@@ -590,8 +590,8 @@ in every shell, this project's first, with each one's output beside it:
 Some tables' rows are things: an `ls -l` row is a file or a folder, a
 `ps` row a process, a `kubectl get` row a pod, deployment or other
 kubernetes object (from the `kubernetes` plugin), a `docker ps` row a
-container. Some are known by their
-columns, whatever printed them: a row with a `PID` (from `ps` on any
+container (from the `docker` plugin). Some are known by their columns,
+whatever printed them: a row with a `PID` (from `ps` on any
 system, `lsof`, `docker top`) is a process, and rows with a name and a
 type of `file` or `dir`, as nu's `ls` gives, are files. In a repository,
 `git status` (short or long) and `jj st` list changed files (`diff`,

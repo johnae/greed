@@ -55,7 +55,6 @@ local suggest = require("@self/suggest")
 local kinds = require("@self/kinds")
 local live = require("@self/live")
 local peek = require("@self/peek")
-require("@self/docker")
 require("@self/processes")
 require("@self/vcs")
 

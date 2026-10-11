@@ -1,0 +1,2 @@
+name = "docker"
+requires = ["core", "shell"]

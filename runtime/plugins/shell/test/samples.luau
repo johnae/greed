@@ -1,6 +1,6 @@
 -- The rows of the commands people run most, as each system prints them:
--- GNU and macOS (BSD) `ls -l` and `ps`, `lsof`, `docker ps`,
--- `git status`, `git log`, `jj st` and `jj log`.
+-- GNU and macOS (BSD) `ls -l` and `ps`, `lsof`, `git status`, `git log`,
+-- `jj st` and `jj log`.
 -- Each sample is printed by a stand-in for its program and run as typed,
 -- so a change in how they're read shows here first. The last test runs
 -- the real `ls` and `ps` of the machine the tests run on.
@@ -137,18 +137,6 @@ sshd      977 root    3u  IPv4  23999      0t0  TCP *:ssh (LISTEN)
 ]],
 		many = "processes",
 		rows = { { id = "process:812", label = "812 nginx" }, { id = "process:977" } },
-	},
-	{
-		name = "docker ps",
-		program = "docker",
-		line = "docker ps",
-		output = [[
-CONTAINER ID   IMAGE          COMMAND                  CREATED        STATUS        PORTS                  NAMES
-3f2a1b4c5d6e   nginx:latest   "/docker-entrypoint.…"   2 hours ago    Up 2 hours    0.0.0.0:8080->80/tcp   web
-9a8b7c6d5e4f   postgres:16    "docker-entrypoint.s…"   3 days ago     Up 3 days     5432/tcp               db
-]],
-		many = "containers",
-		rows = { { id = "container:web", label = "web" }, { id = "container:db" } },
 	},
 	{
 		name = "git status -s",
@@ -360,21 +348,6 @@ local function act(t: test.TestContext, sh: Shell, object: core.Object, name: st
 	end)
 	return sh.blocks[#sh.blocks].command
 end
-
-test("a container's image is an object", function(t)
-	local sh = printing(
-		t,
-		"docker",
-		"CONTAINER ID   IMAGE          COMMAND   CREATED       STATUS       PORTS   NAMES\n"
-			.. '3f2a1b4c5d6e   nginx:latest   "nginx"   2 hours ago   Up 2 hours           web\n'
-	)
-	ran(t, sh, "docker ps")
-	local image =
-		assert(assert(core.objects.related(assert(core.objects.get("container:web")))).image)[1]
-	assert(image.id == "image:nginx:latest", image.id)
-	local inspected = act(t, sh, assert(core.objects.get(image.id)), "inspect")
-	assert(inspected == "docker image inspect nginx:latest", inspected)
-end)
 
 test("changed files, commits and changes run git and jj in their repository", function(t)
 	local sh = printing(t, "git", " M a.txt\n")

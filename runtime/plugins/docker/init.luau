@@ -1,12 +1,17 @@
--- `docker ps`'s rows as containers, in the docker context the command
--- ran against when it named one.
+-- Docker in the shell. `docker ps`'s rows are containers, in the docker
+-- context the command ran against when it named one, to read the logs
+-- of, open a shell in, inspect, restart or stop; the image each runs is
+-- an object too, to inspect or pull. Containers complete the next docker
+-- command acting on one.
 
 local greed = require("@greed")
-local state = require("./state")
-local parse = require("./parse")
-local kinds = require("./kinds")
+local shell = require("@shell")
 
-type Block = state.Block
+local parse = shell.parse
+
+type Block = shell.Block
+type Shell = shell.Shell
+type Thing = shell.Thing
 
 -- The flags that take a value: docker's own before its command, and those
 -- of the commands acting on a container.
@@ -86,7 +91,7 @@ local function docker(args: string, value: any): string
 end
 
 -- The docker object `name` of `kind`, in `context`, as a thing.
-local function thing_of(kind: string, name: string, context: string?): kinds.Thing
+local function thing_of(kind: string, name: string, context: string?): Thing
 	return {
 		kind = kind,
 		label = name,
@@ -95,18 +100,18 @@ local function thing_of(kind: string, name: string, context: string?): kinds.Thi
 	}
 end
 
-kinds.kind({
+shell.kind({
 	name = "docker",
 	match = "docker",
 	capture = function(block: Block): any
-		local words = parse.words(kinds.command_line(block), greed.fs.dirs().home)
+		local words = parse.words(shell.kinds.command_line(block), greed.fs.dirs().home)
 		if words == nil then
 			return nil
 		end
 		local lists, context = listing(words)
 		return if lists then { context = context } else nil
 	end,
-	row = function(row: { [string]: string }, captured: any): kinds.Thing?
+	row = function(row: { [string]: string }, captured: any): Thing?
 		local name = row.NAMES or row.Names
 		local id = row["CONTAINER ID"] or row.ID
 		local which = if name and name ~= "" then name else id
@@ -126,7 +131,7 @@ kinds.kind({
 		return "container", "containers"
 	end,
 	complete = {
-		docker = function(words: { string }, _shell: state.Shell): ((value: any) -> string?)?
+		docker = function(words: { string }, _shell: Shell): ((value: any) -> string?)?
 			if string.sub(words[#words] or "", 1, 1) == "-" then
 				return nil
 			end
@@ -141,7 +146,7 @@ kinds.kind({
 	},
 })
 
-kinds.object_kind(
+shell.object_kind(
 	"container",
 	"A docker container, by its name and docker context",
 	function(value: any): string
@@ -149,34 +154,34 @@ kinds.object_kind(
 	end
 )
 
-kinds.command("container", "logs", function(value: any): string
+shell.action_command("container", "logs", function(value: any): string
 	return docker(`logs --tail 200 {parse.quote(value.name)}`, value)
 end, { doc = "The end of what it logged", default = true })
-kinds.command("container", "follow logs", function(value: any): string
+shell.action_command("container", "follow logs", function(value: any): string
 	return docker(`logs -f --tail 50 {parse.quote(value.name)}`, value)
 end, { doc = "What it logs, as it logs it", follow = true })
-kinds.command("container", "shell", function(value: any): string
+shell.action_command("container", "shell", function(value: any): string
 	return "!" .. docker(`exec -it {parse.quote(value.name)} sh`, value)
 end, { doc = "A shell in it, in a terminal" })
-kinds.command("container", "inspect", function(value: any): string
+shell.action_command("container", "inspect", function(value: any): string
 	return docker(`inspect {parse.quote(value.name)}`, value)
 end, { doc = "Everything docker knows about it, as JSON" })
-kinds.command("container", "restart", function(value: any): string
+shell.action_command("container", "restart", function(value: any): string
 	return docker(`restart {parse.quote(value.name)}`, value)
 end, { doc = "Stop it and start it again", danger = true })
-kinds.command("container", "stop", function(value: any): string
+shell.action_command("container", "stop", function(value: any): string
 	return docker(`stop {parse.quote(value.name)}`, value)
 end, { doc = "Stop it", danger = true })
 
-kinds.object_kind("image", "A docker image, by its name and docker context")
+shell.object_kind("image", "A docker image, by its name and docker context")
 
-kinds.command("image", "inspect", function(value: any): string
+shell.action_command("image", "inspect", function(value: any): string
 	return docker(`image inspect {parse.quote(value.name)}`, value)
 end, { doc = "Everything docker knows about it, as JSON", default = true })
-kinds.command("image", "history", function(value: any): string
+shell.action_command("image", "history", function(value: any): string
 	return docker(`image history {parse.quote(value.name)}`, value)
 end, { doc = "The layers it's made of" })
-kinds.command("image", "pull", function(value: any): string
+shell.action_command("image", "pull", function(value: any): string
 	return docker(`pull {parse.quote(value.name)}`, value)
 end, { doc = "Fetch it again, for what's newest under its name" })
 

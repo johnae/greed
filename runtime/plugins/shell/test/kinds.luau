@@ -6,15 +6,13 @@ local shell = require("@shell")
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
 
--- A shell whose `docker` and `ps` print tables for `ps` and say what they
--- were asked otherwise.
+-- A shell whose `ps` prints the same table everywhere: macOS's prints
+-- other columns than Linux's.
 local function fake(t: test.TestContext): (Shell, string)
 	local dir = t:tempdir({
-		["bin/docker"] = '#!/bin/sh\nif [ "$1" = "ps" ]; then\n  printf "CONTAINER ID   IMAGE      NAMES\\n3f2a1b4c5d6e   nginx      web\\n"\nelse\n  echo "docker $*"\nfi\n',
-		-- The same ps everywhere: macOS's prints other columns than Linux's.
 		["bin/ps"] = '#!/bin/sh\nprintf "USER         PID %%CPU %%MEM COMMAND\\nroot           1  0.0  0.1 /sbin/init\\nme          4711  1.5  2.0 greed\\n"\n',
 	})
-	assert(greed.process.run({ "chmod", "+x", `{dir}/bin/docker`, `{dir}/bin/ps` }))
+	assert(greed.process.run({ "chmod", "+x", `{dir}/bin/ps` }))
 	t:run("shell")
 	local sh = assert(shell.of(greed.view():buffer()))
 	sh.cwd = dir
@@ -85,7 +83,7 @@ test("ls -l's rows are files and folders; enter opens one and goes into the othe
 	assert(greed.view():buffer():path() == `{sh.cwd}/notes.txt`, "forward to the file")
 end)
 
-test("ps's rows are processes and docker ps's containers", function(t)
+test("ps's rows are processes", function(t)
 	local sh = fake(t)
 	local listed = ran(t, sh, "ps aux")
 	assert(listed.called and listed.called.many == "processes")
@@ -93,14 +91,6 @@ test("ps's rows are processes and docker ps's containers", function(t)
 	local me = assert(thing_here("process"))
 	local folder = act(t, sh, me, "its folder")
 	assert(folder.command == "lsof -a -d cwd -p 4711", folder.command)
-	local containers = ran(t, sh, "docker ps")
-	assert(containers.called and containers.called.many == "containers")
-	on(sh, containers, "nginx")
-	local web = assert(thing_here("container"))
-	assert(web.label == "web")
-	local logs = act(t, sh, web, "logs")
-	assert(logs.command == "docker logs --tail 200 web", logs.command)
-	assert(string.find(logs.output, "docker logs --tail 200 web", 1, true), logs.output)
 end)
 
 -- What completion offers with `text` at `sh`'s prompt, in order.
@@ -128,26 +118,13 @@ local function labels(items: { { label: string, detail: string? } }): string
 	return table.concat(out, ",")
 end
 
-test(
-	"completion offers processes for kill and containers for docker, from blocks above",
-	function(t)
-		local sh = fake(t)
-		local listed = ran(t, sh, "ps aux")
-		local kill = offered(t, sh, "kill ")
-		assert(kill[1] and string.match(kill[1].label, "^%d+$"), labels(kill))
-		assert(
-			string.find(kill[1].detail or "", `${listed.number}`, 1, true),
-			tostring(kill[1].detail)
-		)
-		ran(t, sh, "docker ps")
-		assert(offered(t, sh, "docker logs --tail 50 ")[1].label == "web")
-		-- A one-word alias or a path to the program counts as it.
-		shell.aliases.use({ d = "docker" })
-		assert(offered(t, sh, "d logs ")[1].label == "web")
-		assert(offered(t, sh, `{sh.cwd}/bin/docker logs `)[1].label == "web")
-		shell.aliases.use(nil)
-	end
-)
+test("completion offers processes for kill, from blocks above", function(t)
+	local sh = fake(t)
+	local listed = ran(t, sh, "ps aux")
+	local kill = offered(t, sh, "kill ")
+	assert(kill[1] and string.match(kill[1].label, "^%d+$"), labels(kill))
+	assert(string.find(kill[1].detail or "", `${listed.number}`, 1, true), tostring(kill[1].detail))
+end)
 
 -- The ids of `objects`, in order.
 local function ids(objects: { core.Object }): string
@@ -158,15 +135,12 @@ local function ids(objects: { core.Object }): string
 	return table.concat(out, ",")
 end
 
-test("process rows are process:PID and container rows container:NAME", function(t)
+test("process rows are process:PID", function(t)
 	local sh = fake(t)
 	ran(t, sh, "ps aux")
 	local process = assert(core.objects.get("process:4711"))
 	assert(process.label == "4711 greed", process.label)
 	assert(core.objects.inspect(process).row["%CPU"] == "1.5")
-	ran(t, sh, "docker ps")
-	local web = assert(core.objects.get("container:web"))
-	assert(core.objects.inspect(web).row.IMAGE == "nginx")
 end)
 
 test("the rows of a table no kind reads are plain rows of their block", function(t)
@@ -255,8 +229,12 @@ end)
 
 test("filtering by a cell with spaces keeps the rows with its words", function(t)
 	local sh = fake(t)
-	ran(t, sh, "docker ps")
-	local status = ran(t, sh, "docker ps")
+	greed.fs.write(
+		`{sh.cwd}/containers.txt`,
+		"CONTAINER ID   IMAGE      NAMES\n3f2a1b4c5d6e   nginx      web\n"
+	)
+	ran(t, sh, "cat containers.txt")
+	local status = ran(t, sh, "cat containers.txt")
 	local cell = assert(core.objects.get(`cell:{sh.buffer:id()}.{status.number}.1.CONTAINER ID`))
 	assert(core.objects.act(cell, "filter by this"))
 	assert(

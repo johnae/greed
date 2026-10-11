@@ -261,9 +261,9 @@ several, asking once, and gives back those it ran on.
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the
 selection) and `command`; the shell adds `shell-block`, `row`, `cell`,
-`process`, `container`, `image`, `changed-file`, `commit` and `revision`,
-and the kubernetes plugin `pod`, `deployment` and `kubernetes`, so a
-plugin can add actions to those too. A plugin's finders and actions go
+`process`, `changed-file`, `commit` and `revision`, the kubernetes plugin
+`pod`, `deployment` and `kubernetes`, and the docker plugin `container`
+and `image`, so a plugin can add actions to those too. A plugin's finders and actions go
 when it's unloaded.
 
 ### Objects
