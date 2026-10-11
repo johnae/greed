@@ -248,7 +248,7 @@ local function lines_of(block: Block, before: Snapshot?): ({ Line }, number, Sna
 		local text = out[i]
 		local marks: { greed.Mark } = {}
 		local was = before and before.rows[key]
-		if before and (was == nil or differs(was, now.rows[key]) ~= nil) then
+		if before and not block.drawn and (was == nil or differs(was, now.rows[key]) ~= nil) then
 			changed += 1
 			table.insert(marks, { from = 0, to = #text, style = "shell.changed" })
 		end
@@ -299,14 +299,19 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 			end
 			block.stdout, block.stderr, block.output = out, errors, out .. errors
 			block.value = tables.json(out)
-			block.table = tables.from_value(block.value) or tables.parse(out, line, block)
+			-- A chart's characters aren't a table.
+			block.table = if block.drawn
+				then nil
+				else tables.from_value(block.value) or tables.parse(out, line, block)
 			kinds.finished(shell, block)
 			local lines, changed, now = lines_of(block, before)
-			if before then
+			if before and not block.drawn then
 				tell(block, describe(before, now))
 			end
 			before = now
-			block.note = `every {every}s · {changed} changed · {os.date("%H:%M:%S")}`
+			block.note = if block.drawn
+				then `every {every}s · {os.date("%H:%M:%S")}`
+				else `every {every}s · {changed} changed · {os.date("%H:%M:%S")}`
 			rows.renew(shell, block, lines)
 			peek.follow(block)
 			if minutes > 0 and greed.now() - started >= minutes * 60000 then

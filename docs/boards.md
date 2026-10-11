@@ -60,6 +60,8 @@ After the language (`sh`, `bash`, `zsh`, `fish`, `nu` or `shell`):
   says how many more there are.
 - `span=COLUMNS` makes it as wide as that many cards side by side, and
   `wide` as wide as the board.
+- `chart` draws it as a [chart](shell.md#charts) as big as the card;
+  `chart="bar CPU"` says which.
 - `dir=PATH` runs it in another folder, from the project's root.
 
 `space e` opens the file, and saving it shows the board as it says. Cards

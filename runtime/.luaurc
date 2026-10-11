@@ -36,6 +36,8 @@
 		"tutor": "./plugins/tutor",
 		"hosts": "./plugins/hosts",
 		"kubernetes": "./plugins/kubernetes",
-		"board": "./plugins/board"
+		"board": "./plugins/board",
+		"scene": "./plugins/scene",
+		"chart": "./plugins/chart"
 	}
 }

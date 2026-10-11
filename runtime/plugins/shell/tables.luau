@@ -771,6 +771,10 @@ local function iso_time(text: string): number?
 		- offset
 end
 
+--- `text` read as a date and time in ISO 8601, in seconds since 1970; nil
+--- when it isn't one.
+M.iso_time = iso_time
+
 -- A size in bytes as people read it, as nu shows them: "899 B", "142.6 kB".
 local function bytes(n: number): string
 	if n < 1000 then
@@ -1649,9 +1653,14 @@ local function to_format(tbl: Table, format: string): (string?, string?)
 	return table.concat(lines, "\n"), nil
 end
 
+--- What a stage runs for: the block and its shell, when it runs in one
+--- (not while a line is completed), so a stage can keep something from one
+--- run of a watch to the next.
+export type StageContext = { block: any?, shell: any? }
+
 -- The stages working on a table's rows, by name: each makes a new table,
 -- or, for `to`, text; nil and why when it can't.
-local ROWS: { [string]: (tbl: Table, rest: string) -> ((Table | string)?, string?) } = {
+local ROWS: { [string]: StageRun } = {
 	count = function(tbl: Table): ((Table | string)?, string?)
 		return new({ "count" }, { { count = tostring(#tbl.rows) } }), nil
 	end,
@@ -1756,6 +1765,59 @@ local ROWS: { [string]: (tbl: Table, rest: string) -> ((Table | string)?, string
 	end,
 }
 
+-- The stages taking text that isn't a table, as a table of its words.
+local READS_TEXT: { [string]: boolean } = {}
+
+-- `text` as a table of its lines' words: `0.52 0.48 0.40` is a row of
+-- three, in columns named 1, 2 and so on. A first line without numbers
+-- over lines with them is the header, as `kubectl top`'s `NAME
+-- CPU(cores)` is; words past the header's last are in its last column.
+-- Nil without any.
+local function words_table(text: string): Table?
+	local lines: { { string } } = {}
+	local most = 0
+	for line in string.gmatch(text, "[^\n]+") do
+		local words: { string } = {}
+		for word in string.gmatch(line, "%S+") do
+			table.insert(words, word)
+		end
+		if #words > 0 then
+			table.insert(lines, words)
+			most = math.max(most, #words)
+		end
+	end
+	if most == 0 then
+		return nil
+	end
+	local function has_number(words: { string }): boolean
+		for _, word in words do
+			if M.number(word) then
+				return true
+			end
+		end
+		return false
+	end
+	local header = #lines > 1 and not has_number(lines[1]) and has_number(lines[2])
+	local columns: { string } = {}
+	if header then
+		columns = table.remove(lines, 1) :: { string }
+	else
+		for n = 1, most do
+			table.insert(columns, tostring(n))
+		end
+	end
+	local rows: { { [string]: string } } = {}
+	for _, words in lines do
+		local row: { [string]: string } = {}
+		for i, word in words do
+			local column = columns[math.min(i, #columns)]
+			row[column] = if i > #columns then `{row[column]} {word}` else word
+		end
+		table.insert(rows, row)
+	end
+	return { columns = columns, rows = rows }
+end
+
 -- Whether `word rest` is the row stage rather than the program of that
 -- name: `uniq` and `sum` when they name a column, `last` with a number.
 local function takes(word: string, input: Table?, rest: string): boolean
@@ -1782,7 +1844,8 @@ function M.pipeline(
 	tbl: Table?,
 	text: string?,
 	line: string,
-	value: any?
+	value: any?,
+	ctx: StageContext?
 ): (Table?, string?, string?, any?)
 	local current = tbl
 	-- The JSON the stages read, while they've read nothing else.
@@ -1848,10 +1911,14 @@ function M.pipeline(
 		elseif word == "sort" and input and sort_args(input, rest) then
 			current, json = M.sort(input, rest), nil
 		elseif word and ROWS[word] and takes(word, input, rest) then
+			if input == nil and READS_TEXT[word] then
+				input =
+					words_table(if done > 0 and json ~= nil then M.value_text(json) else text or "")
+			end
 			if input == nil then
 				return nil, nil, not_a_table(word)
 			end
-			local made: (Table | string)?, why = ROWS[word](input, rest)
+			local made: (Table | string)?, why = ROWS[word](input, rest, ctx or {})
 			if made == nil then
 				return nil, nil, `{word}: {why}`
 			elseif type(made) == "string" then
@@ -1925,10 +1992,10 @@ function M.after_programs(line: string): (string?, string?)
 	return nil, nil
 end
 
---- What a plugin's stage does with the table it gets and the rest of its
---- words: makes a table, or text (which ends the tables, as `to` does), or
---- gives nil and why it can't.
-export type StageRun = (tbl: Table, rest: string) -> ((Table | string)?, string?)
+--- What a plugin's stage does with the table it gets, the rest of its
+--- words and what it runs for: makes a table, or text (which ends the
+--- tables, as `to` does), or gives nil and why it can't.
+export type StageRun = (tbl: Table, rest: string, ctx: StageContext) -> ((Table | string)?, string?)
 
 export type StageSpec = {
 	name: string,
@@ -1941,6 +2008,9 @@ export type StageSpec = {
 	--- Whether it can follow a program too, as in `kubectl get pods |
 	--- NAME`: only for names no program has.
 	starts: boolean?,
+	--- Whether it takes text that isn't a table too, as a table of its
+	--- lines' words, in columns named 1, 2 and so on.
+	text: boolean?,
 }
 
 --- Adds the table stage `spec.name`, which `run` does, in place of one a
@@ -1968,6 +2038,9 @@ function M.stage(spec: StageSpec, run: StageRun)
 	greed.plugin.tie(core.registry.set(ROWS, name, run))
 	if spec.starts then
 		greed.plugin.tie(core.registry.set(STARTERS, name, true))
+	end
+	if spec.text then
+		greed.plugin.tie(core.registry.set(READS_TEXT, name, true))
 	end
 end
 

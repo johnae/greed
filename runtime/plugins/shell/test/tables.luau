@@ -878,3 +878,23 @@ test("map and filter say what's wrong with a column, and fractions show to two p
 	assert(string.find(fraction.output, "0.33", 1, true), fraction.output)
 	assert(string.find(fraction.output, "1.33", 1, true), fraction.output)
 end)
+
+test("a stage taking text reads its words, a first line without numbers as the header", function()
+	local tables = require("@shell").tables
+	local seen: any = nil
+	tables.stage(
+		{ name = "test-words", usage = "test-words", doc = "Keeps what it's given", text = true },
+		function(tbl, _rest, ctx)
+			seen = { tbl = tbl, ctx = ctx }
+			return tbl, nil
+		end
+	)
+	assert((tables.pipeline(nil, "0.5 0.4 1/20\n", "test-words")))
+	assert(seen.tbl.columns[3] == "3" and seen.tbl.rows[1]["1"] == "0.5", seen.tbl.columns[1])
+	local text = "NAME CPU(cores) NOTE\napi 250m a b\n"
+	assert((tables.pipeline(nil, text, "test-words", nil, { block = "b" })))
+	local made = seen.tbl
+	assert(made.columns[2] == "CPU(cores)" and made.rows[1]["CPU(cores)"] == "250m")
+	assert(made.rows[1].NOTE == "a b", "past the header, in its last column")
+	assert(seen.ctx.block == "b", "it gets what it runs for")
+end)

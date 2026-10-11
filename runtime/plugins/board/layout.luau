@@ -38,6 +38,15 @@ function M.columns(width: number, least: number): number
 	return math.max(1, (width + M.GAP) // (least + M.GAP))
 end
 
+--- How wide a card taking `span` columns is on a board `width` wide,
+--- with cards at least `least` wide.
+function M.card_width(width: number, least: number, span: number): number
+	local columns = M.columns(width, least)
+	local column = math.max((width - (columns - 1) * M.GAP) // columns, 1)
+	local cards = if span <= 0 then columns else math.min(span, columns)
+	return cards * column + (cards - 1) * M.GAP
+end
+
 -- A card in a row being laid out: how wide it is, and which card.
 type Placed = { piece: Piece, width: number, card: number }
 

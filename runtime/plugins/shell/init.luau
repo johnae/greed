@@ -375,6 +375,7 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		table = nil,
 		called = nil,
 		watching = nil,
+		drawn = nil,
 		change = nil,
 		notify = nil,
 		shown = nil,
@@ -581,7 +582,8 @@ local function capture_all(
 	tbl: tables.Table?
 ): (string, string, number?)
 	if text ~= nil then
-		local staged, rest, why, json = tables.pipeline(tbl, text, line, value)
+		local staged, rest, why, json =
+			tables.pipeline(tbl, text, line, value, { block = block, shell = shell })
 		if why then
 			return "", why .. "\n", 2
 		end
@@ -635,7 +637,8 @@ local function flow(
 	flags: { raw: boolean?, handoff: boolean? }
 )
 	if text ~= nil and not flags.raw then
-		local staged, rest, why, json = tables.pipeline(tbl, text, line, value)
+		local staged, rest, why, json =
+			tables.pipeline(tbl, text, line, value, { block = block, shell = shell })
 		if why then
 			run.fail(shell, block, why, 2)
 			return

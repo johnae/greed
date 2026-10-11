@@ -10,8 +10,9 @@
 -- without either it runs once, and again when the board refreshes, or as
 -- long as it runs by itself (`kubectl get pods -w`). `title` names the
 -- card, `height` is how many lines of it show (10), `span` how many
--- columns of the board it takes (`wide` the whole row), and `dir` is the
--- folder it runs in, from the project's root.
+-- columns of the board it takes (`wide` the whole row), `chart` draws it
+-- as a chart (`chart="bar CPU"` says which), and `dir` is the folder it
+-- runs in, from the project's root.
 
 local blocks = require("@blocks")
 local shell = require("@shell")
@@ -28,6 +29,8 @@ export type Card = {
 	dir: string?,
 	--- How many columns of the board it takes; 0 for the whole row.
 	span: number,
+	--- What `chart` is given, to draw it as a chart; "" to guess.
+	chart: string?,
 	--- The `## ` heading it's under.
 	section: string?,
 	--- The lines of the file it's on, from its opening fence to its
@@ -75,6 +78,7 @@ local function card_of(info: string, code: string, section: string?): Card?
 		height = math.max(tonumber(opts.height) or HEIGHT, 1),
 		dir = opts.dir,
 		span = if has(info, "wide") then 0 else math.max(tonumber(opts.span) or 1, 1),
+		chart = opts.chart or (if has(info, "chart") then "" else nil),
 		section = section,
 		first = 0,
 		last = 0,

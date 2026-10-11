@@ -87,6 +87,9 @@ export type Block = {
 	--- worker-abc · 14:05", and whether a notification says so each time.
 	change: string?,
 	notify: boolean?,
+	--- Set by a stage whose output is a drawing, like a chart: a watch
+	--- doesn't mark its lines that changed, as they all do.
+	drawn: boolean?,
 	--- What a filter, or a sort of its table, shows of its output, when
 	--- one does.
 	shown: Shown?,

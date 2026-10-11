@@ -254,3 +254,20 @@ test("on a wide view cards show side by side, and < and > move them, in the file
 	t:keys(">")
 	assert(b.cards[2].command == "echo second", "and back")
 end)
+
+test("a card with chart is drawn as a chart as big as the card", function(t)
+	local parsed =
+		board.file.parse('```sh chart="bar 2" height=4\nprintf "a 1 3\\nb 2 1\\n"\n```\n')
+	assert(parsed.cards[1].chart == "bar 2", tostring(parsed.cards[1].chart))
+	assert(board.file.parse("```sh chart\nx\n```\n").cards[1].chart == "")
+	local dir, path = make(t, '# ops\n\n```sh chart height=3\nprintf "a 1\\nb 3\\n"\n```\n')
+	local b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	local block = b.blocks[1]
+	assert(string.find(block.command, "| chart  --width 80 --height 3", 1, true), block.command)
+	t:wait_for(function()
+		return string.find(b.buffer:text(), "█", 1, true) ~= nil
+	end)
+	local shown = b.buffer:text()
+	assert(string.find(shown, "\nb █", 1, true) and string.find(shown, "█ 3\n", 1, true), shown)
+end)

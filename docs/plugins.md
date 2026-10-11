@@ -1420,10 +1420,23 @@ like `where`. `spec` has its `name`, `usage` and `doc` (for `help` and
 completion), `args` ("column", "columns", "condition" or "format", for
 completion), and `starts = true` when it may follow a program too, as in
 `kubectl get pods | NAME`; give that only to names no program has.
-`run(tbl, rest)` gets the table and the rest of the stage's words, and
-returns a new table (`{ columns, rows }`, each row a map of column to
-text), text (which ends the stages, as `to csv` does), or nil and why it
-can't.
+With `text = true` it takes text that isn't a table too, as a table of
+its words (columns 1, 2 and so on, or a first line without numbers as
+the header). `run(tbl, rest, ctx)` gets the table, the rest of the
+stage's words, and `ctx.block` and `ctx.shell` when it runs in a shell
+(a watch runs it each time, in the same block, so it can keep things
+from run to run), and returns a new table (`{ columns, rows }`, each row
+a map of column to text), text (which ends the stages, as `to csv`
+does), or nil and why it can't. The `chart` stage is a plugin, written
+this way.
+
+`require("@scene")` draws small vector scenes in character cells, as
+charts are: `scene.cells(spec, cols, rows)` gives styled lines, braille
+for lines and dots, eighth blocks for filled shapes. A spec is
+`{ alt = "what it shows", items = { ... } }`, with coordinates in cells;
+items are `line`, `area`, `rect`, `dots`, `text` and `group` (clipped).
+`require("@chart").lines(tbl, "bar CPU", cols, rows)` draws a table as
+`| chart` would.
 
 ```luau
 -- `top COL N`: the N rows with the most in a column.

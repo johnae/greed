@@ -178,10 +178,16 @@ local function draw(board: Board)
 	end
 end
 
--- The line `card` runs: its command, in a watch when it runs again by
--- itself.
-local function line_of(card: Card): string
-	return if card.every then `watch -n {card.every} {card.command}` else card.command
+-- The line `card` runs: its command, drawn as a chart as big as its card
+-- when it's one, in a watch when it runs again by itself.
+local function line_of(board: Board, card: Card): string
+	local command = card.command
+	if card.chart then
+		local least = greed.option.get("board-card-width") :: number
+		local width = layout.card_width(board.width, least, card.span)
+		command ..= ` | chart {card.chart} --width {width} --height {card.height}`
+	end
+	return if card.every then `watch -n {card.every} {command}` else command
 end
 
 -- The folder `card` runs in.
@@ -202,7 +208,7 @@ local function start(board: Board, again: boolean?)
 	local free = table.clone(board.blocks)
 	local blocks: { Block? } = {}
 	for i, card in board.cards do
-		local line, cwd = line_of(card), cwd_of(board, card)
+		local line, cwd = line_of(board, card), cwd_of(board, card)
 		for k, block in free do
 			if block.command == line and block.cwd == cwd then
 				blocks[i] = block
@@ -216,7 +222,7 @@ local function start(board: Board, again: boolean?)
 	end
 	for i, card in board.cards do
 		if blocks[i] == nil then
-			local line, cwd = line_of(card), cwd_of(board, card)
+			local line, cwd = line_of(board, card), cwd_of(board, card)
 			local before = table.remove(free, 1)
 			blocks[i] = if before
 				then shell.change(board.shell, before, line, { cwd = cwd })
@@ -596,6 +602,13 @@ greed.on("view.resized", function(event: greed.ViewResized)
 	if board and board.width ~= event.cols then
 		board.width = event.cols
 		draw(board)
+		-- Charts are drawn as wide as their cards.
+		for _, card in board.cards do
+			if card.chart then
+				greed.spawn(load, board)
+				break
+			end
+		end
 	end
 end)
 

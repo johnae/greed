@@ -561,6 +561,42 @@ resource or namespace flags changed, as k9s's views do:
 ❯ 7 kubectl get deployments -n payments -w ◐ 0 changed · 14:05:09
 ```
 
+## Charts
+
+`| chart` draws a table as a chart, in characters every terminal shows:
+braille for lines, eighth blocks for bars, in the theme's colours.
+
+```text
+❯ 4 kubectl top pods | chart
+api-7d9f8b6c5-2xkqz    ████████████▊ 0.25
+worker-5c6b7d8f9-abcde ████████████████████████████████████████████ 1.2
+redis-0                █▊ 0.035
+ingest-6f7c-xyz        ████████████████████████████████▌ 0.64
+```
+
+It guesses the chart from the columns:
+
+| The table | The chart |
+|---|---|
+| A name column and numbers (`kubectl top pods`) | Bars of the first number, a row each |
+| A time column and numbers | A line a number column, over time |
+| Numbers only | A line a column, row by row; two columns are dots, one against the other |
+| Text that isn't a table (`cat /proc/loadavg`) | Its words as columns, a first line without numbers as the header |
+
+Anything it guesses can be said: `chart bar CPU MEMORY` (both, a bar
+each), `chart line rate over time`, `chart area`, `chart scatter`,
+`chart bar --stacked`, `chart --log`, `--width` and `--height` (it's as
+wide as the view and `chart-height` lines tall, 12). When it can't draw
+one, it says why, naming the columns it found.
+
+In a watch every run adds a point, so the chart is of how the numbers
+went: `watch -n 2 kubectl top pods | chart` draws a line a pod, of its
+CPU, over the last 120 runs (`--last` keeps another number). A watch
+drawing a chart doesn't mark its lines changed, as they all do.
+
+On a [board](boards.md), `chart` after a card's language draws it as a
+chart as big as the card.
+
 ## Running blocks above the prompt
 
 A watch, or anything else still running, scrolls up out of sight as you
