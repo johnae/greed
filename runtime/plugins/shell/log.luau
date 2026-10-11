@@ -444,8 +444,12 @@ local function summary(block: Block): string
 		local called = block.called or { one = "row", many = "rows" }
 		return `{count} {if count == 1 then called.one else called.many}`
 	end
+	if block.drawn then
+		return "a chart"
+	end
+	-- Cut by characters, as a byte might be in the middle of one.
 	local first = string.match(block.stdout, "^%s*([^\n]*)") or ""
-	return if #first > 40 then string.sub(first, 1, 39) .. "…" else first
+	return core.text.clip(first, 40)
 end
 
 --- What the strip says of a running block: for a live one, what it shows

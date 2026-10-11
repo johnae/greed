@@ -4,6 +4,8 @@
 -- --all  what it does`, Go's `-flag value` with the doc on the next line,
 -- clap's and argparse's, and Cobra's `Flags:` sections.
 
+local core = require("@core")
+
 local M = {}
 
 --- A flag a program takes, and what it does.
@@ -17,10 +19,7 @@ local function short(text: string): string?
 		return nil
 	end
 	local sentence = string.match(trimmed, "^(.-%.)%s") or trimmed
-	if #sentence > 80 then
-		sentence = string.sub(sentence, 1, 77) .. "..."
-	end
-	return sentence
+	return core.text.clip(sentence, 80)
 end
 
 -- The flags named at the start of `head`, like "-a, --all" or "-w,

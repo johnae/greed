@@ -268,3 +268,14 @@ test("--why says how each column was read and why the chart is what it is", func
 	local asked = require("@scene").text((assert(chart.lines(pods, "line --why", 40, 6))))
 	assert(string.find(asked, "(as asked)", 1, true), asked)
 end)
+
+test("a watch drawing a chart says so above the prompt, not its first characters", function(t)
+	local sh = open(t)
+	greed.fs.write(`{sh.cwd}/load`, "0.5\n")
+	local block = assert(shell.run(sh, "watch -n 1 cat load | chart --width 30 --height 4"))
+	t:wait_for(function()
+		return block.output ~= ""
+	end)
+	assert(shell.log.running_status(block) == "a chart", shell.log.running_status(block))
+	shell.interrupt(block)
+end)
