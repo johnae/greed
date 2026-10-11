@@ -7,6 +7,7 @@
 local greed = require("@greed")
 local shell = require("@shell")
 local config = require("./config")
+local json = require("./json")
 
 local parse = shell.parse
 
@@ -305,6 +306,21 @@ shell.kind({
 	end,
 	streams = function(words: { string }): boolean
 		return read_line(words).watch and asked(words) ~= nil
+	end,
+	-- Read as data when stages follow: `kubectl get` as it prints JSON.
+	structured = function(words: { string }): string?
+		local line = read_line(words)
+		if line.args[1] ~= "get" or line.args[2] == nil or line.output or line.watch then
+			return nil
+		end
+		local quoted: { string } = {}
+		for _, word in words do
+			table.insert(quoted, parse.quote(word))
+		end
+		return table.concat(quoted, " ") .. " -o json"
+	end,
+	from_json = function(value: any): shell.Table?
+		return json.table(value)
 	end,
 	complete = {
 		kubectl = function(words: { string }, sh: Shell): ((value: any) -> string?)?

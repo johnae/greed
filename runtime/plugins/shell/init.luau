@@ -609,6 +609,42 @@ local function read_output(block: Block, out: string, programs: string): (any, t
 	return json, tables.from_value(json) or tables.parse(out, programs, block)
 end
 
+-- Runs `programs`, whose output goes on to table stages: as its kind
+-- says it prints JSON (`kubectl get pods -o json`) when it says, read as
+-- the table that is, so the stages read data rather than columns on
+-- screen; else, or when that fails, as typed. What it printed (the table
+-- as text, when it was read from JSON), its errors, how it exited (nil when
+-- stopped), and its JSON and table.
+local function capture_programs(
+	shell: Shell,
+	block: Block,
+	programs: string,
+	text: string?
+): (string, string, number?, any, tables.Table?)
+	local structured, from_json = kinds.structured(programs)
+	if structured and from_json then
+		local out, errors, code = capture(shell, block, structured, text)
+		if code == nil then
+			return out, errors, code, nil, nil
+		end
+		if code == 0 then
+			-- JSON lines, as docker prints, aren't one value: the kind reads the text.
+			local read, value = pcall(tables.json, out)
+			local ok, made = pcall(from_json, if read then value else nil, out)
+			if ok and made then
+				block.note = `read as data: {structured}`
+				return tables.text(made), errors, code, nil, made
+			end
+		end
+	end
+	local out, errors, code = capture(shell, block, programs, text)
+	if code == nil or (out == "" and code ~= 0) then
+		return out, errors, code, nil, nil
+	end
+	local json, made = read_output(block, out, programs)
+	return out, errors, code, json, made
+end
+
 -- Runs `line` once as `flow` would, but gives back what it printed in the
 -- end rather than showing it: table stages after its programs included, as
 -- `kubectl get pods | where RESTARTS > 0`, and `each`. Also its errors and
@@ -651,11 +687,10 @@ local function capture_all(
 	if programs == nil or stages == nil then
 		return capture(shell, block, line, text)
 	end
-	local out, errors, code = capture(shell, block, programs, text)
+	local out, errors, code, json, made = capture_programs(shell, block, programs, text)
 	if code == nil or (out == "" and code ~= 0) then
 		return out, errors, code
 	end
-	local json, made = read_output(block, out, programs)
 	local more, more_errors, more_code = capture_all(shell, block, stages, out, json, made)
 	return more, errors .. more_errors, more_code
 end
@@ -713,7 +748,7 @@ local function flow(
 		fall_back(shell, block, line, opts, flags.handoff == true, text)
 		return
 	end
-	local out, errors, code = capture(shell, block, programs, text)
+	local out, errors, code, json, made = capture_programs(shell, block, programs, text)
 	if errors ~= "" then
 		run.write(shell, block, errors, "stderr")
 	end
@@ -724,7 +759,6 @@ local function flow(
 		run.finish(shell, block, code, nil)
 		return
 	end
-	local json, made = read_output(block, out, programs)
 	flow(shell, block, stages, opts, out, json, made, {})
 end
 

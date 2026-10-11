@@ -68,6 +68,15 @@ export type Kind = {
 	--- as they change, like `kubectl get pods -w`: the shell shows such a
 	--- stream as its rows, each in place, rather than every line it prints.
 	streams: ((words: { string }) -> boolean)?,
+	--- For a command line of its (as words) whose output goes on to table
+	--- stages: the same command printing JSON, as `kubectl get pods -o
+	--- json`, or nil to run it as typed. Stages then read data, which
+	--- doesn't change when the columns on screen do.
+	structured: ((words: { string }) -> string?)?,
+	--- The table `structured`'s output is, its columns named as the text
+	--- has them: given it read as JSON (nil for JSON lines) and as text.
+	--- Nil when it can't say.
+	from_json: ((value: any, text: string) -> tables.Table?)?,
 }
 
 local kinds: { Kind } = {}
@@ -94,6 +103,25 @@ function M.streams(line: string): boolean
 		end
 	end
 	return false
+end
+
+--- The form of `line` printing JSON that its kind gives, and how to read
+--- that as a table; nil when there's none.
+function M.structured(line: string): (string?, ((value: any, text: string) -> tables.Table?)?)
+	local words = parse.words(line, greed.fs.dirs().home)
+	if words == nil then
+		return nil, nil
+	end
+	for _, kind in kinds do
+		local structured, match = kind.structured, kind.match
+		if structured and match and kind.from_json and tables.matches(match, line) then
+			local ok, form = pcall(structured, words)
+			if ok and form then
+				return form, kind.from_json
+			end
+		end
+	end
+	return nil, nil
 end
 
 --- Says what the rows of the commands `kind.match` names are, or of

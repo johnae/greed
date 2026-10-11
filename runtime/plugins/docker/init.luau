@@ -84,6 +84,75 @@ local function listing(words: { string }): (boolean, string?)
 	return lists, context
 end
 
+-- The columns `docker ps` and `docker stats` print, in order, and the
+-- field of `--format json` each is read from.
+local PS_COLUMNS = {
+	{ "NAMES", "Names" },
+	{ "IMAGE", "Image" },
+	{ "STATUS", "Status" },
+	{ "PORTS", "Ports" },
+	{ "CREATED", "RunningFor" },
+	{ "COMMAND", "Command" },
+	{ "CONTAINER ID", "ID" },
+}
+local STATS_COLUMNS = {
+	{ "NAME", "Name" },
+	{ "CPU %", "CPUPerc" },
+	{ "MEM USAGE / LIMIT", "MemUsage" },
+	{ "MEM %", "MemPerc" },
+	{ "NET I/O", "NetIO" },
+	{ "BLOCK I/O", "BlockIO" },
+	{ "PIDS", "PIDs" },
+	{ "CONTAINER ID", "ID" },
+}
+
+-- What `--format json` printed, `text`, a JSON object a line, as the table
+-- with `columns`; nil when a line isn't one.
+local function json_lines(text: string, columns: { { string } }): shell.Table?
+	local rows: { { [string]: string } } = {}
+	for _, line in string.split(text, "\n") do
+		if string.match(line, "%S") then
+			local ok, value = pcall(greed.json.decode, line)
+			if not ok or type(value) ~= "table" then
+				return nil
+			end
+			local row: { [string]: string } = {}
+			for _, column in columns do
+				local field = value[column[2]]
+				row[column[1]] = if field == nil then "" else tostring(field)
+			end
+			table.insert(rows, row)
+		end
+	end
+	local names: { string } = {}
+	for _, column in columns do
+		table.insert(names, column[1])
+	end
+	return { columns = names, rows = rows }
+end
+
+-- Whether `words` asks for its own output: a format, or only ids.
+local function formatted(words: { string }): boolean
+	for _, word in words do
+		if
+			word == "--format"
+			or string.match(word, "^%-%-format=")
+			or word == "-q"
+			or word == "--quiet"
+		then
+			return true
+		end
+	end
+	return false
+end
+
+-- Whether `words` is `docker stats` printing once.
+local function stats_once(words: { string }): boolean
+	local rest = read_line(words)
+	return (rest[1] == "stats" or (rest[1] == "container" and rest[2] == "stats"))
+		and table.find(words, "--no-stream") ~= nil
+end
+
 -- `docker` with `args`, in the context `value` came from.
 local function docker(args: string, value: any): string
 	local context = if value.context then " --context " .. parse.quote(value.context) else ""
@@ -129,6 +198,22 @@ shell.kind({
 	end,
 	called = function(): (string, string)
 		return "container", "containers"
+	end,
+	-- Read as data when stages follow: the listing and `stats --no-stream`
+	-- as they print JSON.
+	structured = function(words: { string }): string?
+		if formatted(words) or not (listing(words) or stats_once(words)) then
+			return nil
+		end
+		local quoted: { string } = {}
+		for _, word in words do
+			table.insert(quoted, parse.quote(word))
+		end
+		return table.concat(quoted, " ") .. " --format json"
+	end,
+	from_json = function(_value: any, text: string): shell.Table?
+		local stats = string.find(text, '"CPUPerc"', 1, true) ~= nil
+		return json_lines(text, if stats then STATS_COLUMNS else PS_COLUMNS)
 	end,
 	complete = {
 		docker = function(words: { string }, _shell: Shell): ((value: any) -> string?)?

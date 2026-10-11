@@ -421,6 +421,15 @@ the program. What the program prints before the stages isn't shown,
 only what comes out at the end, and its errors. A stage on output that
 isn't a table says so, and what makes one.
 
+Some programs are asked for JSON when stages follow them, so the stages
+read their data rather than columns on screen: `kubectl get` gets `-o
+json`, `docker ps` and `docker stats --no-stream` get `--format json`.
+The table has the columns the program prints itself (`READY`, `STATUS`,
+`RESTARTS`, `CPU %`), and the status says `read as data` with the line
+that ran. A line asking for its own output (`-o wide`, `--format`) or
+watching runs as typed, and when the JSON form fails (an old docker,
+say) the line runs again as typed and its table is read instead.
+
 ### More stages
 
 | | |
@@ -468,8 +477,8 @@ and an array of objects is a table too, with a column for each key, so
 `/` and `space s` show it lined up in columns, and `$3 | where` works on
 it. Many tools print JSON when asked, which is the surest way to a table:
 `kubectl get pods -o json` gives every field, where its columns give a
-few. The shell never runs your command again with other flags; it reads
-what it printed.
+few. A command on its own runs as typed; the shell reads what it
+printed.
 
 The stages work on an object too: its fields are the columns of one row,
 so `$3 | select name` gives its name, and when one of its fields holds an
