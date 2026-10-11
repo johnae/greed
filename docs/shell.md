@@ -598,7 +598,18 @@ Anything it guesses can be said: `chart bar CPU MEMORY` (both, a bar
 each), `chart line rate over time`, `chart area`, `chart scatter`,
 `chart bar --stacked`, `chart --log`, `--width` and `--height` (it's as
 wide as the view and `chart-height` lines tall, 12). When it can't draw
-one, it says why, naming the columns it found.
+one, it says why, naming the columns it found. `chart --why` shows how
+it read each column and why it picked the chart it did:
+
+```text
+❯ 5 kubectl top pods | chart --why
+NAME           names, for the rows
+CPU(cores)     numbers, in cores, charted
+MEMORY(bytes)  numbers, in bytes, left out
+
+bar: CPU(cores) by NAME: api-7d9f8b6c5-2xkqz 250m, worker-5c6b7d8f9-abcde 1.2, redis-0 35m, +1 more
+because the rows have names (NAME): a bar each, of CPU(cores)
+```
 
 In a watch every run adds a point, so the chart is of how the numbers
 went: `watch -n 2 kubectl top pods | chart` draws a line a pod, of its

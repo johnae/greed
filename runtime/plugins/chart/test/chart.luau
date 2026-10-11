@@ -250,3 +250,21 @@ test("on a short chart each row has one tick label at most", function()
 	local text = require("@scene").text((assert(chart.lines(numbers, "", 30, 4))))
 	assert(not string.find(text, "00.0", 1, true), text)
 end)
+
+test("--why says how each column was read and why the chart is what it is", function()
+	local pods = tbl(
+		{ "NAME", "CPU", "MEMORY", "AGE" },
+		{ { "api", "250m", "128Mi", "3d" }, { "worker", "1", "1Gi", "2h" } }
+	)
+	local said = require("@scene").text((assert(chart.lines(pods, "--why", 40, 6))))
+	assert(string.find(said, "NAME    names, for the rows", 1, true), said)
+	assert(string.find(said, "CPU     numbers, in cores, charted", 1, true), said)
+	assert(string.find(said, "MEMORY  numbers, in bytes, left out", 1, true), said)
+	assert(string.find(said, "AGE     durations, left out", 1, true), said)
+	assert(
+		string.find(said, "because the rows have names (NAME): a bar each, of CPU", 1, true),
+		said
+	)
+	local asked = require("@scene").text((assert(chart.lines(pods, "line --why", 40, 6))))
+	assert(string.find(asked, "(as asked)", 1, true), asked)
+end)

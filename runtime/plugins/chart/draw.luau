@@ -12,6 +12,9 @@ local M = {}
 --- (see `scale.unit`) when that's its own.
 export type Series = { name: string, points: { { number } }, unit: string? }
 
+--- How `chart` read a column, for `--why`.
+export type Seen = { column: string, read: string }
+
 --- What to draw: the kind, the series, the category of each bar, what the
 --- x values are ("index", "time" in seconds since 1970, or "number"),
 --- and how.
@@ -26,6 +29,9 @@ export type Chart = {
 	unit: string?,
 	--- What the chart shows, in words, for its `alt`.
 	about: string,
+	--- How each column was read, and why this kind of chart, for `--why`.
+	seen: { Seen }?,
+	reason: string?,
 }
 
 -- The style of series `i`, from 1: eight, then round again.

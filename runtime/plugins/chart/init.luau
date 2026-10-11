@@ -79,6 +79,14 @@ local function make(
 	if chart == nil then
 		return nil, problem
 	end
+	if ask.why then
+		local lines: { scene.Line } = {}
+		for _, text in string.split(read.why(chart), "\n") do
+			local line: scene.Line = { text = text, marks = {} }
+			table.insert(lines, line)
+		end
+		return { spec = { alt = chart.about, items = {} }, cols = 0, lines = lines }, nil
+	end
 	local width = ask.width or cols or 72
 	local height = ask.height or rows or greed.option.get("chart-height") :: number
 	local spec = draw.scene(chart, width, height)

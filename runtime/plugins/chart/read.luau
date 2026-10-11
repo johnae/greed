@@ -21,6 +21,8 @@ export type Ask = {
 	over: string?,
 	stacked: boolean,
 	log: boolean,
+	--- Say what was read and why, rather than draw it.
+	why: boolean,
 	--- How many points of each series a watch keeps.
 	last: number,
 	width: number?,
@@ -45,11 +47,34 @@ local LAST = 120
 
 --- The usage, for `help` and errors.
 M.USAGE =
-	"chart [line|area|bar|scatter] [COLUMN...] [by COLUMN] [over COLUMN] [--stacked] [--log] [--last N] [--width N] [--height N]"
+	"chart [line|area|bar|scatter] [COLUMN...] [by COLUMN] [over COLUMN] [--stacked] [--log] [--last N] [--width N] [--height N] [--why]"
+
+--- What `chart` read and why it drew what it did, for `--why`: a line a
+--- column, then the chart.
+function M.why(chart: draw.Chart): string
+	local lines: { string } = {}
+	local columns: { draw.Seen } = chart.seen or {}
+	local widths: { number } = {}
+	local widest = 0
+	for i, seen in columns do
+		widths[i] = utf8.len(seen.column) or #seen.column
+		widest = math.max(widest, widths[i])
+	end
+	for i, seen in columns do
+		local pad = string.rep(" ", widest - widths[i])
+		table.insert(lines, `{seen.column}{pad}  {seen.read}`)
+	end
+	table.insert(lines, "")
+	table.insert(lines, `{chart.kind}: {chart.about}`)
+	if chart.reason then
+		table.insert(lines, `because {chart.reason}`)
+	end
+	return table.concat(lines, "\n")
+end
 
 --- Reads what follows `chart`: nil and why when it can't.
 function M.ask(text: string): (Ask?, string?)
-	local ask: Ask = { columns = {}, stacked = false, log = false, last = LAST }
+	local ask: Ask = { columns = {}, stacked = false, log = false, why = false, last = LAST }
 	local words: { string } = {}
 	for word in string.gmatch(text, "%S+") do
 		table.insert(words, word)
@@ -65,6 +90,8 @@ function M.ask(text: string): (Ask?, string?)
 			ask.stacked = true
 		elseif word == "--log" then
 			ask.log = true
+		elseif word == "--why" then
+			ask.why = true
 		elseif word == "--last" or word == "--width" or word == "--height" then
 			local n = value()
 			if n == nil or n < 1 then
@@ -272,6 +299,29 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			named = named and label(i) ~= tostring(i)
 		end
 	end
+	-- How each column was read, for `--why`.
+	local seen: { draw.Seen } = {}
+	for _, c in tbl.columns do
+		local u = unit_of(c)
+		local numbers = if u then `numbers, in {u}` else "numbers"
+		local read: string
+		if c == time then
+			read = "times, along the bottom"
+		elseif table.find(ys, c) then
+			read = `{numbers}, charted`
+		elseif c == names then
+			read = "names, for the rows"
+		elseif tables.durations(tbl, c) then
+			read = "durations, left out: they go up by themselves"
+		elseif numeric(tbl, c) then
+			read = `{numbers}, left out`
+		else
+			read = "text, left out"
+		end
+		table.insert(seen, { column = c, read = read })
+	end
+	-- Said after why a chart was picked, when it was asked for.
+	local asked = if ask.kind then " (as asked)" else ""
 
 	-- In a watch, how each number went from run to run.
 	local over_runs = history ~= nil and kind ~= "bar" and kind ~= "scatter" and time == nil
@@ -314,6 +364,10 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			log = ask.log,
 			unit = unit,
 			about = `{table.concat(ys, ", ")} over time: {some(latest, values, unit)}`,
+			seen = seen,
+			reason = `in a watch, each run adds a point: a line a {if #tbl.rows > 1
+				then "row"
+				else "number"}, over time{asked}`,
 		},
 			nil
 	end
@@ -346,6 +400,8 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			log = ask.log,
 			unit = unit,
 			about = `{table.concat(ys, ", ")} over {x}`,
+			seen = seen,
+			reason = `{if time then x .. " holds times" else "over " .. x}: a line a number column along it{asked}`,
 		},
 			nil
 	end
@@ -369,6 +425,8 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			log = ask.log,
 			unit = if #ys > 1 then unit_of(ys[2]) else unit,
 			about = `{ys[2]} against {ys[1]}, {#points} points`,
+			seen = seen,
+			reason = `two number columns and nothing to name the rows by: one against the other{asked}`,
 		},
 			nil
 	end
@@ -403,6 +461,11 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 				first,
 				unit
 			)}`,
+			seen = seen,
+			reason = `the rows have names ({names or "their words"}): a bar each, of {table.concat(
+				ys,
+				" and "
+			)}{asked}`,
 		},
 			nil
 	end
@@ -426,6 +489,8 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 		log = ask.log,
 		unit = unit,
 		about = `{table.concat(ys, ", ")}, {#tbl.rows} rows`,
+		seen = seen,
+		reason = `numbers and nothing to name the rows by: a line a column, row by row{asked}`,
 	},
 		nil
 end
