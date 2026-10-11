@@ -300,3 +300,21 @@ test("from a card's place in the file, jumping back goes to the board", function
 	t:keys("esc ctrl-o")
 	assert(greed.view():buffer() == b.buffer, tostring(greed.view():buffer():path()))
 end)
+
+test("a card's chart is as big as the card, coloured, with its scene over it", function(t)
+	local dir, path = make(t, '# ops\n\n```sh height=3\nprintf "a 1\\nb 3\\n" | chart bar\n```\n')
+	local b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	local block = b.blocks[1]
+	assert(string.find(block.command, "| chart bar --width 80 --height 3", 1, true), block.command)
+	t:wait_for(function()
+		return string.find(b.buffer:text(), "█", 1, true) ~= nil
+	end)
+	local styled, placed = false, nil
+	for _, mark in b.buffer:decorations("board") do
+		styled = styled or mark.style == "chart.series.1"
+		placed = mark.scene or placed
+	end
+	assert(styled, "the chart's colours")
+	assert(placed and placed.rows == 2 and placed.cols == 80, "its scene over its two rows")
+end)

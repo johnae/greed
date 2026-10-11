@@ -61,7 +61,8 @@ After the language (`sh`, `bash`, `zsh`, `fish`, `nu` or `shell`):
 - `span=COLUMNS` makes it as wide as that many cards side by side, and
   `wide` as wide as the board.
 - `chart` draws it as a [chart](shell.md#charts) as big as the card;
-  `chart="bar CPU"` says which.
+  `chart="bar CPU"` says which. A command ending in `| chart` of its own
+  is as big as the card too.
 - `dir=PATH` runs it in another folder, from the project's root.
 
 `space e` opens the file, and saving it shows the board as it says. Cards

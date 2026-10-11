@@ -218,4 +218,12 @@ greed.on("buffer.closed", function(event)
 	scenes[event.id] = nil
 end)
 
+--- The chart `block` drew last, if it drew one: its lines as drawn,
+--- styled, and its scene's id, cells wide and as many rows as lines, to
+--- show it elsewhere, as a board's card does.
+function M.drawing(block: Block): { lines: { scene.Line }, scene: number, cols: number }?
+	local d = drawn[block]
+	return if d then { lines = d.lines, scene = d.scene, cols = d.cols } else nil
+end
+
 return M

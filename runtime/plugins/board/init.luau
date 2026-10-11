@@ -22,6 +22,8 @@ local core = require("@core")
 local picker = require("@picker")
 local shell = require("@shell")
 local blocks = require("@blocks")
+local chart = require("@chart")
+local scene = require("@scene")
 local file = require("@self/file")
 local layout = require("@self/layout")
 
@@ -127,6 +129,59 @@ local function output_of(board: Board, block: Block): { string }
 	return lines
 end
 
+-- The styles of the charts the cards show, and their scenes, for the
+-- clients that draw one better, over the cards that show the whole chart.
+local function chart_marks(board: Board, at: { [number]: { layout.Spot } }): { greed.Mark }
+	local buffer = board.buffer
+	-- Where each card is, line by line: its head, then what it shows.
+	local placed: { [number]: { { line: number, spot: layout.Spot } } } = {}
+	for line = 0, buffer:line_count() - 1 do
+		local spots: { layout.Spot } = at[line] or {}
+		for _, spot in spots do
+			placed[spot.card] = placed[spot.card] or {}
+			table.insert(placed[spot.card], { line = line, spot = spot })
+		end
+	end
+	local out: { greed.Mark } = {}
+	for i in board.cards do
+		local block = board.blocks[i]
+		local drawing = if block then chart.drawing(block) else nil
+		local card = placed[i]
+		if drawing == nil or card == nil then
+			continue
+		end
+		local shown = 0
+		for k, line in drawing.lines do
+			local where = card[k + 1]
+			if where == nil then
+				break
+			end
+			local start = buffer:line_start(where.line) + where.spot.from
+			if buffer:slice(start, start + #line.text) ~= line.text then
+				break
+			end
+			for _, mark in line.marks do
+				table.insert(
+					out,
+					{ from = start + mark.from, to = start + mark.to, style = mark.style }
+				)
+			end
+			shown = k
+		end
+		if shown == #drawing.lines and shown > 0 and scene.drawn() then
+			local first, last = card[2], card[shown + 1]
+			local to = buffer:line_start(last.line) + last.spot.to
+			table.insert(out, {
+				from = buffer:line_start(first.line) + first.spot.from,
+				to = math.min(to, buffer:line_end(last.line)),
+				style = "",
+				scene = { id = drawing.scene, cols = drawing.cols, rows = shown },
+			})
+		end
+	end
+	return out
+end
+
 -- Draws `board` as its cards are now, keeping each view's cursor and
 -- scroll where they were.
 local function draw(board: Board)
@@ -170,6 +225,9 @@ local function draw(board: Board)
 	buffer:edit(function(e)
 		e:replace(0, buffer:len(), text)
 	end, { undo = false })
+	for _, mark in chart_marks(board, laid.at) do
+		table.insert(marks, mark)
+	end
 	buffer:decorate("board", marks)
 	board.at = laid.at
 	local last = buffer:line_count() - 1
@@ -183,10 +241,17 @@ end
 -- when it's one, in a watch when it runs again by itself.
 local function line_of(board: Board, card: Card): string
 	local command = card.command
+	local least = greed.option.get("board-card-width") :: number
+	local size = `--width {layout.card_width(board.width, least, card.span)} --height {card.height}`
 	if card.chart then
-		local least = greed.option.get("board-card-width") :: number
-		local width = layout.card_width(board.width, least, card.span)
-		command ..= ` | chart {card.chart} --width {width} --height {card.height}`
+		command ..= ` | chart {card.chart} {size}`
+	elseif
+		string.match(command, "|%s*chart[^|]*$")
+		and not string.find(command, "--width", 1, true)
+		and not string.find(command, "--height", 1, true)
+	then
+		-- Its own chart, at the end of its command, as big as the card too.
+		command ..= ` {size}`
 	end
 	return if card.every then `watch -n {card.every} {command}` else command
 end
