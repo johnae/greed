@@ -93,6 +93,30 @@ test("kubectl's, docker's and ps's columns are read as tables", function()
 	assert(ps.rows[4].COMMAND == "postgres: checkpointer", ps.rows[4].COMMAND)
 end)
 
+test("macOS's ps, a user name longer than its column moving a row along, is a table", function()
+	local lines = {
+		"USER               PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND",
+		"runner           25090 150.7  2.1 435516464 154208   ??  R<   12:04PM   5:05.86 /Users/runner/work/greed",
+		"root               126   1.1  0.4 435305456  27472   ??  Ss   11:48AM   0:09.91 /usr/libexec/opendirectoryd",
+		"_installcoordinationd   412   0.0  0.1 435290944   9488   ??  Ss   11:48AM   0:00.11 /usr/libexec/installcoordinationd",
+		"_spotlight         501   0.0  0.0 435299184   4896   ??  S    11:49AM   0:00.02 /usr/libexec/trustd --agent",
+	}
+	-- A machine's worth of processes, as macOS has.
+	for pid = 600, 625 do
+		table.insert(
+			lines,
+			`root               {pid}   0.0  0.0 435299184   4896   ??  Ss   11:49AM   0:00.02 /usr/sbin/daemon{pid}`
+		)
+	end
+	local ps = assert(tables.detect(table.concat(lines, "\n") .. "\n", "ps aux"))
+	assert(columns(ps) == "USER,PID,%CPU,%MEM,VSZ,RSS,TT,STAT,STARTED,TIME,COMMAND", columns(ps))
+	local moved = ps.rows[3]
+	assert(moved.USER == "_installcoordinationd" and moved.PID == "412", `{moved.USER}|{moved.PID}`)
+	assert(moved.COMMAND == "/usr/libexec/installcoordinationd", moved.COMMAND)
+	assert(ps.rows[4].COMMAND == "/usr/libexec/trustd --agent", ps.rows[4].COMMAND)
+	assert(ps.rows[1].VSZ == "435516464" and ps.rows[1].TT == "??", ps.rows[1].VSZ)
+end)
+
 test("df's header isn't in capitals, so only df's output is read as a table", function()
 	local df = assert(tables.detect(DF, "df -h"))
 	assert(columns(df) == "Filesystem,Size,Used,Avail,Use%,Mounted on", columns(df))

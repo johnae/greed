@@ -186,26 +186,20 @@ local function lines_of(text: string): { string }
 	return lines
 end
 
--- The columns lined up in `lines` from line `offset` + 1 on, under a header
--- there when `header` is true. `strict` is for output nobody said was a
--- table: then a column under several words far apart, or a row with less
--- than two cells, means it isn't one.
-local function aligned(lines: { string }, offset: number, header: boolean, strict: boolean): Table?
-	local head = if header then lines[offset + 1] else ""
-	local words = runs(head)
-	-- Every line's runs, merged where they touch or overlap: what's left
-	-- between them is blank in every line, so columns start after it.
+-- The columns of a header's `words` over rows' runs (`row_runs`), leaving
+-- out the rows in `skip`: what's blank in every line between runs is where
+-- one column ends and the next starts. Nil when they don't make columns.
+local function columns_of(
+	words: { Run },
+	row_runs: { { Run } },
+	header: boolean,
+	skip: { [number]: boolean }
+): { Field }?
+	-- Every line's runs, merged where they touch or overlap.
 	local all: { Run } = table.clone(words)
-	local row_runs: { { Run } } = {}
-	local above = offset + (if header then 1 else 0)
-	for i = above + 1, #lines do
-		local found = runs(lines[i])
-		if #found == 0 and strict then
-			return nil
-		end
-		table.insert(row_runs, found)
-		for _, run in found do
-			table.insert(all, run)
+	for i, found in row_runs do
+		if not skip[i] then
+			table.move(found, 1, #found, #all + 1, all)
 		end
 	end
 	table.sort(all, function(a: Run, b: Run)
@@ -241,6 +235,109 @@ local function aligned(lines: { string }, offset: number, header: boolean, stric
 			columns[#columns].to = field.to
 		end
 	end
+	return columns
+end
+
+-- The rows in `row_runs` whose first cell runs into the second column:
+-- with text between the first two header words where the header and all
+-- but a few rows (one in twenty) are blank. ps's row for a user name
+-- longer than its column is one, every cell after it moved along. A table
+-- of fewer than twenty rows has none: there, one row is as good as another.
+local function out_of_line(words: { Run }, row_runs: { { Run } }): { [number]: boolean }
+	local out: { [number]: boolean } = {}
+	local second = words[2]
+	local few = #row_runs // 20
+	if second == nil or few == 0 then
+		return out
+	end
+	local headed: { [number]: boolean } = {}
+	for _, word in words do
+		for c = word.from, word.to do
+			headed[c] = true
+		end
+	end
+	local cover: { [number]: number } = {}
+	for _, found in row_runs do
+		for _, run in found do
+			for c = run.from, math.min(run.to, second.from - 1) do
+				cover[c] = (cover[c] or 0) + 1
+			end
+		end
+	end
+	for i, found in row_runs do
+		for _, run in found do
+			for c = run.from, math.min(run.to, second.from - 1) do
+				if not headed[c] and cover[c] <= few then
+					out[i] = true
+				end
+			end
+		end
+	end
+	return out
+end
+
+-- The cells of `line`, a row out of line with `columns`, by its words: as
+-- many for each column as its header has, joined by a space, and the rest
+-- of the line in the last.
+local function cells_by_words(line: string, columns: { Field }): { string }
+	local spans: { { number } } = {}
+	for from, to in string.gmatch(line, "()%S+()") do
+		table.insert(spans, { from :: number, (to :: number) - 1 })
+	end
+	local out: { string } = {}
+	local next_word = 1
+	for j, column in columns do
+		if j == #columns then
+			local span = spans[next_word]
+			out[j] = if span then string.match(string.sub(line, span[1]), "^(.-)%s*$") or "" else ""
+		else
+			local taken: { string } = {}
+			for _ = 1, math.max(#column.words, 1) do
+				local span = spans[next_word]
+				if span then
+					table.insert(taken, string.sub(line, span[1], span[2]))
+					next_word += 1
+				end
+			end
+			out[j] = table.concat(taken, " ")
+		end
+	end
+	return out
+end
+
+-- The columns lined up in `lines` from line `offset` + 1 on, under a header
+-- there when `header` is true. `strict` is for output nobody said was a
+-- table: then a column under several words far apart, or a row with less
+-- than two cells, means it isn't one.
+local function aligned(lines: { string }, offset: number, header: boolean, strict: boolean): Table?
+	local head = if header then lines[offset + 1] else ""
+	local words = runs(head)
+	local row_runs: { { Run } } = {}
+	local above = offset + (if header then 1 else 0)
+	for i = above + 1, #lines do
+		local found = runs(lines[i])
+		if #found == 0 and strict then
+			return nil
+		end
+		table.insert(row_runs, found)
+	end
+	local laid: { Field }? = columns_of(words, row_runs, header, {})
+	-- A few rows out of line don't decide where the columns are, when the
+	-- rest make more of them: their cells are their words instead.
+	local odd: { [number]: boolean } = {}
+	if header then
+		local outliers = out_of_line(words, row_runs)
+		local without = if next(outliers)
+			then columns_of(words, row_runs, header, outliers)
+			else nil
+		if without and (laid == nil or #without > #laid) then
+			laid, odd = without, outliers
+		end
+	end
+	if laid == nil then
+		return nil
+	end
+	local columns: { Field } = laid
 	if #columns == 0 or (strict and #columns < 2) then
 		return nil
 	end
@@ -255,8 +352,9 @@ local function aligned(lines: { string }, offset: number, header: boolean, stric
 		local line = lines[above + i]
 		local row: { string } = {}
 		local filled = 0
+		local by_words = if odd[i] then cells_by_words(line, columns) else nil
 		for j, bound in bounds do
-			local value = cell(line, found, bound[1], bound[2])
+			local value = if by_words then by_words[j] else cell(line, found, bound[1], bound[2])
 			row[j] = value
 			if value ~= "" then
 				filled += 1

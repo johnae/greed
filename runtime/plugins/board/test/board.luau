@@ -89,7 +89,10 @@ test("a board shows each card's output, cut at its height, under its section", f
 	assert(string.find(shown, "^ops\n"), shown)
 	assert(string.find(shown, "files\n\n✓ the list", 1, true), shown)
 	assert(string.find(shown, "\na\nb\n… 2 more lines", 1, true), shown)
-	assert(string.find(shown, `\n{dir}/sub\n`, 1, true), "dir runs it in a folder: " .. shown)
+	-- In the block: the card cuts a long path at its edge, and macOS's
+	-- temporary folders are long, under another name (/private/var).
+	local sub = b.blocks[2].output
+	assert(string.find(sub, "/sub%s*$"), "dir runs it in a folder: " .. sub)
 	assert(
 		string.find(shown, "other\n", 1, true) and string.find(shown, "\nlive\n", 1, true),
 		shown
@@ -363,6 +366,8 @@ test("saved twice quickly, the board loads once after the other, as the file say
 	-- Each add loads the board again: the second while the first runs.
 	board.add(path, "sleep 0.2; echo four")
 	board.add(path, "sleep 0.2; echo five")
+	-- Loads run one after another, each starting its cards: slow machines
+	-- need the time.
 	t:wait_for(function()
 		local shown = b.buffer:text()
 		return #b.cards == 3
@@ -370,9 +375,9 @@ test("saved twice quickly, the board loads once after the other, as the file say
 			and string.find(shown, "three", 1, true) ~= nil
 			and string.find(shown, "four", 1, true) ~= nil
 			and string.find(shown, "five", 1, true) ~= nil
-	end)
+	end, 20000)
 	t:wait_for(function()
 		return #b.shell.blocks == 3
-	end)
+	end, 20000)
 	assert(not string.find(b.buffer:text(), "two", 1, true), b.buffer:text())
 end)
