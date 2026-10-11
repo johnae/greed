@@ -4,7 +4,7 @@
 //! Clients send input and get back frames, over channels in the same
 //! process or as JSON lines over a session socket.
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::ops::Range;
 use std::thread::{self, JoinHandle};
@@ -68,6 +68,9 @@ pub enum Output {
     /// An image frames will place, sent once before the first frame that
     /// does.
     Image(ImageData),
+    /// A scene frames will place, sent before the first frame placing it
+    /// and again when it changes.
+    Scene(SceneData),
     /// A notification for the user's desktop, from `greed.client.notify`.
     Notify(Notice),
 }
@@ -90,6 +93,25 @@ impl From<&Image> for ImageData {
             width: image.width,
             height: image.height,
             png: base64::engine::general_purpose::STANDARD.encode(&image.png),
+        }
+    }
+}
+
+/// A scene as it goes to a client: its id, version and spec, as JSON,
+/// which the client reads as a `scene::Spec`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneData {
+    pub id: crate::scene::SceneId,
+    pub version: u64,
+    pub spec: serde_json::Value,
+}
+
+impl From<&crate::scene::Scene> for SceneData {
+    fn from(scene: &crate::scene::Scene) -> Self {
+        Self {
+            id: scene.id,
+            version: scene.version,
+            spec: serde_json::to_value(&scene.spec).unwrap_or_default(),
         }
     }
 }
@@ -180,6 +202,8 @@ struct Client {
     last: Option<Frame>,
     /// The images whose data it has.
     images: HashSet<ImageId>,
+    /// The version of each scene it has.
+    scenes: HashMap<crate::scene::SceneId, u64>,
     /// Lays out its frames, and knows where it put things for its clicks.
     renderer: Renderer<CellWidth>,
     /// Its screen's size, once it has said.
@@ -205,6 +229,7 @@ impl Client {
             connection,
             last: None,
             images: HashSet::new(),
+            scenes: HashMap::new(),
             renderer: Renderer::new(CellWidth),
             size: None,
             message: None,
@@ -986,12 +1011,25 @@ impl Server<'_> {
             .filter(|p| client.images.insert(p.id))
             .filter_map(|p| host.with_editor(|ed| ed.images().get(p.id).cloned()))
             .collect();
-        let sent = images.iter().all(|image| {
+        let mut sent = images.iter().all(|image| {
             client
                 .output
                 .send(Output::Image(ImageData::from(&**image)))
                 .is_ok()
         });
+        // And of scenes it hasn't had as they are now.
+        for placement in &frame.scenes {
+            if client.scenes.insert(placement.id, placement.version) == Some(placement.version) {
+                continue;
+            }
+            let scene = host.with_editor(|ed| ed.scenes().get(placement.id).cloned());
+            if let Some(scene) = scene {
+                sent &= client
+                    .output
+                    .send(Output::Scene(SceneData::from(&*scene)))
+                    .is_ok();
+            }
+        }
         let Some(output) = host.timed("what changed on screen", || client.output_for(frame)) else {
             return true;
         };

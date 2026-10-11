@@ -162,6 +162,11 @@ local function fill(
 	end
 	for cy = math.floor(y0), math.ceil(y1) - 1 do
 		local tall = overlap(y0, y1, cy)
+		-- A box at least half a row tall with room above and below it in
+		-- its row fills the row, as a bar does.
+		if tall >= 0.5 and y0 > cy + 0.01 and y1 < cy + 0.99 then
+			tall = 1
+		end
 		for cx = math.floor(x0), math.ceil(x1) - 1 do
 			local wide = overlap(x0, x1, cx)
 			local char: string? = nil

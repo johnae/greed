@@ -28,6 +28,7 @@ mod plugin;
 mod process;
 mod projects;
 mod requests;
+mod scenes;
 mod secrets;
 mod sessions;
 mod stalls;

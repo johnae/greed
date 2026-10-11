@@ -68,3 +68,14 @@ test("each cell takes the style of what was drawn in it last, in runs", function
 	)
 	assert(marks[2].style == "b" and marks[2].from == 6 and marks[2].to == 8)
 end)
+
+test("a box at least half a row tall within one row fills the row", function()
+	assert(
+		draw({ { kind = "rect", at = { 0, 0.15 }, size = { 2.5, 0.7 }, fill = "x" } }, 3, 1)
+			== "██▌"
+	)
+	assert(
+		draw({ { kind = "rect", at = { 0, 0.3 }, size = { 1, 0.4 }, fill = "x" } }, 1, 1) ~= "█",
+		"less is less"
+	)
+end)

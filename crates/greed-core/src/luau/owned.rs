@@ -21,6 +21,7 @@ pub(crate) struct Owned {
     marks: HashMap<(BufferId, Arc<str>), PluginId>,
     tracked: HashMap<(BufferId, TrackId), PluginId>,
     images: HashMap<ImageId, PluginId>,
+    scenes: HashMap<crate::scene::SceneId, PluginId>,
     /// Floating views and panels.
     views: HashMap<ViewId, PluginId>,
     /// Oldest first, so what a plugin overrode comes back when it goes.
@@ -58,6 +59,14 @@ impl Owned {
 
     pub fn forget_image(&mut self, id: ImageId) {
         self.images.remove(&id);
+    }
+
+    pub fn scene(&mut self, id: crate::scene::SceneId, by: PluginId) {
+        self.scenes.insert(id, by);
+    }
+
+    pub fn forget_scene(&mut self, id: crate::scene::SceneId) {
+        self.scenes.remove(&id);
     }
 
     pub fn view(&mut self, id: ViewId, by: PluginId) {
@@ -98,8 +107,8 @@ impl Owned {
     }
 
     /// Takes away what `owner` made: clears its marks, forgets its tracked
-    /// places and images, closes its views, and puts back the file types and
-    /// servers it replaced. Returns the views it closed.
+    /// places, images and scenes, closes its views, and puts back the file
+    /// types and servers it replaced. Returns the views it closed.
     pub fn remove_owned_by(
         &mut self,
         owner: &str,
@@ -123,6 +132,12 @@ impl Owned {
         self.images.retain(|id, by| {
             if mine(by) {
                 editor.images_mut().remove(*id);
+            }
+            !mine(by)
+        });
+        self.scenes.retain(|id, by| {
+            if mine(by) {
+                editor.scenes_mut().remove(*id);
             }
             !mine(by)
         });

@@ -344,6 +344,7 @@ fn api_tables_survive_nonsense() {
         ("syntax", "greed.syntax", "Syntax"),
         ("theme", "greed.theme", "Theme"),
         ("image", "greed.image", "Images"),
+        ("scene", "greed.scene", "Scenes"),
         ("json", "greed.json", "Json"),
     ] {
         fuzz(label, &format!("return {make}"), type_name, &[]);

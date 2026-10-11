@@ -674,6 +674,7 @@ mod tests {
             surfaces: vec![pane, status],
             lines: Vec::new(),
             images: Vec::new(),
+            scenes: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
             theme: Arc::new(theme),

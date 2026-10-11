@@ -583,6 +583,11 @@ It guesses the chart from the columns:
 | Numbers only | A line a column, row by row; two columns are dots, one against the other |
 | Text that isn't a table (`cat /proc/loadavg`) | Its words as columns, a first line without numbers as the header |
 
+In a terminal with kitty graphics (kitty, Ghostty, WezTerm, Konsole) the
+chart is drawn as an image, smooth lines and bars in the theme's
+colours, with its labels and numbers still the terminal's text;
+`GREED_IMAGES=none` keeps it in characters.
+
 Anything it guesses can be said: `chart bar CPU MEMORY` (both, a bar
 each), `chart line rate over time`, `chart area`, `chart scatter`,
 `chart bar --stacked`, `chart --log`, `--width` and `--height` (it's as

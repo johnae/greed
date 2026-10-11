@@ -146,6 +146,13 @@ test("| chart in the shell draws the table, in the chart styles", function(t)
 		styles[mark.style or ""] = true
 	end
 	assert(styles["chart.series.1"] and styles["chart.label"], "styled")
+	-- A scene over it, for the clients that draw one better.
+	local placed: any = nil
+	for _, mark in sh.buffer:decorations(`chart.{block.uid}`) do
+		placed = mark.scene or placed
+	end
+	assert(placed and placed.cols == 30 and placed.rows == 2, "a scene over its two rows")
+	assert(greed.scene.set(placed.id, { alt = "still there", items = {} }), "the scene is kept")
 	local bad = finished(t, assert(shell.run(sh, "cat pods | chart DISK")))
 	assert(string.find(bad.output, "there's no column DISK", 1, true), bad.output)
 end)

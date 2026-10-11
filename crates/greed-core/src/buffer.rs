@@ -133,6 +133,9 @@ pub struct Mark {
     pub lines: Vec<VirtualLine>,
     /// An image drawn over the text from the start of the range.
     pub image: Option<MarkImage>,
+    /// A scene drawn over the text from the start of the range, by the
+    /// clients that can; the text there is what the others show.
+    pub scene: Option<MarkScene>,
     /// A command that clicking the mark's `text` runs, with the cursor put
     /// at the start of the range first, like a button.
     pub action: Option<Arc<str>>,
@@ -188,6 +191,16 @@ impl From<&str> for VirtualLine {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MarkImage {
     pub id: crate::image::ImageId,
+    pub cols: u16,
+    pub rows: u16,
+    pub col: u16,
+    pub row: u16,
+}
+
+/// A scene over a block of cells, as `MarkImage` places an image.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MarkScene {
+    pub id: crate::scene::SceneId,
     pub cols: u16,
     pub rows: u16,
     pub col: u16,

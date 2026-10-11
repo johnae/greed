@@ -35,10 +35,15 @@ greed.option.define({
 })
 
 -- What each watch's chart has had, and each block's chart as drawn, to
--- style its output once it shows.
+-- style its output once it shows and place its scene over it: the scene's
+-- id, and how many cells wide it is.
 local histories: { [Block]: read.History } = setmetatable({}, { __mode = "k" }) :: any
-type Drawn = { shell: Shell, lines: { scene.Line } }
+type Drawn = { shell: Shell, lines: { scene.Line }, scene: number, cols: number }
 local drawn: { [Block]: Drawn } = setmetatable({}, { __mode = "k" }) :: any
+
+-- The scenes charts in each shell's buffer drew, by its id, to forget with
+-- it.
+local scenes: { [number]: { number } } = {}
 
 -- How wide a chart in `sh` is: as the view showing it, a little in.
 local function width_of(sh: Shell?): number
@@ -53,16 +58,19 @@ local function width_of(sh: Shell?): number
 	return 72
 end
 
---- `tbl` as a chart `rest` asks for, `cols` by `rows` cells, as styled
---- lines: in a watch, `history` keeps its points from run to run. Nil and
---- why when there's nothing to chart.
-function M.lines(
+-- A chart made: the scene, how many cells wide it is, and the scene in
+-- characters.
+type Made = { spec: scene.Spec, cols: number, lines: { scene.Line } }
+
+-- `tbl` as a chart `rest` asks for, as `lines` says; nil and why when
+-- there's nothing to chart.
+local function make(
 	tbl: shell.Table,
 	rest: string,
 	cols: number?,
 	rows: number?,
 	history: read.History?
-): ({ scene.Line }?, string?)
+): (Made?, string?)
 	local ask, why = read.ask(rest)
 	if ask == nil then
 		return nil, why
@@ -73,12 +81,27 @@ function M.lines(
 	end
 	local width = ask.width or cols or 72
 	local height = ask.height or rows or greed.option.get("chart-height") :: number
-	local lines = scene.cells(draw.scene(chart, width, height), width, height)
+	local spec = draw.scene(chart, width, height)
+	local lines = scene.cells(spec, width, height)
 	-- Bars for a few rows leave empty ones under them.
 	while #lines > 1 and lines[#lines].text == "" do
 		table.remove(lines)
 	end
-	return lines, nil
+	return { spec = spec, cols = width, lines = lines }, nil
+end
+
+--- `tbl` as a chart `rest` asks for, `cols` by `rows` cells, as styled
+--- lines: in a watch, `history` keeps its points from run to run. Nil and
+--- why when there's nothing to chart.
+function M.lines(
+	tbl: shell.Table,
+	rest: string,
+	cols: number?,
+	rows: number?,
+	history: read.History?
+): ({ scene.Line }?, string?)
+	local made, why = make(tbl, rest, cols, rows, history)
+	return if made then made.lines else nil, why
 end
 
 shell.stage({
@@ -99,15 +122,26 @@ shell.stage({
 		end
 		history = kept
 	end
-	local lines, why = M.lines(tbl, rest, width_of(ctx.shell), nil, history)
-	if lines == nil then
+	local made, why = make(tbl, rest, width_of(ctx.shell), nil, history)
+	if made == nil then
 		return nil, why
 	end
-	if block and ctx.shell then
+	local sh: Shell? = ctx.shell
+	if block and sh then
 		block.drawn = true
-		drawn[block] = { shell = ctx.shell, lines = lines }
+		-- The block's scene, a version on, or a new one.
+		local before = drawn[block]
+		local id = if before and greed.scene.set(before.scene, made.spec)
+			then before.scene
+			else greed.scene.new(made.spec)
+		if before == nil or before.scene ~= id then
+			local buffer = sh.buffer:id()
+			scenes[buffer] = scenes[buffer] or {}
+			table.insert(scenes[buffer], id)
+		end
+		drawn[block] = { shell = sh, lines = made.lines, scene = id, cols = made.cols }
 	end
-	return scene.text(lines), nil
+	return scene.text(made.lines), nil
 end)
 
 -- A chart's output takes its styles once it shows, as long as it's the
@@ -120,6 +154,7 @@ shell.log.on_update(function(block: Block)
 	local buffer = d.shell.buffer
 	local from = shell.log.output_range(d.shell, block)
 	local marks: { greed.Mark } = {}
+	local matched = 0
 	if from then
 		local first = buffer:line_of(from)
 		for i, line in d.lines do
@@ -131,6 +166,7 @@ shell.log.on_update(function(block: Block)
 			if buffer:slice(start, start + #line.text) ~= line.text then
 				break
 			end
+			matched = i
 			for _, mark in line.marks do
 				table.insert(
 					marks,
@@ -139,7 +175,28 @@ shell.log.on_update(function(block: Block)
 			end
 		end
 	end
+	-- The whole chart showing, its scene goes over it, for the clients that
+	-- draw one better than the characters.
+	if from and matched == #d.lines then
+		local start = buffer:line_start(buffer:line_of(from))
+		table.insert(marks, {
+			from = start,
+			to = start,
+			-- Empty, so its style shows nowhere.
+			style = "chart.label",
+			scene = { id = d.scene, cols = d.cols, rows = #d.lines },
+		})
+	end
 	buffer:decorate(`chart.{block.uid}`, marks)
+end)
+
+-- A shell's charts' scenes go with it.
+greed.on("buffer.closed", function(event)
+	local ids: { number } = scenes[event.id] or {}
+	for _, id in ids do
+		greed.scene.forget(id)
+	end
+	scenes[event.id] = nil
 end)
 
 return M

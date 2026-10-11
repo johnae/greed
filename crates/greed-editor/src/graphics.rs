@@ -1,14 +1,25 @@
 //! Images in the terminal Greed runs in, drawn with the kitty graphics
 //! protocol (kitty, Ghostty, `WezTerm`, Konsole). Each image is sent once and
-//! then placed, cropped and scaled, wherever a frame puts it.
+//! then placed, cropped and scaled, wherever a frame puts it. Scenes are
+//! drawn into images of their own, which go under the text, so a scene's
+//! labels stay the terminal's text.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 
+use base64::Engine;
 use crossterm::{cursor, queue};
 use greed_core::image::ImageId;
-use greed_core::render::ImagePlacement;
-use greed_core::server::ImageData;
+use greed_core::render::{ImagePlacement, ScenePlacement};
+use greed_core::scene::{Item, SceneId, Spec};
+use greed_core::server::{ImageData, SceneData};
+use greed_core::theme::Theme;
+
+use crate::scene_image;
+
+/// The first id of the images scenes are drawn into, above any the editor
+/// gives its own; kitty's ids are 32 bits.
+const SCENE_IMAGES: u64 = 0x8000_0000;
 
 /// How much base64 goes in one escape sequence; the protocol's limit.
 const CHUNK: usize = 4096;
@@ -45,6 +56,32 @@ pub struct Graphics {
     sent: HashSet<ImageId>,
     /// What's on screen now.
     placed: Vec<ImagePlacement>,
+    /// Scenes as they are now: their version and what they draw.
+    scenes: HashMap<SceneId, (u64, Spec)>,
+    /// Each scene as last drawn into an image, and what it was drawn for.
+    drawn: HashMap<SceneId, Drawn>,
+    /// The id the next scene's image gets.
+    next: u64,
+    /// A cell's size in pixels, once the terminal said.
+    cell: Option<(u16, u16)>,
+}
+
+/// A scene drawn into an image: which image, and what for.
+struct Drawn {
+    id: ImageId,
+    version: u64,
+    cols: u16,
+    rows: u16,
+    cell: (u16, u16),
+    /// The colors of the styles it uses, as the theme had them.
+    colors: Vec<[u8; 3]>,
+}
+
+/// A scene drawn as an image over part of the screen: where, and the image
+/// placed there.
+pub struct SceneShown {
+    pub placement: ScenePlacement,
+    pub image: ImagePlacement,
 }
 
 impl Graphics {
@@ -59,9 +96,150 @@ impl Graphics {
         self.images.insert(image.id, image);
     }
 
-    /// The screen was cleared, and the images on it with it.
+    /// The screen was cleared, and the images on it with it. Its cells may
+    /// be another size now.
     pub fn cleared(&mut self) {
         self.placed.clear();
+        self.cell = None;
+    }
+
+    /// Keeps `scene` as it is now, for frames to place.
+    pub fn add_scene(&mut self, scene: SceneData) {
+        if let Ok(spec) = serde_json::from_value::<Spec>(scene.spec) {
+            self.scenes.insert(scene.id, (scene.version, spec));
+        }
+    }
+
+    /// Says how big a cell is in pixels, as the terminal would.
+    #[cfg(test)]
+    pub fn set_cell(&mut self, cell: (u16, u16)) {
+        self.cell = Some(cell);
+    }
+
+    /// A cell's size in pixels, asking the terminal the first time.
+    fn cell(&mut self) -> Option<(u16, u16)> {
+        if self.cell.is_none()
+            && let Ok(size) = crossterm::terminal::window_size()
+            && size.columns > 0
+            && size.rows > 0
+            && size.width > 0
+        {
+            self.cell = Some((size.width / size.columns, size.height / size.rows));
+        }
+        self.cell
+    }
+
+    /// Draws the scenes `placements` show into images, as needed, with
+    /// `theme`'s colors: the ones it could, each with the image to place.
+    /// Empty without a protocol, or before the terminal said its cell size.
+    pub fn scenes(
+        &mut self,
+        out: &mut impl Write,
+        placements: &[ScenePlacement],
+        theme: &Theme,
+    ) -> io::Result<Vec<SceneShown>> {
+        let mut shown = Vec::new();
+        if self.protocol.is_none() {
+            return Ok(shown);
+        }
+        let Some(cell) = self.cell() else {
+            return Ok(shown);
+        };
+        for placement in placements {
+            let Some((version, spec)) = self.scenes.get(&placement.id) else {
+                continue;
+            };
+            let mut names = Vec::new();
+            scene_image::styles(&spec.items, &mut names);
+            let colors: Vec<[u8; 3]> = names.iter().map(|n| scene_image::color(theme, n)).collect();
+            let current = self.drawn.get(&placement.id).filter(|d| {
+                d.version == *version
+                    && d.cols == placement.cols
+                    && d.rows == placement.rows
+                    && d.cell == cell
+                    && d.colors == colors
+            });
+            let id = if let Some(drawn) = current {
+                drawn.id
+            } else {
+                let Some(png) =
+                    scene_image::draw(spec, placement.cols, placement.rows, cell, theme)
+                else {
+                    continue;
+                };
+                let id = ImageId(SCENE_IMAGES + self.next);
+                self.next += 1;
+                let drawn = Drawn {
+                    id,
+                    version: *version,
+                    cols: placement.cols,
+                    rows: placement.rows,
+                    cell,
+                    colors,
+                };
+                if let Some(old) = self.drawn.insert(placement.id, drawn) {
+                    self.forget(out, old.id)?;
+                }
+                self.images.insert(
+                    id,
+                    ImageData {
+                        id,
+                        width: u32::from(placement.cols) * u32::from(cell.0),
+                        height: u32::from(placement.rows) * u32::from(cell.1),
+                        png: base64::engine::general_purpose::STANDARD.encode(png),
+                    },
+                );
+                id
+            };
+            shown.push(SceneShown {
+                placement: *placement,
+                image: ImagePlacement {
+                    id,
+                    rect: placement.rect,
+                    col: placement.col,
+                    row: placement.row,
+                    cols: placement.cols,
+                    rows: placement.rows,
+                },
+            });
+        }
+        Ok(shown)
+    }
+
+    /// The cells of scene `id` that hold its text, by column and row in
+    /// the scene: the terminal shows them over its image.
+    pub fn text_cells(&self, id: SceneId) -> HashSet<(i32, i32)> {
+        fn add(items: &[Item], cells: &mut HashSet<(i32, i32)>) {
+            for item in items {
+                match item {
+                    Item::Text {
+                        at, text, align, ..
+                    } => {
+                        let (column, row, width) = Item::text_cells(*at, text, align.as_deref());
+                        for x in column..column + width {
+                            cells.insert((x, row));
+                        }
+                    }
+                    Item::Group { items, .. } => add(items, cells),
+                    _ => {}
+                }
+            }
+        }
+        let mut cells = HashSet::new();
+        if let Some((_, spec)) = self.scenes.get(&id) {
+            add(&spec.items, &mut cells);
+        }
+        cells
+    }
+
+    /// Takes image `id`, one a scene was drawn into before, off the
+    /// terminal, its data too.
+    fn forget(&mut self, out: &mut impl Write, id: ImageId) -> io::Result<()> {
+        self.images.remove(&id);
+        if self.sent.remove(&id) {
+            write!(out, "\x1b_Ga=d,d=I,i={},q=2\x1b\\", id.0)?;
+        }
+        Ok(())
     }
 
     /// Shows `placements`, replacing what was there.
@@ -78,7 +256,9 @@ impl Graphics {
             if self.sent.insert(image.id) {
                 transmit(out, image)?;
             }
-            place(out, image, placement, n + 1)?;
+            // A scene's image goes under the text, which holds its labels.
+            let under = image.id.0 >= SCENE_IMAGES;
+            place(out, image, placement, n + 1, under)?;
         }
         self.placed = placements.to_vec();
         Ok(())
@@ -105,8 +285,14 @@ fn transmit(out: &mut impl Write, image: &ImageData) -> io::Result<()> {
 }
 
 /// Puts the part of `image` the placement shows over its cells, as
-/// placement `n` of the image.
-fn place(out: &mut impl Write, image: &ImageData, p: &ImagePlacement, n: usize) -> io::Result<()> {
+/// placement `n` of the image; `under` the text there.
+fn place(
+    out: &mut impl Write,
+    image: &ImageData,
+    p: &ImagePlacement,
+    n: usize,
+    under: bool,
+) -> io::Result<()> {
     // The part shown, in the image's pixels.
     let crop = |cell: u16, cells: u16, pixels: u32| {
         u32::try_from(u64::from(cell) * u64::from(pixels) / u64::from(cells.max(1)))
@@ -117,9 +303,10 @@ fn place(out: &mut impl Write, image: &ImageData, p: &ImagePlacement, n: usize) 
     let w = crop(p.col.saturating_add(p.rect.width), p.cols, image.width).saturating_sub(x);
     let h = crop(p.row.saturating_add(p.rect.height), p.rows, image.height).saturating_sub(y);
     queue!(out, cursor::MoveTo(p.rect.x, p.rect.y))?;
+    let z = if under { ",z=-1" } else { "" };
     write!(
         out,
-        "\x1b_Ga=p,i={},p={n},x={x},y={y},w={w},h={h},c={},r={},C=1,q=2\x1b\\",
+        "\x1b_Ga=p,i={},p={n},x={x},y={y},w={w},h={h},c={},r={},C=1,q=2{z}\x1b\\",
         image.id.0, p.rect.width, p.rect.height
     )
 }
@@ -183,6 +370,94 @@ mod tests {
         let after = text(&after);
         assert!(!after.contains("a=t"), "the data is already there");
         assert!(after.contains("a=p,i=7"));
+    }
+
+    fn scene(version: u64) -> SceneData {
+        SceneData {
+            id: SceneId(3),
+            version,
+            spec: serde_json::json!({ "alt": "bars", "items": [
+                { "kind": "rect", "at": [0, 0], "size": [2, 1], "fill": "chart.series.1" },
+                { "kind": "text", "at": [3, 0], "text": "12", "style": "chart.label" },
+            ] }),
+        }
+    }
+
+    fn scene_placement(version: u64) -> ScenePlacement {
+        ScenePlacement {
+            id: SceneId(3),
+            version,
+            rect: Rect {
+                x: 2,
+                y: 1,
+                width: 5,
+                height: 1,
+            },
+            col: 0,
+            row: 0,
+            cols: 5,
+            rows: 1,
+        }
+    }
+
+    #[test]
+    fn a_scene_is_drawn_into_an_image_under_the_text_and_again_as_it_changes() {
+        let mut graphics = Graphics::new(Some(Protocol::Kitty));
+        graphics.set_cell((10, 20));
+        graphics.add_scene(scene(1));
+        let theme = Theme::default();
+        let mut out = Vec::new();
+        let shown = graphics
+            .scenes(&mut out, &[scene_placement(1)], &theme)
+            .unwrap();
+        assert_eq!(shown.len(), 1);
+        let first = shown[0].image;
+        assert!(first.id.0 >= SCENE_IMAGES && first.rect == scene_placement(1).rect);
+        assert_eq!(
+            graphics.text_cells(SceneId(3)),
+            HashSet::from([(3, 0), (4, 0)])
+        );
+        graphics.draw(&mut out, &[first]).unwrap();
+        let sent = text(&out);
+        assert!(
+            sent.contains(&format!("a=t,f=100,t=d,i={}", first.id.0)),
+            "{sent}"
+        );
+        assert!(sent.contains(",z=-1"), "under the text: {sent}");
+
+        // The same version isn't drawn again.
+        let mut again = Vec::new();
+        let same = graphics
+            .scenes(&mut again, &[scene_placement(1)], &theme)
+            .unwrap();
+        assert_eq!(same[0].image.id, first.id);
+        assert!(again.is_empty());
+
+        // A new version is, and the old image goes from the terminal.
+        graphics.add_scene(scene(2));
+        let mut changed = Vec::new();
+        let next = graphics
+            .scenes(&mut changed, &[scene_placement(2)], &theme)
+            .unwrap();
+        assert_ne!(next[0].image.id, first.id);
+        let changed = text(&changed);
+        assert!(
+            changed.contains(&format!("a=d,d=I,i={}", first.id.0)),
+            "{changed}"
+        );
+    }
+
+    #[test]
+    fn scenes_wait_for_the_cell_size_and_a_protocol() {
+        let mut none = Graphics::new(None);
+        none.set_cell((10, 20));
+        none.add_scene(scene(1));
+        let mut out = Vec::new();
+        assert!(
+            none.scenes(&mut out, &[scene_placement(1)], &Theme::default())
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

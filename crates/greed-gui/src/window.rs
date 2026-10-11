@@ -68,7 +68,7 @@ pub fn run(
                 crossbeam_channel::select! {
                     recv(outputs) -> message => {
                         let message = message.unwrap_or(Output::Exit);
-                        let last = !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::Notify(_));
+                        let last = !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::Notify(_));
                         if proxy.send_event(Event::Output(message)).is_err() || last {
                             return;
                         }
@@ -304,8 +304,9 @@ impl App {
                 });
                 return;
             }
-            // The window has no notifications of its own yet.
-            Output::Notify(_) => return,
+            // The window has no notifications of its own yet, and shows
+            // scenes as the characters under them for now.
+            Output::Notify(_) | Output::Scene(_) => return,
             // Kept as PNG; frames that place it make its texture.
             Output::Image(image) => {
                 use base64::Engine;

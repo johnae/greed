@@ -444,6 +444,8 @@ pub struct Editor {
     menus: Vec<crate::render::Menu>,
     /// Images marks can show.
     images: crate::image::Images,
+    /// Scenes marks can show.
+    scenes: crate::scene::Scenes,
 }
 
 impl Editor {
@@ -480,6 +482,7 @@ impl Editor {
             theme: Arc::default(),
             menus: Vec::new(),
             images: crate::image::Images::default(),
+            scenes: crate::scene::Scenes::default(),
         }
     }
 
@@ -1721,6 +1724,14 @@ impl Editor {
 
     pub fn images_mut(&mut self) -> &mut crate::image::Images {
         &mut self.images
+    }
+
+    pub fn scenes(&self) -> &crate::scene::Scenes {
+        &self.scenes
+    }
+
+    pub fn scenes_mut(&mut self) -> &mut crate::scene::Scenes {
+        &mut self.scenes
     }
 
     /// A cell's width and height in pixels on the client's screen; 8 by 16

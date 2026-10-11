@@ -115,6 +115,7 @@ fn frame() -> Frame {
         ],
         lines: Vec::new(),
         images: Vec::new(),
+        scenes: Vec::new(),
         cursor: Some(Position { col: 3, row: 0 }),
         cursor_shape: CursorShape::Block,
         theme: Arc::new(theme),

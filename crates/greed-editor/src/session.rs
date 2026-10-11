@@ -181,6 +181,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> 
             | Output::Frame(_)
             | Output::Delta(_)
             | Output::Image(_)
+            | Output::Scene(_)
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::Notify(_) => return Ok(()),
@@ -377,6 +378,7 @@ pub fn ssh(
             | Output::Frame(_)
             | Output::Delta(_)
             | Output::Image(_)
+            | Output::Scene(_)
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::Notify(_) => return Ok(()),

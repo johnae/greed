@@ -23,7 +23,8 @@ use crate::image::ImageId;
 use crate::layout::Direction;
 use crate::search::{self, Direction as SearchDirection};
 use crate::{
-    Buffer, BufferId, Mark, MarkImage, Reveal, ScreenSize, Scroll, View, ViewId, VirtualLine,
+    Buffer, BufferId, Mark, MarkImage, MarkScene, Reveal, ScreenSize, Scroll, View, ViewId,
+    VirtualLine,
 };
 
 type LuaResult<T> = mlua::Result<T>;
@@ -654,6 +655,10 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                             .get::<Option<Table>>("image")?
                             .map(|i| mark_image_from_lua(&i))
                             .transpose()?,
+                        scene: t
+                            .get::<Option<Table>>("scene")?
+                            .map(|s| mark_scene_from_lua(&s))
+                            .transpose()?,
                         action: t.get::<Option<String>>("action")?.map(Into::into),
                         scale: scale_from_lua(t.get("scale"))?,
                         data: match t.get::<Value>("data")? {
@@ -776,6 +781,15 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
         i.set("row", image.row)?;
         t.set("image", i)?;
     }
+    if let Some(scene) = mark.scene {
+        let s = lua.create_table()?;
+        s.set("id", scene.id.0)?;
+        s.set("cols", scene.cols)?;
+        s.set("rows", scene.rows)?;
+        s.set("col", scene.col)?;
+        s.set("row", scene.row)?;
+        t.set("scene", s)?;
+    }
     Ok(t)
 }
 
@@ -851,6 +865,17 @@ pub(super) fn virtual_line_to_lua(lua: &Lua, line: &VirtualLine) -> LuaResult<Va
 fn mark_image_from_lua(t: &Table) -> LuaResult<MarkImage> {
     Ok(MarkImage {
         id: ImageId(t.get("id")?),
+        cols: t.get::<u16>("cols")?.max(1),
+        rows: t.get::<u16>("rows")?.max(1),
+        col: t.get::<Option<u16>>("col")?.unwrap_or(0),
+        row: t.get::<Option<u16>>("row")?.unwrap_or(0),
+    })
+}
+
+/// `{ id, cols, rows, col?, row? }`, as for an image.
+fn mark_scene_from_lua(t: &Table) -> LuaResult<MarkScene> {
+    Ok(MarkScene {
+        id: crate::scene::SceneId(t.get("id")?),
         cols: t.get::<u16>("cols")?.max(1),
         rows: t.get::<u16>("rows")?.max(1),
         col: t.get::<Option<u16>>("col")?.unwrap_or(0),

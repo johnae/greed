@@ -312,6 +312,10 @@ pub struct Frame {
     /// Images to draw over the surfaces, after them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ImagePlacement>,
+    /// Scenes to draw over the surfaces, by the clients that can; the
+    /// cells under them hold them drawn in characters for the others.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenes: Vec<ScenePlacement>,
     /// Where the primary cursor is, if it's on screen.
     pub cursor: Option<Position>,
     pub cursor_shape: CursorShape,
@@ -530,6 +534,20 @@ fn border_spans(line: Option<&VirtualLine>) -> Vec<Span> {
     spans
 }
 
+/// Part of a scene on screen, as an image's part is: the scene is `cols`
+/// by `rows` cells, and the part from its cell (`col`, `row`) goes in
+/// `rect`. `version` says which of the scene's versions it shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScenePlacement {
+    pub id: crate::scene::SceneId,
+    pub version: u64,
+    pub rect: Rect,
+    pub col: u16,
+    pub row: u16,
+    pub cols: u16,
+    pub rows: u16,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rect {
     pub x: u16,
@@ -614,6 +632,8 @@ pub struct Renderer<M> {
     pub tab_width: usize,
     /// Images placed while laying out the frame being drawn.
     images: RefCell<Vec<ImagePlacement>>,
+    /// Scenes placed while laying out the frame being drawn.
+    scenes: RefCell<Vec<ScenePlacement>>,
     /// Where marks with actions are on screen, as last drawn.
     actions: RefCell<Vec<ActionArea>>,
     /// Where status line segments with actions are, as last drawn.
@@ -634,6 +654,7 @@ impl<M: Measure> Renderer<M> {
             measure,
             tab_width: TAB_WIDTH,
             images: RefCell::default(),
+            scenes: RefCell::default(),
             actions: RefCell::default(),
             status_actions: RefCell::default(),
         }
@@ -649,6 +670,7 @@ impl<M: Measure> Renderer<M> {
         decorations: &dyn Decorations,
     ) -> Frame {
         self.images.borrow_mut().clear();
+        self.scenes.borrow_mut().clear();
         self.actions.borrow_mut().clear();
         let screen = Rect {
             x: 0,
@@ -693,6 +715,7 @@ impl<M: Measure> Renderer<M> {
         // Images under a floating view are left out rather than drawn over
         // it.
         let mut images = self.images.take();
+        let mut scenes = self.scenes.take();
         let mut covered = Vec::new();
         let shown: Vec<Float> = editor.floats().into_iter().cloned().collect();
         for float in shown {
@@ -723,6 +746,8 @@ impl<M: Measure> Renderer<M> {
         }
         images.retain(|image| !covered.iter().any(|&c| overlaps(image.rect, c)));
         images.extend(self.images.take());
+        scenes.retain(|scene| !covered.iter().any(|&c| overlaps(scene.rect, c)));
+        scenes.extend(self.scenes.take());
         // Deltas tell surfaces apart by id. A view is on screen once, but
         // should one show up twice, only the first is drawn.
         let mut seen = std::collections::HashSet::new();
@@ -733,6 +758,7 @@ impl<M: Measure> Renderer<M> {
             surfaces,
             lines,
             images,
+            scenes,
             cursor: cursor_of(&cursors, editor.focus()),
             cursor_shape: editor.cursor_shape(),
             theme: editor.theme().clone(),
@@ -741,9 +767,9 @@ impl<M: Measure> Renderer<M> {
         }
     }
 
-    /// Places the images `marks` show in `view`, cut to `text_area`, the
-    /// part of the screen its text takes. An image goes over whole cells
-    /// from its mark's start, whatever text is under it.
+    /// Places the images and scenes `marks` show in `view`, cut to
+    /// `text_area`, the part of the screen its text takes. Each goes over
+    /// whole cells from its mark's start, whatever text is under it.
     fn place_images(
         &self,
         editor: &Editor,
@@ -762,15 +788,15 @@ impl<M: Measure> Renderer<M> {
                 .unwrap_or(i64::MAX)
         };
         let scroll_row = i64::try_from(view.scroll.row).unwrap_or(0);
-        for (mark, image) in marks.iter().filter_map(|m| Some((m, m.image?))) {
-            if !editor.images().contains(image.id) {
-                continue;
-            }
+        // Where something `cols` by `rows` cells, whose cell (`col`, `row`)
+        // is at `mark`'s start, is on screen: the part in the text area, and
+        // its first cell there. Nil when none of it is.
+        let place = |mark: &Mark, cols: u16, rows: u16, col: u16, row: u16| {
             let start = mark.range.start.min(text.len_bytes());
             let line = text.byte_to_line(start);
-            // The screen row of the mark's line, counting from the top of the
-            // view, so negative above it.
-            let row = if line >= view.scroll.line {
+            // The screen row of the mark's line, counting from the top of
+            // the view, so negative above it.
+            let screen_row = if line >= view.scroll.line {
                 rows_of(view.scroll.line..line)
             } else {
                 -rows_of(line..view.scroll.line)
@@ -785,28 +811,57 @@ impl<M: Measure> Renderer<M> {
                         .map(|c| c.width)
                         .sum::<usize>()
                 });
-            let left = i64::try_from(x).unwrap_or(0) - i64::from(image.col);
-            let top = row - i64::from(image.row);
+            let left = i64::try_from(x).unwrap_or(0) - i64::from(col);
+            let top = screen_row - i64::from(row);
             let (x0, y0) = (left.max(0), top.max(0));
-            let x1 = (left + i64::from(image.cols)).min(i64::from(text_area.width));
-            let y1 = (top + i64::from(image.rows)).min(i64::from(text_area.height));
+            let x1 = (left + i64::from(cols)).min(i64::from(text_area.width));
+            let y1 = (top + i64::from(rows)).min(i64::from(text_area.height));
             if x1 <= x0 || y1 <= y0 {
-                continue;
+                return None;
             }
             let cell = |n: i64| u16::try_from(n).unwrap_or(u16::MAX);
-            self.images.borrow_mut().push(ImagePlacement {
-                id: image.id,
-                rect: Rect {
-                    x: text_area.x + cell(x0),
-                    y: text_area.y + cell(y0),
-                    width: cell(x1 - x0),
-                    height: cell(y1 - y0),
-                },
-                col: cell(x0 - left),
-                row: cell(y0 - top),
-                cols: image.cols,
-                rows: image.rows,
-            });
+            let rect = Rect {
+                x: text_area.x + cell(x0),
+                y: text_area.y + cell(y0),
+                width: cell(x1 - x0),
+                height: cell(y1 - y0),
+            };
+            Some((rect, cell(x0 - left), cell(y0 - top)))
+        };
+        for (mark, scene) in marks.iter().filter_map(|m| Some((m, m.scene?))) {
+            let Some(version) = editor.scenes().get(scene.id).map(|s| s.version) else {
+                continue;
+            };
+            if let Some((rect, col, row)) =
+                place(mark, scene.cols, scene.rows, scene.col, scene.row)
+            {
+                self.scenes.borrow_mut().push(ScenePlacement {
+                    id: scene.id,
+                    version,
+                    rect,
+                    col,
+                    row,
+                    cols: scene.cols,
+                    rows: scene.rows,
+                });
+            }
+        }
+        for (mark, image) in marks.iter().filter_map(|m| Some((m, m.image?))) {
+            if !editor.images().contains(image.id) {
+                continue;
+            }
+            if let Some((rect, col, row)) =
+                place(mark, image.cols, image.rows, image.col, image.row)
+            {
+                self.images.borrow_mut().push(ImagePlacement {
+                    id: image.id,
+                    rect,
+                    col,
+                    row,
+                    cols: image.cols,
+                    rows: image.rows,
+                });
+            }
         }
     }
 

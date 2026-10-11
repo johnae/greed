@@ -233,9 +233,11 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 			if not chart.stacked then
 				x = left
 			end
+			-- A little less than a row tall, so bars drawn as an image
+			-- don't touch; in characters it's a row of blocks.
 			table.insert(
 				items,
-				{ kind = "rect", at = { x, y }, size = { long, 1 }, fill = style(k) }
+				{ kind = "rect", at = { x, y + 0.15 }, size = { long, 0.7 }, fill = style(k) }
 			)
 			x += long
 			if not chart.stacked then

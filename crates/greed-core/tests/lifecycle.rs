@@ -242,6 +242,29 @@ fn unloading_forgets_a_plugins_images() {
 }
 
 #[test]
+fn a_plugins_scenes_change_by_version_and_go_with_it() {
+    let h = host();
+    h.load_str(
+        "sketches",
+        r#"local greed = require("@greed")
+        local id = greed.scene.new({ alt = "a dot", items = { { kind = "dots", points = { { 1, 1 } } } } })
+        assert(greed.scene.set(id, { alt = "two", items = {} }))
+        greed.echo(tostring(id))"#,
+    )
+    .unwrap();
+    let id = greed_core::scene::SceneId(messages(&h)[0].parse().unwrap());
+    let scene = h.with_editor(|ed| ed.scenes().get(id).cloned()).unwrap();
+    assert_eq!((scene.version, scene.spec.alt.as_str()), (2, "two"));
+    let err = h
+        .eval("require('@greed').scene.new({ items = 3 })")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("a scene is { alt"), "{err}");
+    h.unload("sketches").unwrap();
+    assert!(h.with_editor(|ed| ed.scenes().get(id).is_none()));
+}
+
+#[test]
 fn unloading_stops_a_plugins_watches() {
     let h = host();
     h.load_str("a", r#"require("@greed").fs.watch("/tmp/greed-watched")"#)

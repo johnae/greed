@@ -66,6 +66,23 @@ fn start(
                     png = png.display()
                 ),
             )?;
+            // ctrl-g places a scene over the first three cells, and ctrl-e
+            // changes it.
+            host.load_str(
+                "sketch",
+                "local greed = require('@greed')
+                 local spec = { alt = 'a bar', items = { { kind = 'rect', at = { 0, 0 }, size = { 2, 1 }, fill = 'x' } } }
+                 local id = greed.scene.new(spec)
+                 greed.command({ name = 'sketch', run = function(ctx)
+                     ctx.buffer:decorate('sketch', { { from = 0, to = 1, style = 'x',
+                         scene = { id = id, cols = 3, rows = 1 } } })
+                 end })
+                 greed.command({ name = 'sketch-more', run = function()
+                     spec.items[1].size = { 3, 1 }
+                     greed.scene.set(id, spec)
+                 end })
+                 greed.keymap.bind('helix', { ['ctrl-g'] = 'sketch', ['ctrl-e'] = 'sketch-more' })",
+            )?;
             Ok(host)
         },
         Some(session),
@@ -358,6 +375,7 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
             Output::Frame(_)
             | Output::Delta(_)
             | Output::Image(_)
+            | Output::Scene(_)
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::Notify(_) => {}
@@ -512,6 +530,7 @@ fn a_session_can_send_its_client_to_another_session() {
             Output::Frame(_)
             | Output::Delta(_)
             | Output::Image(_)
+            | Output::Scene(_)
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::Notify(_) => {}
@@ -566,6 +585,44 @@ fn an_image_is_sent_once_before_the_frame_that_shows_it() {
     assert!(matches!(client.next(), Output::Delta(_)));
     conn.input.send(Input::Quit).unwrap();
     let _ = std::fs::remove_file(picture());
+}
+
+#[test]
+fn a_scene_is_sent_before_the_frame_that_places_it_and_again_as_it_changes() {
+    let (conn, attach, _) = start("scene");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    client.first_row();
+    client.keys("ctrl-g");
+    let scene = loop {
+        match client.next() {
+            Output::Scene(scene) => break scene,
+            Output::Delta(delta) => assert!(delta.scenes.is_none(), "placed before it was sent"),
+            other => panic!("expected the scene first, got {other:?}"),
+        }
+    };
+    assert_eq!(scene.version, 1);
+    assert_eq!(scene.spec["alt"], "a bar");
+    match client.next() {
+        Output::Delta(delta) => {
+            let scenes = delta.scenes.expect("the frame places it");
+            assert_eq!(scenes.len(), 1);
+            assert_eq!((scenes[0].id, scenes[0].version), (scene.id, 1));
+            assert_eq!((scenes[0].cols, scenes[0].rows), (3, 1));
+        }
+        other => panic!("expected a delta, got {other:?}"),
+    }
+    // Changed, it's sent again, at its next version.
+    client.keys("ctrl-e");
+    let changed = loop {
+        match client.next() {
+            Output::Scene(scene) => break scene,
+            Output::Delta(_) => {}
+            other => panic!("expected the scene again, got {other:?}"),
+        }
+    };
+    assert_eq!((changed.id, changed.version), (scene.id, 2));
+    conn.input.send(Input::Quit).unwrap();
 }
 
 #[test]

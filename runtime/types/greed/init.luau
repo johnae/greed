@@ -268,6 +268,8 @@ export type Mark = {
 	--- which of its cells is at `from`, for an image cut off at the top or
 	--- left. Shown in terminals that can show images.
 	image: { id: number, cols: number, rows: number, col: number?, row: number? }?,
+	--- A scene (from `greed.scene`) drawn over `cols` by `rows` cells right of and below `from` by the clients that can draw one, as an image is; the text there is what the others show, so put the scene in characters there. `col` and `row` are as for an image.
+	scene: { id: number, cols: number, rows: number, col: number?, row: number? }?,
 	--- A command that clicking `text` runs, with the cursor put at `from`
 	--- first, so the text works as a button, e.g. "proposal-accept".
 	action: string?,
@@ -936,6 +938,15 @@ export type Images = {
 	cells: (id: number) -> (number?, number?),
 	--- A cell's width and height in pixels on the attached screen.
 	cell_size: () -> (number, number),
+	forget: (id: number) -> (),
+}
+
+--- Small vector drawings, as charts are, for a mark's `scene`: each client draws one as well as it can (an image in a terminal with kitty graphics), and the text under it is what the others show. A spec is `{ alt, items }`: `alt` says what it shows, and items are `line` (points, style, weight), `area` (points, base, fill, opacity), `rect` (at, size, fill, style, opacity), `dots` (points, style, weight), `text` (at, text, style, align) and `group` (items, clip), in cells from the top left. `require("@scene")` draws a spec in characters.
+export type Scenes = {
+	--- Keeps a scene and returns its id.
+	new: (spec: { alt: string, items: { any } }) -> number,
+	--- Makes `spec` what scene `id` shows, at its next version; false when there's no such scene.
+	set: (id: number, spec: { alt: string, items: { any } }) -> boolean,
 	forget: (id: number) -> (),
 }
 
@@ -1747,6 +1758,7 @@ export type Greed = {
 	secrets: Secrets,
 	terminal: Terminals,
 	image: Images,
+	scene: Scenes,
 	pdf: Pdfs,
 	--- A one-shot value that one piece of code waits for and another sends,
 	--- e.g. a tool waiting for the user's review. `wait` works in commands and

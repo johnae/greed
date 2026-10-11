@@ -1438,6 +1438,14 @@ items are `line`, `area`, `rect`, `dots`, `text` and `group` (clipped).
 `require("@chart").lines(tbl, "bar CPU", cols, rows)` draws a table as
 `| chart` would.
 
+To have clients draw a scene better than characters, keep it with
+`greed.scene.new(spec)`, which gives its id, and put it over the
+characters with a mark's `scene = { id = id, cols = 60, rows = 12 }`.
+A terminal with kitty graphics draws the scene as an image under its
+text, so the scene's own text stays the terminal's; other clients show
+the characters. `greed.scene.set(id, spec)` changes it, and
+`greed.scene.forget(id)` lets it go; a plugin's scenes go when it does.
+
 ```luau
 -- `top COL N`: the N rows with the most in a column.
 shell.stage({ name = "top", usage = "top COL N", doc = "The rows with the most in a column", args = "column", starts = true }, function(tbl, rest)

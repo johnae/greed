@@ -35,6 +35,7 @@ pub mod project;
 pub mod registry;
 pub mod render;
 pub mod rpc;
+pub mod scene;
 pub mod search;
 pub mod server;
 pub mod syntax;
@@ -46,7 +47,7 @@ use std::fmt;
 use greed_text::TxId;
 
 pub use buffer::{
-    Buffer, BufferId, Mark, MarkImage, Reveal, ScreenSize, TrackId, Tracked, VirtualLine,
+    Buffer, BufferId, Mark, MarkImage, MarkScene, Reveal, ScreenSize, TrackId, Tracked, VirtualLine,
 };
 pub use editor::{
     Anchor, ClientInfo, ClientLayout, ClientState, CurrentProject, CursorShape, Editor, Extent,

@@ -1,6 +1,7 @@
 //! The terminal client: sends key presses and resizes to the server, and
 //! draws the frames it sends back.
 
+use std::collections::HashSet;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,7 +21,7 @@ use crossterm::{execute, queue};
 use greed_core::CursorShape;
 use greed_core::keymap::{Key, KeyCode, Mods};
 use greed_core::mouse::{Button, Mouse, MouseKind};
-use greed_core::render::{Frame, Size, grid};
+use greed_core::render::{Frame, ScenePlacement, Size, grid};
 use greed_core::server::{Input, Output};
 use greed_core::theme::{Color as ThemeColor, Medium, Style, Underline};
 use unicode_width::UnicodeWidthStr;
@@ -97,6 +98,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
         for message in std::iter::once(first).chain(output.try_iter()) {
             match message {
                 Output::Image(image) => screen.graphics.add(image),
+                Output::Scene(scene) => screen.graphics.add_scene(scene),
                 Output::Clipboard(text) => copy_to_system(&mut out, &text)?,
                 // Read off this thread: a clipboard tool can take a moment.
                 Output::ReadClipboardImage(ask) => {
@@ -457,10 +459,20 @@ impl Painter {
 
 impl Screen {
     fn draw(&mut self, out: &mut impl Write, frame: &Frame) -> io::Result<()> {
-        let grid = compose(frame, self.sized);
+        let mut grid = compose(frame, self.sized);
         // The terminal shows the frame whole once it's written, never half drawn;
         // terminals without synchronized output ignore this.
         queue!(out, terminal::BeginSynchronizedUpdate)?;
+        // Scenes drawn as images go under the text: the cells there keep
+        // only the scene's own text, its labels.
+        let scenes = self.graphics.scenes(out, &frame.scenes, &frame.theme)?;
+        for shown in &scenes {
+            blank_under(
+                &mut grid,
+                &shown.placement,
+                &self.graphics.text_cells(shown.placement.id),
+            );
+        }
         if self.grid.len() != grid.len()
             || self.grid.first().map(Vec::len) != grid.first().map(Vec::len)
         {
@@ -476,7 +488,9 @@ impl Screen {
             write_row(out, u16::try_from(y).unwrap_or(u16::MAX), row)?;
         }
         self.grid = grid;
-        self.graphics.draw(out, &frame.images)?;
+        let mut images = frame.images.clone();
+        images.extend(scenes.iter().map(|shown| shown.image));
+        self.graphics.draw(out, &images)?;
         // Where it shows once a view laid out at another size, like a
         // terminal sized for another client's screen, is cropped to fit.
         if let Some(pos) = grid::cursor(frame) {
@@ -489,6 +503,27 @@ impl Screen {
         }
         queue!(out, terminal::EndSynchronizedUpdate)?;
         out.flush()
+    }
+}
+
+/// Empties the cells of `grid` that `placement` covers, but those holding
+/// the scene's text (`text`, by column and row in the scene), keeping
+/// their styles, so the scene's image under them shows.
+fn blank_under(grid: &mut [Vec<Cell>], placement: &ScenePlacement, text: &HashSet<(i32, i32)>) {
+    let rect = placement.rect;
+    for y in rect.y..rect.y.saturating_add(rect.height) {
+        let Some(row) = grid.get_mut(usize::from(y)) else {
+            continue;
+        };
+        let scene_row = i32::from(placement.row) + i32::from(y - rect.y);
+        for x in rect.x..rect.x.saturating_add(rect.width) {
+            let scene_col = i32::from(placement.col) + i32::from(x - rect.x);
+            if let Some(cell) = row.get_mut(usize::from(x))
+                && !text.contains(&(scene_col, scene_row))
+            {
+                cell.text = " ".into();
+            }
+        }
     }
 }
 
@@ -953,6 +988,7 @@ mod tests {
             surfaces,
             lines: Vec::new(),
             images: Vec::new(),
+            scenes: Vec::new(),
             cursor: None,
             cursor_shape: CursorShape::Block,
             theme: std::sync::Arc::default(),

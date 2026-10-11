@@ -1470,6 +1470,7 @@ dependencies = [
  "mimalloc",
  "serde_json",
  "sha2",
+ "tiny-skia",
  "unicode-segmentation",
  "unicode-width",
  "ureq",
@@ -3980,6 +3981,7 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "log",
+ "png 0.17.16",
  "tiny-skia-path",
 ]
 

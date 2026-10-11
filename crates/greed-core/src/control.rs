@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 /// client or session; new optional fields don't need it, since fields a
 /// side doesn't know are ignored. Clients say which protocol they speak
 /// when they attach, and a session refuses one that doesn't match.
-pub const PROTOCOL: u32 = 9;
+pub const PROTOCOL: u32 = 10;
 
 /// The longest line a session reads from a connection, in bytes: room for a
 /// big paste, short of letting anything that can reach the socket fill the

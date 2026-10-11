@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::CursorShape;
 use crate::render::{
-    Frame, ImagePlacement, Menu, Position, Rect, Role, Row, Separator, Size, Surface, SurfaceId,
+    Frame, ImagePlacement, Menu, Position, Rect, Role, Row, ScenePlacement, Separator, Size,
+    Surface, SurfaceId,
 };
 use crate::theme::Theme;
 
@@ -34,6 +35,8 @@ pub struct FrameDelta {
     pub lines: Option<Vec<Separator>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<ImagePlacement>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenes: Option<Vec<ScenePlacement>>,
     /// The cursor, when it moved, appeared or went away.
     #[serde(
         default,
@@ -217,6 +220,7 @@ impl FrameDelta {
             surfaces,
             lines: changed(&old.lines, &new.lines),
             images: changed(&old.images, &new.images),
+            scenes: changed(&old.scenes, &new.scenes),
             cursor: changed(&old.cursor, &new.cursor),
             cursor_shape: changed(&old.cursor_shape, &new.cursor_shape),
             theme,
@@ -233,6 +237,7 @@ impl FrameDelta {
             && self.surfaces.is_empty()
             && self.lines.is_none()
             && self.images.is_none()
+            && self.scenes.is_none()
             && self.cursor.is_none()
             && self.cursor_shape.is_none()
             && self.theme.is_none()
@@ -272,6 +277,9 @@ impl FrameDelta {
         }
         if let Some(lines) = self.lines {
             frame.lines = lines;
+        }
+        if let Some(scenes) = self.scenes {
+            frame.scenes = scenes;
         }
         if let Some(images) = self.images {
             frame.images = images;
