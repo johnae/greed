@@ -238,7 +238,12 @@ local function inline(line: Line)
 end
 
 -- `text` as it shows with its inline markup hidden.
-visible = function(text: string, reading: boolean): string
+-- What `visible` gave for each text, reading and not: tables ask for every
+-- cell's each time they're drawn. Emptied when it grows large.
+local seen_visible: { [boolean]: { [string]: string } } = { [true] = {}, [false] = {} }
+local seen_count = 0
+
+local function shown_text(text: string, reading: boolean): string
 	local line: Line =
 		{ text = text, at = 0, out = {}, shows = "never", taken = {}, reading = reading }
 	inline(line)
@@ -262,6 +267,21 @@ visible = function(text: string, reading: boolean): string
 	end
 	table.insert(parts, string.sub(text, at + 1))
 	return table.concat(parts)
+end
+
+visible = function(text: string, reading: boolean): string
+	local known = seen_visible[reading][text]
+	if known then
+		return known
+	end
+	if seen_count >= 10000 then
+		seen_visible = { [true] = {}, [false] = {} }
+		seen_count = 0
+	end
+	local shown = shown_text(text, reading)
+	seen_visible[reading][text] = shown
+	seen_count += 1
+	return shown
 end
 
 -- The marks for table `found` of `s` go in `out`. False if its rows don't
@@ -778,8 +798,15 @@ greed.on("option.changed", function(event)
 end)
 -- Images fit the view again when it's resized.
 greed.on("view.resized", function(event: greed.ViewResized)
-	if reading[event.view:buffer():id()] then
-		redraw(event.view:buffer())
+	local read = reading[event.view:buffer():id()]
+	if read == nil then
+		return
+	end
+	for _, image in read.images do
+		if type(image) == "number" then
+			redraw(event.view:buffer())
+			return
+		end
 	end
 end)
 

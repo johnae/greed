@@ -64,8 +64,14 @@ use crate::registry::{PluginId, Registry};
 use crate::render::{Hit, StatusLine};
 use modules::Modules;
 
-/// How long one call into Luau may work before it is stopped.
-const BUDGET: Duration = Duration::from_secs(2);
+/// How long one call into Luau may work before it is stopped. Builds
+/// without optimisation, as tests run in, do the same work several times
+/// slower, on machines often busy with other tests, so they get longer.
+const BUDGET: Duration = if cfg!(debug_assertions) {
+    Duration::from_secs(8)
+} else {
+    Duration::from_secs(2)
+};
 
 /// How long a command or handler runs before it yields to the editor, to
 /// carry on once keys are handled and the screen is drawn.
