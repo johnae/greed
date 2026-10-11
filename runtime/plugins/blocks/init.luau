@@ -550,26 +550,50 @@ function M.runnable(buffer: greed.Buffer): { Block }
 	return list
 end
 
--- Asks whether blocks in `buffer`'s file may run, unless they may already.
-local function allow(buffer: greed.Buffer): boolean
-	if M.trusted(buffer) then
+--- Asks whether what the file at `path` holds may run (`what`, "code
+--- blocks" unless said), unless it may already: `y` for now, `a` always.
+--- Boards share this, so a file trusted for one is trusted for the other.
+function M.allow_file(path: string, what: string?): boolean
+	if trusted[path] or allowed_now[path] then
 		return true
 	end
-	local path = path_of(buffer) :: string
 	local name = core.project.basename(path) or path
-	greed.echo(`run code blocks from {name}? y yes, a always for this file, n no`)
+	greed.echo(`run {what or "code blocks"} from {name}? y yes, a always for this file, n no`)
 	local key = greed.next_key()
 	if key == "y" then
 		allowed_now[path] = true
 	elseif key == "a" then
 		trusted[path] = true
 		save_trusted()
-		approve(buffer, M.runnable(buffer))
 	else
 		greed.echo("nothing ran")
 		return false
 	end
 	greed.echo("")
+	return true
+end
+
+--- Trusts the file at `path` to run what it holds, as `a` does: for a file
+--- you made yourself.
+function M.trust(path: string)
+	if not trusted[path] then
+		trusted[path] = true
+		save_trusted()
+	end
+end
+
+-- Asks whether blocks in `buffer`'s file may run, unless they may already.
+local function allow(buffer: greed.Buffer): boolean
+	if M.trusted(buffer) then
+		return true
+	end
+	local path = path_of(buffer) :: string
+	if not M.allow_file(path) then
+		return false
+	end
+	if trusted[path] then
+		approve(buffer, M.runnable(buffer))
+	end
 	draw(buffer)
 	return true
 end

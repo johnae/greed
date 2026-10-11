@@ -15,7 +15,7 @@
 -- it's with what's staged, so staged changes lose their signs.
 --
 -- In a shell, the rows of `git status`, `git log`, `jj st` and `jj log`
--- are changed files, commits and revisions to act on (rows.luau).
+-- are changed files, commits and revisions to act on.
 
 local core = require("@core")
 local greed = require("@greed")

@@ -5,9 +5,9 @@
 -- context and namespace the command ran against, to describe, read the
 -- logs of, open a shell in, restart or delete; and they complete the
 -- next kubectl command. `space o k` and `space o K` switch the context and
--- namespace, everywhere or in one shell (context.luau). A `kubectl get`
--- block shows another resource or namespace in its place, live if it was
--- (browse.luau).
+-- namespace, everywhere or in one shell. On a `kubectl get` block,
+-- `space .` shows another resource or namespace in its place, live if it
+-- was.
 
 local shell = require("@shell")
 local config = require("@self/config")

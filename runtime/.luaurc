@@ -35,6 +35,7 @@
 		"shell": "./plugins/shell",
 		"tutor": "./plugins/tutor",
 		"hosts": "./plugins/hosts",
-		"kubernetes": "./plugins/kubernetes"
+		"kubernetes": "./plugins/kubernetes",
+		"board": "./plugins/board"
 	}
 }

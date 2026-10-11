@@ -5,6 +5,7 @@
 - [Using Greed](using.md)
   - [Several clients](clients.md)
   - [The shell](shell.md)
+  - [Boards](boards.md)
 - [Editing styles](editing-styles.md)
 - [Keys](keys.md)
 - [Highlighting](highlighting.md)

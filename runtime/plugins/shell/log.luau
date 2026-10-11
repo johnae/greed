@@ -61,6 +61,15 @@ type Shown = {
 
 local shown: { [number]: Shown } = {}
 
+-- Who's told each time a block's status line is drawn.
+local statuses: { (block: Block) -> () } = {}
+
+--- Calls `listener` each time a block's status is drawn: as it starts, each
+--- second it runs and as it ends.
+function M.on_status(listener: (block: Block) -> ())
+	table.insert(statuses, listener)
+end
+
 -- The most output lines a block shows, and how many of them are its head,
 -- which stays.
 local function cap(): (number, number)
@@ -421,6 +430,9 @@ function M.draw_block(shell: Shell, block: Block)
 		core.folds.extend(buffer, line, last)
 	end
 	M.draw_strip(shell)
+	for _, listener in statuses do
+		listener(block)
+	end
 end
 
 -- What a live block shows now, in a few words: how many rows its table

@@ -1,0 +1,5 @@
+name = "board"
+requires = ["core", "picker", "shell", "blocks"]
+# Its cards run commands in a shell of its own (proc); boards are files in
+# the project and your config folder.
+capabilities = ["proc", "fs.read", "fs.write"]
