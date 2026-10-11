@@ -469,6 +469,67 @@ fn scaled_text_is_drawn_big_across_its_cells_and_rows() {
 }
 
 #[test]
+fn a_pane_beside_scaled_text_draws_its_own_rows() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    frame.surfaces.truncate(2);
+    // A heading twice the size in the left pane, and a terminal's lines in
+    // the right one, "top" and then "next" a row each.
+    frame.surfaces[0].rect.width = 20;
+    frame.surfaces[0].rows[0] = Row {
+        spans: vec![Span {
+            scale: 2,
+            ..Span::new("Hi", SmallVec::default())
+        }],
+        covers: 1,
+        ..Row::default()
+    };
+    frame.surfaces[0].rows[1] = Row::default();
+    frame.surfaces.push(Surface::new(
+        SurfaceId::View(ViewId(3)),
+        Role::Pane { active: false },
+        Rect {
+            x: 20,
+            y: 0,
+            width: 20,
+            height: 6,
+        },
+        vec![row(&[("top", "")]), row(&[("next", "")])],
+    ));
+    frame.cursor = None;
+    let grid = compose(&frame, Medium::Gui);
+    let scene = build(
+        &grid,
+        None,
+        &Chrome::default(),
+        &mut fonts,
+        &mut atlas,
+        &palette,
+    )
+    .unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    save("scaled-beside.png", size, &rgba);
+    let inked = |cols: std::ops::Range<f32>, rows: std::ops::Range<f32>| {
+        ((cols.start * cw) as u32..(cols.end * cw) as u32)
+            .flat_map(|x| ((rows.start * ch) as u32..(rows.end * ch) as u32).map(move |y| (x, y)))
+            .filter(|&(x, y)| pixel(&rgba, size.0, x, y)[..3] != palette.bg)
+            .count()
+    };
+    // The right pane's "top" sits in its own first row, and "next" shows
+    // in the second, beside the heading's lower half.
+    assert!(inked(20.0..23.0, 0.0..1.0) > 0, "top, in the first row");
+    assert!(inked(20.0..24.0, 1.0..2.0) > 0, "next, in the second row");
+}
+
+#[test]
 fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
         return;

@@ -147,7 +147,7 @@ pub fn build(
         .iter()
         .map(|row| row.iter().map(|cell| look(&cell.style, palette)).collect())
         .collect();
-    let heights = row_heights(grid);
+    let heights = cell_heights(grid);
     // The cursor takes the cells of what it's on: a scaled character's are
     // wider and taller.
     let cursor = cursor.map(|(at, shape)| {
@@ -202,15 +202,13 @@ pub fn build(
         .collect();
     lines_under(&looks, &heights, &columns, fonts, &mut instances);
     for (y, (row, row_looks)) in grid.iter().zip(&looks).enumerate() {
-        if let Some(height) = heights[y] {
-            let at = RowAt {
-                y,
-                height,
-                columns: &columns,
-                outlined: &border[y],
-            };
-            text_row(row, row_looks, &at, fonts, atlas, &mut instances)?;
-        }
+        let at = RowAt {
+            y,
+            heights: &heights[y],
+            columns: &columns,
+            outlined: &border[y],
+        };
+        text_row(row, row_looks, &at, fonts, atlas, &mut instances)?;
     }
     if let Some((shape, col, row, w, h)) = cursor {
         let (x, w) = columns.span(row, col, col + w);
@@ -281,13 +279,16 @@ struct Run {
     /// The byte offset of each cell's text, with its column, in order.
     starts: Vec<(usize, usize)>,
     style: TextStyle,
+    /// How many rows its line takes, for its baseline.
+    height: usize,
 }
 
-/// Where a row's text goes: row `y`, `height` rows tall, its cells placed
-/// as `columns` says, and which cells a float's rounded outline takes.
+/// Where a row's text goes: row `y`, how many rows each cell's text
+/// takes (see [`cell_heights`]), its cells placed as `columns` says, and
+/// which cells a float's rounded outline takes.
 struct RowAt<'a> {
     y: usize,
-    height: usize,
+    heights: &'a [usize],
     columns: &'a Columns,
     outlined: &'a [bool],
 }
@@ -306,14 +307,19 @@ fn text_row(
 ) -> Result<(), Full> {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let top = at.y as f32 * ch;
-    let baseline = top + at.height as f32 * fonts.baseline;
+    let unit = fonts.baseline;
+    let baseline = |height: usize| top + height as f32 * unit;
     let mut run: Option<Run> = None;
     for (x, cell) in row.iter().enumerate() {
         let l = looks[x];
+        let height = at.heights.get(x).copied().unwrap_or(1);
+        if height == 0 {
+            continue;
+        }
         // A checkbox goes over its cells, in place of their text.
         if let Some(kind) = l.checkbox {
             if let Some(done) = run.take() {
-                shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
+                shape_run(&done, at, looks, baseline(done.height), fonts, atlas, out)?;
             }
             if x == 0 || looks[x - 1].checkbox != Some(kind) {
                 let end = (x..looks.len())
@@ -343,14 +349,14 @@ fn text_row(
         };
         if let Some(cap) = one.and_then(|c| round_cap(c, left, top, cw * k, ch * k, l.fg)) {
             if let Some(done) = run.take() {
-                shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
+                shape_run(&done, at, looks, baseline(done.height), fonts, atlas, out)?;
             }
             out.push(cap);
             continue;
         }
         if let Some(rects) = one.and_then(|c| boxdraw::rects(c, cw * k, ch * k)) {
             if let Some(done) = run.take() {
-                shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
+                shape_run(&done, at, looks, baseline(done.height), fonts, atlas, out)?;
             }
             if !at.outlined.get(x).copied().unwrap_or(false) {
                 for r in rects {
@@ -360,21 +366,24 @@ fn text_row(
             continue;
         }
         let style = style_of(cell, &l);
-        if run.as_ref().is_some_and(|r| r.style != style)
+        if run
+            .as_ref()
+            .is_some_and(|r| r.style != style || r.height != height)
             && let Some(done) = run.take()
         {
-            shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
+            shape_run(&done, at, looks, baseline(done.height), fonts, atlas, out)?;
         }
         let r = run.get_or_insert_with(|| Run {
             text: String::new(),
             starts: Vec::new(),
             style,
+            height,
         });
         r.starts.push((r.text.len(), x));
         r.text.push_str(&cell.text);
     }
     if let Some(done) = run {
-        shape_run(&done, at, looks, baseline, fonts, atlas, out)?;
+        shape_run(&done, at, looks, baseline(done.height), fonts, atlas, out)?;
     }
     Ok(())
 }
@@ -502,7 +511,7 @@ fn checkbox(
 /// baseline. Rows under scaled text have none of their own.
 fn lines_under(
     looks: &[Vec<Look>],
-    heights: &[Option<usize>],
+    heights: &[Vec<usize>],
     columns: &Columns,
     fonts: &Fonts,
     instances: &mut Vec<Instance>,
@@ -510,10 +519,13 @@ fn lines_under(
     let ch = fonts.cell_h;
     let thickness = (ch / 16.0).round().max(1.0);
     for (y, row) in looks.iter().enumerate() {
-        let Some(height) = heights[y] else { continue };
         let top = y as f32 * ch;
-        let (baseline, bottom) = (height as f32 * fonts.baseline, height as f32 * ch);
         for (x, l) in row.iter().enumerate() {
+            let height = heights[y].get(x).copied().unwrap_or(1);
+            if height == 0 {
+                continue;
+            }
+            let (baseline, bottom) = (height as f32 * fonts.baseline, height as f32 * ch);
             let (left, w) = columns.span(y, x, x + 1);
             if let Some((_, color)) = l.underline {
                 let under = (top + baseline + thickness).min(top + bottom - thickness);
@@ -527,23 +539,30 @@ fn lines_under(
     }
 }
 
-/// How many rows each row's text takes, as many as its largest scale; `None`
-/// for rows that text above them covers.
-fn row_heights(grid: &[Vec<Cell>]) -> Vec<Option<usize>> {
-    let mut covered_until = 0;
+/// How many rows each cell's text takes: one, and one more for each row
+/// under it in a scaled line's rows (cells with scale 0), so the text of a
+/// line with big text in it sits on one baseline; 0 for the cells in those
+/// rows. Other panes' rows beside a scaled line are rows of their own.
+fn cell_heights(grid: &[Vec<Cell>]) -> Vec<Vec<usize>> {
+    let covered = |y: usize, x: usize| {
+        grid.get(y)
+            .and_then(|r| r.get(x))
+            .is_some_and(|c| c.scale == 0)
+    };
     grid.iter()
         .enumerate()
         .map(|(y, row)| {
-            if y < covered_until {
-                return None;
-            }
-            let height = row
-                .iter()
-                .map(|c| usize::from(c.scale.max(1)))
-                .max()
-                .unwrap_or(1);
-            covered_until = y + height;
-            Some(height)
+            (0..row.len())
+                .map(|x| {
+                    if covered(y, x) {
+                        0
+                    } else {
+                        1 + (y + 1..grid.len())
+                            .take_while(|&below| covered(below, x))
+                            .count()
+                    }
+                })
+                .collect()
         })
         .collect()
 }

@@ -21,6 +21,7 @@ pub struct Cell {
     pub style: Style,
     /// How many times bigger the text is: it takes that many times its
     /// cells across, the cells after it and the rows under it come empty.
+    /// 0 for a cell in the rows a scaled line takes, in its pane.
     pub scale: u8,
 }
 
@@ -592,14 +593,30 @@ fn append(row: &mut Row, piece: Row, width: usize) {
     }
 }
 
-/// Gives the cells under scaled text in `rows` and `cols`, in the rows it
-/// covers, its style, so its background (a selection, a highlight) fills
-/// all of it.
+/// Marks the cells under scaled text in `rows` and `cols`, a pane: in the
+/// rows a scaled line takes, every cell of the pane is under it (its
+/// `scale` is 0), and those under the text itself take its style, so its
+/// background (a selection, a highlight) fills all of it. Other panes'
+/// rows beside it are their own.
 fn spread_scaled(grid: &mut [Vec<Cell>], rows: Range<usize>, cols: Range<usize>) {
     let bottom = rows.end.min(grid.len());
     for y in rows.start..bottom {
+        let end = cols.end.min(grid[y].len());
+        let tallest = grid[y][cols.start.min(end)..end]
+            .iter()
+            .map(|cell| usize::from(cell.scale))
+            .max()
+            .unwrap_or(1);
+        if tallest < 2 {
+            continue;
+        }
+        for row in grid[..bottom].iter_mut().skip(y + 1).take(tallest - 1) {
+            for under in row.iter_mut().take(end).skip(cols.start) {
+                under.scale = 0;
+            }
+        }
         let mut x = cols.start;
-        while x < cols.end.min(grid[y].len()) {
+        while x < end {
             let cell = &grid[y][x];
             let scale = usize::from(cell.scale);
             if scale < 2 {
@@ -613,7 +630,7 @@ fn spread_scaled(grid: &mut [Vec<Cell>], rows: Range<usize>, cols: Range<usize>)
                     *under = Cell {
                         text: String::new(),
                         style,
-                        scale: 1,
+                        scale: 0,
                     };
                 }
             }
@@ -697,6 +714,13 @@ mod tests {
         }
     }
 
+    fn text_row(text: &str) -> Row {
+        Row {
+            spans: vec![Span::new(text, smallvec![])],
+            ..Row::default()
+        }
+    }
+
     fn texts(grid: &[Vec<Cell>], y: usize) -> Vec<&str> {
         grid[y].iter().map(|c| c.text.as_str()).collect()
     }
@@ -716,6 +740,29 @@ mod tests {
                 .all(|c| c.text.is_empty() && c.style.bg == blue)
         );
         assert_eq!(grid[1][4].text, " ", "the 1x text covers nothing below");
+        assert!(
+            grid[1].iter().all(|c| c.scale == 0),
+            "the whole row under it is the scaled line's, in its pane"
+        );
+        assert!(grid[2].iter().all(|c| c.scale == 1));
+    }
+
+    #[test]
+    fn a_scaled_line_takes_rows_only_in_its_own_pane() {
+        // Two panes side by side, the left one with a heading at twice the
+        // size: the right one's rows are its own.
+        let mut f = frame(vec![scaled_row()]);
+        f.surfaces[0].rect = rect(0, 0, 4, 3);
+        f.surfaces.push(Surface::new(
+            SurfaceId::View(ViewId(2)),
+            Role::Pane { active: false },
+            rect(4, 0, 4, 3),
+            vec![text_row("top"), text_row("next"), Row::default()],
+        ));
+        let grid = compose(&f, Medium::Gui);
+        assert!(grid[1][..4].iter().all(|c| c.scale == 0));
+        assert_eq!(texts(&grid, 1)[4..], ["n", "e", "x", "t"]);
+        assert!(grid[1][4..].iter().all(|c| c.scale == 1));
     }
 
     #[test]
