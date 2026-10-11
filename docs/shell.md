@@ -583,10 +583,16 @@ It guesses the chart from the columns:
 | Numbers only | A line a column, row by row; two columns are dots, one against the other |
 | Text that isn't a table (`cat /proc/loadavg`) | Its words as columns, a first line without numbers as the header |
 
-In a terminal with kitty graphics (kitty, Ghostty, WezTerm, Konsole) the
-chart is drawn as an image, smooth lines and bars in the theme's
-colours, with its labels and numbers still the terminal's text;
-`GREED_IMAGES=none` keeps it in characters.
+In the window (`greed --gui`) and in a terminal with kitty graphics
+(kitty, Ghostty, WezTerm, Konsole) the chart is drawn as an image, smooth
+lines and bars in the theme's colours, with its labels and numbers still
+text. `:set scene-drawing cells` keeps charts in characters everywhere,
+and `GREED_IMAGES=none` in one terminal.
+
+Numbers keep their unit: `128Mi` and `1.5Gi` for bytes, `250m` for
+kubectl's CPU, `45%` for percents, on the axis and beside the bars. Bars
+of two columns in different units, like CPU and memory, are each as long
+as their own greatest.
 
 Anything it guesses can be said: `chart bar CPU MEMORY` (both, a bar
 each), `chart line rate over time`, `chart area`, `chart scatter`,

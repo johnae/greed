@@ -153,6 +153,19 @@ test("| chart in the shell draws the table, in the chart styles", function(t)
 	end
 	assert(placed and placed.cols == 30 and placed.rows == 2, "a scene over its two rows")
 	assert(greed.scene.set(placed.id, { alt = "still there", items = {} }), "the scene is kept")
+	-- With scene-drawing cells, the characters are all there is.
+	local function scened(): boolean
+		for _, mark in sh.buffer:decorations(`chart.{block.uid}`) do
+			if mark.scene then
+				return true
+			end
+		end
+		return false
+	end
+	greed.option.set("scene-drawing", "cells")
+	assert(not scened(), "no scene with cells")
+	greed.option.set("scene-drawing", "auto")
+	assert(scened(), "back with auto")
 	local bad = finished(t, assert(shell.run(sh, "cat pods | chart DISK")))
 	assert(string.find(bad.output, "there's no column DISK", 1, true), bad.output)
 end)
@@ -178,4 +191,62 @@ test("in a watch, | chart draws how the numbers went, without marking lines chan
 		assert(mark.style ~= "shell.changed", "its lines aren't marked changed")
 	end
 	shell.interrupt(block)
+end)
+
+test("numbers keep their unit: bytes, kubectl's CPU and percents", function()
+	assert(scale.unit({ "", "128Mi", "1Gi" }) == "bytes" and scale.unit({ "4KB" }) == "bytes")
+	assert(scale.unit({ "250m", "1" }) == "cores" and scale.unit({ "45%" }) == "percent")
+	assert(scale.unit({ "12", "3.5" }) == nil and scale.unit({ "5d" }) == nil)
+	assert(
+		scale.format(128 * 1024 ^ 2, nil, "bytes") == "128Mi",
+		scale.format(128 * 1024 ^ 2, nil, "bytes")
+	)
+	assert(scale.format(1.5 * 1024 ^ 3, nil, "bytes") == "1.5Gi")
+	assert(scale.format(0.25, nil, "cores") == "250m" and scale.format(1.2, nil, "cores") == "1.2")
+	assert(scale.format(45, nil, "percent") == "45%")
+	-- Ticks of bytes are round in their own unit.
+	local ticks = scale.ticks_in(0, 900 * 1024 ^ 2, 3, "bytes")
+	assert(
+		scale.format(ticks.values[2], ticks.step, "bytes") == "500Mi",
+		scale.format(ticks.values[2], ticks.step, "bytes")
+	)
+	-- Bars of CPU and memory each fill their own room, with their units.
+	local pods = tbl(
+		{ "NAME", "CPU", "MEMORY" },
+		{ { "api", "250m", "128Mi" }, { "worker", "500m", "1Gi" } }
+	)
+	local text = require("@scene").text((assert(chart.lines(pods, "CPU MEMORY", 40, 5))))
+	assert(string.find(text, "250m", 1, true) and string.find(text, "128Mi", 1, true), text)
+	assert(string.find(text, "1Gi", 1, true), text)
+end)
+
+test("a stacked bar leaves room for its total", function()
+	local rows = tbl({ "NAME", "A", "B" }, { { "x", "600", "500" } })
+	local text = require("@scene").text((assert(chart.lines(rows, "bar A B --stacked", 20, 3))))
+	assert(string.find(text, "1.1k", 1, true), text)
+	for line in string.gmatch(text, "[^\n]+") do
+		assert((utf8.len(line) or #line) <= 20, "within its width: " .. line)
+	end
+end)
+
+test("text read as words names a row by its words that aren't numbers", function()
+	local authors = tbl(
+		{ "1", "2", "3", "4" },
+		{ { "737", "John", "Axel", "Eriksson" }, { "12", "Ann", "Lee" } }
+	)
+	local bars = assert(read.chart(authors, assert(read.ask("")), nil, 0))
+	assert(bars.kind == "bar" and bars.labels and bars.labels[1] == "John Axel Eriksson", bars.kind)
+	-- One row is a line of its first number, its other words no name.
+	local load = tbl(
+		{ "1", "2", "3", "4", "5" },
+		{ { "5.96", "4.45", "3.32", "1/2615", "3822008" } }
+	)
+	local line = assert(read.chart(load, assert(read.ask("")), nil, 0))
+	assert(line.kind == "line" and line.series[1].name == "1", line.kind)
+end)
+
+test("on a short chart each row has one tick label at most", function()
+	local numbers = tbl({ "n" }, { { "0.024" }, { "0.03" } })
+	local text = require("@scene").text((assert(chart.lines(numbers, "", 30, 4))))
+	assert(not string.find(text, "00.0", 1, true), text)
 end)

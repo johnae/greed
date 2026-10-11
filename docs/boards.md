@@ -94,6 +94,60 @@ same tables, filters and rows to act on.
 A board stays open while you look at something else, and closing it stops
 its cards.
 
+## Live charts
+
+A card with `chart` is drawn as a [chart](shell.md#charts), and one that
+runs `every` so often adds a point each time, so the chart moves. Each
+of these is a whole board; save one as `.greed/boards/NAME.md` and
+`:board NAME`. The first is for Linux.
+
+````markdown
+# machine
+
+## load
+
+```sh every=2 chart title="load average" height=8
+cat /proc/loadavg
+```
+
+```sh every=5 chart=area title="memory used, MiB" height=8
+free -m | awk '/Mem:/ { print $3 }'
+```
+
+## disks and the web
+
+```sh every=60 chart="bar Use%" title=disks height=4
+df -h -x tmpfs -x devtmpfs
+```
+
+```sh every=10 chart title="example.com, seconds" height=4
+curl -o /dev/null -s -w '%{time_total}\n' https://example.com
+```
+````
+
+A cluster, with metrics-server running in it:
+
+````markdown
+# cluster
+
+```sh every=10 chart title="CPU by pod" wide
+kubectl top pods
+```
+
+```sh every=10 chart="bar MEMORY(bytes)" title="memory by pod"
+kubectl top pods
+```
+
+```sh every=30 chart=bar title="restarts"
+kubectl get pods --no-headers | awk '{ print $1, $4 }'
+```
+````
+
+`kubectl top pods` charted every ten seconds is a line a pod, of its CPU,
+in cores and millicores; with `bar MEMORY(bytes)` it's a bar a pod, as
+it is now, in MiB and GiB. A card's chart is as wide as the card, and
+`height` lines tall.
+
 ## Boards from others
 
 A board runs commands, so one you didn't make asks before it runs

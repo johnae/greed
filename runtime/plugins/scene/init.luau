@@ -27,6 +27,19 @@ local greed = require("@greed")
 
 local M = {}
 
+greed.option.define({
+	name = "scene-drawing",
+	doc = "How charts and other scenes show: auto (as an image where the terminal can draw one, else characters) or cells (characters everywhere)",
+	default = "auto",
+	choices = { "auto", "cells" },
+})
+
+--- Whether scenes go over their characters, for the clients that can draw
+--- them better: unless `scene-drawing` says cells.
+function M.drawn(): boolean
+	return greed.option.get("scene-drawing") ~= "cells"
+end
+
 --- A point, x then y, in cells.
 export type Point = { number }
 

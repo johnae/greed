@@ -146,7 +146,7 @@ end)
 
 -- A chart's output takes its styles once it shows, as long as it's the
 -- chart as drawn.
-shell.log.on_update(function(block: Block)
+local function paint(block: Block)
 	local d = drawn[block]
 	if d == nil then
 		return
@@ -177,7 +177,7 @@ shell.log.on_update(function(block: Block)
 	end
 	-- The whole chart showing, its scene goes over it, for the clients that
 	-- draw one better than the characters.
-	if from and matched == #d.lines then
+	if from and matched == #d.lines and scene.drawn() then
 		local start = buffer:line_start(buffer:line_of(from))
 		table.insert(marks, {
 			from = start,
@@ -188,6 +188,16 @@ shell.log.on_update(function(block: Block)
 		})
 	end
 	buffer:decorate(`chart.{block.uid}`, marks)
+end
+shell.log.on_update(paint)
+
+-- Charts show as `scene-drawing` says now.
+greed.on("option.changed", function(event)
+	if event.name == "scene-drawing" then
+		for block in drawn do
+			paint(block)
+		end
+	end
 end)
 
 -- A shell's charts' scenes go with it.

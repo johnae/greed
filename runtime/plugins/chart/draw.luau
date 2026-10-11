@@ -8,8 +8,9 @@ local scale = require("./scale")
 
 local M = {}
 
---- A series: its name and its points, x then y.
-export type Series = { name: string, points: { { number } } }
+--- A series: its name, its points (x then y), and what its numbers are
+--- (see `scale.unit`) when that's its own.
+export type Series = { name: string, points: { { number } }, unit: string? }
 
 --- What to draw: the kind, the series, the category of each bar, what the
 --- x values are ("index", "time" in seconds since 1970, or "number"),
@@ -21,6 +22,8 @@ export type Chart = {
 	x: string,
 	log: boolean?,
 	stacked: boolean?,
+	--- What the y axis's numbers are: "bytes", "cores" or "percent".
+	unit: string?,
 	--- What the chart shows, in words, for its `alt`.
 	about: string,
 }
@@ -103,12 +106,16 @@ local function plot(chart: Chart, cols: number, rows: number): { scene.Item }
 		end
 	end
 	local bottom = rows - 1
-	local ticks = scale.ticks(ylo, yhi, math.max(math.floor((bottom - top) / 3), 2))
+	local count = math.max(math.floor((bottom - top) / 3), 2)
+	local ticks = scale.ticks_in(ylo, yhi, count, if chart.log then nil else chart.unit)
 	local labels: { string } = {}
 	local width = 0
 	for _, v in ticks.values do
-		local text =
-			scale.format(if chart.log then 10 ^ v else v, if chart.log then nil else ticks.step)
+		local text = scale.format(
+			if chart.log then 10 ^ v else v,
+			if chart.log then nil else ticks.step,
+			chart.unit
+		)
 		table.insert(labels, text)
 		width = math.max(width, utf8.len(text) or #text)
 	end
@@ -121,14 +128,21 @@ local function plot(chart: Chart, cols: number, rows: number): { scene.Item }
 	local function sx(x: number): number
 		return if xhi > xlo then left + (x - xlo) / xspan * (right - left) else (left + right) / 2
 	end
+	-- A label a row: on a short chart, ticks closer than that would run
+	-- together.
+	local labelled: { [number]: boolean } = {}
 	for i, v in ticks.values do
-		table.insert(items, {
-			kind = "text",
-			at = { width, sy(v) },
-			text = labels[i],
-			align = "end",
-			style = "chart.label",
-		})
+		local row = math.floor(sy(v))
+		if not labelled[row] then
+			labelled[row] = true
+			table.insert(items, {
+				kind = "text",
+				at = { width, sy(v) },
+				text = labels[i],
+				align = "end",
+				style = "chart.label",
+			})
+		end
 	end
 	table.insert(items, {
 		kind = "line",
@@ -183,11 +197,21 @@ end
 
 -- Bars across: a row each, the label on the left, the value after the bar.
 -- With several series each label gets a row a series, or one row of them
--- end to end with `stacked`.
+-- end to end with `stacked`. Series in another unit than the first are
+-- each as long as their own greatest, as CPU and bytes share no scale.
 local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 	local items: { scene.Item } = {}
 	local top = if legend(items, chart.series, cols) then 1 else 0
 	local labels: { string } = chart.labels or {}
+	local shared = true
+	if not chart.stacked then
+		for _, s in chart.series do
+			if s.unit ~= chart.series[1].unit then
+				shared = false
+			end
+		end
+	end
+	local own: { number } = {}
 	local most = 0
 	local values: { { number } } = {}
 	local totals: { number } = {}
@@ -200,6 +224,7 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 			values[i][k] = v
 			total += v
 			most = math.max(most, v)
+			own[k] = math.max(own[k] or 0, v)
 		end
 		totals[i] = total
 		if chart.stacked then
@@ -211,7 +236,15 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 		label_width = math.max(label_width, utf8.len(label) or #label)
 	end
 	label_width = math.min(label_width, math.floor(cols * 0.35))
-	local value_width = #scale.format(most) + 1
+	local value_width = 1
+	for k, s in chart.series do
+		value_width =
+			math.max(value_width, #scale.format(own[k] or 0, nil, s.unit or chart.unit) + 1)
+	end
+	-- A stacked bar is labelled with its total.
+	if chart.stacked then
+		value_width = math.max(value_width, #scale.format(most, nil, chart.unit) + 1)
+	end
 	local left = label_width + 1
 	local room = math.max(cols - left - value_width, 1)
 	local per = if chart.stacked then 1 else #chart.series
@@ -228,7 +261,8 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 		local x = left
 		for k = 1, #chart.series do
 			local v = values[i][k]
-			local long = if most > 0 then v / most * room else 0
+			local greatest = if shared then most else own[k] or 0
+			local long = if greatest > 0 then v / greatest * room else 0
 			local y = if chart.stacked then row else row + k - 1
 			if not chart.stacked then
 				x = left
@@ -244,7 +278,7 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 				table.insert(items, {
 					kind = "text",
 					at = { math.ceil(x) + 1, y },
-					text = scale.format(v),
+					text = scale.format(v, nil, chart.series[k].unit or chart.unit),
 					style = "chart.label",
 				})
 			end
@@ -253,7 +287,7 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 			table.insert(items, {
 				kind = "text",
 				at = { math.ceil(x) + 1, row },
-				text = scale.format(totals[i]),
+				text = scale.format(totals[i], nil, chart.unit),
 				style = "chart.label",
 			})
 		end

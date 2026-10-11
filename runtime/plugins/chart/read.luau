@@ -150,10 +150,10 @@ local function from_words(tbl: Table): boolean
 end
 
 -- A few of `values` with their names, for what the chart says it shows.
-local function some(names: { string }, values: { number }): string
+local function some(names: { string }, values: { number }, unit: string?): string
 	local parts: { string } = {}
 	for i = 1, math.min(#names, 3) do
-		table.insert(parts, `{names[i]} {scale.format(values[i])}`)
+		table.insert(parts, `{names[i]} {scale.format(values[i], nil, unit)}`)
 	end
 	if #names > 3 then
 		table.insert(parts, `+{#names - 3} more`)
@@ -205,8 +205,11 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			end
 		end
 	end
+	-- Text read as words has no column of names: a row is named by its
+	-- words that aren't numbers, as `git shortlog -sn`'s authors are.
+	local worded = from_words(tbl)
 	local names = by
-	if names == nil then
+	if names == nil and not worded then
 		for _, c in tbl.columns do
 			if c ~= time and not numeric(tbl, c) then
 				names = c
@@ -221,7 +224,7 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 				-- Rows with names, or words from text: their first number,
 				-- as other numbers are often of another kind (CPU, then
 				-- bytes) and one would hide the other.
-				if from_words(tbl) or (names and time == nil) then
+				if worded or (names and time == nil) then
 					break
 				end
 			end
@@ -233,11 +236,41 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 	while #ys > 8 do
 		table.remove(ys)
 	end
+	-- What the numbers are, by how a column writes them: bytes, CPU, percents.
+	local function unit_of(c: string): string?
+		local cells: { string } = {}
+		for _, row in tbl.rows do
+			table.insert(cells, row[c] or "")
+		end
+		return scale.unit(cells)
+	end
+	local unit = unit_of(ys[1])
 	-- What's asked for, or "" to guess.
 	local kind: string = ask.kind or ""
 	local function label(i: number): string
 		local row = tbl.rows[i]
-		return if names and row[names] ~= "" then row[names] else tostring(i)
+		if names and row[names] ~= "" then
+			return row[names]
+		end
+		local words: { string } = {}
+		if worded then
+			for _, c in tbl.columns do
+				local cell = row[c]
+				if cell and tables.number(cell) == nil then
+					table.insert(words, cell)
+				end
+			end
+		end
+		return if #words > 0 then table.concat(words, " ") else tostring(i)
+	end
+	-- Whether rows have names to tell them apart by: a column of them, or
+	-- words in each of several rows of text.
+	local named = names ~= nil
+	if worded and #tbl.rows > 1 then
+		named = true
+		for i in tbl.rows do
+			named = named and label(i) ~= tostring(i)
+		end
 	end
 
 	-- In a watch, how each number went from run to run.
@@ -279,7 +312,8 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			series = series,
 			x = "time",
 			log = ask.log,
-			about = `{table.concat(ys, ", ")} over time: {some(latest, values)}`,
+			unit = unit,
+			about = `{table.concat(ys, ", ")} over time: {some(latest, values, unit)}`,
 		},
 			nil
 	end
@@ -310,13 +344,14 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			series = series,
 			x = if dated then "time" else "number",
 			log = ask.log,
+			unit = unit,
 			about = `{table.concat(ys, ", ")} over {x}`,
 		},
 			nil
 	end
 
 	-- Two numbers and nothing to name them by: one against the other.
-	if kind == "scatter" or (kind == "" and names == nil and #ys == 2) then
+	if kind == "scatter" or (kind == "" and not named and #ys == 2) then
 		if #ys < 2 then
 			return nil, "scatter needs two number columns, x then y"
 		end
@@ -332,13 +367,14 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			series = { { name = `{ys[2]} by {ys[1]}`, points = points } },
 			x = "number",
 			log = ask.log,
+			unit = if #ys > 1 then unit_of(ys[2]) else unit,
 			about = `{ys[2]} against {ys[1]}, {#points} points`,
 		},
 			nil
 	end
 
 	-- Something to name the rows by: a bar each.
-	if kind == "bar" or (kind == "" and names) then
+	if kind == "bar" or (kind == "" and named) then
 		local labels: { string } = {}
 		for i in tbl.rows do
 			table.insert(labels, label(i))
@@ -349,7 +385,7 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			for i, row in tbl.rows do
 				points[i] = { i, tables.number(row[c] or "") or 0 }
 			end
-			table.insert(series, { name = c, points = points })
+			table.insert(series, { name = c, points = points, unit = unit_of(c) })
 		end
 		local first: { number } = {}
 		for i in tbl.rows do
@@ -361,9 +397,11 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			labels = labels,
 			x = "index",
 			stacked = ask.stacked,
+			unit = unit,
 			about = `{table.concat(ys, ", ")}{if names then " by " .. names else ""}: {some(
 				labels,
-				first
+				first,
+				unit
 			)}`,
 		},
 			nil
@@ -386,6 +424,7 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 		series = series,
 		x = "index",
 		log = ask.log,
+		unit = unit,
 		about = `{table.concat(ys, ", ")}, {#tbl.rows} rows`,
 	},
 		nil
