@@ -9,8 +9,9 @@ local GREED: acp.Agent = { name = "greed", title = "Greed", commands = {}, nativ
 -- Stands in for the model: each turn returns the next of `turns`, and the
 -- requests it got are kept, as they were then. Requests to summarise the
 -- conversation are answered with `summary` (false fails them) and kept
--- apart. A turn with `fail` fails with it; a function as a turn gives it,
--- from the request.
+-- apart. A turn with `fail` fails with it, as one that may pass with
+-- `again`; one with `retried` was tried again for that reason first. A
+-- function as a turn gives it, from the request.
 local function script(turns: { any }, summary: (string | false)?): ({ any }, { any })
 	local asked: { any } = {}
 	local summarised: { any } = {}
@@ -19,7 +20,15 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 	models.check = function(): string?
 		return nil
 	end
-	models.turn = function(_role, request, on_text, _on_open, on_thinking): (any, string?)
+	models.turn = function(
+		_role,
+		request,
+		on_text,
+		_on_open,
+		on_thinking,
+		_on_calling,
+		on_retry
+	): (any, string?, boolean?)
 		local copy = table.clone(request)
 		copy.said = table.move(request.said, 1, #request.said, 1, {})
 		if string.find(request.system or "", "You summarise", 1, true) then
@@ -36,8 +45,11 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 		if type(turn) == "function" then
 			turn = (turn :: (any) -> any)(copy)
 		end
+		if turn.retried and on_retry then
+			on_retry(turn.retried, 2000)
+		end
 		if turn.fail then
-			return nil, turn.fail
+			return nil, turn.fail, turn.again
 		end
 		if on_thinking and turn.thinking then
 			on_thinking(turn.thinking)
@@ -1873,6 +1885,37 @@ test("a request turned down as too long is compacted and tried again", function(
 	assert(asked[#asked].said[1].text == compact.NOTE, "it went on from the summary")
 	acp.close(s)
 	models.roles.agent = nil
+end)
+
+test("a model that stops answering is tried again, and the transcript says so", function(t)
+	script({
+		{ retried = "no reply for 270s", fail = "no reply for 270s", again = true },
+		{ retried = "Connection reset by peer", text = "Here.", calls = {}, stop = "done" },
+	})
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.prompt(s, "hi")
+	assert(
+		string.find(
+			said(s),
+			"note: no reply for 270s; trying again in 2s | "
+				.. "note: the model failed: no reply for 270s; say go on to try again",
+			1,
+			true
+		),
+		said(s)
+	)
+	acp.prompt(s, "go on")
+	assert(
+		string.find(
+			said(s),
+			"note: Connection reset by peer; trying again in 2s | agent: Here.",
+			1,
+			true
+		),
+		said(s)
+	)
+	assert(s.failed == nil, tostring(s.failed))
+	acp.close(s)
 end)
 
 test("a request turned down for something else isn't retried", function(t)

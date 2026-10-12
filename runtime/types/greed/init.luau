@@ -564,7 +564,9 @@ export type Keys = {
 }
 
 --- A request for `greed.http`. `method` defaults to POST with a body and GET
---- without; `timeout` is in milliseconds, for the whole request. With `save`,
+--- without; `timeout` is in milliseconds, for the whole request, and
+--- `head_timeout` for the status and headers alone, which limits a stream's
+--- wait without limiting its body. With `save`,
 --- `request` writes a successful (2xx) response's body to that file as it
 --- arrives, creating its folders, and returns an empty body; the file appears
 --- only once it's whole. Other responses come back as usual and nothing is
@@ -575,6 +577,7 @@ export type HttpRequest = {
 	headers: { [string]: string }?,
 	body: string?,
 	timeout: number?,
+	head_timeout: number?,
 	save: string?,
 }
 
@@ -586,12 +589,14 @@ export type HttpResponse = {
 }
 
 --- A response whose body arrives in pieces. `read` waits for the next piece
---- and returns it, nil at the end, or nil and why it failed; `close` stops
---- reading, and a read waiting in another task returns nil.
+--- and returns it, nil at the end, or nil and why it failed; given
+--- `timeout` milliseconds, it gives up after them with nil and "timed out",
+--- and the stream stays open for the next read. `close` stops reading, and
+--- a read waiting in another task returns nil.
 export type HttpStream = {
 	status: number,
 	headers: { [string]: string },
-	read: (self: HttpStream) -> (string?, string?),
+	read: (self: HttpStream, timeout: number?) -> (string?, string?),
 	close: (self: HttpStream) -> (),
 }
 

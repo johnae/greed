@@ -25,6 +25,7 @@ local sse = require("@self/sse")
 local turn = require("@self/turn")
 local login = require("@self/login")
 local listing = require("@self/list")
+local network = require("@self/network")
 
 export type ToolSpec = turn.ToolSpec
 export type Call = turn.Call
@@ -45,7 +46,8 @@ export type TurnRequest = turn.Request
 --- what the model thought back with what it said, as Mistral's
 --- reasoning models want (OpenAI-like servers only). `effort` is how hard
 --- its models think when a role doesn't say (see `M.effort`), and
---- `efforts` the ones it takes, when it doesn't take them all.
+--- `efforts` the ones it takes, when it doesn't take them all. `idle` is
+--- how many seconds its answers may go quiet (see `M.idle`).
 export type Provider = {
 	kind: string,
 	url: string,
@@ -58,13 +60,15 @@ export type Provider = {
 	thinking_back: boolean?,
 	effort: string?,
 	efforts: { string }?,
+	idle: number?,
 }
 
 --- Which provider and model play a role, and optionally how many tokens
 --- the model has room for (its context window) and may write in one answer,
 --- whether it sees images, when its name doesn't tell (see `M.sees_images`),
---- how Greed's agent has it edit files (see `M.edits`), and how hard it
---- thinks before answering (see `M.effort`).
+--- how Greed's agent has it edit files (see `M.edits`), how hard it
+--- thinks before answering (see `M.effort`), and how many seconds its
+--- answers may go quiet (see `M.idle`).
 export type Role = {
 	provider: string,
 	model: string,
@@ -73,6 +77,7 @@ export type Role = {
 	edits: string?,
 	images: boolean?,
 	effort: string?,
+	idle: number?,
 }
 
 export type Message = { role: "user" | "assistant", content: string }
@@ -423,6 +428,28 @@ function M.output(role: string): number
 	end
 	return math.min(OUTPUT, M.window(role) // 4)
 end
+
+greed.option.define({
+	name = "models-idle-timeout",
+	doc = "Seconds a model's answer may go quiet before its request counts as failed and is tried again; the first bytes get three times as long. 0 waits for ever",
+	default = 90,
+})
+
+--- How many seconds the answer of the model playing `role` may go quiet
+--- before it counts as failed: the role's `idle`, its provider's, or the
+--- `models-idle-timeout` option; nil for no limit. Before the first bytes
+--- it may take three times as long, as a long prompt the provider hasn't
+--- cached, or thinking it doesn't show, can take minutes.
+function M.idle(role: string): number?
+	local chosen, provider = M.resolve(M.playing(role))
+	local said = (chosen and chosen.idle)
+		or (provider and provider.idle)
+		or tonumber(greed.option.get("models-idle-timeout"))
+	return if said and said > 0 then said else nil
+end
+
+-- How many times as long the first bytes may take as a quiet gap later.
+local FIRST = 3
 
 --- The ways Greed's agent can have a model edit files: "replace", old
 --- text to new, which models trained on it do best with, and "hashline",
@@ -791,28 +818,59 @@ function M.list(name: string): ({ string }?, string?)
 	return greed.vouch(list, name)
 end
 
--- Sends `request` and waits for the answer to start, or says why it won't.
-local function open(chosen: Role, request: greed.HttpRequest): (greed.HttpStream?, string?)
+-- How long a request to the model playing `role` waits for its first
+-- bytes, then for each piece after them, in milliseconds; nil for ever.
+local function limits(role: string): (number?, number?)
+	local idle = M.idle(role)
+	if idle == nil then
+		return nil, nil
+	end
+	return idle * FIRST * 1000, idle * 1000
+end
+
+-- What a wait of `ms` that ran out says.
+local function quiet(ms: number): string
+	return `no reply for {ms / 1000}s`
+end
+
+-- A read of `stream` waiting `limit` milliseconds at most: the piece, or
+-- nil and why there's none, "no reply" when the time ran out.
+local function read_within(stream: greed.HttpStream, limit: number?): (string?, string?)
+	local piece, failed = stream:read(limit)
+	if piece == nil and limit and failed == "timed out" then
+		stream:close()
+		return nil, quiet(limit)
+	end
+	return piece, failed
+end
+
+-- Sends `request` and waits for the answer to start, or says why it won't
+-- and, when sending it again may work, how many milliseconds to wait first.
+local function open(chosen: Role, request: greed.HttpRequest): (greed.HttpStream?, string?, number?)
 	local provider = M.providers[chosen.provider]
 	local ollama = provider ~= nil and is_ollama(chosen.provider, provider)
-	local response, err = greed.http.stream(request)
+	local response, err = network.stream(request)
 	if response == nil then
-		local why = `can't reach {chosen.provider}: {err}`
-		return nil, if ollama then ollama_hint(chosen, why, nil) else why
+		local why = if err == "timed out" and request.head_timeout
+			then quiet(request.head_timeout)
+			else `can't reach {chosen.provider}: {err}`
+		return nil, if ollama then ollama_hint(chosen, why, nil) else why, network.PAUSE
 	end
 	if response.status >= 300 then
 		local body = {}
 		while true do
-			local piece = response:read()
+			local piece = read_within(response, request.head_timeout)
 			if piece == nil then
 				break
 			end
 			table.insert(body, piece)
 		end
 		local why = refusal(response.status, table.concat(body))
-		return nil, if ollama then ollama_hint(chosen, why, response.status) else why
+		return nil,
+			if ollama then ollama_hint(chosen, why, response.status) else why,
+			network.again_in(response.status, response.headers)
 	end
-	return response, nil
+	return response, nil, nil
 end
 
 -- `open` as the plugins that set role `role`'s model and provider may, or
@@ -821,12 +879,12 @@ local function send(
 	role: string,
 	chosen: Role,
 	request: greed.HttpRequest
-): (greed.HttpStream?, string?)
-	local ok, response, err = pcall(as_set, role, chosen, open, chosen, request)
+): (greed.HttpStream?, string?, number?)
+	local ok, response, err, again = pcall(as_set, role, chosen, open, chosen, request)
 	if not ok then
-		return nil, tostring(response)
+		return nil, tostring(response), nil
 	end
-	return response, err
+	return response, err, again
 end
 
 --- Asks the model playing `role`, and returns the answer as it arrives.
@@ -838,8 +896,14 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 		return nil, why
 	end
 	local effort = M.effort(role, request.effort)
-	local response, err =
-		greed.vouch(send, role, chosen, http_request(provider, chosen.model, request, key, effort))
+	local first, gap = limits(role)
+	local function ask(asked: Request): (greed.HttpStream?, string?)
+		local sent = http_request(provider, chosen.model, asked, key, effort)
+		sent.head_timeout = first
+		local response, err = greed.vouch(send, role, chosen, sent)
+		return response, err
+	end
+	local response, err = ask(request)
 	-- Newer models refuse a temperature; they're asked again without one.
 	if
 		response == nil
@@ -848,12 +912,7 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	then
 		local plain = table.clone(request)
 		plain.temperature = nil
-		response, err = greed.vouch(
-			send,
-			role,
-			chosen,
-			http_request(provider, chosen.model, plain, key, effort)
-		)
+		response, err = ask(plain)
 	end
 	if response == nil then
 		return nil, err
@@ -862,12 +921,14 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	local pending: { string } = {}
 	local buffered = ""
 	local done = false
+	local heard = false
 	local stream: Stream
 	stream = {
 		text = "",
 		next = function(_: Stream): (string?, string?)
 			while #pending == 0 and not done do
-				local piece, failed = reply:read()
+				local piece, failed = read_within(reply, if heard then gap else first)
+				heard = true
 				if piece == nil then
 					done = true
 					if failed then
@@ -1110,24 +1171,32 @@ local fingerprints: { [string]: turn.Fingerprint } = {}
 
 --- One turn of a conversation with tools, by the model playing `role`:
 --- `on_text` gets its text as it arrives, and the turn says what it said,
---- the tool calls it asked for and why it stopped. `on_open` gets what
---- closes the answer's stream once it starts, to stop it early: the turn
---- then ends with what came so far. `on_thinking` gets what the model
---- thinks as it arrives, when the provider shows it, and `on_calling`
---- hears each piece of a tool call's arguments as it arrives. The
---- request's `effort` is the role's unless it says (see `effort`). Waits
---- like greed.sleep.
+--- the tool calls it asked for and why it stopped. `on_open` gets, before
+--- anything is sent, what stops the turn: it closes the answer's stream
+--- and the turn ends with what came so far, or with nil and "stopped"
+--- when nothing was coming yet. `on_thinking` gets what the model thinks
+--- as it arrives, when the provider shows it, and `on_calling` hears each
+--- piece of a tool call's arguments as it arrives. The request's `effort`
+--- is the role's unless it says (see `effort`).
+---
+--- A request that fails in a way that may pass (no reply for as long as
+--- `idle` allows, a dropped connection, a busy server) is sent once more
+--- after a pause, `on_retry` hearing why and how many milliseconds it
+--- waits; not once `on_text` or `on_thinking` had some of the answer, as a
+--- second answer would repeat it. When the turn fails, the third result
+--- says whether asking again later may work. Waits like greed.sleep.
 function M.turn(
 	role: string,
 	request: turn.Request,
 	on_text: ((text: string) -> ())?,
 	on_open: ((close: () -> ()) -> ())?,
 	on_thinking: ((text: string) -> ())?,
-	on_calling: (() -> ())?
-): (turn.Turn?, string?)
+	on_calling: (() -> ())?,
+	on_retry: ((why: string, ms: number) -> ())?
+): (turn.Turn?, string?, boolean?)
 	local chosen, provider, key, why = greed.vouch(connect, role)
 	if chosen == nil or provider == nil then
-		return nil, why
+		return nil, why, false
 	end
 	if not M.sees_images(role) then
 		request = unseen(request)
@@ -1141,6 +1210,8 @@ function M.turn(
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
 	local body = turn.body(provider.kind, chosen.model, request, M.output(role))
 	sent.body = greed.json.encode(body)
+	local first_limit, gap = limits(role)
+	sent.head_timeout = first_limit
 	-- One debug line a request, with what it changed of the last one in its
 	-- conversation, which the provider's cache needs it to start with.
 	local traced: string? = nil
@@ -1155,28 +1226,15 @@ function M.turn(
 	-- debug line's timing.
 	local started = greed.now()
 	local first: number? = nil
-	local function failed_with(err: string?): (turn.Turn?, string?)
+	local function trace_failure(err: string?)
 		if traced then
 			greed.debug.log(
 				`{traced}; failed: {err}; {turn.timing(started, first, greed.now(), nil)}`
 			)
 		end
-		return nil, err
 	end
-	local response, err = greed.vouch(send, role, chosen, sent)
-	if response == nil then
-		return failed_with(err)
-	end
-	if on_open then
-		local stream: greed.HttpStream = response
-		on_open(function()
-			stream:close()
-		end)
-	end
-	local reader = turn.reader(provider.kind)
-	local buffered = ""
 	-- The turn as it ended, its tokens counted.
-	local function ended(): turn.Turn
+	local function ended(reader: turn.Reader): turn.Turn
 		local done = reader.turn()
 		greed.vouch(M.count, chosen.provider, chosen.model, done.input, done.output, done.cached)
 		if traced then
@@ -1191,37 +1249,104 @@ function M.turn(
 		end
 		return done
 	end
-	while true do
-		local piece, failed = response:read()
-		first = first or (if piece and piece ~= "" then greed.now() else nil)
-		if piece == nil then
-			if failed then
-				return failed_with(failed)
+	-- Stopping closes the answer's stream, or ends the pause before trying
+	-- again.
+	local stopped = false
+	local current: greed.HttpStream? = nil
+	local pausing: greed.Signal? = nil
+	if on_open then
+		on_open(function()
+			stopped = true
+			if current then
+				current:close()
 			end
-			return ended(), nil
+			if pausing then
+				pausing:send(true)
+			end
+		end)
+	end
+	-- Whether some of the answer went to `on_text` or `on_thinking`.
+	local passed = false
+	-- Sends the request once: the turn, or nil, why not and, when it may
+	-- pass, how many milliseconds to wait before sending it again.
+	local function attempt(): (turn.Turn?, string?, number?)
+		started, first = greed.now(), nil
+		local response, err, again = greed.vouch(send, role, chosen, sent)
+		if response == nil then
+			return nil, err, again
 		end
-		local events
-		events, buffered = sse.parse(buffered .. piece)
-		for _, event in events do
-			local text, finished, problem, thinking = reader.feed(event)
-			if problem then
-				response:close()
-				return failed_with(problem)
+		current = response
+		if stopped then
+			response:close()
+		end
+		local reader = turn.reader(provider.kind)
+		local buffered = ""
+		local hear_text, hear_thinking, hear_calling = on_text, on_thinking, on_calling
+		while true do
+			local piece, failed = read_within(response, if first then gap else first_limit)
+			if piece == nil then
+				if failed then
+					return nil, failed, network.PAUSE
+				end
+				return ended(reader), nil, nil
 			end
-			if thinking and on_thinking then
-				on_thinking(thinking)
-			end
-			if text and on_text then
-				on_text(text)
-			elseif not thinking and on_calling and reader.calling() then
-				on_calling()
-			end
-			if finished then
-				response:close()
-				return ended(), nil
+			first = first or (if piece ~= "" then greed.now() else nil)
+			local events
+			events, buffered = sse.parse(buffered .. piece)
+			for _, event in events do
+				local text, finished, problem, thinking = reader.feed(event)
+				if problem then
+					response:close()
+					return nil, problem, nil
+				end
+				if thinking and hear_thinking then
+					passed = true
+					hear_thinking(thinking)
+				end
+				if text and hear_text then
+					passed = passed or text ~= ""
+					hear_text(text)
+				elseif not thinking and hear_calling and reader.calling() then
+					hear_calling()
+				end
+				if finished then
+					response:close()
+					return ended(reader), nil, nil
+				end
 			end
 		end
 	end
+	-- Waits `ms` before trying again; false when the turn was stopped first.
+	local function pause(ms: number): boolean
+		local woke = greed.signal()
+		pausing = woke
+		greed.spawn(function()
+			greed.sleep(ms)
+			woke:send(false)
+		end)
+		local stop = woke:wait()
+		pausing = nil
+		return not stop
+	end
+	if stopped then
+		return nil, "stopped", false
+	end
+	local done, err, again = attempt()
+	if done == nil and again and not passed and not stopped then
+		trace_failure(err)
+		if on_retry then
+			on_retry(err or "it failed", again)
+		end
+		if not pause(again) then
+			return nil, "stopped", false
+		end
+		done, err, again = attempt()
+	end
+	if done == nil then
+		trace_failure(err)
+		return nil, if stopped then "stopped" else err, again ~= nil and not stopped
+	end
+	return done, nil, nil
 end
 
 M.tools = turn

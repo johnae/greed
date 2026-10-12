@@ -412,6 +412,13 @@ hash; one that changed is refused, so the model reads it again.
 models.roles.agent = { provider = "berget", model = "moonshotai/Kimi-K3", edits = "hashline" }
 ```
 
+When the model stops answering or its connection drops, the transcript
+says so (`no reply for 90s; trying again in 2s`) and Greed asks once more,
+unless some of the answer had already come. If that fails too, the turn
+ends with why and `say go on to try again`; `ctrl-c` stops it at once,
+during the wait before trying again too. [Models](using.md#models) says
+how long a model may go quiet.
+
 `:usage` shows how the edits went, by model and way of editing, to compare
 the two, beside the tokens each model was sent and wrote today and over the
 last week, and how many came from the provider's cache

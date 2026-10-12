@@ -30,6 +30,9 @@ const MAX_BODY: u64 = 64 * 1024 * 1024;
 /// How long connecting may take.
 const CONNECT: Duration = Duration::from_secs(30);
 
+/// Why a request or a read gave up waiting.
+const TIMED_OUT: &str = "timed out";
+
 /// A request, as a plugin describes it.
 struct Request {
     method: String,
@@ -37,6 +40,8 @@ struct Request {
     headers: Vec<(String, String)>,
     body: Option<Vec<u8>>,
     timeout: Option<Duration>,
+    /// How long the status and headers may take to come.
+    head_timeout: Option<Duration>,
 }
 
 /// A response's status and headers.
@@ -117,12 +122,14 @@ fn request_from_lua(lua: &Lua, owner: &PluginId, opts: &Table) -> LuaResult<Requ
         }
     }
     let timeout: Option<f64> = opts.get("timeout")?;
+    let head_timeout: Option<f64> = opts.get("head_timeout")?;
     Ok(Request {
         method: method.unwrap_or_else(|| if body.is_some() { "POST" } else { "GET" }.to_owned()),
         url,
         headers,
         body: body.map(|b| b.as_bytes().to_vec()),
         timeout: timeout.map(super::millis),
+        head_timeout: head_timeout.map(super::millis),
     })
 }
 
@@ -175,6 +182,7 @@ fn send_once(request: &Request) -> Result<(Head, ureq::Body), String> {
         .max_redirects(0)
         .timeout_connect(Some(CONNECT))
         .timeout_global(request.timeout)
+        .timeout_recv_response(request.head_timeout)
         .build()
         .into();
     let mut builder = ureq::http::Request::builder()
@@ -188,7 +196,11 @@ fn send_once(request: &Request) -> Result<(Head, ureq::Body), String> {
         None => builder.body(()).map(|r| agent.run(r)),
     }
     .map_err(|err| err.to_string())?
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| match err {
+        // The same words as a read that timed out.
+        ureq::Error::Timeout(_) => TIMED_OUT.to_owned(),
+        err => err.to_string(),
+    })?;
     let head = Head {
         status: response.status().as_u16(),
         headers: response
@@ -305,30 +317,52 @@ pub(super) fn stream_started(
     };
     let stream = lua.create_table()?;
     head_to_lua(lua, &head, &stream)?;
-    let read_now = lua.create_function(move |lua, NoArgs| read_now(lua, id))?;
+    let read_now =
+        lua.create_function(move |lua, timeout: Option<f64>| read_now(lua, id, timeout))?;
+    let gave_up = lua.create_function(move |lua, token: u64| {
+        if let Some(stream) = state_mut(lua).http.open.get_mut(&id) {
+            stream.waiter = stream.waiter.filter(|waiter| *waiter != token);
+        }
+        Ok(TIMED_OUT)
+    })?;
+    // A read whose time ran out wakes with no values; a piece, the end and
+    // `close` each wake it with at least one.
     let read: Function = lua
         .load(
             r"
-            local read_now = ...
-            return function()
-                local ready, a, b = read_now()
+            local read_now, gave_up = ...
+            local function woke(token, ...)
+                if select('#', ...) == 0 then
+                    return nil, gave_up(token)
+                end
+                return ...
+            end
+            return function(timeout)
+                local ready, a, b = read_now(timeout)
                 if ready then
                     return a, b
                 end
-                return coroutine.yield(a)
+                return woke(a, coroutine.yield(a))
             end
             ",
         )
         .set_name("=greed.http.stream.read")
-        .call(read_now)?;
+        .call((read_now, gave_up))?;
     stream.set("read", read)?;
     stream.set(
         "close",
         lua.create_function(move |lua, NoArgs| {
-            let waiter = state_mut(lua).http.open.remove(&id).and_then(|stream| {
-                stream.cancel.store(true, Ordering::Relaxed);
-                stream.waiter
-            });
+            let waiter = {
+                let state = &mut *state_mut(lua);
+                let waiter = state.http.open.remove(&id).and_then(|stream| {
+                    stream.cancel.store(true, Ordering::Relaxed);
+                    stream.waiter
+                });
+                if let Some(token) = waiter {
+                    state.tasks.cancel_timer(token);
+                }
+                waiter
+            };
             // A read waiting in another task ends as at the stream's end.
             match waiter {
                 Some(token) => tasks::deliver(lua, token, Value::Nil),
@@ -353,8 +387,9 @@ fn chunk_values(lua: &Lua, id: u64, chunk: Chunk) -> LuaResult<MultiValue> {
 }
 
 /// The next piece of stream `id` if one arrived: `true` and its values.
-/// Otherwise `false` and the token the next piece wakes.
-fn read_now(lua: &Lua, id: u64) -> LuaResult<MultiValue> {
+/// Otherwise `false` and the token the next piece wakes, or the end of
+/// `timeout` milliseconds when given.
+fn read_now(lua: &Lua, id: u64, timeout: Option<f64>) -> LuaResult<MultiValue> {
     let chunk = {
         let mut state = state_mut(lua);
         let state = &mut *state;
@@ -365,6 +400,9 @@ fn read_now(lua: &Lua, id: u64) -> LuaResult<MultiValue> {
         let Some(chunk) = stream.queue.pop_front() else {
             let token = state.tasks.token();
             stream.waiter = Some(token);
+            if let Some(ms) = timeout {
+                state.tasks.time_out(token, super::millis(ms));
+            }
             return (false, token).into_lua_multi(lua);
         };
         chunk
@@ -378,7 +416,7 @@ fn read_now(lua: &Lua, id: u64) -> LuaResult<MultiValue> {
 /// waits for the next read.
 pub(super) fn chunk_arrived(lua: &Lua, id: u64, chunk: Chunk) -> LuaResult<()> {
     let waiter = {
-        let mut state = state_mut(lua);
+        let state = &mut *state_mut(lua);
         let Some(stream) = state.http.open.get_mut(&id) else {
             return Ok(());
         };
@@ -386,6 +424,7 @@ pub(super) fn chunk_arrived(lua: &Lua, id: u64, chunk: Chunk) -> LuaResult<()> {
             stream.queue.push_back(chunk);
             return Ok(());
         };
+        state.tasks.cancel_timer(token);
         token
     };
     let values = chunk_values(lua, id, chunk)?;

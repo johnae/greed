@@ -84,6 +84,16 @@ fn answer(stream: TcpStream) {
             }
             write!(out, "0\r\n\r\n").unwrap();
         }
+        "/pause" => {
+            write!(out, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").unwrap();
+            for piece in ["one", "two"] {
+                write!(out, "{:x}\r\n{piece}\r\n", piece.len()).unwrap();
+                out.flush().unwrap();
+                std::thread::sleep(Duration::from_millis(400));
+            }
+            write!(out, "0\r\n\r\n").unwrap();
+        }
+        "/mute" => std::thread::sleep(Duration::from_secs(2)),
         _ => write!(out, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").unwrap(),
     }
     out.flush().unwrap();
@@ -204,6 +214,37 @@ fn closing_a_stream_ends_a_read_waiting_in_another_task() {
     .unwrap();
     host.run(FIRST_CLIENT, "close").unwrap();
     assert_eq!(messages(&host, 1), ["ended"]);
+}
+
+#[test]
+fn a_read_or_the_head_can_give_up_waiting() {
+    let address = serve();
+    let host = host();
+    host.load_str(
+        "wait",
+        &format!(
+            r#"
+            local greed = require("@greed")
+            greed.command {{ name = "wait", run = function()
+                local s = assert(greed.http.stream({{ url = "{address}/pause" }}))
+                greed.echo(tostring(s:read(2000)))
+                local none, why = s:read(50)
+                greed.echo(`{{none}} {{why}}`)
+                -- What comes later is still there for the next read.
+                greed.echo(tostring(s:read(2000)))
+                s:close()
+                local _, err = greed.http.stream({{ url = "{address}/mute", head_timeout = 100 }})
+                greed.echo(tostring(err))
+            end }}
+            "#
+        ),
+    )
+    .unwrap();
+    host.run(FIRST_CLIENT, "wait").unwrap();
+    assert_eq!(
+        messages(&host, 4),
+        ["one", "nil timed out", "two", "timed out"]
+    );
 }
 
 #[test]

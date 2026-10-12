@@ -1127,6 +1127,21 @@ all, and how many tokens a second it wrote while it streamed. A long wait
 for the first bytes is the provider (queueing, or reading a long uncached
 conversation); a low pace is the model writing slowly, or thinking.
 
+A model's answer that goes quiet for 90 seconds counts as failed, and the
+first bytes get three times as long, since a long uncached conversation
+or thinking the model doesn't show can take minutes. `:set
+models-idle-timeout 180` changes it for all of them, `idle = 180` on a
+role or provider for its models (a slow local one, say), and `0` waits for
+ever. A request that failed that way, lost its connection, or was turned
+away as too busy (429, 502, 503 or 504) is sent once more after a moment,
+or as long as the server's `Retry-After` says, up to 30 seconds. It isn't
+sent again once some of the answer was shown, as the second answer would
+repeat it.
+
+```luau
+models.providers.ollama.idle = 600
+```
+
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
 `GREED_SECRET_NAME`. The built-in providers send their keys only to their
 own servers. The first time any other key would go to an address, Greed

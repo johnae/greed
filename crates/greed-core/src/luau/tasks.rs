@@ -104,6 +104,18 @@ impl Tasks {
             .unwrap_or_else(|| Instant::now().max(self.latest))
     }
 
+    /// Wakes whatever waits on `token` with no values after `delay`, unless
+    /// something else wakes it first and `cancel_timer`s it: a wait with a
+    /// time limit.
+    pub(super) fn time_out(&mut self, token: u64, delay: Duration) {
+        let at = self.now() + delay;
+        self.timers.push((at, token));
+    }
+
+    pub(super) fn cancel_timer(&mut self, token: u64) {
+        self.timers.retain(|(_, t)| *t != token);
+    }
+
     /// Drops what's kept about the coroutine `id`, once it's done.
     fn forget(&mut self, id: usize) {
         self.causes.remove(&id);
@@ -504,10 +516,9 @@ pub(super) fn resume_sliced(lua: &Lua) -> LuaResult<bool> {
 
 /// Starts a timer and returns the token it resolves.
 fn start_timer(lua: &Lua, delay: Duration) -> u64 {
-    let mut state = state_mut(lua);
-    let token = state.tasks.token();
-    let at = state.tasks.now() + delay;
-    state.tasks.timers.push((at, token));
+    let tasks = &mut state_mut(lua).tasks;
+    let token = tasks.token();
+    tasks.time_out(token, delay);
     token
 }
 

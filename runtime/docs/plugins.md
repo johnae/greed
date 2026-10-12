@@ -1813,6 +1813,10 @@ while true do
 end
 ```
 
+`stream:read(ms)` gives up after `ms` milliseconds with nil and `"timed
+out"`, leaving the stream open, and `head_timeout = ms` limits the wait for
+the status and headers; `timeout` limits the whole request, body included.
+
 Each request runs on a thread of its own and both wait like `greed.sleep`,
 so they work in commands and event handlers and never hold up the editor.
 A plugin needs `net`, or `net:HOST` for each host it talks to.

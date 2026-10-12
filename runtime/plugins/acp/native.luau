@@ -174,24 +174,24 @@ local NOT_RUN = "not run: the user stopped the turn first"
 -- Runs `f` in a task of its own and waits for what it returns, unless the
 -- turn is stopped first: then it's false at once, and `f` is left to end
 -- on its own.
-local function unless_stopped(state: State, f: () -> (any, any)): (boolean, any, any)
+local function unless_stopped(state: State, f: () -> (any, any, any)): (boolean, any, any, any)
 	if state.cancelled then
-		return false, nil, nil
+		return false, nil, nil, nil
 	end
 	local done = greed.signal()
 	state.waiting = done
 	greed.spawn(function()
-		local ok, a, b = pcall(f)
-		done:send({ ok = ok, a = a, b = b })
+		local ok, a, b, c = pcall(f)
+		done:send({ ok = ok, a = a, b = b, c = c })
 	end)
 	local got = done:wait()
 	state.waiting = nil
 	if got == false then
-		return false, nil, nil
+		return false, nil, nil, nil
 	elseif not got.ok then
 		error(got.a, 0)
 	end
-	return true, got.a, got.b
+	return true, got.a, got.b, got.c
 end
 
 -- Whether call `c` may run at once with calls like it next to it: its tool
@@ -1606,8 +1606,9 @@ local function prompt(
 		end
 		local run = state.run
 		local chosen = models.resolve(state.role)
-		doing(s, `waiting for {if chosen then chosen.provider else "the model"}`)
-		local answered, answer, err = unless_stopped(state, function()
+		local waiting = `waiting for {if chosen then chosen.provider else "the model"}`
+		doing(s, waiting)
+		local answered, answer, err, again = unless_stopped(state, function()
 			return models.turn(state.role, {
 				system = said_system,
 				said = state.said,
@@ -1632,6 +1633,13 @@ local function prompt(
 				if state.run == run then
 					doing(s, "writing")
 				end
+			end, function(why, ms)
+				if state.run == run then
+					local wait = if ms >= 1000 then ` in {math.floor(ms / 1000 + 0.5)}s` else ""
+					table.insert(s.entries, { kind = "note", text = `{why}; trying again{wait}` })
+					s.doing = waiting
+					s.changed()
+				end
 			end)
 		end)
 		state.close = nil
@@ -1653,8 +1661,12 @@ local function prompt(
 					continue
 				end
 			end
-			s.failed = `the model failed: {err}`
-			table.insert(s.entries, { kind = "note", text = s.failed })
+			local failed = `the model failed: {err}`
+			if again then
+				failed ..= "; say go on to try again"
+			end
+			s.failed = failed
+			table.insert(s.entries, { kind = "note", text = failed })
 			break
 		end
 		-- It answered, so nothing keeps it from working.
