@@ -27,6 +27,7 @@ local goto_keys = require("@self/goto")
 local textobjects = require("@self/textobjects")
 local objects = require("@self/objects")
 local syntax = require("@self/syntax")
+local formula = require("@self/formula")
 require("@self/selections")
 local comment = require("@self/comment")
 local jumps = require("@self/jumps")
@@ -93,12 +94,16 @@ export type Object = objects.Object
 export type ObjectKind = objects.Kind
 export type TransientItem = transient.Item
 export type TransientMenu = transient.Menu
+--- A formula read by `formula.compile`, and where its names come from.
+export type Formula = formula.Formula
+export type FormulaScope = formula.Scope
 --- A float being typed in, from `floats.typing`.
 export type TypingFloat = floats.Typing
 
 -- Other plugins can use these with `require("@core")`.
 return {
 	text = text,
+	formula = formula,
 	motions = motions,
 	menu = menu,
 	features = features,

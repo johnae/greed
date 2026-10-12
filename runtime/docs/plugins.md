@@ -645,6 +645,21 @@ written to disk. `{ from, to }` replaces just that part, and `{ load = true }`
 opens the file first. Both take paths as `core.project.resolve` does, and
 `core.file.buffer(path)` is the open buffer for one.
 
+`core.formula` works out formulas: Luau's expressions, read and worked out
+by Greed itself rather than run as code, so they always finish and can only
+make a value. `core.formula.compile(source)` reads one (or gives nil and why
+not), `core.formula.eval(f, scope)` works it out with names from `scope` (a
+table, or a function asked for each name) and gives the value or nil and
+what went wrong, in words for whoever wrote it. `core.formula.show(value)`
+is how a value shows. Formulas call only the built-in functions (`sum`,
+`avg`, `count`, `min`, `max`, `round`, `fixed`, ...) and those plugins add:
+
+```luau
+core.formula.add("money", function(n) return string.format("%.2f kr", n) end, "A sum in kronor")
+```
+
+A function you add runs as the formula is worked out, so keep it quick.
+
 A buffer of your own with no file, like a page of results or a command's
 output, can be scratch: `core.file.scratch(buffer)` keeps its changes from
 counting as unsaved, so `:q` doesn't refuse over them and the status line
