@@ -1263,10 +1263,12 @@ impl<M: Measure> Renderer<M> {
             .take_while(|c| c.byte < head)
             .map(|c| c.width)
             .sum();
-        if x < view.columns {
-            x
-        } else if x >= view.columns + width {
-            x + 1 - width
+        // A cell of room on either side, where `clip` marks what's out of
+        // sight, so the cursor never sits under the mark.
+        if x < view.columns || (x == view.columns && x > 0) {
+            x.saturating_sub(1)
+        } else if x + 1 >= view.columns + width {
+            (x + 2).saturating_sub(width)
         } else {
             view.columns
         }
@@ -2306,7 +2308,30 @@ fn clip(cells: Vec<Cell>, from: usize, width: usize, end: usize) -> Vec<Cell> {
     if (from..from + width).contains(&x) {
         row.push(end_cell(end));
     }
+    // What's out of sight at either edge is marked there, as a wide table's
+    // columns past the right edge are.
+    if x > from + width && row.len() > 1 {
+        let last = row.len() - 1;
+        row[last] = clipped("›", row[last].byte);
+    }
+    if from > 0 && row.len() > 1 {
+        row[0] = clipped("‹", row[0].byte);
+    }
     row
+}
+
+/// A cell at a no-wrap line's edge, at byte `byte`, saying more of it is
+/// out of sight that way.
+fn clipped(mark: &str, byte: usize) -> Cell {
+    Cell {
+        byte,
+        text: mark.to_owned(),
+        width: 1,
+        end_of_line: false,
+        inserted: Some(Arc::from("fold")),
+        action: None,
+        scale: 1,
+    }
 }
 
 /// The cell for the end of a line, at byte `end`, where a cursor can sit

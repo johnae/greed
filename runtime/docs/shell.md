@@ -461,6 +461,10 @@ says so (`table · 12 rows`). So is `ls -l`'s output. The shell looks for a
 header in capitals with the columns lined up under it in every row, and
 when it isn't sure, the output is text: prose is never taken for a table.
 
+A table's lines don't wrap: one wider than the view goes on past its
+right edge, where `›` marks it, and moving along the line scrolls it
+sideways, `‹` marking what's gone off the left.
+
 A table the shell draws itself (after a stage, a filter or a sort) shows
 its values as people read them: sizes in bytes as `142.6 kB`, dates as
 `3 h ago` (or the date, past a week), nested JSON as `{4 fields}` or

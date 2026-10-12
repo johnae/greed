@@ -1836,7 +1836,7 @@ fn a_narrowed_view_shows_only_its_lines_wherever_the_cursor_is() {
 }
 
 #[test]
-fn lines_that_dont_wrap_are_cut_at_the_edge_and_scroll_sideways_to_the_cursor() {
+fn lines_that_dont_wrap_are_cut_at_the_edge_marked_and_scroll_sideways_to_the_cursor() {
     use greed_core::Mark;
     let mut ed = editor("|abcdefghijklmnopqrstuvwxyz\nwrapped words go on and on\n");
     let buffer = ed.view(ed.main()).buffer;
@@ -1850,18 +1850,27 @@ fn lines_that_dont_wrap_are_cut_at_the_edge_and_scroll_sideways_to_the_cursor() 
         }],
     );
     let shown = body(&frame(&mut ed, 12, 6));
-    assert_eq!(shown[0], "abcdefghij", "cut at the edge");
+    assert_eq!(
+        shown[0], "abcdefghi›",
+        "cut at the edge, saying there's more"
+    );
     assert_eq!(shown[1].trim_end(), "wrapped", "other lines still wrap");
 
     let main = ed.main();
     ed.view_mut(main).selection = greed_text::Selection::point(25);
     let shown = body(&frame(&mut ed, 12, 6));
-    assert_eq!(shown[0], "qrstuvwxyz", "scrolled to show the cursor on z");
-    assert_eq!(ed.view(main).columns, 16);
+    assert_eq!(
+        shown[0], "‹stuvwxyz",
+        "scrolled to show the cursor on z, a cell from the edge"
+    );
+    assert_eq!(ed.view(main).columns, 17);
 
     ed.view_mut(main).selection = greed_text::Selection::point(2);
     let shown = body(&frame(&mut ed, 12, 6));
-    assert_eq!(shown[0], "cdefghijkl", "back as little as shows it");
+    assert_eq!(
+        shown[0], "‹cdefghij›",
+        "back as little as shows it, clear of the mark"
+    );
 }
 
 #[test]
