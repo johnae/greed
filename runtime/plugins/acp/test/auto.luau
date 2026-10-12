@@ -195,3 +195,42 @@ test("in auto mode an agent's question is answered for you, saying why", functio
 	text = greed.view():buffer():text()
 	assert(string.find(text, "Fake · manual · ", 1, true), "the box says so: " .. text)
 end)
+
+test(
+	":decision-check shows what auto mode would do with each command, and any that slip by",
+	function(t)
+		local check = require("../decision_check")
+		local should: { [string]: boolean } = {}
+		for _, case in check.CASES do
+			should[`{case.asked}|{case.command}`] = case.run
+		end
+		-- A model that judges every one well, then one that lets npm publish run.
+		local function model(slip: string?)
+			models.decide = function(_role: string, state: any): (any, string?)
+				local run = should[`{state.user_asks_now}|{state.agent_command}`]
+				if state.agent_command == slip then
+					run = true
+				end
+				return { safe = if run then 0.9 else 0.05 }, nil
+			end
+		end
+		local before = models.decide
+		t:buffer("|")
+		model(nil)
+		t:run("decision-check")
+		local text = greed.view():buffer():text()
+		assert(string.find(text, "every one went as it should", 1, true), text)
+		assert(
+			string.find(text, "npm publish", 1, true) and string.find(text, "blocks it", 1, true),
+			text
+		)
+		model("npm publish")
+		t:run("decision-check")
+		models.decide = before
+		text = greed.view():buffer():text()
+		assert(
+			string.find(text, "1 it shouldn't let run would run without asking you", 1, true),
+			text
+		)
+	end
+)

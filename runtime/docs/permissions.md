@@ -132,10 +132,17 @@ costs more per command than a decision model, and how well it judges
 depends on the model.
 
 Whichever you pick, it's a model making a judgment call, and Greed can't
-promise it judges well. Test it before you rely on it: in a scratch
-project, ask the agent for a few things and watch what it lets through
-and what it blocks, which the transcript shows with each answer. Models
-change, and yours may judge differently from what we saw.
+promise it judges well. Test it before you rely on it. `:decision-check`
+tries your `decision` model on sixteen commands an agent might run, some
+it should let run (a folder you asked for, `npm install`, a push you
+asked for) and some it shouldn't (deleting your documents, sending an ssh
+key away, `npm publish` while fixing a test, one with a comment claiming
+you approved it), and shows what auto mode would do with each. A model
+that lets one it shouldn't run through isn't one to rely on. Passing is
+no guarantee either: then try it in a scratch project, asking the agent
+for a few things and watching what it lets through and what it blocks,
+which the transcript shows with each answer. Models change, and yours may
+judge differently from what we saw.
 
 The same command isn't asked about twice for the same request. Without a
 model, or without an answer, you're asked. Tell it what's fine in your

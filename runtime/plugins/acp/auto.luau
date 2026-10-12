@@ -174,16 +174,53 @@ local function asked(s: Session): (string?, { string }, number)
 	return now, said, count
 end
 
+--- What auto mode does with a command: lets it run or blocks it, and why.
+export type Verdict = { allow: boolean, why: string }
+
 -- What the decision model said of each command, by session and how many of
--- your messages there were then: whether it may run, and why.
-type Verdict = { allow: boolean, why: string }
+-- your messages there were then.
 local decided: { [Session]: { [string]: Verdict } } = setmetatable({}, { __mode = "k" }) :: any
 
+--- How likely the decision model thinks `command` is safe to run without
+--- asking you, from 0 to 1, for an agent working in `folder` where you
+--- asked `now` (after `before`, oldest first); nil and why without an
+--- answer. It isn't told what Greed thinks is risky (told so, it blocks
+--- what you asked for too), and the command goes as it is: the state is
+--- data to it, never instructions, and wrapped in tags a harmless command
+--- looked suspect.
+function M.judged(
+	folder: string,
+	now: string?,
+	before: { string },
+	command: string
+): (number?, string?)
+	local rules = greed.option.get("agent-auto-rules")
+	local state = {
+		project_folder = folder,
+		user_asks_now = now,
+		user_asked_before = if #before > 0 then before else nil,
+		user_rules = if type(rules) == "string" and rules ~= "" then rules else nil,
+		agent_command = command,
+	}
+	local answers, err = models.decide(M.ROLE, state, QUESTIONS)
+	return if answers then answers.safe else nil, err
+end
+
+--- What auto mode does with a command the decision model thinks `safe`
+--- to run unasked (0 to 1): nil asks you.
+function M.verdict(safe: number): Verdict?
+	local function sure(p: number): string
+		return `{math.floor(p * 100 + 0.5)}%`
+	end
+	return if safe <= UNSAFE
+		then { allow = false, why = `not safe to run unasked ({sure(1 - safe)})` }
+		elseif safe >= SAFE then { allow = true, why = `safe to run ({sure(safe)})` }
+		else nil
+end
+
 -- What the decision model says of `s` running `command`, or nil when
--- there's no model or no clear answer. It isn't told what Greed thinks is
--- risky (told so, it blocks what you asked for too), and the command goes
--- as it is: the state is data to it, never instructions, and wrapped in
--- tags a harmless command looked suspect.
+-- there's no model or no clear answer: you're asked, and it's asked again
+-- next time.
 local function judge(s: Session, command: string): Verdict?
 	local now, before, count = asked(s)
 	local known = decided[s] or {}
@@ -192,28 +229,8 @@ local function judge(s: Session, command: string): Verdict?
 	if known[key] then
 		return known[key]
 	end
-	local rules = greed.option.get("agent-auto-rules")
-	local state = {
-		project_folder = s.cwd,
-		user_asks_now = now,
-		user_asked_before = if #before > 0 then before else nil,
-		user_rules = if type(rules) == "string" and rules ~= "" then rules else nil,
-		agent_command = command,
-	}
-	local answers = models.decide(M.ROLE, state, QUESTIONS)
-	if answers == nil then
-		-- No model, or no answer: you're asked, and it's asked again next
-		-- time.
-		return nil
-	end
-	local safe = answers.safe
-	local function sure(p: number): string
-		return `{math.floor(p * 100 + 0.5)}%`
-	end
-	local result: Verdict? = if safe <= UNSAFE
-		then { allow = false, why = `not safe to run unasked ({sure(1 - safe)})` }
-		elseif safe >= SAFE then { allow = true, why = `safe to run ({sure(safe)})` }
-		else nil
+	local safe = M.judged(s.cwd, now, before, command)
+	local result = if safe then M.verdict(safe) else nil
 	if result then
 		known[key] = result
 	end
