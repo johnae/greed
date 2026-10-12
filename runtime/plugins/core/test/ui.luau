@@ -314,6 +314,23 @@ test("values and spots are found in parts not drawn again", function(t)
 	assert(#spots == 2 and buffer:slice(spots[2].from, spots[2].to) == "tail")
 end)
 
+test("on a line of several things, value_at gives the one at the position", function(t)
+	local buffer = shown(t)
+	local view = ui.mount(buffer, function()
+		return ui.column({
+			ui.line({ { text = "top" } }),
+			ui.line({
+				{ text = " one ", value = 1 },
+				{ text = " " },
+				{ text = " two ", value = 2 },
+			}),
+		})
+	end)
+	local start = buffer:line_start(1)
+	assert(view:value_at(start + 1) == 1 and view:value_at(start + 7) == 2)
+	assert(view:value_at(start + 5) == 1, "between them, the line's")
+end)
+
 test("soon draws a burst of changes once", function(t)
 	local buffer = shown(t)
 	local draws = 0

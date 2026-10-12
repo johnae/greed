@@ -1049,7 +1049,9 @@ greed.tab.set_layout({
   widget is pressed with `enter`, `space` or a click, and `tab` and
   `shift-tab` go between them; the cursor is the focus, so each client has
   its own. A span's `value` is what its line stands for, found with
-  `view:value_at(pos)` (a list's item, a grid's row);
+  `view:value_at(pos)` (a list's item, a grid's row); on a line of several
+  things, like a strip of tabs, `value_at` gives the value of the span at
+  `pos`;
   `ui.list(items, spans, { open = f, current = n })` opens an item when
   pressed and marks row `n` as a menu's selected one, for a list whose
   cursor is elsewhere, like a picker's under its query. With

@@ -29,10 +29,11 @@ local width, clip = text_helpers.width, text_helpers.clip
 local M = {}
 
 --- Text in a style; `press`, if given, makes it a widget pressing calls.
---- `value` is what its line stands for (a row's thing), found under the
---- cursor with `View:value_at`; `tag` names where it is, for `View:spots`;
---- `line` is a style for the whole line it's on. `marks` are marks of its
---- own, counted from its start, like a bar drawn over its first cell.
+--- `value` is what it and its line stand for (a row's thing, a tab's),
+--- found under the cursor with `View:value_at`; `tag` names where it is,
+--- for `View:spots`; `line` is a style for the whole line it's on. `marks`
+--- are marks of its own, counted from its start, like a bar drawn over its
+--- first cell.
 export type Span = {
 	text: string,
 	style: string?,
@@ -68,7 +69,7 @@ export type View = {
 	redraw: (self: View) -> (),
 	--- Stops drawing it; the buffer stays as it was last drawn.
 	unmount: (self: View) -> (),
-	--- The value of the line at `pos`, if a span on it has one.
+	--- The value of the span at `pos`, else of the line it's on.
 	value_at: (self: View, pos: number) -> any,
 	--- The values of its lines, top to bottom.
 	values: (self: View) -> { any },
@@ -548,14 +549,15 @@ end
 -- Some lines drawn: their text and marks, from 0 at the first line's
 -- start; each pressable span a mark whose action is `ui-press`, its data
 -- the index of what it does in `presses`; each line's value by 0-based
--- line, and where tagged spans are. A keyed part's also says what it was
--- drawn for.
+-- line, where each span with a value is, and where tagged spans are. A
+-- keyed part's also says what it was drawn for.
 type Piece = {
 	text: string,
 	lines: { string },
 	marks: { greed.Mark },
 	presses: { () -> () },
 	values: { [number]: any },
+	valued: { { from: number, to: number, value: any } },
 	spots: { [string]: { { from: number, to: number } } },
 	key: string?,
 	version: any,
@@ -570,9 +572,11 @@ local function piece_of(lines: { Line }): Piece
 		marks = {},
 		presses = {},
 		values = {},
+		valued = {},
 		spots = {},
 	}
-	local marks, presses, values, spots = piece.marks, piece.presses, piece.values, piece.spots
+	local marks, presses, values, valued, spots =
+		piece.marks, piece.presses, piece.values, piece.valued, piece.spots
 	local at = 0
 	for n, line in lines do
 		local parts: { string } = {}
@@ -582,8 +586,11 @@ local function piece_of(lines: { Line }): Piece
 			local from = at
 			at += #span.text
 			table.insert(parts, span.text)
-			if span.value ~= nil and values[n - 1] == nil then
-				values[n - 1] = span.value
+			if span.value ~= nil then
+				if values[n - 1] == nil then
+					values[n - 1] = span.value
+				end
+				table.insert(valued, { from = from, to = at, value = span.value })
 			end
 			line_style = line_style or span.line
 			local tag = span.tag
@@ -1158,7 +1165,17 @@ function M.mount(
 			end
 		end,
 		value_at = function(_self: View, pos: number): any
-			return value_of(entry, buffer:line_of(pos))
+			local line = buffer:line_of(pos)
+			local p = placed_at(entry.placed, line - (if entry.above then 1 else 0))
+			if p then
+				local rel = pos - base(entry, buffer) - p.at
+				for _, span in p.piece.valued do
+					if rel >= span.from and rel < span.to then
+						return span.value
+					end
+				end
+			end
+			return value_of(entry, line)
 		end,
 		values = function(_self: View): { any }
 			local out: { any } = {}
