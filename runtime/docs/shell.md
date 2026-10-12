@@ -424,6 +424,7 @@ Two kinds of words look at the structure of what's printed:
 | | |
 |---|---|
 | `key=value` | In a line of JSON, as many logs are, `value` in its field `key`: `level=error`, `HelmRelease.name=vikunja` (a dotted path, looking through arrays). In other lines the word itself, so `level=error` works on logfmt too |
+| `key>=value` | `>`, `>=`, `<`, `<=` compare, levels in their order (`level>=warn` keeps warnings and errors) and numbers as numbers (`took>500`); `!=` keeps the lines without it |
 | `.key.key` | The section of indented text under those keys, with the keys above it: `.status.conditions` of `kubectl get pod -o yaml`, `.conditions` of `kubectl describe`. The keys can be anywhere in the path, and the last matches by its start, so the section shows as you type it |
 
 `/.conditions ready` keeps the lines of that section with "ready" in them,

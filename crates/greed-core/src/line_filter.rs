@@ -4,10 +4,12 @@
 //! case, or else a regex. Among the words, `key=value` looks in a line of
 //! JSON (a log as JSON lines) for `value` in its field `key`, a dotted path
 //! like `HelmRelease.name`; other lines must have `key=value` in their text,
-//! as logfmt does. A word starting with `.`, like `.status.conditions`, keeps
-//! the section of nested text under those keys (YAML, indented JSON, what
-//! `kubectl describe` prints) and the keys above it; the last key matches by
-//! its start, so `.status.cond` keeps the same while it's typed.
+//! as logfmt does. `level>=warn`, `took>500` and `level!=debug` compare,
+//! levels in their order and numbers as numbers. A word starting with `.`,
+//! like `.status.conditions`, keeps the section of nested text under those
+//! keys (YAML, indented JSON, what `kubectl describe` prints) and the keys
+//! above it; the last key matches by its start, so `.status.cond` keeps the
+//! same while it's typed.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -39,13 +41,93 @@ pub struct LineFilter {
     verdicts: Mutex<HashMap<u64, bool>>,
 }
 
-/// A `key=value` word, lowercase.
+/// A `key=value` word, lowercase, or one comparing: `level>=warn`,
+/// `took>500`, `level!=debug`.
 #[derive(Debug)]
 struct Field {
     path: Vec<String>,
+    op: Op,
     value: String,
-    /// The word itself, for lines that aren't JSON.
+    /// The word itself, for lines that aren't JSON or logfmt.
     word: String,
+}
+
+/// How a field word compares the field with its value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Op {
+    /// `=`: has it in it.
+    Has,
+    /// `!=`: doesn't.
+    Not,
+    Less,
+    AtMost,
+    More,
+    AtLeast,
+}
+
+impl Field {
+    /// The field `word` is, if it's one: a key, an operator, a value.
+    fn parse(word: &str) -> Option<Self> {
+        let at = word.find(['=', '!', '<', '>']).filter(|at| *at > 0)?;
+        let (key, rest) = word.split_at(at);
+        let (op, value) = [
+            (">=", Op::AtLeast),
+            ("<=", Op::AtMost),
+            ("!=", Op::Not),
+            ("=", Op::Has),
+            (">", Op::More),
+            ("<", Op::Less),
+        ]
+        .into_iter()
+        .find_map(|(sign, op)| rest.strip_prefix(sign).map(|value| (op, value)))?;
+        Some(Self {
+            path: keys(key),
+            op,
+            value: value.to_owned(),
+            word: word.to_owned(),
+        })
+    }
+
+    /// Whether `have`, the field's value as text, passes.
+    fn passes(&self, have: &str) -> bool {
+        let have = have.to_lowercase();
+        let order = || compare(&have, &self.value);
+        match self.op {
+            Op::Has => have.contains(&self.value),
+            Op::Not => !have.contains(&self.value),
+            Op::Less => order().is_some_and(std::cmp::Ordering::is_lt),
+            Op::AtMost => order().is_some_and(std::cmp::Ordering::is_le),
+            Op::More => order().is_some_and(std::cmp::Ordering::is_gt),
+            Op::AtLeast => order().is_some_and(std::cmp::Ordering::is_ge),
+        }
+    }
+}
+
+/// How `have` compares with `want`: as numbers when both are, as log
+/// levels when both are (debug before info before warn), else as text.
+fn compare(have: &str, want: &str) -> Option<std::cmp::Ordering> {
+    if let (Ok(a), Ok(b)) = (have.parse::<f64>(), want.parse::<f64>()) {
+        return a.partial_cmp(&b);
+    }
+    if let (Some(a), Some(b)) = (level(have), level(want)) {
+        return Some(a.cmp(&b));
+    }
+    Some(have.cmp(want))
+}
+
+/// How severe a log level is, as logs spell them.
+fn level(name: &str) -> Option<u8> {
+    Some(match name {
+        "trace" => 0,
+        "debug" => 1,
+        "info" => 2,
+        "notice" => 3,
+        "warn" | "warning" => 4,
+        "error" | "err" => 5,
+        "critical" | "crit" => 6,
+        "fatal" | "panic" | "alert" | "emerg" => 7,
+        _ => return None,
+    })
 }
 
 /// Where a line is in nested text: whether it's in the section a filter
@@ -76,12 +158,8 @@ impl LineFilter {
         for word in text.split_whitespace().map(str::to_lowercase) {
             if let Some(path) = word.strip_prefix('.').filter(|p| !p.is_empty()) {
                 filter.section = keys(path);
-            } else if let Some((key, value)) = word.split_once('=').filter(|(k, _)| !k.is_empty()) {
-                filter.fields.push(Field {
-                    path: keys(key),
-                    value: value.to_owned(),
-                    word: word.clone(),
-                });
+            } else if let Some(field) = Field::parse(&word) {
+                filter.fields.push(field);
             } else {
                 filter.words.push(word);
             }
@@ -157,8 +235,16 @@ impl LineFilter {
             None
         };
         self.fields.iter().all(|field| match &json {
-            Some(value) => holds(value, &field.path, &field.value),
-            None => lower.contains(field.word.as_str()),
+            Some(value) if field.op == Op::Not => !holds(value, &field.path, &|have| {
+                have.to_lowercase().contains(&field.value)
+            }),
+            Some(value) => holds(value, &field.path, &|have| field.passes(have)),
+            None => match text_field(&lower, &field.path.join(".")) {
+                Some(have) => field.passes(&have),
+                // Not a `key=value` line: the word in its text will do.
+                None if field.op == Op::Has => lower.contains(field.word.as_str()),
+                None => field.op == Op::Not,
+            },
         })
     }
 
@@ -257,24 +343,49 @@ fn key(text: &str) -> Option<&str> {
     (!key.is_empty() && key.len() <= 64 && !key.contains(['{', '[', '"'])).then_some(key)
 }
 
-/// Whether `value` holds `want` at `path`: in a field by that name (in any
-/// case), in any item of an array on the way, as text containing it.
-fn holds(value: &Value, path: &[String], want: &str) -> bool {
+/// Whether `value` has a field at `path` (by name, in any case, through
+/// any item of an array on the way) whose text `passes`.
+fn holds(value: &Value, path: &[String], passes: &dyn Fn(&str) -> bool) -> bool {
     let Some((first, rest)) = path.split_first() else {
         return match value {
-            Value::String(text) => text.to_lowercase().contains(want),
-            Value::Number(_) | Value::Bool(_) | Value::Null => value.to_string().contains(want),
-            Value::Array(_) | Value::Object(_) => want.is_empty(),
+            Value::String(text) => passes(text),
+            Value::Number(_) | Value::Bool(_) | Value::Null => passes(&value.to_string()),
+            // Only `key=` with nothing after it: the field is there.
+            Value::Array(_) | Value::Object(_) => passes(""),
         };
     };
     match value {
         Value::Object(fields) => fields
             .iter()
             .filter(|(key, _)| key.to_lowercase() == *first)
-            .any(|(_, field)| holds(field, rest, want)),
-        Value::Array(items) => items.iter().any(|item| holds(item, path, want)),
+            .any(|(_, field)| holds(field, rest, passes)),
+        Value::Array(items) => items.iter().any(|item| holds(item, path, passes)),
         Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => false,
     }
+}
+
+/// The value of field `key` in `line`, logfmt, lowercase: `key=value` at
+/// its start or after a space, the value in quotes or up to the next space.
+fn text_field(line: &str, key: &str) -> Option<String> {
+    let needle = format!("{key}=");
+    let mut from = 0;
+    while let Some(found) = line[from..].find(&needle) {
+        let at = from + found;
+        from = at + needle.len();
+        if at > 0 && !line[..at].ends_with(char::is_whitespace) {
+            continue;
+        }
+        let rest = &line[from..];
+        return Some(match rest.strip_prefix('"') {
+            Some(quoted) => quoted.split('"').next().unwrap_or_default().to_owned(),
+            None => rest
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_owned(),
+        });
+    }
+    None
 }
 
 #[cfg(test)]
@@ -319,6 +430,36 @@ mod tests {
         );
         assert_eq!(kept("helmrelease.name=vik", log).len(), 1);
         assert_eq!(kept("level=error down", log).len(), 1);
+    }
+
+    #[test]
+    fn a_field_compares_levels_in_their_order_and_numbers_as_numbers() {
+        let log = concat!(
+            r#"{"level":"debug","took":9,"msg":"a"}"#,
+            "\n",
+            r#"{"level":"warn","took":700,"msg":"b"}"#,
+            "\n",
+            "level=error took=1200 msg=c\n",
+            "level=info took=30 msg=d\n",
+            "no fields here\n",
+        );
+        let msgs = |filter: &str| -> Vec<String> {
+            kept(filter, log)
+                .iter()
+                .map(|line| {
+                    line.chars()
+                        .rfind(char::is_ascii_lowercase)
+                        .unwrap()
+                        .to_string()
+                })
+                .collect()
+        };
+        assert_eq!(msgs("level>=warn"), ["b", "c"]);
+        assert_eq!(msgs("level<info"), ["a"]);
+        assert_eq!(msgs("took>500"), ["b", "c"]);
+        assert_eq!(msgs("took<=30"), ["a", "d"]);
+        // A line without the field isn't the value it's not.
+        assert_eq!(msgs("level!=info"), ["a", "b", "c", "e"]);
     }
 
     #[test]

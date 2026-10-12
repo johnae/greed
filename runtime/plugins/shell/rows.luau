@@ -124,7 +124,8 @@ local function keep(texts: { string }, filter: string): { number }?
 	local structured = false
 	for word in string.gmatch(filter, "%S+") do
 		table.insert(words, word)
-		structured = structured or is_section(word) or string.find(word, "^[^=]+=") ~= nil
+		-- `key=value`, `level>=warn`, `took>500`, `level!=debug`.
+		structured = structured or is_section(word) or string.find(word, "^[^=!<>]+[=!<>]") ~= nil
 	end
 	if structured then
 		-- Fields of JSON lines and sections of YAML, as a view's filter reads them.

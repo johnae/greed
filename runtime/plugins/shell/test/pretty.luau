@@ -178,3 +178,13 @@ test("a command that hasn't printed after a second says so where its output goes
 	assert(says(), "after a second")
 	shell.kill(block)
 end)
+
+test("a filter compares levels in their order", function(t)
+	local sh = open(t)
+	local logs = run(t, sh, "cat log.json")
+	shell.rows.set(sh, logs, "level>=warn")
+	local shown = assert(logs.shown)
+	assert(#shown.rows == 1 and shown.total == 3, `{#shown.rows} of {shown.total}`)
+	shell.rows.set(sh, logs, "level!=error")
+	assert(#assert(logs.shown).rows == 2, "info, and the line without a level")
+end)

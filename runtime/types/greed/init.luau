@@ -309,7 +309,7 @@ export type View = {
 	narrow: (self: View, from: number?, to: number?) -> (),
 	--- The first and last line it's narrowed to, or nil when it shows all of its buffer.
 	narrowed: (self: View) -> (number?, number?),
-	--- Shows only the lines with every word of `text` in them, without minding case, or with `regex` those it matches, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. A word `key=value` looks in a line of JSON for `value` in field `key` (a dotted path, through arrays), and for the word itself in other lines. A word `.a.b` keeps the section of indented text (YAML, indented JSON) under keys a and b, with the keys above what shows. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.
+	--- Shows only the lines with every word of `text` in them, without minding case, or with `regex` those it matches, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. A word `key=value` looks in a line of JSON or logfmt for `value` in field `key` (a dotted path, through arrays), and for the word itself in other lines; `key>=value`, `>`, `<`, `<=` compare (log levels in their order, numbers as numbers) and `key!=value` keeps lines without it. A word `.a.b` keeps the section of indented text (YAML, indented JSON) under keys a and b, with the keys above what shows. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.
 	set_filter: (self: View, text: string?, opts: { regex: boolean?, skip: number? }?) -> (),
 	--- What `set_filter` was given, while it filters.
 	filter: (self: View) -> string?,
