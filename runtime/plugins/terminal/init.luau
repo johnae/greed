@@ -90,6 +90,8 @@ export type Term = {
 	-- screen or exits, and whether that's due.
 	return_on_primary: boolean,
 	giving_back: boolean,
+	-- The agent running in it, as its hooks last said (`agent_state`).
+	agent: { name: string, state: AgentState, since: number }?,
 }
 
 local M = {}
@@ -192,6 +194,30 @@ local function needs_look(buffer: greed.Buffer, reason: string?)
 	local label = (if term then term.terminal:title() or term.command else buffer:name())
 		or "a terminal"
 	core.attention.set(key, { label = label, reason = reason, buffer = buffer })
+end
+
+--- How an agent running in a terminal says it's doing.
+export type AgentState = "working" | "waiting" | "idle"
+
+--- Says the agent `name` (like "claude") in the terminal shown in `buffer`
+--- is working, waiting for you or idle, as its hooks tell; nil says it's
+--- gone. One waiting needs you until it says otherwise. False when
+--- `buffer` isn't a terminal.
+function M.agent_state(buffer: greed.Buffer, name: string, state: AgentState?): boolean
+	local term = term_of(buffer)
+	if term == nil then
+		return false
+	end
+	local had = term.agent
+	term.agent = if state
+		then {
+			name = name,
+			state = state,
+			since = if had and had.state == state then had.since else os.time(),
+		}
+		else nil
+	needs_look(buffer, if state == "waiting" then `{name} waits for your answer` else nil)
+	return true
 end
 
 --- The terminal shown in `buffer`, if it's one.
@@ -704,6 +730,11 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	if session then
 		env.GREED_TERMINAL = session
 		env.GREED_SESSION = session
+		-- Which terminal, and the greed to reach it with, for an agent's
+		-- hooks saying how it's doing (`greed ctl agent_hook`), on a machine
+		-- where greed isn't on the PATH too.
+		env.GREED_TERMINAL_ID = tostring(buffer:id())
+		env.GREED_BIN = greed.session.program() or false
 	end
 	local spawned, started = pcall(function()
 		return greed.terminal.spawn({
@@ -1680,6 +1711,7 @@ core.objects.kind({
 			exit_code = t:exit_code(),
 			busy = t:busy(),
 			failed_commands = #term.failures,
+			agent = term.agent,
 		}
 	end,
 	relations = function(term: Term)

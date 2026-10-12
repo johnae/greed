@@ -12,7 +12,8 @@ use serde_json::{Map, Value, json};
 const USAGE: &str = "\
 usage: greed ctl tools                 list the tools the editor offers
        greed ctl TOOL [JSON | KEY=VALUE...]
-                                      run a tool, e.g. greed ctl read path=src/main.rs
+                                      run a tool, e.g. greed ctl read path=src/main.rs;
+                                      KEY=@- reads that value from standard input
        greed ctl TOOL --help           what a tool does and the arguments it takes
        greed ctl sessions              list running editors
        greed ctl agent-socket [SESSION]
@@ -303,7 +304,9 @@ fn result_text(result: &Value) -> String {
 }
 
 /// A tool's arguments: one JSON object, or `key=value` pairs where each
-/// value is JSON if it parses as JSON and a string otherwise.
+/// value is JSON if it parses as JSON and a string otherwise. `key=@-`
+/// takes the value from standard input, as a hook's JSON comes, which may
+/// be longer than an argument can be.
 fn arguments(args: &[String]) -> Result<Value, Box<dyn std::error::Error>> {
     if let [only] = args
         && only.trim_start().starts_with('{')
@@ -315,7 +318,12 @@ fn arguments(args: &[String]) -> Result<Value, Box<dyn std::error::Error>> {
         let (key, value) = arg
             .split_once('=')
             .ok_or_else(|| format!("expected KEY=VALUE or a JSON object, got {arg:?}"))?;
-        let value = serde_json::from_str(value).unwrap_or_else(|_| Value::String(value.to_owned()));
+        let value = if value == "@-" {
+            io::read_to_string(io::stdin())?
+        } else {
+            value.to_owned()
+        };
+        let value = serde_json::from_str(&value).unwrap_or(Value::String(value));
         map.insert(key.to_owned(), value);
     }
     Ok(Value::Object(map))

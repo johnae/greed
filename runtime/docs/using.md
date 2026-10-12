@@ -73,7 +73,8 @@ ssh connection sharing (`ControlMaster`).
 In one of Greed's own terminals, `greed FILE` opens the file in that session
 and returns, rather than starting an editor inside the editor, and
 `greed ctl` talks to that session. Programs there can tell from
-`$GREED_TERMINAL`, which names the session.
+`$GREED_TERMINAL`, which names the session; `$GREED_TERMINAL_ID` says which
+terminal and `$GREED_BIN` which greed runs the session.
 
 If a session can't start in the background, `GREED_NO_SESSION=1 greed FILE`
 runs the editor directly in the terminal.

@@ -1,7 +1,8 @@
 -- The session's status, for `greed ctl status`, agents and later the hub:
--- what needs you (core.attention) and the agents at work (objects of kind
--- "agent-session"), in one table. `schema` says its shape, so a reader can
--- tell an older session's from one it doesn't understand.
+-- what needs you (core.attention) and the agents at work (agent sessions,
+-- and agents in terminals as their hooks tell), in one table. `schema`
+-- says its shape, so a reader can tell an older session's from one it
+-- doesn't understand.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -31,6 +32,19 @@ function M.status(): { [string]: any }
 		state.id = found.id
 		state.label = found.label
 		table.insert(agents, state)
+	end
+	-- Agents in terminals, as their hooks say how they're doing.
+	for _, found in core.objects.list("terminal") do
+		local running = core.objects.inspect(found).agent
+		if running then
+			table.insert(agents, {
+				id = found.id,
+				label = found.label,
+				agent = running.name,
+				status = running.state,
+				since = running.since,
+			})
+		end
 	end
 	return {
 		schema = M.SCHEMA,

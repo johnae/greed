@@ -25,7 +25,8 @@ greed ctl diagnostics
 greed ctl eval code='return require("@greed").mode.get()'
 ```
 
-Arguments are `key=value` pairs (values that parse as JSON are JSON) or one
+Arguments are `key=value` pairs (values that parse as JSON are JSON; `key=@-`
+reads the value from standard input) or one
 JSON object; an argument a tool doesn't take, or a missing one it needs, is
 an error naming the ones it takes. A relative path is from the root of the
 project Greed shows, wherever Greed or the agent was started, and `~` is
@@ -331,6 +332,32 @@ works and how its work gets back to you, and it shows in `space i l` with
 the other sessions, so `d`, `R`, `b` and `x` work on it there. You talk to
 it in its terminal. Stopped or after a restart, `enter` in the list starts
 it again there with `claude --continue`.
+
+### Knowing when it waits for you
+
+Claude Code in a Greed terminal can tell Greed when it's working, waiting
+for your answer or idle, through its hooks. One waiting for you gets a dot
+on its float and shows in `greed ctl status`. Greed doesn't guess this from
+the screen, since any program could print a prompt that looks like Claude's.
+Add the hooks to `~/.claude/settings.json` (or a project's
+`.claude/settings.json`); outside Greed's terminals they do nothing:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }],
+    "Notification": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }]
+  }
+}
+```
+
+Greed's terminals give their programs `$GREED_TERMINAL_ID` (which terminal)
+and `$GREED_BIN` (the greed running the session, also where `greed ssh` put
+it), so this works on other machines too. Other agents with hooks can call
+`greed ctl agent_hook` the same way with `agent=NAME`.
 
 ## Agents inside Greed
 
