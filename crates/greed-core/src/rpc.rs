@@ -11,7 +11,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -81,13 +81,8 @@ pub struct Transport {
 impl Transport {
     /// Starts `command` (a program and its arguments) in `dir`.
     pub fn spawn(command: &[String], dir: &Path) -> io::Result<Self> {
-        let (program, args) = command
-            .split_first()
-            .ok_or_else(|| io::Error::other("no command"))?;
         crate::debug!(Rpc, "starting {} in {}", command.join(" "), dir.display());
-        let mut child = Command::new(program)
-            .args(args)
-            .current_dir(dir)
+        let mut child = crate::child::command(command, Some(dir), &[], false)?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

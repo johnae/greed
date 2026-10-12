@@ -4,7 +4,6 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use mlua::{Function, Lua, Table};
@@ -246,11 +245,9 @@ fn analyze(dir: &Path, others: &[(String, PathBuf)]) -> Result<(bool, String), S
             files.push(file);
         }
         // One thread: luau-analyze's worker threads race on shared state.
-        Command::new(analyzer)
-            .arg("-j1")
-            .current_dir(&wrapper)
-            .args(&files)
-            .output()
+        let mut argv = vec![analyzer.as_os_str(), "-j1".as_ref()];
+        argv.extend(files.iter().map(|file| file.as_os_str()));
+        crate::child::command(&argv, Some(&wrapper), &[], false)?.output()
     })();
     let _ = std::fs::remove_dir_all(&wrapper);
     let output = result.map_err(|err| err.to_string())?;

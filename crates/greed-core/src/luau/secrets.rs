@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 use mlua::{Lua, Table, Value};
 
@@ -106,8 +106,11 @@ fn from_env(name: &str) -> Option<String> {
 /// Runs `program` with `args`, giving it `input`, and returns what it printed
 /// if it succeeded.
 fn run(program: &str, args: &[&str], input: Option<&str>) -> Option<String> {
-    let mut child = Command::new(program)
-        .args(args)
+    let command: Vec<&str> = std::iter::once(program)
+        .chain(args.iter().copied())
+        .collect();
+    let mut child = crate::child::command(&command, None, &[], false)
+        .ok()?
         .stdin(if input.is_some() {
             Stdio::piped()
         } else {

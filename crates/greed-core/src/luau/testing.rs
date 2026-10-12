@@ -1073,18 +1073,18 @@ impl Vcs {
     /// time spent waiting for it doesn't count against the test's budget.
     fn run(&self, lua: &Lua, args: &[&str]) -> mlua::Result<Vec<u8>> {
         let started = Instant::now();
-        let out = std::process::Command::new(self.program)
-            .args(self.options)
-            .args(args)
-            .envs(
-                child_env(lua)
-                    .into_iter()
-                    .filter_map(|(k, v)| Some((k, v?))),
-            )
-            .current_dir(&self.dir)
-            .stdin(std::process::Stdio::null())
-            .output()
-            .map_err(|err| mlua::Error::runtime(format!("can't run {}: {err}", self.program)))?;
+        let command: Vec<&str> = std::iter::once(self.program)
+            .chain(self.options.iter().copied())
+            .chain(args.iter().copied())
+            .collect();
+        let out =
+            crate::child::command(&command, Some(Path::new(&self.dir)), &child_env(lua), false)
+                .map_err(mlua::Error::external)?
+                .stdin(std::process::Stdio::null())
+                .output()
+                .map_err(|err| {
+                    mlua::Error::runtime(format!("can't run {}: {err}", self.program))
+                })?;
         extend_deadline(lua, started.elapsed());
         if !out.status.success() {
             return Err(mlua::Error::runtime(format!(

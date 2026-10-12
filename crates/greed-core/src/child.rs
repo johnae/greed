@@ -1,4 +1,4 @@
-//! Signals Greed passes on to the programs it starts.
+//! Starting programs: what every program Greed starts gets.
 
 use nix::sys::signal::{SaFlags, SigAction, SigHandler, SigSet, Signal, sigaction};
 
@@ -29,4 +29,41 @@ pub fn pass_on_signals() {
             }
         }
     }
+}
+
+/// How Greed starts a program: `argv`'s first word, with the rest as its
+/// arguments, in `cwd`, with `env` set (`None` leaves a variable out of
+/// what it inherits), and with `group` in a process group of its own, so a
+/// signal reaches what it starts too. Its input and output are the
+/// caller's to set.
+pub fn command<S: AsRef<std::ffi::OsStr>>(
+    argv: &[S],
+    cwd: Option<&std::path::Path>,
+    env: &[(String, Option<String>)],
+    group: bool,
+) -> std::io::Result<std::process::Command> {
+    use std::os::unix::process::CommandExt;
+    let (program, rest) = argv
+        .split_first()
+        .ok_or_else(|| std::io::Error::other("an empty command line"))?;
+    let mut command = std::process::Command::new(program);
+    command.args(rest);
+    for (name, value) in env {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
+    }
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    if group {
+        command.process_group(0);
+    }
+    Ok(command)
+}
+
+/// Why `program` didn't start, naming it.
+pub fn cant_run(program: impl std::fmt::Display, err: &std::io::Error) -> std::io::Error {
+    std::io::Error::new(err.kind(), format!("can't run {program}: {err}"))
 }
