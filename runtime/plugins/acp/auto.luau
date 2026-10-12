@@ -39,8 +39,26 @@ greed.option.define({
 	default = "",
 })
 
---- How many blocks in a row before auto mode asks you instead.
+--- How many blocks in a row before auto mode asks you instead, and how
+--- many in a session, as an agent that keeps trying what it shouldn't
+--- between allowed steps would.
 M.BLOCKS = 3
+M.SESSION_BLOCKS = 20
+
+-- Whether `paths` are all in the system's folder for temporary files,
+-- where an agent may make and remove scratch files outside the project.
+local function temporary(paths: { string }): boolean
+	local temp = greed.fs.dirs().temp
+	if temp == nil then
+		return false
+	end
+	for _, path in paths do
+		if not core.project.inside(path, temp) then
+			return false
+		end
+	end
+	return true
+end
 
 -- Where your last switch (alt-a) is kept: new sessions start that way,
 -- after a restart too, unless your config sets `agent-auto` itself.
@@ -70,6 +88,8 @@ end
 function M.switch(s: Session): boolean
 	local on = not M.on(s)
 	s.auto = on
+	-- Switched on again, it starts counting blocks afresh.
+	s.auto_blocks, s.auto_blocked = nil, nil
 	greed.option.set("agent-auto", on)
 	local path = kept_at()
 	if path then
@@ -242,6 +262,13 @@ function M.said(why: string?): boolean
 	return why ~= nil and string.sub(why, 1, 5) == "auto:"
 end
 
+--- What an agent hears when auto mode blocked what it asked to do, for
+--- `why` ("auto: ..."): not a no from you, so another way may do.
+function M.refusal(why: string): string
+	return `auto mode didn't let this run ({why}). Do it another way that doesn't need it, `
+		.. "or ask the user if it's needed"
+end
+
 --- What auto mode says of `s` doing what `permission` asks: "allow" or
 --- "block" and why, or nil to leave it to you. It may wait for the decision
 --- model.
@@ -250,25 +277,36 @@ function M.decide(s: Session, permission: session.Permission): ("allow" | "block
 		return nil, nil
 	end
 	local kind = permission.kind or ""
+	-- What goes to the decision model: a command, or a change to files in
+	-- the temporary folder, as the question names it ("Write /tmp/a.txt").
+	local action: string? = nil
 	if LOOKS[kind] then
 		return "allow", "auto: only looks"
 	elseif EDITS[kind] then
 		local locations = permission.locations
-		if locations and #locations > 0 and not session.outside(s, locations) then
+		if locations == nil or #locations == 0 then
+			return nil, nil
+		elseif not session.outside(s, locations) then
 			return "allow", "auto: in the project"
+		elseif not temporary(locations) then
+			return nil, nil
 		end
+		action = permission.title
+	else
+		local command = permission.command
+		if kind ~= "execute" or command == nil or M.hard(command) then
+			return nil, nil
+		elseif not core.risk.of(command) and core.risk.safe(command) then
+			return "allow", "auto: only looks, builds or tests"
+		end
+		action = command
+	end
+	if (s.auto_blocks or 0) >= M.BLOCKS or (s.auto_blocked or 0) >= M.SESSION_BLOCKS then
+		-- Blocked a few times in a row, or many times in all: you decide,
+		-- until you've answered or switched auto mode off and on.
 		return nil, nil
 	end
-	local command = permission.command
-	if kind ~= "execute" or command == nil or M.hard(command) then
-		return nil, nil
-	elseif not core.risk.of(command) and core.risk.safe(command) then
-		return "allow", "auto: only looks, builds or tests"
-	elseif (s.auto_blocks or 0) >= M.BLOCKS then
-		-- Blocked a few times in a row: you decide until you've answered.
-		return nil, nil
-	end
-	local verdict = judge(s, command)
+	local verdict = judge(s, action :: string)
 	if verdict == nil then
 		return nil, nil
 	elseif verdict.allow then
@@ -276,6 +314,7 @@ function M.decide(s: Session, permission: session.Permission): ("allow" | "block
 		return "allow", `auto: {verdict.why}`
 	end
 	s.auto_blocks = (s.auto_blocks or 0) + 1
+	s.auto_blocked = (s.auto_blocked or 0) + 1
 	return "block", `auto: {verdict.why}`
 end
 

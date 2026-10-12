@@ -97,9 +97,11 @@ export type Session = {
 	--- Whether Greed answers its questions for you where it safely can
 	--- (auto), or leaves them all to you; nil goes by `agent-auto`.
 	--- `auto_blocks` counts the commands auto mode blocked in a row, until
-	--- you answer a question.
+	--- you answer a question, and `auto_blocked` all it blocked since it
+	--- was switched on.
 	auto: boolean?,
 	auto_blocks: number?,
+	auto_blocked: number?,
 	--- The models the agent offers, and the one it uses. `model_option` is
 	--- the id of the config option that picks it, for agents that offer
 	--- models that way rather than with `session/set_model`.
@@ -838,23 +840,30 @@ end
 --- paths), doing `title` (a call of `kind`). Inside where it works it may.
 --- An agent in a workspace of its own changes nothing outside it; one in
 --- the project asks first, Allow once or Reject, whatever you allowed it
---- before. Nil when it may, else why not.
-function M.may_write(session: Session, title: string, kind: string, paths: { string }): string?
+--- before. Nil when it may, else why not, and why a policy said no when
+--- one answered for you.
+function M.may_write(
+	session: Session,
+	title: string,
+	kind: string,
+	paths: { string }
+): (string?, string?)
 	local outside = M.outside(session, paths)
 	if outside == nil then
-		return nil
+		return nil, nil
 	elseif session.workspace then
-		return `{outside} is outside the workspace ({session.cwd})`
+		return `{outside} is outside the workspace ({session.cwd})`, nil
 	end
-	local chosen, note = M.ask(session, `{title}, outside the project`, kind, M.ONCE, paths)
+	local chosen, note, by = M.ask(session, `{title}, outside the project`, kind, M.ONCE, paths)
 	if chosen == "once" then
-		return nil
+		return nil, nil
 	end
 	-- An ACP agent gets your note as the next prompt instead.
 	return M.refused(
 		"the user didn't allow writing outside the project",
 		if session.driver then note else nil
-	)
+	),
+		by
 end
 
 local next_id = 0
@@ -1265,14 +1274,16 @@ end
 
 --- Keeps `text`, a message you sent while the agent works, and the images
 --- attached for it, to send once it can take them (see `Session.queued`).
-function M.queue(session: Session, text: string)
+--- `alone` leaves the images attached for what you write next, for a
+--- message Greed sends for you.
+function M.queue(session: Session, text: string, alone: boolean?)
 	local queued = session.queued or {}
 	if text ~= "" then
 		table.insert(queued, text)
 	end
 	session.queued = queued
 	local attached = session.attached
-	if attached then
+	if attached and not alone then
 		local images = session.queued_images or {}
 		table.move(attached, 1, #attached, #images + 1, images)
 		session.queued_images = images

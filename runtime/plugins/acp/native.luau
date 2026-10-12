@@ -1423,11 +1423,17 @@ local function call(
 	-- A change outside the project asks apart, whatever you allowed always;
 	-- in a workspace of its own it can't change anything outside.
 	local outside = if own and own.paths and locations then session.outside(s, locations) else nil
-	local refused = if outside and locations
-		then session.may_write(s, tool.title, kind, locations)
-		else nil
+	local refused, blocked_by = nil, nil
+	if outside and locations then
+		refused, blocked_by = session.may_write(s, tool.title, kind, locations)
+	end
+	if refused and auto.said(blocked_by) then
+		-- Auto mode said no, not you: the agent hears why, to find another way.
+		refused = auto.refusal(blocked_by :: string)
+	end
 	-- Whether you were asked and said no, and what you wrote then.
-	local rejected: boolean, told: string? = refused ~= nil and s.workspace == nil, nil
+	local rejected: boolean, told: string? =
+		refused ~= nil and s.workspace == nil and not auto.said(blocked_by), nil
 	if refused == nil then
 		local title = if widens
 			then `{tool.title}, which {widens}`
@@ -1453,8 +1459,7 @@ local function call(
 		if not ok and auto.said(by) then
 			-- Auto mode blocked it: the agent hears why, to find another
 			-- way, and it isn't counted as you saying no.
-			refused = `auto mode didn't let this run ({by}). Do it another way that doesn't need `
-				.. "it, or ask the user if it's needed"
+			refused = auto.refusal(by :: string)
 		elseif not ok then
 			local why = if widens then session.NOT_WIDENED else "the user didn't allow it"
 			refused = session.refused(why, note)

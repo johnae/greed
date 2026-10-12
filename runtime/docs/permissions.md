@@ -108,11 +108,17 @@ and the command, with your newest message apart from the ones before it,
 and says how likely the command is safe to run without asking you, given
 what you asked for. Safe (60% or more) lets it run; unsafe (20% or less)
 blocks it; anything in between asks you, so a model that can't tell asks
-you rather than guessing. Asked to clean out
-`/tmp/scratch`, an `rm -rf /tmp/scratch` goes ahead; a deploy you never
-mentioned doesn't. A blocked command goes back to the agent with the
-reason, to find another way, without stopping its turn; after three
-blocks in a row you're asked instead, until you've answered one.
+you rather than guessing. Asked to clean out `/tmp/scratch`, an `rm -rf
+/tmp/scratch` goes ahead; a deploy you never mentioned doesn't. Files the
+agent writes, moves or deletes with its own tools in the system's folder
+for temporary files (`/tmp`, or `$TMPDIR`) go to the model the same way.
+
+A blocked command goes back to the agent with the reason, to find another
+way, without stopping its turn. Greed's own agent hears it at once; an
+ACP agent like Claude Code can only be told no, so the reason follows as
+its next message once its turn ends. After three blocks in a row you're
+asked instead, until you've answered one, and after twenty in a session
+until you switch auto mode off and on again.
 
 `:models` sets which model decides, the `fast` one until you pick another.
 Either kind of model works. A decision model made for these answers, like
@@ -153,10 +159,11 @@ greed.option.set("agent-auto-rules", "Deleting under /tmp is fine. Never touch t
 ```
 
 A few things always ask you, in auto mode too, and the decision model
-never sees them: changes outside the project, anything run as root
-(`sudo`), force pushes and remote deletes, programs that change the
-machine itself (`dd`, `mkfs`, `shutdown`), and deleting the root, your
-home or a folder right under either. An answer auto mode gave shows in the
+never sees them: the agent's own changes to files outside both the
+project and the temporary folder, anything run as root (`sudo`), force
+pushes and remote deletes, programs that change the machine itself (`dd`,
+`mkfs`, `shutdown`), and deleting the root, your home or a folder right
+under either. An answer auto mode gave shows in the
 transcript with why, like `? Run cargo test: Allow once (auto: only looks,
 builds or tests)` or `Reject (auto: not safe to run unasked (97%))`.
 

@@ -3593,3 +3593,32 @@ test(
 		assert(string.find(said(s), "Done another way.", 1, true), said(s))
 	end
 )
+
+test(
+	"in auto mode Greed's agent writes in the temporary folder as the decision model lets it",
+	function(t)
+		local temp = assert(greed.fs.dirs().temp)
+		local path = `{temp}/greed-auto-{greed.now()}.txt`
+		local asked = script({
+			calling("write_file", { path = path, text = "scratch\n" }),
+			{ text = "Written.", calls = {}, stop = "done" },
+		})
+		local before = models.decide
+		models.decide = function(_role: string, _state: any): (any, string?)
+			return { safe = 0.9 }, nil
+		end
+		greed.option.set("agent-auto", true)
+		local s = assert(acp.start(GREED, t:tempdir({ ["a.txt"] = "x\n" })))
+		greed.spawn(function()
+			acp.prompt(s, "make a scratch file in the temp folder")
+		end)
+		t:wait_for(function()
+			return s.status == "idle"
+		end)
+		greed.option.set("agent-auto", false)
+		models.decide = before
+		assert(greed.fs.read(path) == "scratch\n", "written without asking")
+		assert(#asked == 2, `{#asked} requests`)
+		greed.fs.remove(path)
+	end
+)

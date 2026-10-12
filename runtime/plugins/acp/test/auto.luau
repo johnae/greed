@@ -184,6 +184,9 @@ test("in auto mode an agent's question is answered for you, saying why", functio
 	local blocked = s.entries[#s.entries].chosen
 	assert(blocked == "Reject (auto: not safe to run unasked (90%))", blocked)
 	assert(s.auto_blocks == 1)
+	-- An ACP agent's answer is only an option: why follows as its next message.
+	local queued = (s.queued or {})[1] or ""
+	assert(string.find(queued, "Run python3 x.py: auto mode didn't let this run", 1, true), queued)
 	-- New sessions start as you switched the last one, after a restart too.
 	assert(greed.option.get("agent-auto") == true, "new sessions start in auto")
 	local kept = `{greed.fs.dirs().data}/agent-auto`
@@ -232,5 +235,42 @@ test(
 			string.find(text, "1 it shouldn't let run would run without asking you", 1, true),
 			text
 		)
+	end
+)
+
+test(
+	"changes in the temporary folder go to the decision model; elsewhere outside, to you",
+	function(t)
+		local s = session_in(t, "make a scratch file in /tmp")
+		local temp = assert(greed.fs.dirs().temp)
+		local given = deciding(SAFE, function()
+			local scratch = asking("edit", { `{temp}/scratch/a.txt` })
+			scratch.title = `Write {temp}/scratch/a.txt`
+			local verdict, why = auto.decide(s, scratch)
+			assert(verdict == "allow" and why == "auto: safe to run (95%)", tostring(why))
+			local home = asking("edit", { `{temp}/a.txt`, "/etc/hosts" })
+			assert(auto.decide(s, home) == nil, "one file elsewhere outside asks you")
+		end)
+		assert(#given == 1, `asked {#given} times`)
+		assert(greed.json.decode(given[1]).agent_command == `Write {temp}/scratch/a.txt`, given[1])
+	end
+)
+
+test(
+	"after twenty blocks in a session you're asked, until auto mode is switched on again",
+	function(t)
+		local s = session_in(t)
+		deciding(UNSAFE, function()
+			for i = 1, auto.SESSION_BLOCKS do
+				assert(auto.decide(s, asking("execute", nil, `python3 x{i}.py`)) == "block")
+				-- An answer of yours between them, so they're never three in a row.
+				s.auto_blocks = 0
+			end
+			assert(auto.decide(s, asking("execute", nil, "python3 more.py")) == nil, "asks you")
+			auto.switch(s)
+			auto.switch(s)
+			assert(auto.decide(s, asking("execute", nil, "python3 again.py")) == "block")
+		end)
+		greed.option.set("agent-auto", false)
 	end
 )

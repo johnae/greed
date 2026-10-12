@@ -201,6 +201,11 @@ local function decide(s: Session, permission: session.Permission): (string?, str
 		elseif verdict == "block" then option_of(permission, "reject_once")
 		else nil
 	if option then
+		if verdict == "block" and why and s.driver == nil then
+			-- An ACP agent's answer can only be an option: why goes to it
+			-- as the next message, once its turn ends, to find another way.
+			session.queue(s, `{permission.title}: {auto.refusal(why)}`, true)
+		end
 		return option, why
 	end
 	return workspace_edits(s, permission), nil
