@@ -724,6 +724,8 @@ fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
             table.set("path", to.path)?;
             table.set("host", to.host)?;
             table.set("window", to.window)?;
+            table.set("back", to.back)?;
+            table.set("home", to.home)?;
             Ok::<_, mlua::Error>(table)
         })
         .transpose()

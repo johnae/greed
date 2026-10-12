@@ -1119,8 +1119,10 @@ export type Sessions = {
 	--- session for `path`'s project, even when one is running for it. With
 	--- `host`, the session is on that machine, reached as `greed ssh` does.
 	--- With `window`, a window client opens it in another window and stays
-	--- on this session; a terminal goes to it as without.
-	switch: (to: { name: string?, path: string?, new: boolean?, host: string?, window: boolean? }) -> (),
+	--- on this session; a terminal goes to it as without. `back` goes to where
+	--- the client was before, on whichever machine, and `home` to the session
+	--- on the client's own machine it was on last; each goes on its own.
+	switch: (to: { name: string?, path: string?, new: boolean?, host: string?, window: boolean?, back: boolean?, home: boolean? }) -> (),
 }
 
 --- JSON. Tables with keys 1..n become arrays, other tables objects; an

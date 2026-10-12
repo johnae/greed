@@ -253,6 +253,68 @@ fn the_terminal_follows_when_its_session_switches_to_another_machine() {
     world.eval("remote", "require('@greed').quit()");
 }
 
+/// Whether a client shows the session `name`.
+fn shows(world: &World, name: &str) -> bool {
+    world.eval(
+        name,
+        "return tostring(require('@greed').session.attached())",
+    ) == "true"
+}
+
+/// Asks the session `here` to send its client to the project `remote` on
+/// another machine, the way a plugin would; true once asked.
+fn go_to_the_other_machine(world: &World) -> bool {
+    let file = world.root.join("remote/b.txt");
+    let script = format!(
+        "require('@greed').session.switch({{ host = 'somehost', path = {:?} }})",
+        file.to_str().unwrap()
+    );
+    world.eval("here", &script);
+    true
+}
+
+#[test]
+fn the_terminal_goes_back_and_home_across_machines() {
+    let Some(world) = World::new("switch-back") else {
+        return;
+    };
+    let here = world.project("here", &[("a.txt", "on this machine")]);
+    world.project("remote", &[("b.txt", "on the other machine")]);
+    let fake_ssh = fake_ssh(&world);
+    let out = world.terminal(
+        &here,
+        "a.txt",
+        &[
+            ("GREED_SSH", fake_ssh.to_str().unwrap()),
+            ("GREED_REMOTE", GREED),
+        ],
+        &[
+            Step::Until("the session", running),
+            Step::Shows("on this machine"),
+            Step::Keys(" B"),
+            Step::Shows("nowhere to go back to"),
+            Step::Until("the switch", go_to_the_other_machine),
+            Step::Shows("on the other machine"),
+            Step::Until("the other machine", |w| {
+                shows(w, "remote") && !shows(w, "here")
+            }),
+            Step::Keys(" B"),
+            Step::Until("back here", |w| shows(w, "here") && !shows(w, "remote")),
+            Step::Keys(" B"),
+            Step::Until("back there", |w| shows(w, "remote") && !shows(w, "here")),
+            Step::Keys(":session-home\r"),
+            Step::Until("home", |w| shows(w, "here") && !shows(w, "remote")),
+            Step::Keys(":detach\r"),
+        ],
+    );
+    assert!(
+        out.contains("detached; greed attach here comes back"),
+        "{out}"
+    );
+    world.eval("remote", "require('@greed').quit()");
+    world.eval("here", "require('@greed').quit()");
+}
+
 /// A fake ssh agent at `path`, answering every request with no keys and
 /// leaving `agent-asked` in the world's folder once asked.
 fn fake_agent(world: &World, path: &std::path::Path) {

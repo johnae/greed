@@ -6,6 +6,8 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use greed_core::SwitchTo;
@@ -158,49 +160,149 @@ pub fn open_inside(name: &str, path: Option<&Path>) -> Result<(), Error> {
 }
 
 /// Shows the session called `name` in this terminal, asking it to open
-/// `open`, and follows the client to any session it switches to, until a
-/// session quits or lets the terminal go.
-fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> Result<(), Error> {
-    // A terminal or shell is asked for once, not again after a switch.
+/// `open`, and follows the client wherever it goes from there.
+fn follow(name: String, open: Option<PathBuf>, opening: Opening) -> Result<(), Error> {
+    travel(Next::Here { name, open }, opening)
+}
+
+/// A session this client showed: on this machine, or on `host`. A session
+/// on another machine whose greed doesn't say its name is that machine's
+/// default one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Place {
+    host: Option<String>,
+    session: Option<String>,
+}
+
+/// How many places the client remembers for going back.
+const TRAIL: usize = 20;
+
+/// Where the client goes next.
+enum Next {
+    /// The session `name` here, asked to open `open`.
+    Here { name: String, open: Option<PathBuf> },
+    /// The session `to` points at on `host`, or with `new` another beside
+    /// the one there.
+    There {
+        host: String,
+        to: SwitchTo,
+        new: bool,
+    },
+}
+
+/// What `greed ssh` needs for one machine: found once per visit.
+struct Machine {
+    host: String,
+    config: Option<String>,
+    greed: String,
+    agent: Option<PathBuf>,
+}
+
+impl Machine {
+    fn reach(host: &str) -> Result<Self, Error> {
+        Ok(Self {
+            host: host.to_owned(),
+            config: bring_config(host),
+            greed: remote_greed(host)?,
+            agent: relays_agent(host),
+        })
+    }
+}
+
+/// Shows sessions in this terminal or window, starting with `next`, and
+/// follows the client to wherever it switches, here or on other machines,
+/// keeping where it was so it can go back, until a session quits or lets it
+/// go. A terminal or shell (`opening`) is asked for once, not again after a
+/// switch.
+fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
+    let mut trail: Vec<Place> = Vec::new();
+    let mut machine: Option<Machine> = None;
+    // What to say once the next session shows, like why it didn't go back.
+    let mut problem: Option<String> = None;
     loop {
-        let attached =
-            ctl::connect_to(Some(&name))?.attach_opening(client::kind(), open.as_deref(), opening);
-        let Attachment { reader, writer, .. } = match attached {
-            Ok(attachment) => attachment,
-            Err(err) => {
-                let err: Error = err.into();
-                let Some(refused) = versions::other_version(&err) else {
-                    return Err(err);
-                };
-                // Another version runs it: what to do is the user's to say.
-                match settle(&name, &refused)? {
-                    Some(next) => {
-                        name = next;
-                        continue;
+        let (place, ended) = match &mut next {
+            Next::Here { name, open } => {
+                let attached = ctl::connect_to(Some(name))?.attach_opening(
+                    client::kind(),
+                    open.as_deref(),
+                    opening,
+                );
+                let Attachment { reader, writer, .. } = match attached {
+                    Ok(attachment) => attachment,
+                    Err(err) => {
+                        let err: Error = err.into();
+                        let Some(refused) = versions::other_version(&err) else {
+                            return Err(err);
+                        };
+                        // Another version runs it: what to do is the user's
+                        // to say.
+                        match settle(name, &refused)? {
+                            Some(beside) => {
+                                *name = beside;
+                                continue;
+                            }
+                            None => return Ok(()),
+                        }
                     }
-                    None => return Ok(()),
+                };
+                // Coming back to a machine finds it again, bringing your
+                // config as it is then.
+                machine = None;
+                let place = Place {
+                    host: None,
+                    session: Some(name.clone()),
+                };
+                (place, show(reader, writer, false, None, problem.take())?)
+            }
+            Next::There { host, to, new } => {
+                if machine.as_ref().is_none_or(|m| m.host != *host) {
+                    machine = Some(Machine::reach(host)?);
+                }
+                let there = machine.as_ref().expect("just reached");
+                match ssh_once(there, to, opening, *new, problem.take()) {
+                    Ok((session, ended)) => {
+                        let place = Place {
+                            host: Some(host.clone()),
+                            session: session.or_else(|| to.session.clone()),
+                        };
+                        (place, ended)
+                    }
+                    Err(err) => {
+                        let Some(refused) = versions::other_version(&err) else {
+                            return Err(err);
+                        };
+                        // Another version runs it there: what to do is the
+                        // user's to say, and it's done there.
+                        match settle_remote(host, &there.greed, &refused)? {
+                            Some(beside) => {
+                                *new = beside;
+                                continue;
+                            }
+                            None => return Ok(()),
+                        }
+                    }
                 }
             }
         };
         opening = Opening::Nothing;
-        match show(reader, writer, false, None)? {
-            Output::Switch(SwitchTo {
-                host: Some(host),
-                session,
-                path,
-                ..
-            }) => {
-                return ssh(
-                    &host,
-                    session.as_deref(),
-                    path.as_deref(),
-                    Opening::Nothing,
-                    false,
-                );
+        // Each place once, the latest last, so going back twice comes back.
+        trail.retain(|p| *p != place);
+        trail.push(place.clone());
+        if trail.len() > TRAIL {
+            trail.remove(0);
+        }
+        next = match ended {
+            Output::Switch(to) => {
+                let (to, said) = where_to(to, &place, &mut trail)?;
+                problem = said;
+                to
             }
-            Output::Switch(to) => (name, open) = resolve(&to)?,
             Output::Detached => {
-                println!("detached; greed attach {name} comes back");
+                match (&place.host, &place.session) {
+                    (Some(host), _) => println!("detached; greed ssh {host} comes back"),
+                    (None, Some(name)) => println!("detached; greed attach {name} comes back"),
+                    (None, None) => println!("detached"),
+                }
                 return Ok(());
             }
             Output::Exit
@@ -212,8 +314,76 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> 
             | Output::ReadClipboardImage(_)
             | Output::SshAgentRequest(..)
             | Output::Notify(_) => return Ok(()),
-        }
+        };
     }
+}
+
+/// Where a switch `to` from `here` goes, with the places the client has been
+/// (`trail`, each once, ending with `here`): back to the latest before it,
+/// home to the session on this machine it was on last (or the one for this
+/// folder), to another machine, or to a session on the same machine as
+/// `here`. Also what to tell the user there, as when there's nowhere to go
+/// back to.
+fn where_to(
+    to: SwitchTo,
+    here: &Place,
+    trail: &mut Vec<Place>,
+) -> Result<(Next, Option<String>), Error> {
+    // A session here that has ended since is passed over; one on another
+    // machine is found (or started) there.
+    let live = ctl::live_sessions()?;
+    let go = |place: &Place| -> Option<Next> {
+        match (&place.host, &place.session) {
+            (Some(host), session) => Some(Next::There {
+                host: host.clone(),
+                to: SwitchTo {
+                    session: session.clone(),
+                    ..SwitchTo::default()
+                },
+                new: false,
+            }),
+            (None, Some(name)) if live.contains(name) => Some(Next::Here {
+                name: name.clone(),
+                open: None,
+            }),
+            (None, _) => None,
+        }
+    };
+    if to.back {
+        // The latest place before this one; sessions here that ended since
+        // are forgotten.
+        while trail.len() > 1 {
+            let before = trail[trail.len() - 2].clone();
+            if let Some(next) = go(&before) {
+                return Ok((next, None));
+            }
+            trail.remove(trail.len() - 2);
+        }
+        let stay = go(here).ok_or("the session ended")?;
+        return Ok((stay, Some("nowhere to go back to".to_owned())));
+    }
+    if to.home {
+        let last_here = trail.iter().rev().filter(|p| p.host.is_none()).find_map(go);
+        if let Some(next) = last_here {
+            return Ok((next, None));
+        }
+        let (name, open) = resolve(&SwitchTo::default())?;
+        return Ok((Next::Here { name, open }, None));
+    }
+    // Anywhere else is on the machine named, or on the one shown.
+    if let Some(host) = to.host.clone().or_else(|| here.host.clone()) {
+        let to = SwitchTo { host: None, ..to };
+        return Ok((
+            Next::There {
+                host,
+                to,
+                new: false,
+            },
+            None,
+        ));
+    }
+    let (name, open) = resolve(&to)?;
+    Ok((Next::Here { name, open }, None))
 }
 
 /// Asks what to do about the session `name` here, which another version
@@ -324,15 +494,20 @@ pub fn open_window(to: SwitchTo) {
 /// Shows an attached session in this terminal: input goes to `writer` and
 /// frames come from `reader`, one JSON message per line, from a session on
 /// another machine with `remote`. The session's requests for your ssh agent
-/// go to `agent`, the one this client relays. Returns how it ended.
+/// go to `agent`, the one this client relays. `problem` goes on its status
+/// line. Returns how it ended.
 fn show(
     reader: impl BufRead + Send + 'static,
     mut writer: impl Write + Send + 'static,
     remote: bool,
     agent: Option<PathBuf>,
+    problem: Option<String>,
 ) -> Result<Output, Error> {
     client::set_remote(remote);
     let (input, inputs) = crossbeam_channel::unbounded::<Input>();
+    if let Some(problem) = problem {
+        let _ = input.send(Input::Problem(problem));
+    }
     let (outputs, output) = crossbeam_channel::unbounded::<Output>();
     std::thread::spawn(move || {
         for message in inputs {
@@ -350,7 +525,7 @@ fn show(
     let replies = input.clone();
     // Whether the agent's last failure was said, so a burst of requests
     // says it once, and again only after it answered in between.
-    let said = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let failure_said = Arc::new(AtomicBool::new(false));
     std::thread::spawn(move || {
         for line in reader.lines() {
             let Ok(line) = line else { break };
@@ -367,15 +542,15 @@ fn show(
             };
             // Asked off this thread: a key touch can take a while.
             if let Output::SshAgentRequest(id, body) = message {
-                let (agent, replies, said) = (agent.clone(), replies.clone(), said.clone());
+                let (agent, replies, failure_said) =
+                    (agent.clone(), replies.clone(), failure_said.clone());
                 std::thread::spawn(move || {
-                    use std::sync::atomic::Ordering;
                     let answer = greed_core::ssh_agent::ask_base64(agent.as_deref(), &body);
                     // Why it failed goes on the status line, rather than
                     // only "agent refused operation" in the program.
                     match &answer {
-                        Ok(_) => said.store(false, Ordering::Relaxed),
-                        Err(why) if !said.swap(true, Ordering::Relaxed) => {
+                        Ok(_) => failure_said.store(false, Ordering::Relaxed),
+                        Err(why) if !failure_said.swap(true, Ordering::Relaxed) => {
                             let _ = replies.send(Input::Problem(why.clone()));
                         }
                         Err(_) => {}
@@ -523,84 +698,29 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
 
 /// `greed ssh`: shows a session on `host`, through `greed bridge` run there
 /// over ssh, starting one if none is running, or with `new` another one
-/// beside it. `$GREED_SSH` replaces the ssh command and `$GREED_REMOTE` the
-/// greed on the other end.
+/// beside it, and follows the client wherever it goes from there.
+/// `$GREED_SSH` replaces the ssh command and `$GREED_REMOTE` the greed on
+/// the other end.
 pub fn ssh(
     host: &str,
     name: Option<&str>,
     file: Option<&str>,
-    mut opening: Opening,
-    mut new: bool,
+    opening: Opening,
+    new: bool,
 ) -> Result<(), Error> {
-    let mut host = host.to_owned();
-    let mut config = bring_config(&host);
-    let mut greed = remote_greed(&host)?;
-    let mut agent = relays_agent(&host);
-    let mut to = SwitchTo {
+    let to = SwitchTo {
         session: name.map(str::to_owned),
         path: file.map(str::to_owned),
-        host: None,
-        window: false,
+        ..SwitchTo::default()
     };
-    // A terminal or shell is asked for once, not again after a switch.
-    loop {
-        let ended = match ssh_once(
-            &host,
-            &greed,
-            &to,
-            config.as_deref(),
-            opening,
+    travel(
+        Next::There {
+            host: host.to_owned(),
+            to,
             new,
-            agent.as_deref(),
-        ) {
-            Ok(ended) => ended,
-            Err(err) => {
-                let Some(refused) = versions::other_version(&err) else {
-                    return Err(err);
-                };
-                // Another version runs it there: what to do is the user's
-                // to say, and it's done there.
-                match settle_remote(&host, &greed, &refused)? {
-                    Some(beside) => {
-                        new = beside;
-                        continue;
-                    }
-                    None => return Ok(()),
-                }
-            }
-        };
-        opening = Opening::Nothing;
-        new = false;
-        match ended {
-            // The bridge on the other end finds (or starts) the session to
-            // switch to; a new connection is the simplest way to ask it. A
-            // switch to another machine brings the config there too.
-            Output::Switch(next) => {
-                if let Some(other) = &next.host
-                    && *other != host
-                {
-                    host.clone_from(other);
-                    config = bring_config(&host);
-                    greed = remote_greed(&host)?;
-                    agent = relays_agent(&host);
-                }
-                to = next;
-            }
-            Output::Detached => {
-                println!("detached; greed ssh {host} comes back");
-                return Ok(());
-            }
-            Output::Exit
-            | Output::Frame(_)
-            | Output::Delta(_)
-            | Output::Image(_)
-            | Output::Scene(_)
-            | Output::Clipboard(_)
-            | Output::ReadClipboardImage(_)
-            | Output::SshAgentRequest(..)
-            | Output::Notify(_) => return Ok(()),
-        }
-    }
+        },
+        opening,
+    )
 }
 
 /// Asks what to do about the session on `host` that another version of
@@ -730,20 +850,25 @@ fn relays_agent(host: &str) -> Option<PathBuf> {
         .or(local)
 }
 
-/// Shows the session `to` points at on `host` until it ends, lets go or
-/// switches; returns which. With `agent`, an ssh agent's socket here, it
+/// Shows the session `to` points at on `machine` until it ends, lets go or
+/// switches; returns the session's name, when its greed says it, and which
+/// of those it was. With an agent to relay, an ssh agent's socket here, it
 /// relays that agent to the session, which then has one way to it: ssh's
-/// own forwarding is off.
+/// own forwarding is off. `problem` goes on its status line once it shows.
 fn ssh_once(
-    host: &str,
-    remote_greed: &str,
+    machine: &Machine,
     to: &SwitchTo,
-    config: Option<&str>,
     opening: Opening,
     new: bool,
-    agent: Option<&Path>,
-) -> Result<Output, Error> {
-    let line = bridge_command(remote_greed, to, config, new);
+    problem: Option<String>,
+) -> Result<(Option<String>, Output), Error> {
+    let Machine {
+        host,
+        config,
+        greed,
+        agent,
+    } = machine;
+    let line = bridge_command(greed, to, config.as_deref(), new);
     let attach_failed = |err: Error| -> Error {
         // Another version there is for the caller to ask about.
         if versions::other_version(&err).is_some() {
@@ -758,7 +883,7 @@ fn ssh_once(
     };
     let (mut child, mut writer, mut reader) =
         remote_with(host, options, &line).map_err(attach_failed)?;
-    handshake(
+    let session = handshake(
         &mut reader,
         &mut writer,
         to.session.as_deref(),
@@ -766,26 +891,26 @@ fn ssh_once(
         agent.is_some(),
     )
     .map_err(attach_failed)?;
-    let ended = show(reader, writer, true, agent.map(Path::to_path_buf))?;
+    let ended = show(reader, writer, true, agent.clone(), problem)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
     let _ = child.kill();
     let _ = child.wait();
-    Ok(ended)
+    Ok((session, ended))
 }
 
 /// Asks to attach over `reader` and `writer`, already connected to the
 /// session `session` (or whichever the other end picks). Fails with the
 /// session's reason if it refuses, e.g. because the two ends run greed
 /// versions that don't speak the same protocol. With `agent`, it says it
-/// relays your ssh agent.
+/// relays your ssh agent. Returns the session's name, when its greed says.
 fn handshake(
     reader: &mut impl BufRead,
     writer: &mut impl Write,
     session: Option<&str>,
     opening: Opening,
     agent: bool,
-) -> Result<(), Error> {
+) -> Result<Option<String>, Error> {
     let mut params = control::attach_params(client::kind());
     opening.ask(&mut params);
     if agent {
@@ -808,7 +933,7 @@ fn handshake(
         let said = error["message"].as_str().unwrap_or("refused");
         return Err(control::Refused::new(session, said).into());
     }
-    Ok(())
+    Ok(response["result"]["session"].as_str().map(str::to_owned))
 }
 
 /// The ssh command, which `$GREED_SSH` replaces.
@@ -966,8 +1091,7 @@ mod tests {
         let to = SwitchTo {
             session: Some("greed".to_owned()),
             path: Some("it's here.rs".to_owned()),
-            host: None,
-            window: false,
+            ..SwitchTo::default()
         };
         assert_eq!(
             bridge_command(
@@ -978,12 +1102,7 @@ mod tests {
             ),
             r#"GREED_SSH_CONFIG_DIR="$HOME/.cache/greed/config-from-box" exec 'greed' 'bridge' '--session' 'greed' 'it'\''s here.rs'"#
         );
-        let plain = SwitchTo {
-            session: None,
-            path: None,
-            host: None,
-            window: false,
-        };
+        let plain = SwitchTo::default();
         assert_eq!(
             bridge_command("/opt/greed", &plain, None, false),
             "exec '/opt/greed' 'bridge'"

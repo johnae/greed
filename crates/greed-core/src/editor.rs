@@ -322,11 +322,17 @@ impl<'a> CurrentProject<'a> {
 /// of the project a path is in (opening the path), started if it isn't
 /// running; on another machine, over `greed ssh`, with `host`. With
 /// `window`, a window client opens it in another window and stays; a
-/// terminal goes to it as it would anyway.
+/// terminal goes to it as it would anyway. With `back`, the client goes to
+/// where it was before, on whichever machine; with `home`, to the session on
+/// its own machine it was on last. Only the client knows those places.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SwitchTo {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub window: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub back: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub home: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

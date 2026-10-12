@@ -49,3 +49,25 @@ test("a host typed in the picker that isn't listed is connected to", function(t)
 	assert(to and to.host == "lab-7", "switched to the typed host")
 	hosts.ssh_config = nil
 end)
+
+test("on another machine the picker offers home first, which sends the client home", function(t)
+	hosts.ssh_config = `{t:tempdir({ ["config"] = "Host build-box\n" })}/config`
+	t:buffer("|")
+	t:run("connect")
+	assert(not string.find(table.concat(t:floats(), "\n"), "home", 1, true), "not here")
+	t:keys("esc")
+	local away = hosts.away
+	hosts.away = function()
+		return true
+	end
+	t:run("connect")
+	local shown = table.concat(t:floats(), "\n")
+	local home = string.find(shown, "home  (the machine you are at)", 1, true)
+	local host = string.find(shown, "build-box", 1, true)
+	hosts.away = away
+	assert(home and host and home < host, shown)
+	t:keys("enter")
+	local to = t:switched()
+	assert(to and to.home and to.host == nil, "home")
+	hosts.ssh_config = nil
+end)

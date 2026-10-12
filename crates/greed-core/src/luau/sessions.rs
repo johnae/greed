@@ -67,15 +67,27 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     session.set(
         "switch",
         lua.create_function(|lua, spec: Table| {
+            let flag = |name: &str| -> LuaResult<bool> {
+                Ok(spec.get::<Option<bool>>(name)?.unwrap_or(false))
+            };
             let mut to = SwitchTo {
                 session: spec.get("name")?,
                 path: spec.get("path")?,
                 host: spec.get("host")?,
-                window: spec.get::<Option<bool>>("window")?.unwrap_or(false),
+                window: flag("window")?,
+                back: flag("back")?,
+                home: flag("home")?,
             };
-            if to.session.is_none() && to.path.is_none() && to.host.is_none() {
+            let somewhere = to.session.is_some() || to.path.is_some() || to.host.is_some();
+            if to.back || to.home {
+                if somewhere || to.window || (to.back && to.home) {
+                    return Err(mlua::Error::runtime(
+                        "back and home go on their own: no name, path, host, window or each other",
+                    ));
+                }
+            } else if !somewhere {
                 return Err(mlua::Error::runtime(
-                    "switch to what? give a session name, a path or a host",
+                    "switch to what? give a session name, a path or a host, or back or home",
                 ));
             }
             // A session of its own, even if one runs for that project here.

@@ -736,7 +736,11 @@ fn serve_connection(
                     let _ = writeln!(lock(&shared), "{refused}");
                     return;
                 }
-                let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": handshake() });
+                // Its name, for a client that came over `greed ssh` without
+                // knowing which session it would get, to come back to.
+                let mut result = handshake();
+                result["session"] = Value::from(session);
+                let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": result });
                 if writeln!(lock(&shared), "{ok}").is_ok() {
                     closing.attached = true;
                     let _ = attachments.send(Attachment::asked(reader, writer, &message["params"]));

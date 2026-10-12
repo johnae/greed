@@ -81,9 +81,22 @@ function M.connect(host: string)
 	greed.session.switch({ host = host })
 end
 
--- Every host the picker lists: recent ones first, then the configured.
+--- Whether this session is on another machine than you, as one `greed ssh`
+--- started is.
+function M.away(): boolean
+	return greed.session.remote()
+end
+
+-- The value of the picker's item for your own machine, apart from host names.
+local HOME = {}
+
+-- Every host the picker lists: your own machine first when this session
+-- is on another, then recent ones, then the configured.
 local function items(): { picker.Item }
 	local list: { picker.Item } = {}
+	if M.away() then
+		table.insert(list, { label = "home  (the machine you are at)", value = HOME })
+	end
 	local listed: { [string]: boolean } = {}
 	local function add(host: string, note: string)
 		if not listed[host] then
@@ -111,7 +124,11 @@ greed.command({
 			return
 		end
 		picker.pick("Connect to", items(), function(item)
-			M.connect(item.value)
+			if item.value == HOME then
+				greed.session.switch({ home = true })
+			else
+				M.connect(item.value)
+			end
 		end, {
 			fallback = function(query)
 				local typed = string.match(query, "^%s*(%S+)%s*$")

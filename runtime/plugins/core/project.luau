@@ -404,6 +404,24 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "session-back",
+	doc = "Go back to the session you were in before, on whichever machine (space B)",
+	run = function()
+		greed.session.switch({ back = true })
+	end,
+})
+
+greed.command({
+	name = "session-home",
+	doc = "Go back to this machine: the session here you were in last, or this folder's",
+	run = function()
+		greed.session.switch({ home = true })
+	end,
+})
+
+greed.keymap.bind({ layer = "leader" }, { B = "session-back" })
+
 -- When `window-new` last asked for a window: the window that attaches soon
 -- after is that one, and gets a layout of its own.
 local window_asked = -math.huge

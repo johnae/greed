@@ -255,6 +255,8 @@ picker, project search and tree work within the shown one.
 | `alt-w` in `space P` | In a window, open the project in another window and keep this one; in a terminal, go to it as `enter` does |
 | `space C` or `:connect HOST` | Show a session on another machine here, as `greed ssh` does: pick from the hosts you connected to lately and those in `~/.ssh/config`, or type one |
 | `:session NAME` or `:session PATH` | Go to a running session, or to the session for a project (starting it) |
+| `space B` or `:session-back` | Go back to the session you were in before, on whichever machine; again to return |
+| `:session-home` | Go back to this machine from another: the session here you were in last |
 | `:project-close` | Close the shown project |
 | `:q` | In the last pane of the last tab, close the shown project and leave; on the last project, end the session unless something runs in it |
 | `:qa` | End the session and every project in it |
@@ -302,7 +304,10 @@ window's File menu) does the same without a terminal: it lists the hosts
 you connected to lately and those in `~/.ssh/config`, and the window or
 terminal you're in moves to that machine's session. That way Greed.app on
 a Mac, or a window on a Linux laptop, can be the screen for a workstation
-where the work runs.
+where the work runs. `space B` goes back to where you were, and pressing it
+again returns, so two sessions on two machines are a key apart; on another
+machine `space C` lists home first (`:session-home`), the session on your
+own machine you were in last.
 
 `greed ssh HOST --terminal` shows the session and opens a terminal on that
 machine in a new tab, for when a shell is what you're after. It runs in the
