@@ -499,6 +499,17 @@ provider to change it. An answer that runs out of room anyway, such as one
 writing a long file, runs none of its tool calls. The agent is told and
 goes on in smaller pieces, and stops after three such answers in a row.
 
+A thought can run too long as well: some models design a whole program in
+their head before acting, for half an hour. Once one thought passes 8k
+tokens (counted roughly, four characters each) Greed stops that request,
+shows `stopped a thought at 8k tokens; asking for smaller steps` and tells
+the model nothing ran: write a short plan with `plan_write` if it helps,
+then take the first small step. The thought it had goes back to models
+that are sent their thinking (Mistral's), so the plan isn't lost. These
+count with the answers that ran out of room, so three in a row stop the
+turn. `:set agent-max-thought 20000` moves the limit, and `0` lets
+thoughts run on.
+
 | Keys | |
 |---|---|
 | `space i n` (`:agent-new`) | Start an agent, Greed's own or one over ACP: pick which, and where it works; one that isn't installed says the command that installs it |

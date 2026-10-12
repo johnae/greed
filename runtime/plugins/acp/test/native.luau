@@ -11,7 +11,8 @@ local GREED: acp.Agent = { name = "greed", title = "Greed", commands = {}, nativ
 -- conversation are answered with `summary` (false fails them) and kept
 -- apart. A turn with `fail` fails with it, as one that may pass with
 -- `again`; one with `retried` was tried again for that reason first. A
--- function as a turn gives it, from the request.
+-- function as a turn gives it, from the request. A turn's `thoughts` stream
+-- one by one until the turn is stopped, which ends it with what was thought.
 local function script(turns: { any }, summary: (string | false)?): ({ any }, { any })
 	local asked: { any } = {}
 	local summarised: { any } = {}
@@ -24,7 +25,7 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 		_role,
 		request,
 		on_text,
-		_on_open,
+		on_open,
 		on_thinking,
 		_on_calling,
 		on_retry
@@ -50,6 +51,28 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 		end
 		if turn.fail then
 			return nil, turn.fail, turn.again
+		end
+		if turn.thoughts then
+			local closed = false
+			if on_open then
+				on_open(function()
+					closed = true
+				end)
+			end
+			local thought = {}
+			for _, piece in turn.thoughts do
+				if closed then
+					break
+				end
+				table.insert(thought, piece)
+				if on_thinking then
+					on_thinking(piece)
+				end
+			end
+			if closed then
+				return { text = "", calls = {}, stop = "done", thinking = table.concat(thought) },
+					nil
+			end
 		end
 		if on_thinking and turn.thinking then
 			on_thinking(turn.thinking)
@@ -1621,6 +1644,78 @@ test("answers cut off again and again stop it", function(t)
 	assert(s.status == "idle", s.status)
 	assert(#asked == 3, `it stops after the third: {#asked}`)
 	assert(string.find(said(s), "stopped: the answer ran out of room", 1, true), said(s))
+end)
+
+-- A turn thinking `pieces` of 4000 characters (1k tokens) each before it
+-- writes a file, which runs only if it isn't stopped first.
+local function musing(pieces: number): any
+	local thoughts = {}
+	for i = 1, pieces do
+		thoughts[i] = `{i}` .. string.rep("x", 3999)
+	end
+	return {
+		thoughts = thoughts,
+		text = "",
+		calls = { { id = "c1", name = "write_file", input = { path = "b.txt", text = "b" } } },
+		stop = "tools",
+	}
+end
+
+test("a thought past agent-max-thought is stopped, and small steps asked for", function(t)
+	local asked = script({ musing(12), { text = "Done.", calls = {}, stop = "done" } })
+	local s, dir = ask(t, "build it")
+	assert(s.status == "idle", s.status)
+	assert(#asked == 2, `the next request went out: {#asked}`)
+	assert(greed.fs.read(`{dir}/b.txt`) == nil, "nothing ran")
+	assert(
+		string.find(
+			said(s),
+			"note: stopped a thought at 8k tokens; asking for smaller steps",
+			1,
+			true
+		),
+		said(s)
+	)
+	local kept = asked[2].said[#asked[2].said - 1]
+	assert(kept.role == "assistant" and #kept.calls == 0, "the stopped turn calls nothing")
+	assert(
+		kept.thinking and #kept.thinking == 9 * 4000,
+		`the thought is kept: {#(kept.thinking or "")}`
+	)
+	assert(string.find(kept.thinking, "^1x"), "from its start")
+	local heard = asked[2].said[#asked[2].said]
+	assert(heard.role == "user" and string.find(heard.text, "past 8k tokens", 1, true), heard.text)
+	assert(string.find(heard.text, "plan_write", 1, true), heard.text)
+	assert(string.find(said(s), "agent: Done.", 1, true), said(s))
+	assert(s.failed == nil, s.failed)
+end)
+
+test("agent-max-thought at 0 lets a long thought through", function(t)
+	greed.option.set("agent-max-thought", 0)
+	local asked = script({ musing(12), { text = "Done.", calls = {}, stop = "done" } })
+	local s, dir = ask(t, "build it")
+	waiting(s).answer:send("once")
+	t:wait(10)
+	greed.option.set("agent-max-thought", 8000)
+	assert(s.status == "idle", s.status)
+	assert(not string.find(said(s), "stopped a thought", 1, true), said(s))
+	assert(greed.fs.read(`{dir}/b.txt`) == "b", "the call ran")
+	assert(#asked == 2, `{#asked}`)
+end)
+
+test("thoughts stopped again and again stop it", function(t)
+	local asked = script({ musing(12), musing(12), musing(12), musing(12) })
+	local s = ask(t, "go")
+	assert(s.status == "idle", s.status)
+	assert(#asked == 3, `it stops after the third: {#asked}`)
+	assert(string.find(said(s), "stopped: its thoughts kept running too long", 1, true), said(s))
+end)
+
+test("the system prompt asks for short thoughts and small steps", function(t)
+	local asked = script({ { text = "Hi", calls = {}, stop = "done" } })
+	ask(t, "hi")
+	local system = asked[1].system or ""
+	assert(string.find(system, "Keep your thoughts short", 1, true), system)
 end)
 
 test("an empty answer after a tool's result is sent back to go on, twice at most", function(t)

@@ -96,6 +96,12 @@ greed.option.define({
 })
 
 greed.option.define({
+	name = "agent-max-thought",
+	doc = "Stop a thought of Greed's own agent once it passes this many tokens, before it acts, and ask for smaller steps; 0 lets thoughts run on",
+	default = 8000,
+})
+
+greed.option.define({
 	name = "agent-thoughts",
 	doc = "Show what agents think in their transcripts, each thought folded to its first line (tab unfolds it); /thoughts switches it",
 	default = true,

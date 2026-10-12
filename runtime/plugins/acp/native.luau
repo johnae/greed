@@ -16,6 +16,7 @@ local vcs = require("@vcs")
 local session = require("./session")
 local saved = require("./saved")
 local compact = require("./compact")
+local transcript = require("./transcript")
 
 type Session = session.Session
 
@@ -36,6 +37,15 @@ local MAX_CUTS = 2
 local CUT_OFF = "Your answer was cut off: it was longer than one answer may be, so any tool "
 	.. "call in it was lost and nothing ran. Go on in smaller pieces: write a long file with "
 	.. "write_file holding its first part, then add the rest with edit_file, a part at a time."
+
+-- What the model hears after a thought it was stopped in, at `size`
+-- tokens (the `agent-max-thought` option); such thoughts count as cut
+-- off too.
+local function thought_cut(size: string): string
+	return `Your thinking ran past {size} tokens before you acted, so it was stopped and nothing `
+		.. "ran. Don't design it all in your head: write a short plan with plan_write if it "
+		.. "helps, then take the first small step now and let tests and tools answer the rest."
+end
 
 -- Empty answers after a tool's result it goes on from in one prompt, and
 -- what the model hears of one.
@@ -1156,6 +1166,9 @@ local function system(s: Session, env: string?, edits: string?, helpers: boolean
 		config_note(),
 		"Keep your plan for bigger tasks with plan_read and plan_write, where the user sees and "
 			.. "changes it. Follow the decisions the decisions tool lists as accepted.",
+		"Keep your thoughts short: plan in a few lines with plan_write rather than designing "
+			.. "everything in your head, then work in small steps and let tests and tools answer "
+			.. "questions.",
 		"When the user rejects a call, don't make it again or get the same effect another way "
 			.. "(another tool, a command or eval): ask them what they want, and don't say it was "
 			.. "done.",
@@ -1608,6 +1621,12 @@ local function prompt(
 		local chosen = models.resolve(state.role)
 		local waiting = `waiting for {if chosen then chosen.provider else "the model"}`
 		doing(s, waiting)
+		-- A thought past `cap` tokens stops the request; what it thought is kept.
+		local max_thought = greed.option.get("agent-max-thought")
+		local cap = if type(max_thought) == "number" then max_thought else 0
+		local thought: { string } = {}
+		local thought_size = 0
+		local overthought = false
 		local answered, answer, err, again = unless_stopped(state, function()
 			return models.turn(state.role, {
 				system = said_system,
@@ -1625,9 +1644,18 @@ local function prompt(
 				else
 					close()
 				end
-			end, function(thought)
-				if state.run == run then
-					say(s, thought, "thought")
+			end, function(piece)
+				if state.run ~= run or overthought then
+					return
+				end
+				say(s, piece, "thought")
+				table.insert(thought, piece)
+				thought_size += #piece
+				if cap > 0 and compact.estimate(thought_size) > cap then
+					overthought = true
+					if state.close then
+						state.close()
+					end
 				end
 			end, function()
 				if state.run == run then
@@ -1643,7 +1671,18 @@ local function prompt(
 			end)
 		end)
 		state.close = nil
-		local turn: models.Turn? = answer
+		-- Stopped for thinking too long, which this prompt treats as an
+		-- answer that ran out of room. The thought goes back to the model,
+		-- with `thinking_back`, without Anthropic's signatures: a thought
+		-- cut short has none.
+		local turn: models.Turn? = if answered and overthought
+			then {
+				text = if answer then answer.text else "",
+				calls = {},
+				stop = "length",
+				thinking = table.concat(thought),
+			} :: models.Turn
+			else answer
 		if not answered then
 			break
 		elseif turn == nil then
@@ -1695,17 +1734,21 @@ local function prompt(
 		elseif cut then
 			cuts += 1
 			if cuts > MAX_CUTS then
-				table.insert(
-					s.entries,
-					{ kind = "note", text = "stopped: the answer ran out of room" }
-				)
+				local why = if overthought
+					then "stopped: its thoughts kept running too long"
+					else "stopped: the answer ran out of room"
+				table.insert(s.entries, { kind = "note", text = why })
 				break
 			end
-			table.insert(
-				s.entries,
-				{ kind = "note", text = "the answer ran out of room; going on" }
-			)
-			table.insert(state.said, { role = "user", text = CUT_OFF } :: models.Said)
+			local note, heard = "the answer ran out of room; going on", CUT_OFF
+			if overthought then
+				-- 8k rather than 8.0k.
+				local size = (string.gsub(transcript.tokens(cap), "%.0k$", "k"))
+				note = `stopped a thought at {size} tokens; asking for smaller steps`
+				heard = thought_cut(size)
+			end
+			table.insert(s.entries, { kind = "note", text = note })
+			table.insert(state.said, { role = "user", text = heard } :: models.Said)
 			s.changed()
 			continue
 		end
