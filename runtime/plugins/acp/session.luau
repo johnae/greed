@@ -826,6 +826,15 @@ function M.ready(session: Session): boolean
 	return session.status ~= "starting" and session.status ~= "exited"
 end
 
+-- Knows the tool calls `session`'s transcript starts with.
+local function index_tools(session: Session)
+	for _, entry in session.entries do
+		if entry.tool then
+			session.tools[entry.tool.id] = entry.tool
+		end
+	end
+end
+
 --- A session of the agent `command` (registered as `agent`) working in
 --- `cwd` for the project at `root`, starting now. `changed` is called
 --- whenever there's something new to show.
@@ -866,11 +875,7 @@ function M.start(
 		changed = opts.changed,
 	}
 	starting[session.id] = {}
-	for _, entry in session.entries do
-		if entry.tool then
-			session.tools[entry.tool.id] = entry.tool
-		end
-	end
+	index_tools(session)
 	local function note(text: string)
 		table.insert(session.entries, { kind = "note", text = text })
 		session.changed()
@@ -993,19 +998,21 @@ function M.start(
 	return session
 end
 
---- A session of an agent `driver` runs in the editor, ready at once.
+--- A session of an agent `driver` runs in the editor, ready at once, its
+--- transcript starting with `entries` when it's taken up or forked.
 function M.start_driven(opts: {
 	name: string,
 	agent: string,
 	root: string,
 	cwd: string,
 	workspace: Workspace?,
+	entries: { Entry }?,
 	decide: ((permission: Permission) -> string?)?,
 	changed: () -> (),
 	driver: Driver,
 }): Session
 	next_id += 1
-	return {
+	local session: Session = {
 		id = next_id,
 		name = opts.name,
 		agent = opts.agent,
@@ -1013,7 +1020,7 @@ function M.start_driven(opts: {
 		cwd = opts.cwd,
 		workspace = opts.workspace,
 		status = "idle",
-		entries = {},
+		entries = opts.entries or {},
 		tools = {},
 		modes = {},
 		models = {},
@@ -1021,6 +1028,8 @@ function M.start_driven(opts: {
 		changed = opts.changed,
 		driver = opts.driver,
 	}
+	index_tools(session)
+	return session
 end
 
 --- What to send with a prompt now: `context` (what you have on screen) and

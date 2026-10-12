@@ -260,18 +260,22 @@ local function fresh_name(named: string): string
 end
 
 -- Starts a session of `agent` in `workspace` (or the project at `root`),
--- with `extra` saying what to take up or fork.
+-- with `extra` saying what to take up or fork: the agent's session id to
+-- fork, or for Greed's own agent the session itself (`from`).
 local function launch(
 	agent: Agent,
 	root: string,
 	workspace: session.Workspace?,
-	extra: { load: string?, fork: string?, entries: { session.Entry }? }?
+	extra: {
+		load: string?,
+		fork: string?,
+		from: Session?,
+		entries: { session.Entry }?,
+	}?
 ): (Session?, string?)
 	local command = agents.command_of(agent)
 	if command == nil then
 		return nil, agents.missing(agent)
-	elseif agent.native and extra and extra.fork then
-		return nil, `{agent.title or agent.name} can't be forked yet`
 	end
 	local name = fresh_name(agent.title or agent.name)
 	local s: Session
@@ -293,6 +297,8 @@ local function launch(
 			workspace = workspace,
 			role = agent.model,
 			resume = extra and extra.load,
+			from = extra and extra.from,
+			entries = extra and extra.entries,
 			decide = decides,
 			changed = changes,
 		})
@@ -495,12 +501,13 @@ end
 --- workspace of its own made from `s`'s if it has one.
 function M.fork(s: Session): (Session?, string?)
 	local agent = agent_of[s.id]
-	if agent and agent.native then
-		return nil, "Greed's own sessions can't be forked yet"
-	elseif s.agent == IN_TERMINAL then
+	if s.agent == IN_TERMINAL then
 		return nil, "Claude Code in a terminal can't be forked here"
 	elseif agent == nil or s.session_id == nil then
 		return nil, "it hasn't started yet"
+	elseif agent.native and (s.status == "working" or s.status == "waiting") then
+		-- Its conversation is half way through a turn.
+		return nil, "it's working; wait for it or stop it first"
 	end
 	local workspace = nil
 	if s.workspace then
@@ -520,6 +527,10 @@ function M.fork(s: Session): (Session?, string?)
 		table.insert(entries, copy)
 	end
 	table.insert(entries, { kind = "note", text = `forked from {s.name}` })
+	-- Greed's own agent goes on from the session itself; others fork theirs.
+	if agent.native then
+		return launch(agent, s.root, workspace, { from = s, entries = entries })
+	end
 	return launch(agent, s.root, workspace, { fork = s.session_id, entries = entries })
 end
 

@@ -1431,12 +1431,25 @@ test("a session whose model failed shows as failed in the list, with why", funct
 	assert(string.find(text, "ctrl-c stop", 1, true) and string.find(text, "d diff", 1, true))
 end)
 
-test("forking Greed's own session says it can't, without naming a new session", function(t)
-	script({ { text = "ok", calls = {}, stop = "done" } })
+test("Greed's own session can't be forked half way through a turn", function(t)
+	script({
+		{
+			text = "",
+			calls = {
+				{
+					id = "c1",
+					name = "edit_file",
+					input = { path = "a.txt", old_text = "two", new_text = "2" },
+				},
+			},
+			stop = "tools",
+		},
+	})
 	local s = ask(t, "hi")
 	local fork, err = acp.fork(s)
-	assert(fork == nil and err == "Greed's own sessions can't be forked yet", tostring(err))
+	assert(fork == nil and err == "it's working; wait for it or stop it first", tostring(err))
 	assert(#acp.sessions() == 1, "nothing new started")
+	acp.close(s)
 end)
 
 test("starting Greed's agent from space i n leaves you typing in its box", function(t)
@@ -1860,6 +1873,33 @@ test("the status lists an agent waiting on a question until it is answered", fun
 	for _, found in now().attention do
 		assert(found.id ~= `agent-session:{s.id}`, "answered, it no longer needs you")
 	end
+	acp.close(s)
+end)
+
+test("a fork of Greed's own session goes on from what was said, apart from it", function(t)
+	local asked = script({
+		{ text = "Blue.", calls = {}, stop = "done" },
+		{ text = "Still blue.", calls = {}, stop = "done" },
+		{ text = "Red now.", calls = {}, stop = "done" },
+	})
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.prompt(s, "pick a colour")
+	local fork = assert(acp.fork(s))
+	assert(string.find(said(fork), "agent: Blue. | note: forked from", 1, true), said(fork))
+	acp.prompt(fork, "and now?")
+	local sent = asked[2].said
+	assert(
+		#sent == 3 and sent[2].text == "Blue." and untimed(sent[3].text) == "and now?",
+		tostring(#sent)
+	)
+	acp.prompt(s, "change it")
+	local original = asked[3].said
+	assert(
+		#original == 3 and untimed(original[3].text) == "change it",
+		"the original goes on its own"
+	)
+	assert(not string.find(said(s), "Still blue.", 1, true), said(s))
+	acp.close(fork)
 	acp.close(s)
 end)
 

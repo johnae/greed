@@ -2089,7 +2089,9 @@ end
 --- model in role `role` (by default `M.ROLE`, else `reasoning`). With
 --- `resume`, the id of a session kept from before, it takes that up where
 --- it left off: its transcript, what was said, its model and tool groups.
---- In `workspace`, it works there instead of in the project.
+--- In `workspace`, it works there instead of in the project. With `from`,
+--- a running session of Greed's agent, it's a fork of that one: it goes on
+--- from what was said there, showing `entries`.
 function M.start(opts: {
 	name: string,
 	agent: string,
@@ -2097,6 +2099,8 @@ function M.start(opts: {
 	workspace: session.Workspace?,
 	role: string?,
 	resume: string?,
+	from: Session?,
+	entries: { session.Entry }?,
 	decide: ((permission: session.Permission) -> string?)?,
 	changed: () -> (),
 }): (Session?, string?)
@@ -2104,12 +2108,16 @@ function M.start(opts: {
 	if opts.resume and kept == nil then
 		return nil, "its conversation isn't kept any more"
 	end
+	-- A fork goes on from what `from` has said so far, with its model and
+	-- tool groups, as a session of its own.
+	local source = if opts.from then states[opts.from.id] else nil
 	local s = session.start_driven({
 		name = opts.name,
 		agent = opts.agent,
 		root = opts.root,
 		cwd = if opts.workspace then opts.workspace.path else opts.root,
 		workspace = opts.workspace,
+		entries = if kept then kept.entries elseif source then opts.entries else nil,
 		decide = opts.decide,
 		changed = opts.changed,
 		driver = DRIVER,
@@ -2127,12 +2135,6 @@ function M.start(opts: {
 	states[s.id] = state
 	s.session_id = if kept then kept.id else new_id()
 	if kept then
-		s.entries = kept.entries
-		for _, entry in s.entries do
-			if entry.tool then
-				s.tools[entry.tool.id] = entry.tool
-			end
-		end
 		table.insert(s.entries, { kind = "note", text = "taken up again" })
 		state.said = kept.said
 		s.spent = kept.spent
@@ -2140,6 +2142,15 @@ function M.start(opts: {
 			role = kept.role
 		end
 		for _, group in kept.groups do
+			state.caller.groups[group] = true
+		end
+	end
+	if source then
+		for _, said in source.said do
+			table.insert(state.said, table.clone(said))
+		end
+		role = source.role
+		for group in source.caller.groups do
 			state.caller.groups[group] = true
 		end
 	end

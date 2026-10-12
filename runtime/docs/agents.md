@@ -812,7 +812,7 @@ repository, `workspace NAME` for one in a workspace of its own.
 | `p`, `t`, `w`, `s` | Show it in a pane, a tab of its own, a floating view or a panel on the right |
 | `/` | Narrow the list to sessions with what you type in them; `esc` puts back the filter there was |
 | `n` | Start another, asking which agent as `space i n` does |
-| `f` | Fork it: a new session that starts with everything said so far (not Greed's own sessions yet) |
+| `f` | Fork it: a new session that starts with everything said so far; one of Greed's own goes on with its model and tool groups, once it isn't in the middle of a turn |
 | `x` | Close it: stop it, forget it and remove its workspace, asking first when it's running or has a workspace |
 | `d`, `b`, `R` | What it changed in its workspace, bring that in, or review it (below) |
 | `ctrl-c` | Stop its turn |
