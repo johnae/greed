@@ -1612,7 +1612,8 @@ function M.decide(
 	local provider = chosen and M.providers[chosen.provider]
 	local which = if chosen then `{chosen.provider}/{chosen.model}` else ""
 	if provider and provider.kind ~= "anthropic" and decides_by[which] ~= "chat" then
-		local answers, err, unsupported = systemone(role, state, questions)
+		-- As this plugin, which may read the provider's key; the caller may not.
+		local answers, err, unsupported = greed.vouch(systemone, role, state, questions)
 		if answers then
 			decides_by[which] = "systemone"
 			return answers, nil

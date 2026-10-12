@@ -820,3 +820,31 @@ test(
 		assert(again and chats == 2 and #asked == 1, "the System One API is tried only once")
 	end
 )
+
+test("a plugin that may not read keys gets decisions from a model that needs one", function(t)
+	local request = listing.request
+	-- A built-in provider's key goes to its own server without asking.
+	greed.secrets.set("openai", "sk-test")
+	models.roles.judging = { provider = "openai", model = "a-decision-model" }
+	local asked = lists({
+		["https://api.openai.com/v1/systemone"] = {
+			status = 200,
+			body = { answers = { q = { type = "noul", noul = 0.7 } } },
+		},
+	})
+	local dir = t:tempdir({
+		["asker/plugin.toml"] = 'name = "asker"\nrequires = ["models"]\n',
+		["asker/init.luau"] = 'local greed = require("@greed")\n'
+			.. 'greed.command({ name = "asker-ask", doc = "", run = function()\n'
+			.. 'local a, why = require("@models").decide("judging", "s", { q = { instructions = "?" } })\n'
+			.. "greed.echo(if a then `yes {a.q}` else `no answer: {why}`)\nend })\nreturn {}\n",
+	})
+	greed.plugin.load(dir .. "/asker")
+	t:run("asker-ask")
+	greed.plugin.unload("asker")
+	listing.request = request
+	models.roles.judging = nil
+	local said = t:messages()
+	assert(said[#said] == "yes 0.7", tostring(said[#said]))
+	assert(asked[1].headers.authorization == "Bearer sk-test", "with the key")
+end)
