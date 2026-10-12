@@ -13,6 +13,8 @@
 local greed = require("@greed")
 local core = require("@core")
 
+local ui = core.ui
+
 local M = {}
 
 --- A file in two versions; nil where it doesn't exist.
@@ -50,8 +52,8 @@ type Picker = {
 	buffer: greed.Buffer,
 	previous: greed.Buffer,
 	was_kept: boolean,
-	-- The item on each line, by 0-based line number.
-	rows: { [number]: number },
+	-- What draws it, each item's lines' value its index.
+	drawn: core.UiView,
 }
 
 local pickers: { [number]: Picker } = {}
@@ -79,63 +81,62 @@ local function items_of(files: { File }): { Item }
 	return items
 end
 
-local function render(picker: Picker)
-	local title, help = picker.options.title, "space picks, a picks all, enter goes on, q cancels"
-	local text: { string } = { title, help, "" }
-	local marks: { greed.Mark } = {
-		{ from = 0, to = #title, style = "markup.heading" },
-		{ from = #title + 1, to = #title + 1 + #help, style = "comment" },
+-- Item `i`'s lines: its box, its file and where, and the lines a hunk
+-- takes away and adds; each line's value `i`.
+local function item_lines(i: number, item: Item): core.UiNode
+	local lines: { core.UiNode } = {}
+	local function add(head: string, text: string, style: string)
+		table.insert(lines, ui.line({ { text = head, value = i }, ui.span(text, style) }))
+	end
+	local box = if item.picked then "[x] " else "[ ] "
+	local hunk = item.hunk
+	if item.whole then
+		add(box, `{item.file.path}  not text`, "markup.heading")
+	elseif hunk then
+		local old = core.text.split_lines(string.sub(item.file.old or "", hunk.from + 1, hunk.to))
+		local new = core.text.split_lines(hunk.text)
+		local _, before = string.gsub(string.sub(item.file.old or "", 1, hunk.from), "\n", "")
+		add(box, `{item.file.path}  line {before + 1}  +{#new} -{#old}`, "markup.heading")
+		for _, line in old do
+			add("    ", `-{line}`, "diff.minus")
+		end
+		for _, line in new do
+			add("    ", `+{line}`, "diff.plus")
+		end
+	else
+		local what = if item.file.old == nil then "new file" else "deleted"
+		add(box, `{item.file.path}  {what}`, "markup.heading")
+	end
+	return ui.column(lines)
+end
+
+-- The picker: its title and keys, then each item, drawn again only when
+-- it's picked or put back.
+local function draw(picker: Picker): core.UiNode
+	local parts: { core.UiNode } = {
+		ui.line({ ui.span(picker.options.title, "markup.heading") }),
+		ui.line({ ui.span("space picks, a picks all, enter goes on, q cancels", "comment") }),
+		ui.gap(),
 	}
-	local at = #title + #help + 3
-	local function add(line: string, style: string, from: number)
-		table.insert(marks, { from = at + from, to = at + #line, style = style })
-		table.insert(text, line)
-		at += #line + 1
-	end
-	picker.rows = {}
 	for i, item in picker.items do
-		local first = #text
-		local box = if item.picked then "[x] " else "[ ] "
-		local hunk = item.hunk
-		if item.whole then
-			add(`{box}{item.file.path}  not text`, "markup.heading", 4)
-		elseif hunk then
-			local old =
-				core.text.split_lines(string.sub(item.file.old or "", hunk.from + 1, hunk.to))
-			local new = core.text.split_lines(hunk.text)
-			local _, before = string.gsub(string.sub(item.file.old or "", 1, hunk.from), "\n", "")
-			add(`{box}{item.file.path}  line {before + 1}  +{#new} -{#old}`, "markup.heading", 4)
-			for _, line in old do
-				add(`    -{line}`, "diff.minus", 4)
-			end
-			for _, line in new do
-				add(`    +{line}`, "diff.plus", 4)
-			end
-		else
-			local what = if item.file.old == nil then "new file" else "deleted"
-			add(`{box}{item.file.path}  {what}`, "markup.heading", 4)
-		end
-		for line = first, #text - 1 do
-			picker.rows[line] = i
-		end
+		table.insert(
+			parts,
+			ui.keyed(`item:{i}`, item.picked, function()
+				return item_lines(i, item)
+			end)
+		)
 	end
-	local buffer = picker.buffer
-	buffer:set_readonly(false)
-	buffer:edit(function(e)
-		e:replace(0, buffer:len(), table.concat(text, "\n"))
-	end)
-	buffer:set_readonly(true)
-	buffer:decorate("hunks", marks)
+	return ui.column(parts)
 end
 
 -- The first line of item `i`.
 local function line_of_item(picker: Picker, i: number): number?
-	local found = nil
-	for line, item in picker.rows do
-		if item == i and (found == nil or line < found) then
+	local found: number? = nil
+	picker.drawn:each(function(line: number, item: number)
+		if item == i and found == nil then
 			found = line
 		end
-	end
+	end)
 	return found
 end
 
@@ -159,12 +160,16 @@ function M.pick(view: greed.View, options: Options)
 		buffer = buffer,
 		previous = previous,
 		was_kept = previous:kept(),
-		rows = {},
+		-- Mounted once it's made, since mounting draws it.
+		drawn = nil :: any,
 	}
+	picker.drawn = ui.mount(buffer, function()
+		return draw(picker)
+	end, nil, { ns = "hunks", keys = false })
 	previous:set_kept(true)
 	pickers[buffer:id()] = picker
 	view:show(buffer)
-	render(picker)
+	picker.drawn:redraw()
 	go_to(picker, line_of_item(picker, 1) or 0)
 end
 
@@ -211,7 +216,7 @@ local function here(ctx: greed.Context): (Picker?, number?)
 		return nil, nil
 	end
 	picker.view = ctx.view
-	return picker, picker.rows[ctx.buffer:line_of(ctx.view:cursor())]
+	return picker, picker.drawn:value_at(ctx.view:cursor())
 end
 
 greed.command({
@@ -223,7 +228,7 @@ greed.command({
 			return
 		end
 		picker.items[i].picked = not picker.items[i].picked
-		render(picker)
+		picker.drawn:redraw()
 		go_to(picker, line_of_item(picker, i + 1) or line_of_item(picker, i) or 0)
 	end,
 })
@@ -244,7 +249,7 @@ greed.command({
 			item.picked = not all
 		end
 		local line = ctx.buffer:line_of(ctx.view:cursor())
-		render(picker)
+		picker.drawn:redraw()
 		go_to(picker, line)
 	end,
 })

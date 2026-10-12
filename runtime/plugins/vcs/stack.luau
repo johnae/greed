@@ -16,6 +16,8 @@ local diff_text = require("./diffs")
 local hunks = require("./hunks")
 local repos = require("./repo")
 
+local ui = core.ui
+
 type Repo = repos.Repo
 
 local M = {}
@@ -40,8 +42,11 @@ type Stack = {
 	--- kept before that.
 	previous: greed.Buffer,
 	was_kept: boolean,
-	--- The change on each line, by 0-based line number.
-	rows: { [number]: Change },
+	--- Its changes as last read, or why they couldn't be, and what draws
+	--- them, each change's line's value the change.
+	changes: { Change }?,
+	problem: string?,
+	drawn: core.UiView,
 }
 
 -- Stacks by their buffer's id.
@@ -110,38 +115,49 @@ function M.changes(repo: Repo): ({ Change }?, string?)
 	return out, nil
 end
 
-type Style = { from: number, to: number, style: string }
-
--- A change's line and the styles over it.
-local function row(change: Change): (string, { Style })
-	local styles: { Style } = {}
-	local parts = { change.marker, " " }
-	local at = #change.marker + 1
-	local function add(text: string, style: string?)
-		if style then
-			table.insert(styles, { from = at, to = at + #text, style = style })
-		end
-		table.insert(parts, text)
-		at += #text
-	end
-	add(change.short, "constant")
-	add(" ")
+-- A change's line: its marker, id, whether it's in conflict or empty, its
+-- bookmarks and its description.
+local function row(change: Change): { core.UiSpan }
+	local spans = { ui.span(`{change.marker} `), ui.span(change.short, "constant"), ui.span(" ") }
 	if change.conflict then
-		add("(conflict) ", "diagnostic.error")
+		table.insert(spans, ui.span("(conflict) ", "diagnostic.error"))
 	end
 	if change.empty then
-		add("(empty) ", "comment")
+		table.insert(spans, ui.span("(empty) ", "comment"))
 	end
 	if change.bookmarks ~= "" then
-		add(change.bookmarks, "keyword")
-		add("  ")
+		table.insert(spans, ui.span(change.bookmarks, "keyword"))
+		table.insert(spans, ui.span("  "))
 	end
 	if change.description == "" then
-		add("(no description)", "comment")
+		table.insert(spans, ui.span("(no description)", "comment"))
 	else
-		add(change.description)
+		table.insert(spans, ui.span(change.description))
 	end
-	return table.concat(parts), styles
+	return spans
+end
+
+-- The stack: a heading, then its changes, a line each, or why they
+-- couldn't be read.
+local function draw(stack: Stack): core.UiNode
+	local changes = stack.changes
+	return ui.column({
+		ui.line({
+			ui.span(`Changes in {core.project.tilde(stack.repo.root)}`, "markup.heading"),
+			ui.span("    ? for keys", "comment"),
+		}),
+		ui.gap(),
+		if changes then ui.list(changes, row) else ui.line({ ui.span(stack.problem or "") }),
+	})
+end
+
+-- The change on 0-based `line` of `stack`, if any.
+local function row_at(stack: Stack, line: number): Change?
+	local buffer = stack.buffer
+	if line < 0 or line >= buffer:line_count() then
+		return nil
+	end
+	return stack.drawn:value_at(buffer:line_start(line))
 end
 
 -- The 0-based line the cursor of `stack`'s view is on.
@@ -151,56 +167,29 @@ end
 
 -- The change on the cursor's line, if any.
 local function under_cursor(stack: Stack): Change?
-	return stack.rows[cursor_line(stack)]
+	return row_at(stack, cursor_line(stack))
 end
 
 -- Redraws `stack`, keeping the cursor on the change it was on, or on
--- `select` if given.
+-- `select` if given; else on the working copy's.
 local function render(stack: Stack, select: string?)
 	local was_on = under_cursor(stack)
 	local keep = select or (was_on and was_on.id)
-	local changes, err = M.changes(stack.repo)
-	local title = `Changes in {core.project.tilde(stack.repo.root)}`
-	local header = title .. "    ? for keys"
-	local lines = { header, "" }
-	local marks: { greed.Mark } = {
-		{ from = 0, to = #title, style = "markup.heading" },
-		{ from = #title, to = #header, style = "comment" },
-	}
-	local at = #header + 2
-	stack.rows = {}
-	local cursor = nil
-	if changes == nil then
-		table.insert(lines, err :: string)
-	else
-		for _, change in changes do
-			local line, styles = row(change)
-			for _, style in styles do
-				table.insert(
-					marks,
-					{ from = at + style.from, to = at + style.to, style = style.style }
-				)
-			end
-			stack.rows[#lines] = change
-			if change.id == keep or (change.marker == "@" and (cursor == nil or keep == "@")) then
-				cursor = #lines
-			end
-			table.insert(lines, line)
-			at += #line + 1
-		end
-	end
+	stack.changes, stack.problem = M.changes(stack.repo)
+	stack.drawn:redraw()
 	local buffer = stack.buffer
-	buffer:set_readonly(false)
-	buffer:edit(function(e)
-		e:replace(0, buffer:len(), table.concat(lines, "\n"))
-	end)
-	buffer:set_readonly(true)
-	buffer:decorate("change-stack", marks)
 	if stack.view:buffer() ~= buffer then
 		return
 	end
-	local pos = buffer:line_start(cursor or 2)
-	stack.view:set_cursor(pos)
+	local kept, working = nil :: number?, nil :: number?
+	stack.drawn:each(function(line: number, change: Change)
+		if change.id == keep then
+			kept = line
+		elseif change.marker == "@" and working == nil then
+			working = line
+		end
+	end)
+	stack.view:set_cursor(buffer:line_start(kept or working or 2))
 end
 
 --- Opens the change stack of the repository the project is in, in `view`.
@@ -231,8 +220,12 @@ function M.open(view: greed.View)
 		buffer = buffer,
 		previous = previous,
 		was_kept = previous:kept(),
-		rows = {},
+		-- Mounted once it's made, since mounting draws it.
+		drawn = nil :: any,
 	}
+	stack.drawn = ui.mount(buffer, function()
+		return draw(stack)
+	end, nil, { ns = "change-stack", keys = false })
 	previous:set_kept(true)
 	stacks[buffer:id()] = stack
 	view:show(buffer)
@@ -464,7 +457,7 @@ local ACTIONS: { Action } = {
 		key = "alt-k",
 		doc = "Move it above the change above it",
 		run = function(stack, change)
-			local above = stack.rows[cursor_line(stack) - 1]
+			local above = row_at(stack, cursor_line(stack) - 1)
 			if above then
 				jj(stack, { "rebase", "-r", change.id, "--insert-after", above.id }, change.id)
 			end
@@ -475,7 +468,7 @@ local ACTIONS: { Action } = {
 		key = "alt-j",
 		doc = "Move it below the change below it",
 		run = function(stack, change)
-			local below = stack.rows[cursor_line(stack) + 1]
+			local below = row_at(stack, cursor_line(stack) + 1)
 			if below then
 				jj(stack, { "rebase", "-r", change.id, "--insert-before", below.id }, change.id)
 			end
