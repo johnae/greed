@@ -4,7 +4,7 @@ use std::io::{BufReader, Cursor};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use greed_core::rpc::{Connection, Event, Transport, read_message, write_message};
+use greed_core::rpc::{Connection, Event, Framing, Transport, read_message, write_message};
 use serde_json::{Value, json};
 
 fn sh(script: &str) -> Vec<String> {
@@ -286,4 +286,35 @@ fn a_process_that_ignores_its_input_ending_is_killed() {
         Ok(Event::Exited { .. })
     ));
     assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn messages_can_go_one_a_line_as_agents_speak() {
+    let (sender, events) = crossbeam_channel::unbounded();
+    // Answers each request with its own method, a line each, after a blank
+    // line and a notification of its own.
+    let script = r#"echo; echo '{"jsonrpc":"2.0","method":"hello","params":{"n":1}}'
+while read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":\"ok $id\"}"
+done"#;
+    let transport = Transport::start(&sh(script), None, &[])
+        .unwrap()
+        .framed(Framing::Lines);
+    let mut connection = Connection::open(4, transport, &sender);
+    let hello = connection.receive(next(&events)).unwrap();
+    assert!(
+        matches!(&hello, Event::Notification { method, params, .. } if method == "hello" && params["n"] == 1),
+        "{hello:?}"
+    );
+    let id = connection.request("ping", &json!({ "a": 1 })).unwrap();
+    match connection.receive(next(&events)).unwrap() {
+        Event::Response {
+            id: got, result, ..
+        } => {
+            assert_eq!(got, id);
+            assert_eq!(result.unwrap(), json!(format!("ok {id}")));
+        }
+        other => panic!("{other:?}"),
+    }
 }

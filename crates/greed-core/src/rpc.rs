@@ -1,6 +1,6 @@
 //! JSON-RPC 2.0 with a child process over its stdin and stdout, each message
-//! framed with a `Content-Length` header, as language servers speak it.
-//! Debug adapters frame their messages the same way.
+//! framed with a `Content-Length` header, as language servers and debug
+//! adapters speak it, or one a line, as agents do over ACP ([`Framing`]).
 //!
 //! A [`Connection`] numbers the requests it sends and matches responses to
 //! them. A reader thread per connection turns what the other side writes
@@ -29,6 +29,10 @@ const STDERR_LINES: usize = 50;
 /// How long a process gets to exit on its own once its input is closed,
 /// before it's killed.
 const GRACE: Duration = Duration::from_secs(2);
+
+/// How long the end of a process's error output may take to be read once
+/// its output has ended, for its exit to say why it stopped.
+const STDERR_AFTER_EXIT: Duration = Duration::from_secs(1);
 
 /// Something the other side sent.
 #[derive(Debug, Clone)]
@@ -70,19 +74,41 @@ impl Event {
     }
 }
 
+/// How messages are told apart on the wire.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Framing {
+    /// Each after a `Content-Length` header, as language servers and debug
+    /// adapters write them.
+    #[default]
+    Headers,
+    /// One a line, as the Agent Client Protocol has them.
+    Lines,
+}
+
 /// The two ends to talk over, and the process behind them if there's one.
 pub struct Transport {
     input: Box<dyn Write + Send>,
     output: Box<dyn Read + Send>,
     stderr: Option<Box<dyn Read + Send>>,
     child: Option<Child>,
+    framing: Framing,
 }
 
 impl Transport {
     /// Starts `command` (a program and its arguments) in `dir`.
     pub fn spawn(command: &[String], dir: &Path) -> io::Result<Self> {
-        crate::debug!(Rpc, "starting {} in {}", command.join(" "), dir.display());
-        let mut child = crate::child::command(command, Some(dir), &[], false)?
+        Self::start(command, Some(dir), &[])
+    }
+
+    /// Starts `command` in `cwd` (the editor's own folder without one), with
+    /// `env` set as [`crate::child::command`] takes it.
+    pub fn start(
+        command: &[String],
+        cwd: Option<&Path>,
+        env: &[(String, Option<String>)],
+    ) -> io::Result<Self> {
+        crate::debug!(Rpc, "starting {} in {cwd:?}", command.join(" "));
+        let mut child = crate::child::command(command, cwd, env, false)?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -92,7 +118,15 @@ impl Transport {
             output: Box::new(child.stdout.take().expect("stdout is piped")),
             stderr: Some(Box::new(child.stderr.take().expect("stderr is piped"))),
             child: Some(child),
+            framing: Framing::Headers,
         })
+    }
+
+    /// The same, its messages framed as `framing` says.
+    #[must_use]
+    pub fn framed(mut self, framing: Framing) -> Self {
+        self.framing = framing;
+        self
     }
 
     /// Talks over `input` and `output` with no process behind them, e.g. to
@@ -103,6 +137,7 @@ impl Transport {
             output: Box::new(output),
             stderr: None,
             child: None,
+            framing: Framing::Headers,
         }
     }
 }
@@ -119,6 +154,7 @@ pub struct Connection {
     pending: HashSet<i64>,
     alive: bool,
     stderr: Arc<Mutex<VecDeque<String>>>,
+    framing: Framing,
 }
 
 impl Connection {
@@ -127,12 +163,25 @@ impl Connection {
     pub fn open(id: ServerId, transport: Transport, events: &Sender<Event>) -> Self {
         let sender = events.clone();
         let output = transport.output;
-        thread::spawn(move || read_messages(id, output, &sender));
+        let framing = transport.framing;
         let stderr = Arc::new(Mutex::new(VecDeque::new()));
+        // Dropped once its error output is all read, so its exit says why
+        // it stopped with the last of it.
+        let (reading, read) = crossbeam_channel::bounded::<()>(0);
         if let Some(from) = transport.stderr {
             let lines = stderr.clone();
-            thread::spawn(move || keep_lines(from, &lines));
+            thread::spawn(move || {
+                let _reading = reading;
+                keep_lines(from, &lines);
+            });
+        } else {
+            drop(reading);
         }
+        thread::spawn(move || {
+            read_messages(id, output, framing, &sender);
+            let _ = read.recv_timeout(STDERR_AFTER_EXIT);
+            let _ = sender.send(Event::Exited { server: id });
+        });
         Self {
             server: id,
             input: BufWriter::new(transport.input),
@@ -141,6 +190,7 @@ impl Connection {
             pending: HashSet::new(),
             alive: true,
             stderr,
+            framing,
         }
     }
 
@@ -152,7 +202,13 @@ impl Connection {
     /// Writes `message` as it is.
     pub fn send(&mut self, message: &Value) -> io::Result<()> {
         crate::debug!(Rpc, "server {}: -> {}", self.server, summary(message));
-        write_message(&mut self.input, message)
+        match self.framing {
+            Framing::Headers => write_message(&mut self.input, message),
+            Framing::Lines => {
+                writeln!(self.input, "{message}")?;
+                self.input.flush()
+            }
+        }
     }
 
     /// A request for `method`, numbered and counted as waiting for its
@@ -302,11 +358,36 @@ pub fn read_message(reader: &mut impl BufRead) -> io::Result<Option<Value>> {
         .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
 }
 
-/// Reads messages until the stream ends, then sends `Exited`.
-fn read_messages(server: ServerId, output: impl Read, events: &Sender<Event>) {
+/// Reads the next message of a line each, skipping blank lines.
+fn read_line_message(reader: &mut impl BufRead) -> io::Result<Option<Value>> {
+    loop {
+        let mut line = Vec::new();
+        if reader
+            .by_ref()
+            .take(MAX_MESSAGE as u64)
+            .read_until(b'\n', &mut line)?
+            == 0
+        {
+            return Ok(None);
+        }
+        if line.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        return serde_json::from_slice(&line)
+            .map(Some)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err));
+    }
+}
+
+/// Reads messages until the stream ends.
+fn read_messages(server: ServerId, output: impl Read, framing: Framing, events: &Sender<Event>) {
     let mut reader = BufReader::new(output);
     loop {
-        let message = match read_message(&mut reader) {
+        let read = match framing {
+            Framing::Headers => read_message(&mut reader),
+            Framing::Lines => read_line_message(&mut reader),
+        };
+        let message = match read {
             Ok(Some(message)) => message,
             Err(err) if err.kind() == io::ErrorKind::InvalidData => continue,
             Ok(None) | Err(_) => break,
@@ -318,7 +399,6 @@ fn read_messages(server: ServerId, output: impl Read, events: &Sender<Event>) {
             return;
         }
     }
-    let _ = events.send(Event::Exited { server });
 }
 
 /// What a message is: a request or notification by its method, or a
