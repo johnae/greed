@@ -106,7 +106,17 @@ greed.command({
 			keys_of[binding.command] = list
 		end
 		local items = {}
+		-- Commands that won't run without an argument, typed so they say, and
+		-- whether there's a command line to give it on.
+		local has_command_line = false
+		local needs_args: { [string]: boolean } = {}
 		for _, command in greed.commands() do
+			has_command_line = has_command_line or command.name == "command-line"
+			for _, arg in command.args do
+				if arg.type and not arg.optional then
+					needs_args[command.name] = true
+				end
+			end
 			local keys = keys_of[command.name] or {}
 			local label = command.name
 			if #keys > 0 then
@@ -118,7 +128,13 @@ greed.command({
 			)
 		end
 		picker.pick("Commands", items, function(item)
-			greed.run(item.value)
+			-- One that needs an argument goes to the command line, its name
+			-- typed, to give it there.
+			if needs_args[item.value] and has_command_line then
+				greed.run("command-line", { args = { `{item.value} ` } })
+			else
+				greed.run(item.value)
+			end
 		end)
 	end,
 })

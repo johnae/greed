@@ -602,3 +602,31 @@ test(":watches lists what's watched, and enter stops watching one", function(t)
 	t:keys("enter")
 	assert(#core.watch.list() == 0, "stopped")
 end)
+
+test("a command needing an argument, picked from the palette, goes to the command line", function(t)
+	-- The command line is another plugin's; without it, there's nothing to check.
+	local there = false
+	for _, command in greed.commands() do
+		there = there or command.name == "command-line"
+	end
+	if not there then
+		return
+	end
+	local ran: string? = nil
+	greed.command({
+		name = "test-greet-someone",
+		doc = "Greets someone",
+		args = { { name = "who", type = "string" } },
+		run = function(ctx)
+			ran = ctx.values.who
+		end,
+	})
+	t:buffer("|x")
+	t:run("command-palette")
+	t:keys("t e s t - g r e e t - s o m e o n e enter")
+	assert(ran == nil, "it didn't run without its argument")
+	local floats = table.concat(t:floats(), "\n")
+	assert(string.find(floats, ":test-greet-someone ", 1, true), floats)
+	t:keys("y o u enter")
+	assert(ran == "you", tostring(ran))
+end)
