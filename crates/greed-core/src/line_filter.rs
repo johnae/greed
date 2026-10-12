@@ -6,7 +6,8 @@
 //! like `HelmRelease.name`; other lines must have `key=value` in their text,
 //! as logfmt does. A word starting with `.`, like `.status.conditions`, keeps
 //! the section of nested text under those keys (YAML, indented JSON, what
-//! `kubectl describe` prints) and the keys above it.
+//! `kubectl describe` prints) and the keys above it; the last key matches by
+//! its start, so `.status.cond` keeps the same while it's typed.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -187,9 +188,7 @@ impl LineFilter {
                 path.push(key);
             }
             places.push(Place {
-                inside: path
-                    .windows(self.section.len())
-                    .any(|run| run == self.section.as_slice()),
+                inside: path.windows(self.section.len()).any(|run| self.leads(run)),
                 parent: above.last().map(|(.., at)| *at),
             });
             if let Some(key) = key {
@@ -197,6 +196,18 @@ impl LineFilter {
             }
         }
         places
+    }
+
+    /// Whether keys `run` are the section's: the same, the last only starting
+    /// with the section's, so `.status.cond` is `.status.conditions` while
+    /// it's typed.
+    fn leads(&self, run: &[&str]) -> bool {
+        let Some((last, keys)) = self.section.split_last() else {
+            return false;
+        };
+        run.len() == self.section.len()
+            && run[..keys.len()] == *keys
+            && run[keys.len()].starts_with(last.as_str())
     }
 }
 
@@ -345,6 +356,8 @@ spec:
             ]
         );
         assert_eq!(kept(".status.phase", yaml), ["status:", "  phase: Running"]);
+        // Typed so far.
+        assert_eq!(kept(".status.cond", yaml), kept(".status.conditions", yaml));
         assert_eq!(
             kept(".conditions podscheduled", yaml),
             ["status:", "  conditions:", "  - type: PodScheduled"]

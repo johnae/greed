@@ -56,6 +56,7 @@ local kinds = require("@self/kinds")
 local live = require("@self/live")
 local peek = require("@self/peek")
 local pretty = require("@self/pretty")
+local filtering = require("@self/filtering")
 local navigate = require("@self/navigate")
 require("@self/processes")
 
@@ -2111,7 +2112,7 @@ local function filter_view(view: greed.View, block: Block)
 			view:set_filter(pattern, { regex = regex, skip = skip })
 		end)
 	end
-	core.prompt.open({
+	filtering.prompt(block, {
 		title = "Filter what this shows (/ for a regex)",
 		text = view:filter() or "",
 		on_change = set,
@@ -2166,7 +2167,7 @@ greed.command({
 				to_output(shell, block, view)
 			end
 		end
-		core.prompt.open({
+		filtering.prompt(block, {
 			title = if block.table then "Filter rows" else "Filter lines",
 			text = if shown then shown.filter else "",
 			on_change = set,

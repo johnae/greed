@@ -421,10 +421,12 @@ Two kinds of words look at the structure of what's printed:
 | | |
 |---|---|
 | `key=value` | In a line of JSON, as many logs are, `value` in its field `key`: `level=error`, `HelmRelease.name=vikunja` (a dotted path, looking through arrays). In other lines the word itself, so `level=error` works on logfmt too |
-| `.key.key` | The section of indented text under those keys, with the keys above it: `.status.conditions` of `kubectl get pod -o yaml`, `.conditions` of `kubectl describe`. The keys can be anywhere in the path |
+| `.key.key` | The section of indented text under those keys, with the keys above it: `.status.conditions` of `kubectl get pod -o yaml`, `.conditions` of `kubectl describe`. The keys can be anywhere in the path, and the last matches by its start, so the section shows as you type it |
 
 `/.conditions ready` keeps the lines of that section with "ready" in them,
-and the keys they're under.
+and the keys they're under. `tab` while typing a filter completes from what
+the block printed: its sections, its JSON lines' fields and its table's
+columns.
 
 In a float or a pane showing one block, `/` filters that view alone, the
 same way (words, or `/` and a regex), while the shell and other views of
