@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
-use greed_text::{Operation, Rope};
+use greed_text::{Operation, Rope, line_content};
 use serde_json::{Value, json};
 
 use crate::rpc::{Connection, Transport};
@@ -175,9 +175,6 @@ struct Document {
     version: usize,
     uri: String,
     text: Rope,
-    /// Whether the text has line breaks LSP doesn't count as such, so
-    /// changes can't be sent as ranges.
-    odd_breaks: bool,
 }
 
 /// How a server wants to hear about changes to a document.
@@ -524,7 +521,6 @@ impl Lsp {
                     version,
                     uri: uri.clone(),
                     text: buffer.text().clone(),
-                    odd_breaks: has_odd_break(&text),
                 },
             );
             let params = json!({ "textDocument": {
@@ -535,16 +531,12 @@ impl Lsp {
         if document.version == version {
             return Ok(());
         }
-        let ranged = if sync == SyncKind::Incremental && !document.odd_breaks {
+        let ranged = if sync == SyncKind::Incremental {
             ranged_changes(&document.text, document.version, buffer, encoding)
         } else {
             None
         };
-        let changes = ranged.unwrap_or_else(|| {
-            let text = buffer.text().to_string();
-            document.odd_breaks = has_odd_break(&text);
-            vec![json!({ "text": text })]
-        });
+        let changes = ranged.unwrap_or_else(|| vec![json!({ "text": buffer.text().to_string() })]);
         document.version = version;
         document.text = buffer.text().clone();
         let params = json!({
@@ -1152,7 +1144,7 @@ fn ranged_changes(
                     }
                 }
             };
-            changes.push(replace(&mut text, pos..pos + deleted, inserted, encoding)?);
+            changes.push(replace(&mut text, pos..pos + deleted, inserted, encoding));
             pos += inserted.len();
         }
     }
@@ -1163,10 +1155,7 @@ fn ranged_changes(
 /// change against the text before. A range starting or ending between a
 /// `\r` and its `\n` takes in the whole line break, since servers can't
 /// place a position there.
-fn replace(text: &mut Rope, range: Range<usize>, new: &str, encoding: Encoding) -> Option<Value> {
-    if has_odd_break(new) {
-        return None;
-    }
+fn replace(text: &mut Rope, range: Range<usize>, new: &str, encoding: Encoding) -> Value {
     let splits = |at: usize| {
         at > 0 && at < text.len_bytes() && text.byte(at - 1) == b'\r' && text.byte(at) == b'\n'
     };
@@ -1187,13 +1176,7 @@ fn replace(text: &mut Rope, range: Range<usize>, new: &str, encoding: Encoding) 
     let (start, end) = (text.byte_to_char(from), text.byte_to_char(to));
     text.remove(start..end);
     text.insert(start, &new);
-    Some(change)
-}
-
-/// Whether `text` has a line break the editor counts but LSP doesn't: LSP
-/// breaks lines only at `\n`, `\r\n` and `\r`.
-fn has_odd_break(text: &str) -> bool {
-    text.contains(['\u{0B}', '\u{0C}', '\u{85}', '\u{2028}', '\u{2029}'])
+    change
 }
 
 /// An LSP position (`{ line, character }`) for byte `pos`, or for the start
@@ -1222,8 +1205,8 @@ pub fn offset(text: &Rope, position: &Value, encoding: Encoding) -> Option<usize
     }
     let mut byte = text.line_to_byte(line);
     let mut units = 0;
-    for c in text.line(line).chars() {
-        if units >= character || c == '\n' {
+    for c in line_content(text, line).chars() {
+        if units >= character {
             return Some(byte);
         }
         units += match encoding {

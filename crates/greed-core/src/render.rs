@@ -18,7 +18,7 @@ use smallvec::{SmallVec, smallvec};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use greed_text::{Rope, Selection};
+use greed_text::{Rope, Selection, line_content};
 
 mod hit;
 pub use hit::Hit;
@@ -87,8 +87,7 @@ pub fn display_column(text: &Rope, pos: usize, tab_width: usize) -> usize {
 /// character covering it, or the line's end if the line is shorter.
 pub fn at_display_column(text: &Rope, line: usize, col: usize, tab_width: usize) -> usize {
     let start = text.line_to_byte(line);
-    let content = text.line(line).to_string();
-    let content = content.trim_end_matches(['\n', '\r']);
+    let content: Cow<str> = line_content(text, line).into();
     let mut x = 0;
     for (offset, g) in content.grapheme_indices(true) {
         let w = width_at(&CellWidth, g, x, tab_width);
@@ -1167,8 +1166,7 @@ impl<M: Measure> Renderer<M> {
         let buffer = editor.buffer(view.buffer);
         let text = buffer.text();
         let start = text.line_to_byte(line);
-        let content: Cow<str> = text.line(line).into();
-        let content = content.trim_end_matches(['\n', '\r']);
+        let content: Cow<str> = line_content(text, line).into();
         let end = start + content.len();
 
         let auto = editor.reveal();

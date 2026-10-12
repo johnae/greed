@@ -524,6 +524,17 @@ fn positions_count_in_the_servers_encoding() {
     // Past the end of a line clamps to the line's end; past the last line to the buffer's end.
     assert_eq!(at(0, 99, Encoding::Utf16), Some(8));
     assert_eq!(at(9, 0, Encoding::Utf16), Some(10));
+
+    // Before the line break, whichever it is.
+    let text = Rope::from_str("ab\r\ncd\ref");
+    let at = |line: u64| {
+        offset(
+            &text,
+            &json!({ "line": line, "character": 99 }),
+            Encoding::Utf8,
+        )
+    };
+    assert_eq!((at(0), at(1), at(2)), (Some(2), Some(6), Some(9)));
 }
 
 #[test]
@@ -989,7 +1000,7 @@ fn a_change_inside_a_line_break_takes_in_the_whole_break() {
 }
 
 #[test]
-fn line_breaks_lsp_doesnt_count_or_a_forgotten_history_send_the_whole_text() {
+fn a_forgotten_history_sends_the_whole_text() {
     let options = support::Options {
         incremental: true,
         utf8: false,
@@ -1000,19 +1011,11 @@ fn line_breaks_lsp_doesnt_count_or_a_forgotten_history_send_the_whole_text() {
     s.edit(1, 1, "x");
     s.lsp.sync(&s.editor);
     assert_eq!(s.compare()["whole"], 0);
-    // The editor breaks lines at U+2028; a server doesn't.
-    s.edit(0, 0, "\u{2028}");
-    s.lsp.sync(&s.editor);
-    assert_eq!(s.compare()["whole"], 1);
+    // Lines break where a server breaks them, so any text goes as ranges.
+    s.edit(0, 0, "\u{2028}\u{85}\u{0C}\r");
     s.edit(0, 0, "y");
     s.lsp.sync(&s.editor);
-    assert_eq!(s.compare()["whole"], 2, "while the text has one");
-    s.edit(1, 4, "");
-    s.lsp.sync(&s.editor);
-    assert_eq!(s.compare()["whole"], 3);
-    s.edit(0, 0, "z");
-    s.lsp.sync(&s.editor);
-    assert_eq!(s.compare()["whole"], 3, "ranges again once it's gone");
+    assert_eq!(s.compare()["whole"], 0);
 
     // Without the transactions, there's nothing to make ranges from.
     let buffer = s.editor.buffers().next().unwrap().id();
@@ -1021,7 +1024,7 @@ fn line_breaks_lsp_doesnt_count_or_a_forgotten_history_send_the_whole_text() {
     s.edit(0, 0, "v");
     s.lsp.sync(&s.editor);
     let probe = s.compare();
-    assert_eq!(probe["whole"], 4, "{probe}");
+    assert_eq!(probe["whole"], 1, "{probe}");
 }
 
 #[test]

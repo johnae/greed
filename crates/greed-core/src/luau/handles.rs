@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use greed_text::{Author, ChangeSet, Range, Rope, Selection};
+use greed_text::{Author, ChangeSet, Range, Rope, Selection, line_content, line_end};
 use mlua::{
     Function, IntoLuaMulti, Lua, LuaSerdeExt, MetaMethod, Table, UserData, UserDataMethods,
     UserDataRef, Value,
@@ -1164,17 +1164,6 @@ fn kept_to_undo(opts: Option<&Table>) -> LuaResult<bool> {
     })
 }
 
-/// The end of `line`, before its line break.
-fn line_end(text: &Rope, line: usize) -> usize {
-    let slice = text.line(line);
-    let newline = match (slice.len_chars(), slice.chars().last()) {
-        (n, Some('\n')) if n >= 2 && slice.char(n - 2) == '\r' => 2,
-        (_, Some('\n')) => 1,
-        _ => 0,
-    };
-    text.line_to_byte(line) + slice.len_bytes() - newline
-}
-
 /// The tab width a display column method was given, or the default.
 fn tab_width(given: Option<usize>) -> LuaResult<usize> {
     match given {
@@ -1212,8 +1201,7 @@ fn add_line_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("line_text", |lua, this, line: usize| {
         this.with_text(lua, |t| {
             check_line(t, line)?;
-            Ok(t.byte_slice(t.line_to_byte(line)..line_end(t, line))
-                .to_string())
+            Ok(line_content(t, line).to_string())
         })
     });
     methods.add_method(

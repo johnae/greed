@@ -16,7 +16,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::sync::{Mutex, PoisonError};
 
-use greed_text::Rope;
+use greed_text::{Rope, line_content};
 use regex_cursor::Input;
 use regex_cursor::engines::meta::Regex;
 use serde_json::Value;
@@ -307,9 +307,7 @@ fn keys(path: &str) -> Vec<String> {
 
 /// `line` of `text` without its line ending.
 fn content(text: &Rope, line: usize) -> String {
-    let mut content = text.line(line).to_string();
-    content.truncate(content.trim_end_matches(['\n', '\r']).len());
-    content
+    line_content(text, line).to_string()
 }
 
 /// How far `line` is indented, counting a list item's `- ` as indent, and

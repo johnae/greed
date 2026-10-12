@@ -22,7 +22,7 @@ mod transaction;
 use std::fmt;
 
 pub use changeset::{Assoc, ChangeSet, Operation};
-pub use ropey::Rope;
+pub use ropey::{Rope, RopeSlice};
 pub use selection::{Range, Selection};
 pub use transaction::{AgentId, Author, ClientId, Replica, Transaction, TxId, TxMeta};
 
@@ -61,3 +61,25 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// The byte where `line` of `text` ends, before its line break. Lines break
+/// at `\n`, `\r\n` and a lone `\r`, as compilers and language servers count
+/// them.
+#[must_use]
+pub fn line_end(text: &Rope, line: usize) -> usize {
+    let slice = text.line(line);
+    let len = slice.len_bytes();
+    let last = |back: usize| len.checked_sub(back).map(|i| slice.byte(i));
+    let newline = match (last(2), last(1)) {
+        (Some(b'\r'), Some(b'\n')) => 2,
+        (_, Some(b'\n' | b'\r')) => 1,
+        _ => 0,
+    };
+    text.line_to_byte(line) + len - newline
+}
+
+/// `line` of `text` without its line break.
+#[must_use]
+pub fn line_content(text: &Rope, line: usize) -> RopeSlice<'_> {
+    text.byte_slice(text.line_to_byte(line)..line_end(text, line))
+}
