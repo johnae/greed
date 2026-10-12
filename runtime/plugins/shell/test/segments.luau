@@ -107,7 +107,7 @@ end)
 
 test("with shell-prompt starship, starship draws the prompt before ❯", function(t)
 	local dir = t:tempdir({
-		["bin/starship"] = '#!/bin/sh\necho "$*" > "$(dirname "$0")/args"\nprintf "\\n\\033[1;35mfrom starship\\033[0m \\n\\033[32m❯\\033[0m "\n',
+		["bin/starship"] = '#!/bin/sh\nd=$(dirname "$0"); echo "$*" > "$d/args.$$" && mv "$d/args.$$" "$d/args"\nprintf "\\n\\033[1;35mfrom starship\\033[0m \\n\\033[32m❯\\033[0m "\n',
 	})
 	assert(greed.process.run({ "chmod", "+x", `{dir}/bin/starship` }))
 	local sh = open(t, dir)
