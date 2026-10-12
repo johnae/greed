@@ -165,24 +165,6 @@ function M.prompt(block: Block, options: Options): greed.View
 	return opened
 end
 
--- The key a line of indented text starts with, and how far it's indented,
--- counting a list item's `- `: `name:` or `"name":`. Nil for a blank line.
-local function shape(line: string): (number?, string?)
-	local spaces, rest = string.match(line, "^(%s*)(.*)$")
-	if spaces == nil or rest == nil or rest == "" then
-		return nil, nil
-	end
-	local indent = #spaces
-	while string.sub(rest, 1, 2) == "- " do
-		local after = string.match(string.sub(rest, 3), "^%s*(.*)$") or ""
-		indent += #rest - #after
-		rest = after
-	end
-	local key = string.match(rest, '^"([^"]+)"%s*:') or string.match(rest, '^([^:{%["]+):%s')
-	key = key or string.match(rest, '^([^:{%["]+):$')
-	return indent, key
-end
-
 -- How many values of a field are shown beside it, and how long each may be.
 local SAMPLES = 3
 local SAMPLE_WIDTH = 20
@@ -236,7 +218,7 @@ function M.words(block: Block): { { word: string, what: string } }
 				fields(value, "", named)
 			end
 		end
-		local indent, key = shape(line)
+		local indent, key = greed.text.shape(line, true)
 		if indent then
 			while #above > 0 and above[#above].indent >= indent do
 				table.remove(above)

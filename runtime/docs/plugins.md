@@ -1294,6 +1294,9 @@ so your own filters read the same: `greed.compare.test("12 (5s ago)",
 ">", "0")`, `greed.compare.test("WARN", ">=", "warn")`,
 `greed.compare.number("512Mi")`, `greed.compare.order(a, b)` (-1, 0 or 1,
 for sorting) and `greed.compare.find("AGE<=1h")` for where an operator is.
+`greed.text.shape(line, true)` reads a line of nested text (YAML, indented
+JSON, `kubectl describe`) as filters and folds do: how far it's indented,
+a list item's `- ` counting, and the key it starts with.
 
 `shell.parser(match, parse)` reads the output of the commands `match`
 names as tables, ahead of the shell's own look for one: a program's name,

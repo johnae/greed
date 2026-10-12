@@ -39,6 +39,7 @@ mod tabs;
 mod tasks;
 mod terminal;
 mod testing;
+mod text;
 mod theme;
 mod track;
 mod watch;

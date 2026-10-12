@@ -1486,6 +1486,12 @@ export type Compare = {
 	find: (text: string) -> (number?, number?, string?),
 }
 
+--- Reading lines of text as Greed does, so plugins read them the same way.
+export type Text = {
+	--- How far `line` is indented and the key it starts with (`name:` or `"name":`), as YAML, indented JSON and `kubectl describe` nest; nil for a blank line. With `items`, a list item's `- ` counts as indent, so `- name: x` is a key `name` two further in.
+	shape: (line: string, items: boolean?) -> (number?, string?),
+}
+
 --- Reading and writing the file system. Failures return nil and a message.
 export type Fs = {
 	--- The entries directly in `dir`, folders first, then by name. Hidden
@@ -1881,6 +1887,7 @@ export type Greed = {
 	fs: Fs,
 	hash: Hash,
 	compare: Compare,
+	text: Text,
 	control: Control,
 	json: Json,
 	project: Projects,

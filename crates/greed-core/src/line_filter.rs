@@ -23,6 +23,7 @@ use regex_cursor::engines::meta::Regex;
 use serde_json::Value;
 
 use crate::compare::{self, Op};
+use crate::nested;
 use crate::search::{BadPattern, compile};
 
 /// How many lines' verdicts a filter keeps before starting over.
@@ -210,7 +211,7 @@ impl LineFilter {
         let mut above: Vec<(usize, String, usize)> = Vec::new();
         for (i, line) in lines.enumerate() {
             let content = content(text, line);
-            let Some((indent, key)) = shape(&content) else {
+            let Some((indent, key)) = nested::shape(&content, true) else {
                 // A blank line goes with what's before it.
                 let inside = places.last().is_some_and(|p: &Place| p.inside);
                 places.push(Place {
@@ -219,6 +220,7 @@ impl LineFilter {
                 });
                 continue;
             };
+            let key = key.map(str::to_lowercase);
             while above.last().is_some_and(|(at, ..)| *at >= indent) {
                 above.pop();
             }
@@ -261,37 +263,6 @@ fn keys(path: &str) -> Vec<String> {
 /// `line` of `text` without its line ending.
 fn content(text: &Rope, line: usize) -> String {
     line_content(text, line).to_string()
-}
-
-/// How far `line` is indented, counting a list item's `- ` as indent, and
-/// the key it starts with, lowercase, if any; `None` for a blank line.
-fn shape(line: &str) -> Option<(usize, Option<String>)> {
-    let mut rest = line.trim_start();
-    if rest.is_empty() {
-        return None;
-    }
-    let mut indent = line.len() - rest.len();
-    while let Some(item) = rest.strip_prefix("- ") {
-        let after = item.trim_start();
-        indent += rest.len() - after.len();
-        rest = after;
-    }
-    Some((indent, key(rest).map(str::to_lowercase)))
-}
-
-/// The key `text` starts with: `name:` or `"name":`, before a colon that
-/// ends the line or has a space after it.
-fn key(text: &str) -> Option<&str> {
-    if let Some(quoted) = text.strip_prefix('"') {
-        let (key, after) = quoted.split_once('"')?;
-        return after.trim_start().starts_with(':').then_some(key);
-    }
-    let colon = text.match_indices(':').find_map(|(at, _)| {
-        let after = &text[at + 1..];
-        (after.is_empty() || after.starts_with(' ')).then_some(at)
-    })?;
-    let key = &text[..colon];
-    (!key.is_empty() && key.len() <= 64 && !key.contains(['{', '[', '"'])).then_some(key)
 }
 
 /// Whether `value` has a field at `path` (by name, in any case, through

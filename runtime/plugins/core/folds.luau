@@ -54,16 +54,7 @@ end
 --- How far `line` is indented, or nil for a blank line. With `items`, a
 --- list item's `- ` counts as indent, as YAML nests a list under its key.
 function M.indent(buffer: Buffer, line: number, items: boolean?): number?
-	local text = buffer:line_text(line)
-	local spaces, rest = string.match(text, "^(%s*)()")
-	local width, at = #(spaces :: string), rest :: number
-	-- A dash only before a space, as `- name:`, not `-1`.
-	while items and string.match(text, "^%- +()", at) do
-		local after = string.match(text, "^%- +()", at) :: number
-		width += after - at
-		at = after
-	end
-	return if at > #text then nil else width
+	return (greed.text.shape(buffer:line_text(line), items))
 end
 
 --- The lines indented under the nearest line around `line` indented less:

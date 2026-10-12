@@ -34,6 +34,7 @@ pub mod line_filter;
 pub mod lsp;
 pub mod luau;
 pub mod mouse;
+pub mod nested;
 pub mod panics;
 pub mod pdf;
 pub mod project;
