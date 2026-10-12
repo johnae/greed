@@ -2120,6 +2120,17 @@ function M.effort(s: Session): (string?, string?)
 	return s.effort or (role and role.effort), models.effort(state.role, s.effort)
 end
 
+--- The efforts to pick from for `s`, a session of Greed's own agent, as
+--- `models.efforts` has them for its model, the one it has now marked;
+--- none for another agent's session.
+function M.efforts(s: Session): { models.EffortChoice }
+	local state = states[s.id]
+	if state == nil then
+		return {}
+	end
+	return models.efforts(state.role, (M.effort(s)), "as the model's role says")
+end
+
 --- Has Greed's agent in `s` only read and search from now on: it's offered
 --- no tool that changes anything, nor told about helpers. For a helper
 --- working in the project, which can't have a workspace of its own.

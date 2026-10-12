@@ -1070,9 +1070,22 @@ greed.command({
 
 local NO_SESSION = "no agent session here; use it in a transcript, or space i l lists them"
 
--- The item in Greed's own agent's model list that picks any model a
--- provider lists, after the roles.
-local ANOTHER_MODEL = "Another model…"
+-- Asks for one of the `choices` of the chat command `name` in `s` in a
+-- picker titled `title`, as tab after `/name ` lists them. Returns its
+-- value, or nil when you picked none.
+local function pick(s: Session, name: string, title: string): string?
+	local command = slash.find(s, `/{name}`)
+	local listing = command and command.choices
+	local choices: { slash.Choice } = if listing then listing(s) else {}
+	local items = {}
+	for _, choice in choices do
+		local about = if choice.doc then `: {choice.doc}` else ""
+		local now = if choice.now then "  (now)" else ""
+		table.insert(items, { label = `{choice.label}{about}{now}`, value = choice.value })
+	end
+	local chosen = picker.choose(title, items)
+	return chosen and chosen.value
+end
 
 -- The mode or model among `list` that `named` names, by its id or name,
 -- whatever the case; or says there's none.
@@ -1112,22 +1125,10 @@ greed.command({
 			greed.echo(`{s.name} has no modes to pick from`)
 			return
 		end
-		if ctx.args[1] then
-			local mode = named_in(s.modes, ctx.args[1], "mode")
-			if mode then
-				switch(s, session.set_mode, mode.id)
-			end
-			return
-		end
-		local items = {}
-		for _, mode in s.modes do
-			local now = if mode.id == s.mode then "  (now)" else ""
-			local about = if mode.description then `: {mode.description}` else ""
-			table.insert(items, { label = `{mode.name}{about}{now}`, value = mode.id })
-		end
-		local chosen = picker.choose("Mode", items)
-		if chosen then
-			switch(s, session.set_mode, chosen.value)
+		local named = ctx.args[1] or pick(s, "mode", "Mode")
+		local mode = named and named_in(s.modes, named, "mode")
+		if mode then
+			switch(s, session.set_mode, mode.id)
 		end
 	end,
 })
@@ -1152,30 +1153,19 @@ greed.command({
 			greed.echo(`{s.name} has no models to pick from`)
 			return
 		end
-		if ctx.args[1] then
-			local model = named_in(s.models, ctx.args[1], "model")
-			if model then
-				switch(s, session.set_model, model.id)
-			end
+		local named = ctx.args[1] or pick(s, "model", "Model")
+		if named == nil then
 			return
-		end
-		local items = {}
-		for _, model in s.models do
-			local now = if model.id == s.model then "  (now)" else ""
-			local about = if model.description then `: {model.description}` else ""
-			table.insert(items, { label = `{model.name}{about}{now}`, value = model.id })
-		end
-		if own then
-			table.insert(items, { label = ANOTHER_MODEL, value = ANOTHER_MODEL })
-		end
-		local chosen = picker.choose("Model", items)
-		if chosen and chosen.value == ANOTHER_MODEL then
+		elseif own and named == slash.ANOTHER_MODEL then
 			local said = native.pick_model(s)
 			if said then
 				greed.echo(said)
 			end
-		elseif chosen then
-			switch(s, session.set_model, chosen.value)
+			return
+		end
+		local model = named_in(s.models, named, "model")
+		if model then
+			switch(s, session.set_model, model.id)
 		end
 	end,
 })
@@ -1193,30 +1183,20 @@ greed.command({
 			greed.echo(`{s.name} sets its own effort; only Greed's own agent's is set here`)
 			return
 		end
-		local wanted = ctx.args[1]
+		local wanted = ctx.args[1] or pick(s, "effort", "Effort for this session")
+		if wanted == nil then
+			return
+		end
 		-- Another plugin's tables are read through, not as lists.
 		local efforts: { string } = {}
 		for _, known in models.EFFORTS do
 			table.insert(efforts, known)
 		end
-		local effort: string?
-		if wanted == nil then
-			local now = native.effort(s)
-			local picked, chosen =
-				models.pick_effort("Effort for this session", now, "as the model's role says")
-			if not picked then
-				return
-			end
-			effort = chosen
-		elseif wanted == "unset" then
-			effort = nil
-		elseif table.find(efforts, wanted) then
-			effort = wanted
-		else
+		if wanted ~= "unset" and not table.find(efforts, wanted) then
 			greed.echo(`{wanted} isn't an effort: {table.concat(efforts, ", ")} or unset`)
 			return
 		end
-		s.effort = effort
+		s.effort = if wanted == "unset" then nil else wanted
 		local set, sent = native.effort(s)
 		local as = if sent and sent ~= set then ` (sent as {sent})` else ""
 		greed.echo(`effort {set or "unset"}{as} for this session; :models e sets the role's`)

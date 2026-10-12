@@ -525,6 +525,41 @@ function M.effort(role: string, wanted: string?): string?
 	return if best then M.EFFORTS[best] else effort
 end
 
+-- What each effort does, as the effort pickers say it.
+local EFFORT_DOCS: { [string]: string } = {
+	none = "answers without thinking, or as little as the model goes",
+	low = "thinks a little",
+	medium = "thinks some",
+	high = "thinks hard, slower and using more tokens",
+	max = "thinks as hard as the model goes, slowest and using the most tokens",
+}
+
+--- An effort to pick: `value` ("unset" for none), `label`, which says
+--- what it's sent as when that differs ("none (sent as low)"), what it
+--- does, and whether it's the one set `now`.
+export type EffortChoice = { value: string, label: string, doc: string, now: boolean }
+
+--- The efforts to pick from for the model playing `role`, with `now` set:
+--- those the model takes first, then the rest with what each is sent as
+--- (`effort`), then unset, which `unset` says what it means.
+function M.efforts(role: string, now: string?, unset: string): { EffortChoice }
+	local taken: { EffortChoice } = {}
+	local fitted: { EffortChoice } = {}
+	for _, effort in M.EFFORTS do
+		local sent = M.effort(role, effort)
+		local differs = sent ~= nil and sent ~= effort
+		table.insert(if differs then fitted else taken, {
+			value = effort,
+			label = if differs then `{effort} (sent as {sent})` else effort,
+			doc = EFFORT_DOCS[effort],
+			now = effort == now,
+		})
+	end
+	table.move(fitted, 1, #fitted, #taken + 1, taken)
+	table.insert(taken, { value = "unset", label = "unset", doc = unset, now = now == nil })
+	return taken
+end
+
 -- The headers that carry `key` to `provider`, as its API wants them.
 local function auth(provider: Provider, key: string?): { [string]: string }
 	if provider.kind == "anthropic" then
@@ -1742,33 +1777,19 @@ greed.command({
 	end,
 })
 
--- What each effort does, as the effort picker says it.
-local EFFORT_DOCS: { [string]: string } = {
-	none = "answers without thinking, or as little as the model goes",
-	low = "thinks a little",
-	medium = "thinks some",
-	high = "thinks hard, slower and using more tokens",
-	max = "thinks as hard as the model goes, slowest and using the most tokens",
-}
-
---- Asks for an effort (`EFFORTS`) in a picker titled `title`, `now`
---- marked, or for none, which `unset` says what it means. Returns whether
---- you picked one, and which.
-function M.pick_effort(title: string, now: string?, unset: string): (boolean, string?)
+--- Asks for one of `choices` (`efforts`) in a picker titled `title`.
+--- Returns whether you picked one, and which: nil for unset.
+function M.pick_effort(title: string, choices: { EffortChoice }): (boolean, string?)
 	local items: { picker.Item } = {}
-	local function add(name: string, doc: string, value: string, current: boolean)
-		local mark = if current then "  (now)" else ""
-		table.insert(items, { label = `{name}: {doc}{mark}`, value = value })
+	for _, choice in choices do
+		local mark = if choice.now then "  (now)" else ""
+		table.insert(items, { label = `{choice.label}: {choice.doc}{mark}`, value = choice.value })
 	end
-	for _, effort in M.EFFORTS do
-		add(effort, EFFORT_DOCS[effort], effort, effort == now)
-	end
-	add("unset", unset, "", now == nil)
 	local item = picker.choose(title, items)
 	if item == nil then
 		return false, nil
 	end
-	return true, if item.value == "" then nil else item.value
+	return true, if item.value == "unset" then nil else item.value
 end
 
 --- Asks which effort the model playing `role` gets (see `set_effort`),
@@ -1780,7 +1801,8 @@ function M.ask_effort(role: string): string?
 	if chosen == nil then
 		return `no model plays the role "{name}"`
 	end
-	local picked, effort = M.pick_effort(`Effort for {name}`, chosen.effort, "as the provider says")
+	local choices = M.efforts(name, chosen.effort, "as the provider says")
+	local picked, effort = M.pick_effort(`Effort for {name}`, choices)
 	if not picked then
 		return nil
 	end

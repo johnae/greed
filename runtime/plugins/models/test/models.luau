@@ -485,6 +485,36 @@ test(":models says what GLM's effort is sent as", function(t)
 	assert(found, "the fast role's line says none is sent as low")
 end)
 
+test("a role's efforts list those its model takes first, and what the rest are sent as", function(t)
+	models.roles.poetry = { provider = "mistral", model = "zai-glm-5-3", effort = "none" }
+	local labels = {}
+	for _, choice in models.efforts("poetry", "none", "as the provider says") do
+		local now = if choice.now then " (now)" else ""
+		table.insert(labels, `{choice.value}={choice.label}{now}`)
+	end
+	local said = table.concat(labels, ", ")
+	assert(
+		said
+			== "low=low, high=high, max=max, none=none (sent as low) (now), medium=medium (sent as high), unset=unset",
+		said
+	)
+	-- The :models picker lists them so.
+	t:buffer("|x")
+	t:run("models")
+	local page = greed.view():buffer()
+	for n = 0, page:line_count() - 1 do
+		if string.find(page:line_text(n), "^poetry:") then
+			greed.view():set_cursor(page:line_start(n))
+		end
+	end
+	t:keys("e")
+	t:wait(10)
+	local shown = table.concat(t:floats(), "\n")
+	t:keys("esc q")
+	models.roles.poetry = nil
+	assert(string.find(shown, "none (sent as low): ", 1, true), shown)
+end)
+
 test("max goes only where it's taken, else as the nearest", function()
 	models.roles.poetry = { provider = "openai", model = "gpt-5" }
 	assert(models.effort("poetry", "max") == "high", "OpenAI-like servers top out at high")

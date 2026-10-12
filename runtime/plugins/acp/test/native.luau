@@ -2831,25 +2831,109 @@ test("a /word that isn't one of Greed's goes to the model as typed", function(t)
 	assert(untimed(asked[1].said[1].text) == "/review the pager", untimed(asked[1].said[1].text))
 end)
 
-test("tab after / lists Greed's chat commands, with what each does", function(t)
-	script({})
-	shown_agent(t)
+-- What the completion menu lists, a row each, after typing `keys` at the
+-- end of the box of the transcript shown.
+local function completing(t: test.TestContext, keys: string): { string }
 	local view = greed.view()
 	local pos = view:buffer():len()
 	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
-	t:keys("i / e tab")
+	t:keys(keys)
 	t:wait(30)
-	local listed = ""
+	local rows = {}
 	for _, float in greed.floats() do
 		if float:buffer():kind() == "completion" then
-			listed = float:buffer():text()
+			for line in string.gmatch(float:buffer():text(), "[^\n]+") do
+				table.insert(rows, (string.gsub(line, "^%s+", "")))
+			end
 		end
 	end
+	return rows
+end
+
+-- Whether `rows` has one starting with each of `wanted`, in that order.
+local function in_order(rows: { string }, wanted: { string }): boolean
+	local at = 1
+	for _, row in rows do
+		if wanted[at] and string.sub(row, 1, #wanted[at]) == wanted[at] then
+			at += 1
+		end
+	end
+	return at > #wanted
+end
+
+local function typed_in_box(): string
+	return require("../transcript").prompt(greed.view():buffer())
+end
+
+test("tab after / lists Greed's chat commands, with what each does", function(t)
+	script({})
+	shown_agent(t)
+	local listed = table.concat(completing(t, "i / e tab"), "\n")
 	assert(string.find(listed, "/effort", 1, true), listed)
 	assert(string.find(listed, "How hard the model thinks", 1, true), listed)
 	t:keys("enter")
-	local typed = require("../transcript").prompt(view:buffer())
-	assert(typed == "/effort ", typed)
+	assert(typed_in_box() == "/effort ", typed_in_box())
+end)
+
+test("tab after /effort lists the efforts the model takes first, and how the rest go", function(t)
+	script({})
+	models.roles.agent = { provider = "mistral", model = "mistral-large-4", effort = "high" }
+	shown_agent(t)
+	local listed = completing(t, "i / e f f o r t space tab")
+	models.roles.agent = nil
+	assert(
+		in_order(listed, {
+			"none ",
+			"high (now)",
+			"low (sent as none)",
+			"medium (sent as high)",
+			"max (sent as high)",
+			"unset ",
+		}),
+		table.concat(listed, " / ")
+	)
+	t:keys("m a enter")
+	assert(typed_in_box() == "/effort max", typed_in_box())
+end)
+
+test("tab after /effort for GLM lists low, high and max as taken", function(t)
+	script({})
+	models.roles.agent = { provider = "mistral", model = "zai-glm-5-3" }
+	shown_agent(t)
+	local listed = completing(t, "i / e f f o r t space tab")
+	models.roles.agent = nil
+	assert(
+		in_order(listed, {
+			"low ",
+			"high ",
+			"max ",
+			"none (sent as low)",
+			"medium (sent as high)",
+			"unset (now)",
+		}),
+		table.concat(listed, " / ")
+	)
+end)
+
+test("tab after /model lists the roles and Another model…, as its picker does", function(t)
+	script({})
+	shown_agent(t)
+	local listed = table.concat(completing(t, "i / m o d e l space tab"), "\n")
+	assert(string.find(listed, "reasoning", 1, true), listed)
+	assert(string.find(listed, "Another model…", 1, true), listed)
+	t:keys("f a s enter")
+	assert(typed_in_box() == "/model fast", typed_in_box())
+end)
+
+test("tab after /mode lists the agent's modes", function(t)
+	script({})
+	local s = shown_agent(t)
+	s.modes = { { id = "plan", name = "Plan", description = "only reads" } }
+	local listed = table.concat(completing(t, "i / m o d e space tab"), "\n")
+	assert(string.find(listed, "Plan", 1, true), listed)
+	assert(string.find(listed, "only reads", 1, true), listed)
+	t:keys("enter")
+	assert(typed_in_box() == "/mode plan", typed_in_box())
 end)
 
 -- A 1×1 PNG, to attach.

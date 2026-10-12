@@ -664,6 +664,23 @@ for an agent that offers none). `tab` after the
 `/` lists the commands that fit what you typed, Greed's and those the
 agent offers, each with what it does.
 
+`tab` after `/effort `, `/model ` or `/mode ` lists what each takes, as its
+picker does, with the one the session has marked `(now)`. The efforts the
+model takes come first; the rest say what they're sent as, the nearest the
+model takes:
+
+```text
+none                    answers without thinking, or as little as the model goes
+high (now)              thinks hard, slower and using more tokens
+low (sent as none)      thinks a little
+medium (sent as high)   thinks some
+max (sent as high)      thinks as hard as the model goes, slowest and using the most tokens
+unset                   as the model's role says
+```
+
+That's Mistral Large 4, which takes `none` and `high`; GLM 5 takes `low`,
+`high` and `max`. `e` in `:models` lists them the same way for a role.
+
 ### The session list
 
 `space i l` lists the sessions of the repository you're in: those running
