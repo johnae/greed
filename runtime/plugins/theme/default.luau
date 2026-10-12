@@ -96,6 +96,10 @@ return {
 	-- What lit letters glow towards; effects need "#rrggbb" colors.
 	["ui.glow"] = { fg = "bright-white" },
 	["ui.flash"] = { bg = "yellow", fg = "black" },
+	-- Text someone else changed, and the line a jump landed on. With these
+	-- colors they can't fade, so they show for a moment and go.
+	["ui.changed"] = { underline = true },
+	["ui.jumped"] = { bg = "bright-black" },
 	["ui.jump.label"] = { fg = "red", bold = true },
 	["ui.motion.hint"] = { fg = "black", bg = "yellow", bold = true, gui = { badge = true } },
 	["ui.motion.hint.far"] = { fg = "black", bg = "white", bold = true, gui = { badge = true } },
@@ -104,6 +108,7 @@ return {
 	["ui.panel.border"] = { fg = "bright-black" },
 	["ui.panel.title"] = { bold = true },
 	["ui.pane.border"] = { fg = "bright-black" },
+	["ui.pane.inactive"] = {},
 	["ui.pane.label"] = { bg = "yellow", fg = "black", bold = true },
 	["ui.tabline"] = { bg = "bright-black", fg = "white" },
 	["ui.tabline.active"] = { bg = "blue", fg = "black", bold = true },

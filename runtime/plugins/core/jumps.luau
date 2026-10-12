@@ -5,8 +5,12 @@
 -- through it, ctrl-i (or tab) forward again. Places follow edits, and a
 -- place keeps where its view was scrolled. Other plugins add their own
 -- jumping commands with `require("@core").jumps.add(name)`.
+--
+-- The line a jump lands on lights up briefly (`effects-jumps`), and so does
+-- the one a move of more than a screen does.
 
 local greed = require("@greed")
+local effects = require("./effects")
 local file = require("./file")
 local registry = require("./registry")
 
@@ -20,8 +24,9 @@ type Place = {
 	offset: number,
 }
 
--- Where a view is, as last seen.
-type Seen = { buffer: number, pos: number, top: number }
+-- Where a view is, as last seen: also the cursor's line and the buffer's
+-- length, to tell a move from an edit.
+type Seen = { buffer: number, pos: number, top: number, line: number, len: number }
 
 type History = {
 	places: { Place },
@@ -106,7 +111,14 @@ local function forget(place: Place)
 end
 
 local function look(view: greed.View): Seen
-	return { buffer = view:buffer():id(), pos = view:cursor(), top = view:scroll() }
+	local buffer, pos = view:buffer(), view:cursor()
+	return {
+		buffer = buffer:id(),
+		pos = pos,
+		top = view:scroll(),
+		line = buffer:line_of(pos),
+		len = buffer:len(),
+	}
 end
 
 local function place_of(at: Seen): Place?
@@ -186,16 +198,63 @@ local function note(view: greed.View): Seen
 	return now
 end
 
+-- Where each view's jump started, by view id, until it lands.
+local leaving: { [number]: Seen } = {}
+
+-- A view's jump has landed once the view is in focus again somewhere else
+-- (a prompt or picker may have had the focus meanwhile): that line lights
+-- up. A file opened at its start has nothing to point out.
+local function land(view: greed.View, now: Seen)
+	local from = leaving[view:id()]
+	if from == nil or greed.view() ~= view then
+		return
+	end
+	local same = from.buffer == now.buffer
+	if same and from.line == now.line then
+		return
+	end
+	leaving[view:id()] = nil
+	if same or now.pos > 0 then
+		effects.jumped(view)
+	end
+end
+
 greed.on("command.run", function(event: greed.CommandRun)
 	local view = greed.view()
 	local now = note(view)
 	if JUMPS[event.name] then
 		push(view, now)
 	end
+	if JUMPS[event.name] or event.name == "jump-back" or event.name == "jump-forward" then
+		leaving[view:id()] = now
+	else
+		leaving[view:id()] = nil
+	end
 end)
 
 greed.on("selection.changed", function(event: greed.SelectionChanged)
-	note(event.view)
+	local view = event.view
+	local before = seen[view:id()]
+	local now = note(view)
+	if leaving[view:id()] then
+		land(view, now)
+		return
+	end
+	-- Any other move of more than a screen, the text unchanged, is a jump too.
+	local rows = view:size() or 40
+	if
+		before
+		and before.buffer == now.buffer
+		and before.len == now.len
+		and math.abs(now.line - before.line) > rows
+		and greed.view() == view
+	then
+		effects.jumped(view)
+	end
+end)
+
+greed.on("view.focused", function(event: greed.ViewFocused)
+	land(event.view, look(event.view))
 end)
 
 greed.on("view.scrolled", function(event: greed.ViewScrolled)
@@ -214,6 +273,7 @@ greed.on("view.closed", function(event: greed.ViewClosed)
 	end
 	histories[event.view] = nil
 	seen[event.view] = nil
+	leaving[event.view] = nil
 end)
 
 greed.command({

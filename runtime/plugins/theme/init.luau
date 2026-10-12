@@ -112,11 +112,23 @@ local function styles(name: string, seen: { [string]: boolean }): Styles
 	return out
 end
 
---- Switches to theme `name`.
+--- Switches to theme `name`. With `effects-dim` on, the text of the panes
+--- you're not in is dimmed: blended towards the background in the window,
+--- the terminal's dim attribute in a terminal.
 function M.use(name: string)
-	greed.theme.base(styles(name, {}))
+	local base = styles(name, {})
+	if greed.option.get("effects-dim") == true then
+		base["ui.pane.inactive"] = patch(base["ui.pane.inactive"], { dim = true })
+	end
+	greed.theme.base(base)
 	current = name
 end
+
+greed.on("option.changed", function(event: greed.OptionChanged)
+	if event.name == "effects-dim" then
+		M.use(current)
+	end
+end)
 
 -- Where the theme picked last is kept.
 local function remembered(): string?

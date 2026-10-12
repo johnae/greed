@@ -170,8 +170,9 @@ fn a_frame_draws_text_on_its_grid_with_the_cursor_status_line_and_a_float() {
     // The block cursor's cell is the text color.
     let cursor = pixel(&rgba, size.0, (3.5 * cw) as u32, (0.15 * ch) as u32);
     assert_eq!(&cursor[..3], &palette.fg, "cursor cell");
-    // The status line's background fills its row.
-    let status = pixel(&rgba, size.0, size.0 - 2, (6.5 * ch) as u32);
+    // The status line's background fills its row (away from the float, whose
+    // shadow falls on its right end).
+    let status = pixel(&rgba, size.0, (22.5 * cw) as u32, (6.5 * ch) as u32);
     assert_eq!(&status[..3], &[0x81, 0xa2, 0xbe], "status line");
     // Somewhere in "fn" is the keyword's color, not the background.
     let keyword = (0..(2.0 * cw) as u32)
@@ -568,8 +569,8 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
         ..Row::default()
     };
     assert!(
-        !Chrome::of(&frame).rounded && !Chrome::of(&frame).shadows,
-        "only where the theme says"
+        !Chrome::of(&frame).rounded && Chrome::of(&frame).shadows,
+        "rounded only where the theme says, shadows unless it says not"
     );
     let mut theme = (*frame.theme).clone();
     theme.set(
@@ -633,6 +634,76 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
             .zip(&[0x30, 0x34, 0x46])
             .all(|(s, b)| s < b),
         "shadow under the float: {shade:?}"
+    );
+}
+
+#[test]
+fn floats_cast_shadows_unless_the_theme_says_not_lighter_on_a_light_background() {
+    // `frame` with its text and float backgrounds `text` and `float`, and
+    // its floats rounded, with shadows as `shadow` says.
+    fn themed(text: (u8, u8, u8), float: (u8, u8, u8), shadow: Option<bool>) -> Frame {
+        let mut frame = frame();
+        let mut theme = (*frame.theme).clone();
+        for (name, (r, g, b)) in [("ui.text", text), ("ui.float", float)] {
+            let is_float = name == "ui.float";
+            theme.set(
+                name,
+                Entry::new(Style {
+                    bg: Some(Color::Rgb(r, g, b)),
+                    rounded: is_float.then_some(true),
+                    shadow: if is_float { shadow } else { None },
+                    ..Style::default()
+                }),
+            );
+        }
+        frame.theme = Arc::new(theme);
+        frame
+    }
+    let (dark, light) = ((0x30, 0x34, 0x46), (0xef, 0xf1, 0xf5));
+    assert!(
+        Chrome::of(&themed(dark, dark, None)).shadows,
+        "on by default"
+    );
+    assert!(
+        !Chrome::of(&themed(dark, dark, Some(false))).shadows,
+        "a theme can turn them off"
+    );
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    // How much darker the shadow makes the blue under the float, with the
+    // text's background `under` and the float's `float`.
+    let mut drop = |name: &str, under: (u8, u8, u8), float: (u8, u8, u8)| {
+        let frame = themed(under, float, None);
+        let grid = compose(&frame, Medium::Gui);
+        let scene = build(
+            &grid,
+            None,
+            &Chrome::of(&frame),
+            &mut fonts,
+            &mut atlas,
+            &palette,
+        )
+        .unwrap();
+        gpu.upload(&mut atlas);
+        let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+        let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+        let rgba = gpu.snapshot(size, &scene);
+        save(name, size, &rgba);
+        let shade = pixel(&rgba, size.0, (30.0 * cw) as u32, (5.9 * ch) as u32);
+        i32::from(under.2) - i32::from(shade[2])
+    };
+    let on_dark = drop("shadow-dark.png", dark, (0x41, 0x45, 0x59));
+    let on_light = drop("shadow-light.png", light, (0xe6, 0xe9, 0xef));
+    assert!(on_dark > 0 && on_light > 0, "{on_dark} {on_light}");
+    // Black at the same depth would take about three and a half times as
+    // much off the light background.
+    assert!(
+        on_light < on_dark * 5 / 2,
+        "lighter on light: {on_light} against {on_dark}"
     );
 }
 

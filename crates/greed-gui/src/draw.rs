@@ -106,7 +106,8 @@ pub struct Chrome<'a> {
     pub floats: Vec<Rect>,
     /// Floats with rounded corners and an outline instead of box lines.
     pub rounded: bool,
-    /// Floats casting a soft shadow on what's under them.
+    /// Floats casting a soft shadow on what's under them: unless the theme
+    /// turns it off.
     pub shadows: bool,
     /// How text looks where nothing says otherwise (`ui.text`): its
     /// background is the window's, behind every cell.
@@ -115,7 +116,8 @@ pub struct Chrome<'a> {
 
 impl<'a> Chrome<'a> {
     /// What `frame` has besides its cells, its floats looking as the theme's
-    /// `ui.float` says for the window (`rounded`, `shadow`).
+    /// `ui.float` says for the window (`rounded`, `shadow`). Floats cast a
+    /// shadow unless the theme says `shadow = false`.
     pub fn of(frame: &'a Frame) -> Self {
         let float = frame.theme.style("ui.float", Medium::Gui);
         Chrome {
@@ -124,7 +126,7 @@ impl<'a> Chrome<'a> {
             // A float without a border is plain cells, with no box drawn around it.
             floats: frame.bordered_floats().collect(),
             rounded: float.rounded == Some(true),
-            shadows: float.shadow == Some(true),
+            shadows: float.shadow != Some(false),
             text: frame.theme.style("ui.text", Medium::Gui),
         }
     }
@@ -189,7 +191,7 @@ pub fn build(
             &mut instances,
         );
     }
-    float_shapes(&boxes, chrome, &mut instances);
+    float_shapes(&boxes, chrome, background, &mut instances);
     fill(Pass::Floats { border: !rounded }, &mut instances);
     let backgrounds = instances.len();
     let border: Vec<Vec<bool>> = regions
@@ -579,10 +581,14 @@ fn rounded(x: f32, y: f32, w: f32, h: f32, radius: f32, outline: f32, color: Rgb
 }
 
 /// The floats' boxes: every shadow first, so none falls on another float,
-/// then each fill, and its outline when rounded.
-fn float_shapes(boxes: &[FloatBox], chrome: &Chrome, out: &mut Vec<Instance>) {
+/// then each fill, and its outline when rounded. A shadow on a light
+/// `background` is lighter than on a dark one, where it has to be deeper to
+/// show at all.
+fn float_shapes(boxes: &[FloatBox], chrome: &Chrome, background: Rgba, out: &mut Vec<Instance>) {
     if chrome.shadows {
-        out.extend(boxes.iter().map(FloatBox::shadow));
+        let light = 0.2126 * background[0] + 0.7152 * background[1] + 0.0722 * background[2];
+        let depth = if light > 0.5 { 0.18 } else { 0.7 };
+        out.extend(boxes.iter().map(|b| b.shadow(depth)));
     }
     for b in boxes {
         out.push(b.fill());
@@ -610,14 +616,15 @@ struct FloatBox {
 
 impl FloatBox {
     /// Its shadow: one soft edge, a little lower than the box, so it falls
-    /// mostly below it, as from a light above.
-    fn shadow(&self) -> Instance {
+    /// mostly below it, as from a light above; black at `depth` opacity
+    /// where it's darkest.
+    fn shadow(&self, depth: f32) -> Instance {
         let blur = self.blur;
         Instance {
             pos: [self.x - blur, self.y - blur + blur / 2.0],
             size: [self.w + 2.0 * blur, self.h + 2.0 * blur],
             uv: [self.radius, blur, self.radius, blur],
-            color: [0.0, 0.0, 0.0, 0.45],
+            color: [0.0, 0.0, 0.0, depth],
             kind: SHADOW,
         }
     }

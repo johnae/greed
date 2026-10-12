@@ -50,6 +50,11 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 			and effects.lightness(bg) < 0.5
 		then effects.mix(text, { 255, 255, 255 }, 0.7)
 		else accent
+	-- A little of `color` over the background, for highlights that fade.
+	local function tint(color: string, amount: number): string
+		local over = effects.rgb(color)
+		return if bg and over then effects.mix(bg, over, amount) else p.selection
+	end
 	local keyword = p.keyword or p.purple
 	local func = p.func or p.blue
 	local str = p.string or p.green
@@ -89,6 +94,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.panel.border"] = { fg = p.gutter },
 		["ui.panel.title"] = { fg = p.fg, bold = true },
 		["ui.pane.border"] = { fg = p.gutter },
+		["ui.pane.inactive"] = {},
 		["ui.pane.label"] = { bg = p.yellow, fg = p.bg, bold = true },
 		["ui.tabline"] = { bg = p.bg_alt, fg = p.comment },
 		["ui.tabline.active"] = { bg = accent, fg = p.bg, bold = true },
@@ -101,6 +107,10 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.search.match"] = { bg = p.yellow, fg = p.bg },
 		["ui.grep.location"] = { fg = p.cyan },
 		["ui.flash"] = { bg = p.yellow, fg = p.bg },
+		-- Text someone else changed, and the line a jump landed on: faint,
+		-- and fading to the background (core.effects).
+		["ui.changed"] = { bg = tint(p.yellow, 0.3) },
+		["ui.jumped"] = { bg = tint(accent, 0.28) },
 		["ui.jump.label"] = { fg = p.red, bold = true },
 		["ui.motion.hint"] = { fg = p.bg, bg = p.yellow, bold = true, gui = { badge = true } },
 		["ui.motion.hint.far"] = {

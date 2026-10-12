@@ -21,23 +21,7 @@ greed.option.define({
 -- Each flash gets a number, so an older one finishing doesn't clear a newer.
 local latest = 0
 
--- The red, green and blue of a "#rrggbb" color.
-local function rgb(hex: string): { number }?
-	local r, g, b = string.match(hex, "^#(%x%x)(%x%x)(%x%x)$")
-	if r == nil then
-		return nil
-	end
-	return { tonumber(r, 16) :: number, tonumber(g, 16) :: number, tonumber(b, 16) :: number }
-end
-
--- The color `t` of the way from `from` to `to`.
-local function mix(from: { number }, to: { number }, t: number): string
-	local out = {}
-	for i = 1, 3 do
-		out[i] = math.floor(from[i] + (to[i] - from[i]) * t + 0.5)
-	end
-	return string.format("#%02x%02x%02x", out[1], out[2], out[3])
-end
+local rgb, mix = core.effects.rgb, core.effects.mix
 
 greed.on("command.run", function(event: greed.CommandRun)
 	if event.name ~= "copy" then

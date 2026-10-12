@@ -99,3 +99,37 @@ test("a theme's styles and your own entries change only the fields they give", f
 	assert(keyword.fg == "#81a1c1" and keyword.bold == true, "the theme's color stays")
 	theme.use("default")
 end)
+
+test("effects-dim dims the panes you're not in, whichever theme is in use", function()
+	local function dimmed(): boolean
+		local entry = greed.theme.get("ui.pane.inactive")
+		return entry ~= nil and entry.dim == true
+	end
+	assert(not dimmed(), "off by default")
+	greed.option.set("effects-dim", true)
+	assert(dimmed(), "on")
+	theme.use("nord")
+	assert(dimmed(), "still, after switching themes")
+	greed.option.set("effects-dim", false)
+	assert(not dimmed(), "and off again")
+end)
+
+test("the highlights that fade are faint in every theme, light or dark", function()
+	local effects = require("@core").effects
+	for _, name in theme.list() do
+		theme.use(name)
+		local text = greed.theme.get("ui.text")
+		local back = effects.rgb(text and text.bg)
+		for _, style in { "ui.changed", "ui.jumped" } do
+			local entry = greed.theme.get(style)
+			local lit = effects.rgb(entry and entry.bg)
+			if back then
+				assert(lit, `{name}: {style} has a "#rrggbb" background to fade from`)
+				local apart = effects.distance(back, lit)
+				assert(apart > 15 and apart < 110, `{name}: {style} is faint, but shows: {apart}`)
+			else
+				assert(entry ~= nil, `{name}: {style} has an entry`)
+			end
+		end
+	end
+end)

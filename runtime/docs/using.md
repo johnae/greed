@@ -221,7 +221,8 @@ selections and clicks follow the text where it's drawn.
 
 Floats (pickers, prompts, hover info) show as boxes with rounded corners
 and a soft shadow, as the theme says for the window; terminals draw box
-lines. The window draws the round ends of the status line's pills itself,
+lines. Floats cast a shadow unless the theme turns it off, a lighter one on
+a light background. The window draws the round ends of the status line's pills itself,
 so they need no Powerline font. For square floats without shadows:
 
 ```luau
@@ -2095,6 +2096,38 @@ option.set("effects", true)
 The wave's letters glow towards the theme's `ui.glow` color: brighter text
 in a dark theme, the accent in a light one. Effects need a theme with
 `#rrggbb` colors, so the default 16-color theme has none.
+
+### Highlights that show what changed
+
+Some highlights tell you something, so they're on unless you turn them
+off. Each has an option of its own:
+
+- `effects-changes`: text someone other than you changes (an agent, a
+  formatter, a language server's rename or fix, a plugin, the file changing
+  on disk) gets a faint background in the views showing it for a second,
+  then fades out over a second and a half. What you type, paste, undo or pick from a completion
+  menu doesn't.
+- `effects-jumps`: the line a jump lands on lights up for a moment: a
+  search hit, going to a definition, back and forward through the jumplist
+  (`ctrl-o`, `ctrl-i`), a picker opening a file at a line, and any move of
+  more than a screen. Ordinary moves don't.
+- `effects-dim`, off by default: the panes you're not in are dimmed, their
+  text blended towards the background in the window, and in a terminal
+  drawn with its dim attribute.
+
+```luau
+local option = require("@greed").option
+option.set("effects-changes", false)
+option.set("effects-dim", true)
+```
+
+The colors are the theme's `ui.changed` and `ui.jumped` backgrounds. With
+`#rrggbb` colors they fade in a few steps, in the terminal too; with the
+terminal's 16 colors changed text is underlined for a moment and the
+line a jump lands on gets a gray background, then both go. In a
+repository, the gutter's `+`, `~` and `-` signs also mark the lines that
+changed, without relying on color, and the cursor is on the line a jump
+lands on.
 
 Add pieces of your own, or take some away:
 
