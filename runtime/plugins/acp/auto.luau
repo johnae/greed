@@ -158,19 +158,23 @@ local UNSAFE = 0.2
 local MESSAGES = 4
 local MESSAGE_BYTES = 1500
 
--- Your newest messages to `s`, oldest first.
-local function asked(s: Session): { string }
-	local out: { string } = {}
+-- Your newest message to `s`, the few before it (oldest first), and how
+-- many you've sent. The newest goes apart: among earlier ones asking for
+-- something else, a decision model weighs it too lightly.
+local function asked(s: Session): (string?, { string }, number)
+	local said: { string } = {}
+	local count = 0
 	for i = #s.entries, 1, -1 do
 		local e = s.entries[i]
 		if e.kind == "user" and e.text then
-			table.insert(out, 1, string.sub(e.text, 1, MESSAGE_BYTES))
-			if #out == MESSAGES then
-				break
+			count += 1
+			if #said < MESSAGES then
+				table.insert(said, 1, string.sub(e.text, 1, MESSAGE_BYTES))
 			end
 		end
 	end
-	return out
+	local now = table.remove(said)
+	return now, said, count
 end
 
 -- What the decision model said of each command, by session and how many of
@@ -182,17 +186,18 @@ local decided: { [Session]: { [string]: Verdict } } = setmetatable({}, { __mode 
 -- there's no model or no clear answer. It isn't told what Greed thinks is
 -- risky: told so, it blocks what you asked for too.
 local function judge(s: Session, command: string): Verdict?
-	local said = asked(s)
+	local now, before, count = asked(s)
 	local known = decided[s] or {}
 	decided[s] = known
-	local key = `{#said}\0{command}`
+	local key = `{count}\0{command}`
 	if known[key] then
 		return known[key]
 	end
 	local rules = greed.option.get("agent-auto-rules")
 	local state = {
 		project_folder = s.cwd,
-		user_asked = said,
+		user_asks_now = now,
+		user_asked_before = if #before > 0 then before else nil,
 		user_rules = if type(rules) == "string" and rules ~= "" then rules else nil,
 		agent_command = agent.untrusted("the agent's command", command),
 	}

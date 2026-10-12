@@ -95,6 +95,24 @@ test("the decision model judges other commands, risky ones too, by what you aske
 	end)
 end)
 
+test(
+	"your newest message goes apart, and after a new one a command is asked about again",
+	function(t)
+		local s = session_in(t, "make a folder")
+		table.insert(s.entries, { kind = "user", text = "now delete it" })
+		local given = deciding(SAFE, function()
+			auto.decide(s, asking("execute", nil, "rm -rf /tmp/x"))
+			auto.decide(s, asking("execute", nil, "rm -rf /tmp/x"))
+			table.insert(s.entries, { kind = "user", text = "and again" })
+			auto.decide(s, asking("execute", nil, "rm -rf /tmp/x"))
+		end)
+		assert(#given == 2, `asked {#given} times`)
+		local state = greed.json.decode(given[1])
+		assert(state.user_asks_now == "now delete it", given[1])
+		assert(state.user_asked_before[1] == "make a folder", given[1])
+	end
+)
+
 test("your rules go to the decision model", function(t)
 	local s = session_in(t)
 	greed.option.set("agent-auto-rules", "deleting under /tmp is fine")
