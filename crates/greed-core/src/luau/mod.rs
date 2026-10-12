@@ -84,6 +84,63 @@ const SLICE: Duration = Duration::from_millis(15);
 /// Plugin name used for code evaluated at the REPL.
 const REPL: &str = "user/repl";
 
+/// What plugins wait on, answer and hear from language servers.
+#[derive(Default)]
+pub(crate) struct LspCalls {
+    /// The waiting command each pending request wakes, by server and
+    /// request id.
+    pub waiting: HashMap<(crate::lsp::ServerId, i64), u64>,
+    /// What answers each kind of request from servers, and its plugin.
+    pub handlers: HashMap<String, (PluginId, Function)>,
+    /// What hears each kind of notification from servers, and its plugin.
+    pub listeners: Vec<(String, PluginId, Function)>,
+}
+
+impl LspCalls {
+    /// Forgets the handlers and listeners plugin `name` set.
+    fn remove_owned_by(&mut self, name: &str) {
+        self.handlers.retain(|_, (owner, _)| &**owner != name);
+        self.listeners.retain(|(_, owner, _)| &**owner != name);
+    }
+}
+
+/// Requests from the session socket that plugins haven't answered yet, and
+/// the connections they came on.
+#[derive(Default)]
+pub(crate) struct Control {
+    pub pending: HashMap<u64, crate::control::Request>,
+    pub next: u64,
+    /// The session socket connections requests came on, by id, for
+    /// `greed.control.send`; closed ones are dropped as new ones come.
+    pub connections: HashMap<u64, crate::control::Notifier>,
+    /// Where requests from other transports go, when there is a session.
+    pub sender: Option<crossbeam_channel::Sender<crate::control::Request>>,
+}
+
+/// What plugins were last told of each client's views, so they hear only
+/// of changes.
+#[derive(Default)]
+pub(crate) struct Told {
+    /// Each view's size, with "view.resized".
+    pub sizes: HashMap<(ClientId, crate::ViewId), (u16, u16)>,
+    /// Each view's top line, with "view.scrolled".
+    pub scrolls: HashMap<(ClientId, crate::ViewId), usize>,
+    /// Each view's buffer and selection, with "selection.changed".
+    pub selections: HashMap<(ClientId, crate::ViewId), (crate::BufferId, greed_text::Selection)>,
+    /// Each client's focused view, with "view.focused".
+    pub focus: HashMap<ClientId, crate::ViewId>,
+}
+
+impl Told {
+    /// Forgets what client `id` was told, as it goes.
+    fn forget(&mut self, id: ClientId) {
+        self.focus.remove(&id);
+        self.sizes.retain(|(client, _), _| *client != id);
+        self.scrolls.retain(|(client, _), _| *client != id);
+        self.selections.retain(|(client, _), _| *client != id);
+    }
+}
+
 pub(crate) struct State {
     pub editor: Editor,
     pub registry: Registry<Function>,
@@ -109,13 +166,8 @@ pub(crate) struct State {
     pub recording: HashMap<ClientId, HashMap<String, api::Recording>>,
     /// Language servers.
     pub lsp: crate::lsp::Lsp,
-    /// The waiting command each pending request wakes, by server and
-    /// request id.
-    pub lsp_waiting: HashMap<(crate::lsp::ServerId, i64), u64>,
-    /// What answers each kind of request from servers, and its plugin.
-    pub lsp_handlers: HashMap<String, (PluginId, Function)>,
-    /// What hears each kind of notification from servers, and its plugin.
-    pub lsp_listeners: Vec<(String, PluginId, Function)>,
+    /// What plugins wait on, answer and hear from language servers.
+    pub lsp_calls: LspCalls,
     /// The theme entries plugins set, each with the plugin that set it last,
     /// so it goes with the plugin. Each patches the base theme's entry.
     pub theme_set: HashMap<Arc<str>, (PluginId, crate::theme::Entry)>,
@@ -124,14 +176,8 @@ pub(crate) struct State {
     pub theme_base: Option<(PluginId, HashMap<Arc<str>, crate::theme::Entry>)>,
     /// Work running on other threads.
     pub jobs: jobs::Jobs,
-    /// Requests from the session socket that plugins haven't answered yet.
-    pub requests: HashMap<u64, crate::control::Request>,
-    pub next_request: u64,
-    /// The session socket connections requests came on, by id, for
-    /// `greed.control.send`; closed ones are dropped as new ones come.
-    pub connections: HashMap<u64, crate::control::Notifier>,
-    /// Where requests from other transports go, when there is a session.
-    pub request_sender: Option<crossbeam_channel::Sender<crate::control::Request>>,
+    /// Requests from the session socket and where they came from.
+    pub control: Control,
     /// Claude Code's IDE connection, once a plugin starts it, and that
     /// plugin.
     pub ide: Option<(PluginId, crate::ide::Ide)>,
@@ -150,19 +196,8 @@ pub(crate) struct State {
     pub dirs: Option<PathBuf>,
     /// Programs running in terminals.
     pub terminals: terminal::Terminals,
-    /// Each view's size for each client, as last told to plugins with
-    /// "view.resized".
-    pub view_sizes: HashMap<(ClientId, crate::ViewId), (u16, u16)>,
-    /// Each view's top line for each client, as last told to plugins with
-    /// "view.scrolled".
-    pub view_scrolls: HashMap<(ClientId, crate::ViewId), usize>,
-    /// Each view's buffer and selection for each client, as last told to
-    /// plugins with "selection.changed".
-    pub view_selections:
-        HashMap<(ClientId, crate::ViewId), (crate::BufferId, greed_text::Selection)>,
-    /// Each client's focused view as last told to plugins with
-    /// "view.focused".
-    pub focus_told: HashMap<ClientId, crate::ViewId>,
+    /// What plugins were last told of each client's views.
+    pub told: Told,
     /// Syntax trees, for highlighting and for plugins.
     pub syntax: crate::syntax::Syntax,
     /// The queries each plugin set, by language and kind, oldest first; the
@@ -450,16 +485,11 @@ impl Host {
             key_waiter: HashMap::new(),
             recording: HashMap::new(),
             lsp: crate::lsp::Lsp::default(),
-            lsp_waiting: HashMap::new(),
-            lsp_handlers: HashMap::new(),
-            lsp_listeners: Vec::new(),
+            lsp_calls: LspCalls::default(),
             theme_set: HashMap::new(),
             theme_base: None,
             jobs: jobs::Jobs::default(),
-            requests: HashMap::new(),
-            next_request: 0,
-            connections: HashMap::new(),
-            request_sender: None,
+            control: Control::default(),
             ide: None,
             menus_owner: None,
             session_name: None,
@@ -467,10 +497,7 @@ impl Host {
             attached: true,
             dirs: None,
             terminals: terminal::Terminals::default(),
-            view_sizes: HashMap::new(),
-            view_scrolls: HashMap::new(),
-            view_selections: HashMap::new(),
-            focus_told: HashMap::new(),
+            told: Told::default(),
             syntax: crate::syntax::Syntax::new(),
             query_owners: HashMap::new(),
             watches: watch::Watches::default(),
@@ -782,7 +809,7 @@ impl Host {
     /// Lets plugins start transports, like the IDE connection, whose
     /// requests arrive with the session socket's.
     pub fn set_request_sender(&self, sender: crossbeam_channel::Sender<crate::control::Request>) {
-        state_mut(&self.lua).request_sender = Some(sender);
+        state_mut(&self.lua).control.sender = Some(sender);
     }
 
     /// Tells plugins about the files opened before they loaded, as
@@ -903,10 +930,7 @@ impl Host {
         let state = &mut *state_mut(&self.lua);
         state.key_waiter.remove(&id);
         state.recording.remove(&id);
-        state.focus_told.remove(&id);
-        state.view_sizes.retain(|(client, _), _| *client != id);
-        state.view_scrolls.retain(|(client, _), _| *client != id);
-        state.view_selections.retain(|(client, _), _| *client != id);
+        state.told.forget(id);
         state.tasks.forget_client(id);
     }
 
@@ -956,7 +980,7 @@ impl Host {
     /// Tells plugins the session socket connection `id` closed, with
     /// "control.closed", e.g. so what its requests wait on can stop.
     pub fn connection_closed(&self, id: u64) -> Result<(), HostError> {
-        state_mut(&self.lua).connections.remove(&id);
+        state_mut(&self.lua).control.connections.remove(&id);
         budgeted(&self.lua, || {
             let payload = self.lua.create_table()?;
             payload.set("connection", id)?;
@@ -1414,10 +1438,10 @@ fn report_views_of(lua: &Lua, client: ClientId) -> mlua::Result<bool> {
             .collect();
         let resized = sizes
             .iter()
-            .filter(|(id, size)| state.view_sizes.get(id) != Some(size))
+            .filter(|(id, size)| state.told.sizes.get(id) != Some(size))
             .map(|((_, id), size)| (*id, *size))
             .collect();
-        replace_client_views(&mut state.view_sizes, client, sizes);
+        replace_client_views(&mut state.told.sizes, client, sizes);
         let scrolls: HashMap<_, _> = state
             .editor
             .view_scrolls()
@@ -1426,10 +1450,10 @@ fn report_views_of(lua: &Lua, client: ClientId) -> mlua::Result<bool> {
         // A view that's new hasn't scrolled anywhere yet.
         let scrolled = scrolls
             .iter()
-            .filter(|(id, line)| state.view_scrolls.get(id).is_some_and(|old| old != *line))
+            .filter(|(id, line)| state.told.scrolls.get(id).is_some_and(|old| old != *line))
             .map(|((_, id), line)| (*id, *line))
             .collect();
-        replace_client_views(&mut state.view_scrolls, client, scrolls);
+        replace_client_views(&mut state.told.scrolls, client, scrolls);
         (resized, scrolled)
     };
     let author = greed_text::Author::User(client);
@@ -1482,7 +1506,7 @@ fn report_selections_of(lua: &Lua, client: ClientId) -> mlua::Result<bool> {
         let moved = state.editor.take_moved();
         let editor = &state.editor;
         let focus = editor.focus();
-        let focused = match state.focus_told.insert(client, focus) {
+        let focused = match state.told.focus.insert(client, focus) {
             Some(old) if old != focus => Some((focus, editor.find_view(old).map(|_| old), moved)),
             _ => None,
         };
@@ -1494,13 +1518,14 @@ fn report_selections_of(lua: &Lua, client: ClientId) -> mlua::Result<bool> {
             .iter()
             .filter(|(id, seen)| {
                 state
-                    .view_selections
+                    .told
+                    .selections
                     .get(id)
                     .is_some_and(|old| old != *seen)
             })
             .map(|((_, id), _)| *id)
             .collect();
-        replace_client_views(&mut state.view_selections, client, now);
+        replace_client_views(&mut state.told.selections, client, now);
         (focused, changed)
     };
     let author = greed_text::Author::User(client);
@@ -1567,8 +1592,7 @@ fn remove_owned_by(state: &mut State, name: &str) -> Vec<crate::ViewId> {
     let closed = state
         .owned
         .remove_owned_by(name, &mut state.editor, &mut state.lsp);
-    state.lsp_handlers.retain(|_, (owner, _)| &**owner != name);
-    state.lsp_listeners.retain(|(_, owner, _)| &**owner != name);
+    state.lsp_calls.remove_owned_by(name);
     state.cli.retain(|_, command| &*command.owner != name);
     state.editor.keymap_mut().remove_owned_by(name);
     let mut restyled: Vec<Arc<str>> = state

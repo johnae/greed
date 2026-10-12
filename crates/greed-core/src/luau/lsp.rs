@@ -37,7 +37,7 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
     };
     match handled {
         Handled::Response { server, id, result } => {
-            let Some(token) = state_mut(lua).lsp_waiting.remove(&(server, id)) else {
+            let Some(token) = state_mut(lua).lsp_calls.waiting.remove(&(server, id)) else {
                 return Ok(());
             };
             let (result, error) = match &result {
@@ -69,7 +69,8 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
 /// so its answers can't wake these.
 fn stopped(lua: &Lua, server: lsp::ServerId) -> LuaResult<()> {
     let tokens: Vec<u64> = state_mut(lua)
-        .lsp_waiting
+        .lsp_calls
+        .waiting
         .extract_if(|(s, _), _| *s == server)
         .map(|(_, token)| token)
         .collect();
@@ -97,7 +98,8 @@ fn answer(
     params: &serde_json::Value,
 ) -> LuaResult<()> {
     let handler = state(lua)
-        .lsp_handlers
+        .lsp_calls
+        .handlers
         .get(method)
         .map(|(owner, handler)| (owner.clone(), handler.clone()));
     let Some((owner, handler)) = handler else {
@@ -138,7 +140,8 @@ fn tell(
     params: &serde_json::Value,
 ) -> LuaResult<()> {
     let listeners: Vec<(PluginId, Function)> = state(lua)
-        .lsp_listeners
+        .lsp_calls
+        .listeners
         .iter()
         .filter(|(m, _, _)| m == method)
         .map(|(_, owner, handler)| (owner.clone(), handler.clone()))
@@ -182,7 +185,8 @@ fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
         "on_request",
         lua.create_function(move |lua, (method, handler): (String, Function)| {
             state_mut(lua)
-                .lsp_handlers
+                .lsp_calls
+                .handlers
                 .insert(method, (o.clone(), handler));
             Ok(())
         })?,
@@ -193,7 +197,8 @@ fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
         "on_notification",
         lua.create_function(move |lua, (method, handler): (String, Function)| {
             state_mut(lua)
-                .lsp_listeners
+                .lsp_calls
+                .listeners
                 .push((method, o.clone(), handler));
             Ok(())
         })?,
@@ -410,7 +415,7 @@ fn request_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
                 .request(b, &method, &params)
                 .map_err(mlua::Error::external)?;
             let token = state.tasks.token();
-            state.lsp_waiting.insert(request, token);
+            state.lsp_calls.waiting.insert(request, token);
             Ok(token)
         },
     )?;

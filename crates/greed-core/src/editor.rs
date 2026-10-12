@@ -1402,6 +1402,11 @@ impl Editor {
         self.views().get(&id)
     }
 
+    /// The acting client's view `id`, if it has it, to change.
+    pub fn find_view_mut(&mut self, id: ViewId) -> Option<&mut View> {
+        self.acting_client_mut().views.get_mut(&id)
+    }
+
     pub fn buffers(&self) -> impl Iterator<Item = &Buffer> {
         self.buffers.values()
     }
@@ -1442,10 +1447,7 @@ impl Editor {
     }
 
     pub fn view_mut(&mut self, id: ViewId) -> &mut View {
-        self.acting_client_mut()
-            .views
-            .get_mut(&id)
-            .expect("view exists")
+        self.find_view_mut(id).expect("view exists")
     }
 
     /// The other attached clients and how each sees `view`: whose cursors

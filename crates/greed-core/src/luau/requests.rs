@@ -34,14 +34,17 @@ pub(super) fn handle(lua: &Lua, request: Request) -> LuaResult<()> {
     let id = {
         let mut state = state_mut(lua);
         if let Some(connection) = &request.connection
-            && !state.connections.contains_key(&connection.id)
+            && !state.control.connections.contains_key(&connection.id)
         {
-            state.connections.retain(|_, known| known.is_open());
-            state.connections.insert(connection.id, connection.clone());
+            state.control.connections.retain(|_, known| known.is_open());
+            state
+                .control
+                .connections
+                .insert(connection.id, connection.clone());
         }
-        state.next_request += 1;
-        let id = state.next_request;
-        state.requests.insert(id, request);
+        state.control.next += 1;
+        let id = state.control.next;
+        state.control.pending.insert(id, request);
         id
     };
     payload.set("id", id)?;
@@ -54,7 +57,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     control.set(
         "reply",
         lua.create_function(|lua, (id, result, error): (u64, Value, Option<String>)| {
-            let Some(request) = state_mut(lua).requests.remove(&id) else {
+            let Some(request) = state_mut(lua).control.pending.remove(&id) else {
                 return Err(mlua::Error::runtime(format!(
                     "request {id} was already answered"
                 )));
@@ -71,7 +74,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     control.set(
         "serve_ide",
         lua.create_function(move |lua, (folders, dir): (Vec<String>, Option<String>)| {
-            let sender = state(lua).request_sender.clone().ok_or_else(|| {
+            let sender = state(lua).control.sender.clone().ok_or_else(|| {
                 mlua::Error::runtime("Claude Code can only connect to an editor with a session")
             })?;
             let dir = dir
@@ -94,10 +97,10 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             |lua, (connection, method, params): (Option<u64>, String, Value)| {
                 let params: serde_json::Value = lua.from_value(params)?;
                 let sent = connection
-                    .and_then(|id| state(lua).connections.get(&id).cloned())
+                    .and_then(|id| state(lua).control.connections.get(&id).cloned())
                     .is_some_and(|notifier| notifier.notify(&method, &params));
                 if !sent && let Some(id) = connection {
-                    state_mut(lua).connections.remove(&id);
+                    state_mut(lua).control.connections.remove(&id);
                 }
                 Ok(sent)
             },

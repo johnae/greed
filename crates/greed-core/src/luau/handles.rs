@@ -77,6 +77,19 @@ impl ViewRef {
         f(view)
     }
 
+    fn with_view_mut<R>(
+        &self,
+        lua: &Lua,
+        f: impl FnOnce(&mut View) -> LuaResult<R>,
+    ) -> LuaResult<R> {
+        let mut state = state_mut(lua);
+        let view = state
+            .editor
+            .find_view_mut(self.id)
+            .ok_or_else(|| mlua::Error::runtime("this view was closed"))?;
+        f(view)
+    }
+
     fn buffer(&self, lua: &Lua) -> LuaResult<BufferId> {
         self.with_view(lua, |v| Ok(v.buffer))
     }
@@ -151,18 +164,19 @@ impl UserData for ViewRef {
         });
         methods.add_method("set_scroll", |lua, this, line: usize| {
             let buffer = this.buffer(lua)?;
-            let mut state = state_mut(lua);
-            let last = state
+            let last = state(lua)
                 .editor
                 .buffer(buffer)
                 .text()
                 .len_lines()
                 .saturating_sub(1);
-            state.editor.view_mut(this.id).scroll = Scroll {
-                line: line.min(last),
-                row: 0,
-            };
-            Ok(())
+            this.with_view_mut(lua, |v| {
+                v.scroll = Scroll {
+                    line: line.min(last),
+                    row: 0,
+                };
+                Ok(())
+            })
         });
         methods.add_method("buffer", |lua, this, ()| {
             Ok(BufferRef {
@@ -204,20 +218,22 @@ fn add_selection_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
     methods.add_method("set_selection", |lua, this, t: Table| {
         let selection = selection_from_lua(&t)?;
         let buffer = this.buffer(lua)?;
-        let mut state = state_mut(lua);
-        check_selection(state.editor.buffer(buffer).text(), &selection)?;
-        state.editor.view_mut(this.id).selection = selection;
-        Ok(())
+        check_selection(state(lua).editor.buffer(buffer).text(), &selection)?;
+        this.with_view_mut(lua, |v| {
+            v.selection = selection;
+            Ok(())
+        })
     });
     methods.add_method("cursor", |lua, this, ()| {
         this.with_view(lua, |v| Ok(v.selection.primary().head))
     });
     methods.add_method("set_cursor", |lua, this, pos: usize| {
         let buffer = this.buffer(lua)?;
-        let mut state = state_mut(lua);
-        char_index(state.editor.buffer(buffer).text(), pos)?;
-        state.editor.view_mut(this.id).selection = Selection::point(pos);
-        Ok(())
+        char_index(state(lua).editor.buffer(buffer).text(), pos)?;
+        this.with_view_mut(lua, |v| {
+            v.selection = Selection::point(pos);
+            Ok(())
+        })
     });
 }
 
@@ -403,9 +419,10 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
         this.with_view(lua, |v| Ok(v.columns))
     });
     methods.add_method("set_side_scroll", |lua, this, columns: usize| {
-        this.with_view(lua, |_| Ok(()))?;
-        state_mut(lua).editor.view_mut(this.id).columns = columns;
-        Ok(())
+        this.with_view_mut(lua, |v| {
+            v.columns = columns;
+            Ok(())
+        })
     });
 }
 
