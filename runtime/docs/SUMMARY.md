@@ -6,6 +6,7 @@
   - [Several clients](clients.md)
   - [The shell](shell.md)
   - [Boards](boards.md)
+  - [Charts](charts.md)
 - [Editing styles](editing-styles.md)
 - [Keys](keys.md)
 - [Highlighting](highlighting.md)

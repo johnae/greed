@@ -577,6 +577,8 @@ resource or namespace flags changed, as k9s's views do:
 
 `| chart` draws a table as a chart, in characters every terminal shows:
 braille for lines, eighth blocks for bars, in the theme's colours.
+[Charts](charts.md) goes further: a line for each thing, Prometheus,
+dashboards, boards that work on Linux and macOS, and what to watch out for.
 
 [![A table, the rows of it over 20, a bar chart of it, and the load average charted as it goes](https://github.com/johnae/greed/releases/download/media/shell-live.png)](https://github.com/johnae/greed/releases/download/media/shell.mp4)
 
@@ -593,7 +595,7 @@ It guesses the chart from the columns:
 | The table | The chart |
 |---|---|
 | A name column and numbers (`kubectl top pods`) | Bars of the first number, a row each |
-| A time column and numbers | A line a number column, over time |
+| A time column and numbers | A line a number column, over time; with a name column whose names come again (samples of several hosts), a line a name |
 | Numbers only | A line a column, row by row; two columns are dots, one against the other |
 | Text that isn't a table (`cat /proc/loadavg`) | Its words as columns, a first line without numbers as the header |
 

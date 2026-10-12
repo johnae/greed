@@ -129,7 +129,7 @@ its cards.
 
 ## Live charts
 
-A card with `chart` is drawn as a [chart](shell.md#charts), and one that
+A card with `chart` is drawn as a [chart](charts.md), and one that
 runs `every` so often adds a point each time, so the chart moves. Each
 of these is a whole board; save one as `.greed/boards/NAME.md` and
 `:board NAME`. The first is for Linux.
