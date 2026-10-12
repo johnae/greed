@@ -159,3 +159,40 @@ test("a data block with id= is a value for the document's formulas", function(t)
 	local values = require("@markdown").values.all(greed.view():buffer())
 	assert(values.sales and #values.sales == 2 and values.sales[2].units == 7, "for blocks too")
 end)
+
+test("space m o opens the table in a float as text, a page at a time", function(t)
+	local _, view =
+		opened(t, { ["doc.md"] = "```csv rows=2\nname,age\nann,31\nbob,45\ncid,22\n```\n" })
+	shows(t, "▦ csv · rows 1–2, more")
+	view:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
+	t:keys("space m o")
+	local float = greed.view()
+	local buffer = float:buffer()
+	assert(buffer:kind() == "data-table", buffer:kind())
+	t:wait_for(function()
+		return string.find(buffer:slice(0, buffer:len()), "│ bob  │  45 │", 1, true) ~= nil
+	end)
+	local text = buffer:slice(0, buffer:len())
+	assert(string.find(text, "rows 1–2", 1, true), text)
+	assert(string.find(text, "[ Later ▶ ]", 1, true), text)
+	-- Enter on a row shows the whole record.
+	local row = assert((string.find(text, "│ ann", 1, true))) + #"│ " - 1
+	float:set_selection({ ranges = { { anchor = row, head = row } }, primary = 1 })
+	t:keys("enter")
+	local record = greed.view():buffer()
+	assert(
+		string.find(record:slice(0, record:len()), "age: 31", 1, true),
+		record:slice(0, record:len())
+	)
+	t:keys("q")
+	assert(greed.view() == float, "back on the table")
+	-- The next page, by its button.
+	local later = assert((string.find(buffer:slice(0, buffer:len()), "[ Later", 1, true))) - 1
+	float:set_selection({ ranges = { { anchor = later, head = later } }, primary = 1 })
+	t:keys("enter")
+	t:wait_for(function()
+		return string.find(buffer:slice(0, buffer:len()), "│ cid  │  22 │", 1, true) ~= nil
+	end)
+	t:keys("q")
+	assert(not float:valid(), "q closes it")
+end)

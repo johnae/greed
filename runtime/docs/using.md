@@ -1579,6 +1579,9 @@ the editor up.
   query: a field holding `'; drop table customers; --` is only text. Change
   the field and the table is read again.
 - `rows=N` shows N rows at a time; `space m n` and `space m p` turn the page.
+- The table is drawn, so the cursor goes past it. `enter` on it, or
+  `space m o`, opens it in a float as text, a page at a time, to search and
+  copy; `enter` on a row shows the whole record and `q` closes it.
 - `id=NAME` makes the table a value for formulas, as a named Markdown table is
   (`customers[1].name`, `sum(customers.total)`), and a `<!-- chart: ... -->`
   line under the block charts it.

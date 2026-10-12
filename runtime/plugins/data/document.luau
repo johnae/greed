@@ -20,7 +20,6 @@ local greed = require("@greed")
 local core = require("@core")
 local markdown = require("@markdown")
 local blocks = require("@blocks")
-local render = require("./render")
 local sources = require("./sources")
 
 type Structure = markdown.Structure
@@ -178,6 +177,21 @@ local function header(code: Code, ask: core.DataAsk, entry: Entry): string
 	return table.concat(parts, " · ")
 end
 
+--- What the data block `code` of `buffer` asks of its source now.
+function M.ask(buffer: greed.Buffer, code: Code): core.DataAsk
+	return ask_of(buffer, code, markdown.structure(buffer), blocks.text(buffer, code))
+end
+
+--- `t` drawn as a table widget (`core.ui.table`): numbers on the right,
+--- each row pressing `on_open` if given.
+function M.node(t: Table, on_open: ((row: { [string]: any }, index: number) -> ())?): core.UiNode
+	local columns: { any } = {}
+	for _, column in t.columns do
+		table.insert(columns, { name = column.name, right = column.kind == "number" })
+	end
+	return core.ui.table({ columns = columns, rows = t.rows, on_open = on_open })
+end
+
 -- The marks drawing the block `code` of `buffer`.
 local function draw_block(buffer: greed.Buffer, s: Structure, code: Code, out: { greed.Mark })
 	local source = core.data.get(code.lang)
@@ -222,20 +236,21 @@ local function draw_block(buffer: greed.Buffer, s: Structure, code: Code, out: {
 		})
 	elseif t and #t.columns > 0 then
 		-- The top border over the closing fence, the rest under it.
-		local drawn = render.lines(t)
-		local under: { greed.MarkLine } = {}
-		for i = 2, #drawn do
-			table.insert(under, drawn[i])
-		end
+		local laid = M.node(t).lay(core.ui.width(buffer))
+		local top = table.remove(laid, 1) :: core.UiLine
 		table.insert(out, {
 			from = close_from,
 			to = close_to,
 			style = "markdown.table",
-			text = drawn[1][1].text,
+			text = top[1].text,
+			action = "data-open",
 			conceal = true,
 			reveal = "auto" :: "auto",
 		})
-		table.insert(out, { from = close_from, to = close_to, style = "", lines = under })
+		table.insert(
+			out,
+			{ from = close_from, to = close_to, style = "", lines = core.ui.pieces(laid) }
+		)
 	else
 		table.insert(out, {
 			from = close_from,
