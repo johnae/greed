@@ -36,7 +36,6 @@ local jumps = require("@self/jumps")
 local registers = require("@self/registers")
 require("@self/macro_commands")
 require("@self/window")
-local menu = require("@self/menu")
 local features = require("@self/features")
 local menus = require("@self/menus")
 local reveal = require("@self/reveal")
@@ -122,7 +121,6 @@ return {
 	--- A toolkit for plugins' interfaces, drawn as text and marks (ui.luau).
 	ui = ui,
 	motions = motions,
-	menu = menu,
 	features = features,
 	menus = menus,
 	reveal = reveal,

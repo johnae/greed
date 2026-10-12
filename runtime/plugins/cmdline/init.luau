@@ -31,7 +31,7 @@ local ex = require("@self/ex")
 require("@self/eval")
 require("@self/set")
 local core = require("@core")
-local menu = core.menu
+local ui = core.ui
 
 greed.option.define({
 	name = "substitute-preview",
@@ -83,6 +83,10 @@ type Open = {
 	client: number,
 	buffer: greed.Buffer,
 	view: greed.View,
+	-- What draws the matches over the prompt, and whether it's drawing, so
+	-- its own edits aren't taken for typing.
+	drawn: core.UiView,
+	drawing: boolean?,
 	-- The view it was opened from, which what's typed runs in.
 	target: greed.View,
 	float: core.TypingFloat,
@@ -111,58 +115,59 @@ local opened: { [number]: Open } = {}
 
 -- The prompt line, which is always the last one.
 local function prompt_start(o: Open): number
-	return o.buffer:line_start(o.buffer:line_count() - 1)
+	return o.drawn:input_start()
 end
 
--- Rewrites the buffer: matches above, then ":" and `o.text`. The cursor
--- stays where it was in the prompt, or goes to its end with `to_end`.
-local function render(o: Open, to_end: boolean?)
-	local start = prompt_start(o)
-	local column = o.view:cursor() - start
-	local lines = {}
-	local marks: { greed.Mark } = {}
-	local from = 0
+-- The matches, a row each, what's typed picked out and the current one
+-- marked.
+local function draw(o: Open): core.UiNode
 	-- A match's doc is cut to the width rather than wrapped, so every match
 	-- keeps one row and the first ones stay in sight.
 	local _, cols = o.view:size()
+	local rows: { core.UiNode } = {}
 	for i, candidate in o.candidates do
 		if i > SHOWN then
 			break
 		end
-		local line = " " .. candidate.text
+		local spans: { core.UiSpan } = {
+			{ text = " ", line = if i == o.current then "ui.menu.selected" else nil },
+		}
+		local matched = greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() })
+		for _, span in ui.matched(candidate.text, matched) do
+			table.insert(spans, span)
+		end
 		local doc = candidate.doc
 		if doc and doc ~= "" then
-			line ..= "  "
-			local room = (cols or 1000) - core.text.width(line) - 1
-			doc = if room > 1 then core.text.clip(doc, room) else ""
+			local room = (cols or 1000) - core.text.width(" " .. candidate.text) - 3
+			table.insert(spans, ui.span("  "))
 			table.insert(
-				marks,
-				{ from = from + #line, to = from + #line + #doc, style = "ui.menu.doc" }
+				spans,
+				ui.span(if room > 1 then core.text.clip(doc, room) else "", "ui.menu.doc")
 			)
-			line ..= doc
 		end
-		menu.mark_row(
-			marks,
-			from,
-			line,
-			i == o.current,
-			greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() }),
-			1
-		)
-		table.insert(lines, line)
-		from += #line + 1
+		table.insert(rows, ui.line(spans))
 	end
-	table.insert(lines, ":" .. o.text)
-	local text = table.concat(lines, "\n")
-	local new_start = #text - #o.text - 1
-	local head = if to_end then #text else new_start + math.clamp(column, 1, #o.text + 1)
-	o.buffer:edit(function(e)
-		e:replace(0, o.buffer:len(), text)
-		e:select({ ranges = { { anchor = head, head = head } }, primary = 1 })
-	end)
-	o.buffer:decorate("cmdline", marks)
+	return ui.column(rows)
+end
+
+-- Draws the matches above, then ":" and `o.text`. The cursor stays where it
+-- was in the prompt, or goes to its end with `to_end`.
+local function render(o: Open, to_end: boolean?)
+	local column = o.view:cursor() - prompt_start(o)
+	o.drawing = true
+	o.drawn:redraw()
+	local start = prompt_start(o)
+	local prompt = ":" .. o.text
+	if o.buffer:slice(start, o.buffer:len()) ~= prompt then
+		o.buffer:edit(function(e)
+			e:replace(start, o.buffer:len(), prompt)
+		end)
+	end
+	o.drawing = nil
+	local head = if to_end then o.buffer:len() else start + math.clamp(column, 1, #o.text + 1)
+	o.view:set_selection({ ranges = { { anchor = head, head = head } }, primary = 1 })
 	-- Two rows of border.
-	o.view:configure({ height = #lines + 2 })
+	o.view:configure({ height = o.buffer:line_count() + 2 })
 end
 
 -- Closes the command line; unless what's typed is about to run, a preview
@@ -192,7 +197,7 @@ local function set_text(o: Open, text: string)
 end
 
 local function changed(o: Open)
-	if opened[o.client] ~= o then
+	if opened[o.client] ~= o or o.drawing then
 		return
 	end
 	local line = o.buffer:slice(prompt_start(o), o.buffer:len())
@@ -516,6 +521,9 @@ greed.command({
 			client = client,
 			buffer = float.buffer,
 			view = float.view,
+			drawn = ui.mount(float.buffer, function()
+				return draw(o)
+			end, nil, { ns = "cmdline", keys = false, input = true, draw = false }),
 			target = ctx.view,
 			float = float,
 			text = "",
