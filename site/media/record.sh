@@ -26,6 +26,7 @@ for name in "${names[@]}"; do
   cp -r "$media/profile" "$scratch/profile"
   cp -r "$media/home" "$scratch/home"
   cp -r "$media/shop" "$scratch/home/shop"
+  cp -r "$media/infra" "$scratch/home/infra"
   cp "$media/$name.demo" "$scratch/"
   echo "recording $name"
   # Nothing of this machine: a home of its own, and only the variables

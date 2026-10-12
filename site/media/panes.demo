@@ -27,3 +27,15 @@ wait 1.5
 shot panes
 keys alt-f
 wait 1.5
+keys ctrl-\
+keys :
+type project ~/infra/README.md
+keys enter
+wait 2
+keys space P
+wait 1
+shot panes-projects
+type shop
+wait 0.8
+keys enter
+wait 2
