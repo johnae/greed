@@ -28,6 +28,8 @@ pub enum Output {
     /// its exit. Programs run for as long as they like, so they don't count
     /// as running jobs.
     Child(u64, super::process::Piece),
+    /// What connection `id`, made with `greed.rpc.start`, heard.
+    Rpc(u64, crate::rpc::Event),
     Pdf(super::pdf::Done),
     Tags(Vec<crate::syntax::FileTags>),
     /// The image on a client's system clipboard, as PNG; none when it has
@@ -191,6 +193,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::StreamHead(_, _, Ok(_))
             | Output::StreamChunk(_, super::http::Chunk::Data(_))
             | Output::Child(..)
+            | Output::Rpc(..)
     );
     if last {
         state_mut(lua).jobs.running.remove(&done.token);
@@ -208,6 +211,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
             tasks::deliver(lua, done.token, super::secrets::to_lua(lua, result)?)
         }
         Output::Child(id, piece) => super::process::piece_arrived(lua, id, piece),
+        Output::Rpc(id, event) => super::rpc::event_arrived(lua, id, event),
         Output::Pdf(pdf) => super::pdf::finish(lua, done.token, pdf),
         Output::Tags(files) => {
             tasks::deliver(lua, done.token, super::syntax::tags_to_lua(lua, files)?)
@@ -254,10 +258,10 @@ pub(super) fn await_child_for(lua: &Lua, wait: Duration) -> LuaResult<bool> {
     }
 }
 
-/// Whether a test may be waiting on a program: one it reads from, or one
-/// running in a terminal.
+/// Whether a test may be waiting on a program: one it reads from or talks
+/// JSON-RPC to, or one running in a terminal.
 pub(super) fn awaited(lua: &Lua) -> bool {
-    super::process::awaited(lua) || state(lua).terminals.running()
+    super::process::awaited(lua) || super::rpc::awaited(lua) || state(lua).terminals.running()
 }
 
 /// Waits for every running job and finishes it, and lets work cut into time

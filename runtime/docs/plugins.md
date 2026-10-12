@@ -1284,6 +1284,33 @@ stays yours to read and close. `references(buffer, { from, to, cwd })`
 finds the files and lines some output names, and `row_marks` turns a
 terminal's rows into marks for a buffer of your own.
 
+### JSON-RPC
+
+`greed.rpc.start(command, opts)` starts a program that speaks JSON-RPC 2.0
+over its input and output, as language servers, debug adapters and coding
+agents do. `opts.framing` is `"headers"` (`Content-Length` headers, the
+default) or `"lines"` (one message a line, as ACP agents send them), and
+`cwd` and `env` work as for `greed.process.run`. The program's requests go
+to `on_request(method, params)`, whose return value is the answer (or `nil`
+and an error message); its notifications go to `on_notify(method, params)`,
+and `on_exit(stderr)` hears it end. Each runs in a coroutine of its own, so
+one that waits doesn't hold up the rest.
+
+```luau
+local conn = assert(greed.rpc.start({ "my-adapter" }, {
+	on_notify = function(method, params)
+		greed.echo(`{method}: {greed.json.encode(params)}`)
+	end,
+}))
+local caps, err = conn:request("initialize", { adapterID = "demo" }) -- waits for the answer
+conn:notify("initialized", {})
+```
+
+`conn:alive()` says whether it still runs, `conn:stderr()` is what it
+printed there lately, and `conn:close()` stops it. A request on a closed or
+exited connection returns `nil` and why. The connection is your plugin's
+and goes with it.
+
 ### The shell
 
 `require("@shell")` is the [shell](shell.md): `shell.run(sh, line)` runs

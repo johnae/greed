@@ -60,6 +60,7 @@ pub const KNOWN: &[(&str, &str)] = &[
 const GATED: &[(&str, &str)] = &[
     ("process.run", "proc"),
     ("process.spawn", "proc"),
+    ("rpc.start", "proc"),
     ("terminal.spawn", "proc"),
     ("lsp.server", "proc"),
     ("lsp.restart", "proc"),
@@ -606,6 +607,7 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
         ],
     ),
     ("process", "run programs", &[]),
+    ("rpc", "run programs", &[]),
     ("terminal", "use terminals", &[]),
     ("http", "use the network", &[]),
     ("secrets", "read or keep secrets", &[]),

@@ -605,6 +605,29 @@ export type Process = {
 	spawn: (command: { string }, opts: { cwd: string?, env: { [string]: string | false }?, stderr: ("keep" | "stream")?, group: boolean? }?) -> (Child?, string?),
 }
 
+--- How `greed.rpc.start` talks to a program. `framing` is how its messages are told apart: "headers" (`Content-Length`, as language servers and debug adapters write them; the default) or "lines" (one a line, as agents over ACP). `on_request(method, params)` answers its requests, returning the result or nil and an error; `on_notify(method, params)` hears its notifications; each runs in a coroutine of its own, so it may wait. `on_exit(stderr)` is called once it exits, with the last lines of its error output.
+export type RpcOptions = { cwd: string?, env: { [string]: string | false }?, framing: ("headers" | "lines")?, on_request: ((method: string, params: any) -> (any, string?))?, on_notify: ((method: string, params: any) -> ())?, on_exit: ((stderr: string) -> ())? }
+
+--- A JSON-RPC connection to a program, from `greed.rpc.start`.
+export type RpcConnection = {
+	--- Sends a request and waits for its result, or nil and the error. Waits like greed.sleep, so only in commands, event handlers and greed.spawn.
+	request: (self: RpcConnection, method: string, params: any) -> (any, string?),
+	--- Sends a notification; false if it couldn't go.
+	notify: (self: RpcConnection, method: string, params: any) -> boolean,
+	--- Whether the program is still running.
+	alive: (self: RpcConnection) -> boolean,
+	--- The last lines of its error output.
+	stderr: (self: RpcConnection) -> string,
+	--- Ends the connection; the program's input closes and it's killed if it doesn't exit soon after.
+	close: (self: RpcConnection) -> (),
+}
+
+--- JSON-RPC 2.0 with a program, on the transport language servers use.
+export type Rpc = {
+	--- Starts `command` and talks JSON-RPC with it; nil and the error if it couldn't start. Needs "proc". The connection is the plugin's, and goes with it.
+	start: (command: { string }, opts: RpcOptions?) -> (RpcConnection?, string?),
+}
+
 --- A program started with `greed.process.spawn`.
 export type Child = {
 	pid: number,
@@ -1814,6 +1837,7 @@ export type Greed = {
 	next_key: () -> string,
 	keys: Keys,
 	process: Process,
+	rpc: Rpc,
 	http: Http,
 	secrets: Secrets,
 	terminal: Terminals,

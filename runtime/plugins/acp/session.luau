@@ -5,7 +5,6 @@
 local greed = require("@greed")
 local core = require("@core")
 local agent = require("@agent")
-local rpc = require("./rpc")
 
 local M = {}
 
@@ -76,7 +75,7 @@ export type Session = {
 	where: { path: string, line: number? }?,
 	entries: { Entry },
 	tools: { [string]: Tool },
-	conn: rpc.Conn?,
+	conn: greed.RpcConnection?,
 	session_id: string?,
 	--- The modes the agent offers, and the one it's in.
 	modes: { Mode },
@@ -441,11 +440,15 @@ local function update(session: Session, u: any)
 	end
 end
 
+-- What answers the agent's requests and notifications, by method. A
+-- request's handler returns the result, or nil and an error message.
+type Handlers = { [string]: (params: any) -> (any, string?) }
+
 -- What the agent asks of the editor, by method.
-local function handlers(session: Session): rpc.Handlers
+local function handlers(session: Session): Handlers
 	local terms: { [string]: Term } = {}
 	local next_term = 0
-	local h: rpc.Handlers = {}
+	local h: Handlers = {}
 
 	h["session/update"] = function(params: any): (any, string?)
 		if not session.quiet then
@@ -775,16 +778,47 @@ function M.start(
 	end
 	-- Says why it can't start, to the transcript and whoever waits for it.
 	local function failed(text: string)
+		-- Its exit said why already; the requests it left unanswered fail too.
+		if session.status == "exited" and session.failed then
+			return
+		end
 		session.failed = text
 		note(text)
 		settle(session)
 	end
-	local conn, err = rpc.start(opts.command, opts.cwd, handlers(session), function(stderr)
-		session.status = "exited"
-		session.tool = nil
-		local said = string.match(stderr, "([^\n]+)\n?$")
-		failed(if said then `the agent exited: {said}` else "the agent exited")
-	end)
+	local answers = handlers(session)
+	local conn, err = greed.rpc.start(opts.command, {
+		cwd = opts.cwd,
+		framing = "lines",
+		on_request = function(method: string, params: any): (any, string?)
+			local handler = answers[method]
+			if handler == nil then
+				return nil, `{method} isn't supported`
+			end
+			local result, problem = handler(params)
+			if problem then
+				return nil, problem
+			end
+			-- `null` can't be a Luau value, so no result answers with an
+			-- empty object.
+			return if result == nil then {} else result, nil
+		end,
+		on_notify = function(method: string, params: any)
+			local handler = answers[method]
+			if handler then
+				handler(params)
+			end
+		end,
+		on_exit = function(stderr: string)
+			local what = if session.status == "starting"
+				then "the agent didn't start"
+				else "the agent exited"
+			session.status = "exited"
+			session.tool = nil
+			local said = string.match(stderr, "([^\n]+)\n?$")
+			failed(if said then `{what}: {said}` else what)
+		end,
+	})
 	if conn == nil then
 		session.status = "exited"
 		failed(`couldn't start {table.concat(opts.command, " ")}: {err}`)
@@ -792,7 +826,7 @@ function M.start(
 	end
 	session.conn = conn
 	greed.spawn(function()
-		local init, problem = conn.request("initialize", {
+		local init, problem = conn:request("initialize", {
 			protocolVersion = 1,
 			clientCapabilities = {
 				fs = { readTextFile = true, writeTextFile = true },
@@ -822,7 +856,7 @@ function M.start(
 			end
 			method, params.sessionId = "session/fork", opts.fork
 		end
-		local new, refused = conn.request(method, params)
+		local new, refused = conn:request(method, params)
 		if new == nil then
 			failed(`the agent couldn't start a session: {refused}`)
 			return
@@ -834,10 +868,10 @@ function M.start(
 			local open: any = table.clone(params)
 			open.sessionId = new.sessionId
 			if can.sessionCapabilities and can.sessionCapabilities.resume then
-				conn.request("session/resume", open)
+				conn:request("session/resume", open)
 			elseif can.loadSession then
 				session.quiet = true
-				conn.request("session/load", open)
+				conn:request("session/load", open)
 				session.quiet = false
 			end
 		end
@@ -1029,7 +1063,7 @@ function M.prompt(session: Session, text: string, context: string?): (boolean, s
 	if fresh then
 		table.insert(blocks, 1, { type = "text", text = fresh })
 	end
-	local result, err = conn.request("session/prompt", {
+	local result, err = conn:request("session/prompt", {
 		sessionId = session.session_id,
 		prompt = blocks,
 	})
@@ -1056,7 +1090,7 @@ function M.set_mode(session: Session, id: string): (boolean, string?)
 	if conn == nil or session.session_id == nil then
 		return false, "the agent isn't running"
 	end
-	local _, err = conn.request("session/set_mode", { sessionId = session.session_id, modeId = id })
+	local _, err = conn:request("session/set_mode", { sessionId = session.session_id, modeId = id })
 	if err then
 		return false, err
 	end
@@ -1076,7 +1110,7 @@ function M.set_model(session: Session, id: string): (boolean, string?)
 	end
 	local result, err
 	if session.model_option then
-		result, err = conn.request("session/set_config_option", {
+		result, err = conn:request("session/set_config_option", {
 			sessionId = session.session_id,
 			configId = session.model_option,
 			value = id,
@@ -1086,7 +1120,7 @@ function M.set_model(session: Session, id: string): (boolean, string?)
 		end
 	else
 		result, err =
-			conn.request("session/set_model", { sessionId = session.session_id, modelId = id })
+			conn:request("session/set_model", { sessionId = session.session_id, modelId = id })
 	end
 	if err then
 		return false, err
@@ -1106,7 +1140,7 @@ function M.cancel(session: Session)
 	end
 	local conn = session.conn
 	if conn and session.session_id then
-		conn.notify("session/cancel", { sessionId = session.session_id })
+		conn:notify("session/cancel", { sessionId = session.session_id })
 	end
 end
 
@@ -1125,7 +1159,7 @@ end
 function M.stop(session: Session)
 	M.cancel(session)
 	if session.conn then
-		session.conn.close()
+		session.conn:close()
 	end
 	session.status = "exited"
 	settle(session)

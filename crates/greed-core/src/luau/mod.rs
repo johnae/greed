@@ -30,6 +30,7 @@ mod plugin;
 mod process;
 mod projects;
 mod requests;
+mod rpc;
 mod scenes;
 mod secrets;
 mod sessions;
@@ -195,6 +196,8 @@ pub(crate) struct State {
     pub http: http::Streams,
     /// Programs started with `greed.process.spawn`.
     pub children: process::Children,
+    /// JSON-RPC connections made with `greed.rpc.start`.
+    pub rpcs: rpc::Peers,
     /// Command line commands plugins added.
     pub cli: cli::Commands,
     /// Runs of plugin code that held the editor up.
@@ -479,6 +482,7 @@ impl Host {
             pending: Vec::new(),
             http: http::Streams::default(),
             children: process::Children::default(),
+            rpcs: rpc::Peers::default(),
             cli: cli::Commands::default(),
             stalls: stalls::Stalls::default(),
             errors: errors::Errors::default(),
@@ -1529,6 +1533,7 @@ fn remove_owned_by(state: &mut State, name: &str) -> Vec<crate::ViewId> {
     state.registry.remove_owned_by(name);
     state.terminals.remove_owned_by(name);
     state.children.remove_owned_by(name);
+    state.rpcs.remove_owned_by(name);
     state.watches.remove_owned_by(name);
     state.http.remove_owned_by(name);
     // Dropping the connection removes its lock file.

@@ -656,6 +656,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("session", super::sessions::module(lua)?)?;
     greed.set("keys", keys_module(lua, owner)?)?;
     greed.set("process", super::process::module(lua, owner, greed)?)?;
+    greed.set("rpc", super::rpc::module(lua, owner)?)?;
     greed.set("http", super::http::module(lua, owner)?)?;
     greed.set("secrets", super::secrets::module(lua, owner)?)?;
     greed.set("terminal", super::terminal::module(lua, owner)?)?;
