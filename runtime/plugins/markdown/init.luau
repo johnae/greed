@@ -365,8 +365,9 @@ local function draw_table(
 			lines = { tables.border(widths, "┌", "┬", "┐") },
 		})
 	end
+	-- Empty, so the border's style doesn't paint the last row.
 	table.insert(out, {
-		from = line_start(last),
+		from = line_end(last),
 		to = line_end(last),
 		style = "markdown.table",
 		lines = { tables.border(widths, "└", "┴", "┘") },
