@@ -1,5 +1,6 @@
 local test = require("@greed/test")
 local greed = require("@greed")
+local core = require("@core")
 local languages = require("@languages")
 
 -- Opens a file in a language whose formatter squeezes runs of spaces, and
@@ -14,9 +15,19 @@ local function squeezing(t: test.TestContext, text: string): string
 		},
 	})
 	local dir = t:tempdir({ ["a.sq"] = text })
+	-- Formatting on save runs only in a project you trusted.
+	core.project.trust(dir)
 	greed.open(dir .. "/a.sq")
 	return dir .. "/a.sq"
 end
+
+test("saving in a project you haven't trusted doesn't run its formatter", function(t)
+	languages.set("squeezed", { extensions = { "sq" }, formatter = { "tr", "-s", " " } })
+	local dir = t:tempdir({ ["a.sq"] = "one    two" })
+	greed.open(dir .. "/a.sq")
+	t:run("save")
+	assert(greed.fs.read(dir .. "/a.sq") == "one    two", (greed.fs.read(dir .. "/a.sq")))
+end)
 
 test("saving formats the file, changing only what the formatter changed", function(t)
 	local path = squeezing(t, "one    two three")

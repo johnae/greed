@@ -457,8 +457,9 @@ pub fn launcher_with(options: Options) -> (greed_core::lsp::Launcher, Started) {
 pub fn serve_rust(host: &greed_core::luau::Host) -> Started {
     let (launcher, started) = launcher();
     host.set_lsp_launcher(launcher);
+    // In any folder: these test talking to servers, not trusting projects.
     host.eval(
-        "require('@greed').lsp.server({ language = 'rust', command = { 'sh' }, root_markers = { 'Cargo.toml' } })",
+        "local lsp = require('@greed').lsp\nlsp.trust(nil)\nlsp.server({ language = 'rust', command = { 'sh' }, root_markers = { 'Cargo.toml' } })",
     )
     .unwrap();
     started

@@ -165,8 +165,14 @@ greed.command({
 	end,
 })
 
+-- Formatting on save runs the project's formatter and its config, which
+-- can be code (prettier's .prettierrc.js): only in a project you trusted.
+-- `:format` you run yourself.
 core.file.before_save("format", function(buffer)
-	if greed.option.get("format-on-save") == true then
+	local path = buffer:path()
+	if
+		greed.option.get("format-on-save") == true and (path == nil or core.project.trusts(path))
+	then
 		local _, err = M.format(buffer)
 		if err then
 			error(err, 0)

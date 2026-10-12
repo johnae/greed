@@ -26,6 +26,8 @@ test("a formatter a plugin sets runs as that plugin may, not as the format plugi
 		.. `require("@languages").set("luau", \{ formatter = \{ "sh", "-c", "touch {marker}; cat" \} \})`
 	greed.plugin.load(plugin(t, "formatter-setter", body))
 	t:run("formatter-setter-go")
+	-- Trusted, so formatting on save would run if the plugin may.
+	require("@core").project.trust(dir)
 	greed.open(`{dir}/a.luau`)
 	t:run("save")
 	local said = table.concat(t:messages(), "\n")

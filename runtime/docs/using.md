@@ -2359,9 +2359,13 @@ Config runs in layers, each after the one before, so later ones win:
 
 A project's config is code from whoever wrote the repository, so it doesn't
 run until you say so: opening a project that has one tells you, and
-`:trust` runs it, now and whenever the project opens again. Trusted
-projects are listed in `~/.cache/greed/trusted-projects`; take a line out
-to stop trusting one.
+`:trust` runs it, now and whenever the project opens again. Trusting a
+project also lets its language servers start and its files format on
+save, which run its code too; Greed asks the first time a file of an
+untrusted project opens (see
+[Trusting a project](permissions.md#trusting-a-project)). Trusted projects
+are listed in `~/.cache/greed/trusted-projects`; take a line out to stop
+trusting one.
 
 ```luau
 local greed = require("@greed")

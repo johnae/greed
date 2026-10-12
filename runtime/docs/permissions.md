@@ -15,7 +15,7 @@ sandbox.
 | An agent's `eval` | Nothing while the code stays in its sandbox; a reviewer or you for more | A page with the code |
 | `greed ctl` from your shell | Nothing: it runs as you | |
 | A plugin that isn't Greed's own | Whether it may use what it declares, like running programs | `:plugins-approve` |
-| A project's `.greed/init.luau`, code blocks in Markdown | Whether to run them at all | `:trust`, `:blocks-trust` |
+| A project's own code: its `.greed/init.luau`, language servers, formatting on save; code blocks in Markdown | Whether to run them at all | `:trust` (asked when a file opens), `:blocks-trust` |
 
 Reading never asks: agents read files, buffers with your unsaved changes,
 diagnostics and the rest freely. Edits an agent proposes with `propose`
@@ -439,10 +439,27 @@ from there approves what it declared.
 
 ## Trusting a project
 
-A project's own config, `.greed/init.luau`, is code from whoever wrote the
-repository, so it doesn't run until you say so: opening a project that has
-one tells you, and `:trust` runs it, now and whenever the project opens
-again (see [Configuration](using.md#configuration)).
+A repository you cloned can run its own code through Greed without your
+asking: its config (`.greed/init.luau`), a language server that builds it
+(rust-analyzer runs `build.rs` and proc macros), and a formatter that
+loads its config as code (prettier reads `.prettierrc.js`). So a project
+you haven't trusted runs none of it. The first time a file of it opens
+with a language server set up for it, Greed asks:
+
+```text
+~/src/app isn't trusted: its language server and formatting on save would run its code (build scripts, config files). Trust it? y yes, n not now
+```
+
+`y` trusts it: its language servers start, it formats on save, its
+config runs, now and whenever it opens again. `n` leaves it as it is for
+this session, and `:trust` trusts the shown project later. A project
+opened with its own config tells you so and waits for `:trust` too (see
+[Configuration](using.md#configuration)). `:format` you run yourself works
+anywhere.
+
+Trust goes by folder: a project somewhere else, even a copy, asks again.
+Your own config folder is always trusted. `:set project-trust off` trusts
+every project, as Greed did before 0.2.
 
 Code blocks in Markdown files don't run when a file opens either. The first
 time you run one in a file, Greed asks whether to: `y` for now, `a` to

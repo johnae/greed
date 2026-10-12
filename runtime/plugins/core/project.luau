@@ -208,10 +208,62 @@ local function remember(root: string)
 	add_to_list("recent-projects", root, RECENT)
 end
 
---- The roots of projects whose own config (`.greed/init.luau`) you trusted.
+--- The roots of projects you trusted to run their own code: their config
+--- (`.greed/init.luau`), language servers and formatting on save.
 function M.trusted(): { string }
 	return read_list("trusted-projects")
 end
+
+greed.option.define({
+	name = "project-trust",
+	doc = '"ask": a project you haven\'t trusted runs none of its own code (its .greed config, '
+		.. "language servers, formatting on save) until you say so, asked once when a file of "
+		.. 'it opens; "off": every project runs them',
+	default = "ask",
+	choices = { "ask", "off" },
+})
+
+-- The folders whose code may run: the projects you trusted and your own
+-- config; nil when every project's may.
+local function trusted_folders(): { string }?
+	if greed.option.get("project-trust") == "off" then
+		return nil
+	end
+	local folders = M.trusted()
+	local config = greed.fs.dirs().config
+	if config then
+		table.insert(folders, config)
+	end
+	return folders
+end
+
+--- Whether `path` (a file or folder) is in a project you trusted to run its
+--- own code, or every project may.
+function M.trusts(path: string): boolean
+	-- As core, which keeps the list; the plugin asking may not read files.
+	local folders = greed.vouch(trusted_folders)
+	if folders == nil then
+		return true
+	end
+	for _, folder in folders do
+		if M.inside(path, folder) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Language servers start only in trusted folders: a server runs the
+-- project's code (rust-analyzer its build scripts).
+local function gate()
+	greed.lsp.trust(trusted_folders())
+end
+gate()
+greed.on("option.changed", function(event: greed.OptionChanged)
+	if event.name == "project-trust" then
+		gate()
+	end
+end)
 
 -- Runs the config in project `root`'s `.greed` folder if it has one and it's
 -- trusted, or says how to trust it.
@@ -220,7 +272,7 @@ local function run_config(root: string)
 	if greed.fs.stat(`{dir}/init.luau`) == nil then
 		return
 	end
-	if not table.find(M.trusted(), root) then
+	if not M.trusts(root) then
 		greed.echo(`{root} has its own Greed config in .greed/ - :trust runs it`)
 		return
 	end
@@ -450,18 +502,71 @@ end)
 
 greed.keymap.bind({}, { ["ctrl-N"] = "window-new" })
 
+--- Trusts project `root` to run its own code: its config in .greed/, run
+--- now and whenever it opens, its language servers and formatting on save.
+function M.trust(root: string)
+	add_to_list("trusted-projects", root, math.huge)
+	gate()
+	run_config(root)
+end
+
 greed.command({
 	name = "trust",
-	doc = "Trust the shown project's own config in .greed/, and run it now and whenever it opens",
+	doc = "Trust the shown project to run its own code: its config in .greed/, language "
+		.. "servers and formatting on save",
 	run = function()
 		local root = greed.project.current().root
-		if greed.fs.stat(`{root}/.greed/init.luau`) == nil then
-			error(`{root} has no .greed/init.luau to trust`, 0)
-		end
-		add_to_list("trusted-projects", root, math.huge)
-		run_config(root)
+		M.trust(root)
+		greed.echo(`trusted {M.tilde(root)}`)
 	end,
 })
+
+-- The projects asked about this session, not to ask again.
+local asked: { [string]: boolean } = {}
+
+-- Whether a language server would run for `buffer`: one is set up for its
+-- language, and installed. Without one, there's nothing to ask about.
+local function server_would_run(buffer: greed.Buffer): boolean
+	local language = buffer:language()
+	if language == nil or greed.lsp.root(buffer) == nil then
+		return false
+	end
+	local commands = greed.lsp.servers()[language]
+	if commands == nil then
+		return false
+	end
+	for _, command in commands do
+		if command[1] and greed.which(command[1]) then
+			return true
+		end
+	end
+	return false
+end
+
+-- A file opening in a project you haven't trusted, whose language server
+-- would run, asks once whether to trust the project.
+greed.on("buffer.opened", function(event: greed.BufferChanged)
+	local buffer = event.buffer
+	local path = buffer:path()
+	if path == nil or M.trusts(path) or not server_would_run(buffer) then
+		return
+	end
+	local root = M.root(path)
+	if asked[root] then
+		return
+	end
+	asked[root] = true
+	greed.echo(
+		`{M.tilde(root)} isn't trusted: its language server and formatting on save would run `
+			.. "its code (build scripts, config files). Trust it? y yes, n not now"
+	)
+	if greed.next_key() == "y" then
+		M.trust(root)
+		greed.echo(`trusted {M.tilde(root)}`)
+	else
+		greed.echo(":trust trusts it later")
+	end
+end)
 
 greed.command({
 	name = "project-config",

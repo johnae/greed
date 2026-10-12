@@ -151,6 +151,10 @@ fn with_plugin() -> Host {
         plugin("lsp"),
     ])
     .unwrap();
+    // Core runs servers only in trusted projects and asks about others;
+    // these test servers, not trust.
+    h.eval("require('@greed').option.set('project-trust', 'off')")
+        .unwrap();
     h.sync_lsp();
     // Wait for the first diagnostics.
     pump(&h, support::has_diagnostics);
@@ -665,6 +669,8 @@ fn each_projects_buffers_show_their_own_servers_root_and_work() {
         plugin("lsp"),
     ])
     .unwrap();
+    h.eval("require('@greed').option.set('project-trust', 'off')")
+        .unwrap();
     // Before any server runs, where they would.
     let roots = r#"
         local greed = require("@greed")
@@ -735,6 +741,8 @@ fn with_agent() -> Host {
         plugin("lsp"),
     ])
     .unwrap();
+    h.eval("require('@greed').option.set('project-trust', 'off')")
+        .unwrap();
     // The file is outside the project, so the agent names it in full.
     let dir = std::env::temp_dir().join("greed-lsp-luau");
     let dir = dir.display().to_string();
