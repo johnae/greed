@@ -1592,6 +1592,8 @@ export type Text = {
 }
 
 --- Reading and writing the file system. Failures return nil and a message.
+--- A relative path goes from the shown project's root, and `~` is your home
+--- folder.
 export type Fs = {
 	--- The entries directly in `dir`, folders first, then by name. Hidden
 	--- entries and ones `.gitignore` excludes are left out unless asked for.

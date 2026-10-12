@@ -257,3 +257,14 @@ test(
 		greed.option.set("project-trust", "off")
 	end
 )
+
+test("greed.fs takes a relative path from the shown project's root", function(t)
+	local dir = t:tempdir({ [".git/HEAD"] = "", ["notes/a.md"] = "from the project\n" })
+	t:run("project", { dir })
+	assert(greed.fs.cwd() ~= dir, "not where Greed started")
+	local read = greed.fs.read("notes/a.md")
+	assert(read == "from the project\n", tostring(read))
+	assert(greed.fs.write("notes/b.md", "written\n"))
+	assert(greed.fs.read(`{dir}/notes/b.md`) == "written\n", "written there too")
+	assert(greed.fs.stat("notes") ~= nil and #(greed.fs.list("notes") or {}) == 2)
+end)

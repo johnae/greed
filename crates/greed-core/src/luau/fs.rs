@@ -399,7 +399,23 @@ pub(super) struct UserPath(pub String);
 
 impl FromLua for UserPath {
     fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
-        Ok(Self(expand_home(lua, String::from_lua(value, lua)?)))
+        Ok(Self(from_project(
+            lua,
+            expand_home(lua, String::from_lua(value, lua)?),
+        )))
+    }
+}
+
+/// `path` from the shown project's root when it's relative, as `:e` and
+/// the rest go from there, rather than from the folder Greed started in,
+/// which is another project's once a session has several.
+fn from_project(lua: &Lua, path: String) -> String {
+    if path.is_empty() || Path::new(&path).is_absolute() {
+        return path;
+    }
+    match state(lua).editor.shown_root() {
+        Some(root) => root.join(&path).to_string_lossy().into_owned(),
+        None => path,
     }
 }
 

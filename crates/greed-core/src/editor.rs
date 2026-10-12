@@ -858,6 +858,11 @@ impl Editor {
         &self.projects
     }
 
+    /// The root of the project shown, if there's one yet.
+    pub fn shown_root(&self) -> Option<&Path> {
+        self.projects.get(self.shown_index()).map(Project::root)
+    }
+
     /// The project shown. Panics before the first view opens.
     pub fn current_project(&self) -> CurrentProject<'_> {
         let current = self.shown_index();

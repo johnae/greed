@@ -622,8 +622,9 @@ Buffers know their files by full path, with `.` and `..` worked out, so
 `greed.buffer_for(path)` finds a file's open buffer however the path is
 written (or gives nil, without opening it), and `greed.buffer(id)` finds one
 by its id, as events give it. Paths an agent or a user gives a plugin are
-relative to the project, and `core.project` turns them into full paths and
-back:
+relative to the project, and so are relative paths `greed.fs` takes:
+`greed.fs.read("notes.md")` reads the shown project's `notes.md`, wherever
+Greed started. `core.project` turns them into full paths and back:
 
 ```luau
 local core = require("@core")
