@@ -523,6 +523,8 @@ test("Anthropic's current models take an effort and summarised thinking", functi
 	assert(high.output_config.effort == "high", "the effort")
 	assert(high.thinking.type == "adaptive" and high.thinking.display == "summarized", "thinking")
 	assert(high.max_tokens == 100 and high.temperature == nil, "the length as asked")
+	local max = turn.body("anthropic", "claude-opus-5-5", { said = said, effort = "max" }, 100)
+	assert(max.output_config.effort == "max" and max.thinking.type == "adaptive", "max")
 	local none = turn.body("anthropic", "claude-sonnet-5", { said = said, effort = "none" }, 100)
 	assert(none.output_config.effort == "low" and none.thinking == nil, "none is the least")
 	local plain = turn.body("anthropic", "claude-opus-5-5", { said = said }, 100)
@@ -541,6 +543,8 @@ test("older Claude models think within a budget, above which the answer has room
 	assert(high.output_config == nil, "no effort for them")
 	local none = turn.body("anthropic", model, { said = said, effort = "none" }, 4000)
 	assert(none.thinking == nil and none.max_tokens == 4000, "none doesn't think")
+	local max = turn.body("anthropic", model, { said = said, effort = "max" }, 4000)
+	assert(max.thinking.budget_tokens == 24576, "max is the largest budget")
 	-- The plain path's temperature doesn't go with thinking.
 	local body: { [string]: any } = { model = model, max_tokens = 100, temperature = 0.2 }
 	turn.reasoning("anthropic", model, "low", body)

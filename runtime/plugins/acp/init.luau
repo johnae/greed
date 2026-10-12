@@ -1176,8 +1176,8 @@ greed.command({
 
 greed.command({
 	name = "agent-effort",
-	doc = "How hard the model of Greed's own agent thinks in this session: none, low, medium or high; without one, pick it",
-	args = { { name = "effort", doc = "none, low, medium or high, or unset for the role's" } },
+	doc = "How hard the model of Greed's own agent thinks in this session: none, low, medium, high or max; without one, pick it",
+	args = { { name = "effort", doc = "none, low, medium, high or max, or unset for the role's" } },
 	run = function(ctx)
 		local s = current(ctx)
 		if s == nil then

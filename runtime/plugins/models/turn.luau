@@ -56,14 +56,15 @@ export type Turn = {
 }
 
 --- How hard a model may think before it answers, least first.
-M.EFFORTS = { "none", "low", "medium", "high" }
+M.EFFORTS = { "none", "low", "medium", "high", "max" }
 
 -- Claude models that think within a budget of tokens rather than by an
 -- effort, by a pattern in their name: those before the 4.6 family.
 local BUDGETED = { "claude%-3", "%-4%-5", "%-4%-1", "%-4%-0", "%-4%-%d%d%d%d%d%d%d%d", "%-4$" }
 
--- The thinking budget of each effort, for those.
-local BUDGETS: { [string]: number } = { low = 2048, medium = 8192, high = 24576 }
+-- The thinking budget of each effort, for those. Max is high's: more
+-- would leave Haiku 4.5 too little of its 64k for the answer.
+local BUDGETS: { [string]: number } = { low = 2048, medium = 8192, high = 24576, max = 24576 }
 
 -- Whether the Claude model `model` thinks within a budget.
 local function budgeted(model: string): boolean

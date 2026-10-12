@@ -421,6 +421,78 @@ test("Mistral Large 4 is known: its window, and that it sees images", function()
 	assert(sees, "sees images")
 end)
 
+test("GLM 5 is known by name, as Mistral or Z.ai calls it", function()
+	local function window(model: string): (number, boolean)
+		models.roles.test_glm = { provider = "mistral", model = model }
+		local size, known = models.window("test_glm")
+		models.roles.test_glm = nil
+		return size, known
+	end
+	for _, model in { "zai-glm-5-3", "glm-5.3", "zai-glm-5-2", "glm-5-2" } do
+		local size, known = window(model)
+		assert(size == 1048576 and known, `{model}: {size}`)
+	end
+	for _, model in { "zai-glm-5", "glm-5.1" } do
+		local size, known = window(model)
+		assert(size == 200000 and known, `{model}: {size}`)
+	end
+	models.roles.test_glm = { provider = "mistral", model = "zai-glm-5-3" }
+	local sees = models.sees_images("test_glm")
+	models.roles.test_glm = nil
+	assert(not sees, "GLM 5.3 reads text only")
+end)
+
+test("GLM 5 takes low, high and max, whatever its provider takes", function()
+	local turn = models.tools
+	local said: { any } = { { role = "user", text = "hi" } }
+	-- What's sent as reasoning_effort for each effort asked.
+	local function sent(model: string): { [string]: string }
+		models.roles.test_glm = { provider = "mistral", model = model }
+		local out = {}
+		for _, effort in models.EFFORTS do
+			local fitted = models.effort("test_glm", effort) :: string
+			out[effort] =
+				turn.body("openai", model, { said = said, effort = fitted }, 100).reasoning_effort
+		end
+		models.roles.test_glm = nil
+		return out
+	end
+	local glm = sent("zai-glm-5-3")
+	assert(glm.none == "low", `none can't turn its thinking off: {glm.none}`)
+	assert(glm.low == "low" and glm.medium == "high", `medium is sent as high: {glm.medium}`)
+	assert(glm.high == "high" and glm.max == "max", `max is sent as max: {glm.max}`)
+	local large = sent("mistral-large-4")
+	assert(large.none == "none" and large.low == "none", "Mistral's own take none")
+	assert(large.medium == "high" and large.high == "high", "and high")
+	assert(large.max == "high", `max is as high as Mistral's go: {large.max}`)
+end)
+
+test(":models says what GLM's effort is sent as", function(t)
+	local before = models.roles.fast
+	models.roles.fast = { provider = "mistral", model = "zai-glm-5-3", effort = "none" }
+	t:buffer("|x")
+	t:run("models")
+	local page = greed.view():buffer()
+	local found = false
+	for n = 0, page:line_count() - 1 do
+		local text = page:line_text(n)
+		if string.find(text, "^fast:") then
+			found = string.find(text, ", effort none (sent as low),", 1, true) ~= nil
+		end
+	end
+	t:keys("q")
+	models.roles.fast = before
+	assert(found, "the fast role's line says none is sent as low")
+end)
+
+test("max goes only where it's taken, else as the nearest", function()
+	models.roles.poetry = { provider = "openai", model = "gpt-5" }
+	assert(models.effort("poetry", "max") == "high", "OpenAI-like servers top out at high")
+	models.roles.poetry = { provider = "anthropic", model = "claude-opus-5-5" }
+	assert(models.effort("poetry", "max") == "max", "Claude takes max")
+	models.roles.poetry = nil
+end)
+
 -- Stands in for the network as models are listed: each address gets its
 -- answer, and what was asked is kept.
 local function lists(answers: { [string]: { status: number, body: any } }): { any }

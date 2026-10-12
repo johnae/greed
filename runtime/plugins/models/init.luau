@@ -46,7 +46,8 @@ export type TurnRequest = turn.Request
 --- what the model thought back with what it said, as Mistral's
 --- reasoning models want (OpenAI-like servers only). `effort` is how hard
 --- its models think when a role doesn't say (see `M.effort`), and
---- `efforts` the ones it takes, when it doesn't take them all. `idle` is
+--- `efforts` the ones it takes, when it doesn't take them all (some models
+--- known by name take their own, see `M.effort`). `idle` is
 --- how many seconds its answers may go quiet (see `M.idle`).
 export type Provider = {
 	kind: string,
@@ -342,12 +343,25 @@ local WINDOWS: { { pattern: string, tokens: number } } = {
 	{ pattern = "devstral", tokens = 131072 },
 	{ pattern = "glm%-4%.[6-9]", tokens = 200000 },
 	{ pattern = "glm%-4%.5", tokens = 131072 },
+	{ pattern = "glm%-?5[%-.][23]", tokens = 1048576 },
+	{ pattern = "glm%-?5", tokens = 200000 },
 	{ pattern = "qwen3%-coder", tokens = 262144 },
 	{ pattern = "deepseek", tokens = 131072 },
 	{ pattern = "gemma%-?3", tokens = 131072 },
 	{ pattern = "kimi%-k2", tokens = 131072 },
 	{ pattern = "kimi%-k3", tokens = 1048576 },
 }
+
+-- The efforts some models take whoever serves them, by a pattern in their
+-- name (lowercased); they count before their provider's `efforts`. GLM 5
+-- always thinks, so it can't be sent none, and it goes up to max.
+local TAKES: { { pattern: string, efforts: { string } } } = {
+	{ pattern = "glm%-?5", efforts = { "low", "high", "max" } },
+}
+
+-- What OpenAI-like servers take when neither the model nor its provider
+-- says: all but max, which few of them know.
+local OPENAI_EFFORTS = { "none", "low", "medium", "high" }
 
 --- What a model of unknown size is taken to have room for, in tokens.
 M.WINDOW = 32000
@@ -467,23 +481,36 @@ function M.edits(role: string): string
 	return known(chosen and chosen.edits) or known(provider and provider.edits) or "replace"
 end
 
+-- The efforts `model` at `provider` takes: the model's own if known by
+-- name, else the provider's `efforts`, else all of them for Claude and
+-- all but max for OpenAI-like servers.
+local function takes(provider: Provider, model: string): { string }
+	local name = string.lower(model)
+	for _, known in TAKES do
+		if string.find(name, known.pattern) then
+			return known.efforts
+		end
+	end
+	if provider.efforts and #provider.efforts > 0 then
+		return provider.efforts
+	end
+	return if provider.kind == "anthropic" then M.EFFORTS else OPENAI_EFFORTS
+end
+
 --- How hard the model playing `role` thinks, as sent: `wanted`, else the
---- role's `effort`, else its provider's, as the nearest of the provider's
---- `efforts` (the higher of two as near). Nil when none says, and then
---- nothing is sent.
+--- role's `effort`, else its provider's, as the nearest of the efforts the
+--- model takes (the higher of two as near): those known for it by name,
+--- else its provider's `efforts`. Nil when none says, and then nothing is
+--- sent.
 function M.effort(role: string, wanted: string?): string?
 	local chosen, provider = M.resolve(M.playing(role))
 	local effort = wanted or (chosen and chosen.effort) or (provider and provider.effort)
 	local at = effort and table.find(M.EFFORTS, effort)
-	if at == nil then
+	if at == nil or chosen == nil or provider == nil then
 		return nil
 	end
-	local takes = provider and provider.efforts
-	if takes == nil or #takes == 0 then
-		return effort
-	end
 	local best, distance = nil, math.huge
-	for _, offered in takes do
+	for _, offered in takes(provider, chosen.model) do
 		local there = table.find(M.EFFORTS, offered)
 		if there then
 			local far = math.abs(there - at)
@@ -1718,6 +1745,7 @@ local EFFORT_DOCS: { [string]: string } = {
 	low = "thinks a little",
 	medium = "thinks some",
 	high = "thinks hard, slower and using more tokens",
+	max = "thinks as hard as the model goes, slowest and using the most tokens",
 }
 
 --- Asks for an effort (`EFFORTS`) in a picker titled `title`, `now`

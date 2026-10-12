@@ -1086,18 +1086,21 @@ assumes 32k for others; Greed's own agent uses it to compact long
 conversations (see [Agents](agents.md#greeds-own-agent)).
 
 A role's `effort` says how hard its model thinks before it answers:
-`"none"`, `"low"`, `"medium"` or `"high"`. Unset, nothing is sent and the
-model does what it does by default. `e` in `:models` picks it and keeps it
-with the role, and the role's line shows it; a provider's `effort` is the
-default for its roles. Servers with OpenAI's API get it as
-`reasoning_effort`. A provider that takes only some sets `efforts`, and
-the nearest of those is sent: the `mistral` provider takes `none` and
-`high`, so `low` is sent as `none` and `medium` as `high`, and `:models`
-says so. Claude models get it as their effort, with their thinking
+`"none"`, `"low"`, `"medium"`, `"high"` or `"max"`. Unset, nothing is sent
+and the model does what it does by default. `e` in `:models` picks it and
+keeps it with the role, and the role's line shows it; a provider's `effort`
+is the default for its roles. Servers with OpenAI's API get it as
+`reasoning_effort`, up to `high` (`max` is sent as `high`). A provider that
+takes only some sets `efforts`, and the nearest of those is sent: the
+`mistral` provider takes `none` and `high`, so `low` is sent as `none` and
+`medium` as `high`, and `:models` says so ("effort low (sent as none)").
+Some models take their own whoever serves them: GLM 5 always thinks and
+takes `low`, `high` and `max`, so `none` is sent as `low` and `medium` as
+`high`. Claude models get it as their effort, with their thinking
 summarised so Greed's agent can show it; models before Claude 4.6, like
-Haiku 4.5, think within a budget instead (2k, 8k or 24k tokens). In Greed's
-agent, `/effort` changes it for one session (see
-[Agents](agents.md#slash-commands)).
+Haiku 4.5, think within a budget instead (2k, 8k or 24k tokens, `max`
+the same as `high`). In Greed's agent, `/effort` changes it for one
+session (see [Agents](agents.md#slash-commands)).
 
 ```luau
 models.roles.agent = { provider = "mistral", model = "mistral-large-4", effort = "high" }
@@ -1165,6 +1168,15 @@ Small for `fast` when picked in `:models`:
 
 ```luau
 models.roles.agent = { provider = "mistral", model = "mistral-large-4" }
+```
+
+Mistral also serves Z.ai's GLM 5.3 as `zai-glm-5-3`: a million tokens of
+room, text only, and it always thinks, at `low`, `high` or `max` (see
+efforts above). Its thinking goes back to it each turn like Mistral's own
+models'.
+
+```luau
+models.roles.agent = { provider = "mistral", model = "zai-glm-5-3", effort = "high" }
 ```
 
 | Keys | |

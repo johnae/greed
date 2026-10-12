@@ -33,7 +33,7 @@ M.COMMANDS = {
 	{
 		name = "effort",
 		doc = "How hard the model thinks, for this session",
-		hint = "none|low|medium|high",
+		hint = "none|low|medium|high|max",
 		command = "agent-effort",
 		when = native.drives,
 	},

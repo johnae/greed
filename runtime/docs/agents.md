@@ -640,7 +640,7 @@ of going to the agent:
 | `/mode [name]` | Picks the mode, as `alt-m` does; with a name, switches to it |
 | `/thoughts` | Hides or shows what agents think |
 | `/fork` | A new session that starts with everything said so far |
-| `/effort [none\|low\|medium\|high]` | Greed's own agent: how hard its model thinks, for this session; without a word, a picker |
+| `/effort [none\|low\|medium\|high\|max]` | Greed's own agent: how hard its model thinks, for this session; without a word, a picker |
 | `/compact` | Greed's own agent: summarises all but its last few turns, to save room |
 
 `/effort` changes the session only, shown at the top of the box
