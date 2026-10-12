@@ -14,6 +14,7 @@
 )]
 
 mod buffer;
+pub mod child;
 pub mod control;
 pub mod debug;
 pub mod delta;

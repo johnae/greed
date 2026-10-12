@@ -47,7 +47,9 @@ unicode-width = "0.2"
 url = "2.5"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# Denied, with one allowed spot: resetting signals in programs Greed starts
+# (`child.rs`), which needs `sigaction`.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

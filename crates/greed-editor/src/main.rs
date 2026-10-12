@@ -57,6 +57,7 @@ Type Luau to evaluate it, or one of:
 /// What this process says about itself before anything else: its build,
 /// and the debug topics `$GREED_DEBUG` turns on.
 fn process_setup() {
+    greed_core::child::pass_on_signals();
     greed_core::control::set_build(runtime::BUILD);
     greed_core::debug::from_env();
 }
