@@ -12,7 +12,8 @@
 -- glyph and the block's number, the status after the command's line (✓ ✗
 -- ◐ ↗ ■, or ? for a question to a model that brought no command, the exit
 -- code, how long it took, where cd went), the sign beside it, the blank
--- line after it, and how many lines were left out. Output styles (errors, a
+-- line after it, how many lines were left out, and while a slow command
+-- has printed nothing, a line saying so. Output styles (errors, a
 -- program's colors) are in `shell.out.N`, and links on the places in files
 -- it names (`src/main.rs:12`) in `shell.ref.N`. Nothing is laid out to a
 -- view's width, so every client wraps the text at its own.
@@ -99,6 +100,9 @@ local STYLE: { [string]: string } = {
 -- are kept out of undo, so undo at the prompt takes back only typing, while
 -- output streams in above it.
 local OUT_OF_UNDO: { undo: boolean? } = { undo = false }
+
+-- How long a running command prints nothing before its block says so.
+local QUIET_MS = 1000
 
 -- Whose turn it is to change a shell's text, how deep in, and who waits.
 type Turn = { thread: thread, depth: number, waiting: { greed.Signal } }
@@ -417,6 +421,15 @@ function M.draw_block(shell: Shell, block: Block)
 		table.insert(marks, { from = at, to = at, style = "shell.status", lines = { said } })
 	end
 	local after = buffer:line_end(last)
+	-- A slow command, like kubectl reaching a cluster, shows it's at work
+	-- where its output will be, as in a float drilled down to.
+	local quiet = block.status == "running" and block.lines == 0 and last == line
+	if quiet and greed.now() - block.started >= QUIET_MS then
+		table.insert(
+			marks,
+			{ from = after, to = after, style = "shell.status", lines = { "nothing printed yet" } }
+		)
+	end
 	table.insert(marks, { from = after, to = after, style = "shell.separator", lines = { "" } })
 	-- A table's rows stay rows in a narrow pane: cut at the edge, and the
 	-- view scrolls sideways to the cursor, rather than wrapping.

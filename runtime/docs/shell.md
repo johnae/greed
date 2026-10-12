@@ -91,6 +91,9 @@ how it went: `◐` while it runs with how long so far, then `✓`, `✗ exit 1`,
 for a question to a model that brought no command back, how
 long it took, where `cd` went and which variables it set. A block that went
 quiet while it could be reading a line says it may be waiting for input.
+One that has printed nothing after a second says so where its output
+will go, so a slow command, like kubectl reaching a far cluster, shows
+it's at work.
 
 Output that's JSON or a table is kept as a value on the block too, and
 the status says so (`JSON · 3 items`, `table · 12 rows`); see [Filtering

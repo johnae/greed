@@ -161,3 +161,20 @@ test("the filter's prompt says how much it keeps as it's typed", function(t)
 	t:keys("d o w n")
 	assert(string.find(title(), "1 of 3 lines", 1, true), title())
 end)
+
+test("a command that hasn't printed after a second says so where its output goes", function(t)
+	local sh = open(t)
+	local block = assert(shell.run(sh, "sleep 30", { view = greed.view() }))
+	local function says(): boolean
+		for _, mark in sh.buffer:decorations(`shell.block.{block.uid}`) do
+			if mark.lines and tostring(mark.lines[1]) == "nothing printed yet" then
+				return true
+			end
+		end
+		return false
+	end
+	assert(not says(), "not at once")
+	t:wait(1100)
+	assert(says(), "after a second")
+	shell.kill(block)
+end)
