@@ -62,11 +62,14 @@ agent.tool({
 			return "nothing to say"
 		end
 		local term: terminal.Term = found.value
-		terminal.agent_state(
-			term.buffer,
-			tostring(args.agent or "claude"),
-			if state == "gone" then nil else state :: terminal.AgentState
-		)
+		-- The agent's own hooks: only `greed ctl` reaches this tool, and
+		-- nothing a program prints can stand in for them.
+		terminal.agent_report(term.buffer, {
+			source = "hook",
+			trusted = true,
+			name = tostring(args.agent or "claude"),
+			state = if state == "gone" then nil else state :: terminal.AgentState,
+		})
 		return state
 	end,
 })

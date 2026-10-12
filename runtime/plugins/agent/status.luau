@@ -33,7 +33,8 @@ function M.status(): { [string]: any }
 		state.label = found.label
 		table.insert(agents, state)
 	end
-	-- Agents in terminals, as their hooks say how they're doing.
+	-- Agents in terminals, as what they report says, and whether that can be
+	-- trusted (their hooks) or might be something a program printed.
 	for _, found in core.objects.list("terminal") do
 		local running = core.objects.inspect(found).agent
 		if running then
@@ -43,6 +44,8 @@ function M.status(): { [string]: any }
 				agent = running.name,
 				status = running.state,
 				since = running.since,
+				source = running.source,
+				trusted = running.trusted,
 			})
 		end
 	end

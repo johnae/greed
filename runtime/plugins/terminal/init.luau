@@ -90,8 +90,10 @@ export type Term = {
 	-- screen or exits, and whether that's due.
 	return_on_primary: boolean,
 	giving_back: boolean,
-	-- The agent running in it, as its hooks last said (`agent_state`).
-	agent: { name: string, state: AgentState, since: number }?,
+	-- What each source says about the agent running in it, and the agent
+	-- as they say it (`agent_report`).
+	reports: { [string]: AgentReport },
+	agent: Agent?,
 }
 
 local M = {}
@@ -199,24 +201,93 @@ end
 --- How an agent running in a terminal says it's doing.
 export type AgentState = "working" | "waiting" | "idle"
 
---- Says the agent `name` (like "claude") in the terminal shown in `buffer`
---- is working, waiting for you or idle, as its hooks tell; nil says it's
---- gone. One waiting needs you until it says otherwise. False when
---- `buffer` isn't a terminal.
-function M.agent_state(buffer: greed.Buffer, name: string, state: AgentState?): boolean
+--- What one source says about the agent in a terminal. A `trusted` source,
+--- like the agent's own hooks, can't be faked by what a program prints;
+--- the others (the bell, the screen) can, so they only ever lead to "go
+--- there", never to answering for you.
+export type AgentReport = {
+	source: string,
+	trusted: boolean,
+	name: string,
+	state: AgentState,
+	--- When it was said, on `greed.now()`'s clock.
+	at: number,
+}
+
+--- The agent in a terminal, as its reports say: the latest trusted one,
+--- else the latest of the others. `since` is when it got into `state`, in
+--- seconds since 1970.
+export type Agent = {
+	name: string,
+	state: AgentState,
+	source: string,
+	trusted: boolean,
+	since: number,
+}
+
+-- Works out `term`'s agent from its reports again, says it needs a look
+-- when the agent waits, and nudges whoever follows the terminal when that
+-- changed.
+local function reconcile(term: Term)
+	local best: AgentReport? = nil
+	for _, report in term.reports do
+		local better = best == nil
+			or (report.trusted and not best.trusted)
+			or (report.trusted == best.trusted and report.at > best.at)
+		if better then
+			best = report
+		end
+	end
+	local had = term.agent
+	local now: Agent? = nil
+	if best then
+		local same = had and had.state == best.state and had.name == best.name
+		now = {
+			name = best.name,
+			state = best.state,
+			source = best.source,
+			trusted = best.trusted,
+			since = if same and had then had.since else os.time(),
+		}
+	end
+	term.agent = now
+	local was = if had then `{had.name} {had.state} {had.source}` else ""
+	local is = if now then `{now.name} {now.state} {now.source}` else ""
+	if was == is then
+		return
+	end
+	needs_look(
+		term.buffer,
+		if now and now.state == "waiting" then `{now.name} waits for your answer` else nil
+	)
+	core.objects.changed(`terminal:{term.buffer:id()}`)
+end
+
+--- Says what `report.source` tells about the agent in the terminal shown
+--- in `buffer`: that `report.name` (like "claude") is working, waiting for
+--- you or idle, or with no `state` that it has nothing to say any more.
+--- False when `buffer` isn't a terminal.
+function M.agent_report(
+	buffer: greed.Buffer,
+	report: { source: string, trusted: boolean, name: string, state: AgentState? }
+): boolean
 	local term = term_of(buffer)
 	if term == nil then
 		return false
 	end
-	local had = term.agent
-	term.agent = if state
-		then {
-			name = name,
+	local state: AgentState? = report.state
+	if state then
+		term.reports[report.source] = {
+			source = report.source,
+			trusted = report.trusted,
+			name = report.name,
 			state = state,
-			since = if had and had.state == state then had.since else os.time(),
+			at = greed.now(),
 		}
-		else nil
-	needs_look(buffer, if state == "waiting" then `{name} waits for your answer` else nil)
+	else
+		term.reports[report.source] = nil
+	end
+	reconcile(term)
 	return true
 end
 
@@ -669,6 +740,7 @@ local function track(
 		command = how.command,
 		asked = how.asked,
 		images = {},
+		reports = {},
 		alternate = false,
 		links = {},
 		screen_links = {},
@@ -882,6 +954,10 @@ greed.on("terminal.exited", function(event)
 		return
 	end
 	M.update(term)
+	-- Its program ended, so no agent runs in it, whatever was said last
+	-- (an agent killed outright says nothing as it goes).
+	table.clear(term.reports)
+	reconcile(term)
 	if term.return_on_primary then
 		if M.is_open(term) then
 			release(term)

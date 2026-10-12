@@ -414,6 +414,14 @@ the thing is gone; it may wait on a program). `watch`, an action every
 object has, uses it to look again every `watch-interval` seconds; a kind
 without it is found again by id and inspected.
 
+When the plugin that owns an object knows its state changed, like a
+terminal's agent starting to wait, it says so with
+`objects.changed(id)`, and whoever follows the object (a watch, and
+`objects.on_changed(listener)`) looks again at once instead of at its next
+look. It's only a nudge: they read the state again and act on what
+differs, so saying it once too often costs a look and changes nothing, and
+the regular looks still catch whatever a nudge missed.
+
 `objects.list(kind)`, `objects.get(id)`, `objects.inspect(object)`,
 `objects.related(object)` and `objects.at(view)` read them.
 `objects.find(kind, text)` is the object of a kind someone typed: by the key

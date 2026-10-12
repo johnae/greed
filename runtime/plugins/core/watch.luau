@@ -15,7 +15,8 @@ greed.option.define({
 	default = 10,
 })
 
-type Watch = { object: objects.Object, state: { [string]: string } }
+-- What a watch saw last, and what wakes it to look again.
+type Watch = { object: objects.Object, state: { [string]: string }, wake: greed.Signal? }
 
 -- What's watched, by object id.
 local watched: { [string]: Watch } = {}
@@ -62,11 +63,18 @@ local function tell(object: objects.Object, said: string)
 	greed.client.notify(object.label, said)
 end
 
--- Looks at `w` again every interval while it's watched.
+-- Looks at `w` again every interval while it's watched, and at once when
+-- its owner says it changed (`objects.changed`).
 local function follow(w: Watch)
 	local id = w.object.id
 	while watched[id] == w do
-		greed.sleep((tonumber(greed.option.get("watch-interval")) or 10) * 1000)
+		local wake = greed.signal()
+		w.wake = wake
+		greed.spawn(function()
+			greed.sleep((tonumber(greed.option.get("watch-interval")) or 10) * 1000)
+			wake:send(true)
+		end)
+		wake:wait()
 		if watched[id] ~= w then
 			return
 		end
@@ -88,13 +96,26 @@ local function follow(w: Watch)
 	end
 end
 
+-- An object its owner says changed is looked at again now.
+objects.on_changed(function(id)
+	local w = watched[id]
+	if w and w.wake then
+		w.wake:send(true)
+	end
+end)
+
 local M = {}
 
 --- Starts watching `object`, or stops when it's watched already. Says
 --- which, and returns whether it's watched now.
 function M.toggle(object: objects.Object): boolean
-	if watched[object.id] then
+	local was = watched[object.id]
+	if was then
 		watched[object.id] = nil
+		-- Its loop ends now rather than at its next look.
+		if was.wake then
+			was.wake:send(false)
+		end
 		greed.echo(`stopped watching {object.label}`)
 		return false
 	end

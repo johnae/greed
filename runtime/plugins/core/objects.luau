@@ -93,6 +93,23 @@ function M.source(source: Source)
 	end))
 end
 
+-- Who hears that an object changed.
+local changed_listeners: { (id: string) -> () } = {}
+
+--- Says the state of the object `id` changed, so whoever follows it looks
+--- again now rather than at its next look. Only a nudge: they read its
+--- state again and act on what differs, so saying it too often costs a
+--- look and changes nothing. The plugin that owns the object says it.
+function M.changed(id: string)
+	registry.tell(changed_listeners, id)
+end
+
+--- Calls `listener` with an object's id each time its owner says it
+--- changed (`changed`), until the plugin that asked goes.
+function M.on_changed(listener: (id: string) -> ())
+	greed.plugin.tie(registry.put(changed_listeners, listener))
+end
+
 -- What `f(...)` gives, or nil when it fails.
 local function tried<T>(f: (...any) -> T, ...: any): T?
 	local ok, found = pcall(f, ...)

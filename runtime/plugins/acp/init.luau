@@ -245,6 +245,9 @@ local function changed(s: Session)
 		-- change the same files?
 		local was = last_status[s.id]
 		last_status[s.id] = s.status
+		if was ~= s.status then
+			core.objects.changed(`agent-session:{s.id}`)
+		end
 		if was == "working" and s.status == "idle" and s.workspace then
 			overlap.check(s, sessions)
 		end

@@ -909,8 +909,9 @@ of them (`describe  3 × pod: api-0, api-1, api-2`), running it on each in
 turn. One that deletes or stops asks once for all of them (see below).
 
 `watch` on a row (or anything else, under `space .`) looks at it again
-every `watch-interval` seconds (10) and sends a notification when it
-changes, on the status line and to your desktop, saying how:
+every `watch-interval` seconds (10), and at once when the plugin that owns
+it says it changed. When it differs, a notification on the status line and
+to your desktop says how:
 
 ```text
 worker-5c6b7d8f9-abcde: RESTARTS 12 → 13; STATUS Running → CrashLoopBackOff
