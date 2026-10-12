@@ -807,6 +807,13 @@ last did something, the tokens it takes when the agent says, and where it
 works: `in other-workspace` for one that ran in another workspace of the
 repository, `workspace NAME` for one in a workspace of its own.
 
+Agents running in a terminal of the repository show there too, like the
+Claude Code pane (`space i C`) or a `claude` you started yourself with the
+hooks set up, with how they last said they're doing (see [Knowing when it
+waits for you](#knowing-when-it-waits-for-you)). `enter` and `p t w s` show
+their terminal and `x` closes it, ending the program; the keys that work
+on a session's conversation, like `f` or `d`, don't apply to them.
+
 ```text
   Claude    Fix the off-by-one in the pager  ⠋ working  just now   14.2k tokens
   Greed     Add a test for the pager         idle       4 min ago  3.1k tokens

@@ -610,22 +610,36 @@ local function split(buffer: greed.Buffer, sizes: Sizes): greed.View
 	return view
 end
 
-local function open_in(buffer: greed.Buffer, s: Session, where: Placement, sizes: Sizes): greed.View
+local function open_in(
+	buffer: greed.Buffer,
+	name: string,
+	where: Placement,
+	sizes: Sizes
+): greed.View
 	if where == "panel" then
-		return greed.panel(buffer, { side = "right", width = "45%", title = s.name })
+		return greed.panel(buffer, { side = "right", width = "45%", title = name })
 	elseif where == "float" then
-		return panes.floats.show(buffer, { title = s.name })
+		return panes.floats.show(buffer, { title = name })
 	elseif where == "tab" then
-		greed.tab.rename(greed.tab.new(buffer), s.name)
+		greed.tab.rename(greed.tab.new(buffer), name)
 		return greed.tab.current().active
 	end
 	return split(buffer, sizes)
 end
 
--- Shows the transcript of `s` as `where` says, moving it there from
--- wherever else it shows, or where it shows already (a panel if nowhere).
-local function place(s: Session, where: Placement?, sizes: Sizes?): greed.View
-	local buffer = buffer_of(s)
+-- What a row of the list shows: a session's transcript, or the terminal an
+-- agent runs in, called `name`.
+type Shown = { buffer: greed.Buffer, name: string, terminal: boolean }
+
+local function shown_of(s: Session): Shown
+	return { buffer = buffer_of(s), name = s.name, terminal = terms[s.id] ~= nil }
+end
+
+-- Shows `shown` as `where` says, moving it there from wherever else it
+-- shows, or where it shows already (a terminal in a pane if nowhere, a
+-- transcript in a panel).
+local function place(shown: Shown, where: Placement?, sizes: Sizes?): greed.View
+	local buffer = shown.buffer
 	local before = buffer:views()
 	local found: greed.View? = nil
 	for _, old in before do
@@ -635,8 +649,8 @@ local function place(s: Session, where: Placement?, sizes: Sizes?): greed.View
 		end
 	end
 	-- A terminal goes in a pane, as it started.
-	local fallback: Placement = if terms[s.id] then "pane" else "panel"
-	local view = found or open_in(buffer, s, where or fallback, sizes or {})
+	local fallback: Placement = if shown.terminal then "pane" else "panel"
+	local view = found or open_in(buffer, shown.name, where or fallback, sizes or {})
 	if found == nil then
 		-- Closing a view leaves the session running; the project's last
 		-- pane can't close, and goes on showing it.
@@ -645,7 +659,7 @@ local function place(s: Session, where: Placement?, sizes: Sizes?): greed.View
 		end
 	end
 	view:focus()
-	if terms[s.id] then
+	if shown.terminal then
 		terminal.enter(view)
 	else
 		transcript.focus_prompt(view)
@@ -653,22 +667,32 @@ local function place(s: Session, where: Placement?, sizes: Sizes?): greed.View
 	return view
 end
 
+-- Shows each of `several` as `where` says: several panes split the
+-- biggest pane each time, and several tabs are one tab with a pane each.
+local function place_all(several: { Shown }, where: Placement)
+	local sizes: Sizes = {}
+	for i, shown in several do
+		place(shown, if where == "tab" and i > 1 then "pane" else where, sizes)
+	end
+end
+
 --- Shows the transcript of `s` with the cursor in its prompt: as `where`
 --- says, moving it there from where it showed, or without `where`, where
 --- it shows already, or else in a panel on the right. Closing its view
 --- leaves the session running.
 function M.show(s: Session, where: Placement?)
-	place(s, where)
+	place(shown_of(s), where)
 end
 
 --- Shows the transcripts of `several` as `where` says, each moved there:
 --- several panes split the biggest pane each time, and several tabs are
 --- one tab with a pane each.
 function M.show_all(several: { Session }, where: Placement)
-	local sizes: Sizes = {}
-	for i, s in several do
-		place(s, if where == "tab" and i > 1 then "pane" else where, sizes)
+	local all: { Shown } = {}
+	for _, s in several do
+		table.insert(all, shown_of(s))
 	end
+	place_all(all, where)
 end
 
 --- Every session, oldest first.
@@ -765,23 +789,53 @@ local function rows(root: string): { list.Row }
 	local key = repository(root)
 	local out: { list.Row } = {}
 	local running: { [string]: boolean } = {}
+	-- The terminals sessions run in, which show as those sessions.
+	local of_sessions: { [terminal.Term]: boolean } = {}
 	for _, s in sessions do
 		if repository(s.root) == key then
 			if s.session_id then
 				running[s.session_id] = true
 			end
+			local term = terms[s.id]
+			if term then
+				of_sessions[term] = true
+			end
+			-- Claude Code in a terminal says how it's doing through its hooks.
+			local status: string = if term
+					and term.agent
+					and s.status == "idle"
+				then term.agent.state
+				else s.status
 			table.insert(out, {
 				key = string.format("s%08d", s.id),
 				session = s,
 				agent = s.name,
 				title = saved.title(s),
 				-- A turn that failed shows as failed, with why, until the next.
-				status = if s.failed and s.status == "idle" then "failed" else s.status :: string,
+				status = if s.failed and s.status == "idle" then "failed" else status,
 				reason = if s.status == "idle" or s.status == "exited" then s.failed else nil,
 				time = active[s.id] or os.time(),
 				tokens = s.tokens,
 				root = s.root,
 				workspace = s.workspace and s.workspace.name,
+			})
+		end
+	end
+	-- Agents in other terminals, like the Claude Code pane or one you
+	-- started yourself, in a folder of this repository.
+	for _, term in terminal.agents() do
+		local agent = term.agent
+		local folder = term.terminal:cwd()
+		local at = if folder then core.project.root(folder) else nil
+		if agent and at and not of_sessions[term] and repository(at) == key then
+			table.insert(out, {
+				key = `t{term.buffer:id()}`,
+				terminal = term,
+				agent = agent.name,
+				title = term.terminal:title() or term.command,
+				status = agent.state :: string,
+				time = agent.since,
+				root = at,
 			})
 		end
 	end
@@ -816,6 +870,13 @@ local function rows(root: string): { list.Row }
 	return out
 end
 list.source(rows)
+
+-- An agent in a terminal changed how it's doing: its row shows it.
+core.objects.on_changed(function(id)
+	if string.sub(id, 1, 9) == "terminal:" then
+		list.render()
+	end
+end)
 
 --- Opens the list of the sessions of the repository of the project at
 --- `root`, running and kept to take up again, in any of its workspaces.
@@ -877,24 +938,37 @@ local function take_up(row: list.Row, here: string?): (Session?, string?)
 end
 
 -- The session `ctx` is about: the transcript it's in, or the list's line.
+-- A line of an agent in a terminal has none, and says what it takes.
 local function current(ctx: greed.Context): Session?
-	local row = list.at_cursor(ctx)
-	return by_buffer[ctx.buffer:id()] or (row and row.session)
-end
-
--- The sessions of the rows chosen in the list (marked, or under the
--- cursor), taken up first where they need to be, or the transcript's
--- session; each failure said.
-local function chosen(ctx: greed.Context): { Session }
-	local out: { Session } = {}
 	local s = by_buffer[ctx.buffer:id()]
 	if s then
-		return { s }
+		return s
+	end
+	local row = list.at_cursor(ctx)
+	if row and row.terminal then
+		greed.echo(`{row.agent} runs in a terminal: enter and p t w s show it, x closes it`)
+	end
+	return row and row.session
+end
+
+-- What to show of the rows chosen in the list, or of the transcript `ctx`
+-- is in: sessions' transcripts, taken up first where they need to be, and
+-- the terminals agents run in.
+local function chosen_shown(ctx: greed.Context): { Shown }
+	local out: { Shown } = {}
+	local s = by_buffer[ctx.buffer:id()]
+	if s then
+		return { shown_of(s) }
 	end
 	for _, row in list.chosen(ctx) do
+		local term = row.terminal
+		if term then
+			table.insert(out, { buffer = term.buffer, name = row.agent, terminal = true })
+			continue
+		end
 		local taken, err = take_up(row)
 		if taken then
-			table.insert(out, taken)
+			table.insert(out, shown_of(taken))
 		else
 			greed.echo(`can't take up {row.agent}: {err}`)
 		end
@@ -1047,7 +1121,7 @@ greed.command({ name = "agent-resume", doc = "The same as agent-list", run = tog
 local function show_in(where: Placement?): (ctx: greed.Context) -> ()
 	return function(ctx)
 		local in_list = list.is(ctx.buffer)
-		local several = chosen(ctx)
+		local several = chosen_shown(ctx)
 		if #several == 0 then
 			if not in_list then
 				greed.echo("no session here; space i l lists them")
@@ -1056,9 +1130,9 @@ local function show_in(where: Placement?): (ctx: greed.Context) -> ()
 		end
 		leave_list(ctx)
 		if where == nil and #several == 1 then
-			M.show(several[1])
+			place(several[1], nil)
 		else
-			M.show_all(several, where or "pane")
+			place_all(several, where or "pane")
 		end
 	end
 end
@@ -1118,7 +1192,7 @@ greed.command({
 local function resume_chosen(ctx: greed.Context, here: string?)
 	local taken = 0
 	for _, row in list.chosen(ctx) do
-		if row.session and row.session.status ~= "exited" then
+		if row.terminal or (row.session and row.session.status ~= "exited") then
 			continue
 		end
 		local s, err = take_up(row, here)
@@ -1505,7 +1579,7 @@ local function open_row(ctx: greed.Context, s: Session): boolean
 	if helper then
 		local from = ctx.view
 		local key = transcript.tool_at(ctx.buffer, ctx.buffer:line_of(from:cursor())) :: string
-		local float = place(helper, "float")
+		local float = place(shown_of(helper), "float")
 		if float ~= from then
 			opened_from[float:id()] = { view = from, key = key }
 		end
@@ -1739,7 +1813,9 @@ greed.command({
 		local running, workspace = false, false
 		for _, row in picked do
 			table.insert(names, row.agent)
-			running = running or (row.session ~= nil and row.status ~= "exited")
+			running = running
+				or row.terminal ~= nil
+				or (row.session ~= nil and row.status ~= "exited")
 			workspace = workspace or row.workspace ~= nil
 		end
 		if #picked == 0 then
@@ -1754,8 +1830,11 @@ greed.command({
 			end
 		end
 		for _, row in picked do
-			local s, entry = row.session, row.saved
-			if s then
+			local s, entry, term = row.session, row.saved, row.terminal
+			if term then
+				-- Its program ends with it.
+				terminal.close(term)
+			elseif s then
 				M.close(s)
 			elseif entry then
 				saved.forget(entry)

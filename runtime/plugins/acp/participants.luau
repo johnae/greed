@@ -66,7 +66,7 @@ end
 --- What the status line shows about `sessions` and the agents running in
 --- terminals (`in_terminals`, as their hooks say): how many work and how
 --- many wait for you; nil when none do.
-function M.status(sessions: { Session }, in_terminals: { terminal.Agent }): string?
+function M.status(sessions: { Session }, in_terminals: { terminal.Term }): string?
 	local working, waiting = 0, 0
 	local function count(state: string)
 		if state == "working" then
@@ -78,8 +78,8 @@ function M.status(sessions: { Session }, in_terminals: { terminal.Agent }): stri
 	for _, s in sessions do
 		count(s.status)
 	end
-	for _, agent in in_terminals do
-		count(agent.state)
+	for _, term in in_terminals do
+		count((term.agent :: terminal.Agent).state)
 	end
 	local parts = {}
 	if working > 0 then

@@ -17,18 +17,21 @@ local core = require("@core")
 local session = require("./session")
 local saved = require("./saved")
 local transcript = require("./transcript")
+local terminal = require("@terminal")
 
 type Session = session.Session
 
 local M = {}
 
---- A line of the list: a session running or that ran (`session`), or one
---- kept from before (`saved`).
+--- A line of the list: a session running or that ran (`session`), one
+--- kept from before (`saved`), or an agent running in a terminal
+--- (`terminal`), as its hooks say.
 export type Row = {
 	--- Tells it apart while the list is redrawn, for marks.
 	key: string,
 	session: Session?,
 	saved: saved.Saved?,
+	terminal: terminal.Term?,
 	agent: string,
 	title: string,
 	--- A session's status, "failed" after a turn that failed, or "saved".

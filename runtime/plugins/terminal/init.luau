@@ -291,14 +291,18 @@ function M.agent_report(
 	return true
 end
 
---- The agents running in terminals now, as their reports say.
-function M.agents(): { Agent }
-	local found = {}
+--- The terminals an agent runs in now, as their reports say (each one's
+--- `agent`), oldest terminal first.
+function M.agents(): { Term }
+	local found: { Term } = {}
 	for _, term in terms do
 		if term.agent then
-			table.insert(found, term.agent)
+			table.insert(found, term)
 		end
 	end
+	table.sort(found, function(a: Term, b: Term): boolean
+		return a.buffer:id() < b.buffer:id()
+	end)
 	return found
 end
 
