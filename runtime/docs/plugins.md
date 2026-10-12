@@ -288,8 +288,8 @@ objects it relates to and its kind's actions. `space h i` inspects one, and
 agents read them through the `describe` tool. Greed's own kinds are
 `editor` (where the inspector starts), `buffer`, `view`, `tab`, `plugin`,
 `client`, `file`, `folder`, `terminal`, `shell`, `shell-block`, `language-server`,
-`proposal`, `agent-session` (an agent session: show, stop, close), `board`
-and `board-card`.
+`proposal`, `agent-session` (an agent session: show, stop, close), `board`,
+`board-card`, `note` and `todo`.
 
 A plugin adds a kind for its own things. Everything but the name is
 optional: `list` when there's a way to list them all, `get` to find one by

@@ -619,3 +619,42 @@ test("searching notes ignores case unless notes-search-case says otherwise", fun
 	assert(#found == 0, "unless it should mind case")
 	greed.option.set("notes-search-case", "ignore")
 end)
+
+test("notes and their todos are objects: listed, related, opened and ticked", function(t)
+	local core = require("@core")
+	local dir = folder(t, {
+		["plan.md"] = "# plan\n\n- [ ] ship it due:2026-10-20\n- [x] write it\n",
+		["log.md"] = "see [[plan]]\n",
+	})
+	local note = assert(core.objects.get("note:plan"))
+	local linked = core.objects.related(note).linked_from
+	assert(linked and #linked == 1 and linked[1].id == "note:log", "the notes linking here")
+	local open: any = nil
+	for _, object in core.objects.list("todo") do
+		if object.label == "ship it due:2026-10-20" then
+			open = object
+		end
+	end
+	assert(open and open.id == "todo:plan#2", open and open.id)
+	assert(core.objects.inspect(open).due == "2026-10-20")
+	assert(core.objects.related(open).note[1].id == "note:plan")
+	assert(core.objects.actions(open)[1].name == "open")
+	assert(core.objects.act(open, "tick"))
+	t:wait_for(function()
+		return string.find(greed.fs.read(`{dir}/plan.md`) or "", "- [x] ship it", 1, true) ~= nil
+	end)
+end)
+
+test("space . on a todo in a note offers to tick it", function(t)
+	local core = require("@core")
+	local dir = folder(t, { ["plan.md"] = "- [ ] ship it\n" })
+	greed.open(`{dir}/plan.md`)
+	t:wait(10)
+	local found: any = nil
+	for _, target in core.actions.at(greed.view()) do
+		if target.kind == "todo" then
+			found = target
+		end
+	end
+	assert(found and found.id == "todo:plan#0", found and found.id)
+end)

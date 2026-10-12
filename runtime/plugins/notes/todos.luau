@@ -87,23 +87,33 @@ function M.plain(text: string): string
 	return (string.gsub(out, "^%s+", ""))
 end
 
+--- The todo on line `line` (0-based) of note `note`, whose text is
+--- `text`, if that line is one.
+function M.at(note: string, line: number, text: string): Todo?
+	local done, rest = M.parse(text)
+	if rest == nil then
+		return nil
+	end
+	local date, time = M.remind(rest)
+	return {
+		note = note,
+		line = line,
+		text = rest,
+		done = done == true,
+		due = M.due(rest),
+		remind = if date and time then `{date} {time}` else date,
+	}
+end
+
 --- Every todo in the notes, in every place, open ones only unless `all`,
 --- soonest due first (undated last), then by note and line.
 function M.list(all: boolean?): { Todo }
 	local found: { Found } = notes.grep_text("^\\s*[-*+] \\[[ xX]\\] ") or {}
 	local out: { Todo } = {}
 	for _, line in found do
-		local done, text = M.parse(line.text)
-		if text and (all or not done) then
-			local date, time = M.remind(text)
-			table.insert(out, {
-				note = line.note,
-				line = line.line,
-				text = text,
-				done = done == true,
-				due = M.due(text),
-				remind = if date and time then `{date} {time}` else date,
-			})
+		local todo = M.at(line.note, line.line, line.text)
+		if todo and (all or not todo.done) then
+			table.insert(out, todo)
 		end
 	end
 	table.sort(out, function(a: Todo, b: Todo)

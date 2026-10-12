@@ -1331,7 +1331,9 @@ to show other words.
 | `z a` | Fold the section under the cursor, or unfold it (any Markdown) |
 
 A todo is a list item with a box, `- [ ] call the bank`, and
-`due:2026-10-03` anywhere in it gives it a date for the agenda. In a note,
+`due:2026-10-03` anywhere in it gives it a date for the agenda. Notes and
+todos are objects too: `space h i` on one shows its note, due date and
+reminder, and `space .` opens or ticks it, for agents as well. In a note,
 links show without their brackets (except while typing on their line) and the
 notes linking to it are listed at its end. Other Markdown files, like a
 project's README, look as they always do; `:set notes-everywhere true`
