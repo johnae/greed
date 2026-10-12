@@ -1942,7 +1942,8 @@ float is now. Plugins that show things in floats use
 `require("@panes").floats.show(buffer)`, which opens the buffer in a float
 of the tab (or finds the one it has) and brings it to the front,
 `floats.focus(view)` for a float they have, and
-`core.floats.attention(buffer, true)` to give it the dot.
+`core.attention.set(key, { label = ..., reason = ..., buffer = buffer })`
+to give it the dot.
 
 ## Clipboard
 

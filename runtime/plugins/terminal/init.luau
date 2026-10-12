@@ -180,6 +180,20 @@ local function out_of_sight(term: Term): boolean
 	return #views > 0
 end
 
+-- Says the terminal showing in `buffer` needs a look and why, or with nil
+-- that it no longer does.
+local function needs_look(buffer: greed.Buffer, reason: string?)
+	local key = `terminal:{buffer:id()}`
+	if reason == nil then
+		core.attention.set(key, nil)
+		return
+	end
+	local term = term_of(buffer)
+	local label = (if term then term.terminal:title() or term.command else buffer:name())
+		or "a terminal"
+	core.attention.set(key, { label = label, reason = reason, buffer = buffer })
+end
+
 --- The terminal shown in `buffer`, if it's one.
 function M.terminal(buffer: greed.Buffer): greed.Terminal?
 	local term = term_of(buffer)
@@ -384,7 +398,7 @@ local function mark_failures(term: Term)
 		term.failures = failures
 		-- A command that finished in a hidden float wants a look.
 		if finished and out_of_sight(term) then
-			core.floats.attention(term.buffer, true)
+			needs_look(term.buffer, "a command finished")
 		end
 	end
 	local marks: { greed.Mark } = {}
@@ -856,7 +870,7 @@ greed.on("terminal.exited", function(event)
 		greed.mode.set(core.style.home())
 	end
 	if out_of_sight(term) then
-		core.floats.attention(term.buffer, true)
+		needs_look(term.buffer, "its program ended")
 	end
 end)
 
@@ -879,7 +893,7 @@ end
 greed.on("view.focused", function(event: greed.ViewFocused)
 	local term = if event.view:valid() then term_of(event.view:buffer()) else nil
 	if term then
-		core.floats.attention(event.view:buffer(), false)
+		needs_look(event.view:buffer(), nil)
 		claim(term, event.view)
 	else
 		leave_unless_terminal(event.view)

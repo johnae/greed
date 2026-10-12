@@ -244,8 +244,8 @@ end)
 test("a float that needs you gets a colored dot, until its owner says it doesn't", function(t)
 	local views = three(t, { width = 40, height = 10 })
 	floats.use("one")
-	core.floats.attention(views[1]:buffer(), true)
-	assert(core.floats.needs_attention(views[1]:buffer()))
+	core.attention.set("test:one", { label = "one", reason = "a test", buffer = views[1]:buffer() })
+	assert(core.attention.of(views[1]:buffer()))
 	local footer = (views[3]:float_spec() :: greed.FloatSpec).footer
 	local first = (footer :: { { text: string, style: string?, action: string? } })[1]
 	assert(first.text == "●" and first.style == "ui.float.attention", first.text)
@@ -253,7 +253,7 @@ test("a float that needs you gets a colored dot, until its owner says it doesn't
 		string.find((dock() :: greed.View):buffer():text(), "1 a ●", 1, true),
 		"in the dock too"
 	)
-	core.floats.attention(views[1]:buffer(), false)
+	core.attention.set("test:one", nil)
 	footer = (views[3]:float_spec() :: greed.FloatSpec).footer
 	assert(text_of(footer) == "○ ○ ●  alt-{ alt-}", text_of(footer))
 end)
@@ -334,11 +334,11 @@ test("a command finishing in a hidden floating terminal wants a look", function(
 	t:draw(80, 24)
 	assert(table.concat(shown()) == "x")
 	t:wait_for(function()
-		return core.floats.needs_attention(term.buffer)
+		return core.attention.of(term.buffer) ~= nil
 	end)
 	t:keys("alt-}")
 	t:draw(80, 24)
-	assert(not core.floats.needs_attention(term.buffer), "seen")
+	assert(core.attention.of(term.buffer) == nil, "seen")
 end)
 
 test("a float layout places floats in proportion on clients of other sizes", function(t)

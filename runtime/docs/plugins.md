@@ -910,8 +910,11 @@ greed.tab.set_layout({
   apart for each client too, by `greed.client.id()`.
   To show something in a float of the tab, laid out by its
   [float layout](using.md#float-layouts), use
-  `require("@panes").floats.show(buffer)`, and say a buffer needs the
-  user with `core.floats.attention(buffer, true)`.
+  `require("@panes").floats.show(buffer)`, and say something needs the
+  user with `core.attention.set(key, { label, reason, buffer })`, where
+  `key` is the thing's object id (`terminal:12`) and `buffer` where to
+  look; its float gets a dot, and `core.attention.list()` gives everything
+  waiting, oldest first. `core.attention.set(key, nil)` takes it off.
 - Pickers (`require("@picker").pick(title, items, choose, options)`)
   filter a list as you type, with an optional preview, or ask a function
   for items as the query changes. `on_move` hears each item as it becomes

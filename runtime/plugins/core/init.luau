@@ -140,6 +140,8 @@ return {
 	--- Typing in a buffer with a read-only start goes after it (writable.luau).
 	writable = require("@self/writable"),
 	floats = floats,
+	--- What needs you, and why, for floats' dots and the status (attention.luau).
+	attention = require("@self/attention"),
 	registers = registers,
 	--- Where the thing under the cursor is defined, and what it is (lookup.luau).
 	lookup = lookup,

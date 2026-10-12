@@ -221,8 +221,17 @@ local function changed(s: Session)
 		local buffer = buffers[s.id]
 		if buffer and buffer:valid() and terms[s.id] == nil then
 			pcall(transcript.render, buffer, s)
-			-- Its float, if it has one, says it's waiting for you.
-			core.floats.attention(buffer, s.status == "waiting")
+			-- Waiting for you: its float, if it has one, and the status say so.
+			core.attention.set(
+				`agent-session:{s.id}`,
+				if s.status == "waiting"
+					then {
+						label = saved.title(s),
+						reason = "waits for your answer",
+						buffer = buffer,
+					}
+					else nil
+			)
 		end
 		list.render()
 		participants.draw(sessions)

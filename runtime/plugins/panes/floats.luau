@@ -15,7 +15,7 @@
 -- A layout that hides floats marks the one showing with where it is among
 -- them (`‹ 2/5 ›` on its border, a dot for each float under it) and shows
 -- the dock, a strip along the bottom listing them. A float whose buffer
--- needs you (`core.floats.attention`) gets a colored dot in both.
+-- needs you (`core.attention`) gets a colored dot in both.
 --
 -- `define` adds a layout of your own: a function from the tab's floats to
 -- where each goes and whether it shows.
@@ -295,7 +295,7 @@ local function indicator(st: TabState, i: number, cells: number): ({ Piece }, { 
 	local footer: { Piece } = {}
 	for j, view in st.order do
 		local dot, style = "○", nil
-		if core.floats.needs_attention(view:buffer()) then
+		if core.attention.of(view:buffer()) ~= nil then
 			dot, style = "●", "ui.float.attention"
 		elseif j == i then
 			dot, style = "●", "ui.float.title"
@@ -384,7 +384,7 @@ local function draw_dock(st: TabState, shown: boolean)
 			elseif i == current then "ui.tabline.active"
 			else "ui.tabline"
 		table.insert(marks, { from = from, to = #text, style = style })
-		if core.floats.needs_attention(float:buffer()) then
+		if core.attention.of(float:buffer()) ~= nil then
 			table.insert(marks, { from = #text, to = #text + #"●", style = "ui.float.attention" })
 			text ..= "● "
 		end
@@ -815,7 +815,7 @@ greed.on("view.resized", function(event: greed.ViewResized)
 	end
 end)
 
-core.floats.on_attention(function()
+core.attention.on_change(function()
 	arrange()
 end)
 
