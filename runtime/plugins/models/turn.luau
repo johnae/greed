@@ -146,6 +146,13 @@ local function openai_messages(system: string?, said: { Said }): { any }
 			end
 			table.insert(messages, message)
 		else
+			-- A turn stopped at tool results, by you or the turn limit, ends
+			-- with a word from the model: some providers, like Mistral, turn
+			-- down a message that follows a tool's result.
+			local last = messages[#messages]
+			if last and last.role == "tool" then
+				table.insert(messages, { role = "assistant", content = "(stopped here)" })
+			end
 			local data, gone = images_of(s)
 			if #data == 0 then
 				table.insert(messages, { role = "user", content = user_text(s, gone) })

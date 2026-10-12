@@ -273,3 +273,17 @@ test("images you said go as image blocks to Anthropic and as data URLs to the re
 	local plain = turn.body("openai", "m", { said = { { role = "user", text = "hi" } } }, 100)
 	assert(plain.messages[1].content == "hi")
 end)
+
+test("a message after a turn that stopped at tool results follows a word from the model", function()
+	local said: { any } = {
+		{ role = "user", text = "look" },
+		{ role = "assistant", text = "", calls = { { id = "c1", name = "now", input = {} } } },
+		{ role = "tool", call = "c1", text = "noon" },
+		{ role = "user", text = "go on" },
+	}
+	local messages = turn.body("openai", "m", { said = said }, 100).messages
+	assert(#messages == 5, `{#messages} messages`)
+	assert(messages[3].role == "tool" and messages[4].role == "assistant", messages[4].role)
+	assert(messages[4].content ~= "", "it says something")
+	assert(messages[5].role == "user" and messages[5].content == "go on")
+end)
