@@ -102,19 +102,24 @@ Auto mode allows:
 Any other command, risky ones like `rm -rf /tmp/scratch` included, goes
 to the `decision` model. It reads what you asked for (your last few
 messages, never what the agent read or what commands printed), your rules,
-why Greed thinks the command is risky, and the command, and lets it run or
-blocks it, with a few words why. Asked to clean out `/tmp/scratch`, an `rm
--rf /tmp/scratch` goes ahead; a deploy you never mentioned doesn't. A
-blocked command goes back to the agent with the reason, to find another
-way, without stopping its turn; after three blocks in a row you're asked
-instead, until you've answered one.
+why Greed thinks the command is risky, and the command, and says how
+likely the command is to do harm you didn't ask for, and how likely it's
+what you asked for. Likely harmful (60% or more) blocks it; unlikely (30%
+or less) lets it run; in between it runs only when it's plainly what you
+asked for (70% or more), and otherwise you're asked. Asked to clean out
+`/tmp/scratch`, an `rm -rf /tmp/scratch` goes ahead; a deploy you never
+mentioned doesn't. A blocked command goes back to the agent with the
+reason, to find another way, without stopping its turn; after three
+blocks in a row you're asked instead, until you've answered one.
 
 `:models` sets which model decides, the `fast` one until you pick another.
-A small model made for yes-or-no answers does well, like the decision
-models Berget offers: each command is one short question, and the same
-command isn't asked about twice for the same request. Without a model, or
-without a clear answer, you're asked. Tell it what's fine in your setup
-with `agent-auto-rules`:
+Either kind of model works. A decision model made for these answers,
+like Berget's System One models (`Qwen/Qwen3.5-2B`, `laya`), is fast and
+cheap and answers with probabilities directly; any other model is asked
+the same questions in a chat and answers in JSON. The same command isn't
+asked about twice for the same request. Without a model, or without an
+answer, you're asked. Tell it what's fine in your setup with
+`agent-auto-rules`:
 
 ```luau
 greed.option.set("agent-auto-rules", "Deleting under /tmp is fine. Never touch the prod cluster.")
@@ -126,7 +131,7 @@ never sees them: changes outside the project, anything run as root
 machine itself (`dd`, `mkfs`, `shutdown`), and deleting the root, your
 home or a folder right under either. An answer auto mode gave shows in the
 transcript with why, like `? Run cargo test: Allow once (auto: only looks,
-builds or tests)` or `Reject (auto: not part of the task)`.
+builds or tests)` or `Reject (auto: may do harm you didn't ask for (85%))`.
 
 The decision model reads the command, which the agent wrote; Greed tells
 it to read the command as data, but a command written to talk it round

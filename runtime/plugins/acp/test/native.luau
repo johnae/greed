@@ -3567,12 +3567,11 @@ test(
 			calling("run", { command = "python3 deploy.py" }),
 			{ text = "Done another way.", calls = {}, stop = "done" },
 		})
-		local before = models.ask
-		models.ask = function(_role: string, request: any): (string?, string?)
-			local content = request.messages[1].content
-			return if string.find(content, "deploy", 1, true)
-				then "BLOCK - it deploys"
-				else "ALLOW - the user asked for it",
+		local before = models.decide
+		models.decide = function(_role: string, state: any): (any, string?)
+			return if string.find(state.agent_command, "deploy", 1, true)
+				then { harmful = 0.95, asked = 0.05 }
+				else { harmful = 0.4, asked = 0.9 },
 				nil
 		end
 		greed.option.set("agent-auto", true)
@@ -3584,12 +3583,12 @@ test(
 			return s.status == "idle"
 		end)
 		greed.option.set("agent-auto", false)
-		models.ask = before
+		models.decide = before
 		assert(greed.fs.read(`{dir}/junk/x`) == nil, "deleted, without asking")
 		assert(#asked == 3, `{#asked} requests`)
 		local result = asked[3].said[#asked[3].said]
 		assert(string.find(result.text, "auto mode didn't let this run", 1, true), result.text)
-		assert(string.find(result.text, "it deploys", 1, true), result.text)
+		assert(string.find(result.text, "may do harm", 1, true), result.text)
 		assert(not string.find(said(s), "stopped: you rejected", 1, true), said(s))
 		assert(string.find(said(s), "Done another way.", 1, true), said(s))
 	end
