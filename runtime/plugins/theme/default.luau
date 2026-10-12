@@ -210,4 +210,6 @@ return {
 	["chart.label"] = { fg = "bright-black" },
 	["chart.title"] = { bold = true },
 	["shell.strip"] = { italic = true },
+	["shell.selected"] = { bg = "blue", fg = "bright-white" },
+	["shell.hint"] = { fg = "bright-black", italic = true },
 }

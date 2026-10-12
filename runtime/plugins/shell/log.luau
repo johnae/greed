@@ -586,6 +586,14 @@ function M.draw_prompt(shell: Shell)
 	elseif segments and #segments > 0 and segments[#segments].tight then
 		table.insert(marks, { from = start, to = start, style = "shell.segment", text = " " })
 	end
+	if shell.editing then
+		table.insert(marks, {
+			from = start,
+			to = start,
+			style = "shell.number",
+			text = `↻ {shell.editing.number} `,
+		})
+	end
 	table.insert(marks, {
 		from = start,
 		to = start,

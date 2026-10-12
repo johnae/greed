@@ -11,6 +11,8 @@ local log = shell.log
 -- A shell in a folder with scripts that print lines, slowly or not, and
 -- one that fails.
 local function open(t: test.TestContext): Shell
+	-- These go about the shell as text; blocks mode has tests of its own.
+	greed.option.set("shell-blocks", false)
 	t:run("shell")
 	local sh = assert(shell.of(greed.view():buffer()))
 	sh.cwd = t:tempdir({

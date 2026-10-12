@@ -113,11 +113,49 @@ Undo at the prompt takes back what you typed since the last command ran,
 while output keeps streaming in above it; it never reaches back into a
 command that ran.
 
+## Moving between commands
+
+You type at the prompt. `esc` there goes to blocks mode (`BLOCKS` on the
+status line), where the commands you ran, and the rows they printed, are
+things to move between and act on, a key each. Clicking in what a command
+printed comes here too. The selected command or row is marked, with what
+you can do with it on a line under it:
+
+```text
+❯ 2 df -kP ✓ 0.04s · table · 13 rows
+enter change · r run again · / filter · . actions · → rows · esc prompt
+Filesystem     1024-blocks       Used  Available Capacity Mounted on
+```
+
+| Key | |
+|---|---|
+| `up` `down` (`k` `j`) | The command before or after; on a row, the row before or after |
+| `right` (`l`) | Into the rows the command printed: a table's rows, or its lines |
+| `left` (`h`) | Back out of the rows to the command |
+| `enter` | On a command, put it at the prompt to change: running it then runs it again in its place (`↻ 2` before the prompt says so; empty the prompt to run something new instead). On a row, what the row does: open the file and line it names, describe the pod |
+| `r` | Run the command again in its place |
+| `b` `d` | What it showed the run before, or what changed since then, `-` then and `+` now |
+| `/` | Keep the rows with what you type |
+| `.` | What can be done with it, or with the row |
+| `y` `Y` | Copy what it printed, or the command |
+| `o` | Open what it printed in a buffer of its own, to edit or search |
+| `s` | Stop it |
+| `tab` | Fold it under its command, or unfold it |
+| `g` `G` | The first or last command |
+| `esc` `i` `a` | Back to the prompt |
+
+Typing anything else goes back to the prompt with what you typed, so you
+never type into a command's output: in blocks mode the shell's text can't
+be changed, only acted on. `space` and its keys work as elsewhere.
+`:set shell-blocks false` goes back to moving about the shell as text, with
+`esc` going to your style's own normal mode and the keys below.
+
 ## Keys
 
-In Helix and Vim you type at the prompt in insert mode. `enter` on a block,
-the keys for moving between blocks and files, `g o` and the `space` keys
-work in normal mode; `up`, `down`, `alt-enter` and `tab` work while typing.
+In Helix and Vim you type at the prompt in insert mode. With
+`shell-blocks` off, `enter` on a block, the keys for moving between blocks
+and files, `g o` and the `space` keys work in normal mode; `up`, `down`,
+`alt-enter` and `tab` work while typing.
 
 | Keys | |
 |---|---|

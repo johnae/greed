@@ -55,6 +55,7 @@ local suggest = require("@self/suggest")
 local kinds = require("@self/kinds")
 local live = require("@self/live")
 local peek = require("@self/peek")
+local navigate = require("@self/navigate")
 require("@self/processes")
 
 export type Shell = state.Shell
@@ -931,20 +932,28 @@ end
 
 --- Runs `line` in `block`'s place, with its folder and variables, as
 --- `run` would: the same number, place and floats, with what it printed,
---- its filter and its sort replaced. A running block is stopped first. This
---- is how a watch or `kubectl get -w` switches to showing something else.
+--- its filter and its sort replaced, and what it showed kept as `before`.
+--- A running block is stopped first. This is how a watch or `kubectl get
+--- -w` switches to showing something else.
 --- Waits (in a command, handler or greed.spawn) for that.
 function M.change(shell: Shell, block: Block, line: string, options: RunOptions?): Block?
 	if block.status == "running" then
 		M.kill(block)
 		M.wait(block)
 	end
+	run.fill(block)
+	local before: state.Before =
+		{ command = block.command, output = block.output, time = block.time, status = block.status }
 	local opts: RunOptions = if options then table.clone(options) else {}
 	opts.block = block
 	opts.cwd = opts.cwd or block.cwd
 	opts.env = opts.env or block.env
 	opts.by = opts.by or block.by
-	return M.run(shell, line, opts)
+	local ran = M.run(shell, line, opts)
+	if ran then
+		ran.before = before
+	end
+	return ran
 end
 
 --- Waits for `block` to finish (in a command, handler or greed.spawn) and
@@ -1122,6 +1131,7 @@ end
 local HELP_KEYS = {
 	vscode = {
 		{ "enter", "run what's at the prompt; alt-enter starts another line" },
+		{ "esc", "blocks mode: up and down between commands, right into rows, a key to act" },
 		{ "up  down", "commands typed before, starting with what's typed" },
 		{ "right  end", "take the rest of the command the prompt suggests" },
 		{ "ctrl-r", "pick a command typed before" },
@@ -1139,6 +1149,7 @@ local HELP_KEYS = {
 	},
 	other = {
 		{ "enter", "run what's at the prompt; on a block, edit its command" },
+		{ "esc", "blocks mode: up and down between commands, right into rows, a key to act" },
 		{ "up  down", "commands typed before, starting with what's typed" },
 		{ "right  end", "take the rest of the command the prompt suggests" },
 		{ "ctrl-r", "pick a command typed before" },
@@ -1455,14 +1466,23 @@ local function run_prompt(shell: Shell, ctx: greed.Context)
 			return
 		end
 	end
-	M.run(shell, line, { view = ctx.view })
+	local editing = shell.editing
+	shell.editing = nil
+	log.draw_prompt(shell)
+	if editing and table.find(shell.blocks, editing) then
+		M.change(shell, editing, line, { view = ctx.view })
+	else
+		M.run(shell, line, { view = ctx.view })
+	end
 	-- Undo takes back typing since the last run, never what ran: the
 	-- steps before it would put their text back in the empty prompt.
 	shell.buffer:clear_history()
 end
 
--- Puts `block`'s command at the prompt to change and run again.
+-- Puts `block`'s command at the prompt to change and run again in its
+-- place.
 local function edit(shell: Shell, block: Block, ctx: greed.Context)
+	shell.editing = block
 	log.set_prompt(shell, block.command, { ctx.view })
 	greed.mode.set(core.style.typing_mode())
 end
@@ -1481,7 +1501,7 @@ greed.command({
 			run_prompt(shell, ctx)
 		elseif stripped then
 			peek.open(shell, stripped)
-		elseif core.style.is_typing() then
+		elseif core.style.is_typing() and not navigate.on() then
 			greed.run("insert-newline")
 		else
 			local block = log.block_at(shell, pos)
@@ -1602,6 +1622,95 @@ block_command(
 	"Run the block's command again, in the folder and with the variables it had",
 	function(shell, block, ctx)
 		M.run(shell, block.command, { cwd = block.cwd, env = block.env, view = ctx.view })
+	end
+)
+
+block_command(
+	"shell-rerun-in-place",
+	"Run the block's command again in its place, keeping what it showed before (b in blocks mode shows it)",
+	function(shell, block, ctx)
+		M.change(shell, block, block.command, { view = ctx.view })
+	end
+)
+
+-- What `block` showed the run before, or nil after saying it has none.
+local function run_before(block: Block): state.Before?
+	if block.before == nil then
+		greed.echo(`{block.number} hasn't run again in its place`)
+	end
+	return block.before
+end
+
+block_command(
+	"shell-before",
+	"Show what the block showed the run before this one",
+	function(_shell, block)
+		local before = run_before(block)
+		if before == nil then
+			return
+		end
+		local at = os.date("%H:%M:%S", math.floor(before.time))
+		core.floats.show_text(
+			`❯ {block.number} the run before, at {at} ({before.status}): {before.command}`,
+			before.output,
+			{ kind = "shell-before" }
+		)
+	end
+)
+
+-- `old` and `new` as one text, a line each: those in both start with two
+-- spaces, those only in `old` with "- " and those only in `new` with "+ ",
+-- and marks colouring those.
+local function line_diff(old: string, new: string): (string, { greed.Mark })
+	local out: { string } = {}
+	local marks: { greed.Mark } = {}
+	local at_byte = 0
+	local function add(prefix: string, text: string)
+		local style = if prefix == "- "
+			then "diff.minus"
+			elseif prefix == "+ " then "diff.plus"
+			else nil
+		for line in string.gmatch(text, "([^\n]*)\n") do
+			local shown = prefix .. line
+			if style then
+				table.insert(marks, { from = at_byte, to = at_byte + #shown, style = style })
+			end
+			table.insert(out, shown)
+			at_byte += #shown + 1
+		end
+	end
+	local at = 0
+	for _, hunk in greed.diff(old, new) do
+		add("  ", string.sub(old, at + 1, hunk.from))
+		add("- ", string.sub(old, hunk.from + 1, hunk.to))
+		add("+ ", hunk.text)
+		at = hunk.to
+	end
+	add("  ", string.sub(old, at + 1))
+	return table.concat(out, "\n") .. "\n", marks
+end
+
+-- `text` ending in a line break, as `line_diff` reads lines.
+local function ended(text: string): string
+	return if text == "" or string.sub(text, -1) == "\n" then text else text .. "\n"
+end
+
+block_command(
+	"shell-diff-before",
+	"Show what changed in the block since the run before",
+	function(_shell, block)
+		local before = run_before(block)
+		if before == nil then
+			return
+		end
+		run.fill(block)
+		local at = os.date("%H:%M:%S", math.floor(before.time))
+		local text, marks = line_diff(ended(before.output), ended(block.output))
+		core.floats.show_text(
+			`❯ {block.number} since the run at {at}: - then, + now`,
+			text,
+			{ kind = "shell-before", marks = marks }
+		)
 	end
 )
 
@@ -2244,6 +2353,16 @@ core.file.running("shells", function()
 	return found
 end)
 
+greed.command({
+	name = "shell-esc",
+	doc = "Leave the prompt: for blocks mode, or the style's own mode with shell-blocks off",
+	run = function(ctx)
+		if not (navigate.on() and navigate.enter(ctx.view)) then
+			greed.mode.set(core.style.home())
+		end
+	end,
+})
+
 -- Coming back from a terminal a program was handed to, the prompt takes
 -- typing again.
 core.style.typing_kind(KIND)
@@ -2251,6 +2370,7 @@ core.style.typing_kind(KIND)
 greed.keymap.bind({ layer = "leader" }, { ["o s"] = "pick-shell", ["o w"] = "pick-running" })
 greed.keymap.bind({ role = "typing", kind = KIND }, {
 	enter = "shell-enter",
+	esc = "shell-esc",
 	["alt-enter"] = "insert-newline",
 	["ctrl-c"] = "shell-interrupt",
 	["ctrl-t"] = "shell-handoff",

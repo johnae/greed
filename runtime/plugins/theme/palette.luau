@@ -187,6 +187,8 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["chart.label"] = { fg = p.comment },
 		["chart.title"] = { fg = p.fg, bold = true },
 		["shell.strip"] = { italic = true },
+		["shell.selected"] = { bg = p.bg_alt },
+		["shell.hint"] = { fg = p.comment, italic = true },
 		fold = { fg = p.comment },
 		["ui.glow"] = { fg = glow },
 

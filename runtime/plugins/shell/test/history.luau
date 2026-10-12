@@ -6,6 +6,8 @@ type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
 
 local function open(t: test.TestContext, dir: string): Shell
+	-- These go about the shell as text; blocks mode has tests of its own.
+	greed.option.set("shell-blocks", false)
 	t:run("shell")
 	local sh = assert(shell.of(greed.view():buffer()))
 	sh.cwd = dir

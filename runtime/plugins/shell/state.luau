@@ -110,7 +110,13 @@ export type Block = {
 	job: Job?,
 	--- Sent once it's done.
 	done: greed.Signal,
+	--- What it showed the run before, when it ran again in its place.
+	before: Before?,
 }
+
+--- A block's run before the one it shows: its command, what it printed, when
+--- it started (seconds since 1970) and how it ended.
+export type Before = { command: string, output: string, time: number, status: string }
 
 --- What a block shows of its output: the rows of its table (or the lines,
 --- without one) that `filter` keeps, indexes from 1 of `total`, sorted by
@@ -181,6 +187,9 @@ export type Shell = {
 	--- The strip of running blocks between the others and the prompt, when
 	--- some have scrolled up out of the way (log.luau).
 	strip: Strip?,
+	--- The block whose command the prompt holds to change: running it runs
+	--- that block again in its place.
+	editing: Block?,
 }
 
 --- An environment a folder brings: who gives it and for which folder,
