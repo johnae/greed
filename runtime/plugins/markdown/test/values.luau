@@ -102,3 +102,12 @@ test("a table's formula columns are worked out row by row, and its values use th
 	rows = table.concat(t:draw(60, 30), "\n")
 	assert(string.find(rows, "Left 750,", 1, true), rows)
 end)
+
+test("a command button's values are its command's, left for it", function(t)
+	local rows = shown(t, "Who: [Ada](field:who)\n\n[Greet](run:echo hi {{ who }})")
+	assert(not string.find(rows, "hi Ada", 1, true), rows)
+	local buffer = greed.view():buffer()
+	for _, mark in buffer:decorations("markdown-values") do
+		assert(mark.text ~= "Ada", "no value drawn in the command")
+	end
+end)

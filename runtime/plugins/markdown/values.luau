@@ -367,8 +367,21 @@ function M.marks(buffer: greed.Buffer, s: Structure, first: number, last: number
 			continue
 		end
 		local start = s.starts[n + 1]
+		-- A command button's `{{ }}` are its command's, worked out as it runs.
+		local commands: { { number } } = {}
+		for first, last in string.gmatch(line, "()%[[^%]]+%]%(run:[^%)]+%)()") do
+			table.insert(commands, { first :: number, last :: number })
+		end
+		local function in_command(at: number): boolean
+			for _, span in commands do
+				if at > span[1] and at < span[2] then
+					return true
+				end
+			end
+			return false
+		end
 		for from, source, to in string.gmatch(line, "(){{(.-)}}()") do
-			if not in_code(line, from :: number) then
+			if not in_code(line, from :: number) and not in_command(from :: number) then
 				scope = scope or M.scope(buffer, s)
 				local shown, failed = M.show(source :: string, scope :: core.FormulaScope)
 				table.insert(out, {
