@@ -17,6 +17,12 @@ NAMESPACE   NAME      READY   STATUS    RESTARTS   AGE
 billing     pay-0     1/1     Running   0          1d
 ]]
 
+local EVENTS = [[
+NAMESPACE   LAST SEEN   TYPE      REASON      OBJECT                       MESSAGE
+billing     2m          Warning   Unhealthy   pod/pay-0                    Readiness probe failed
+billing     5m          Normal    Scaled      deployment/pay              Scaled up replica set pay-7d9 to 1
+]]
+
 local CONFIG = [[
 apiVersion: v1
 current-context: CONTEXT
@@ -34,9 +40,10 @@ contexts:
 -- asked otherwise, with kubectl's config in `context`.
 local function fake(t: test.TestContext, context: string): (Shell, string)
 	local dir = t:tempdir({
-		["bin/kubectl"] = '#!/bin/sh\nif [ "$1 $2" = "get pods" ]; then\n  case "$*" in *-w*) cat "$(dirname "$0")/pods"; sleep 0.3; printf "worker-5c6b7d8f9-abcde   0/1   CrashLoopBackOff   13 (5s ago)   2h\\n" ;; *-A*) cat "$(dirname "$0")/all" ;; *) cat "$(dirname "$0")/pods" ;; esac\nelif [ "$1 $2" = "logs -f" ]; then\n  i=0; while :; do i=$((i+1)); echo "log $i"; sleep 0.1; done\nelse\n  echo "kubectl $*"\nfi\n',
+		["bin/kubectl"] = '#!/bin/sh\nif [ "$1 $2" = "get events" ]; then\n  cat "$(dirname "$0")/events"\nelif [ "$1 $2" = "get pods" ]; then\n  case "$*" in *-w*) cat "$(dirname "$0")/pods"; sleep 0.3; printf "worker-5c6b7d8f9-abcde   0/1   CrashLoopBackOff   13 (5s ago)   2h\\n" ;; *-A*) cat "$(dirname "$0")/all" ;; *) cat "$(dirname "$0")/pods" ;; esac\nelif [ "$1 $2" = "logs -f" ]; then\n  i=0; while :; do i=$((i+1)); echo "log $i"; sleep 0.1; done\nelse\n  echo "kubectl $*"\nfi\n',
 		["bin/pods"] = PODS,
 		["bin/all"] = ALL,
+		["bin/events"] = EVENTS,
 		["kubeconfig"] = (string.gsub(CONFIG, "CONTEXT", context)),
 	})
 	assert(greed.process.run({ "chmod", "+x", `{dir}/bin/kubectl` }))
@@ -442,4 +449,15 @@ test("enter on a pod shows what it ran where you are, and esc goes back to the p
 	assert(not float:valid(), "closed")
 	assert(greed.view() == main, "back in the shell")
 	assert(sh.buffer:line_of(main:cursor()) == line, "on the pod again")
+end)
+
+test("an event's row is the object it's about", function(t)
+	local sh = fake(t, "prod-eu")
+	local events = ran(t, sh, "kubectl get events -A")
+	on(sh, events, "pod/pay-0")
+	local pod = assert(thing_here("pod"), "the pod it's about")
+	assert(pod.value.name == "pay-0" and pod.value.namespace == "billing", pod.value.name)
+	on(sh, events, "deployment/pay")
+	local deployment = assert(thing_here("deployment"), "the deployment it's about")
+	assert(deployment.value.name == "pay" and deployment.value.namespace == "billing")
 end)

@@ -958,6 +958,10 @@ cell's (a node's `describe`, an image's `pull`), and the inspector lists
 them among the row's relations. A namespace or a node is named as kubectl
 names it, `namespace/billing`.
 
+A row of `kubectl get events` is the object the event is about, the
+`pod/pay-0` of its OBJECT column, so `enter` describes the pod that
+failed its probe and `.` offers its logs.
+
 Any cell of any table is something to act on too: `copy` copies what's
 in it, and `filter by this` keeps the rows with the same in that column
 (`STATUS=Running`; with spaces in it, the rows with its words). A plain

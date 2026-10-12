@@ -272,7 +272,8 @@ shell.kind({
 		return captured
 	end,
 	row = function(row: { [string]: string }, captured: Captured): Thing?
-		local name = row.NAME
+		-- An event's row is the object it's about, as `pod/api-x`.
+		local name = if captured.resource == "events" then row.OBJECT else row.NAME
 		if name == nil or name == "" then
 			return nil
 		end
