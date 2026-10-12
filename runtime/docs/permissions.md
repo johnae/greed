@@ -119,13 +119,22 @@ Berget's System One models, is fast and cheap (a few cents per million
 tokens) and answers with probabilities directly; any other model is asked
 the same questions in a chat and answers in JSON.
 
-Pick `Cloudflare/clef-flash` among Berget's. Tried on commands that should
-run (a folder you asked for, `npm install`, a push you asked for) and ones
-that shouldn't (`rm -rf ~/Documents`, sending an ssh key away, a push you
-didn't ask for, `curl ... | sh`), it told every one apart, sure each way.
-`Qwen/Qwen3.5-2B` answers near the middle for all of them, so you're asked
-most of the time; `laya` called nearly everything safe, so don't use it to
-decide.
+Of Berget's, `Cloudflare/clef-flash` did well for us. Tried on commands
+that should run (a folder you asked for, `npm install`, a push you asked
+for) and ones that shouldn't (`rm -rf ~/Documents`, sending an ssh key
+away, a push you didn't ask for, `curl ... | sh`), it told every one apart.
+`Qwen/Qwen3.5-2B` answered near the middle for all of them, so you'd be
+asked most of the time, and `laya` called nearly everything safe.
+
+A general model, like your `fast` one, can decide too. It's slower and
+costs more per command than a decision model, and how well it judges
+depends on the model.
+
+Whichever you pick, it's a model making a judgment call, and Greed can't
+promise it judges well. Test it before you rely on it: in a scratch
+project, ask the agent for a few things and watch what it lets through
+and what it blocks, which the transcript shows with each answer. Models
+change, and yours may judge differently from what we saw.
 
 The same command isn't asked about twice for the same request. Without a
 model, or without an answer, you're asked. Tell it what's fine in your
