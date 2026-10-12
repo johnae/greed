@@ -210,6 +210,16 @@ function M.span(range: greed.Range): (number, number)
 	return math.min(range.anchor, range.head), math.max(range.anchor, range.head)
 end
 
+--- Whether any range of `selection` covers text, rather than being a cursor.
+function M.anything_selected(selection: greed.Selection): boolean
+	for _, range in selection.ranges do
+		if range.anchor ~= range.head then
+			return true
+		end
+	end
+	return false
+end
+
 -- The line break the buffer uses: "\r\n" if its first line ends in one.
 function M.line_break(buffer: Buffer): string
 	if buffer:line_count() > 1 and buffer:char_at(buffer:line_end(0)) == "\r" then

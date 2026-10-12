@@ -1206,11 +1206,9 @@ greed.command({
 	name = "shell-copy-or-interrupt",
 	doc = "Copy the selection, or with nothing selected interrupt the running block",
 	run = function(ctx)
-		for _, range in ctx.view:selection().ranges do
-			if range.anchor ~= range.head then
-				greed.run("copy-or-line")
-				return
-			end
+		if core.text.anything_selected(ctx.view:selection()) then
+			greed.run("copy-or-line")
+			return
 		end
 		local shell = shell_of(ctx)
 		local block = shell and running_target(shell, ctx)

@@ -90,11 +90,8 @@ greed.command({
 	run = function(ctx)
 		writable.cursor(ctx.view)
 		greed.history.start_group()
-		for _, range in ctx.view:selection().ranges do
-			if range.anchor ~= range.head then
-				type_text(ctx, "")
-				break
-			end
+		if text.anything_selected(ctx.view:selection()) then
+			type_text(ctx, "")
 		end
 		indent.break_lines(ctx.view)
 	end,
@@ -135,15 +132,6 @@ greed.command({
 -- With nothing selected, copy and cut take whole lines, as in most
 -- editors, and pasting whole lines with nothing selected puts them above
 -- the line rather than at the cursor.
-
-local function nothing_selected(selection: greed.Selection): boolean
-	for _, range in selection.ranges do
-		if range.anchor ~= range.head then
-			return false
-		end
-	end
-	return true
-end
 
 -- A run of lines, first and last.
 type Block = { first: number, last: number }
@@ -206,7 +194,7 @@ greed.command({
 	name = "copy-or-line",
 	doc = "Copy the selection, or the line when nothing is selected",
 	run = function(ctx)
-		if nothing_selected(ctx.view:selection()) then
+		if not text.anything_selected(ctx.view:selection()) then
 			copy_lines(ctx)
 		else
 			greed.run("copy")
@@ -218,7 +206,7 @@ greed.command({
 	name = "cut-or-line",
 	doc = "Cut the selection, or the line when nothing is selected",
 	run = function(ctx)
-		if not nothing_selected(ctx.view:selection()) then
+		if text.anything_selected(ctx.view:selection()) then
 			greed.run("cut")
 			return
 		end
@@ -238,7 +226,7 @@ greed.command({
 		local pieces = register.pieces
 		local selection = ctx.view:selection()
 		local joined = registers.join(register)
-		if register.linewise and nothing_selected(selection) then
+		if register.linewise and not text.anything_selected(selection) then
 			local buffer = ctx.buffer
 			buffer:edit(function(e)
 				for _, block in line_blocks(buffer, selection) do
