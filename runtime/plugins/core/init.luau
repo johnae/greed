@@ -28,6 +28,7 @@ local textobjects = require("@self/textobjects")
 local objects = require("@self/objects")
 local syntax = require("@self/syntax")
 local formula = require("@self/formula")
+local data = require("@self/data")
 require("@self/selections")
 local comment = require("@self/comment")
 local jumps = require("@self/jumps")
@@ -97,6 +98,11 @@ export type TransientMenu = transient.Menu
 --- A formula read by `formula.compile`, and where its names come from.
 export type Formula = formula.Formula
 export type FormulaScope = formula.Scope
+--- A table of data, where it comes from and what's asked of it (data.luau).
+export type DataTable = data.Table
+export type DataColumn = data.Column
+export type DataSource = data.Source
+export type DataAsk = data.Ask
 --- A float being typed in, from `floats.typing`.
 export type TypingFloat = floats.Typing
 
@@ -104,6 +110,8 @@ export type TypingFloat = floats.Typing
 return {
 	text = text,
 	formula = formula,
+	--- Tables of data and the sources they come from (data.luau).
+	data = data,
 	motions = motions,
 	menu = menu,
 	features = features,
