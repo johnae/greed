@@ -315,6 +315,14 @@ local function finish(r: Run, code: number)
 	end)
 end
 
+-- Ends `r`'s block if its program exited and nothing ended it yet.
+local function finish_if_exited(r: Run)
+	local code = r.exited
+	if code ~= nil and runs[r.terminal:id()] == r then
+		finish(r, code)
+	end
+end
+
 -- Draws `r` until nothing more came in meanwhile, then ends it if its
 -- program exited. A draw's time slice can run out partway, and another
 -- event start meanwhile on the half-drawn block; that one leaves it to the
@@ -332,13 +340,13 @@ local function pump(r: Run)
 				draw(r, false)
 			end
 		until not r.stale
-		local code = r.exited
-		if code ~= nil and runs[r.terminal:id()] == r then
-			finish(r, code)
-		end
+		finish_if_exited(r)
 	end)
 	r.drawing = false
 	if not ok then
+		-- A draw that failed still ends a block whose program has exited,
+		-- or it would run forever.
+		finish_if_exited(r)
 		error(err, 0)
 	end
 end
