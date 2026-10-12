@@ -221,3 +221,50 @@ test(
 		assert(current() == "echo two", "J from a row: the next command: " .. current())
 	end
 )
+
+test("text that names nothing has no rows to step through; a file and line is one", function(t)
+	local sh = open(t)
+	greed.fs.write(`{sh.cwd}/a.txt`, "one\ntwo\n")
+	type_line(t, sh, "printf 'just\\nwords\\n'")
+	type_line(t, sh, "printf 'see a.txt:2 here\\n'")
+	t:keys("esc g down")
+	assert(string.find(current(), "^printf 'see"), "past the words: " .. current())
+	t:keys("down")
+	assert(string.find(current(), "^see a.txt:2"), current())
+	local view = greed.view()
+	assert(view:buffer():slice(view:cursor(), view:cursor() + 7) == "a.txt:2", "on the file")
+	t:keys("enter")
+	assert(greed.view():buffer():path() == `{sh.cwd}/a.txt`, "opened")
+end)
+
+test("a float showing a block keeps its own keys: esc closes it", function(t)
+	local sh = open(t)
+	local block = type_line(t, sh, "cat pods")
+	local float = assert(shell.peek.open(sh, block, { focus = true }))
+	float:set_cursor(float:buffer():line_start(float:buffer():line_count() - 3))
+	t:wait(50)
+	assert(greed.mode.get() ~= "blocks", greed.mode.get())
+	assert(hint() == "", "no hint in the float: " .. hint())
+	t:keys("esc")
+	assert(not float:valid(), "closed")
+end)
+
+test(
+	"output without a last line break, run again in place, leaves the next command on a line of its own",
+	function(t)
+		local sh = open(t)
+		local first = type_line(t, sh, "printf 'a\\nb'")
+		type_line(t, sh, "echo next")
+		t:keys("esc K r")
+		t:wait_for(function()
+			return first.status ~= "running" and first.before ~= nil
+		end)
+		t:wait(50)
+		type_line(t, sh, "echo last")
+		for n = 0, sh.buffer:line_count() - 1 do
+			local line = sh.buffer:line_text(n)
+			assert(not string.find(line, ".echo next"), "joined: " .. line)
+			assert(not string.find(line, ".echo last"), "joined: " .. line)
+		end
+	end
+)

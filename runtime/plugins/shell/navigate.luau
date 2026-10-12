@@ -49,8 +49,12 @@ function M.on(): boolean
 	return greed.option.get("shell-blocks") == true
 end
 
--- The shell `view` shows, if it shows one.
+-- The shell `view` shows, if it shows one in a pane: a float showing a
+-- block, as a peek does, keeps its own keys.
 local function shell_in(view: greed.View): Shell?
+	if view:float_spec() then
+		return nil
+	end
 	return state.of(view:buffer())
 end
 
@@ -60,8 +64,9 @@ local function command_line(shell: Shell, block: Block): number?
 	return if from then shell.buffer:line_of(from) else nil
 end
 
--- The lines of `block`'s output that are things to land on: its table's
--- rows, or the lines with something on them.
+-- The lines of `block`'s output that are things to act on: its table's
+-- rows, or else the lines naming a file and line. Other text is to read,
+-- not to step through.
 local function row_lines(shell: Shell, block: Block): { number }
 	local from, to = log.output_range(shell, block)
 	if from == nil or to == nil then
@@ -69,12 +74,17 @@ local function row_lines(shell: Shell, block: Block): { number }
 	end
 	local buffer = shell.buffer
 	local found: { number } = {}
-	for line = buffer:line_of(from), buffer:line_of(to) do
-		local start = buffer:line_start(line)
-		local thing = if block.table
-			then rows.row_at(shell, block, start) ~= nil
-			else string.match(buffer:line_text(line), "%S") ~= nil
-		if thing then
+	if block.table then
+		for line = buffer:line_of(from), buffer:line_of(to) do
+			if rows.row_at(shell, block, buffer:line_start(line)) then
+				table.insert(found, line)
+			end
+		end
+		return found
+	end
+	for _, ref in log.references(shell, block) do
+		local line = buffer:line_of(ref.from)
+		if found[#found] ~= line then
 			table.insert(found, line)
 		end
 	end
@@ -114,9 +124,22 @@ function M.at(view: greed.View): (Block?, number?)
 	return block, line
 end
 
--- Puts `view`'s cursor at the start of `line`.
+-- Puts `view`'s cursor on `line`: at its start, or on the file and line it
+-- names, where enter opens it.
 local function land(view: greed.View, line: number)
-	view:set_cursor(view:buffer():line_start(line))
+	local buffer = view:buffer()
+	local at = buffer:line_start(line)
+	local shell = state.of(buffer)
+	local block = shell and log.block_at(shell, at)
+	if shell and block and block.table == nil and line ~= command_line(shell, block) then
+		for _, ref in log.references(shell, block) do
+			if buffer:line_of(ref.from) == line then
+				at = ref.from
+				break
+			end
+		end
+	end
+	view:set_cursor(at)
 end
 
 -- Puts `view` on `block`'s command.

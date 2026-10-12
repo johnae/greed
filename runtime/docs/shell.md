@@ -129,7 +129,7 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 
 | Key | |
 |---|---|
-| `up` `down` (`k` `j`) | A step through everything you can act on, in order: a command, the rows it printed (a table's rows, like pods or files, or its lines), the next command |
+| `up` `down` (`k` `j`) | A step through everything you can act on, in order: a command, the rows it printed (a table's rows, like pods or files, or the files and lines it names), the next command. Other text is passed over; `o` opens it to read and search |
 | `J` `K` (`ctrl-down` `ctrl-up`) | The next or previous command, past its rows |
 | `right` `left` (`l` `h`) | Into the command's rows, or back up to the command |
 | `enter` | On a command, put it at the prompt to change: running it then runs it again in its place (`↻ 2` before the prompt says so; empty the prompt to run something new instead). On a row, what the row does: open the file and line it names, describe the pod |
@@ -147,6 +147,8 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 Typing anything else goes back to the prompt with what you typed, so you
 never type into a command's output: in blocks mode the shell's text can't
 be changed, only acted on. `space` and its keys work as elsewhere.
+A float showing a block, like the one `enter` on a running block opens,
+keeps its own keys: `esc` closes it.
 `:set shell-blocks false` goes back to moving about the shell as text, with
 `esc` going to your style's own normal mode and the keys below.
 
