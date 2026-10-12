@@ -2273,7 +2273,10 @@ pub(crate) fn hidden_lines(editor: &Editor, view: &View) -> Vec<Range<usize>> {
         .filter_map(|m| {
             let first = text.byte_to_line(m.range.start.min(text.len_bytes()));
             let hidden = first + 1..last_line(text, &m.range) + 1;
-            (!hidden.is_empty() && !cursors.iter().any(|c| hidden.contains(c))).then_some(hidden)
+            let open = cursors
+                .iter()
+                .any(|c| hidden.contains(c) || (m.peek && *c == first));
+            (!hidden.is_empty() && !open).then_some(hidden)
         })
         .collect();
     if let Some(lines) = &view.lines {

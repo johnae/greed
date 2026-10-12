@@ -139,13 +139,30 @@ end
 
 --- The marks for lines `first` to `last` of `buffer` shown as a document:
 --- comments hidden, and each part whose condition doesn't hold folded
---- under its `if` line, which shows as an empty line.
+--- under its `if` line, which says when it shows. With the cursor on that
+--- line the part opens, dimmed, to read and edit.
 function M.marks(buffer: greed.Buffer, s: Structure, first: number, last: number): { greed.Mark }
 	local code = in_code(s)
+	local hidden = M.state(buffer)
+	local sections = M.sections(buffer)
+	-- The `if` line of each hidden part, and the part.
+	local folded: { [number]: Section } = {}
+	for _, section in sections do
+		if hidden[section.open] then
+			folded[section.open] = section
+		end
+	end
 	local out: { greed.Mark } = {}
 	for n = first, math.min(last, #s.lines - 1) do
 		local line = s.lines[n + 1]
 		if not code[n] then
+			local section = folded[n]
+			local hint: string? = nil
+			if section then
+				local values = string.gsub(section.value, ",", " or ")
+				local is = if section.negated then "isn't" else "is"
+				hint = `▸ shows if {section.id} {is} {values}`
+			end
 			local at = 1
 			while true do
 				local from, to = string.find(line, "%s*<!%-%-.-%-%->", at)
@@ -156,14 +173,13 @@ function M.marks(buffer: greed.Buffer, s: Structure, first: number, last: number
 					from = s.starts[n + 1] + from - 1,
 					to = s.starts[n + 1] + to,
 					style = "markdown.marker",
+					text = hint,
 					conceal = true,
 				})
 				at = to + 1
 			end
 		end
 	end
-	local hidden = M.state(buffer)
-	local sections = M.sections(buffer)
 	for _, section in sections do
 		if section.open >= first and section.open <= last and hidden[section.open] then
 			-- Inside a hidden part, the outer one's fold covers it.
@@ -184,6 +200,7 @@ function M.marks(buffer: greed.Buffer, s: Structure, first: number, last: number
 					to = buffer:line_end(section.close),
 					style = "markdown.marker",
 					fold = true,
+					peek = true,
 				})
 			end
 		end

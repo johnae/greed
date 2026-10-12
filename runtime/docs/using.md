@@ -1437,6 +1437,9 @@ require("@greed").echo(`theme {answers.theme}, model {answers.provider}`)
 - `<!-- if NAME=VALUE -->` to `<!-- end -->` is a part that shows only for
   that answer (`!=` for any other), or for any of several, as in
   `<!-- if style=vim,helix -->`. Its questions don't count otherwise.
+  A hidden part leaves its `if` line, which says when it shows
+  (`▸ shows if trip is abroad`); with the cursor on that line the part
+  opens, dimmed, to read and edit without changing the answer.
 
 Blocks that make choices or hear picks hide behind the page, and buttons
 show as buttons: put the cursor there to see their code. They run as any

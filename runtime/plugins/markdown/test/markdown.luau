@@ -705,6 +705,25 @@ test("a part shows only for the answers it names, and its questions count only t
 	assert(string.find(rows, "Nothing more to ask", 1, true), rows)
 end)
 
+test("a hidden part's if line says when it shows, and opens it with the cursor on it", function(t)
+	local rows = table.concat(shown(t, QUESTIONS), "\n")
+	assert(string.find(rows, "▸ shows if agents isn't yes", 1, true), rows)
+	assert(not string.find(rows, "Nothing more to ask", 1, true), rows)
+	-- On the if line: the part shows, to read and edit, the answer as it was.
+	local view = greed.view()
+	local buffer = view:buffer()
+	local open = buffer:line_start(12)
+	view:set_selection({ ranges = { { anchor = open, head = open } }, primary = 1 })
+	rows = table.concat(t:draw(60, 20), "\n")
+	assert(string.find(rows, "<!-- if agents!=yes -->", 1, true), rows)
+	assert(string.find(rows, "Nothing more to ask", 1, true), rows)
+	assert(markdown.questions.answers(buffer).agents == "Yes")
+	-- Off it, hidden again.
+	view:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
+	rows = table.concat(t:draw(60, 20), "\n")
+	assert(not string.find(rows, "Nothing more to ask", 1, true), rows)
+end)
+
 test("a part can name several answers, and shows for any of them", function(t)
 	shown(
 		t,

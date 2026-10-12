@@ -773,6 +773,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                         conceal: flag("conceal")?,
                         reveal: reveal_from_lua(t.get("reveal"))?,
                         fold: flag("fold")?,
+                        peek: flag("peek")?,
                         nowrap: flag("nowrap")?,
                         plain: flag("plain")?,
                         lines: t
@@ -889,6 +890,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
         },
     )?;
     t.set("fold", mark.fold)?;
+    t.set("peek", mark.peek)?;
     t.set("nowrap", mark.nowrap)?;
     t.set("plain", mark.plain)?;
     t.set("action", mark.action.as_deref())?;

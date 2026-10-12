@@ -128,6 +128,9 @@ pub struct Mark {
     /// Hide the lines after the range's first line, up to its last, unless a
     /// cursor is in them, e.g. a section folded under its heading.
     pub fold: bool,
+    /// With `fold`, show the lines while a cursor is on the first line too,
+    /// as a part hidden under the line that says when it shows.
+    pub peek: bool,
     /// Don't wrap the lines the range touches: what's past the right edge is
     /// out of sight, and the view scrolls sideways to show the cursor, as
     /// for a wide table.

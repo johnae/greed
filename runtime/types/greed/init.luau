@@ -277,6 +277,8 @@ export type Mark = {
 	--- Hide the lines after the first one, up to the last, unless a cursor is
 	--- in them, like a section folded under its heading.
 	fold: boolean?,
+	--- With `fold`, show the lines while a cursor is on the first line too, as a part hidden under the line that says when it shows.
+	peek: boolean?,
 	--- Don't wrap the lines it touches: what's past the right edge is out of sight, and the view scrolls sideways to the cursor (`view:side_scroll()`), as for a wide table.
 	nowrap: boolean?,
 	--- Draw the text without syntax highlighting, like a tool's output in a
