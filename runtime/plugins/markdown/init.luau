@@ -902,7 +902,11 @@ greed.keymap.bind(
 	{ ["alt-V"] = "markdown-look-toggle", ["alt-v"] = "markdown-read" }
 )
 
+-- Each buffer's version when typing in it began, by buffer.
+local typed_from: { [number]: number } = {}
+
 greed.on("buffer.closed", function(event: greed.BufferClosed)
+	typed_from[event.id] = nil
 	looks[event.id] = nil
 	plain_lines[event.id] = nil
 	forget(event.id)
@@ -914,15 +918,24 @@ greed.on("mode.changed", function(event: greed.ModeChanged)
 		stop_reading()
 	end
 	-- Done typing in a table as it's drawn: its pipes line up again and a
-	-- row typed short of cells gets the rest.
+	-- row typed short of cells gets the rest. Typing that changed nothing,
+	-- like a search, leaves the table as it is.
 	local view = greed.view()
-	if
-		core.style.is_typing(event.from)
-		and not core.style.is_typing(event.to)
-		and not view:buffer():readonly()
-		and M.drawn(view:buffer())
-	then
-		M.table_edit.tidy(view)
+	local buffer = view:buffer()
+	local typing_from, typing_to = core.style.is_typing(event.from), core.style.is_typing(event.to)
+	if typing_to and not typing_from then
+		typed_from[buffer:id()] = buffer:version()
+	elseif typing_from and not typing_to then
+		local from = typed_from[buffer:id()]
+		typed_from[buffer:id()] = nil
+		if
+			from ~= nil
+			and from ~= buffer:version()
+			and not buffer:readonly()
+			and M.drawn(buffer)
+		then
+			M.table_edit.tidy(view)
+		end
 	end
 end)
 greed.on("option.changed", function(event)

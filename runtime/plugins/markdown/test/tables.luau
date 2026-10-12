@@ -193,3 +193,13 @@ test("alt-l into a cell the row doesn't have yet fills the row out", function(t)
 	assert(string.find(text_of(view), "| Thing | 8      |          |", 1, true), text_of(view))
 	assert(assert(markdown.table_edit.at(buffer, view:cursor())).column == 3, "in the new cell")
 end)
+
+test("typing that changes nothing, like a search into a table, leaves it as written", function(t)
+	local written = "| Item | Amount |\n|---|--:|\n| Rent | 10 |\n| Hosting | 5 |\n"
+	local view = opened(t, written)
+	t:keys("/ H o s t enter")
+	assert(text_of(view) == written, text_of(view))
+	assert(not view:buffer():modified(), "nothing to save")
+	t:keys("i esc")
+	assert(text_of(view) == written, "in and out of typing: " .. text_of(view))
+end)
