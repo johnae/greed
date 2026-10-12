@@ -1,8 +1,8 @@
 -- Reference pages as Markdown, from the editor as it runs: every loaded
 -- plugin with its commands, keys and options, every option, and the Luau
--- API from its type definitions. `greed reference DIR` writes them; the website
--- builds its reference from them, and with your own config loaded they
--- describe your setup too.
+-- API and its events from the type definitions. `greed reference DIR`
+-- writes them; the website builds its reference from them, and with your
+-- own config loaded they describe your setup too.
 
 local greed = require("@greed")
 
@@ -314,6 +314,43 @@ function M.api(source: string): string
 	return table.concat(out, "\n") .. "\n"
 end
 
+--- The page of events, from the type definitions in `source`: each event
+--- `greed.on` takes, with the type its handler gets and that type's fields.
+function M.events(source: string): string
+	local by_name: { [string]: Type } = {}
+	for _, t in parse_types(source) do
+		by_name[t.name] = t
+	end
+	local out = {
+		"# Events",
+		"",
+		"What `greed.on(event, handler)` hands each handler. Give the handler's parameter the type named here, as in `function(event: greed.BufferChanged)`, and the type checker catches a misspelled field. When each event happens is in [Writing plugins](../plugins.md#events); `space h e` (`:describe-event`) shows the same in the editor.",
+	}
+	for line in string.gmatch(source, "[^\n]+") do
+		local event, kind =
+			string.match(line, '%(event: "([%w%._]+)", handler: %(event: ([%w_{}]+)%)')
+		if event == nil or kind == nil then
+			continue
+		end
+		local t = by_name[kind]
+		if t == nil then
+			table.insert(out, `\n## \`{event}\`\n\nIts handler gets nothing.`)
+			continue
+		end
+		local about = if #t.doc > 0 then " " .. table.concat(t.doc, " ") else ""
+		table.insert(out, `\n## \`{event}\`\n\nIts handler gets a \`greed.{kind}\`.{about}`)
+		local fields = {}
+		for _, f in t.fields do
+			for _, doc in f.doc do
+				table.insert(fields, `\t--- {doc}`)
+			end
+			table.insert(fields, "\t" .. (string.gsub(f.text, "\n", "\n\t")))
+		end
+		table.insert(out, `\n\`\`\`luau\n\{\n{table.concat(fields, "\n")}\n}\n\`\`\``)
+	end
+	return table.concat(out, "\n") .. "\n"
+end
+
 --- Writes the reference pages into `dir`, returning what it wrote.
 function M.write(dir: string): { string }
 	local core = greed.plugin.dirs().core
@@ -323,6 +360,7 @@ function M.write(dir: string): { string }
 		{ ["plugins.md"] = M.plugins(), ["options.md"] = M.options() }
 	if types then
 		pages["api.md"] = M.api(types)
+		pages["events.md"] = M.events(types)
 	end
 	local written = {}
 	for file, text in pages do

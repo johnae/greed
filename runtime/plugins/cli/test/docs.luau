@@ -5,7 +5,10 @@ local cli = require("@cli")
 test("docs writes the plugins, options and API pages from the running editor", function(t)
 	local dir = t:tempdir({})
 	local written = cli.docs.write(dir)
-	assert(table.concat(written, " ") == "api.md options.md plugins.md", table.concat(written, " "))
+	assert(
+		table.concat(written, " ") == "api.md events.md options.md plugins.md",
+		table.concat(written, " ")
+	)
 	local plugins = greed.fs.read(dir .. "/plugins.md") :: string
 	-- Each plugin's top comment, and its commands with their keys.
 	assert(string.find(plugins, "\n## core\n", 1, true), "core has a section")
@@ -18,7 +21,7 @@ test("docs writes the plugins, options and API pages from the running editor", f
 	assert(string.find(plugins, "`g d` (every style's command mode)", 1, true), "a role")
 	assert(string.find(plugins, "`k` (after the leader)", 1, true), "the leader")
 	greed.keymap.bind({ style = "vim", role = "command" }, { ["z z z"] = "goto-definition" })
-	plugins = greed.fs.read(dir .. "/" .. cli.docs.write(dir)[3]) :: string
+	plugins = greed.fs.read(dir .. "/" .. cli.docs.write(dir)[4]) :: string
 	assert(string.find(plugins, "`z z z` (vim's command mode)", 1, true), "one style's role")
 	local options = greed.fs.read(dir .. "/options.md") :: string
 	assert(string.find(options, "| `motion-hints` | `false` | core |", 1, true), options)
@@ -47,4 +50,26 @@ end)
 test("a plugin's top comment keeps its key lists and code as code", function()
 	local page = cli.docs.plugins()
 	assert(string.find(page, "```luau\n    greed.cli({", 1, true), "code examples stay code")
+end)
+
+test("the events page says what each event's handler gets, field by field", function(t)
+	local dir = t:tempdir({})
+	cli.docs.write(dir)
+	local page = greed.fs.read(dir .. "/events.md") :: string
+	assert(string.find(page, "# Events", 1, true) == 1, "a title")
+	assert(
+		string.find(
+			page,
+			"## `buffer.changed`\n\nIts handler gets a `greed.BufferChanged`",
+			1,
+			true
+		),
+		page
+	)
+	assert(
+		string.find(page, '```luau\n{\n\tbuffer: Buffer,\n\t--- On "buffer.changed"', 1, true),
+		"fields with their comments"
+	)
+	assert(string.find(page, "## `mouse`", 1, true), "every event")
+	assert(string.find(page, "## `editor.started`\n\nIts handler gets nothing", 1, true), page)
 end)

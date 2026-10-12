@@ -1072,8 +1072,9 @@ end)
 | `editor.started` | Once, when the editor is up with every plugin and your config loaded | nothing |
 | `editor.quitting` | Just before the editor quits | nothing |
 
-`space h e` (`:describe-event`) shows any event's fields, and the types
-that come with `require("@greed")` have them all. Give the handler's
+`space h e` (`:describe-event`) shows any event's fields, the types that
+come with `require("@greed")` have them all, and the reference has them
+too, with their types: [Events](reference/events.md). Give the handler's
 parameter its type, as above (`greed.BufferChanged`), so the type checker
 catches a misspelled field. A name that isn't on this list, like
 `"buffer.chnaged"`, is an error, from the type checker and when the code

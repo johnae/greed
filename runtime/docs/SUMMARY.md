@@ -18,3 +18,4 @@
 - [Plugins](reference/plugins.md)
 - [Options](reference/options.md)
 - [Luau API](reference/api.md)
+- [Events](reference/events.md)
