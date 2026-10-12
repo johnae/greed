@@ -1,7 +1,8 @@
 //! `greed.hash`: SHA-256 digests, for checking a download or telling
-//! whether some text changed.
+//! whether some text changed, and random bytes for one-time codes.
 
 use std::fmt::Write;
+use std::io::Read;
 use std::path::Path;
 
 use mlua::{IntoLuaMulti, Lua, Table};
@@ -23,11 +24,29 @@ fn file_digest(path: &Path) -> std::io::Result<String> {
     Ok(hex(&hasher.finalize()))
 }
 
+/// `count` bytes from the system's random source, as lowercase hex.
+fn random_hex(count: usize) -> std::io::Result<String> {
+    let mut bytes = vec![0u8; count];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    Ok(hex(&bytes))
+}
+
 pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     let hash = lua.create_table()?;
     hash.set(
         "sha256",
         lua.create_function(|_, data: mlua::LuaString| Ok(hex(&Sha256::digest(data.as_bytes()))))?,
+    )?;
+    hash.set(
+        "random",
+        lua.create_function(|_, count: usize| {
+            if !(1..=1024).contains(&count) {
+                return Err(mlua::Error::runtime(format!(
+                    "hash.random takes 1 to 1024 bytes, not {count}"
+                )));
+            }
+            random_hex(count).map_err(|err| mlua::Error::runtime(format!("no random bytes: {err}")))
+        })?,
     )?;
     hash.set(
         "sha256_file",

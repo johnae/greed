@@ -671,6 +671,7 @@ greed.fs.remove(path)                             -- a file, link or empty folde
 greed.fs.remove(dir, { recursive = true })        -- a folder and all in it
 greed.hash.sha256(text)                           -- hex, to tell if text changed
 greed.hash.sha256_file(path)                      -- to check a download
+greed.hash.random(32)                             -- 32 random bytes as hex, for a one-time code
 ```
 
 Something already gone counts as removed. `remove` and `rename` raise an
@@ -1944,12 +1945,18 @@ read-only, so it adds the provider and the role with
 `models.provider("acme", { ... })` and `models.role("agent", { ... })`;
 both go when the plugin does. Adding a login works the same from both.
 
-Then `:login acme`, and `:models` says "signed in". `:logout acme` forgets
+Then `:login acme`, and `:models` says "signed in (Acme AI)". `:logout acme` forgets
 the tokens, and the provider goes back to its key. The name is used for the
 secret the tokens are kept in, so it takes lowercase letters, digits and
 dashes. Once a login is added it can't be replaced or changed, and its
 tokens stay inside the models plugin: no plugin can read them or send them
 elsewhere.
+
+A sign-in that ends with a plain API key, as Mistral's Vibe does, has no
+device or token addresses: `key` names the secret it keeps the key as, and
+`get_key(show)` signs in, calling `show({ url = ..., minutes = ... })` with
+where to go, and returns the key, or nil and why. Signing out forgets the
+key, unless it's been replaced since.
 
 Any plugin can add a provider, so a key or a sign-in goes only where the
 user let it: the built-in providers' keys to their own servers, and any

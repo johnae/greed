@@ -170,7 +170,7 @@ test("a key the keyring may have says the keyring couldn't be reached", function
 		return why ~= nil
 	end)
 	local said = "no API key for keyless: the system keyring couldn't be reached "
-		.. "(greed-test-no-such-keyring isn't installed here); :login berget saves it "
+		.. "(greed-test-no-such-keyring isn't installed here); :login keyless saves it "
 		.. "in Greed's own secrets file instead, or set GREED_SECRET_GREED_TEST_NOKEY"
 	assert(string.find(why or "", said, 1, true), why)
 	local _, missing = models.key_state("keyless")

@@ -625,7 +625,7 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
         "open, switch or close projects",
         &["list", "current"],
     ),
-    ("hash", "read files", &["sha256"]),
+    ("hash", "read files", &["sha256", "random"]),
     ("files", "read files", &[]),
     ("image", "read files", &[]),
     ("pdf", "read files", &[]),
@@ -990,6 +990,7 @@ mod tests {
         "run",
         // Copying, hashing text and images already in hand.
         "clipboard.set",
+        "hash.random",
         "hash.sha256",
         "image.cell_size",
         "image.cells",

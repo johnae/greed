@@ -1537,10 +1537,12 @@ export type FileInfo = {
 }
 
 --- SHA-256 digests as lowercase hex, for checking a download or telling
---- whether some text changed.
+--- whether some text changed, and random bytes for one-time codes.
 export type Hash = {
 	--- The digest of `data`.
 	sha256: (data: string) -> string,
+	--- `count` (1 to 1024) bytes from the system's random source, as lowercase hex: for a one-time code or a sign-in's PKCE verifier.
+	random: (count: number) -> string,
 	--- The digest of the file at `path`, read in pieces, or nil and why. Needs "fs.read".
 	sha256_file: (path: string) -> (string?, string?),
 }

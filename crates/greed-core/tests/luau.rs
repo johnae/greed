@@ -984,6 +984,30 @@ fn hashes_are_sha256_in_hex() {
 }
 
 #[test]
+fn random_bytes_come_as_hex_and_differ_each_time() {
+    let h = host("");
+    let drawn = h
+        .eval("local greed = require('@greed') return greed.hash.random(16) .. ' ' .. greed.hash.random(16) .. ' ' .. greed.hash.random(1)")
+        .unwrap();
+    let parts: Vec<&str> = drawn.split(' ').collect();
+    assert_eq!(parts.len(), 3, "{drawn}");
+    for part in &parts {
+        assert!(
+            part.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            "{drawn}"
+        );
+    }
+    assert_eq!((parts[0].len(), parts[2].len()), (32, 2), "{drawn}");
+    assert_ne!(parts[0], parts[1]);
+    let err = h
+        .eval("return require('@greed').hash.random(0)")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("1 to 1024"), "{err}");
+}
+
+#[test]
 fn the_machine_has_a_name() {
     let h = host("");
     let name = h.eval("return require('@greed').hostname() or ''").unwrap();

@@ -709,7 +709,7 @@ PATTERN` fills the panel directly.
 | `:debug TOPICS` | Turn debug topics on (`:debug keys frames`) or off (`:debug -keys`, `:debug off`); alone, says which are on. See [Debugging](#debugging) |
 | `:debug-log` | What the debug topics on have said, in a pane below that follows new lines |
 | `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where it can't be reached); what you type shows as dots |
-| `:login PROVIDER`, `:logout PROVIDER` | Sign in to a model provider: with an account for plans that come with one, like Berget Code, or else with its API key, like Mistral (see [Models](#models)) |
+| `:login PROVIDER`, `:logout PROVIDER` | Sign in to a model provider: with an account for plans that come with one, like Berget Code or Mistral's Vibe, or else with its API key (see [Models](#models)) |
 
 Closing a terminal's buffer ends its program.
 
@@ -1031,7 +1031,7 @@ found, and lets you change them:
 | `enter` | Pick the provider and model for the role under the cursor, from the models the provider lists; asks for the key if it needs one |
 | `e` | Pick how hard the role's model thinks before it answers: `none`, `low`, `medium`, `high`, or unset |
 | `k` | Set the API key of the role's provider: it goes in the system keyring, or Greed's secrets file where it can't be reached |
-| `l` | Sign in to the role's provider, for those with an account instead of a key, like Berget |
+| `l` | Sign in to the role's provider, for those with an account instead of a key, like Berget or Mistral (with Vibe) |
 | `q` | Close |
 
 The model picker lists what the provider offers (for Ollama, the models
@@ -1157,16 +1157,28 @@ Some plans come with an account instead of a key, like Berget Code's fixed
 monthly price. `:login berget` signs you in: it shows a link and a code,
 you approve it in a browser on any device, and the `berget` provider uses
 that sign-in from then on, renewing it as needed. `:models` says "signed
-in"; `:logout berget` forgets it, and the provider goes back to its key.
+in (Berget Code)"; `:logout berget` forgets it, and the provider goes back
+to its key.
 
 ```luau
 models.roles.agent = { provider = "berget", model = "the model you want" }
 ```
 
-For a provider that only takes a key, `:login` asks for the key:
-`:login mistral` keeps a Mistral API key (or set `MISTRAL_API_KEY`), and
-the `mistral` provider uses Mistral Large 4 for `reasoning` and Mistral
-Small for `fast` when picked in `:models`:
+With a Le Chat Pro or Team plan, sign in to Mistral with Vibe, as Mistral's
+`vibe` command does: `:login vibe` (or `:login mistral` and pick Vibe)
+shows a link to open, you sign in and pick a workspace there, and Mistral
+makes an API key for Vibe, kept as your `mistral` key. Requests made with
+it count against your plan's allowance instead of API credits; past that,
+your plan's pay-as-you-go applies, at API prices. `:models` says "signed
+in (Vibe)", and `:logout vibe` forgets the key (unless you've set a key of
+your own since). It's an ordinary API key with nothing to renew; you can
+see or revoke it in Mistral's console.
+
+For a key you already have, `:login mistral` and picking an API key keeps
+it (or set `MISTRAL_API_KEY`). Either way, the `mistral` provider uses
+Mistral Large 4 for `reasoning` and Mistral Small for `fast` when picked in
+`:models`, and Mistral's `mistral-vibe-cli-latest` is the model Vibe itself
+uses:
 
 ```luau
 models.roles.agent = { provider = "mistral", model = "mistral-large-4" }

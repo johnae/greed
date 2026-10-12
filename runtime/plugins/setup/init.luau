@@ -95,7 +95,7 @@ function M.model(name: string)
 		if state then
 			greed.echo(`{name}: {state}`)
 		elseif provider and provider.login then
-			greed.run("login", { args = { provider.login } })
+			greed.run("login", { args = { name } })
 		elseif provider then
 			greed.echo(models.ask_key(name))
 		end
