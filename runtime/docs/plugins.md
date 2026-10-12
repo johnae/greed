@@ -325,6 +325,8 @@ things of other plugins' kinds, like a shell block's rows, add them with
 ... end, inspect, relations })`: `objects.list` and `objects.get` ask the
 kind first and then the sources, and a source's `inspect` and `relations`
 add to the kind's for values that came from it (nil or `{}` for others).
+`objects.shown(id)` is the object as a source shows it, for a kind's `get`
+that would rather give that than ask a program.
 
 What a finder finds is an object once it has an id: the kind's `key(value)`
 gives one, or the value itself when it's a string or a number, as a file's

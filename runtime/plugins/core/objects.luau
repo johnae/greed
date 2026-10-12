@@ -186,6 +186,19 @@ function M.list(kind: string?): { Object }
 	return out
 end
 
+--- The object with `id` as a source shows it, like the newest shell row
+--- that is it; nil when none does. For a kind's `get` that would rather
+--- give what's shown, with its cells, than ask a program.
+function M.shown(id: string): Object?
+	for _, source in sources do
+		local found = tried(source.get, id)
+		if found then
+			return found
+		end
+	end
+	return nil
+end
+
 --- The object with `id`, if it's there: by its kind's `get`, else by a
 --- source's, else from its kind's list.
 function M.get(id: string): Object?
@@ -200,11 +213,9 @@ function M.get(id: string): Object?
 			return found
 		end
 	end
-	for _, source in sources do
-		local found = tried(source.get, id)
-		if found then
-			return found
-		end
+	local shown = M.shown(id)
+	if shown then
+		return shown
 	end
 	for _, object in M.list(kind.name) do
 		if object.id == id then

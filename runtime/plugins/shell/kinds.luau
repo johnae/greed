@@ -488,18 +488,17 @@ end
 
 -- `value` as it is now: the command `fresh` makes from it run again where
 -- its row came from (its block's folder and variables), its output read as
--- that block's was, and the first row of it as `inspect` gives a row. Nil
--- when it printed no rows, or the program says it isn't found: it's gone.
+-- that block's was, and the first row of it as `inspect` gives a row; for
+-- a thing no block shows (found by its kind's `get`), in the home folder
+-- with the editor's own variables. Nil when it printed no rows, or the program
+-- says it isn't found: it's gone.
 local function fresh_row(value: any, line: string): { [string]: any }?
 	local origin = origins[value]
-	if origin == nil then
-		error("it isn't in a block any more", 0)
-	end
-	local block = origin.block
-	local ran, err = greed.process.run(
-		{ "sh", "-c", line },
-		{ cwd = block.cwd, env = state.environment(block) }
-	)
+	local block = if origin then origin.block else nil
+	local ran, err = greed.process.run({ "sh", "-c", line }, {
+		cwd = if block then block.cwd else greed.fs.dirs().home,
+		env = if block then state.environment(block) else nil,
+	})
 	if ran == nil then
 		error(err or `can't run {line}`, 0)
 	end

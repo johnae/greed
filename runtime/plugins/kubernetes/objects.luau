@@ -362,20 +362,79 @@ local function get(value: any): string
 	return kubectl(`get {object(value)}`, value)
 end
 
+-- How long kubectl may take to say whether a thing is there, in seconds.
+local LOOKUP_SECONDS = 5
+
+--- The object of `kind` ("pod", "deployment", "kubernetes") with `key`
+--- (`context/namespace/name`, or `context/namespace/resource/name` for
+--- "kubernetes"): the newest row showing it, or else asked of kubectl. Nil
+--- when kubectl says it isn't there or can't say in time. `env` is what kubectl
+--- runs with (a shell's `KUBECONFIG`, say); the editor's variables without.
+function M.find(kind: string, key: string, env: { [string]: string | false }?): core.Object?
+	local shown = core.objects.shown(`{kind}:{key}`)
+	if shown then
+		return shown
+	end
+	-- From the right: a context's name may have slashes in it.
+	local parts = string.split(key, "/")
+	local name = table.remove(parts)
+	local resource = if kind == "kubernetes" then table.remove(parts) else `{kind}s`
+	local namespace = table.remove(parts)
+	if name == nil or name == "" or resource == nil or namespace == nil then
+		return nil
+	end
+	local context = table.concat(parts, "/")
+	local thing = thing_of(
+		resource,
+		name,
+		if namespace == "" then nil else namespace,
+		if context == "" then nil else context
+	)
+	local argv =
+		{ "kubectl", "get", resource, name, "-o", "name", `--request-timeout={LOOKUP_SECONDS}s` }
+	if thing.value.context then
+		table.insert(argv, "--context")
+		table.insert(argv, thing.value.context)
+	end
+	if thing.value.namespace then
+		table.insert(argv, "-n")
+		table.insert(argv, thing.value.namespace)
+	end
+	local ran = greed.process.run(argv, { env = env, timeout = (LOOKUP_SECONDS + 2) * 1000 })
+	if ran == nil or ran.code ~= 0 then
+		return nil
+	end
+	return {
+		kind = thing.kind,
+		id = `{thing.kind}:{thing.key}`,
+		label = thing.label,
+		value = thing.value,
+	}
+end
+
 local fresh = shell.fresh(get)
 core.objects.kind({
 	name = "pod",
 	doc = "A kubernetes pod, by its context, namespace and name",
+	get = function(key)
+		return M.find("pod", key)
+	end,
 	fresh = fresh,
 })
 core.objects.kind({
 	name = "deployment",
 	doc = "A kubernetes deployment, by its context, namespace and name",
+	get = function(key)
+		return M.find("deployment", key)
+	end,
 	fresh = fresh,
 })
 core.objects.kind({
 	name = "kubernetes",
 	doc = "A kubernetes object, by its context, namespace, resource and name",
+	get = function(key)
+		return M.find("kubernetes", key)
+	end,
 	fresh = fresh,
 })
 

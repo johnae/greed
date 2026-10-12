@@ -461,3 +461,25 @@ test("an event's row is the object it's about", function(t)
 	local deployment = assert(thing_here("deployment"), "the deployment it's about")
 	assert(deployment.value.name == "pay" and deployment.value.namespace == "billing")
 end)
+
+test("a pod is found by its id: the row showing it, else asked of kubectl", function(t)
+	local objects = require("../objects")
+	local sh, dir = fake(t, "prod-eu")
+	ran(t, sh, "kubectl get pods")
+	local listed = core.objects.list("pod")
+	assert(#listed > 0, "rows of pods")
+	local key = string.sub(listed[1].id, #"pod:" + 1)
+	local shown = assert(objects.find("pod", key))
+	assert(core.objects.shown(listed[1].id) ~= nil, "a row shows it")
+	assert(shown.id == listed[1].id, shown.id)
+	local env: { [string]: string | false } =
+		{ PATH = sh.env.PATH :: string, KUBECONFIG = `{dir}/kubeconfig` }
+	local asked = assert(objects.find("pod", "other-ctx/payments/api-0", env))
+	assert(asked.id == "pod:other-ctx/payments/api-0" and asked.buffer == nil, asked.id)
+	assert(asked.value.context == "other-ctx" and asked.value.namespace == "payments")
+	local cluster =
+		assert(objects.find("kubernetes", "arn:aws:eks:x:cluster/prod//nodes/node-1", env))
+	assert(cluster.value.context == "arn:aws:eks:x:cluster/prod" and cluster.value.namespace == nil)
+	local none: { [string]: string | false } = { PATH = "/nonexistent" }
+	assert(objects.find("pod", "c/n/api-0", none) == nil, "no kubectl, no pod")
+end)
