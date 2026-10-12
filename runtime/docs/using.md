@@ -1027,10 +1027,18 @@ found, and lets you change them:
 
 | Key | |
 |---|---|
-| `enter` | Pick the provider and model for the role under the cursor (for Ollama, from the models it has pulled); asks for the key if it needs one |
+| `enter` | Pick the provider and model for the role under the cursor, from the models the provider lists; asks for the key if it needs one |
 | `k` | Set the API key of the role's provider: it goes in the system keyring, or Greed's secrets file where it can't be reached |
 | `l` | Sign in to the role's provider, for those with an account instead of a key, like Berget |
 | `q` | Close |
+
+The model picker lists what the provider offers (for Ollama, the models
+it has pulled), the role's current model or the provider's suggested one
+first; type to narrow it down. A name that isn't listed can still be
+typed: enter on one that matches nothing takes it as it is, and "type a
+name…" asks for it. When the list can't be had, say without a key yet or
+with the server down, Greed says why and asks for the name instead. Lists
+are kept for ten minutes.
 
 What you pick there is kept in Greed's data folder and comes back next
 time. Your `init.luau` is read after it, so a role set there wins, and

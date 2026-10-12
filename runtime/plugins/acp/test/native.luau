@@ -615,6 +615,44 @@ test("the model is a role, and alt-M's list is the roles", function(t)
 	models.roles.agent = nil
 end)
 
+test("alt-M's Another model… has the agent use any model a provider lists", function(t)
+	script({})
+	local s = ask(t, "hi")
+	local before: string = s.model
+	assert(before == "reasoning", "the agent falls back to reasoning")
+	acp.show(s)
+	local listed = models.list
+	models.list = function(name: string): ({ string }?, string?)
+		if name == "ollama" then
+			return { "llama3.2", "qwen3" }, nil
+		end
+		return nil, "not listed here"
+	end
+	t:run("agent-model")
+	t:wait(10)
+	local shown = t:floats()[1] or ""
+	assert(string.find(shown, "Another model…", 1, true), shown)
+	t:type("Another")
+	t:keys("enter")
+	t:wait(10)
+	t:type("ollama")
+	t:keys("enter")
+	t:wait(10)
+	t:type("qwen3")
+	t:keys("enter")
+	t:wait(10)
+	models.list = listed
+	local role = models.roles.agent
+	assert(role and role.provider == "ollama" and role.model == "qwen3", "kept as the agent role")
+	assert(s.model == "agent", s.model)
+	local names = {}
+	for _, m in s.models do
+		table.insert(names, m.id)
+	end
+	assert(table.find(names, "agent"), table.concat(names, " "))
+	models.roles.agent = nil
+end)
+
 test("Greed's agent says it can't have a workspace yet", function(t)
 	local dir = t:tempdir({ [".git/HEAD"] = "ref: refs/heads/main\n" })
 	local s, err = acp.start(GREED, dir, true)

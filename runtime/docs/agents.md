@@ -358,6 +358,9 @@ with any model the [models](using.md#models) setup knows: Anthropic's, or
 any server with OpenAI's API, like berget, Mistral or a local Ollama. It uses the
 model playing the `agent` role (or `reasoning` without one); `alt-M` in its
 transcript picks another role, and `:models` sets which model plays it.
+"Another model…" at the end of `alt-M`'s list picks a provider and then
+one of the models it lists, and switches to it: that model plays `agent`
+from then on, as if picked in `:models`.
 When that model's provider has no key, the bottom of the transcript says
 so in place of "ready", and a message you send stays in the box until
 there's one.
@@ -566,8 +569,9 @@ for you.
 
 `alt-m` picks the mode the agent works in, when it has modes (Claude Code
 has Manual, Accept edits and Plan), and `alt-M` the model, when it offers
-a choice; the top of the box you write in shows both. The transcript is a
-buffer in a panel: move and copy in it as in any other, and `:q` or
+a choice (for Greed's own agent, a role or any model a provider lists);
+the top of the box you write in shows both. The transcript is a buffer in
+a panel: move and copy in it as in any other, and `:q` or
 `ctrl-w q` closes the panel while the agent goes on (`space i l` brings it
 back).
 

@@ -381,6 +381,22 @@ test("choose waits for the item, and gives nil when the picker ends without one"
 	t:keys("esc")
 end)
 
+test("choose with a fallback gives nil once the fallback has what was typed", function(t)
+	local picker = require("@picker")
+	t:buffer("|x")
+	local typed: string? = nil
+	local answer = waiting(t, function()
+		return picker.choose("Numbers", { { label = "one", value = 1 } }, {
+			fallback = function(query)
+				typed = query
+			end,
+		})
+	end)
+	t:keys("z z enter")
+	local done, item = answer()
+	assert(done and item == nil and typed == "zz", tostring(typed))
+end)
+
 test("space ' opens the last picker again", function(t)
 	t:buffer("|abc")
 	t:keys("space ? esc")

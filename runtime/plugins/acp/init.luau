@@ -1035,6 +1035,10 @@ greed.command({
 
 local NO_SESSION = "no agent session here; use it in a transcript, or space i l lists them"
 
+-- The item in Greed's own agent's model list that picks any model a
+-- provider lists, after the roles.
+local ANOTHER_MODEL = "Another model…"
+
 greed.command({
 	name = "agent-mode",
 	doc = "Pick the mode the agent works in, like plan or accept edits",
@@ -1065,13 +1069,15 @@ greed.command({
 
 greed.command({
 	name = "agent-model",
-	doc = "Pick the model the agent uses, from those it offers",
+	doc = "Pick the model the agent uses, from those it offers; Greed's own agent can also use any model a provider lists",
 	run = function(ctx)
 		local s = current(ctx)
 		if s == nil then
 			greed.echo(NO_SESSION)
 			return
-		elseif #s.models == 0 then
+		end
+		local own = native.drives(s)
+		if #s.models == 0 and not own then
 			greed.echo(`{s.name} has no models to pick from`)
 			return
 		end
@@ -1081,8 +1087,16 @@ greed.command({
 			local about = if model.description then `: {model.description}` else ""
 			table.insert(items, { label = `{model.name}{about}{now}`, value = model.id })
 		end
+		if own then
+			table.insert(items, { label = ANOTHER_MODEL, value = ANOTHER_MODEL })
+		end
 		local chosen = picker.choose("Model", items)
-		if chosen then
+		if chosen and chosen.value == ANOTHER_MODEL then
+			local said = native.pick_model(s)
+			if said then
+				greed.echo(said)
+			end
+		elseif chosen then
 			local ok, err = session.set_model(s, chosen.value)
 			if not ok then
 				greed.echo(`can't: {err}`)

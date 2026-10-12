@@ -642,7 +642,8 @@ greed.command({
 })
 
 --- Like `pick`, but waits for the answer and returns the chosen item, or
---- nil when the picker ends without one. Works in commands and handlers:
+--- nil when the picker ends without one (or `options.fallback` got what
+--- was typed). Works in commands and handlers:
 ---
 ---     local item = picker.choose("Model", items)
 ---     if item then ... end
@@ -655,6 +656,13 @@ function M.choose(title: string, items: { Item }, options: Options?): Item?
 			cancel()
 		end
 		done:send(false)
+	end
+	local fallback = given.fallback
+	if fallback then
+		given.fallback = function(query)
+			fallback(query)
+			done:send(false)
+		end
 	end
 	M.pick(title, items, function(item)
 		done:send(item)

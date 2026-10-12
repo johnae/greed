@@ -2,6 +2,8 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local models = require("@models")
 local sse = require("../sse")
+-- The module itself, for its request to stand in for.
+local listing: any = require("../list")
 
 test("events come whole, however the stream cuts them", function()
 	local events, rest = sse.parse("event: a\ndata: one\n\ndata: tw")
@@ -283,7 +285,7 @@ end)
 
 test("an Ollama that isn't running says how to start it", function(t)
 	models.providers.ollama = { kind = "openai", url = "http://127.0.0.1:9/v1" }
-	local found, why = models.ollama_models()
+	local found, why = models.list("ollama")
 	assert(found == nil and string.find(why or "", "ollama serve", 1, true), tostring(why))
 	local said: string? = nil
 	greed.spawn(function()
@@ -417,4 +419,188 @@ test("Mistral Large 4 is known: its window, and that it sees images", function()
 	models.roles.test_mistral = nil
 	assert(window == 1048576 and known, tostring(window))
 	assert(sees, "sees images")
+end)
+
+-- Stands in for the network as models are listed: each address gets its
+-- answer, and what was asked is kept.
+local function lists(answers: { [string]: { status: number, body: any } }): { any }
+	local asked = {}
+	listing.forget()
+	listing.request = function(request: any): (any, string?)
+		table.insert(asked, request)
+		local answer = answers[request.url]
+		if answer == nil then
+			return nil, "nothing here"
+		end
+		return { status = answer.status, body = greed.json.encode(answer.body), headers = {} }, nil
+	end
+	return asked
+end
+
+test("an OpenAI-like provider lists its models, sorted, asked with its key", function()
+	greed.secrets.set("openai", "sk-test")
+	local asked = lists({
+		["https://api.openai.com/v1/models"] = {
+			status = 200,
+			body = { data = { { id = "gpt-b" }, { id = "gpt-a" } } },
+		},
+	})
+	local ids, why = models.list("openai")
+	assert(ids and table.concat(ids, " ") == "gpt-a gpt-b", tostring(why))
+	assert(asked[1].headers.authorization == "Bearer sk-test", "with the key")
+	assert(asked[1].method == "GET" and asked[1].timeout, "a GET that doesn't wait long")
+end)
+
+test("Anthropic lists its models with its own headers", function()
+	greed.secrets.set("anthropic", "sk-ant")
+	local asked = lists({
+		["https://api.anthropic.com/v1/models?limit=1000"] = {
+			status = 200,
+			body = { data = { { id = "claude-sonnet-5" }, { id = "claude-haiku-5" } } },
+		},
+	})
+	local ids, why = models.list("anthropic")
+	assert(ids and table.concat(ids, " ") == "claude-haiku-5 claude-sonnet-5", tostring(why))
+	local headers = asked[1].headers
+	assert(headers["x-api-key"] == "sk-ant" and headers["anthropic-version"], "its headers")
+	assert(headers.authorization == nil, "no bearer")
+end)
+
+test("Ollama lists the models it has pulled", function()
+	lists({
+		["http://localhost:11434/api/tags"] = {
+			status = 200,
+			body = { models = { { name = "qwen3:8b" }, { name = "llama3.2:latest" } } },
+		},
+	})
+	local ids = models.list("ollama")
+	assert(ids and table.concat(ids, " ") == "llama3.2 qwen3:8b", ids and table.concat(ids, " "))
+end)
+
+test("a provider's list is kept a while, and asked again once it's old", function()
+	greed.secrets.set("openai", "sk-test")
+	local asked = lists({
+		["https://api.openai.com/v1/models"] = { status = 200, body = { data = { { id = "m" } } } },
+	})
+	models.list("openai")
+	local ids = models.list("openai")
+	assert(#asked == 1 and ids and ids[1] == "m", "kept")
+	local keep = listing.KEEP
+	listing.KEEP = 0
+	models.list("openai")
+	listing.KEEP = keep
+	assert(#asked == 2, "asked again once old")
+end)
+
+test("a list that fails says why, and isn't kept", function()
+	greed.secrets.set("openai", "sk-test")
+	local asked = lists({
+		["https://api.openai.com/v1/models"] = {
+			status = 401,
+			body = { error = { message = "bad key" } },
+		},
+	})
+	local ids, why = models.list("openai")
+	assert(ids == nil and string.find(why or "", "401: bad key", 1, true), tostring(why))
+	models.list("openai")
+	assert(#asked == 2, "not kept")
+	local none, missing = models.list("nowhere")
+	assert(none == nil and string.find(missing or "", "isn't set up", 1, true), missing)
+end)
+
+test("a provider without a key isn't asked, and says how to add one", function()
+	keyless("poetry")
+	local asked = lists({})
+	local ids, why = models.list("keyless")
+	assert(ids == nil and string.find(why or "", "no API key for keyless", 1, true), why)
+	assert(#asked == 0, "nothing sent")
+	models.roles.poetry = nil
+	models.providers.keyless = nil
+end)
+
+-- Has `role` use a model at `provider` in the background, as :models does;
+-- returns what it said once done.
+local function ask_model(role: string, provider: string): () -> string?
+	local said: string? = nil
+	greed.spawn(function()
+		said = models.ask_model(role, provider)
+	end)
+	return function()
+		return said
+	end
+end
+
+test("a model is picked from the provider's list, the preset first", function(t)
+	t:buffer("|x")
+	greed.secrets.set("openai", "sk-test")
+	lists({
+		["https://api.openai.com/v1/models"] = {
+			status = 200,
+			body = { data = { { id = "gpt-a" }, { id = "gpt-5" }, { id = "gpt-b" } } },
+		},
+	})
+	local said = ask_model("poetry", "openai")
+	t:wait(10)
+	local shown = t:floats()[1] or ""
+	local preset = string.find(shown, "gpt-5  (suggested)", 1, true)
+	assert(preset and preset < (string.find(shown, "gpt-a", 1, true) or 0), shown)
+	assert(string.find(shown, "type a name", 1, true), shown)
+	t:type("gpt-b")
+	t:keys("enter")
+	t:wait_for(function()
+		return said() ~= nil
+	end)
+	assert(said() == "poetry uses gpt-b at openai", said())
+	local poetry = models.roles.poetry :: models.Role
+	assert(poetry.model == "gpt-b" and poetry.provider == "openai", "the role uses it")
+	models.roles.poetry = nil
+end)
+
+test("a name the list hasn't got can be typed", function(t)
+	t:buffer("|x")
+	models.providers.work = { kind = "openai", url = "http://work.test/v1" }
+	lists({ ["http://work.test/v1/models"] = { status = 200, body = { data = { { id = "a" } } } } })
+	-- Typed where nothing matches, enter takes it as it is.
+	local said = ask_model("poetry", "work")
+	t:wait(10)
+	t:type("zzz-9")
+	t:keys("enter")
+	t:wait_for(function()
+		return said() ~= nil
+	end)
+	assert(said() == "poetry uses zzz-9 at work", said())
+	-- Or picked "type a name…", which asks for it.
+	models.roles.poetry = nil
+	said = ask_model("poetry", "work")
+	t:wait(10)
+	t:type("type a name")
+	t:keys("enter")
+	t:wait(10)
+	t:type("my-model")
+	t:keys("enter")
+	t:wait_for(function()
+		return said() ~= nil
+	end)
+	assert(said() == "poetry uses my-model at work", said())
+	models.roles.poetry = nil
+	models.providers.work = nil
+end)
+
+test("when the list can't be had, it says why and the model is typed", function(t)
+	t:buffer("|x")
+	greed.secrets.set("openai", "sk-test")
+	lists({
+		["https://api.openai.com/v1/models"] = { status = 500, body = { error = "down" } },
+	})
+	local said = ask_model("poetry", "openai")
+	t:wait(10)
+	local messages = t:messages()
+	assert(string.find(messages[#messages] or "", "500: down", 1, true), messages[#messages])
+	-- The prompt starts from the preset.
+	t:keys("enter")
+	t:wait_for(function()
+		return said() ~= nil
+	end)
+	assert(said() == "poetry uses gpt-5 at openai", said())
+	models.roles.poetry = nil
 end)

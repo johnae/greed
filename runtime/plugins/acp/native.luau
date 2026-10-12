@@ -1564,6 +1564,8 @@ local DRIVER: session.Driver = {
 		if models.roles[id] == nil then
 			return false, `no model plays the role "{id}"`
 		end
+		-- The role may be new, as when a model was just picked for it.
+		s.models = roles()
 		use(s, states[s.id], id)
 		session.check(s)
 		s.changed()
@@ -1663,6 +1665,26 @@ function M.compact(s: Session): (boolean, string?)
 	s.status = "idle"
 	s.changed()
 	return ok, err
+end
+
+--- Whether `s` is a session of Greed's own agent.
+function M.drives(s: Session): boolean
+	return states[s.id] ~= nil
+end
+
+--- Has `s`, a session of Greed's own agent, use a model you pick from
+--- those a provider lists: it plays the `agent` role from now on, kept as
+--- :models keeps it. Returns what happened, to tell you, or nil when you
+--- picked no provider.
+function M.pick_model(s: Session): string?
+	local said, changed = models.ask_role(M.ROLE)
+	if changed then
+		local ok, err = DRIVER.set_model(s, M.ROLE)
+		if not ok then
+			return `{said}; can't switch to it: {err}`
+		end
+	end
+	return said
 end
 
 --- Switches tool group `group` on for the session `s`, as the agent would

@@ -24,6 +24,7 @@ local registry = core.registry
 local sse = require("@self/sse")
 local turn = require("@self/turn")
 local login = require("@self/login")
+local listing = require("@self/list")
 
 export type ToolSpec = turn.ToolSpec
 export type Call = turn.Call
@@ -379,6 +380,18 @@ function M.edits(role: string): string
 	return known(chosen and chosen.edits) or known(provider and provider.edits) or "replace"
 end
 
+-- The headers that carry `key` to `provider`, as its API wants them.
+local function auth(provider: Provider, key: string?): { [string]: string }
+	if provider.kind == "anthropic" then
+		local headers = { ["anthropic-version"] = "2023-06-01" }
+		if key then
+			headers["x-api-key"] = key
+		end
+		return headers
+	end
+	return if key then { authorization = `Bearer {key}` } else {}
+end
+
 -- The request to send, as the provider's API wants it.
 local function http_request(
 	provider: Provider,
@@ -386,7 +399,8 @@ local function http_request(
 	request: Request,
 	key: string?
 ): greed.HttpRequest
-	local headers: { [string]: string } = { ["content-type"] = "application/json" }
+	local headers = auth(provider, key)
+	headers["content-type"] = "application/json"
 	local body: { [string]: any } = {
 		model = model,
 		messages = request.messages,
@@ -395,19 +409,12 @@ local function http_request(
 		stream = true,
 	}
 	if provider.kind == "anthropic" then
-		headers["anthropic-version"] = "2023-06-01"
-		if key then
-			headers["x-api-key"] = key
-		end
 		body.system = request.system
 		return {
 			url = provider.url .. "/v1/messages",
 			headers = headers,
 			body = greed.json.encode(body),
 		}
-	end
-	if key then
-		headers.authorization = `Bearer {key}`
 	end
 	if request.system then
 		local messages: { any } = { { role = "system", content = request.system } }
@@ -584,35 +591,6 @@ local function is_ollama(name: string, provider: Provider): boolean
 	return name == "ollama" or string.find(provider.url, ":11434", 1, true) ~= nil
 end
 
-local function ollama_models(): ({ string }?, string?)
-	local ollama = M.providers.ollama
-	if ollama == nil then
-		return nil, "there's no ollama provider"
-	end
-	local base = string.gsub(ollama.url, "/v1/*$", "")
-	local response = greed.http.request({ url = `{base}/api/tags`, timeout = 3000 })
-	if response == nil or response.status >= 300 then
-		return nil, `Ollama isn't answering at {base}: start it with \`ollama serve\``
-	end
-	local ok, decoded = pcall(greed.json.decode, response.body)
-	local listed = if ok and type(decoded) == "table" then decoded.models else nil
-	local names: { string } = {}
-	if type(listed) == "table" then
-		for _, model in listed :: { any } do
-			if type(model) == "table" and type(model.name) == "string" then
-				table.insert(names, (string.gsub(model.name, ":latest$", "")))
-			end
-		end
-	end
-	return names, nil
-end
-
---- The models the Ollama provider has pulled, or nil and what to do when
---- it doesn't answer.
-function M.ollama_models(): ({ string }?, string?)
-	return greed.vouch(ollama_models)
-end
-
 -- What to do about `err` from a request to the role's Ollama, added to it.
 local function ollama_hint(chosen: Role, err: string, status: number?): string
 	if status == nil then
@@ -623,6 +601,32 @@ local function ollama_hint(chosen: Role, err: string, status: number?): string
 	return err
 end
 
+-- The key to send to the provider `name`, nil when it needs none: the
+-- token of its sign-in if you're signed in, else its key, only where
+-- `may_send` lets it go. The second result says why there's none to send.
+local function key_for(name: string, provider: Provider): (string?, string?)
+	local key: string?, secret: string? = nil, nil
+	if provider.login and login.signed_in(provider.login) then
+		local token, err = login.token(provider.login)
+		if token == nil then
+			return nil, err
+		end
+		key, secret = token, `{provider.login} sign-in`
+	elseif provider.secret then
+		local unreachable
+		key, unreachable = greed.secrets.get(provider.secret)
+		secret = provider.secret
+		if key == nil then
+			return nil, M.no_key(name, unreachable)
+		end
+	end
+	local refused = secret and may_send(secret, provider.url)
+	if refused then
+		return nil, refused
+	end
+	return key, nil
+end
+
 -- The role's model and provider, and its key if it needs one. Callers vouch
 -- for it (greed.vouch): plugins asking a model never see the key, and it
 -- only goes where `may_send` lets it.
@@ -631,26 +635,71 @@ local function connect(role: string): (Role?, Provider?, string?, string?)
 	if chosen == nil or provider == nil then
 		return nil, nil, nil, why
 	end
-	local key: string?, name: string? = nil, nil
-	if provider.login and login.signed_in(provider.login) then
-		local token, err = login.token(provider.login)
-		if token == nil then
-			return nil, nil, nil, err
-		end
-		key, name = token, `{provider.login} sign-in`
-	elseif provider.secret then
-		local unreachable
-		key, unreachable = greed.secrets.get(provider.secret)
-		name = provider.secret
-		if key == nil then
-			return nil, nil, nil, M.no_key(chosen.provider, unreachable)
-		end
-	end
-	local refused = name and may_send(name, provider.url)
+	local key, refused = key_for(chosen.provider, provider)
 	if refused then
 		return nil, nil, nil, refused
 	end
 	return chosen, provider, key, nil
+end
+
+-- Asks the provider `name` which models it offers, with `key`.
+local function fetch_list(name: string, provider: Provider, key: string?): ({ string }?, string?)
+	if is_ollama(name, provider) then
+		local base = string.gsub(provider.url, "/v1/*$", "")
+		local response = listing.request({ url = `{base}/api/tags`, timeout = 3000 })
+		if response == nil or response.status >= 300 then
+			return nil, `Ollama isn't answering at {base}: start it with \`ollama serve\``
+		end
+		return listing.ids(response.body, true), nil
+	end
+	local url = if provider.kind == "anthropic"
+		then `{provider.url}/v1/models?limit=1000`
+		else `{provider.url}/models`
+	local response, err = listing.request({
+		url = url,
+		method = "GET",
+		headers = auth(provider, key),
+		timeout = 5000,
+	})
+	if response == nil then
+		return nil, `can't reach {name}: {err}`
+	elseif response.status >= 300 then
+		return nil, refusal(response.status, response.body)
+	end
+	return listing.ids(response.body, false), nil
+end
+
+local function list(name: string): ({ string }?, string?)
+	local provider = M.providers[name]
+	if provider == nil then
+		return nil, `the provider "{name}" isn't set up`
+	end
+	local kept = listing.kept(name, provider.url)
+	if kept then
+		return kept, nil
+	end
+	local key, refused = key_for(name, provider)
+	if refused then
+		return nil, refused
+	end
+	-- As the plugin that set the provider may, as its requests are.
+	local by = setter(provider_by, name, provider)
+	local ok, ids, err = pcall(greed.plugin.within, by, fetch_list, name, provider, key)
+	if not ok then
+		return nil, tostring(ids)
+	end
+	-- An empty list isn't kept, so a model pulled since shows up.
+	if ids and #ids > 0 then
+		listing.keep(name, provider.url, ids)
+	end
+	return ids, err
+end
+
+--- The ids of the models the provider `name` offers, sorted, or nil and
+--- why not: what its API lists (Ollama's, those it has pulled), asked with
+--- its key as its requests are, and kept for ten minutes.
+function M.list(name: string): ({ string }?, string?)
+	return greed.vouch(list, name)
 end
 
 -- Sends `request` and waits for the answer to start, or says why it won't.
@@ -1164,14 +1213,60 @@ function M.ask_key(name: string): string
 	return if where then `kept the {name} key in {where}` else `can't keep the {name} key: {err}`
 end
 
---- Has `role` use a model at the provider `name`, asking which: from those
---- Ollama has pulled, or typed, starting from the role's own or the
---- provider's preset. Then asks for a key if the provider needs one it
---- hasn't got. Returns what happened, to tell you.
-function M.ask_model(role: string, name: string): string
+-- The item that lets you type a model's name in the model picker.
+local TYPE_NAME = "type a name…"
+
+-- Asks which model `role` gets at the provider `name`: one of those it
+-- lists, `start` first, or typed, when you pick that, type one that isn't
+-- listed, or it lists none.
+local function pick_model(role: string, name: string, provider: Provider, start: string?): string?
+	local title = `Model for {role} at {name}`
+	local ids, why = M.list(name)
+	if ids == nil or #ids == 0 then
+		greed.echo(
+			why
+				or if is_ollama(name, provider)
+					then `Ollama has no models yet: \`ollama pull {start or "llama3.2"}\``
+					else `{name} lists no models; type one`
+		)
+		return core.prompt.ask(title, start)
+	end
+	local items: { picker.Item } = {}
+	if start then
+		local current = M.roles[role]
+		local now = current and current.provider == name and current.model == start
+		table.insert(
+			items,
+			{ label = `{start}  ({if now then "now" else "suggested"})`, value = start }
+		)
+	end
+	for _, id in ids do
+		if id ~= start then
+			table.insert(items, { label = id, value = id })
+		end
+	end
+	table.insert(items, { label = TYPE_NAME, value = TYPE_NAME })
+	local typed: string? = nil
+	local item = picker.choose(title, items, {
+		fallback = function(query)
+			typed = query
+		end,
+	})
+	if item and item.value == TYPE_NAME then
+		return core.prompt.ask(title, start)
+	end
+	return if item then item.value else typed
+end
+
+--- Has `role` use a model at the provider `name`, asking which: one of
+--- those it lists (see `list`), the role's own or the provider's preset
+--- first, or a name you type. Then asks for a key if the provider needs
+--- one it hasn't got. Returns what happened, to tell you, and whether
+--- `role` now uses the model picked.
+function M.ask_model(role: string, name: string): (string, boolean)
 	local provider = M.providers[name]
 	if provider == nil then
-		return `the provider "{name}" isn't set up`
+		return `the provider "{name}" isn't set up`, false
 	end
 	local current = M.roles[role]
 	local preset = M.presets[name]
@@ -1179,25 +1274,9 @@ function M.ask_model(role: string, name: string): string
 		then current.model
 		elseif preset then (if role == "fast" then preset.fast else preset.reasoning)
 		else nil
-	local model: string?
-	if is_ollama(name, provider) then
-		local pulled, why = M.ollama_models()
-		if pulled and #pulled > 0 then
-			local items = {}
-			for _, found in pulled do
-				table.insert(items, { label = found, value = found })
-			end
-			local item = picker.choose(`Model for {role}, of those Ollama has`, items)
-			model = item and item.value
-		else
-			greed.echo(why or `Ollama has no models yet: \`ollama pull {start or "llama3.2"}\``)
-			model = core.prompt.ask(`Model for {role} at {name}`, start)
-		end
-	else
-		model = core.prompt.ask(`Model for {role} at {name}`, start)
-	end
+	local model = pick_model(role, name, provider, start)
 	if model == nil or model == "" then
-		return "no model chosen"
+		return "no model chosen", false
 	end
 	local unkept = M.choose(role, name, model)
 	local said = `{role} uses {model} at {name}`
@@ -1207,7 +1286,31 @@ function M.ask_model(role: string, name: string): string
 			then `; :login {provider.login} signs in`
 			else "; " .. M.ask_key(name)
 	end
-	return said
+	return said, true
+end
+
+--- Has `role` use a model you pick: a provider, then one of its models
+--- (see `ask_model`). Returns what happened, to tell you, or nil when you
+--- picked no provider, and whether `role` now uses the model picked.
+function M.ask_role(role: string): (string?, boolean)
+	local names: { string } = {}
+	for name in M.providers do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	local items = {}
+	for _, name in names do
+		local provider = M.providers[name] :: Provider
+		table.insert(items, {
+			label = `{name}  {provider.url}  {M.key_state(name) or "no key yet"}`,
+			value = name,
+		})
+	end
+	local item = picker.choose(`Provider for {role}`, items)
+	if item == nil then
+		return nil, false
+	end
+	return M.ask_model(role, item.value)
 end
 
 --- Has the `fast` and `reasoning` roles use the provider `name`, with its
@@ -1220,7 +1323,7 @@ function M.use_provider(name: string): string?
 	end
 	local fast, reasoning = preset.fast, preset.reasoning
 	if name == "ollama" then
-		local pulled = M.ollama_models()
+		local pulled = M.list(name)
 		if pulled and #pulled > 0 then
 			fast, reasoning = pulled[1], pulled[1]
 		end
@@ -1311,25 +1414,9 @@ greed.command({
 	doc = "On the :models page, pick the provider and model that play the role under the cursor",
 	run = function(ctx)
 		local role = role_at(ctx)
-		if role == nil then
-			return
-		end
-		local names: { string } = {}
-		for name in M.providers do
-			table.insert(names, name)
-		end
-		table.sort(names)
-		local items = {}
-		for _, name in names do
-			local provider = M.providers[name] :: Provider
-			table.insert(items, {
-				label = `{name}  {provider.url}  {M.key_state(name) or "no key yet"}`,
-				value = name,
-			})
-		end
-		local item = picker.choose(`Provider for {role}`, items)
-		if item then
-			greed.echo(M.ask_model(role, item.value))
+		local said = role and M.ask_role(role)
+		if said then
+			greed.echo(said)
 			render()
 		end
 	end,

@@ -71,7 +71,7 @@ end
 
 -- Whether the Ollama model is there: what the page says about it.
 local function check_ollama(): string
-	local pulled, why = models.ollama_models()
+	local pulled, why = models.list("ollama")
 	local preset = (models.presets.ollama :: { fast: string, reasoning: string }).reasoning
 	if pulled == nil then
 		return `{why}, then \`ollama pull {preset}\`.`
