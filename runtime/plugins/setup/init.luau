@@ -47,6 +47,7 @@ local PROVIDERS = {
 	{ value = "anthropic", text = "Anthropic (Claude), with an API key" },
 	{ value = "openai", text = "OpenAI, with an API key" },
 	{ value = "berget", text = "Berget, signing in with your account" },
+	{ value = "mistral", text = "Mistral, with an API key" },
 	{ value = "ollama", text = "Ollama, running on this machine" },
 	{ value = "none", text = "none for now" },
 }

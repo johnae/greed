@@ -409,3 +409,12 @@ test("a provider or role a plugin without net sets sends nothing", function(t)
 	local said = table.concat(t:messages(), "\n")
 	assert(string.find(said, "relayer", 1, true) and string.find(said, "network", 1, true), said)
 end)
+
+test("Mistral Large 4 is known: its window, and that it sees images", function()
+	models.roles.test_mistral = { provider = "mistral", model = "mistral-large-4" }
+	local window, known = models.window("test_mistral")
+	local sees = models.sees_images("test_mistral")
+	models.roles.test_mistral = nil
+	assert(window == 1048576 and known, tostring(window))
+	assert(sees, "sees images")
+end)

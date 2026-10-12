@@ -130,7 +130,7 @@ Started without a config (`~/.config/greed/init.luau`), Greed shows a page
 with a few questions: how you like to edit, which theme, whether your font
 has icons (in a terminal, which needs a Nerd Font for them; the window has
 them built in and doesn't ask), whether to add Greed's tools to Claude Code,
-and which language model to use (Anthropic, OpenAI, Berget, Ollama on this machine, or none
+and which language model to use (Anthropic, OpenAI, Berget, Mistral, Ollama on this machine, or none
 for now). A style or theme you pick switches at once, so you can try it on
 the page.
 
@@ -708,7 +708,7 @@ PATTERN` fills the panel directly.
 | `:debug TOPICS` | Turn debug topics on (`:debug keys frames`) or off (`:debug -keys`, `:debug off`); alone, says which are on. See [Debugging](#debugging) |
 | `:debug-log` | What the debug topics on have said, in a pane below that follows new lines |
 | `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where it can't be reached); what you type shows as dots |
-| `:login PROVIDER`, `:logout PROVIDER` | Sign in to a model provider whose plan comes with an account, like Berget Code, instead of using a key (see [Models](#models)) |
+| `:login PROVIDER`, `:logout PROVIDER` | Sign in to a model provider: with an account for plans that come with one, like Berget Code, or else with its API key, like Mistral (see [Models](#models)) |
 
 Closing a terminal's buffer ends its program.
 
@@ -1089,6 +1089,15 @@ in"; `:logout berget` forgets it, and the provider goes back to its key.
 
 ```luau
 models.roles.agent = { provider = "berget", model = "the model you want" }
+```
+
+For a provider that only takes a key, `:login` asks for the key:
+`:login mistral` keeps a Mistral API key (or set `MISTRAL_API_KEY`), and
+the `mistral` provider uses Mistral Large 4 for `reasoning` and Mistral
+Small for `fast` when picked in `:models`:
+
+```luau
+models.roles.agent = { provider = "mistral", model = "mistral-large-4" }
 ```
 
 | Keys | |

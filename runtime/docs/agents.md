@@ -355,7 +355,7 @@ file. In a terminal, Greed reads the clipboard with `wl-paste` (Wayland),
 
 Pick "Greed" in `space i n` for an agent that runs in the editor itself,
 with any model the [models](using.md#models) setup knows: Anthropic's, or
-any server with OpenAI's API, like berget or a local Ollama. It uses the
+any server with OpenAI's API, like berget, Mistral or a local Ollama. It uses the
 model playing the `agent` role (or `reasoning` without one); `alt-M` in its
 transcript picks another role, and `:models` sets which model plays it.
 When that model's provider has no key, the bottom of the transcript says

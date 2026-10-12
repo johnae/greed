@@ -207,3 +207,12 @@ test("a login added from config signs in and renews with OAuth's refresh", funct
 	models.providers.acme = nil
 	models.roles.coding = nil
 end)
+
+test("signing in to a provider that only takes a key asks for the key", function(t)
+	t:buffer("|x")
+	t:run("login", { "mistral" })
+	t:keys("s k - 1 enter")
+	assert(greed.secrets.get("mistral") == "sk-1", "kept")
+	assert(models.key_state("mistral") ~= nil, "and it shows as set")
+	greed.secrets.set("mistral", "")
+end)

@@ -88,6 +88,7 @@ M.providers = {
 	anthropic = { kind = "anthropic", url = "https://api.anthropic.com", secret = "anthropic" },
 	openai = { kind = "openai", url = "https://api.openai.com/v1", secret = "openai" },
 	ollama = { kind = "openai", url = "http://localhost:11434/v1" },
+	mistral = { kind = "openai", url = "https://api.mistral.ai/v1", secret = "mistral" },
 	berget = {
 		kind = "openai",
 		url = "https://api.berget.ai/v1",
@@ -237,6 +238,7 @@ M.presets = {
 	anthropic = { fast = "claude-haiku-4-5-20251001", reasoning = "claude-opus-5-5" },
 	openai = { fast = "gpt-5-mini", reasoning = "gpt-5" },
 	berget = { fast = "meta-llama/Llama-3.3-70B-Instruct", reasoning = "openai/gpt-oss-120b" },
+	mistral = { fast = "mistral-small-latest", reasoning = "mistral-large-4" },
 	ollama = { fast = "llama3.2", reasoning = "llama3.2" },
 } :: { [string]: { fast: string, reasoning: string }? }
 
@@ -270,6 +272,7 @@ local WINDOWS: { { pattern: string, tokens: number } } = {
 	{ pattern = "^o[134]", tokens = 200000 },
 	{ pattern = "llama%-?3%.[123]", tokens = 131072 },
 	{ pattern = "mistral%-small", tokens = 131072 },
+	{ pattern = "mistral%-large%-4", tokens = 1048576 },
 	{ pattern = "devstral", tokens = 131072 },
 	{ pattern = "glm%-4%.[6-9]", tokens = 200000 },
 	{ pattern = "glm%-4%.5", tokens = 131072 },
@@ -319,6 +322,7 @@ local SEES = {
 	"pixtral",
 	"mistral%-small%-3%.[1-9]",
 	"mistral%-medium",
+	"mistral%-large%-[4-9]",
 	"qwen[%d.]*%-vl",
 	"glm%-4%.[5-9]v",
 	"llava",
@@ -467,6 +471,7 @@ local KNOWN: { [string]: string } = {
 	openai = "https://api.openai.com",
 	berget = "https://api.berget.ai",
 	["berget sign-in"] = "https://api.berget.ai",
+	mistral = "https://api.mistral.ai",
 }
 
 local APPROVALS = "models-key-addresses"
@@ -1395,9 +1400,16 @@ end
 
 greed.command({
 	name = "login",
-	doc = "Sign in to a provider whose plan comes with an account, like Berget Code, instead of using an API key",
-	args = { { name = "provider", doc = "e.g. berget" } },
+	doc = "Sign in to a provider: with an account for those whose plan comes with one, like Berget Code, or else its API key",
+	args = { { name = "provider", doc = "e.g. berget or mistral" } },
 	run = function(ctx)
+		-- A provider that only takes a key is signed in to with it.
+		local wanted = ctx.args[1]
+		local provider = wanted and M.providers[wanted]
+		if wanted and provider and provider.login == nil and provider.secret then
+			greed.echo(M.ask_key(wanted))
+			return
+		end
 		local name = login_named(ctx)
 		if name == nil then
 			return

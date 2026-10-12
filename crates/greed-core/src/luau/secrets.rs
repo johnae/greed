@@ -32,6 +32,7 @@ type LuaResult<T> = mlua::Result<T>;
 const USUAL: &[(&str, &str)] = &[
     ("anthropic", "ANTHROPIC_API_KEY"),
     ("openai", "OPENAI_API_KEY"),
+    ("mistral", "MISTRAL_API_KEY"),
 ];
 
 /// The keyring's service name for Greed's secrets.
