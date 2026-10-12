@@ -33,3 +33,24 @@ test("secrets in what a command printed are hidden before a model reads it", fun
 	assert(string.find(wrapped, ' hidden="1 secret">', 1, true), wrapped)
 	assert(not string.find(wrapped, "hunter2", 1, true), wrapped)
 end)
+
+test("redacting long text takes time in step with its length", function()
+	local key = "-----BEGIN PRIVATE KEY-----"
+	-- Shapes that once took time growing with the square of their length:
+	-- a long run of name characters, and key beginnings with no end. At
+	-- that rate these would take minutes.
+	local shapes: { [string]: string } = {
+		run = string.rep("x", 50000),
+		beginnings = string.rep(`{key}\n`, 2000),
+	}
+	for name, text in shapes do
+		local started = os.clock()
+		local hidden, count = agent.redact(text)
+		local took = os.clock() - started
+		assert(took < 4, `{name} took {took}s`)
+		assert(hidden == text and count == 0, name)
+	end
+	-- One end hides from the first beginning to it, as before.
+	local hidden, count = agent.redact(`a\n{key}\nb\n{key}\nc\n-----END PRIVATE KEY-----\nd`)
+	assert(hidden == "a\n[secret hidden]\nd" and count == 1, hidden)
+end)

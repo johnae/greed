@@ -37,6 +37,33 @@ local function secret_name(name: string): boolean
 	return false
 end
 
+local KEY_BEGIN = "%-%-%-%-%-BEGIN [%u ]*PRIVATE KEY%-%-%-%-%-"
+local KEY_END = "%-%-%-%-%-END [%u ]*PRIVATE KEY%-%-%-%-%-"
+
+-- `text` with each private key, from its first line to its last, swapped
+-- for `hide()`. Once a key has no last line no later one has either, so
+-- this stops there; `BEGIN.-END` as one pattern looked for the end again
+-- from each beginning.
+local function private_keys(text: string, hide: () -> string): string
+	local parts = {}
+	local at = 1
+	while true do
+		local from, after = string.find(text, KEY_BEGIN, at)
+		if from == nil or after == nil then
+			break
+		end
+		local _, to = string.find(text, KEY_END, after + 1)
+		if to == nil then
+			break
+		end
+		table.insert(parts, string.sub(text, at, from - 1))
+		table.insert(parts, hide())
+		at = to + 1
+	end
+	table.insert(parts, string.sub(text, at))
+	return table.concat(parts)
+end
+
 --- `text` with the secrets it holds hidden, and how many there were.
 function M.redact(text: string): (string, number)
 	local count = 0
@@ -44,12 +71,7 @@ function M.redact(text: string): (string, number)
 		count += 1
 		return HIDDEN
 	end
-	-- A private key, from its first line to its last.
-	text = string.gsub(
-		text,
-		"%-%-%-%-%-BEGIN [%u ]*PRIVATE KEY%-%-%-%-%-.-%-%-%-%-%-END [%u ]*PRIVATE KEY%-%-%-%-%-",
-		hide
-	)
+	text = private_keys(text, hide)
 	for _, pattern in TOKENS do
 		text = string.gsub(text, pattern, function(token: string): string
 			-- Short matches of the loosest shapes are words, not tokens.
@@ -62,10 +84,12 @@ function M.redact(text: string): (string, number)
 		return if #token >= 12 then lead .. hide() else lead .. token
 	end)
 	-- `NAME=value`, `NAME: value` and `"name": "value"` with a name like a
-	-- secret's.
+	-- secret's. The frontier starts a name only where a run of name
+	-- characters starts: tried from inside one too, a long run (a base64
+	-- blob, a line of x's) took time growing with the square of its length.
 	text = string.gsub(
 		text,
-		'("?)([%w_%.%-]+)("?%s*[:=]%s*)("?)([^%s",}]+)',
+		'("?)(%f[%w_%.%-][%w_%.%-]+)("?%s*[:=]%s*)("?)([^%s",}]+)',
 		function(...: string): string
 			local open, name, between, quote, value = ...
 			if secret_name(name) and string.sub(value, 1, 7) ~= "[secret" and #value >= 4 then
