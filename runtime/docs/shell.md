@@ -432,7 +432,9 @@ and the keys they're under. `tab` while typing a filter completes from what
 the block printed: its sections, its JSON lines' fields and its table's
 columns, each field with a few values it has. A readable log line leaves
 the names of its time, level and message out, so `tab` on an empty filter
-is where to see whether a log calls it `level` or `severity`.
+is where to see whether a log calls it `level` or `severity`. `up` and
+`down` there go through the filters used before on the same kind of
+command, like `kubectl logs`.
 
 In a float or a pane showing one block, `/` filters that view alone, the
 same way (words, or `/` and a regex), while the shell and other views of

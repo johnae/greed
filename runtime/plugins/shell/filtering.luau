@@ -19,8 +19,41 @@ M.KIND = "shell-filter-prompt"
 -- How many lines of a block's output are read for what to complete.
 local READ = 5000
 
--- The block whose filter is being typed, by the client typing it.
-local filtering: { [number]: Block } = {}
+-- How many filters are kept for each kind of command.
+local RECENT = 20
+
+-- What's being filtered, by the client typing it: the block, its prompt,
+-- and how far back `up` has gone through the filters used before.
+type Typing = { block: Block, view: greed.View, back: number, typed: string }
+local filtering: { [number]: Typing } = {}
+
+-- Filters used before, newest last, by the kind of command they were used
+-- on, so `kubectl logs` gets its own.
+local recent: { [string]: { string } } = {}
+
+-- The kind of command `block` ran: its first two words.
+local function kind_of(block: Block): string
+	local first, second = string.match(block.command, "^%s*(%S+)%s*(%S*)")
+	return `{first or ""} {second or ""}`
+end
+
+-- Keeps `text`, a filter used on `block`, for `up` to bring back.
+local function remember(block: Block, text: string)
+	if text == "" then
+		return
+	end
+	local kind = kind_of(block)
+	local list = recent[kind] or {}
+	recent[kind] = list
+	local at = table.find(list, text)
+	if at then
+		table.remove(list, at)
+	end
+	table.insert(list, text)
+	if #list > RECENT then
+		table.remove(list, 1)
+	end
+end
 
 core.style.typing_kind(M.KIND)
 core.style.label_kind(M.KIND, "filter")
@@ -29,6 +62,48 @@ greed.keymap.bind({ kind = M.KIND }, {
 	esc = "prompt-cancel",
 	["ctrl-c"] = "prompt-cancel",
 	tab = "completion-ask",
+	up = "shell-filter-older",
+	down = "shell-filter-newer",
+})
+
+-- Puts the filter `by` steps back (or forward) from where `up` has gone
+-- in the prompt; what was typed comes back past the newest.
+local function step(by: number)
+	local typing = filtering[greed.client.id()]
+	if typing == nil or not typing.view:valid() then
+		return
+	end
+	local list = recent[kind_of(typing.block)] or {}
+	if typing.back == 0 then
+		typing.typed = typing.view:buffer():text()
+	end
+	local back = math.clamp(typing.back + by, 0, #list)
+	if back == typing.back then
+		return
+	end
+	typing.back = back
+	local text: string = if back == 0 then typing.typed else list[#list - back + 1] or ""
+	local buffer = typing.view:buffer()
+	buffer:edit(function(e)
+		e:replace(0, buffer:len(), text)
+	end)
+	typing.view:set_cursor(#text)
+end
+
+greed.command({
+	name = "shell-filter-older",
+	doc = "Put the filter used before this one on this kind of command in the filter prompt",
+	run = function()
+		step(1)
+	end,
+})
+
+greed.command({
+	name = "shell-filter-newer",
+	doc = "Put the filter used after this one on this kind of command in the filter prompt",
+	run = function()
+		step(-1)
+	end,
 })
 
 --- What the prompt is opened with, as `core.prompt.open` takes it.
@@ -44,12 +119,13 @@ export type Options = {
 }
 
 --- Asks for a filter of `block` in the prompt; `tab` completes from what it
---- printed, and the title says how much the filter keeps.
+--- printed, `up` brings back filters used before on the same kind of
+--- command, and the title says how much the filter keeps.
 function M.prompt(block: Block, options: Options): greed.View
 	local client = greed.client.id()
-	filtering[client] = block
+	local typing: Typing
 	local function done()
-		if filtering[client] == block then
+		if filtering[client] == typing then
 			filtering[client] = nil
 		end
 	end
@@ -74,6 +150,7 @@ function M.prompt(block: Block, options: Options): greed.View
 		end,
 		on_submit = function(text: string)
 			done()
+			remember(block, text)
 			options.on_submit(text)
 		end,
 		on_cancel = function()
@@ -81,8 +158,11 @@ function M.prompt(block: Block, options: Options): greed.View
 			options.on_cancel()
 		end,
 	})
+	local opened = assert(view)
+	typing = { block = block, view = opened, back = 0, typed = "" }
+	filtering[client] = typing
 	retitle()
-	return assert(view)
+	return opened
 end
 
 -- The key a line of indented text starts with, and how far it's indented,
@@ -221,10 +301,11 @@ local function attach()
 		if view:buffer():kind() ~= M.KIND then
 			return nil
 		end
-		local block = filtering[greed.client.id()]
-		if block == nil then
+		local typing = filtering[greed.client.id()]
+		if typing == nil then
 			return {}
 		end
+		local block = typing.block
 		local before = view:buffer():slice(0, view:cursor())
 		-- A regex completes nothing.
 		if string.sub(before, 1, 1) == "/" then
