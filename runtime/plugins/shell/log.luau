@@ -135,6 +135,11 @@ local function exclusive(shell: Shell, change: () -> ())
 		signal:wait()
 		turn = turns[shell]
 	end
+	-- A closed shell has no text to change, while what ran in it still
+	-- ends: a program stopped as it closed exits after.
+	if not shell.buffer:valid() then
+		return
+	end
 	if turn and turn.thread ~= me then
 		if coroutine.status(turn.thread) ~= "dead" then
 			-- Its task can't wait, and the turn stays with the other.
@@ -369,6 +374,9 @@ end
 --- blank line after it, and how many lines it leaves out.
 function M.draw_block(shell: Shell, block: Block)
 	local buffer = shell.buffer
+	if not buffer:valid() then
+		return
+	end
 	local from, to = M.range(block)
 	if from == nil or to == nil then
 		buffer:decorate(ns_block(block), {})
@@ -884,6 +892,9 @@ end
 --- Shows the places in files `block`'s output names as links, and returns
 --- them.
 function M.draw_refs(shell: Shell, block: Block): { Ref }
+	if not shell.buffer:valid() then
+		return {}
+	end
 	local marks: { greed.Mark } = {}
 	local refs: { Ref } = {}
 	for _, ref in M.references(shell, block) do

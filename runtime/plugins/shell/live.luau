@@ -298,9 +298,10 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 			if code == nil or block.stopping then
 				break
 			end
+			-- Its shell closed: it ends as one stopped.
 			if not shell.buffer:valid() then
-				block.job = nil
-				return
+				code = nil
+				break
 			end
 			block.stdout, block.stderr, block.output = out, errors, out .. errors
 			block.value = tables.json(out)

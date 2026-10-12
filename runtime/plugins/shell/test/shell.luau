@@ -319,6 +319,25 @@ test("a block runs again, is edited, copied, and its output opened", function(t)
 	assert(greed.view():buffer():text() == first.output, greed.view():buffer():text())
 end)
 
+test("blocks still running when their shell closes end, as each way of running ends", function(t)
+	greed.option.set("shell-fallback", "sh")
+	local sh = shell.open({ cwd = t:tempdir(), show = false })
+	local running = {
+		assert(shell.run(sh, "sleep 30")),
+		assert(shell.run(sh, "sleep 30", { runner = "pipe" })),
+		assert(shell.run(sh, "watch -n 1 sleep 30")),
+	}
+	-- A line with table stages runs its programs in the caller.
+	greed.spawn(shell.run, sh, "sleep 30 | lines")
+	table.insert(running, sh.blocks[#sh.blocks])
+	-- Each program's end comes after the shell has gone.
+	sh.buffer:close()
+	for _, block in running do
+		finished(t, block)
+		assert(block.status == "killed", `{block.command}: {block.status}`)
+	end
+end)
+
 test("ctrl-c interrupts the running block, and space x stops one", function(t)
 	local sh = open(t, t:tempdir())
 	local block = type_line(t, sh, "sleep 30")
