@@ -28,12 +28,22 @@ type Level = {
 	at: number,
 	-- Closed to make way for a level below, not to go back up.
 	replaced: boolean,
+	-- Its command was started to show here: going back stops it.
+	owned: boolean,
 }
 
 -- The levels open, the deepest last.
 local levels: { Level } = {}
 
 local FOOTER = "esc back · enter or space . on a row · / filter · ctrl-c stops"
+
+-- Goes back up keeping the command running, as ctrl-z puts a job in the
+-- background in a shell.
+local KEEP = "ctrl-z"
+
+-- For a level whose command was started to show there.
+local OWNED_FOOTER =
+	`esc back, stopping it · {KEEP} back, keeping it running · / filter · . on a row`
 
 local function level_of(view: greed.View): Level?
 	for _, level in levels do
@@ -60,7 +70,13 @@ local function show(level: Level, at: number?, tail: boolean?)
 	if view == nil then
 		return
 	end
-	view:configure({ title = level.title, footer = FOOTER, width = "95%", height = "90%" })
+	local running = level.owned and level.block.status == "running"
+	view:configure({
+		title = level.title,
+		footer = if running then OWNED_FOOTER else FOOTER,
+		width = "95%",
+		height = "90%",
+	})
 	if at then
 		view:set_cursor(at)
 	end
@@ -70,8 +86,16 @@ end
 --- Shows `block` of `shell`, what an action on a row ran from `from`, as a
 --- level down from where `from` is: `step` names the way, like
 --- "api-7d9f › describe". `tail` follows the block's last line, for one
---- that keeps showing what's new.
-function M.open(shell: Shell, block: Block, step: string, from: greed.View, tail: boolean?)
+--- that keeps showing what's new. A block `owned`, started to show here,
+--- stops when its level is gone back from.
+function M.open(
+	shell: Shell,
+	block: Block,
+	step: string,
+	from: greed.View,
+	tail: boolean?,
+	owned: boolean?
+)
 	local parent = level_of(from)
 	local above: string
 	if parent then
@@ -89,6 +113,7 @@ function M.open(shell: Shell, block: Block, step: string, from: greed.View, tail
 		from = from,
 		at = from:cursor(),
 		replaced = false,
+		owned = owned == true,
 	}
 	if parent then
 		parent.replaced = true
@@ -115,6 +140,10 @@ greed.on("view.closed", function(event: greed.ViewClosed)
 				return
 			end
 			table.remove(levels, i)
+			local job = level.block.job
+			if level.owned and level.block.status == "running" and job then
+				job.interrupt()
+			end
 			local parent = level.parent
 			if parent then
 				parent.replaced = false
@@ -163,5 +192,30 @@ greed.on("selection.changed", function(event: greed.SelectionChanged)
 		end
 	end
 end)
+
+greed.command({
+	name = "shell-drill-keep",
+	doc = "Go back up from a level drilled down to, keeping its command running in the shell",
+	run = function(ctx)
+		local level = level_of(ctx.view)
+		if level then
+			level.owned = false
+			ctx.view:close()
+			return
+		end
+		-- Anywhere else the key does what it always does, like undo in vscode.
+		for _, bound in greed.keymap.describe(KEEP) do
+			if bound.command ~= "shell-drill-keep" then
+				greed.run(bound.command)
+				return
+			end
+		end
+	end,
+})
+greed.keymap.bind({ role = "command", kind = "shell" }, { [KEEP] = "shell-drill-keep" })
+greed.keymap.bind(
+	{ style = "vscode", role = "typing", kind = "shell" },
+	{ [KEEP] = "shell-drill-keep" }
+)
 
 return M

@@ -141,6 +141,7 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 | `.` | What can be done with it, or with the row |
 | `y` `Y` | Copy what it printed, or the command |
 | `o` | Open what it printed in a buffer of its own, to edit or search |
+| `v` | Show it in a pane beside, following it while it runs, to filter there on its own |
 | `s` | Stop it |
 | `tab` `shift-tab` | Fold it under its command or unfold it, or all of them |
 | `:` | The command line |
@@ -166,6 +167,19 @@ Acting on a row in that float goes a level further down in its place, and
 in the shell too, in the order it ran, so it's there to read again,
 filter, or pin to a board. This works for every kind of row with actions,
 not only pods.
+
+A command that keeps running, like following a pod's logs, stops when you
+go back up from the float it was started to show. `ctrl-z` goes back up
+and leaves it running instead, on the strip above the prompt, as `ctrl-z`
+puts a job in the background in a shell. The float's footer says which
+key does what.
+
+`/` in the float filters what it shows, as you type, and nothing else: the
+shell keeps every line, and the lines still to come are filtered as they
+arrive. Change the filter and the lines it hid before show again. To watch
+the same log two ways, `v` on the block in blocks mode (or "open beside"
+in its actions) opens it in a pane beside, as many times as you like, and
+`/` in each pane filters it its own way.
 
 A float showing a block, like the one `enter` on a running block opens,
 keeps its own keys: `esc` closes it.
@@ -399,6 +413,12 @@ status says so (`2 of 340 lines · / error`),
 while its record keeps them all, so `$3`, `space y` and `space v` give the
 whole output. On a block's command or at the prompt, `/` searches as
 usual.
+
+In a float or a pane showing one block, `/` filters that view alone, the
+same way (words, or `/` and a regex), while the shell and other views of
+the block show every line. Lines that come in later are filtered too, and
+since nothing is thrown away, changing the filter shows earlier lines it
+hid. `esc` on the filter prompt shows them all again.
 
 ### Tables
 
@@ -742,10 +762,11 @@ Such a line stands for its block, a line or two up from the prompt:
 `space .` lists what you can do with it, and `space r` runs it again.
 `enter` (or a click on its number) opens the block in a float, and `/`
 opens it there to filter. The float shows that block and nothing around it,
-and works as the block does in the shell: `/` filters it, `enter` or
-`space .` on a row acts on the pod or file it is, and `ctrl-c` stops it.
-A watch's float follows it as it refreshes. `esc` closes it, keeping the
-filter, which a watch keeps on each run. `space .` on any block offers
+and works as the block does in the shell: `enter` or `space .` on a row
+acts on the pod or file it is, and `ctrl-c` stops it. `/` filters what
+the float shows, leaving the shell as it is (see [Filtering a
+block](#filtering-a-block)). A watch's float follows it as it refreshes.
+`esc` closes it. `space .` on any block offers
 "open in a float" too. A line goes when its block ends.
 
 These floats stay while you work elsewhere, one for each block, so you
@@ -830,9 +851,10 @@ it, can run it again and change it:
 
 `follow logs` on a pod or a container opens its block in a float that
 stays on the last line as lines come, like `tail -f`; move up to read and
-it stays put, go back to the last line and it follows again. `esc` closes
-the float and the logs keep coming in the line above the prompt, where
-`ctrl-c` stops them. An action whose command still runs in the shell
+it stays put, go back to the last line and it follows again. `/` there
+filters the logs as they come. `esc` closes the float and stops following;
+`ctrl-z` closes it and the logs keep coming in the line above the prompt,
+where `ctrl-c` stops them. An action whose command still runs in the shell
 doesn't start a second one: it opens the one running (`already running as
 $7`).
 

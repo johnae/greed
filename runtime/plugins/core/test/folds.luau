@@ -86,3 +86,33 @@ test("fold-selection folds the selected lines", function(t)
 	assert(hidden() == "1-1", hidden())
 	t:expect("|one\ntwo\nthree")
 end)
+
+test("a view's filter hides the lines it doesn't keep, in that view alone", function(t)
+	t:buffer("|log\nINFO start\nERROR disk full\nINFO ok\nerror again\n")
+	local view = greed.view()
+	local other = view:split("right")
+	view:set_filter("error", { skip = 1 })
+	assert(view:filter() == "error")
+	local hidden = view:hidden_lines()
+	local lines: { number } = {}
+	for _, run in hidden do
+		for line = run.from, run.to do
+			table.insert(lines, line)
+		end
+	end
+	table.sort(lines)
+	assert(
+		table.concat(lines, ",") == "1,3,5",
+		"info and the empty last line: " .. table.concat(lines, ",")
+	)
+	assert(#other:hidden_lines() == 0, "the other view shows them all")
+	view:set_filter("^INFO", { regex = true, skip = 1 })
+	local regexed = view:hidden_lines()
+	assert(#regexed > 0, "a regex filters too")
+	local ok, err = pcall(function()
+		view:set_filter("(", { regex = true })
+	end)
+	assert(not ok and string.find(tostring(err), "not a regex", 1, true), tostring(err))
+	view:set_filter(nil)
+	assert(view:filter() == nil and #view:hidden_lines() == 0, "all of it again")
+end)

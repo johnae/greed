@@ -808,7 +808,7 @@ function M.command(
 			local block = runs(shell, line, in_view)
 			-- What it shows comes up where you are, a level down.
 			if block then
-				drill.open(shell, block, step, in_view, opts.follow)
+				drill.open(shell, block, step, in_view, opts.follow, true)
 			end
 			return if block then block_id(shell, block) else nil
 		end,

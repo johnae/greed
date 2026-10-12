@@ -136,8 +136,11 @@ end
 
 --- How a peek opens: passing, without taking focus (`focus = false`, as
 --- when the mouse rests on a block), at screen row `y`, and with `tail` on
---- the block's last line, following it as it grows.
-export type How = { focus: boolean?, y: number?, tail: boolean? }
+--- the block's last line, following it as it grows; `tail = false` never
+--- follows it, showing it from the top. With `beside`, it's a pane beside
+--- the one with focus rather than a float, a new one each time, so one
+--- block can show in several, each filtered its own way.
+export type How = { focus: boolean?, y: number?, tail: boolean?, beside: boolean? }
 
 --- Opens a float at `block` of `shell`, with the cursor on its first line
 --- of output (or its last, with `tail`). One that takes focus is kept, and
@@ -146,7 +149,10 @@ export type How = { focus: boolean?, y: number?, tail: boolean? }
 function M.open(shell: Shell, block: Block, how: How?): greed.View?
 	local focus = how == nil or how.focus ~= false
 	local tail = how ~= nil and how.tail == true
-	if focus then
+	local beside = how ~= nil and how.beside == true
+	if beside then
+		-- A new one each time.
+	elseif focus then
 		for _, p in peeks do
 			if p.kept and p.block == block and p.view:valid() then
 				p.view:raise()
@@ -170,16 +176,18 @@ function M.open(shell: Shell, block: Block, how: How?): greed.View?
 	-- Each kept one opens a little below and right of the one before, so
 	-- they don't hide each other until they're arranged.
 	local kept = #peeks
-	local view = greed.float(shell.buffer, {
-		title = string.match(block.command, "^[^\n]*") or block.command,
-		width = if focus then "70%" else "90%",
-		height = tall,
-		focus = focus,
-		tab = focus,
-		x = if focus then 4 + 4 * (kept % 8) else nil,
-		y = if focus then 2 + 2 * (kept % 8) else how and how.y,
-		footer = "/ filter · enter or space . on a row · ctrl-c stops · esc closes",
-	})
+	local view = if beside
+		then greed.view():split("right", shell.buffer)
+		else greed.float(shell.buffer, {
+			title = string.match(block.command, "^[^\n]*") or block.command,
+			width = if focus then "70%" else "90%",
+			height = tall,
+			focus = focus,
+			tab = focus,
+			x = if focus then 4 + 4 * (kept % 8) else nil,
+			y = if focus then 2 + 2 * (kept % 8) else how and how.y,
+			footer = "/ filter · enter or space . on a row · ctrl-c stops · esc closes",
+		})
 	view:set_cursor(log.output_range(shell, block) or from)
 	local p: Peek = {
 		view = view,

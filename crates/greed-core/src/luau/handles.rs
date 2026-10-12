@@ -367,6 +367,33 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
             Ok(())
         },
     );
+    methods.add_method(
+        "set_filter",
+        |lua, this, (text, opts): (Option<String>, Option<mlua::Table>)| {
+            this.with_view(lua, |_| Ok(()))?;
+            let filter = match text.filter(|t| !t.trim().is_empty()) {
+                None => None,
+                Some(text) => {
+                    let (regex, skip) = match &opts {
+                        Some(o) => (
+                            o.get::<Option<bool>>("regex")?.unwrap_or(false),
+                            o.get::<Option<usize>>("skip")?.unwrap_or(0),
+                        ),
+                        None => (false, 0),
+                    };
+                    Some(
+                        crate::search::LineFilter::new(&text, regex, skip)
+                            .map_err(|err| mlua::Error::runtime(format!("not a regex: {err}")))?,
+                    )
+                }
+            };
+            state_mut(lua).editor.filter(this.id, filter);
+            Ok(())
+        },
+    );
+    methods.add_method("filter", |lua, this, ()| {
+        this.with_view(lua, |v| Ok(v.filter.as_ref().map(|f| f.text.clone())))
+    });
     methods.add_method("narrowed", |lua, this, ()| {
         this.with_view(lua, |v| {
             Ok(v.lines.as_ref().map(|l| (l.start, l.end - 1)).unzip())

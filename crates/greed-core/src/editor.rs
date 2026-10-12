@@ -55,6 +55,9 @@ pub struct View {
     pub lines: Option<std::ops::Range<usize>>,
     /// How many columns the lines that don't wrap are scrolled to the left.
     pub columns: usize,
+    /// The lines it shows of what it would, as a float filtering a log: those
+    /// hidden stay in the buffer.
+    pub filter: Option<std::sync::Arc<crate::search::LineFilter>>,
 }
 
 impl View {
@@ -1044,6 +1047,7 @@ impl Editor {
             view.visible = None;
             view.lines = None;
             view.columns = 0;
+            view.filter = None;
         }
         self.drop_if_unused(old);
     }
@@ -1054,6 +1058,17 @@ impl Editor {
         for client in self.clients.values_mut() {
             if let Some(view) = client.views.get_mut(&view) {
                 view.lines = lines.cloned();
+            }
+        }
+    }
+
+    /// Shows only the lines of `view` that `filter` keeps, for every client, or
+    /// every line again with `None`.
+    pub fn filter(&mut self, view: ViewId, filter: Option<crate::search::LineFilter>) {
+        let filter = filter.map(std::sync::Arc::new);
+        for client in self.clients.values_mut() {
+            if let Some(view) = client.views.get_mut(&view) {
+                view.filter.clone_from(&filter);
             }
         }
     }
@@ -2100,6 +2115,7 @@ impl Editor {
             size: None,
             area: None,
             lines: None,
+            filter: None,
             columns: 0,
         })
     }

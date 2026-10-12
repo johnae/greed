@@ -343,3 +343,99 @@ test("space and the leader's keys work in blocks mode", function(t)
 	shell.kill(running)
 	assert(kind ~= "shell", "what runs is listed: " .. kind)
 end)
+
+-- The lines `view` hides, as a list.
+local function hidden_in(view: greed.View): { number }
+	local lines = {}
+	for _, run in view:hidden_lines() do
+		for line = run.from, run.to do
+			table.insert(lines, line)
+		end
+	end
+	return lines
+end
+
+test(
+	"/ in a level drilled down to filters that float alone; the shell shows every line",
+	function(t)
+		local sh = open(t)
+		local main = greed.view()
+		local block = type_line(t, sh, "printf 'INFO a\\nERROR b\\nINFO c\\n'")
+		shell.drill.open(sh, block, "lines", main)
+		local float = greed.view()
+		t:keys("/ e r r o r enter")
+		assert(float:filter() == "error", tostring(float:filter()))
+		local text = sh.buffer:text()
+		for _, line in hidden_in(float) do
+			local content = sh.buffer:line_text(line)
+			assert(not string.find(content, "ERROR", 1, true), "ERROR stays: " .. content)
+		end
+		assert(#hidden_in(float) >= 2, "the INFO lines go")
+		assert(string.find(text, "INFO a", 1, true), "the shell keeps them")
+		local shown_in_main = 0
+		for _, run in main:hidden_lines() do
+			shown_in_main += run.to - run.from + 1
+		end
+		assert(shown_in_main == 0, "nothing hidden in the shell")
+	end
+)
+
+test("going back from a command started to show there stops it; ctrl-z keeps it", function(t)
+	local sh = open(t)
+	local main = greed.view()
+	local first = assert(shell.run(sh, "echo up; sleep 30", { view = main }))
+	-- Started, so the interrupt reaches it.
+	t:wait_for(function()
+		return string.find(sh.buffer:text(), "\nup\n", 1, true) ~= nil
+	end)
+	shell.drill.open(sh, first, "sleeping", main, false, true)
+	t:keys("esc")
+	t:wait_for(function()
+		return first.status ~= "running"
+	end)
+	for _, style in { "helix", "vim", "vscode" } do
+		greed.option.set("editing-style", style)
+		local block = assert(shell.run(sh, "sleep 31", { view = main }))
+		shell.drill.open(sh, block, "sleeping", main, false, true)
+		t:keys("ctrl-z")
+		t:wait(50)
+		assert(block.status == "running", `{style}: kept running`)
+		assert(greed.view() == main, `{style}: back`)
+		shell.kill(block)
+	end
+	t:keys("a b ctrl-z")
+	assert(shell.log.prompt_text(sh) ~= "ab", "at the prompt it still undoes")
+end)
+
+test("v shows a command in panes beside, each filtered its own way", function(t)
+	local sh = open(t)
+	type_line(t, sh, "printf 'INFO a\\nERROR b\\n'")
+	local main = greed.view()
+	t:keys("esc v")
+	local first = greed.view()
+	assert(first:float_spec() == nil and first:narrowed() ~= nil, "a pane showing the block")
+	main:focus()
+	t:wait(50)
+	assert(greed.mode.get() == "blocks", `back in the shell: {greed.mode.get()}`)
+	t:keys("v")
+	local second = greed.view()
+	assert(second ~= first and second:float_spec() == nil, "another pane")
+	-- On the command line, which the filter skips: the line with the cursor shows.
+	for _, view in { first, second } do
+		local from = assert((view:narrowed()))
+		view:set_cursor(sh.buffer:line_start(from))
+	end
+	first:set_filter("info", { skip = 1 })
+	second:set_filter("error", { skip = 1 })
+	local function shows(view: greed.View, word: string): boolean
+		for _, line in hidden_in(view) do
+			if string.find(sh.buffer:line_text(line), word, 1, true) then
+				return false
+			end
+		end
+		return true
+	end
+	assert(shows(first, "INFO") and not shows(first, "ERROR"), "the first keeps INFO")
+	assert(shows(second, "ERROR") and not shows(second, "INFO"), "the second keeps ERROR")
+	assert(shows(main, "INFO") and shows(main, "ERROR"), "the shell shows it all")
+end)

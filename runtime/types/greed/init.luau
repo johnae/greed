@@ -307,6 +307,10 @@ export type View = {
 	narrow: (self: View, from: number?, to: number?) -> (),
 	--- The first and last line it's narrowed to, or nil when it shows all of its buffer.
 	narrowed: (self: View) -> (number?, number?),
+	--- Shows only the lines with every word of `text` in them, without minding case, or with `regex` those it matches, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.
+	set_filter: (self: View, text: string?, opts: { regex: boolean?, skip: number? }?) -> (),
+	--- What `set_filter` was given, while it filters.
+	filter: (self: View) -> string?,
 	--- How many columns the lines that don't wrap (a mark's `nowrap`) are scrolled to the left.
 	side_scroll: (self: View) -> number,
 	--- Scrolls the lines that don't wrap `columns` to the left. Drawing scrolls again if the primary cursor is on such a line and would be out of sight, so move it first.

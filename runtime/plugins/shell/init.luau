@@ -1627,6 +1627,14 @@ block_command(
 )
 
 block_command(
+	"shell-beside",
+	"Show the block in a pane beside, following it as it prints, with a filter of its own (/)",
+	function(shell, block)
+		peek.open(shell, block, { beside = true, tail = block.status == "running" })
+	end
+)
+
+block_command(
 	"shell-rerun-in-place",
 	"Run the block's command again in its place, keeping what it showed before (b in blocks mode shows it)",
 	function(shell, block, ctx)
@@ -2078,6 +2086,30 @@ local function to_output(shell: Shell, block: Block, view: greed.View)
 	end
 end
 
+-- Filters what `view`, showing `block` in a float or a pane, shows of it as
+-- what's typed says: lines with every word of it, or starting with `/` a
+-- regex. Its command, and a table's header, stay.
+local function filter_view(view: greed.View, block: Block)
+	local skip = if block.table and block.table.header ~= false then 2 else 1
+	local function set(text: string)
+		local regex = string.sub(text, 1, 1) == "/"
+		local pattern = if regex then string.sub(text, 2) else text
+		-- Half a regex, as it's typed, filters nothing yet.
+		pcall(function()
+			view:set_filter(pattern, { regex = regex, skip = skip })
+		end)
+	end
+	core.prompt.open({
+		title = "Filter what this shows (/ for a regex)",
+		text = view:filter() or "",
+		on_change = set,
+		on_submit = set,
+		on_cancel = function()
+			view:set_filter(nil)
+		end,
+	})
+end
+
 greed.command({
 	name = "shell-filter",
 	doc = "Keep the lines of the block at the cursor with what's typed in them (/ for a regex), or a table's rows (COL=VALUE, COL~TEXT, COL>N); elsewhere, search",
@@ -2088,6 +2120,19 @@ greed.command({
 		local stripped = here and log.strip_block(here, view:cursor())
 		if here and stripped then
 			view = peek.open(here, stripped) or view
+		end
+		-- One still printing, like followed logs, is filtered in a float of
+		-- its own, where what it shows next is filtered too.
+		local at = here and log.block_at(here, view:cursor())
+		if here and at and at.status == "running" and at.watching == nil and not peek.of(view) then
+			view = peek.open(here, at) or view
+		end
+		-- A float or a pane showing a block filters what it shows alone: the
+		-- block keeps every line, and the shell shows them all.
+		local own = peek.of(view)
+		if own then
+			filter_view(view, own)
+			return
 		end
 		local shell, block = output_block(view)
 		if shell == nil or block == nil then
@@ -2280,6 +2325,11 @@ for _, action in
 		{ "kill", "shell-kill", "Stop it for good" },
 		{ "type into it", "shell-handoff", "Show its program in a terminal" },
 		{ "open output", "shell-output-open", "Open its whole output in a buffer" },
+		{
+			"open beside",
+			"shell-beside",
+			"Show it in a pane beside, following it, with a filter of its own",
+		},
 		{
 			"filter",
 			"shell-filter",

@@ -18,6 +18,7 @@
 --     d                what changed since the run before
 --     y  Y             copy what it printed, or its command
 --     o                open what it printed in a buffer
+--     v                show it in a pane beside, with a filter of its own
 --     s                stop it
 --     tab shift-tab    fold or unfold it, or all of them
 --     :                the command line
@@ -521,6 +522,7 @@ b d              what it showed the run before, or what changed since
 .                what can be done with it
 y Y              copy what it printed, or its command
 o                open what it printed in a buffer
+v                show it in a pane beside, with a filter of its own
 s                stop it
 tab shift-tab    fold or unfold it, or all of them
 g G              the first or last command
@@ -695,6 +697,7 @@ greed.keymap.bind(M.MODE, {
 	y = "shell-copy-output",
 	Y = "shell-copy-command",
 	o = "shell-output-open",
+	v = "shell-beside",
 	s = "shell-interrupt",
 	tab = "fold-toggle",
 	["shift-tab"] = "fold-toggle-all",
