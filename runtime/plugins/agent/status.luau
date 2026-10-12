@@ -7,6 +7,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local agent = require("./registry")
+local hooks = require("./hooks")
 
 local M = {}
 
@@ -80,7 +81,10 @@ function M.status(): { [string]: any }
 	for _, found in core.objects.list("terminal") do
 		local running = core.objects.inspect(found).agent
 		if running then
+			-- What it asks, while Greed holds its question for you.
+			local held = hooks.held(found.value.buffer:id())
 			table.insert(agents, {
+				question = held and held.title,
 				id = found.id,
 				label = found.label,
 				agent = running.name,

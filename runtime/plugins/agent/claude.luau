@@ -41,15 +41,26 @@ local M = {}
 local HOOK = '[ -z "$GREED_TERMINAL_ID" ] || "$GREED_BIN" ctl agent_hook '
 	.. 'terminal="$GREED_TERMINAL_ID" hook=@- >/dev/null 2>&1; true'
 
+-- Its permission hook also lets Greed hold the question while you aren't
+-- looking at the terminal (`agent_permission`), printing the answer for
+-- Claude Code; printing nothing has it ask in its own screen.
+local PERMISSION = '[ -z "$GREED_TERMINAL_ID" ] || "$GREED_BIN" ctl agent_permission '
+	.. 'terminal="$GREED_TERMINAL_ID" hook=@- 2>/dev/null; true'
+
 --- Settings for `claude --settings`, for the Claude Code Greed starts: the
---- hooks that tell Greed how it's doing, for that run only, beside your
---- own settings and without writing them.
+--- hooks that tell Greed how it's doing, and through which a question can
+--- be answered from anywhere, for that run only, beside your own settings
+--- and without writing them.
 function M.settings(): string
 	local hooks = {}
 	for _, event in agent_hooks.EVENTS do
-		hooks[event] = greed.json.array({
-			{ hooks = greed.json.array({ { type = "command", command = HOOK } }) },
-		})
+		local hook: { [string]: any } = { type = "command", command = HOOK }
+		if event == "PermissionRequest" then
+			-- Claude Code waits for it, a little longer than Greed holds it.
+			hook.command = PERMISSION
+			hook.timeout = agent_hooks.HOLD // 1000 + 60
+		end
+		hooks[event] = greed.json.array({ { hooks = greed.json.array({ hook }) } })
 	end
 	return greed.json.encode({ hooks = hooks })
 end

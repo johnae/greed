@@ -1020,6 +1020,15 @@ HOST ctl --session NAME act ...`. Run that way it acts as you, and one that
 stops something doesn't ask again in that session, where nobody may be
 looking. An agent can't answer another agent's question: only you can.
 
+Claude Code in one of Greed's terminals (started with `space i C`, which
+gives it Greed's hooks) asks through Greed too, while you aren't looking at
+its terminal: its question waits in Greed, shows as what it waits on (`Bash:
+npm test`), and takes `allow`, `allow-always` (the rule Claude Code offers
+for not asking again) or `reject` from anywhere. Look at its terminal and
+it asks there, in its own screen, as it always does; so does a question
+asked while you're looking, and one nobody answers for half an hour. Its
+multiple-choice questions stay in its own screen.
+
 ## Plugins written by agents
 
 An agent can extend Greed while you work:

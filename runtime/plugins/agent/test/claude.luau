@@ -58,13 +58,21 @@ test("the Claude Code Greed starts gets the hooks that tell Greed how it's doing
 	local claude = require("@agent").claude
 	local settings = greed.json.decode(claude.settings())
 	for _, event in { "UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop", "SessionEnd" } do
-		local command = settings.hooks[event][1].hooks[1].command
-		assert(string.find(command, "agent_hook", 1, true), event)
+		local hook = settings.hooks[event][1].hooks[1]
+		local tool = if event == "PermissionRequest" then "agent_permission" else "agent_hook"
+		assert(string.find(hook.command, tool, 1, true), event)
 		assert(
-			string.find(command, '[ -z "$GREED_TERMINAL_ID" ] ||', 1, true),
+			string.find(hook.command, '[ -z "$GREED_TERMINAL_ID" ] ||', 1, true),
 			"nothing outside Greed"
 		)
 	end
+	-- Claude Code waits for its permission hook longer than Greed holds it.
+	local permission = settings.hooks.PermissionRequest[1].hooks[1]
+	assert(permission.timeout * 1000 > require("../hooks").HOLD, tostring(permission.timeout))
+	assert(
+		not string.find(permission.command, "@- >/dev/null", 1, true),
+		"what it prints reaches Claude"
+	)
 	greed.option.set("claude-command", "sh -c cat")
 	t:buffer("|")
 	local term = claude.open()
