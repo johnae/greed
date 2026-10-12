@@ -553,6 +553,17 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 	local function piece(text: string, style: string)
 		table.insert(left, { text = text, style = style })
 	end
+	-- What follows what it's doing: how many messages wait, and for how long
+	-- it's been at it.
+	local queued = if s.queued then #s.queued else 0
+	local after = (if queued > 0 then ` · {queued} queued` else "")
+		.. (if busy(s) and s.since then ` · {elapsed(s.since)}` else "")
+	local right = ""
+	if s.tokens then
+		right = if s.window
+			then `{M.tokens(s.tokens)} / {M.tokens(s.window)} tokens`
+			else `{M.tokens(s.tokens)} tokens`
+	end
 	if s.status == "working" then
 		piece(if now then spinner_frame(now) else "●", "agent.working")
 		piece(" ", "agent.box")
@@ -561,6 +572,13 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 			then `waiting for {helpers} {if helpers == 1 then "helper" else "helpers"}`
 			elseif s.tool then session.first_line(s.tool)
 			else s.doing or "working"
+		-- A long command is cut to what fits beside the rest, the tokens
+		-- going first when there's little room.
+		local spare = cells - 9 - width(after)
+		if right ~= "" and spare - width(right) - 2 >= 20 then
+			spare -= width(right) + 2
+		end
+		doing = core.text.clip(doing, math.max(spare, 10))
 		local lit = if now then shimmer(doing, (now % 1600) / 1600) else nil
 		if lit then
 			table.move(lit, 1, #lit, #left + 1, left)
@@ -582,18 +600,8 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 	else
 		piece("ready", "agent.hint")
 	end
-	local queued = if s.queued then #s.queued else 0
-	if queued > 0 then
-		piece(` · {queued} queued`, "agent.hint")
-	end
-	if busy(s) and s.since then
-		piece(` · {elapsed(s.since)}`, "agent.hint")
-	end
-	local right = ""
-	if s.tokens then
-		right = if s.window
-			then `{M.tokens(s.tokens)} / {M.tokens(s.window)} tokens`
-			else `{M.tokens(s.tokens)} tokens`
+	if after ~= "" then
+		piece(after, "agent.hint")
 	end
 	local used = 0
 	for _, p in left do

@@ -1330,6 +1330,25 @@ test("an answer streamed in pieces looks as the same answer drawn at once", func
 	acp.stop(s)
 end)
 
+test("a long command in the box's bottom line is cut to fit, its time still there", function()
+	local s: any = {
+		status = "working",
+		tool = "Run cd /home/me/src; find / -maxdepth 6 -name core-plugins -type d 2>/dev/null | grep -v proc | head",
+		since = greed.now() - 5000,
+		tokens = 1500,
+		window = 200000,
+	}
+	for _, cells in { 60, 100 } do
+		local line = ""
+		for _, piece in transcript.bottom(s, cells) do
+			line ..= piece.text
+		end
+		assert(core.text.width(line) <= cells, `{core.text.width(line)} > {cells}: {line}`)
+		assert(string.find(line, " · 5s", 1, true), line)
+		assert(string.find(line, "Run cd /home", 1, true), line)
+	end
+end)
+
 test("other views drawn with core.ui aren't read as transcripts", function(t)
 	t:buffer("|")
 	local buffer = greed.create_buffer("test-ui", "", { readonly = true })
