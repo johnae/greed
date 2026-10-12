@@ -1364,3 +1364,20 @@ test("other views drawn with core.ui aren't read as transcripts", function(t)
 	assert(transcript.tool_at(buffer, 0) == nil)
 	assert(transcript.row_at(buffer, 1) == nil)
 end)
+
+test("an image sent while the agent works says it goes with the next message", function(t)
+	local s = start(t)
+	t:clipboard_image(PIXEL)
+	t:run("paste-image")
+	s.status = "working"
+	t:run("agent-send")
+	assert(
+		table.find(
+			t:messages(),
+			"it's working: the images go with your next message once this turn ends"
+		),
+		"says why nothing went"
+	)
+	assert(s.attached and #s.attached == 1, "the image stays for the next message")
+	s.status = "idle"
+end)

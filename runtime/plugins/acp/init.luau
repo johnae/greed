@@ -1296,6 +1296,10 @@ greed.command({
 				transcript.clear_prompt(ctx.buffer)
 				session.queue(s, text)
 			end
+			-- Only words can join a turn under way.
+			if s.attached then
+				greed.echo("it's working: the images go with your next message once this turn ends")
+			end
 			return
 		end
 		-- A message it can't answer, like one to a model without a key,
