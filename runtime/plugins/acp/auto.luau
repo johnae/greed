@@ -11,7 +11,6 @@
 
 local greed = require("@greed")
 local core = require("@core")
-local agent = require("@agent")
 local models: any = require("@models")
 local session = require("./session")
 
@@ -133,24 +132,22 @@ function M.hard(command: string): string?
 	return nil
 end
 
--- What the decision model is asked of a command, short and plain, as a
--- small model answers those best. The state holds what the user asked and
--- their rules; the command is the agent's, as data.
+-- What the decision model is asked of a command: one short, plain question,
+-- as a small model answers those best. Tried on Berget's clef-flash, it told
+-- apart every command that should run from every one that shouldn't, with
+-- what the user asked taken into account; asking also whether it's what the
+-- user asked for did worse, the answer drifting with how a request was put.
 local QUESTIONS: { [string]: { instructions: string, yes: string?, no: string? } } = {
 	safe = {
 		instructions = "Is it safe to run the agent's command without asking the user "
 			.. "first, given what the user asked for and their rules?",
 	},
-	asked = {
-		instructions = "Is the agent's command what the user asked for, or a step towards it?",
-	},
 }
 
--- How sure the decision model must be: a command it thinks safe and asked
--- for runs, one it thinks unsafe is blocked, and the rest ask you, as a
--- model that can't tell answers in between.
+-- How sure the decision model must be: a command it thinks safe runs, one
+-- it thinks unsafe is blocked, and the rest ask you, as a model that can't
+-- tell answers in between.
 local SAFE = 0.6
-local ASKED = 0.5
 local UNSAFE = 0.2
 
 -- How many of your newest messages the decision model reads, and how much
@@ -184,7 +181,9 @@ local decided: { [Session]: { [string]: Verdict } } = setmetatable({}, { __mode 
 
 -- What the decision model says of `s` running `command`, or nil when
 -- there's no model or no clear answer. It isn't told what Greed thinks is
--- risky: told so, it blocks what you asked for too.
+-- risky (told so, it blocks what you asked for too), and the command goes
+-- as it is: the state is data to it, never instructions, and wrapped in
+-- tags a harmless command looked suspect.
 local function judge(s: Session, command: string): Verdict?
 	local now, before, count = asked(s)
 	local known = decided[s] or {}
@@ -199,7 +198,7 @@ local function judge(s: Session, command: string): Verdict?
 		user_asks_now = now,
 		user_asked_before = if #before > 0 then before else nil,
 		user_rules = if type(rules) == "string" and rules ~= "" then rules else nil,
-		agent_command = agent.untrusted("the agent's command", command),
+		agent_command = command,
 	}
 	local answers = models.decide(M.ROLE, state, QUESTIONS)
 	if answers == nil then
@@ -207,16 +206,13 @@ local function judge(s: Session, command: string): Verdict?
 		-- time.
 		return nil
 	end
-	local safe, asked_for = answers.safe, answers.asked
+	local safe = answers.safe
 	local function sure(p: number): string
 		return `{math.floor(p * 100 + 0.5)}%`
 	end
 	local result: Verdict? = if safe <= UNSAFE
 		then { allow = false, why = `not safe to run unasked ({sure(1 - safe)})` }
-		elseif safe >= SAFE and asked_for >= ASKED then {
-			allow = true,
-			why = `safe and what you asked for ({sure(math.min(safe, asked_for))})`,
-		}
+		elseif safe >= SAFE then { allow = true, why = `safe to run ({sure(safe)})` }
 		else nil
 	if result then
 		known[key] = result

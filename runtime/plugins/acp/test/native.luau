@@ -3570,8 +3570,8 @@ test(
 		local before = models.decide
 		models.decide = function(_role: string, state: any): (any, string?)
 			return if string.find(state.agent_command, "deploy", 1, true)
-				then { safe = 0.05, asked = 0.05 }
-				else { safe = 0.8, asked = 0.9 },
+				then { safe = 0.05 }
+				else { safe = 0.8 },
 				nil
 		end
 		greed.option.set("agent-auto", true)

@@ -19,10 +19,10 @@ local function asking(kind: string, locations: { string }?, command: string?): a
 	}
 end
 
--- The decision model's answers: safe and asked for, unsafe, and unsure.
-local SAFE = { safe = 0.95, asked = 0.9 }
-local UNSAFE = { safe = 0.1, asked = 0.1 }
-local UNSURE = { safe = 0.5, asked = 0.4 }
+-- The decision model's answers: safe, unsafe, and unsure.
+local SAFE = { safe = 0.95 }
+local UNSAFE = { safe = 0.1 }
+local UNSURE = { safe = 0.5 }
 
 -- The states the decision model is given while `f` runs, as JSON, and
 -- `answers` its answers (nil: no model).
@@ -31,7 +31,7 @@ local function deciding(answers: { [string]: number }?, f: () -> ()): { string }
 	local before = models.decide
 	models.decide = function(role: string, state: any, questions: any): (any, string?)
 		assert(role == auto.ROLE, role)
-		assert(questions.safe and questions.asked, "both questions asked")
+		assert(questions.safe, "asked whether it's safe")
 		table.insert(given, greed.json.encode(state))
 		return answers, if answers then nil else "no model"
 	end
@@ -72,20 +72,15 @@ test("the decision model judges other commands, risky ones too, by what you aske
 	local s = session_in(t, "clean out /tmp/blahbleh, it's junk")
 	local given = deciding(SAFE, function()
 		local verdict, why = auto.decide(s, asking("execute", nil, "rm -rf /tmp/blahbleh"))
-		assert(verdict == "allow" and why == "auto: safe and what you asked for (90%)", why)
+		assert(verdict == "allow" and why == "auto: safe to run (95%)", why)
 		auto.decide(s, asking("execute", nil, "rm -rf /tmp/blahbleh"))
 	end)
 	assert(#given == 1, "asked once for the same command")
 	local state = given[1]
 	assert(string.find(state, "clean out /tmp/blahbleh, it's junk", 1, true), state)
-	assert(string.find(state, "untrusted", 1, true), "the command goes as data")
 	deciding(UNSAFE, function()
 		local verdict, why = auto.decide(s, asking("execute", nil, "python3 make.py"))
 		assert(verdict == "block" and why == "auto: not safe to run unasked (90%)", why)
-	end)
-	deciding({ safe = 0.8, asked = 0.3 }, function()
-		local verdict = auto.decide(s, asking("execute", nil, "python3 clean.py"))
-		assert(verdict == nil, "safe but not what you asked for asks you")
 	end)
 	deciding(UNSURE, function()
 		assert(auto.decide(s, asking("execute", nil, "python3 x.py")) == nil, "unsure asks you")

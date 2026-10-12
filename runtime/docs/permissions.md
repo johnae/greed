@@ -104,10 +104,11 @@ Auto mode allows:
 Any other command, risky ones like `rm -rf /tmp/scratch` included, goes
 to the `decision` model. It reads what you asked for (your last few
 messages, never what the agent read or what commands printed), your rules
-and the command, and says how likely it's safe to run without asking you,
-and how likely it's what you asked for. Safe (60% or more) and asked for (50% or more) lets it run;
-unsafe (safe 20% or less) blocks it; anything in between asks you, so a
-model that can't tell asks you rather than guessing. Asked to clean out
+and the command, with your newest message apart from the ones before it,
+and says how likely the command is safe to run without asking you, given
+what you asked for. Safe (60% or more) lets it run; unsafe (20% or less)
+blocks it; anything in between asks you, so a model that can't tell asks
+you rather than guessing. Asked to clean out
 `/tmp/scratch`, an `rm -rf /tmp/scratch` goes ahead; a deploy you never
 mentioned doesn't. A blocked command goes back to the agent with the
 reason, to find another way, without stopping its turn; after three
