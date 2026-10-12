@@ -137,8 +137,10 @@ export type Session = {
 	failed: string?,
 	--- Messages you sent while it worked, oldest first, waiting to go:
 	--- Greed's own agent hears them at its next step, any agent as the
-	--- next prompt once its turn ends.
+	--- next prompt once its turn ends. `queued_images` are the images you
+	--- pasted for them, which go along.
 	queued: { string }?,
+	queued_images: { Attachment }?,
 	--- You stopped its turn (ctrl-c), until the next prompt.
 	cancelled: boolean?,
 	--- The helpers (subagent.luau) working on tasks it handed them now:
@@ -1120,10 +1122,10 @@ function M.chips(attached: { Attachment }): string
 	return table.concat(chips, "  ")
 end
 
--- What a prompt with `attached` images says of them to the agent: where
--- each is kept, and for an agent that can't see them (`seen` false), that
--- it can't and what it can do instead.
-local function about_images(attached: { Attachment }, seen: boolean): string
+--- What a prompt with `attached` images says of them to the agent: where
+--- each is kept, and for an agent that can't see them (`seen` false), that
+--- it can't and what it can do instead.
+function M.about_images(attached: { Attachment }, seen: boolean): string
 	local lines: { string } = {}
 	for i, image in attached do
 		table.insert(
@@ -1146,7 +1148,7 @@ local function prompt_once(session: Session, text: string, context: string?): (b
 		else session.sees_images == true
 	local said, shown = text, text
 	if attached then
-		said = `{text}\n\n{about_images(attached, seen)}`
+		said = `{text}\n\n{M.about_images(attached, seen)}`
 		shown = `{text}\n{M.chips(attached)}`
 	end
 	if driver then
@@ -1218,21 +1220,43 @@ local function prompt_once(session: Session, text: string, context: string?): (b
 	return true, nil
 end
 
---- Keeps `text`, a message you sent while the agent works, to send once it
---- can take it (see `Session.queued`).
+--- Keeps `text`, a message you sent while the agent works, and the images
+--- attached for it, to send once it can take them (see `Session.queued`).
 function M.queue(session: Session, text: string)
 	local queued = session.queued or {}
-	table.insert(queued, text)
+	if text ~= "" then
+		table.insert(queued, text)
+	end
 	session.queued = queued
+	local attached = session.attached
+	if attached then
+		local images = session.queued_images or {}
+		table.move(attached, 1, #attached, #images + 1, images)
+		session.queued_images = images
+		session.attached = nil
+	end
 	session.changed()
 end
 
---- The messages queued for the agent, as one, taken out of the queue; nil
---- when there are none.
-function M.take_queued(session: Session): string?
-	local queued = session.queued
-	session.queued = nil
-	return if queued and #queued > 0 then table.concat(queued, "\n\n") else nil
+--- The messages queued for the agent, as one, and the images that go with
+--- them, taken out of the queue; nil when there are none.
+function M.take_queued(session: Session): (string?, { Attachment }?)
+	local queued, images = session.queued, session.queued_images
+	session.queued, session.queued_images = nil, nil
+	if (queued == nil or #queued == 0) and images == nil then
+		return nil, nil
+	end
+	return table.concat(queued or {}, "\n\n"), images
+end
+
+-- Puts `images` (queued with messages) before those attached now, to go
+-- with the next prompt.
+local function attach_first(session: Session, images: { Attachment }?)
+	if images then
+		local now = session.attached or {}
+		table.move(now, 1, #now, #images + 1, images)
+		session.attached = images
+	end
 end
 
 --- Sends `text` to the agent and waits for its turn to end; what it says
@@ -1243,16 +1267,20 @@ end
 --- together, unless you stopped the turn. False and why when it can't.
 function M.prompt(session: Session, text: string, context: string?): (boolean, string?)
 	-- Those still queued when you stopped the last turn go first.
-	local left = if session.status == "idle" then M.take_queued(session) else nil
-	if left then
-		text = if text == "" then left else `{left}\n\n{text}`
+	if session.status == "idle" then
+		local left, images = M.take_queued(session)
+		if left then
+			text = if text == "" then left elseif left == "" then text else `{left}\n\n{text}`
+			attach_first(session, images)
+		end
 	end
 	local ok, err = prompt_once(session, text, context)
 	while ok and not session.cancelled and session.status == "idle" do
-		local queued = M.take_queued(session)
+		local queued, images = M.take_queued(session)
 		if queued == nil then
 			break
 		end
+		attach_first(session, images)
 		ok, err = prompt_once(session, queued, nil)
 	end
 	return ok, err

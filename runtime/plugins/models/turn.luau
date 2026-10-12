@@ -18,9 +18,10 @@ export type ToolSpec = { name: string, description: string, input: { [string]: a
 export type Call = { id: string, name: string, input: { [string]: any } }
 
 --- What was said: by you (`text`), by the model (`text` and the `calls` it
---- asked for), or a tool's result for the call `call`. What you said can
---- have `images` with it, PNG files by their paths, read when the request
---- is made. `thinking` is what the model thought before it answered, sent
+--- asked for), or a tool's result for the call `call`. What you said, and
+--- a tool's result carrying what you sent while it worked, can have
+--- `images` with it, PNG files by their paths, read when the request is
+--- made. `thinking` is what the model thought before it answered, sent
 --- back to providers with `thinking_back` (see `Request`), and `signed`
 --- Anthropic's thinking blocks as they came, with their signatures, for
 --- the models that want them back (see `body`).
@@ -159,10 +160,22 @@ local function anthropic_messages(said: { Said }, signed: boolean): { any }
 	end
 	for i, s in said do
 		if s.role == "tool" then
+			-- Images with it, as you sent them while it worked, go in it.
+			local data, gone = images_of(s)
+			local content: any = user_text(s, gone)
+			if #data > 0 then
+				content = { { type = "text", text = content } }
+				for _, png in data do
+					table.insert(content, {
+						type = "image",
+						source = { type = "base64", media_type = "image/png", data = png },
+					})
+				end
+			end
 			add("user", {
 				type = "tool_result",
 				tool_use_id = s.call,
-				content = s.text or "",
+				content = content,
 				is_error = s.error or nil,
 			})
 		elseif s.role == "assistant" then
@@ -220,7 +233,24 @@ local function openai_messages(system: string?, said: { Said }, thinking_back: b
 	end
 	for _, s in said do
 		if s.role == "tool" then
-			table.insert(messages, { role = "tool", tool_call_id = s.call, content = s.text or "" })
+			local data, gone = images_of(s)
+			table.insert(
+				messages,
+				{ role = "tool", tool_call_id = s.call, content = user_text(s, gone) }
+			)
+			-- A tool's result is text only here: images with it, as you sent
+			-- them while it worked, come right after, as yours.
+			if #data > 0 then
+				local parts: { any } =
+					{ { type = "text", text = "The images from my message above:" } }
+				for _, png in data do
+					table.insert(
+						parts,
+						{ type = "image_url", image_url = { url = `data:image/png;base64,{png}` } }
+					)
+				end
+				table.insert(messages, { role = "user", content = parts })
+			end
 		elseif s.role == "assistant" then
 			local message: { [string]: any } =
 				{ role = "assistant", content = assistant_content(s, thinking_back) }

@@ -4,6 +4,7 @@ local acp = require("@acp")
 local core = require("@core")
 local models: any = require("@models")
 local transcript = require("../transcript")
+local session = require("../session")
 
 local FAKE: acp.Agent = {
 	name = "fake",
@@ -1365,19 +1366,18 @@ test("other views drawn with core.ui aren't read as transcripts", function(t)
 	assert(transcript.row_at(buffer, 1) == nil)
 end)
 
-test("an image sent while the agent works says it goes with the next message", function(t)
+test("an image sent while the agent works is queued with the message, and shown so", function(t)
 	local s = start(t)
 	t:clipboard_image(PIXEL)
 	t:run("paste-image")
 	s.status = "working"
 	t:run("agent-send")
-	assert(
-		table.find(
-			t:messages(),
-			"it's working: the images go with your next message once this turn ends"
-		),
-		"says why nothing went"
-	)
-	assert(s.attached and #s.attached == 1, "the image stays for the next message")
+	assert(s.attached == nil, "taken from the box")
+	assert(s.queued_images and #s.queued_images == 1, "queued")
+	t:wait(30)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "  You · queued\n  🖼 image 1", 1, true), text)
+	local words, images = session.take_queued(s)
+	assert(words == "" and images and #images == 1, "taken out together")
 	s.status = "idle"
 end)

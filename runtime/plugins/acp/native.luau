@@ -1992,11 +1992,27 @@ local function prompt(
 		-- What you sent while it worked goes with the last result, as a
 		-- word from you: a message of yours after a tool's result would end
 		-- the model's turn for some providers.
-		local queued = session.take_queued(s)
+		local queued, pasted = session.take_queued(s)
 		if queued then
 			local last = state.said[#state.said]
-			last.text = `{last.text or ""}\n\n[The user, while you worked: {queued}]`
-			table.insert(s.entries, { kind = "user", text = queued })
+			local words, entry = queued, queued
+			if pasted then
+				-- The images go with the result too, to a model that sees them.
+				local sees = models.sees_images(state.role)
+				words = `{queued}\n\n{session.about_images(pasted, sees)}`
+				entry = if queued == ""
+					then session.chips(pasted)
+					else `{queued}\n{session.chips(pasted)}`
+				if sees then
+					local files: { string } = last.images or {}
+					for _, image in pasted do
+						table.insert(files, image.path)
+					end
+					last.images = files
+				end
+			end
+			last.text = `{last.text or ""}\n\n[The user, while you worked: {words}]`
+			table.insert(s.entries, { kind = "user", text = entry })
 			s.changed()
 		end
 		keep(s, state, true)

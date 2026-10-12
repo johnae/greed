@@ -419,12 +419,17 @@ local function history(s: Session): { core.UiNode }
 		part(function()
 			local out: Lines = { lines = {} }
 			-- What you sent while it worked, dimmed at the end until it goes.
-			local queued = s.queued
-			if queued and #queued > 0 then
+			local queued, images = s.queued or {}, s.queued_images
+			if #queued > 0 or images then
 				gap(out)
 				out.speaker = "user"
 				add(out, "  You · queued", "comment")
-				body(out, table.concat(queued, "\n\n"), "comment")
+				if #queued > 0 then
+					body(out, table.concat(queued, "\n\n"), "comment")
+				end
+				if images then
+					body(out, session.chips(images), "comment")
+				end
 			end
 			gap(out)
 			return out.lines
@@ -555,7 +560,7 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 	end
 	-- What follows what it's doing: how many messages wait, and for how long
 	-- it's been at it.
-	local queued = if s.queued then #s.queued else 0
+	local queued = if s.queued and #s.queued > 0 then #s.queued elseif s.queued_images then 1 else 0
 	local after = (if queued > 0 then ` · {queued} queued` else "")
 		.. (if busy(s) and s.since then ` · {elapsed(s.since)}` else "")
 	local right = ""

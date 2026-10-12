@@ -1292,13 +1292,9 @@ greed.command({
 		end
 		-- Sent while it works, it waits its turn.
 		if s.status == "working" or s.status == "waiting" then
-			if text ~= "" then
+			if text ~= "" or s.attached then
 				transcript.clear_prompt(ctx.buffer)
 				session.queue(s, text)
-			end
-			-- Only words can join a turn under way.
-			if s.attached then
-				greed.echo("it's working: the images go with your next message once this turn ends")
 			end
 			return
 		end

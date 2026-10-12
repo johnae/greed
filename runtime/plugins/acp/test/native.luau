@@ -3395,6 +3395,49 @@ local function encoded(list: { any }): { string }
 	return out
 end
 
+test(
+	"an image sent while Greed's agent works goes with the next result, to a model that sees",
+	function(t)
+		local session = require("../session")
+		local go = greed.signal()
+		local asked = model(function(_, n)
+			if n == 1 then
+				go:wait()
+				return {
+					text = "",
+					calls = { { id = "c1", name = "focus", input = {} } },
+					stop = "tools",
+				}
+			end
+			return DONE
+		end)
+		local sees = models.sees_images
+		models.sees_images = function()
+			return true
+		end
+		local dir = t:tempdir({ ["a.txt"] = "one\n" })
+		local s = beside(dir, "a.txt", 0, 0)
+		send(t, "look")
+		assert(status_of(s) == "working", status_of(s))
+		assert(session.attach(s, PIXEL))
+		send(t, "and this")
+		assert(s.attached == nil and s.queued_images, "queued with the message")
+		go:send(true)
+		t:wait_for(function()
+			return status_of(s) == "idle"
+		end)
+		models.sees_images = sees
+		local result = asked[2].said[3]
+		assert(result.role == "tool", result.role)
+		assert(
+			string.find(result.text, "[The user, while you worked: and this\n\n[Image 1", 1, true),
+			result.text
+		)
+		assert(result.images and #result.images == 1, "the image goes with it")
+		assert(string.find(said(s), "user: and this\n🖼 image 1", 1, true), said(s))
+	end
+)
+
 test("each request is the last one with more after it, byte for byte, as caches want", function(t)
 	local session = require("../session")
 	local s: any

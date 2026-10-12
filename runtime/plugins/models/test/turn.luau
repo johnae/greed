@@ -782,3 +782,33 @@ test("a request's timing says the wait for its first bytes, the whole, and the p
 		"no pace over no time"
 	)
 end)
+
+test(
+	"images with a tool's result go in it to Anthropic, and right after it to the rest",
+	function(t)
+		local dir = t:tempdir()
+		local png = "\x89PNG\r\n\x1a\nfake"
+		assert(greed.fs.write(`{dir}/a.png`, png))
+		local encoded = greed.base64.encode(png)
+		local said: { any } = {
+			{ role = "user", text = "look" },
+			{ role = "assistant", text = "", calls = { { id = "c1", name = "now", input = {} } } },
+			{
+				role = "tool",
+				call = "c1",
+				text = "noon\n\n[The user, while you worked: see this]",
+				images = { `{dir}/a.png` },
+			},
+		}
+		local anthropic = turn.body("anthropic", "m", { said = said }, 100)
+		local result = anthropic.messages[3].content[1]
+		assert(result.type == "tool_result" and result.tool_use_id == "c1")
+		assert(result.content[1].type == "text" and string.find(result.content[1].text, "^noon"))
+		assert(result.content[2].type == "image" and result.content[2].source.data == encoded)
+		local messages = turn.body("openai", "m", { said = said }, 100).messages
+		assert(messages[3].role == "tool" and string.find(messages[3].content, "^noon"))
+		local parts = messages[4].content
+		assert(messages[4].role == "user" and parts[2].type == "image_url", messages[4].role)
+		assert(parts[2].image_url.url == `data:image/png;base64,{encoded}`)
+	end
+)
