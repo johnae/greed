@@ -313,6 +313,44 @@ test("esc goes to the program, and esc twice quickly stops typing into it", func
 	t:keys("i ctrl-d")
 end)
 
+test("on the normal screen, esc esc leaves without the program getting an esc", function(t)
+	t:run("terminal", { "cat", "-v" })
+	t:keys("esc esc")
+	assert(greed.mode.get() == "helix", "left")
+	t:keys("i x enter")
+	shows(t, "x")
+	assert(not string.find(greed.view():buffer():text(), "^[", 1, true), "no esc reached it")
+	-- One esc on its own reaches it once the wait is up.
+	t:keys("esc")
+	t:wait(400)
+	t:keys("enter")
+	shows(t, "^[")
+	t:keys("ctrl-d")
+end)
+
+test(
+	"a full screen program gets esc at once, and so does any with terminal-esc-wait off",
+	function(t)
+		t:run("terminal", { "sh", "-c", "printf '\\033[?1049h'; cat -v" })
+		local terminal = assert(require("@terminal").terminal(greed.view():buffer()))
+		t:wait_for(function()
+			return terminal:modes().alternate
+		end)
+		t:keys("esc esc")
+		assert(greed.mode.get() == "helix", "left")
+		t:keys("i enter")
+		shows(t, "^[")
+		t:keys("ctrl-d")
+		greed.option.set("terminal-esc-wait", false)
+		t:run("terminal", { "cat", "-v" })
+		t:keys("esc esc")
+		t:keys("i enter")
+		shows(t, "^[")
+		t:keys("ctrl-d")
+		greed.option.set("terminal-esc-wait", true)
+	end
+)
+
 -- A shell session the way a shell that marks its prompts prints it: a
 -- command with output that fails with 2, then another prompt.
 local MARKED = table.concat({

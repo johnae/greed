@@ -909,23 +909,47 @@ greed.command({
 	end,
 })
 
+greed.option.define({
+	name = "terminal-esc-wait",
+	doc = "Hold esc a moment in terminals whose program draws on the normal screen, like Claude "
+		.. "Code, so esc esc stops typing into it without the program getting an esc",
+	default = true,
+})
+
 -- Two escs this close together (ms) leave the terminal.
 local DOUBLE_ESC = 300
 
 -- When esc last went to a program.
 local last_esc = -math.huge
 
--- Sends `key` to the program in the buffer's terminal; once it has exited,
--- stops typing into it instead.
-local function send(ctx: greed.Context, key: string)
-	local term = term_of(ctx.buffer)
+-- An esc held back to see if another follows: it goes to `term` once
+-- DOUBLE_ESC is up, unless another key comes first.
+local held_esc: { term: Term, view: greed.View }? = nil
+
+-- Sends `key` to `term`'s program; once it has exited, stops typing into it
+-- instead.
+local function send_to(term: Term?, view: greed.View, key: string)
 	if term == nil or term.terminal:exit_code() ~= nil then
 		greed.mode.set(core.style.home())
 		return
 	end
 	-- Typing into it sizes it for the screen you type on.
-	claim(term, ctx.view)
+	claim(term, view)
 	term.terminal:key(key)
+end
+
+-- Sends a held esc now, before what comes after it.
+local function flush_held()
+	local esc = held_esc
+	held_esc = nil
+	if esc then
+		send_to(esc.term, esc.view, "esc")
+	end
+end
+
+local function send(ctx: greed.Context, key: string)
+	flush_held()
+	send_to(term_of(ctx.buffer), ctx.view, key)
 end
 
 greed.command({
@@ -945,10 +969,31 @@ greed.command({
 		local now = greed.now()
 		if now - last_esc <= DOUBLE_ESC then
 			last_esc = -math.huge
+			-- The first never reached the program, if it was held.
+			held_esc = nil
 			greed.run("terminal-leave")
 			return
 		end
 		last_esc = now
+		local term = term_of(ctx.buffer)
+		-- Full screen programs (editors, pagers) get esc at once; for one
+		-- on the normal screen, like Claude Code, esc may mean "stop".
+		if
+			term
+			and greed.option.get("terminal-esc-wait") == true
+			and not term.terminal:modes().alternate
+		then
+			flush_held()
+			local esc = { term = term, view = ctx.view }
+			held_esc = esc
+			greed.spawn(function()
+				greed.sleep(DOUBLE_ESC)
+				if held_esc == esc then
+					flush_held()
+				end
+			end)
+			return
+		end
 		send(ctx, "esc")
 	end,
 })

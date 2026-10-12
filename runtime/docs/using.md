@@ -1613,7 +1613,7 @@ goes to the program, including ones the editor would otherwise take, like
 |---|---|
 | `space t` | Switch to a terminal, or open a new one |
 | `space T` (in a file) | Send the selection, or the cursor's line, to the terminal you used last and run it: for a REPL or a shell beside your code |
-| `ctrl-\`, `esc esc` | Stop typing into the program, to move around its output; one `esc` still goes to the program |
+| `ctrl-\`, `esc esc` | Stop typing into the program, to move around its output; one `esc` still goes to the program. For a program on the normal screen, like Claude Code, the first `esc` waits a moment, so `esc esc` reaches it not at all; full screen programs like editors get it at once (`:set terminal-esc-wait false` sends it at once everywhere) |
 | `ctrl-space` | The same, then open the leader: `ctrl-space f` finds a file from inside a terminal |
 | `alt-p` and the other `alt` pane keys | Work as in any pane: `alt-p x` closes the terminal's pane |
 | `f1` | The keys that work while typing into it |
