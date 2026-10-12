@@ -280,11 +280,17 @@ local function decide(
 	note: string?
 )
 	local edits, pending = {}, {}
+	-- Hunks whose text you changed since the agent proposed them: taking
+	-- one would lose your change, so it stays pending.
+	local changed_since = 0
 	for _, hunk in p.pending do
 		local at = position(p, hunk)
 		if at == nil then
 			hunk.status = "gone"
 			clear(p, hunk)
+		elseif accept and chosen(at) and p.buffer:slice(at.from, at.to) ~= hunk.old then
+			changed_since += 1
+			table.insert(pending, hunk)
 		elseif chosen(at) then
 			hunk.status = if accept then "accepted" else "rejected"
 			hunk.note = if accept then nil else note
@@ -297,6 +303,12 @@ local function decide(
 		end
 	end
 	p.pending = pending
+	if changed_since > 0 then
+		greed.echo(
+			`{changed_since} change{if changed_since == 1 then "" else "s"} not taken: you edited `
+				.. "that text since it was proposed; undo your edit, or reject it"
+		)
+	end
 	if #edits > 0 then
 		operations.join(p.op, function()
 			p.buffer:edit(function(e)

@@ -51,6 +51,29 @@ test("changes follow edits made while they wait", function(t)
 	assert(answer() == `accepted 1 of 1 changes to {path}`, answer())
 end)
 
+test("a change whose text you edited since isn't taken over your edit", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one two three\n" })
+	local path = dir .. "/a.txt"
+	greed.open(path)
+	local answer = propose(t, path, { { old_text = "three", new_text = "3" } })
+	local buffer = greed.view():buffer()
+	-- Typed inside the text the change replaces.
+	buffer:edit(function(e)
+		e:insert(10, "X")
+	end)
+	t:keys("space o A")
+	assert(buffer:text() == "one two thXree\n", buffer:text())
+	assert(answer() == nil, "it still waits")
+	assert(agent.pending() == 1)
+	assert(
+		string.find(table.concat(t:messages(), "\n"), "not taken", 1, true),
+		table.concat(t:messages(), " | ")
+	)
+	t:keys("u space o A")
+	assert(buffer:text() == "one two 3\n", buffer:text())
+	assert(answer() == `accepted 1 of 1 changes to {path}`, answer())
+end)
+
 test("old text has to be there exactly once, and changes can't overlap", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one one two\n" })
 	local path = dir .. "/a.txt"

@@ -190,10 +190,11 @@ Nothing changes until you decide, with the keys or by clicking `accept`,
 | `space o o` | Pick from every pending change |
 | `space o d` | Show the file with every change in, beside it; again to hide |
 
-Changes follow the edits you make while they wait. The agent waits too, and
-then hears which changes went in, with the errors and warnings the language
-server reports in those files once it has seen them, so it can fix what it
-broke without running the compiler. An agent that goes away while its
+Changes follow the edits you make while they wait; one whose own text you
+edited isn't accepted over your edit (undo it, or reject the change). The
+agent waits too, and then hears which changes went in, with the errors and
+warnings the language server reports in those files once it has seen them,
+so it can fix what it broke without running the compiler. An agent that goes away while its
 proposal waits, like a Claude Code session you quit, takes the proposal
 with it: what's left of it is rejected. What you accept from one proposal is an
 operation (see [Using Greed](using.md#operations)): `space u u` undoes it in
