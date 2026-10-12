@@ -6,6 +6,8 @@
 //! local result, err = greed.lsp.request(buffer, "textDocument/hover", params)
 //! ```
 
+use std::path::PathBuf;
+
 use greed_text::Author;
 use mlua::serde::SerializeOptions;
 use mlua::{Function, Lua, LuaSerdeExt, Table, UserDataRef, Value};
@@ -279,6 +281,14 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
         "restart",
         lua.create_function(|lua, language: Option<String>| {
             Ok(state_mut(lua).lsp.restart(language.as_deref()))
+        })?,
+    )?;
+    lsp.set(
+        "trust",
+        lua.create_function(|lua, folders: Option<Vec<String>>| {
+            let folders = folders.map(|list| list.into_iter().map(PathBuf::from).collect());
+            state_mut(lua).lsp.trust(folders);
+            Ok(())
         })?,
     )
 }

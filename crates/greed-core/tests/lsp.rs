@@ -1082,3 +1082,21 @@ fn diagnostics_past_the_end_or_inside_characters_are_kept_in_the_text() {
         &Plain,
     );
 }
+
+#[test]
+fn servers_start_only_in_trusted_folders_and_one_held_back_starts_once_trusted() {
+    let mut s = setup("fn main() {}");
+    s.lsp.trust(Some(vec![PathBuf::from("/somewhere/else")]));
+    assert!(s.lsp.sync(&s.editor).is_empty(), "held back quietly");
+    assert_eq!(s.starts(), 0, "nothing started");
+    let held = s.lsp.held();
+    assert_eq!(held.len(), 1, "{held:?}");
+    let (language, root) = held[0].clone();
+    assert!(language == "rust" && s.path.starts_with(&root), "{root:?}");
+    // A folder holding the server's trusts it too.
+    s.lsp
+        .trust(Some(vec![root.parent().unwrap().to_path_buf()]));
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.starts(), 1, "it starts once its folder is trusted");
+    assert!(s.lsp.held().is_empty());
+}

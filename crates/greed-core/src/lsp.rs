@@ -317,6 +317,11 @@ pub struct Lsp {
     /// Every file's latest problems, by URI, including files not open, with
     /// how their server counts positions.
     problems: HashMap<String, (Encoding, Vec<Problem>)>,
+    /// The folders servers may start in, as servers run a project's code
+    /// (a build script, a config file): `None` lets them start anywhere.
+    trusted: Option<Vec<PathBuf>>,
+    /// Servers that would have started outside them, until they may.
+    held: HashSet<Key>,
     events: Receiver<Event>,
     sender: Sender<Event>,
 }
@@ -335,6 +340,8 @@ impl Default for Lsp {
             stops: HashMap::new(),
             given_up: Vec::new(),
             problems: HashMap::new(),
+            trusted: None,
+            held: HashSet::new(),
             events,
             sender,
         }
@@ -387,6 +394,27 @@ impl Lsp {
     /// How each language's server starts.
     pub fn configs(&self) -> &[ServerConfig] {
         &self.configs
+    }
+
+    /// Lets servers start only in `folders` and the folders inside them
+    /// (anywhere, with `None`). A server held back starts at the next sync
+    /// once its folder is in them.
+    pub fn trust(&mut self, folders: Option<Vec<PathBuf>>) {
+        self.trusted = folders;
+    }
+
+    /// The servers held back, as their language and the folder they'd run
+    /// in, sorted.
+    pub fn held(&self) -> Vec<Key> {
+        let mut held: Vec<Key> = self.held.iter().cloned().collect();
+        held.sort();
+        held
+    }
+
+    fn may_start(&self, root: &Path) -> bool {
+        self.trusted
+            .as_ref()
+            .is_none_or(|folders| folders.iter().any(|folder| root.starts_with(folder)))
     }
 
     /// Starts servers with `launcher` instead of running their commands.
@@ -564,6 +592,15 @@ impl Lsp {
         else {
             return Ok(None);
         };
+        if !self.may_start(root) {
+            // Only one that would run: there's nothing to trust for one
+            // that isn't installed.
+            if config.installed_command().is_some() {
+                self.held.insert(key);
+            }
+            return Ok(None);
+        }
+        self.held.remove(&key);
         let transport = match (self.launcher)(&config, root) {
             Ok(Some(transport)) => transport,
             // Not having a server installed is normal, so it's not an error.

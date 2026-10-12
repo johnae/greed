@@ -1469,6 +1469,8 @@ export type Lsp = {
 	remove: (language: string) -> (),
 	--- Stops the servers running for `language` (every language without one) and starts them again, as after they got stuck. Returns how many were running. Needs "proc".
 	restart: (language: string?) -> number,
+	--- Lets servers start only in `folders` and the folders inside them, as a server runs a project's code (a build script, a config file); nil lets them start anywhere. One held back starts once its folder is trusted. Needs "proc".
+	trust: (folders: { string }?) -> (),
 	--- The commands set for each language's server, by language.
 	servers: () -> { [string]: { { string } } },
 	--- The servers running now, by language and then root.
