@@ -341,6 +341,40 @@ test("a card's chart is as big as the card, coloured, with its scene over it", f
 	assert(placed and placed.rows == 2 and placed.cols == 80, "its scene over its two rows")
 end)
 
+test("a watched chart's scene stays over its card as each new run's output comes in", function(t)
+	local dir, path = make(
+		t,
+		'# ops\n\n```sh every=1 height=3\nprintf "a $(date +%N | cut -c1)\\nb 3\\n" | chart bar\n```\n'
+	)
+	local b = assert(board.open(path, { root = dir }))
+	local function placed(): boolean
+		for _, mark in b.buffer:decorations("board-charts") do
+			if mark.scene then
+				return true
+			end
+		end
+		return false
+	end
+	t:wait_for(placed)
+	-- Between tasks, where a frame can be drawn, over several runs.
+	local runs, seen, missing = 0, 0, 0
+	local function hear(event: greed.BufferChanged)
+		if event.buffer == b.buffer then
+			runs += 1
+		end
+	end
+	greed.on("buffer.changed", hear)
+	while runs < 6 do
+		t:wait(1)
+		seen += 1
+		if not placed() then
+			missing += 1
+		end
+	end
+	greed.off("buffer.changed", hear)
+	assert(missing == 0, `the characters showed in {missing} of {seen} looks`)
+end)
+
 test("a board's front matter sets its columns: a wide card a row, the others halves", function()
 	local parsed = board.file.parse("---\ncolumns: 2\n---\n# ops\n\n```sh wide\na\n```\n")
 	assert(parsed.columns == 2 and parsed.title == "ops" and #parsed.cards == 1)
