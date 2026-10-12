@@ -17,8 +17,36 @@ M.SCHEMA = 1
 -- What plugins add to the status, by name (`part`).
 local parts: { [string]: () -> any } = {}
 
---- This session's status: its name, build and project, what needs you
---- (oldest first) and its agents with their state.
+-- This machine's id, once read or made.
+local machine_id: string? = nil
+
+--- The machine this runs on, as hubs tell machines apart: an id made once
+--- and kept in Greed's data folder, so it stays when the machine is renamed
+--- and differs between machines of one name, and its name to show. Where
+--- it can't be kept, it lasts as long as this session.
+function M.host(): { id: string, name: string }
+	if machine_id == nil then
+		local data = greed.fs.dirs().data
+		local file = if data then `{data}/machine-id` else nil
+		local read, kept = pcall(function()
+			return if file then greed.fs.read(file) else nil
+		end)
+		machine_id = if read and kept then string.match(kept, "^%s*(%x+)") else nil
+		if machine_id == nil then
+			local id = greed.hash.random(8)
+			machine_id = id
+			if file then
+				pcall(function()
+					greed.fs.write(file, `{id}\n`)
+				end)
+			end
+		end
+	end
+	return { id = machine_id :: string, name = greed.hostname() or "this machine" }
+end
+
+--- This session's status: its name, build and project, the machine it's on,
+--- what needs you (oldest first) and its agents with their state.
 function M.status(): { [string]: any }
 	local needs = {}
 	for _, need in core.attention.list() do
@@ -63,6 +91,7 @@ function M.status(): { [string]: any }
 		schema = M.SCHEMA,
 		session = greed.session.current(),
 		build = greed.session.build(),
+		host = M.host(),
 		root = greed.project.current().root,
 		attention = greed.json.array(needs),
 		agents = greed.json.array(agents),
