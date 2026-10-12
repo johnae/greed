@@ -29,6 +29,16 @@ pub struct Terminals {
     pub events: Receiver<Event>,
 }
 
+impl Terminals {
+    /// Whether a program runs in any terminal, so what tests wait for may
+    /// come from it.
+    pub(super) fn running(&self) -> bool {
+        self.open
+            .values()
+            .any(|(terminal, _)| terminal.exit_code().is_none())
+    }
+}
+
 impl Default for Terminals {
     fn default() -> Self {
         let (sender, events) = crossbeam_channel::unbounded();

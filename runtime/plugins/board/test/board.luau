@@ -113,9 +113,15 @@ test("a board shows each card's output, cut at its height, under its section", f
 	t:wait_for(function()
 		return not sh.buffer:valid()
 	end)
-	for _, block in b.blocks do
-		assert(block.status ~= "running", "it stops what ran")
-	end
+	-- Each ends once its program has.
+	t:wait_for(function()
+		for _, block in b.blocks do
+			if block.status == "running" then
+				return false
+			end
+		end
+		return true
+	end)
 end)
 
 test("saving a board's file shows the board as it says, in the blocks it had", function(t)

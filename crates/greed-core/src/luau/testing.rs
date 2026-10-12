@@ -907,7 +907,7 @@ impl UserData for TestContext {
             wait_until(
                 lua,
                 &done,
-                Duration::from_secs_f64(ms.unwrap_or(5000.0).max(0.0) / 1000.0),
+                Duration::from_secs_f64(ms.unwrap_or(15000.0).max(0.0) / 1000.0),
             )
         });
         methods.add_method("floats", |lua, _, ()| {

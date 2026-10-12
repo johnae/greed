@@ -58,7 +58,8 @@ export type TestContext = {
 	--- Lets `ms` milliseconds pass for commands waiting on greed.sleep.
 	wait: (self: TestContext, ms: number) -> (),
 	--- Waits, for real, until `done` returns true, passing on terminal
-	--- output as it comes; fails after `ms` milliseconds (default 5000).
+	--- output as it comes; fails after `ms` milliseconds (default 15000, room
+	--- for a busy machine running many tests at once).
 	wait_for: (self: TestContext, done: () -> boolean, ms: number?) -> (),
 	--- A new, empty directory holding `files` (paths in it, to their text).
 	--- Folders in the paths are created.

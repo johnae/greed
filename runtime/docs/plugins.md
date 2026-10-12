@@ -1916,7 +1916,8 @@ colors. `t:status()` the status line, `t:floats()` the floats' text and
 `t:notices()` the desktop notifications sent; `t:clipboard_image(png)`
 sets what `greed.clipboard.image()` gives. `t:wait(ms)` moves the clock
 forward for code that sleeps, `t:wait_for(check)` waits for real until
-`check()` is true (for a program's output), and `t:tempdir(files)` makes a
+`check()` is true (for a program's output; 15 seconds at most unless told
+otherwise), and `t:tempdir(files)` makes a
 folder of files to work on; `t:open(path)` opens one of them as
 `greed.open` does, without your plugin needing `fs.read` for it.
 `local dir, git = t:repo("git", files)` makes a repository (jj or git)

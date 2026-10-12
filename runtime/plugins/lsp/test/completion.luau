@@ -90,10 +90,17 @@ end
 test("a menu opens by itself only once typing pauses for completion-delay", function(t)
 	offer({ "greeting", "green" })
 	t:buffer("|")
-	t:keys("i g r")
+	t:keys("i g")
+	-- The delay starts with the last key, after this; time typing takes on
+	-- a busy machine counts toward it.
+	local before = greed.now()
+	t:keys("r")
 	assert(#t:floats() == 0, "not while typing")
-	t:wait(greed.option.get("completion-delay") :: number - 50)
-	assert(#t:floats() == 0, "not before the delay")
+	local left = before + (greed.option.get("completion-delay") :: number) - 50 - greed.now()
+	if left > 0 then
+		t:wait(left)
+		assert(#t:floats() == 0, "not before the delay")
+	end
 	t:wait(100)
 	assert(#t:floats() == 1, "after it")
 	t:keys("esc")

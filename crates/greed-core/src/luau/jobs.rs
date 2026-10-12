@@ -196,33 +196,45 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
     }
 }
 
-/// Waits for what a program prints next when code waits on one, for tests,
-/// up to a while. Returns whether there was something to wait for.
+/// Waits for what a program prints next when code may wait on one, for
+/// tests, up to a while. Returns whether there was something to wait for.
 pub(super) fn await_child(lua: &Lua) -> LuaResult<bool> {
     const LIMIT: Duration = Duration::from_secs(10);
-    if !super::process::awaited(lua) {
+    if !awaited(lua) {
         return Ok(false);
     }
-    let finished = state(lua).jobs.finished.clone();
-    let done = finished
-        .recv_timeout(LIMIT)
-        .map_err(|_| mlua::Error::runtime("a program waited on said nothing for 10s"))?;
-    finish(lua, done)?;
+    if !await_child_for(lua, LIMIT)? {
+        return Err(mlua::Error::runtime(
+            "a program waited on said nothing for 10s",
+        ));
+    }
     Ok(true)
 }
 
-/// Waits up to `wait` for what a program prints next, for tests, and
-/// finishes it. Returns whether something came.
+/// Waits up to `wait` for what a program prints next, through a pipe or in
+/// a terminal, for tests, and handles it. Returns whether something came.
 pub(super) fn await_child_for(lua: &Lua, wait: Duration) -> LuaResult<bool> {
-    let finished = state(lua).jobs.finished.clone();
-    match finished.recv_timeout(wait) {
-        Ok(done) => {
-            finish(lua, done)?;
+    let (finished, events) = {
+        let state = state(lua);
+        (state.jobs.finished.clone(), state.terminals.events.clone())
+    };
+    crossbeam_channel::select! {
+        recv(finished) -> done => {
+            finish(lua, done.map_err(mlua::Error::external)?)?;
             Ok(true)
         }
-        Err(RecvTimeoutError::Timeout) => Ok(false),
-        Err(err) => Err(mlua::Error::external(err)),
+        recv(events) -> event => {
+            super::terminal::handle(lua, event.map_err(mlua::Error::external)?)?;
+            Ok(true)
+        }
+        default(wait) => Ok(false),
     }
+}
+
+/// Whether a test may be waiting on a program: one it reads from, or one
+/// running in a terminal.
+pub(super) fn awaited(lua: &Lua) -> bool {
+    super::process::awaited(lua) || state(lua).terminals.running()
 }
 
 /// Waits for every running job and finishes it, and lets work cut into time

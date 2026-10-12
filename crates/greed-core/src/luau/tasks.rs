@@ -704,7 +704,7 @@ pub(super) fn run_to_end(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> Lua
                 // reaches them, as the editor fires them, rather than racing
                 // ahead (a plugin polling every second would spin) while
                 // the program takes the time it takes.
-                Some(at) if super::process::awaited(lua) => {
+                Some(at) if super::jobs::awaited(lua) => {
                     let due = at.saturating_duration_since(state(lua).tasks.now());
                     if due.is_zero() {
                         advance(lua, at)?;
