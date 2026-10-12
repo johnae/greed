@@ -933,7 +933,10 @@ greed.tab.set_layout({
   query keep the items it says have them, as `space space` does with kinds.
   `keys = { ["ctrl-e"] = function(items, current) ... end }` adds keys of
   the picker's own, and `fallback(query)` runs on `enter` when nothing
-  matches.
+  matches. `require("@picker").add_places(name, function() ... end)` adds
+  places of your own to `space space`, each `{ kind = "session", label =
+  "notes on eris", tags = { "eris" }, go = function() ... end }`, after the
+  buffers; `@kind` and `@tag` keep them and `enter` runs `go`.
 - The completion menu asks sources before the language server, in any
   buffer, a file or not: `require("@lsp").completion.source(function(view,
   ask) ... end)` returns items like `{ label = "src/", text = "src/", from

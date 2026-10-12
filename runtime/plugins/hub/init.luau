@@ -473,9 +473,20 @@ agent.method("hub/name", function()
 	return M.hub()
 end)
 
---- An agent somewhere: the session it's in, what that session's status
---- says of it, and for another machine its name and how to get there: the
---- ssh host that reaches it, or `home` for the machine your client runs on.
+--- Another session, here or on another machine: its name, what it says
+--- of itself when that's known, and for another machine its name and how
+--- to get there: the ssh host that reaches it, or `home` for the machine
+--- your client runs on.
+export type Session = {
+	session: string,
+	status: Status?,
+	machine: string?,
+	via: string?,
+	home: boolean?,
+}
+
+--- An agent in another session: the session, as `M.sessions` gives it,
+--- with what its status says of the agent.
 export type Found = {
 	session: string,
 	agent: { [string]: any },
@@ -484,14 +495,14 @@ export type Found = {
 	home: boolean?,
 }
 
---- Where `found` is, as you're told it: its session, and the machine when
+--- Where a session is, as you're told it: its name, and the machine when
 --- it's another.
-function M.place(found: Found): string
+function M.place(found: { session: string, machine: string? }): string
 	return if found.machine then `{found.session} on {found.machine}` else found.session
 end
 
---- Sends the client to the session `found` is in, wherever it is.
-function M.go(found: Found)
+--- Sends the client to a session, wherever it is.
+function M.go(found: { session: string, via: string?, home: boolean? })
 	if found.home then
 		greed.session.switch({ name = found.session, home = true })
 	else
@@ -499,41 +510,102 @@ function M.go(found: Found)
 	end
 end
 
+--- The other sessions here and on the other machines, by machine then
+--- name; those here even before the hub has heard from them.
+function M.sessions(): { Session }
+	local out: { Session } = {}
+	local me = greed.session.current()
+	local here = M.machine()
+	for _, running in greed.session.list() do
+		if running.name ~= me then
+			table.insert(out, { session = running.name, status = here[running.name] })
+		end
+	end
+	for _, there in M.machines() do
+		for name, status in there.sessions do
+			table.insert(out, {
+				session = name,
+				status = status,
+				machine = there.host.name,
+				via = if there.home then nil else there.via or there.host.name,
+				home = there.home,
+			})
+		end
+	end
+	table.sort(out, function(a: Session, b: Session): boolean
+		if a.machine ~= b.machine then
+			return (a.machine or "") < (b.machine or "")
+		end
+		return a.session < b.session
+	end)
+	return out
+end
+
 --- The agents of the other sessions here and on the other machines, by
 --- machine, session, then label.
 function M.elsewhere(): { Found }
 	local out: { Found } = {}
-	local me = greed.session.current()
-	local function add(statuses: { [string]: Status }, there: Machine?)
-		for name, status in statuses do
-			local agents = status.agents
-			if (there or name ~= me) and type(agents) == "table" then
-				for _, said in agents do
-					table.insert(out, {
-						session = name,
-						agent = said,
-						machine = there and there.host.name,
-						via = there and not there.home and (there.via or there.host.name) or nil,
-						home = there and there.home,
-					})
-				end
+	for _, found in M.sessions() do
+		local agents = found.status and found.status.agents
+		if type(agents) == "table" then
+			local by: { Found } = {}
+			for _, said in agents do
+				table.insert(by, {
+					session = found.session,
+					agent = said,
+					machine = found.machine,
+					via = found.via,
+					home = found.home,
+				})
 			end
+			table.sort(by, function(a: Found, b: Found): boolean
+				return tostring(a.agent.label) < tostring(b.agent.label)
+			end)
+			table.move(by, 1, #by, #out + 1, out)
 		end
 	end
-	add(M.machine())
-	for _, there in M.machines() do
-		add(there.sessions, there)
-	end
-	table.sort(out, function(a: Found, b: Found): boolean
-		if a.machine ~= b.machine then
-			return (a.machine or "") < (b.machine or "")
-		elseif a.session ~= b.session then
-			return a.session < b.session
-		end
-		return tostring(a.agent.label) < tostring(b.agent.label)
-	end)
 	return out
 end
+
+--- Your other sessions and the agents in them, everywhere, as `space space`
+--- lists them: `@session` or `@agent` keeps one kind, and an agent's state
+--- (`@waiting`) or a machine's name (`@eris`, `@here`) those.
+function M.places(): { picker.Place }
+	local out: { picker.Place } = {}
+	for _, found in M.sessions() do
+		local states: { string } = {}
+		local agents = found.status and found.status.agents
+		if type(agents) == "table" then
+			for _, said in agents do
+				table.insert(states, tostring(said.status))
+			end
+		end
+		local said = agent.status_summary(states)
+		table.insert(out, {
+			kind = "session",
+			label = if said then `{M.place(found)}  {said}` else M.place(found),
+			tags = { found.machine or "here" },
+			go = function()
+				M.go(found)
+			end,
+		})
+	end
+	for _, found in M.elsewhere() do
+		local said = found.agent
+		local what = if said.question then `: {said.question}` else ""
+		table.insert(out, {
+			kind = "agent",
+			label = `{said.agent or said.label} {said.status} in {M.place(found)}{what}`,
+			tags = { tostring(said.status), found.machine or "here" },
+			go = function()
+				M.go(found)
+			end,
+		})
+	end
+	return out
+end
+
+picker.add_places("hub", M.places)
 
 -- How the agents elsewhere are doing, as the status line says it: "◆ 1
 -- waiting in greed-2", or "elsewhere" for several sessions.
@@ -565,19 +637,17 @@ greed.command({
 	doc = "The agents of every other session, here and on the machines the hub follows: enter goes there (space i A)",
 	run = function()
 		local items: { picker.Item } = {}
-		for _, found in M.elsewhere() do
-			local said = found.agent
-			table.insert(items, {
-				label = `{M.place(found)}  {said.agent or said.label}  {said.status}`,
-				value = found,
-			})
+		for _, place in M.places() do
+			if place.kind == "agent" then
+				table.insert(items, { label = place.label, value = place })
+			end
 		end
 		if #items == 0 then
 			greed.echo("no agents in your other sessions")
 			return
 		end
 		picker.pick("Agents in your sessions", items, function(item)
-			M.go(item.value)
+			item.value.go()
 		end)
 	end,
 })

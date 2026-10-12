@@ -15,6 +15,7 @@ local picker = require("@self/picker")
 export type Item = picker.Item
 export type Preview = picker.Preview
 export type Options = picker.Options
+export type Place = picker.Place
 
 require("@self/pickers")
 require("@self/switch")

@@ -557,6 +557,20 @@ fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
              return 'no'",
         ) == "yes"
     });
+    // space space lists it, and the session it's in, by the machine's name.
+    let places = eval(
+        "alpha",
+        false,
+        "local out = {} for _, p in require('@hub').places() do \
+         table.insert(out, `{p.kind}: {p.label} [{table.concat(p.tags or {}, ' ')}]`) end \
+         return table.concat(out, '\\n')",
+    );
+    assert!(
+        places.contains("agent: claude waiting in beta on ")
+            && places.contains("session: beta on ")
+            && places.contains("[waiting "),
+        "{places}"
+    );
     let notice = next_notice(&mut attached);
     assert!(notice.title.contains("waits for you"), "{notice:?}");
     assert!(notice.body.contains("beta on "), "{notice:?}");

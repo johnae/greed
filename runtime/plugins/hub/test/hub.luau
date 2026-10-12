@@ -113,9 +113,9 @@ test("hub-hosts names more machines to follow", function(t)
 	hub.dirs.data = data
 end)
 
-test("another machine's agent is placed on it", function()
-	assert(hub.place({ session = "greed-2", agent = {} }) == "greed-2")
-	assert(hub.place({ session = "greed-2", agent = {}, machine = "eris" }) == "greed-2 on eris")
+test("a session on another machine is placed on it", function()
+	assert(hub.place({ session = "greed-2" }) == "greed-2")
+	assert(hub.place({ session = "greed-2", machine = "eris" }) == "greed-2 on eris")
 end)
 
 test("machines you reached with greed ssh lately are followed, and can be forgotten", function(t)

@@ -641,6 +641,49 @@ test("space space switches to anything open, says what each is and keeps a kind 
 	scratch:set_kept(false)
 end)
 
+test("space space lists what plugins add, kept by kind or tag, and enter goes there", function(t)
+	local picker = require("@picker")
+	local went: { string } = {}
+	local remove = picker.add_places("test-places", function()
+		return {
+			{
+				kind = "agent",
+				label = "claude waiting in greed-2 on eris",
+				tags = { "waiting", "eris" },
+				go = function()
+					table.insert(went, "claude")
+				end,
+			},
+			{
+				kind = "session",
+				label = "notes on mini",
+				tags = { "mini" },
+				go = function()
+					table.insert(went, "notes")
+				end,
+			},
+		}
+	end)
+	t:buffer("|here")
+	t:keys("space space")
+	local list = table.concat(t:floats(), "\n")
+	assert(string.find(list, "agent    claude waiting in greed-2 on eris", 1, true), list)
+	assert(string.find(list, "session  notes on mini", 1, true), list)
+	-- A tag keeps those it's on.
+	t:keys("@ e r i s")
+	t:wait_for(function()
+		return not string.find(table.concat(t:floats(), "\n"), "notes on mini", 1, true)
+	end)
+	t:keys("enter")
+	t:keys("space space @ s e s s enter")
+	assert(table.concat(went, " ") == "claude notes", table.concat(went, " "))
+	remove()
+	t:keys("space space")
+	list = table.concat(t:floats(), "\n")
+	assert(not string.find(list, "notes on mini", 1, true), list)
+	t:keys("esc")
+end)
+
 test(":watches lists what's watched, and enter stops watching one", function(t)
 	local core = require("@core")
 	t:buffer("|x")

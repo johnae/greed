@@ -475,6 +475,44 @@ local M = {}
 
 M.KEYS = KEYS
 
+--- Somewhere to switch to beside the buffers `space space` lists, from
+--- another plugin: what it is (`kind`, shown before its label and kept by
+--- `@kind`), its label, more words `@` keeps it by (`tags`, like "waiting"
+--- or a machine's name), and what enter does.
+export type Place = { kind: string, label: string, tags: { string }?, go: () -> () }
+
+-- What plugins add to `space space`, by name.
+local places: { [string]: () -> { Place } } = {}
+
+--- Adds `found()` to what `space space` lists, as `name`, after the
+--- buffers; it goes when the plugin that added it does, or when the
+--- function returned is called.
+function M.add_places(name: string, found: () -> { Place }): () -> ()
+	local remove = core.registry.set(places, name, found)
+	greed.plugin.tie(remove)
+	return remove
+end
+
+--- What the plugins add to `space space`, by the names they added them
+--- as; one that fails adds nothing.
+function M.places(): { Place }
+	local names: { string } = {}
+	for name in places do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	local out: { Place } = {}
+	for _, name in names do
+		local ok, found = pcall(places[name])
+		if ok then
+			for _, place in found do
+				table.insert(out, place)
+			end
+		end
+	end
+	return out
+end
+
 type Last = { title: string, items: { Item }, choose: (item: Item) -> (), options: Options? }
 
 -- The last picker each client opened, for `resume`.
