@@ -209,11 +209,14 @@ function M.prepare(shell: Shell, block: Block)
 	if entry.status == "loading" then
 		local pending: Environment = entry
 		local waited = greed.signal()
+		-- Stopped while it waits, it runs without the environment: the stop
+		-- was for the wait, not for the command.
 		local function stop()
+			block.stop, block.stopping = nil, nil
 			waited:send(false)
 		end
 		block.note = `waiting for {entry.provider}`
-		block.job = { interrupt = stop, kill = stop }
+		state.give_job(block, { interrupt = stop, kill = stop })
 		log.draw_block(shell, block)
 		greed.spawn(function()
 			waited:send(loading(pending):wait())

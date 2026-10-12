@@ -422,7 +422,7 @@ function M.pipe(
 	end
 	c:close()
 	local stopped: string? = nil
-	block.job = {
+	state.give_job(block, {
 		interrupt = function()
 			stopped = "INT"
 			c:signal("INT")
@@ -431,7 +431,7 @@ function M.pipe(
 			stopped = "KILL"
 			c:kill()
 		end,
-	}
+	})
 	greed.spawn(function()
 		while true do
 			local piece, from = c:read()

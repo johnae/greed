@@ -519,14 +519,14 @@ local function capture(
 		return "", err or `can't start {wrapped.argv[1]}`, 127
 	end
 	local c = child :: greed.Child
-	block.job = {
+	state.give_job(block, {
 		interrupt = function()
 			c:signal("INT")
 		end,
 		kill = function()
 			c:kill()
 		end,
-	}
+	})
 	if input and input ~= "" then
 		c:write(input)
 	end
@@ -969,27 +969,38 @@ function M.wait(block: Block): Block
 	return block.done:wait()
 end
 
---- Interrupts `block`, as ctrl-c does in a terminal. False when it isn't
---- running.
-function M.interrupt(block: Block): boolean
-	local job = block.job
-	if job == nil or block.status ~= "running" then
+-- Tells `block` to stop as `how` says. One whose program hasn't started
+-- yet, as when ctrl-c comes just after enter or while its environment
+-- loads, is stopped as soon as it has (see `state.give_job`). False when
+-- it isn't running.
+local function stop(block: Block, how: "interrupt" | "kill"): boolean
+	if block.status ~= "running" then
 		return false
 	end
 	block.stopping = true
-	job.interrupt()
+	if block.stop ~= "kill" then
+		block.stop = how
+	end
+	local job = block.job
+	if job then
+		if how == "kill" then
+			job.kill()
+		else
+			job.interrupt()
+		end
+	end
 	return true
+end
+
+--- Interrupts `block`, as ctrl-c does in a terminal. False when it isn't
+--- running.
+function M.interrupt(block: Block): boolean
+	return stop(block, "interrupt")
 end
 
 --- Stops `block` for good. False when it isn't running.
 function M.kill(block: Block): boolean
-	local job = block.job
-	if job == nil or block.status ~= "running" then
-		return false
-	end
-	block.stopping = true
-	job.kill()
-	return true
+	return stop(block, "kill")
 end
 
 -- `env` also says what environment the folder brings (envs.luau), and

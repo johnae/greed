@@ -279,7 +279,7 @@ function M.start(shell: Shell, block: Block, line: string, every: number, captur
 		end
 	end
 	local own: state.Job = { interrupt = stop, kill = stop }
-	block.job = own
+	state.give_job(block, own)
 	local minutes = greed.option.get("shell-watch-minutes") :: number
 	local started = greed.now()
 	greed.spawn(function()
@@ -390,14 +390,14 @@ function M.follow(shell: Shell, block: Block, line: string, open: Open)
 	end
 	local c = child :: greed.Child
 	c:close()
-	block.job = {
+	state.give_job(block, {
 		interrupt = function()
 			c:signal("INT")
 		end,
 		kill = function()
 			c:kill()
 		end,
-	}
+	})
 	greed.spawn(function()
 		local header: string? = nil
 		local two = false

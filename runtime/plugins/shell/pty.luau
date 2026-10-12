@@ -416,7 +416,7 @@ function M.start(shell: Shell, block: Block, argv: { string }, options: Options?
 		exited = nil,
 	}
 	runs[t:id()] = r
-	block.job = {
+	state.give_job(block, {
 		interrupt = function()
 			r.stopped = "INT"
 			t:key("ctrl-c")
@@ -429,7 +429,7 @@ function M.start(shell: Shell, block: Block, argv: { string }, options: Options?
 			return M.handoff(block)
 		end,
 		terminal = t,
-	}
+	})
 	if opts.terminal then
 		M.handoff(block)
 	end

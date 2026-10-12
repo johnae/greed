@@ -111,6 +111,9 @@ export type Block = {
 	range: greed.Tracked?,
 	--- The job running it, to interrupt or stop.
 	job: Job?,
+	--- How it was told to stop, kept so a job it gets after, as when
+	--- ctrl-c came before its program started, is stopped the same way.
+	stop: ("interrupt" | "kill")?,
 	--- Sent once it's done.
 	done: greed.Signal,
 	--- What it showed the run before, when it ran again in its place.
@@ -229,6 +232,17 @@ M.views = {} :: { [number]: greed.View }
 
 local next_id = 0
 local next_uid = 0
+
+--- Gives `block` the job running it; one told to stop already, before it
+--- had this job, is stopped at once.
+function M.give_job(block: Block, job: Job)
+	block.job = job
+	if block.stop == "kill" then
+		job.kill()
+	elseif block.stop == "interrupt" then
+		job.interrupt()
+	end
+end
 
 function M.new_id(): number
 	next_id += 1
