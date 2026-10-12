@@ -277,9 +277,10 @@ fn cores() -> usize {
     std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
 }
 
-/// One of the machine's cores, taken by a test while it runs, so that tests
+/// Two of the machine's cores, taken by a test while it runs, so that tests
 /// started from many threads at once, as `cargo test` starts them, don't
-/// crowd the machine until real-time waits in them give up.
+/// crowd the machine until real-time waits in them give up. Two, as a test
+/// keeps more than one busy: the programs it starts and its jobs' threads.
 struct Core;
 
 static CORES_TAKEN: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
@@ -290,7 +291,7 @@ impl Core {
         let mut taken = freed
             .wait_while(
                 taken.lock().unwrap_or_else(PoisonError::into_inner),
-                |taken| *taken >= cores(),
+                |taken| *taken >= cores().div_ceil(2),
             )
             .unwrap_or_else(PoisonError::into_inner);
         *taken += 1;

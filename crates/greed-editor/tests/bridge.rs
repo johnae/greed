@@ -304,9 +304,20 @@ fn a_session_loads_the_config_greed_config_dir_points_at() {
         .args(["bridge", "--session", &name, file.to_str().unwrap()])
         .env("GREED_CONFIG_DIR", &config);
     let mut bridge = Bridge::spawn(command);
-    let rows = bridge.attach();
-    let status = rows.last().unwrap();
-    assert!(status.contains("config from afar"), "{rows:?}");
+    bridge.attach();
+    // Among the messages: the status line may show a later one, like a
+    // plugin slow to start on a busy machine.
+    let said = greed()
+        .args([
+            "ctl",
+            "eval",
+            "code=return table.concat(require('@greed').messages(), '\\n')",
+        ])
+        .env("GREED_SESSION", &name)
+        .output()
+        .unwrap();
+    let said = String::from_utf8(said.stdout).unwrap();
+    assert!(said.contains("config from afar"), "{said}");
     // The plugin in the config's plugins folder loaded too.
     let listed = greed()
         .args([

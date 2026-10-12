@@ -164,14 +164,15 @@ test("by default error output is only kept, and read gives what it printed", fun
 end)
 
 test("a program in a group of its own is signalled with what it started", function(t)
-	-- The sleep ignores INT, so it outlives the shell and holds its output
-	-- open; it says so once it does.
-	local script = "(trap '' INT; echo started; exec sleep 100) & wait"
+	-- The sleep ignores TERM, so it outlives the shell and holds its output
+	-- open; it says so once it does. TERM, as Greed passes on a signal it
+	-- was started ignoring, and INT often is (a background job's, say).
+	local script = "(trap '' TERM; echo started; exec sleep 100) & wait"
 	local child = assert(greed.process.spawn({ "sh", "-c", script }, { group = true }))
 	assert(child:read() == "started\n", "the sleep is running")
-	assert(child:signal("INT"), "sent")
+	assert(child:signal("TERM"), "sent")
 	local code, signal = child:wait()
-	assert(code == nil and signal == "INT", `{code} {signal}`)
+	assert(code == nil and signal == "TERM", `{code} {signal}`)
 	-- The sleep is still in the group, and goes with it.
 	assert(child:signal("KILL"), "what's left of the group is reached")
 	local ok, err = pcall(function()

@@ -3,8 +3,9 @@ local greed = require("@greed")
 local acp = require("@acp")
 
 -- Stands in for Claude Code: writes the arguments it was given, one a
--- line, to `args` in the folder it runs in, then waits.
-local FAKE = 'printf "%s\\n" "$@" > args\nexec sleep 30\n'
+-- line, to `args` in the folder it runs in, then waits. Written aside and
+-- moved there, so it's never read half written.
+local FAKE = 'printf "%s\\n" "$@" > args.part\nmv args.part args\nexec sleep 30\n'
 
 -- What the stand-in in `dir` was given, once it has run.
 local function given(t: test.TestContext, dir: string): string

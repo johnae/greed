@@ -268,8 +268,9 @@ test("shows the language, and the features on for the buffer", function(t)
 	remove()
 	t:buffer("plain|")
 	_, right = t:status()
+	-- The language; a language server still starting may name itself.
 	assert(
-		right and not string.find(right, "rust", 1, true),
+		right and not string.find(right, " rust ", 1, true),
 		"none for plain text: " .. tostring(right)
 	)
 end)
