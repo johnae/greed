@@ -18,26 +18,27 @@ fi
 
 for name in "${names[@]}"; do
   # A fresh Greed in a folder of its own: the demo profile's config, and
-  # the sample project to work on, shop.
+  # the sample project to work on, shop, in the demo's home so paths show
+  # as ~/shop.
   # Under /tmp, away from anything a folder above would load into the
   # shell, as a project's environment.
   scratch=$(mktemp -d -p /tmp greed-demo.XXXXXX)
   cp -r "$media/profile" "$scratch/profile"
-  cp -r "$media/shop" "$scratch/shop"
   cp -r "$media/home" "$scratch/home"
+  cp -r "$media/shop" "$scratch/home/shop"
   cp "$media/$name.demo" "$scratch/"
   echo "recording $name"
   # Nothing of this machine: a home of its own, and only the variables
   # programs and the GPU need. Its programs come first, like a kubectl with
   # a cluster of its own.
   vars=(HOME="$scratch/home" USER=demo SHELL="$(command -v bash)" LANG=C.UTF-8
-    TERM=xterm-256color PATH="$scratch/shop/bin:$PATH")
+    TERM=xterm-256color PATH="$scratch/home/shop/bin:$PATH")
   for var in LD_LIBRARY_PATH XDG_RUNTIME_DIR VK_ICD_FILENAMES VK_DRIVER_FILES; do
     if [ -n "${!var:-}" ]; then
       vars+=("$var=${!var}")
     fi
   done
-  (cd "$scratch/shop" && env -i "${vars[@]}" \
+  (cd "$scratch/home/shop" && env -i "${vars[@]}" \
     "$root/target/debug/greed" --profile "$scratch/profile" --record "$scratch/$name.demo")
   out=$root/target/media/$name
   rm -rf "$out"
