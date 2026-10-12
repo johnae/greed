@@ -564,3 +564,42 @@ fn a_client_asks_once_for_a_whole_frame_when_a_delta_doesnt_fit() {
     assert!(!latest.delta(delta(&first, &split)));
     assert_eq!(latest.frame(), Some(&split));
 }
+
+/// An editor showing 200 numbered lines, the cursor on line 20.
+fn long_file() -> Editor {
+    let text: Vec<String> = (0..200).map(|n| format!("line {n}")).collect();
+    let mut ed = editor(&format!("|{}", text.join("\n")));
+    let view = ed.focus();
+    let at = ed.buffer(ed.view(view).buffer).text().line_to_byte(20);
+    ed.view_mut(view).selection = greed_text::Selection::point(at);
+    ed
+}
+
+#[test]
+fn scrolling_moves_the_rows_a_client_has_and_sends_only_the_new_ones() {
+    let mut ed = long_file();
+    let view = ed.focus();
+    let before = frame(&mut ed);
+    ed.view_mut(view).scroll.line = 3;
+    let after = frame(&mut ed);
+    let delta = delta(&before, &after);
+    let pane = changes(&delta, SurfaceId::View(view)).expect("the pane changed");
+    assert_eq!(pane.shift, 3, "{pane:#?}");
+    assert!(pane.rows.len() <= 4, "{:?}", changed_rows(pane));
+    // And back up.
+    let delta = self::delta(&after, &before);
+    let pane = changes(&delta, SurfaceId::View(view)).expect("the pane changed");
+    assert_eq!(pane.shift, -3, "{pane:#?}");
+    assert!(pane.rows.len() <= 4, "{:?}", changed_rows(pane));
+}
+
+#[test]
+fn an_edit_moves_no_rows() {
+    let mut ed = long_file();
+    let view = ed.focus();
+    let before = frame(&mut ed);
+    insert(&mut ed, 0, "X");
+    let delta = delta(&before, &frame(&mut ed));
+    let pane = changes(&delta, SurfaceId::View(view)).expect("the pane changed");
+    assert_eq!(pane.shift, 0, "{pane:#?}");
+}

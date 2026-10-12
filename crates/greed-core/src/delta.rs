@@ -87,6 +87,11 @@ pub struct SurfaceDelta {
         deserialize_with = "changed_to"
     )]
     pub keep: Option<Option<u16>>,
+    /// How many rows its rows moved up, or down when negative, before the
+    /// rest applies, as when its view scrolled: the rows that stay in sight
+    /// aren't sent again, and a window can glide them to their new place.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub shift: i32,
     /// How many rows it has, when that changed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub row_count: Option<usize>,
@@ -120,6 +125,52 @@ fn index(i: usize) -> u16 {
     u16::try_from(i).unwrap_or(u16::MAX)
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+fn is_zero(n: &i32) -> bool {
+    *n == 0
+}
+
+/// The row of `old` that row `i` is once its rows moved up by `shift`.
+fn shifted(old: &[Row], i: usize, shift: isize) -> Option<&Row> {
+    if i >= old.len() {
+        return None;
+    }
+    i.checked_add_signed(shift).and_then(|from| old.get(from))
+}
+
+/// How far `old`'s rows moved up (or down) to become `new`'s, as when a view
+/// scrolls: the move that leaves the most rows as they are, if it leaves
+/// more than staying put does.
+fn shift_between(old: &[Row], new: &[Row]) -> isize {
+    let kept = |shift: isize| {
+        (0..new.len())
+            .filter(|&i| shifted(old, i, shift) == Some(&new[i]))
+            .count()
+    };
+    let still = kept(0);
+    // Too few rows change to be worth looking for a move.
+    if new.len().saturating_sub(still) < 3 {
+        return 0;
+    }
+    let most = isize::try_from(old.len().min(new.len())).unwrap_or(0);
+    let (mut best, mut best_kept) = (0, still);
+    for shift in (1..most).flat_map(|n| [n, -n]) {
+        // A move can keep no more rows than it leaves in sight.
+        if most - shift.abs() <= isize::try_from(best_kept).unwrap_or(isize::MAX) {
+            break;
+        }
+        let n = kept(shift);
+        if n > best_kept {
+            (best, best_kept) = (shift, n);
+        }
+    }
+    // Moving costs a little to say, so it has to keep a few more rows.
+    if best_kept > still + 2 { best } else { 0 }
+}
+
 impl SurfaceDelta {
     /// All of `new`, for a client that hasn't seen it.
     fn whole(new: &Surface) -> Self {
@@ -130,6 +181,7 @@ impl SurfaceDelta {
             content: new.content.map(Some),
             note: new.note.clone().map(Some),
             keep: new.keep.map(Some),
+            shift: 0,
             row_count: Some(new.rows.len()),
             rows: (new.rows.iter().enumerate())
                 .map(|(i, row)| (index(i), row.clone()))
@@ -139,8 +191,14 @@ impl SurfaceDelta {
 
     /// What turns `old` into `new`, or `None` if they're the same.
     fn between(old: &Surface, new: &Surface) -> Option<Self> {
+        // Only a surface that stays where it is scrolls.
+        let shift = if old.rect == new.rect {
+            shift_between(&old.rows, &new.rows)
+        } else {
+            0
+        };
         let rows: Vec<(u16, Row)> = (new.rows.iter().enumerate())
-            .filter(|(i, row)| old.rows.get(*i) != Some(row))
+            .filter(|(i, row)| shifted(&old.rows, *i, shift) != Some(row))
             .map(|(i, row)| (index(i), row.clone()))
             .collect();
         let delta = SurfaceDelta {
@@ -150,6 +208,7 @@ impl SurfaceDelta {
             content: changed(&old.content, &new.content),
             note: changed(&old.note, &new.note),
             keep: changed(&old.keep, &new.keep),
+            shift: i32::try_from(shift).unwrap_or(0),
             row_count: changed(&old.rows.len(), &new.rows.len()),
             rows,
         };
@@ -162,6 +221,7 @@ impl SurfaceDelta {
             && self.content.is_none()
             && self.note.is_none()
             && self.keep.is_none()
+            && self.shift == 0
             && self.row_count.is_none()
             && self.rows.is_empty()
     }
@@ -181,6 +241,21 @@ impl SurfaceDelta {
         }
         if let Some(keep) = self.keep {
             surface.keep = keep;
+        }
+        // Rows moved out of sight go; those coming into it are empty until
+        // `rows` fills them.
+        let len = surface.rows.len();
+        let by = usize::try_from(self.shift.unsigned_abs())
+            .unwrap_or(usize::MAX)
+            .min(len);
+        if self.shift > 0 {
+            surface.rows.drain(..by);
+            surface.rows.resize_with(len, Row::default);
+        } else if self.shift < 0 {
+            surface.rows.truncate(len - by);
+            surface
+                .rows
+                .splice(0..0, std::iter::repeat_with(Row::default).take(by));
         }
         if let Some(count) = self.row_count {
             // A delta saying more than a u16 numbers is broken.
