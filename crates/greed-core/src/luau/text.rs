@@ -29,5 +29,38 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             ))
         })?,
     )?;
+    text.set(
+        "matches",
+        lua.create_function(
+            |lua, (subject, pattern, limit): (mlua::LuaString, String, Option<usize>)| {
+                let regex = match regex::Regex::new(&pattern) {
+                    Ok(regex) => regex,
+                    Err(err) => return (Value::Nil, err.to_string()).into_lua_multi(lua),
+                };
+                let subject = subject.to_string_lossy();
+                let found = lua.create_table()?;
+                for captures in regex
+                    .captures_iter(&subject)
+                    .take(limit.unwrap_or(usize::MAX))
+                {
+                    let whole = captures.get(0).expect("a match has its whole");
+                    let groups = lua.create_table()?;
+                    for (i, group) in captures.iter().enumerate().skip(1) {
+                        match group {
+                            Some(group) => groups.raw_set(i, group.as_str())?,
+                            None => groups.raw_set(i, false)?,
+                        }
+                    }
+                    let one = lua.create_table()?;
+                    one.set("from", whole.start() + 1)?;
+                    one.set("to", whole.end())?;
+                    one.set("text", whole.as_str())?;
+                    one.set("groups", groups)?;
+                    found.raw_push(one)?;
+                }
+                found.into_lua_multi(lua)
+            },
+        )?,
+    )?;
     Ok(text)
 }

@@ -1424,6 +1424,7 @@ dependencies = [
  "nucleo-matcher",
  "portable-pty",
  "proptest",
+ "regex",
  "regex-cursor",
  "ropey",
  "serde",

@@ -50,6 +50,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 base64 = "0.22"
 gethostname = "1.1"
 sha2 = "0.10"
+regex = "1"
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
 
 [dev-dependencies]
