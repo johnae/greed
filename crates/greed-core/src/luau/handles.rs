@@ -1005,14 +1005,14 @@ fn mark_image_from_lua(t: &Table) -> LuaResult<MarkImage> {
     })
 }
 
-/// `{ id, cols, rows, col?, row? }`, as for an image.
+/// `{ id, cols, rows, col?, row? }`, as for an image; `row` can be negative.
 fn mark_scene_from_lua(t: &Table) -> LuaResult<MarkScene> {
     Ok(MarkScene {
         id: crate::scene::SceneId(t.get("id")?),
         cols: t.get::<u16>("cols")?.max(1),
         rows: t.get::<u16>("rows")?.max(1),
         col: t.get::<Option<u16>>("col")?.unwrap_or(0),
-        row: t.get::<Option<u16>>("row")?.unwrap_or(0),
+        row: t.get::<Option<i32>>("row")?.unwrap_or(0),
     })
 }
 

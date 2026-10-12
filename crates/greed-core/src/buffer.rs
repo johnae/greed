@@ -207,14 +207,16 @@ pub struct MarkImage {
     pub row: u16,
 }
 
-/// A scene over a block of cells, as `MarkImage` places an image.
+/// A scene over a block of cells, as `MarkImage` places an image. A
+/// negative `row` starts it that many rows below the mark's start, like a
+/// chart under the comment line that asks for it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MarkScene {
     pub id: crate::scene::SceneId,
     pub cols: u16,
     pub rows: u16,
     pub col: u16,
-    pub row: u16,
+    pub row: i32,
 }
 
 impl Buffer {

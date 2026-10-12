@@ -271,31 +271,8 @@ local function document_width(buffer: greed.Buffer): number
 	return 60
 end
 
--- `spec`'s items `by` rows lower down: a chart under a comment line it
--- starts on draws from the line after.
-local function lower(items: { any }, by: number)
-	for _, item in items do
-		for _, point in item.points or {} :: { { number } } do
-			point[2] += by
-		end
-		if item.at then
-			item.at[2] += by
-		end
-		if item.base then
-			item.base += by
-		end
-		if item.clip then
-			item.clip[2] += by
-			item.clip[4] += by
-		end
-		if item.items then
-			lower(item.items, by)
-		end
-	end
-end
-
--- A chart drawn: its lines, and its scene a row lower (nil when there's
--- none) and how many cells wide.
+-- A chart drawn: its lines, and its scene (nil when there's none) and how
+-- many cells wide.
 type Charted = { lines: { greed.MarkLine }, spec: scene.Spec?, cols: number }
 
 -- `data` charted as `ask` asks, for `buffer`; or why it can't be.
@@ -317,11 +294,7 @@ local function charted(buffer: greed.Buffer, data: markdown.Data, ask: string): 
 	for _, line in made.lines do
 		table.insert(lines, pieces(line))
 	end
-	local spec = made.spec
-	if spec then
-		lower(spec.items, 1)
-	end
-	return { lines = lines, spec = spec, cols = made.cols }
+	return { lines = lines, spec = made.spec, cols = made.cols }
 end
 
 -- The scenes charts in each document drew, by its buffer's id and the line
@@ -368,9 +341,9 @@ markdown.conceal({
 					local from, to = s.starts[n + 1], s.starts[n + 1] + #s.lines[n + 1]
 					table.insert(out, { from = from, to = to, style = "", lines = chart.lines })
 					-- For the clients that draw one, the chart's scene over its
-					-- lines, from the comment line it's under. Empty, as those
-					-- lines are only drawn, not the file's: the scene is placed
-					-- from where it starts, over what's drawn below.
+					-- lines, a row under the comment line, which stays in sight
+					-- to edit. Empty, as those lines are only drawn, not the
+					-- file's: the scene is placed from the line's start.
 					local spec = chart.spec
 					if spec and scene.drawn() then
 						table.insert(out, {
@@ -380,7 +353,8 @@ markdown.conceal({
 							scene = {
 								id = scene_for(buffer, n, spec),
 								cols = chart.cols,
-								rows = #chart.lines + 1,
+								rows = #chart.lines,
+								row = -1,
 							},
 						})
 					end

@@ -292,7 +292,7 @@ export type Mark = {
 	--- which of its cells is at `from`, for an image cut off at the top or
 	--- left. Shown in terminals that can show images.
 	image: { id: number, cols: number, rows: number, col: number?, row: number? }?,
-	--- A scene (from `greed.scene`) drawn over `cols` by `rows` cells right of and below `from` by the clients that can draw one, as an image is; the text there is what the others show, so put the scene in characters there. `col` and `row` are as for an image.
+	--- A scene (from `greed.scene`) drawn over `cols` by `rows` cells right of and below `from` by the clients that can draw one, as an image is; the text there is what the others show, so put the scene in characters there. `col` and `row` are as for an image; a negative `row` starts it that many rows below `from`.
 	scene: { id: number, cols: number, rows: number, col: number?, row: number? }?,
 	--- A command that clicking `text` runs, with the cursor put at `from`
 	--- first, so the text works as a button, e.g. "proposal-accept".

@@ -820,7 +820,7 @@ impl<M: Measure> Renderer<M> {
         // Where something `cols` by `rows` cells, whose cell (`col`, `row`)
         // is at `mark`'s start, is on screen: the part in the text area, and
         // its first cell there. Nil when none of it is.
-        let place = |mark: &Mark, cols: u16, rows: u16, col: u16, row: u16| {
+        let place = |mark: &Mark, cols: u16, rows: u16, col: u16, row: i64| {
             let start = mark.range.start.min(text.len_bytes());
             let line = text.byte_to_line(start);
             // The screen row of the mark's line, counting from the top of
@@ -841,7 +841,7 @@ impl<M: Measure> Renderer<M> {
                         .sum::<usize>()
                 });
             let left = i64::try_from(x).unwrap_or(0) - i64::from(col);
-            let top = screen_row - i64::from(row);
+            let top = screen_row - row;
             let (x0, y0) = (left.max(0), top.max(0));
             let x1 = (left + i64::from(cols)).min(i64::from(text_area.width));
             let y1 = (top + i64::from(rows)).min(i64::from(text_area.height));
@@ -877,7 +877,7 @@ impl<M: Measure> Renderer<M> {
                 }
             }
             if let Some((rect, col, row)) =
-                place(mark, scene.cols, scene.rows, scene.col, scene.row)
+                place(mark, scene.cols, scene.rows, scene.col, scene.row.into())
             {
                 self.scenes.borrow_mut().push(ScenePlacement {
                     id: scene.id,
@@ -895,7 +895,7 @@ impl<M: Measure> Renderer<M> {
                 continue;
             }
             if let Some((rect, col, row)) =
-                place(mark, image.cols, image.rows, image.col, image.row)
+                place(mark, image.cols, image.rows, image.col, image.row.into())
             {
                 self.images.borrow_mut().push(ImagePlacement {
                     id: image.id,

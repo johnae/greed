@@ -2007,6 +2007,46 @@ fn lines_that_dont_wrap_are_cut_at_the_edge_marked_and_scroll_sideways_to_the_cu
 }
 
 #[test]
+fn a_scene_with_a_negative_row_starts_below_its_mark() {
+    use greed_core::{Mark, MarkScene, VirtualLine};
+    // A chart's comment line, the chart drawn under it as lines of its own.
+    let mut ed = editor("<!-- chart -->|\ntail");
+    let buffer = ed.view(ed.main()).buffer;
+    let id = ed.scenes_mut().insert(greed_core::scene::Spec::default());
+    ed.decorate(
+        buffer,
+        "chart",
+        vec![
+            Mark {
+                range: 0..14,
+                style: "".into(),
+                lines: vec![VirtualLine::from("⠉⠉"), VirtualLine::from("⣀⣀")],
+                ..Mark::default()
+            },
+            Mark {
+                range: 0..0,
+                style: "".into(),
+                scene: Some(MarkScene {
+                    id,
+                    cols: 2,
+                    rows: 2,
+                    col: 0,
+                    row: -1,
+                }),
+                ..Mark::default()
+            },
+        ],
+    );
+    let placed = frame(&mut ed, 20, 8).scenes;
+    assert_eq!(placed.len(), 1);
+    assert_eq!(
+        (placed[0].rect.y, placed[0].rect.height, placed[0].row),
+        (1, 2, 0),
+        "over the two lines under the comment, which stays in sight"
+    );
+}
+
+#[test]
 fn a_scene_is_placed_over_its_text_only_while_every_line_of_it_shows() {
     use greed_core::{Mark, MarkScene};
     // The chart's characters are lines 1 to 3; the cursor is after them.
