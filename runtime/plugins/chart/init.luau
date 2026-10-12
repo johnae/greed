@@ -58,9 +58,9 @@ local function width_of(sh: Shell?): number
 	return 72
 end
 
--- A chart made: the scene, how many cells wide it is, and the scene in
--- characters.
-type Made = { spec: scene.Spec, cols: number, lines: { scene.Line } }
+-- A chart made: the scene (none for `--why`, which is only text), how many
+-- cells wide it is, and the scene in characters.
+type Made = { spec: scene.Spec?, cols: number, lines: { scene.Line } }
 
 -- `tbl` as a chart `rest` asks for, as `lines` says; nil and why when
 -- there's nothing to chart.
@@ -85,7 +85,7 @@ local function make(
 			local line: scene.Line = { text = text, marks = {} }
 			table.insert(lines, line)
 		end
-		return { spec = { alt = chart.about, items = {} }, cols = 0, lines = lines }, nil
+		return { cols = 0, lines = lines }, nil
 	end
 	local width = ask.width or cols or 72
 	local height = ask.height or rows or greed.option.get("chart-height") :: number
@@ -135,13 +135,14 @@ shell.stage({
 		return nil, why
 	end
 	local sh: Shell? = ctx.shell
-	if block and sh then
+	local spec = made.spec
+	if block and sh and spec then
 		block.drawn = true
 		-- The block's scene, a version on, or a new one.
 		local before = drawn[block]
-		local id = if before and greed.scene.set(before.scene, made.spec)
+		local id = if before and greed.scene.set(before.scene, spec)
 			then before.scene
-			else greed.scene.new(made.spec)
+			else greed.scene.new(spec)
 		if before == nil or before.scene ~= id then
 			local buffer = sh.buffer:id()
 			scenes[buffer] = scenes[buffer] or {}

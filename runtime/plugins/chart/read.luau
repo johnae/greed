@@ -199,6 +199,49 @@ local function some(names: { string }, values: { number }, unit: string?): strin
 	return table.concat(parts, ", ")
 end
 
+-- Whether some names in `column` come in more than one row, as a host's
+-- do in a table of samples.
+local function repeats(tbl: Table, column: string): boolean
+	local seen: { [string]: boolean } = {}
+	for _, row in tbl.rows do
+		local name = row[column] or ""
+		if seen[name] then
+			return true
+		end
+		seen[name] = true
+	end
+	return false
+end
+
+-- How many series a chart draws at most.
+local MOST = 8
+
+-- The names in `order` of the series greatest now (by their last point),
+-- as `top` would show them, at most `MOST`, in the order they first came
+-- so each keeps its colour while it stays.
+local function greatest(order: { string }, series: { [string]: { { number } } }): { string }
+	local function latest(name: string): number
+		local points = series[name]
+		local last = points[#points]
+		return if last then last[2] :: number else -math.huge
+	end
+	local ranked = table.clone(order)
+	table.sort(ranked, function(a: string, b: string): boolean
+		return latest(a) > latest(b)
+	end)
+	local chosen: { [string]: boolean } = {}
+	for n = 1, math.min(MOST, #ranked) do
+		chosen[ranked[n]] = true
+	end
+	local out: { string } = {}
+	for _, name in order do
+		if chosen[name] then
+			table.insert(out, name)
+		end
+	end
+	return out
+end
+
 --- The chart `ask` makes of `tbl`: in a watch, with its `history` (which
 --- it adds to, at `now`, in seconds since 1970), of how the numbers went.
 --- Nil and why when there's nothing to chart.
@@ -235,7 +278,7 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 	end
 	-- The time column, a name column, and the numbers, unless they're said.
 	local time = over
-	if time == nil and by == nil then
+	if time == nil then
 		for _, c in tbl.columns do
 			if not numeric(tbl, c) and times(tbl, c) then
 				time = c
@@ -271,7 +314,7 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 	if #ys == 0 then
 		return nil, `there are no numbers to chart in {table.concat(tbl.columns, ", ")}`
 	end
-	while #ys > 8 do
+	while #ys > MOST do
 		table.remove(ys)
 	end
 	-- What the numbers are, by how a column writes them: bytes, CPU, percents.
@@ -337,8 +380,11 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 	-- In a watch, how each number went from run to run.
 	local over_runs = history ~= nil and kind ~= "bar" and kind ~= "scatter" and time == nil
 	if history and over_runs then
+		-- This run's number for each series. Rows of the same name add up, as
+		-- the processes of one program do in `ps`.
 		local latest: { string } = {}
 		local values: { number } = {}
+		local index: { [string]: number } = {}
 		for i, row in tbl.rows do
 			for _, c in ys do
 				local v = tables.number(row[c] or "")
@@ -347,41 +393,32 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 						then c
 						elseif #ys == 1 then label(i)
 						else `{label(i)} {c}`
-					local points = history.series[name]
-					if points == nil then
-						points = {}
-						history.series[name] = points
-						table.insert(history.order, name)
+					local at = index[name]
+					if at then
+						values[at] += v
+					else
+						table.insert(latest, name)
+						table.insert(values, v)
+						index[name] = #values
 					end
-					table.insert(points, { now, v })
-					while #points > ask.last do
-						table.remove(points, 1)
-					end
-					table.insert(latest, name)
-					table.insert(values, v)
 				end
 			end
 		end
-		-- The eight greatest now, as `top` would show them, in the order
-		-- they first came so each keeps its colour while it stays.
-		local function latest_of(name: string): number
+		for n, name in latest do
 			local points = history.series[name]
-			local last = points[#points]
-			return if last then last[2] :: number else -math.huge
-		end
-		local ranked = table.clone(history.order)
-		table.sort(ranked, function(a: string, b: string): boolean
-			return latest_of(a) > latest_of(b)
-		end)
-		local chosen: { [string]: boolean } = {}
-		for n = 1, math.min(8, #ranked) do
-			chosen[ranked[n]] = true
+			if points == nil then
+				points = {}
+				history.series[name] = points
+				table.insert(history.order, name)
+			end
+			table.insert(points, { now, values[n] })
+			while #points > ask.last do
+				table.remove(points, 1)
+			end
 		end
 		local series: { draw.Series } = {}
-		for _, name in history.order do
-			if chosen[name] then
-				table.insert(series, { name = name, points = history.series[name] })
-			end
+		for _, name in greatest(history.order, history.series) do
+			table.insert(series, { name = name, points = history.series[name] })
 		end
 		return {
 			kind = if kind == "" then "line" else kind,
@@ -398,36 +435,53 @@ function M.chart(tbl: Table, ask: Ask, history: History?, now: number): (draw.Ch
 			nil
 	end
 
-	-- Over a time or another column: a line a number.
+	-- Over a time or another column: a line a number, or with rows named
+	-- by a column whose names come again (a host a row, at each time), a
+	-- line a name.
 	local over_column = time ~= nil or (over ~= nil and kind ~= "bar")
 	if over_column then
 		local x = (time or over) :: string
-		local series: { draw.Series } = {}
+		local split: string? = if names and (by ~= nil or repeats(tbl, names)) then names else nil
+		local found: { [string]: { { number } } } = {}
+		local order: { string } = {}
 		local dated = false
-		for _, c in ys do
-			local points: { { number } } = {}
-			for _, row in tbl.rows do
-				local at, is_time = x_of(row[x] or "")
+		for _, row in tbl.rows do
+			local at, is_time = x_of(row[x] or "")
+			for _, c in ys do
 				local v = tables.number(row[c] or "")
 				if at and v then
-					table.insert(points, { at, v })
+					local name = if not split
+						then c
+						elseif #ys == 1 then row[split] or ""
+						else `{row[split] or ""} {c}`
+					if found[name] == nil then
+						found[name] = {}
+						table.insert(order, name)
+					end
+					table.insert(found[name], { at, v })
 					dated = dated or is_time
 				end
 			end
+		end
+		for _, points in found do
 			table.sort(points, function(a: { number }, b: { number }): boolean
 				return (a[1] :: number) < (b[1] :: number)
 			end)
-			table.insert(series, { name = c, points = points })
 		end
+		local series: { draw.Series } = {}
+		for _, name in greatest(order, found) do
+			table.insert(series, { name = name, points = found[name] })
+		end
+		local lines = if split then `a line for each {split}` else "a line a number column"
 		return {
 			kind = if kind == "" then "line" else kind,
 			series = series,
 			x = if dated then "time" else "number",
 			log = ask.log,
 			unit = unit,
-			about = `{table.concat(ys, ", ")} over {x}`,
+			about = `{table.concat(ys, ", ")} over {x}{if split then " by " .. split else ""}`,
 			seen = seen,
-			reason = `{if time then x .. " holds times" else "over " .. x}: a line a number column along it{asked}`,
+			reason = `{if time then x .. " holds times" else "over " .. x}: {lines} along it{asked}`,
 		},
 			nil
 	end

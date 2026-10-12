@@ -338,3 +338,46 @@ test("a watch of many rows draws the eight greatest now, on an axis from zero", 
 	local zero = scale.ticks(0, 0, 3)
 	assert(zero.lo == 0 and zero.hi >= 1, `{zero.lo} {zero.hi}`)
 end)
+
+test("a long table over time, by a column, is a line for each of its values", function()
+	local samples = tbl({ "time", "host", "cpu" }, {
+		{ "2026-10-11T10:00:00Z", "web", "20" },
+		{ "2026-10-11T10:00:00Z", "db", "60" },
+		{ "2026-10-11T10:00:05Z", "web", "30" },
+		{ "2026-10-11T10:00:05Z", "db", "50" },
+	})
+	local split = assert(read.chart(samples, assert(read.ask("cpu by host")), nil, 0))
+	assert(split.kind == "line" and split.x == "time", split.kind)
+	assert(#split.series == 2, tostring(#split.series))
+	local web = split.series[1]
+	assert(web.name == "web" and #web.points == 2 and web.points[2][2] == 30, web.name)
+	-- Guessed too: the time column, the name column and the number.
+	local guessed = assert(read.chart(samples, assert(read.ask("by host")), nil, 0))
+	assert(#guessed.series == 2 and guessed.series[2].name == "db", guessed.series[2].name)
+	-- Over another column than the time, as asked.
+	local over = assert(read.chart(samples, assert(read.ask("cpu over time by host")), nil, 0))
+	assert(#over.series == 2, tostring(#over.series))
+end)
+
+test("in a watch, rows of the same name in one run add up to one point", function()
+	local ask = assert(read.ask(""))
+	local history = read.history("")
+	local ps = tbl({ "COMMAND", "%CPU" }, {
+		{ "firefox", "10" },
+		{ "greed", "3" },
+		{ "firefox", "5" },
+	})
+	local made = assert(read.chart(ps, ask, history, 1))
+	assert(#made.series == 2, tostring(#made.series))
+	local firefox = made.series[1]
+	assert(firefox.name == "firefox" and #firefox.points == 1, firefox.name)
+	assert(firefox.points[1][2] == 15, tostring(firefox.points[1][2]))
+end)
+
+test("--why in the shell is text, with no picture over it", function(t)
+	local sh = open(t)
+	greed.fs.write(`{sh.cwd}/pods`, "NAME CPU\napi 250m\nworker 1\n")
+	local block = finished(t, assert(shell.run(sh, "cat pods | chart --why")))
+	assert(string.find(block.output, "NAME  names, for the rows", 1, true), block.output)
+	assert(chart.drawing(block) == nil, "nothing drawn")
+end)
