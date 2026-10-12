@@ -11,6 +11,7 @@
 
 local greed = require("@greed")
 local unsaved = require("./unsaved")
+local text_width = require("./text").width
 
 local M = {}
 
@@ -510,12 +511,31 @@ function M.trust(root: string)
 	run_config(root)
 end
 
+-- The folder to trust for `buffer` at `path`: its project, or the folder
+-- its language server would run in when that's above the project, as a
+-- Cargo.toml above a folder that isn't in a repository is.
+local function trust_root(buffer: greed.Buffer, path: string): string
+	local root = M.root(path)
+	local server = greed.lsp.root(buffer)
+	if server and M.inside(root, server) then
+		return M.clean(server)
+	end
+	return root
+end
+
 greed.command({
 	name = "trust",
 	doc = "Trust the shown project to run its own code: its config in .greed/, language "
 		.. "servers and formatting on save",
-	run = function()
+	run = function(ctx)
 		local root = greed.project.current().root
+		local path = ctx.buffer:path()
+		if path then
+			local wanted = trust_root(ctx.buffer, path)
+			if M.inside(root, wanted) then
+				root = wanted
+			end
+		end
 		M.trust(root)
 		greed.echo(`trusted {M.tilde(root)}`)
 	end,
@@ -527,32 +547,57 @@ local asked: { [string]: boolean } = {}
 -- A file opening in a project you haven't trusted, whose language server
 -- waits for that, as it would run the project's code, asks once whether
 -- to trust the project. One that only reads files starts anyway.
+--- Asks whether to trust the project at `root`, in a box in the middle of
+--- the screen that stays until it's answered: `y` trusts it, `n` or `esc`
+--- doesn't. Returns whether you trusted it.
+function M.ask_trust(root: string): boolean
+	local lines = {
+		M.tilde(root),
+		"",
+		"Its language server and formatting on save would run",
+		"its code: build scripts, config files.",
+		"",
+		"y  trust it     n  not now",
+	}
+	local width = 0
+	for _, line in lines do
+		width = math.max(width, text_width(line))
+	end
+	local buffer = greed.create_buffer("trust", table.concat(lines, "\n"), { readonly = true })
+	buffer:set_line_numbers(false)
+	local view = greed.float(buffer, {
+		title = "Trust this project?",
+		width = width + 4,
+		height = #lines + 2,
+		anchor = "center",
+		focus = false,
+	})
+	local key
+	repeat
+		key = greed.next_key()
+	until key == "y" or key == "n" or key == "esc"
+	pcall(view.close, view)
+	if key == "y" then
+		M.trust(root)
+		greed.echo(`trusted {M.tilde(root)}`)
+		return true
+	end
+	greed.echo(":trust trusts it later")
+	return false
+end
+
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	local buffer = event.buffer
 	local path = buffer:path()
 	if path == nil or M.trusts(path) or not greed.lsp.waits(buffer) then
 		return
 	end
-	local root = M.root(path)
+	local root = trust_root(buffer, path)
 	if asked[root] then
 		return
 	end
 	asked[root] = true
-	greed.echo(
-		`{M.tilde(root)} isn't trusted: its language server and formatting on save would run `
-			.. "its code (build scripts, config files). Trust it? y yes, n not now"
-	)
-	local key = greed.next_key()
-	if key == "y" then
-		M.trust(root)
-		greed.echo(`trusted {M.tilde(root)}`)
-		return
-	end
-	greed.echo(":trust trusts it later")
-	-- Another key wasn't meant for the question: it does what it would have.
-	if key ~= "n" and key ~= "esc" then
-		greed.keys.feed(key)
-	end
+	M.ask_trust(root)
 end)
 
 greed.command({

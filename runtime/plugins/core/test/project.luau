@@ -224,6 +224,16 @@ test("window-new needs a window, and in a terminal says so", function(t)
 	assert(string.find(messages[#messages], "from a window", 1, true), messages[#messages])
 end)
 
+-- The question about trusting a project, while it's shown: its text.
+local function trust_question(): string?
+	for _, buffer in greed.buffers() do
+		if buffer:kind() == "trust" then
+			return buffer:text()
+		end
+	end
+	return nil
+end
+
 test(
 	"a file opening in a project you haven't trusted asks before its language server runs",
 	function(t)
@@ -234,34 +244,65 @@ test(
 		t:buffer("|x")
 		greed.open(`{dir}/a.tl`)
 		t:wait_for(function()
-			local said = t:messages()
-			return string.find(said[#said] or "", "isn't trusted", 1, true) ~= nil
+			return trust_question() ~= nil
 		end)
-		assert(not project.trusts(`{dir}/a.tl`), "not yet")
-		-- Another key goes on to do what it does, and asks nothing more.
+		assert(string.find(assert(trust_question()), project.tilde(dir), 1, true) ~= nil)
+		-- It stays until it's answered: other keys do nothing meanwhile.
 		t:keys("i")
-		assert(string.find(greed.mode.get(), "insert", 1, true), greed.mode.get())
-		assert(not project.trusts(`{dir}/a.tl`), "still not")
-		t:keys("esc")
-		project.trust(dir)
+		assert(trust_question() ~= nil, "still asking")
+		assert(not string.find(greed.mode.get(), "insert", 1, true), greed.mode.get())
+		t:keys("n")
+		assert(trust_question() == nil, "answered")
+		assert(not project.trusts(`{dir}/a.tl`), "not now")
+		-- y trusts it.
+		local other = t:tempdir({ [".git/HEAD"] = "", ["b.tl"] = "x\n" })
+		greed.open(`{other}/b.tl`)
 		t:wait_for(function()
-			return project.trusts(`{dir}/a.tl`)
+			return trust_question() ~= nil
+		end)
+		t:keys("y")
+		t:wait_for(function()
+			return project.trusts(`{other}/b.tl`)
 		end)
 		-- A server that isn't installed, or only reads files, asks nothing.
 		for _, server in { { "no-such-server-greed" }, { "sh" } } do
 			local reads_only = server[1] == "sh"
 			greed.lsp.server({ language = "trustlang", command = server, reads_only = reads_only })
-			local other = t:tempdir({ [".git/HEAD"] = "", ["b.tl"] = "x\n" })
-			greed.open(`{other}/b.tl`)
+			local quiet = t:tempdir({ [".git/HEAD"] = "", ["c.tl"] = "x\n" })
+			greed.open(`{quiet}/c.tl`)
 			assert(not greed.lsp.waits(greed.view():buffer()), "nothing waits")
 			t:wait(100)
-			local said = t:messages()
-			assert(not string.find(said[#said] or "", "isn't trusted", 1, true), said[#said])
+			assert(trust_question() == nil, "nothing asked")
 		end
 		greed.lsp.remove("trustlang")
 		greed.option.set("project-trust", "off")
 	end
 )
+
+test("outside a repository, the folder trusted is the one the language server runs in", function(t)
+	greed.option.set("project-trust", "ask")
+	greed.lsp.server({
+		language = "trustlang",
+		command = { "sh" },
+		root_markers = { "Trust.toml" },
+	})
+	greed.filetype("trustlang", { extensions = { "tl" } })
+	local dir = t:tempdir({ ["Trust.toml"] = "", ["src/a.tl"] = "x\n" })
+	t:buffer("|x")
+	greed.open(`{dir}/src/a.tl`)
+	t:wait_for(function()
+		return trust_question() ~= nil
+	end)
+	local asked = assert(trust_question())
+	assert(not string.find(asked, "/src", 1, true), asked)
+	t:keys("y")
+	t:wait_for(function()
+		return project.trusts(`{dir}/Trust.toml`)
+	end)
+	assert(not greed.lsp.waits(greed.view():buffer()), "its server may start")
+	greed.lsp.remove("trustlang")
+	greed.option.set("project-trust", "off")
+end)
 
 test("greed.fs takes a relative path from the shown project's root", function(t)
 	local dir = t:tempdir({ [".git/HEAD"] = "", ["notes/a.md"] = "from the project\n" })

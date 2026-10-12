@@ -13,6 +13,7 @@ the repository's history.
 - `space -` shows a folder as text: rename, make, move and delete files by editing it. Deletes go to the trash.
 - Plugins from git, named in your config and pinned to commits in a lock file next to it.
 - Indent guides, color swatches and TODO comments picked out.
+- Trusting a project is asked in a box that stays until you answer, and the status line says when a language server waits for `:trust`.
 
 ### New
 
@@ -31,6 +32,7 @@ the repository's history.
 
 ### Fixed
 
+- core: the question whether to trust a project was cut off on narrow screens, and outside a repository it asked about the file's folder instead of the one the language server runs in, so rust-analyzer kept waiting after a yes (#3); it's now a box that stays until you answer
 - lsp: a server held back in an untrusted project says it waits for :trust
 - notes: reminders go off in one session when several are running
 - projects: space P says what enter does, and alt-o opens a project here

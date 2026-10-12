@@ -453,20 +453,29 @@ A repository can run its own code through Greed: its config
 `build.rs` and proc macros), and a formatter that loads config as code
 (prettier reads `.prettierrc.js`). A project you haven't trusted runs none
 of it. The first time one of its files opens with a language server set up
-for it, Greed asks:
+for it, Greed asks in a box in the middle of the screen:
 
 ```text
-~/src/app isn't trusted: its language server and formatting on save would run its code (build scripts, config files). Trust it? y yes, n not now
+╭ Trust this project? ─────────────────────────────────╮
+│ ~/src/app                                            │
+│                                                      │
+│ Its language server and formatting on save would run │
+│ its code: build scripts, config files.               │
+│                                                      │
+│ y  trust it     n  not now                           │
+╰──────────────────────────────────────────────────────╯
 ```
 
 `y` trusts it: its language servers start, it formats on save and its
-config runs, now and whenever it opens again. `n` leaves it untrusted for
-this session; `:trust` trusts the shown project later. Any other key
-answers `n` and then does what it normally does, so your typing isn't
-lost. A project opened with its own config says so and waits for `:trust`
-too (see [Configuration](using.md#configuration)). Until then the status
-line says so, like `rust-analyzer waits for :trust`. `:format` run by hand
-works anywhere.
+config runs, now and whenever it opens again. `n` or `esc` leaves it
+untrusted for this session; `:trust` trusts the shown project later. The
+box stays until you answer, and other keys do nothing meanwhile. The
+folder is the project's, or the one its language server runs in when
+that's above it, like a `Cargo.toml` above a folder that isn't in a
+repository. A project opened with its own config says so and waits for
+`:trust` too (see [Configuration](using.md#configuration)). Until then the
+status line says so, like `rust-analyzer waits for :trust`. `:format` run
+by hand works anywhere.
 
 Trust goes by folder: a project somewhere else, even a copy, asks again.
 Your own config folder is always trusted. `:set project-trust off` trusts
