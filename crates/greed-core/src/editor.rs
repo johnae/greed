@@ -34,8 +34,23 @@ pub struct ViewId(pub u32);
 /// `Buffer::undo` or `Buffer::redo`.
 type HistoryStep = fn(&mut Buffer, TxId, Author, &Selection) -> Result<Option<Selection>, Error>;
 
-/// Where a client's answer to an ask for its clipboard's image goes.
-type ImageAnswer = crossbeam_channel::Sender<Option<Vec<u8>>>;
+/// What the editor asks a client, which it finds out on its own machine
+/// (`Editor::ask_client`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ask {
+    /// The image on its system clipboard.
+    ClipboardImage,
+    /// The status of the hub of its machine, with the sessions and machines
+    /// that hub knows of, for a session on another machine to show them.
+    HomeStatus,
+}
+
+/// A client's answer to an [`Ask`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum Answer {
+    Png(Vec<u8>),
+    Json(serde_json::Value),
+}
 
 /// A buffer shown on screen, as one client sees it: with its selection and
 /// scroll position. Each client has its own of every view.
@@ -417,11 +432,12 @@ pub struct Editor {
     last_active: ClientId,
     /// Counts what clients do, for telling who did something last.
     activity: u64,
-    /// Asks for the image on a client's clipboard, by number, each with the
+    /// What clients were asked (`ask_client`), by number, each with the
     /// client asked and where its answer goes, and the last number given;
-    /// and an image every ask gets at once instead, for tests.
-    image_asks: HashMap<u64, (ClientId, ImageAnswer)>,
-    image_asked: u64,
+    /// and an image every ask for the clipboard's gets at once instead, for
+    /// tests.
+    asks: HashMap<u64, (ClientId, crossbeam_channel::Sender<Option<Answer>>)>,
+    asked: u64,
     fake_clipboard_image: Option<Vec<u8>>,
     /// Open projects, each with its own main view and panels. Empty until the
     /// first view opens.
@@ -473,8 +489,8 @@ impl Editor {
             doer: FIRST_CLIENT,
             last_active: FIRST_CLIENT,
             activity: 0,
-            image_asks: HashMap::new(),
-            image_asked: 0,
+            asks: HashMap::new(),
+            asked: 0,
             fake_clipboard_image: None,
             projects: Vec::new(),
             shown: BTreeMap::from([(LayoutId::SHARED, 0)]),
@@ -573,10 +589,10 @@ impl Editor {
         };
         client.parked = true;
         client.size = None;
-        // It won't answer what it was asked for its clipboard's image;
-        // dropping where the answers go tells those waiting it has none.
-        client.image_asks.clear();
-        self.image_asks.retain(|_, (asked, _)| *asked != id);
+        // It won't answer what it was asked; dropping where the answers go
+        // tells those waiting it has nothing to say.
+        client.asks.clear();
+        self.asks.retain(|_, (asked, _)| *asked != id);
         if self.last_active == id
             && let Some(latest) = self.clients().max_by_key(|c| c.active_at)
         {
@@ -2017,41 +2033,51 @@ impl Editor {
         std::mem::take(&mut self.acting_client_mut().notices)
     }
 
-    /// Asks the acting client for the image on its system clipboard, which
-    /// it reads on its own machine: its answer, PNG or nothing, comes on
-    /// the channel returned. A client that has gone has none to give.
-    pub fn ask_clipboard_image(&mut self) -> crossbeam_channel::Receiver<Option<Vec<u8>>> {
+    /// Asks client `to` what `ask` says, which it finds out on its own
+    /// machine: its answer, or nothing, comes on the channel returned. A
+    /// client that has gone has nothing to give.
+    pub fn ask_client(
+        &mut self,
+        to: ClientId,
+        ask: Ask,
+    ) -> crossbeam_channel::Receiver<Option<Answer>> {
         let (answer, answered) = crossbeam_channel::bounded(1);
-        if let Some(fake) = &self.fake_clipboard_image {
-            let _ = answer.send(Some(fake.clone()).filter(|png| !png.is_empty()));
-            return answered;
-        }
-        if self.acting_client().parked {
+        let Some(client) = self.clients.get_mut(&to).filter(|c| !c.parked) else {
             let _ = answer.send(None);
             return answered;
-        }
-        self.image_asked += 1;
-        let id = self.image_asked;
-        self.image_asks.insert(id, (self.acting, answer));
-        self.acting_client_mut().image_asks.push(id);
+        };
+        self.asked += 1;
+        let id = self.asked;
+        client.asks.push((id, ask));
+        self.asks.insert(id, (to, answer));
         answered
     }
 
-    /// The asks for the clipboard's image not yet sent to the acting client.
-    pub fn take_image_asks(&mut self) -> Vec<u64> {
-        std::mem::take(&mut self.acting_client_mut().image_asks)
+    /// Asks the acting client for the image on its system clipboard, which
+    /// it reads on its own machine: its answer, PNG or nothing, comes on
+    /// the channel returned.
+    pub fn ask_clipboard_image(&mut self) -> crossbeam_channel::Receiver<Option<Answer>> {
+        if let Some(fake) = &self.fake_clipboard_image {
+            let (answer, answered) = crossbeam_channel::bounded(1);
+            let png = Some(fake.clone()).filter(|png| !png.is_empty());
+            let _ = answer.send(png.map(Answer::Png));
+            return answered;
+        }
+        self.ask_client(self.acting, Ask::ClipboardImage)
     }
 
-    /// Client `by`'s answer to ask `id`: the image on its clipboard, as PNG,
-    /// or none. Only the client that was asked answers.
-    pub fn answer_image_ask(&mut self, by: ClientId, id: u64, png: Option<Vec<u8>>) {
-        if self
-            .image_asks
-            .get(&id)
-            .is_some_and(|(asked, _)| *asked == by)
-            && let Some((_, answer)) = self.image_asks.remove(&id)
+    /// What the acting client hasn't been asked yet, with each ask's number.
+    pub fn take_asks(&mut self) -> Vec<(u64, Ask)> {
+        std::mem::take(&mut self.acting_client_mut().asks)
+    }
+
+    /// Client `by`'s answer to ask `id`, or none. Only the client that was
+    /// asked answers.
+    pub fn answer_ask(&mut self, by: ClientId, id: u64, said: Option<Answer>) {
+        if self.asks.get(&id).is_some_and(|(asked, _)| *asked == by)
+            && let Some((_, answer)) = self.asks.remove(&id)
         {
-            let _ = answer.send(png);
+            let _ = answer.send(said);
         }
     }
 

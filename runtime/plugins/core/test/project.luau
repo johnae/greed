@@ -124,7 +124,7 @@ test(":session sends the client to a project's session, and needs somewhere to g
 	assert(not pcall(greed.session.switch, {} :: any), "switch needs a name or a path")
 end)
 
-test("space B and :session-home send the client back and home, which go on their own", function(t)
+test("space B and :session-home send the client back and home, home maybe to a session", function(t)
 	t:buffer("|x")
 	t:keys("space B")
 	local to = t:switched()
@@ -136,10 +136,15 @@ test("space B and :session-home send the client back and home, which go on their
 		{ back = true, home = true },
 		{ back = true, name = "x" },
 		{ home = true, window = true },
+		{ home = true, host = "eris" },
 	}
 	for _, mixed in mixes do
 		assert(not pcall(greed.session.switch, mixed :: any), "back and home go alone")
 	end
+	-- Home may name a session on the client's machine.
+	greed.session.switch({ home = true, name = "notes" })
+	to = t:switched()
+	assert(to and to.home and to.session == "notes", "home to a session")
 end)
 
 test(":project needs a path, and the only project can't be closed", function(t)

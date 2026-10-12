@@ -601,3 +601,69 @@ fn greed_with_terminal_opens_one_in_the_session_it_shows() {
     assert_eq!(world.eval("app", HAS_TERMINAL), "true");
     world.eval("app", "require('@greed').quit()");
 }
+
+#[test]
+fn a_session_on_another_machine_shows_what_waits_where_your_client_is() {
+    let Some(world) = World::new("ssh-home") else {
+        return;
+    };
+    let machines = common::TwoMachines::new(&world);
+    let mut alpha = machines.serve("alpha", false);
+    common::wait_until("alpha", || {
+        machines.eval("alpha", false, "return 'up'") == "up"
+    });
+    // An agent waits here, which nothing there follows.
+    let terminal = machines.eval(
+        "alpha",
+        false,
+        "return require('@terminal').open({ 'sh', '-c', 'sleep 60' }).buffer:id()",
+    );
+    machines.eval(
+        "alpha",
+        false,
+        &format!(
+            "require('@terminal').agent_report(require('@greed').buffer({terminal}), \
+             {{ source = 'hook', trusted = true, name = 'claude', state = 'waiting' }})"
+        ),
+    );
+    let project = world.project("beta", &[("b.txt", "over there")]);
+    let ssh = machines.ssh.display().to_string();
+    let env = [("GREED_SSH", ssh.as_str()), ("GREED_REMOTE", GREED)];
+    let command = format!("ssh there {}", project.join("b.txt").display());
+    let out = std::thread::scope(|scope| {
+        let shown = scope.spawn(|| {
+            world.terminal(
+                &project,
+                &command,
+                &env,
+                &[
+                    Step::Shows("over there"),
+                    Step::Until("the session there to see it", |w| {
+                        w.root.join("seen").exists()
+                    }),
+                    Step::Keys(":detach\r"),
+                ],
+            )
+        });
+        // The session there learns of it from the client, which asks the
+        // hub on its own machine.
+        common::wait_until("the session there to see the agent here", || {
+            machines.eval(
+                "beta",
+                true,
+                "for _, f in require('@hub').elsewhere() do \
+                 if f.home and f.session == 'alpha' and f.agent.status == 'waiting' then return 'yes' end end \
+                 return 'no'",
+            ) == "yes"
+        });
+        std::fs::write(world.root.join("seen"), "").unwrap();
+        shown.join().unwrap()
+    });
+    assert!(
+        out.contains("detached; greed ssh there comes back"),
+        "{out}"
+    );
+    machines.eval("alpha", false, "require('@greed').quit()");
+    machines.eval("beta", true, "require('@greed').quit()");
+    let _ = alpha.wait();
+}

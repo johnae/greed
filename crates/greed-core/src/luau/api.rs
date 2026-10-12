@@ -1169,7 +1169,13 @@ fn clipboard_module(lua: &Lua) -> LuaResult<Table> {
         Ok(super::jobs::start(
             lua,
             "greed.clipboard.image",
-            move || super::jobs::Output::ClipboardImage(answer.recv_timeout(WAIT).ok().flatten()),
+            move || {
+                let png = match answer.recv_timeout(WAIT) {
+                    Ok(Some(crate::Answer::Png(png))) => Some(png),
+                    _ => None,
+                };
+                super::jobs::Output::ClipboardImage(png)
+            },
         ))
     })?;
     clipboard.set(
@@ -1236,6 +1242,26 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
                 Ok(())
             },
         )?,
+    )?;
+    // The client asks the hub on its own machine, as an ordinary client,
+    // which can take the hub's own wait and the way there and back.
+    let ask_home = lua.create_function(|lua, to: u32| {
+        const WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+        let answer = state_mut(lua)
+            .editor
+            .ask_client(ClientId(to), crate::Ask::HomeStatus);
+        Ok(super::jobs::start(lua, "greed.client.home", move || {
+            let status = match answer.recv_timeout(WAIT) {
+                Ok(Some(crate::Answer::Json(status))) => Ok(status),
+                Ok(_) => Err("the client has no hub to ask".to_owned()),
+                Err(_) => Err("the client didn't answer in time".to_owned()),
+            };
+            super::jobs::Output::Status(status)
+        }))
+    })?;
+    client.set(
+        "home",
+        super::jobs::waiting(lua, "greed.client.home", ask_home)?,
     )?;
     client.set(
         "id",

@@ -1123,7 +1123,8 @@ export type Sessions = {
 	--- With `window`, a window client opens it in another window and stays
 	--- on this session; a terminal goes to it as without. `back` goes to where
 	--- the client was before, on whichever machine, and `home` to the session
-	--- on the client's own machine it was on last; each goes on its own.
+	--- on the client's own machine it was on last, or the one `name` names
+	--- there; `back` goes on its own, and `home` with a name at most.
 	switch: (to: { name: string?, path: string?, new: boolean?, host: string?, window: boolean?, back: boolean?, home: boolean? }) -> (),
 }
 
@@ -1418,6 +1419,8 @@ export type Client = {
 	list: () -> { ClientInfo },
 	--- Sends a notification to your desktop through a client: `client` (an id from `list`), or the one used last; a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.
 	notify: (title: string, body: string?, client: number?) -> (),
+	--- What the hub on the machine `client` (an id from `list`) runs on says, as its status gives it (with `machine` and `machines`), for a session on another machine to show what you have where you are; the client, attached over `greed ssh`, asks it as an ordinary client, so nothing there can be done through it. Or nil and why: the client has no hub to ask (a client here, an older greed) or didn't answer in time. It waits, so it works in a command, an event handler or `greed.spawn`.
+	home: (client: number) -> ({ [string]: any }?, string?),
 	--- Lays a client (the acting one by default) out on its own, "independent", starting from a copy of the tabs, panes and panels it had, with views of its own; or has it "follow" the others again, closing those views (their buffers stay). Returns whether it changed.
 	set_layout: (layout: "follow" | "independent", client: number?) -> boolean,
 }

@@ -82,7 +82,7 @@ pub fn run(
                     recv(outputs) -> message => {
                         let message = message.unwrap_or(Output::Exit);
                         let elsewhere = matches!(&message, Output::Switch(to) if opens_in_new_window(to));
-                        let last = !elsewhere && !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::SshAgentRequest(..) | Output::Notify(_));
+                        let last = !elsewhere && !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::SshAgentRequest(..) | Output::HomeStatus(_) | Output::Notify(_));
                         if proxy.send_event(Event::Output(Box::new(message))).is_err() || last {
                             return;
                         }
@@ -406,8 +406,11 @@ impl App {
             Ok(Taken::Stale) => {
                 let _ = self.input.send(Input::Refresh);
             }
-            // `session::show` answers ssh agent requests before output gets here.
-            Ok(Taken::Kept) | Err(Output::Notify(_) | Output::SshAgentRequest(..)) => return,
+            // `session::show` answers ssh agent requests and home asks before output gets here.
+            Ok(Taken::Kept)
+            | Err(Output::Notify(_) | Output::SshAgentRequest(..) | Output::HomeStatus(_)) => {
+                return;
+            }
             Err(Output::Clipboard(text)) => {
                 if let Some(clipboard) = &mut self.clipboard {
                     let _ = clipboard.set_text(text);

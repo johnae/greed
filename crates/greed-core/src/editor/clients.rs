@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use greed_text::ClientId;
 
-use super::{LayoutId, Notice, SwitchTo, TabId, View, ViewId};
+use super::{Ask, LayoutId, Notice, SwitchTo, TabId, View, ViewId};
 use crate::keymap::Key;
 use crate::render::Rect;
 
@@ -69,9 +69,9 @@ pub struct ClientState {
     pub(super) copied: Option<String>,
     /// Notifications for the client, until it has been told.
     pub(super) notices: Vec<Notice>,
-    /// Requests for the image on the client's system clipboard, until it
+    /// What to ask the client (`Editor::ask_client`), by number, until it
     /// has been asked.
-    pub(super) image_asks: Vec<u64>,
+    pub(super) asks: Vec<(u64, Ask)>,
     /// The client asked to leave, with the editor running on.
     pub(super) detach_requested: bool,
     /// Where the client was asked to go instead of this session.
@@ -104,7 +104,7 @@ impl ClientState {
             undo_group: None,
             copied: None,
             notices: Vec::new(),
-            image_asks: Vec::new(),
+            asks: Vec::new(),
             detach_requested: false,
             switch_requested: None,
             cell_size: (8, 16),

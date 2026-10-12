@@ -421,6 +421,7 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::SshAgentRequest(..)
+            | Output::HomeStatus(_)
             | Output::Notify(_)
             | Output::Ping => {}
             other @ (Output::Exit | Output::Switch(_)) => {
@@ -578,6 +579,7 @@ fn a_session_can_send_its_client_to_another_session() {
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::SshAgentRequest(..)
+            | Output::HomeStatus(_)
             | Output::Notify(_)
             | Output::Ping => {}
             other => panic!("expected a switch, got {other:?}"),

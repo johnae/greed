@@ -510,92 +510,13 @@ fn an_agent_waiting_in_one_session_is_told_to_your_client_in_another() {
     }
 }
 
-/// Folders standing in for another machine's, beside the world's: its
-/// sessions, data (so its own machine id) and cache.
-const THERE: [(&str, &str); 3] = [
-    ("XDG_RUNTIME_DIR", "there/run"),
-    ("XDG_DATA_HOME", "there/data"),
-    ("XDG_CACHE_HOME", "there/cache"),
-];
-
-/// The world's own folders of those, as `World::env` sets them.
-const HERE: [(&str, &str); 3] = [
-    ("XDG_RUNTIME_DIR", "run"),
-    ("XDG_DATA_HOME", "data"),
-    ("XDG_CACHE_HOME", "cache"),
-];
-
-/// Stands in for ssh between the world ("here") and the machine "there":
-/// runs the line it's given with the folders of the host it names.
-fn two_machines_ssh(world: &World) -> std::path::PathBuf {
-    let set = |folders: [(&str, &str); 3]| -> String {
-        let pairs: Vec<String> = folders
-            .iter()
-            .map(|(var, dir)| format!("{var}={}", world.root.join(dir).display()))
-            .collect();
-        pairs.join(" ") + " "
-    };
-    let (here, there) = (set(HERE), set(THERE));
-    let script = format!(
-        "#!/bin/sh\n\
-         while [ \"$2\" != sh ]; do shift; done\n\
-         case \"$1\" in there) exec env {there}sh -s;; here) exec env {here}sh -s;; esac\n\
-         echo \"no host $1\" >&2; exit 255\n"
-    );
-    let path = world.root.join("two-machines-ssh");
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    path
-}
-
-/// Kills the sessions in a sessions folder when it goes.
-struct Ends(std::path::PathBuf);
-
-impl Drop for Ends {
-    fn drop(&mut self) {
-        common::kill_sessions(&self.0, |_| true);
-    }
-}
-
 #[test]
 fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
     let Some(world) = World::new("ctl-hosts") else {
         return;
     };
-    let ssh = two_machines_ssh(&world);
-    for (_, dir) in THERE {
-        std::fs::create_dir_all(world.root.join(dir)).unwrap();
-    }
-    // The other machine's sessions go too, failed or not.
-    let _ends = Ends(world.root.join("there/run/greed"));
-    let with = |command: &mut Command, there: bool| {
-        world.env(command);
-        command.env("GREED_SSH", &ssh).env("GREED_REMOTE", GREED);
-        if there {
-            for (var, dir) in THERE {
-                command.env(var, world.root.join(dir));
-            }
-        }
-    };
-    let start = |name: &str, there: bool| {
-        let mut command = Command::new(GREED);
-        command
-            .arg("serve")
-            .arg(world.project(name, &[("a.txt", "one\n")]))
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        with(&mut command, there);
-        command.spawn().unwrap()
-    };
-    let eval = |name: &str, there: bool, code: &str| {
-        let mut command = Command::new(GREED);
-        command.args(["ctl", "eval", &format!("code={code}")]);
-        with(&mut command, there);
-        command.env("GREED_SESSION", name);
-        let out = command.output().unwrap();
-        String::from_utf8(out.stdout).unwrap().trim().to_owned()
-    };
+    let machines = common::TwoMachines::new(&world);
+    let eval = |name: &str, there: bool, code: &str| machines.eval(name, there, code);
     // Each machine reached the other with greed ssh lately, which noted it.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -606,7 +527,7 @@ fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("ssh-hosts"), format!("{{\"{other}\": {now}}}")).unwrap();
     }
-    let mut servers = [start("alpha", false), start("beta", true)];
+    let mut servers = [machines.serve("alpha", false), machines.serve("beta", true)];
     for (name, there) in [("alpha", false), ("beta", true)] {
         common::wait_until(name, || eval(name, there, "return 'up'") == "up");
     }

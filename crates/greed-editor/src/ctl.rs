@@ -124,7 +124,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 
 /// This machine's hub, as its sessions say (the hub plugin's `hub/name`):
 /// the first by name that answers.
-fn hub() -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn hub() -> Result<String, Box<dyn std::error::Error>> {
     let mut names = live_sessions()?;
     names.sort();
     for name in names {

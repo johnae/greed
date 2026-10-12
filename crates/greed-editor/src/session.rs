@@ -315,6 +315,7 @@ fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::SshAgentRequest(..)
+            | Output::HomeStatus(_)
             | Output::Notify(_)
             | Output::Ping => return Ok(()),
         };
@@ -417,6 +418,10 @@ fn where_to(
         return Ok((stay, Some("nowhere to go back to".to_owned())));
     }
     if to.home {
+        // A session named on this machine, if it runs.
+        if let Some(name) = to.session.filter(|name| live.contains(name)) {
+            return Ok((Next::Here { name, open: None }, None));
+        }
         let last_here = trail.iter().rev().filter(|p| p.host.is_none()).find_map(go);
         if let Some(next) = last_here {
             return Ok((next, None));
@@ -638,25 +643,10 @@ fn show(
                     continue;
                 }
             };
-            // Asked off this thread: a key touch can take a while.
-            if let Output::SshAgentRequest(id, body) = message {
-                let (agent, replies, failure_said) =
-                    (agent.clone(), replies.clone(), failure_said.clone());
-                std::thread::spawn(move || {
-                    let answer = greed_core::ssh_agent::ask_base64(agent.as_deref(), &body);
-                    // Why it failed goes on the status line, rather than
-                    // only "agent refused operation" in the program.
-                    match &answer {
-                        Ok(_) => failure_said.store(false, Ordering::Relaxed),
-                        Err(why) if !failure_said.swap(true, Ordering::Relaxed) => {
-                            let _ = replies.send(Input::Problem(why.clone()));
-                        }
-                        Err(_) => {}
-                    }
-                    let _ = replies.send(Input::SshAgentReply(id, answer.ok()));
-                });
+            let Some(message) = answer_here(message, agent.as_ref(), &replies, &failure_said)
+            else {
                 continue;
-            }
+            };
             said_end |= message.ends();
             if outputs.send(message).is_err() {
                 return;
@@ -675,6 +665,51 @@ fn show(
     } else {
         Some(ended)
     })
+}
+
+/// Answers what the session asks this client to find out on its own
+/// machine, off the reading thread, sending the answer on `replies`: a
+/// request for your ssh agent (to `agent`; `failure_said` keeps a burst of
+/// failures to one word on the status line), or what the hub here says.
+/// Gives back any other message, for the client.
+fn answer_here(
+    message: Output,
+    agent: Option<&PathBuf>,
+    replies: &crossbeam_channel::Sender<Input>,
+    failure_said: &Arc<AtomicBool>,
+) -> Option<Output> {
+    match message {
+        Output::HomeStatus(id) => {
+            let replies = replies.clone();
+            std::thread::spawn(move || {
+                let status = ctl::hub()
+                    .ok()
+                    .and_then(|hub| control::status_of(&hub, control::STATUS_WAIT).ok());
+                let _ = replies.send(Input::HomeStatus(id, status));
+            });
+            None
+        }
+        // A key touch can take a while.
+        Output::SshAgentRequest(id, body) => {
+            let (agent, replies, failure_said) =
+                (agent.cloned(), replies.clone(), failure_said.clone());
+            std::thread::spawn(move || {
+                let answer = greed_core::ssh_agent::ask_base64(agent.as_deref(), &body);
+                // Why it failed goes on the status line, rather than only
+                // "agent refused operation" in the program.
+                match &answer {
+                    Ok(_) => failure_said.store(false, Ordering::Relaxed),
+                    Err(why) if !failure_said.swap(true, Ordering::Relaxed) => {
+                        let _ = replies.send(Input::Problem(why.clone()));
+                    }
+                    Err(_) => {}
+                }
+                let _ = replies.send(Input::SshAgentReply(id, answer.ok()));
+            });
+            None
+        }
+        other => Some(other),
+    }
 }
 
 /// Starts `greed serve` for the session called `name` in the background, its
@@ -1065,7 +1100,8 @@ fn remember_host(host: &str) {
 /// session `session` (or whichever the other end picks), with a heartbeat,
 /// since ssh can go quiet without closing. Fails with the session's reason
 /// if it refuses, e.g. because the two ends run greed versions that don't
-/// speak the same protocol. With `agent`, it says it relays your ssh agent.
+/// speak the same protocol. It answers for the hub on this machine
+/// (`Output::HomeStatus`), and with `agent` says it relays your ssh agent.
 /// Returns the session's name, when its greed says, and whether it agreed
 /// to the heartbeat (an older one doesn't know it).
 fn handshake(
@@ -1078,6 +1114,7 @@ fn handshake(
     let mut params = control::attach_params(client::kind());
     opening.ask(&mut params);
     params["heartbeat"] = Value::Bool(true);
+    params["home"] = Value::Bool(true);
     if agent {
         params["ssh_agent"] = Value::Bool(true);
     }

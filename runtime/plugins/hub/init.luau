@@ -312,13 +312,53 @@ end
 
 --- Another machine: its id and name, its sessions by name, when it was
 --- last heard of (seconds, like `os.time()`), and the ssh host it's
---- reached by, when a hub here follows it.
+--- reached by, when a hub here follows it; `home` when it's the machine a
+--- client attached here from another runs on, which it told of.
 export type Machine = {
 	host: { id: string, name: string },
 	sessions: { [string]: Status },
 	at: number,
 	via: string?,
+	home: boolean?,
 }
+
+-- What the hubs say on the machines of the clients attached from elsewhere
+-- (over `greed ssh`), by client, with when (seconds, like `os.time()`).
+local homes: { [number]: { status: Status, at: number } } = {}
+
+-- Asks each client attached from elsewhere what the hub on its machine
+-- says, one look at a time, so a session there shows what you have where
+-- you are.
+local asking = false
+local function ask_homes()
+	if asking then
+		return
+	end
+	asking = true
+	greed.spawn(function()
+		local attached: { [number]: boolean } = {}
+		for _, client in greed.client.list() do
+			if client.remote then
+				attached[client.id] = true
+				local status = greed.client.home(client.id)
+				local had = homes[client.id]
+				if status then
+					local now = os.time()
+					homes[client.id] = { status = status, at = now - now % 10 }
+					if had == nil or greed.json.encode(had.status) ~= greed.json.encode(status) then
+						changed()
+					end
+				end
+			end
+		end
+		for id in homes do
+			if not attached[id] then
+				homes[id] = nil
+			end
+		end
+		asking = false
+	end)
+end
 
 -- `status` without the others it says of, the way it's passed on.
 local function slim(status: Status): Status
@@ -328,10 +368,11 @@ local function slim(status: Status): Status
 	return out
 end
 
---- The other machines, by id: the ones the hub follows itself, as they say,
---- and the ones they and the hub say of, the freshest of each, none older
---- than `M.STALE` and never this one. A session that isn't the hub has
---- them from the hub.
+--- The other machines, by id: the ones the hub follows itself and those
+--- clients attached here from elsewhere run on, as they say, and the ones
+--- they and the hub say of, the freshest of each, none older than
+--- `M.STALE` and never this one. A session that isn't the hub has them
+--- from the hub too.
 function M.machines(): { [string]: Machine }
 	local me = agent.host().id
 	local now = os.time()
@@ -366,13 +407,15 @@ function M.machines(): { [string]: Machine }
 					sessions = if type(said.sessions) == "table" then said.sessions else {},
 					at = said.at,
 					via = if via then said.via else nil,
+					home = if via then said.home else nil,
 				}, false)
 			end
 		end
 	end
-	for host, follower in hosts.now do
-		local status = follower.status
-		local at, session, machine = follower.at, status and status.session, status and status.host
+	-- What a machine's own hub says, heard directly: by following it
+	-- (`via`), or from a client that runs there (`home`).
+	local function heard_from(status: Status?, at: number?, via: string?, home: boolean?)
+		local session, machine = status and status.session, status and status.host
 		if status and at and type(session) == "string" and type(machine) == "table" then
 			local there: { [string]: Status } = {}
 			if type(status.machine) == "table" then
@@ -381,9 +424,18 @@ function M.machines(): { [string]: Machine }
 				end
 			end
 			there[session] = slim(status)
-			consider({ host = machine :: any, sessions = there, at = at, via = host }, true)
+			consider(
+				{ host = machine :: any, sessions = there, at = at, via = via, home = home },
+				true
+			)
 			told(status, false)
 		end
+	end
+	for _, home in homes do
+		heard_from(home.status, home.at, nil, true)
+	end
+	for host, follower in hosts.now do
+		heard_from(follower.status, follower.at, host)
 	end
 	for _, follower in sessions.now do
 		if follower.status then
@@ -422,9 +474,15 @@ agent.method("hub/name", function()
 end)
 
 --- An agent somewhere: the session it's in, what that session's status
---- says of it, and for another machine its name and the ssh host that
---- reaches it.
-export type Found = { session: string, agent: { [string]: any }, machine: string?, via: string? }
+--- says of it, and for another machine its name and how to get there: the
+--- ssh host that reaches it, or `home` for the machine your client runs on.
+export type Found = {
+	session: string,
+	agent: { [string]: any },
+	machine: string?,
+	via: string?,
+	home: boolean?,
+}
 
 --- Where `found` is, as you're told it: its session, and the machine when
 --- it's another.
@@ -432,27 +490,39 @@ function M.place(found: Found): string
 	return if found.machine then `{found.session} on {found.machine}` else found.session
 end
 
+--- Sends the client to the session `found` is in, wherever it is.
+function M.go(found: Found)
+	if found.home then
+		greed.session.switch({ name = found.session, home = true })
+	else
+		greed.session.switch({ name = found.session, host = found.via })
+	end
+end
+
 --- The agents of the other sessions here and on the other machines, by
 --- machine, session, then label.
 function M.elsewhere(): { Found }
 	local out: { Found } = {}
 	local me = greed.session.current()
-	local function add(statuses: { [string]: Status }, machine: string?, via: string?)
+	local function add(statuses: { [string]: Status }, there: Machine?)
 		for name, status in statuses do
 			local agents = status.agents
-			if (machine or name ~= me) and type(agents) == "table" then
+			if (there or name ~= me) and type(agents) == "table" then
 				for _, said in agents do
-					table.insert(
-						out,
-						{ session = name, agent = said, machine = machine, via = via }
-					)
+					table.insert(out, {
+						session = name,
+						agent = said,
+						machine = there and there.host.name,
+						via = there and not there.home and (there.via or there.host.name) or nil,
+						home = there and there.home,
+					})
 				end
 			end
 		end
 	end
 	add(M.machine())
 	for _, there in M.machines() do
-		add(there.sessions, there.host.name, there.via or there.host.name)
+		add(there.sessions, there)
 	end
 	table.sort(out, function(a: Found, b: Found): boolean
 		if a.machine ~= b.machine then
@@ -507,8 +577,7 @@ greed.command({
 			return
 		end
 		picker.pick("Agents in your sessions", items, function(item)
-			local found: Found = item.value
-			greed.session.switch({ name = found.session, host = found.via })
+			M.go(item.value)
 		end)
 	end,
 })
@@ -737,6 +806,7 @@ greed.on("editor.started", function()
 	greed.spawn(function()
 		while greed.session.current() do
 			M.reconcile()
+			ask_homes()
 			greed.sleep(M.LOOK)
 		end
 	end)

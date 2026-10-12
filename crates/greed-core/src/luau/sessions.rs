@@ -96,11 +96,13 @@ fn switch(lua: &Lua, spec: &Table) -> LuaResult<()> {
         back: flag("back")?,
         home: flag("home")?,
     };
-    let somewhere = to.session.is_some() || to.path.is_some() || to.host.is_some();
+    let path_or_host = to.path.is_some() || to.host.is_some();
+    let somewhere = to.session.is_some() || path_or_host;
     if to.back || to.home {
-        if somewhere || to.window || (to.back && to.home) {
+        // Home may name a session on the client's machine; back takes none.
+        if path_or_host || to.window || (to.back && (to.home || to.session.is_some())) {
             return Err(mlua::Error::runtime(
-                "back and home go on their own: no name, path, host, window or each other",
+                "back goes on its own and home with a name at most: no path, host, window or each other",
             ));
         }
     } else if !somewhere {

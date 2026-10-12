@@ -996,6 +996,14 @@ When two machines follow each other you still get one notification for
 each time an agent waits: an agent's own machine tells the windows attached
 to it, and the other machine tells only the ones it can't reach.
 
+A session you reach with `greed ssh` shows what's on the machine you sit
+at too, though that machine usually can't be reached from there: your
+terminal or window asks the sessions at home and passes on what they say.
+So on eris, `space i A` lists the agents on your laptop as well, `enter`
+on one comes back to it, and `space B` goes back to where you came from.
+What passes this way can only be read; nothing on your machine can be done
+through it from the other.
+
 ## Plugins written by agents
 
 An agent can extend Greed while you work:

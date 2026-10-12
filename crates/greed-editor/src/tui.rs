@@ -84,7 +84,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
                     });
                 }
                 // `session::show` answers these before output gets here.
-                Output::SshAgentRequest(..) => {}
+                Output::SshAgentRequest(..) | Output::HomeStatus(_) => {}
                 Output::Notify(notice) => {
                     if !focused.load(Ordering::Relaxed) {
                         let term = std::env::var("TERM").unwrap_or_default();

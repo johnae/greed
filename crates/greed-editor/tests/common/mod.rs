@@ -237,3 +237,98 @@ pub fn running(world: &World) -> bool {
 pub fn none_running(world: &World) -> bool {
     world.sessions().trim().is_empty()
 }
+
+/// Folders standing in for another machine's, beside the world's: its
+/// sessions, data (so its own machine id) and cache.
+const THERE: [(&str, &str); 3] = [
+    ("XDG_RUNTIME_DIR", "there/run"),
+    ("XDG_DATA_HOME", "there/data"),
+    ("XDG_CACHE_HOME", "there/cache"),
+];
+
+/// The world's own folders of those, as `World::env` sets them.
+const HERE: [(&str, &str); 3] = [
+    ("XDG_RUNTIME_DIR", "run"),
+    ("XDG_DATA_HOME", "data"),
+    ("XDG_CACHE_HOME", "cache"),
+];
+
+/// The world ("here") and another machine beside it ("there"), with an ssh
+/// between them (`ssh`) that runs the line it's given with the folders of
+/// the host it names. The other machine's sessions go when this does,
+/// failed or not.
+pub struct TwoMachines<'a> {
+    pub world: &'a World,
+    pub ssh: PathBuf,
+}
+
+impl<'a> TwoMachines<'a> {
+    pub fn new(world: &'a World) -> Self {
+        for (_, dir) in THERE {
+            std::fs::create_dir_all(world.root.join(dir)).unwrap();
+        }
+        let set = |folders: [(&str, &str); 3]| -> String {
+            let pairs: Vec<String> = folders
+                .iter()
+                .map(|(var, dir)| format!("{var}={}", world.root.join(dir).display()))
+                .collect();
+            pairs.join(" ") + " "
+        };
+        let (here, there) = (set(HERE), set(THERE));
+        // `ssh -G` (your ssh config, as `greed ssh` reads it) says nothing.
+        let script = format!(
+            "#!/bin/sh\n\
+             [ \"$1\" = -G ] && exit 0\n\
+             while [ $# -gt 1 ] && [ \"$2\" != sh ]; do shift; done\n\
+             case \"$1\" in there) exec env {there}sh -s;; here) exec env {here}sh -s;; esac\n\
+             echo \"no host $1\" >&2; exit 255\n"
+        );
+        let ssh = world.root.join("two-machines-ssh");
+        std::fs::write(&ssh, script).unwrap();
+        std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        TwoMachines { world, ssh }
+    }
+
+    /// `command` as it runs on one machine, with this ssh and greed.
+    pub fn env(&self, command: &mut Command, there: bool) {
+        self.world.env(command);
+        command
+            .env("GREED_SSH", &self.ssh)
+            .env("GREED_REMOTE", GREED);
+        if there {
+            for (var, dir) in THERE {
+                command.env(var, self.world.root.join(dir));
+            }
+        }
+    }
+
+    /// A headless session for a new project `name` on one machine.
+    pub fn serve(&self, name: &str, there: bool) -> std::process::Child {
+        let mut command = Command::new(GREED);
+        command
+            .arg("serve")
+            .arg(self.world.project(name, &[("a.txt", "one\n")]))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        self.env(&mut command, there);
+        command.spawn().unwrap()
+    }
+
+    /// What `eval` of `code` returns in session `name` on one machine.
+    pub fn eval(&self, name: &str, there: bool, code: &str) -> String {
+        let mut command = Command::new(GREED);
+        command.args(["ctl", "eval", &format!("code={code}")]);
+        self.env(&mut command, there);
+        command.env("GREED_SESSION", name);
+        let out = command.output().unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    }
+}
+
+impl Drop for TwoMachines<'_> {
+    fn drop(&mut self) {
+        kill_sessions(&self.world.root.join("there/run/greed"), |_| true);
+    }
+}

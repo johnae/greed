@@ -658,6 +658,16 @@ pub(crate) fn new_token() -> io::Result<String> {
     crate::luau::hash::random_hex(16)
 }
 
+/// What a client attached over `greed ssh` answers for on its own machine,
+/// as it said when it attached.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Answers {
+    /// It relays your ssh agent (`Output::SshAgentRequest`).
+    pub ssh_agent: bool,
+    /// It asks the hub there (`Output::HomeStatus`).
+    pub home: bool,
+}
+
 /// A connection that asked to attach, for the server to send frames to and
 /// read input from: one JSON message per line each way.
 pub struct Attachment {
@@ -683,9 +693,8 @@ pub struct Attachment {
     pub takeover: bool,
     /// The build of greed it is, when it said.
     pub build: Option<String>,
-    /// Whether it relays your ssh agent, answering the session's
-    /// `Output::SshAgentRequest`.
-    pub ssh_agent: bool,
+    /// What it answers for on its own machine.
+    pub answers: Answers,
     /// How often it and the session say they're there (`Ping`) when they
     /// have nothing else to send, if it asked for a heartbeat ([`HEARTBEAT`]).
     pub heartbeat: Option<Duration>,
@@ -714,7 +723,10 @@ impl Attachment {
                 .and_then(crate::ClientLayout::parse),
             takeover: params["takeover"].as_bool() == Some(true),
             build: params["build"].as_str().map(str::to_owned),
-            ssh_agent: params["ssh_agent"].as_bool() == Some(true),
+            answers: Answers {
+                ssh_agent: params["ssh_agent"].as_bool() == Some(true),
+                home: params["home"].as_bool() == Some(true),
+            },
             heartbeat: heartbeat_of(&params["heartbeat"]),
         }
     }

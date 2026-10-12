@@ -56,6 +56,9 @@ pub enum Input {
     /// client's machine answered, the message's body in base64, or none
     /// when it couldn't be asked.
     SshAgentReply(u64, Option<String>),
+    /// The answer to `Output::HomeStatus`: the status of the hub on the
+    /// client's machine, or none when it couldn't be asked.
+    HomeStatus(u64, Option<serde_json::Value>),
     /// A debug line from the client's side, sent while the frames it gets
     /// say the `client` topic is on (see [`crate::debug`]).
     Log(String),
@@ -97,6 +100,11 @@ pub enum Output {
     /// agent on its machine; it answers with `Input::SshAgentReply` and
     /// this id.
     SshAgentRequest(u64, String),
+    /// Asks a client that said it would as it attached (over `greed ssh`)
+    /// for the status of the hub on its own machine, which it asks as an
+    /// ordinary client, so nothing there can be done through it; it answers
+    /// with `Input::HomeStatus` and this id.
+    HomeStatus(u64),
     /// An image frames will place, sent once before the first frame that
     /// does.
     Image(ImageData),
@@ -272,8 +280,8 @@ struct Client {
     held: VecDeque<Input>,
     /// Since when `held` has waited for the command at work now.
     held_since: Option<Instant>,
-    /// Whether it relays your ssh agent.
-    ssh_agent: bool,
+    /// What it answers for on its own machine.
+    answers: crate::control::Answers,
 }
 
 impl Client {
@@ -282,7 +290,7 @@ impl Client {
             output,
             local,
             connection,
-            ssh_agent: false,
+            answers: crate::control::Answers::default(),
             last: None,
             sent: 0,
             images: HashSet::new(),
@@ -404,6 +412,7 @@ fn turn_of(input: &Input) -> Turn {
         | Input::CellSize(..)
         | Input::Clipboard(_)
         | Input::ClipboardImage(..)
+        | Input::HomeStatus(..)
         | Input::SshAgentReply(..)
         | Input::Log(_)
         | Input::Refresh
@@ -780,7 +789,8 @@ impl Server<'_> {
         if self.host.with_editor(crate::Editor::quit_requested) {
             return false;
         }
-        // Desktop notifications go to the client used last.
+        // Desktop notifications go to the client they're for; the client
+        // used last's to the one used last that's attached.
         let notified = self.host.with_editor(Editor::last_active);
         let notices = self.as_client(notified, Editor::take_notices);
         if let Some(to) = self.last_active() {
@@ -790,9 +800,12 @@ impl Server<'_> {
         }
         let ids: Vec<ClientId> = self.clients.keys().copied().collect();
         for id in ids {
-            // Each client reads its own clipboard, on its own machine.
-            for ask in self.as_client(id, Editor::take_image_asks) {
-                self.send_to(id, Output::ReadClipboardImage(ask));
+            for notice in self.as_client(id, Editor::take_notices) {
+                self.send_to(id, Output::Notify(notice));
+            }
+            // Each client finds out what it's asked on its own machine.
+            for (ask, what) in self.as_client(id, Editor::take_asks) {
+                self.ask(id, ask, what);
             }
             let local = self.clients.get(&id).is_some_and(|c| c.local);
             if let Some(to) = self.as_client(id, Editor::take_switch_request) {
@@ -898,8 +911,13 @@ impl Server<'_> {
                 let png = png
                     .as_ref()
                     .and_then(|png| base64::engine::general_purpose::STANDARD.decode(png).ok());
+                let png = png.map(crate::Answer::Png);
+                self.host.with_editor_mut(|ed| ed.answer_ask(id, ask, png));
+            }
+            Input::HomeStatus(ask, ref status) => {
+                let status = status.clone().map(crate::Answer::Json);
                 self.host
-                    .with_editor_mut(|ed| ed.answer_image_ask(id, ask, png));
+                    .with_editor_mut(|ed| ed.answer_ask(id, ask, status));
             }
             Input::Dropped(ref path, ref data) => {
                 let remote = self
@@ -982,6 +1000,18 @@ impl Server<'_> {
         }
     }
 
+    /// Asks client `id` what `what` says, as ask `ask`; one that said as it
+    /// attached that it can't answer that has nothing to say.
+    fn ask(&mut self, id: ClientId, ask: u64, what: crate::Ask) {
+        match what {
+            crate::Ask::ClipboardImage => self.send_to(id, Output::ReadClipboardImage(ask)),
+            crate::Ask::HomeStatus if self.clients.get(&id).is_some_and(|c| c.answers.home) => {
+                self.send_to(id, Output::HomeStatus(ask));
+            }
+            crate::Ask::HomeStatus => self.host.with_editor_mut(|ed| ed.answer_ask(id, ask, None)),
+        }
+    }
+
     /// Lets client `id` go; the editor carries on without it.
     fn detach(&mut self, id: ClientId) {
         self.send_to(id, Output::Detached);
@@ -1007,7 +1037,7 @@ impl Server<'_> {
         self.host.with_editor(|ed| {
             self.clients
                 .iter()
-                .filter(|(_, c)| c.ssh_agent)
+                .filter(|(_, c)| c.answers.ssh_agent)
                 .max_by_key(|(id, _)| ed.client_state(**id).map(crate::ClientState::active_at))
                 .map(|(id, _)| *id)
         })
@@ -1138,7 +1168,7 @@ impl Server<'_> {
             layout,
             takeover,
             build,
-            ssh_agent,
+            answers,
             heartbeat,
         } = attachment;
         let others: Vec<ClientId> = self
@@ -1218,7 +1248,7 @@ impl Server<'_> {
             return;
         }
         let mut client = Client::new(output, false, connection);
-        client.ssh_agent = ssh_agent;
+        client.answers = answers;
         client.message = unseen.or_else(|| other_build(build.as_deref()));
         self.clients.insert(id, client);
         if let Some(layout) = layout {
