@@ -171,6 +171,8 @@ type Own = {
 	run: (s: Session, args: any) -> string,
 	--- What the call would let a plugin do that it couldn't (agent.widens).
 	widens: ((s: Session, args: any) -> string?)?,
+	--- Why the call is risky (`kubectl delete`), as a tool's `danger` says.
+	danger: ((args: any) -> string?)?,
 	--- The change it would make, as lines starting "- " (gone) and "+ "
 	--- (new), shown on its row before you're asked.
 	preview: ((s: Session, args: any) -> { string })?,
@@ -887,6 +889,9 @@ local OWN: { Own } = {
 		title = function(args)
 			return `Run {args.command}`
 		end,
+		danger = function(args)
+			return if type(args.command) == "string" then core.risk.of(args.command) else nil
+		end,
 		run = function(s, args)
 			local done, err = greed.process.run({ "sh", "-c", args.command }, { cwd = s.cwd })
 			if done == nil then
@@ -1077,26 +1082,6 @@ local function allowed(s: Session, state: State, title: string, kind: string): b
 	return chosen == "once" or chosen == "always"
 end
 
--- The arguments that best say what a call of one of Greed's tools is about,
--- in the order they're looked for.
-local TELLING = { "path", "file", "query", "pattern", "name", "symbol", "group", "url", "command" }
-
--- A call of one of Greed's tools as its row in the transcript names it:
--- the tool and what it's about, like "read src/main.rs".
-local function title_of(s: Session, c: models.Call): string
-	for _, key in TELLING do
-		local value = c.input[key]
-		if type(value) == "string" and value ~= "" then
-			if key == "path" or key == "file" then
-				value = core.project.relative(value, s.root)
-			end
-			local line = string.match(value, "^[^\n]*") or value
-			return `{c.name} {core.text.clip(line, 50)}`
-		end
-	end
-	return c.name
-end
-
 -- Runs one call the model asked for and returns what it gets back, and
 -- whether that's an error.
 local function call(
@@ -1114,7 +1099,7 @@ local function call(
 	local kind = if own then own.kind else (registered and registered.kind) or "read"
 	local tool: session.Tool = {
 		id = c.id,
-		title = if own then own.title(c.input) else title_of(s, c),
+		title = if own then own.title(c.input) else agent.title(c.name, c.input, s.root),
 		kind = kind,
 		status = "pending",
 		detail = {},
@@ -1148,11 +1133,19 @@ local function call(
 	end
 	-- One letting a plugin do more asks you, and only you, every time.
 	local widens = if own and own.widens then own.widens(s, c.input) else nil
+	-- A risky call asks you, and only you, every time.
+	local danger = if own
+		then (if own.danger then own.danger(c.input) else nil)
+		else agent.danger(registered :: agent.Tool, c.input)
 	local refused = nil
 	if widens then
 		local title = `{tool.title}, which {widens}`
 		if session.ask(s, title, kind, session.ONCE, nil, true) ~= "once" then
 			refused = session.NOT_WIDENED
+		end
+	elseif danger then
+		if session.ask(s, `{tool.title}: {danger}`, kind, session.ONCE, nil, true) ~= "once" then
+			refused = "the user didn't allow it"
 		end
 	elseif asks and not allowed(s, state, tool.title, kind) then
 		refused = "the user didn't allow it"

@@ -335,8 +335,9 @@ folder the agent works in, as a block of its own there: output as it
 comes, `ctrl-c` to stop it, and `space o w` to find it later. `↳ prompt`
 puts it at that shell's prompt to look over and change first, and `⧉ copy`
 copies it. Click one, press `enter` on the fence to pick, or `space .` on
-it. A command that destroys or stops something (`rm`, `kill`, `git push
---force`, `kubectl delete` and the like) asks y/n before it runs. A
+it. A command that destroys, stops or sends something (`rm`, `kill`, `git push`,
+`kubectl delete`, `curl -X DELETE` and the like) asks y/n before it runs,
+saying why. A
 `console` block's commands are its lines after a `$ ` prompt.
 
 To show the agent a screenshot, copy it and press `alt-v` in the
@@ -380,7 +381,10 @@ of the session, `n` no), and your policies answer them too. So do the
 tools above that write, run or fetch something, like `notes_write`,
 `blocks_run` and `web_fetch`, by the kind of thing they do; tools that show
 you their work themselves, like `propose`, `ask` and `eval`, don't ask
-first. Its edits go
+first. A command that destroys, stops or sends something (`kubectl
+delete`, `git push`, `rm`, `docker rm`, `curl -X POST`) asks every time,
+saying why, whatever you allowed; so does `shell_run` from any agent. Its
+edits go
 through the file's buffer, so `u` takes them back, and it hears what the
 language server reports about the file right after. Several changes to a
 file in one `edit_file` are one change to undo. It won't write a whole file

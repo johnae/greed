@@ -7,7 +7,8 @@
 -- that their list changed and fetch it again.
 
 local greed = require("@greed")
-local registry = require("@core").registry
+local core = require("@core")
+local registry = core.registry
 
 --- Who's calling a tool. `kind` says how they reach Greed: "shell" for
 --- `greed ctl`, "socket" for MCP clients like `greed mcp`, "ide" for
@@ -48,6 +49,10 @@ export type Tool = {
 	--- It puts what it does in front of the user itself (a proposal, a
 	--- question, an approval page), so agents don't ask before it runs.
 	reviews: boolean?,
+	--- Why a call with `args` could destroy or change something that
+	--- matters (`kubectl delete`), or nil. Such a call asks you every time,
+	--- whatever you allowed, and only you can say yes.
+	danger: ((args: { [string]: any }) -> string?)?,
 	--- It does more than read but nothing that needs your say, like
 	--- checking a plugin in a sandbox, so agents don't ask before it runs.
 	sandboxed: boolean?,
@@ -120,6 +125,36 @@ end
 --- read, and puts nothing in front of you itself.
 function M.asks(tool: Tool): boolean
 	return (tool.kind or "read") ~= "read" and not tool.reviews and not tool.sandboxed
+end
+
+--- Why a call of `tool` with `args` is risky (its `danger`), or nil.
+function M.danger(tool: Tool, args: { [string]: any }): string?
+	local danger = tool.danger
+	if danger == nil then
+		return nil
+	end
+	local ok, why = pcall(danger, args)
+	return if ok then why else nil
+end
+
+-- The arguments that best say what a call is about, in the order they're
+-- looked for.
+local TELLING = { "path", "file", "query", "pattern", "name", "symbol", "group", "url", "command" }
+
+--- A call of tool `name` with `args` as a line names it: the tool and what
+--- it's about, like "read src/main.rs", paths from `root`.
+function M.title(name: string, args: { [string]: any }, root: string): string
+	for _, key in TELLING do
+		local value = args[key]
+		if type(value) == "string" and value ~= "" then
+			if key == "path" or key == "file" then
+				value = core.project.relative(value, root)
+			end
+			local line = string.match(value, "^[^\n]*") or value
+			return `{name} {core.text.clip(line, 50)}`
+		end
+	end
+	return name
 end
 
 -- The callers made for calls from a shell (`greed ctl`). Only the registry
@@ -337,6 +372,23 @@ function M.call(name: string, arguments: { [string]: any }, caller: Caller)
 	local wrong = M.check(tool, arguments)
 	if wrong then
 		return M.result(wrong, true)
+	end
+	-- A risky call from anyone but you, in your own shell, waits for your
+	-- yes.
+	local why = if M.from_shell(caller) then nil else M.danger(tool, arguments)
+	if why then
+		local label = M.title(tool.name, arguments, greed.project.current().root)
+		local action: any = {
+			kind = "tool",
+			name = tool.name,
+			says = function()
+				return why
+			end,
+		}
+		local target = { kind = "tool", label = label, value = arguments }
+		if #core.actions.confirm(action, { target }, "agent") == 0 then
+			return M.result(`the user didn't allow it: {label} {why}`, true)
+		end
 	end
 	local thread = coroutine.running()
 	running[thread] = caller.connection

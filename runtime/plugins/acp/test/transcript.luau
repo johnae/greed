@@ -614,7 +614,8 @@ test("shell code in a transcript has run, prompt and copy buttons", function(t)
 	assert(#sh.blocks == before, "n leaves it be")
 	assert(acp.code.risky("ls\nsudo rm -rf x") and not acp.code.risky("echo kill"))
 	assert(acp.code.risky("cd x && rm -rf y") and acp.code.risky("git push -f"))
-	assert(not acp.code.risky("git push origin fix-foo"))
+	assert(acp.code.risky("git push origin fix-foo") == "sends commits to a remote")
+	assert(not acp.code.risky("git status && ls"))
 end)
 
 -- A 1 by 1 pixel PNG.

@@ -104,3 +104,19 @@ test("container rows are container:NAME", function(t)
 	local web = assert(core.objects.get("container:web"))
 	assert(core.objects.inspect(web).row.IMAGE == "nginx")
 end)
+
+test("docker that changes containers is risky for an agent; looking isn't", function()
+	local risk = core.risk
+	for _, line in { "docker ps -a", "docker logs web", "docker compose ps", "docker image ls" } do
+		assert(risk.of(line) == nil, line)
+	end
+	local cases: { [string]: string } = {
+		["docker rm -f web"] = "(docker rm)",
+		["docker compose down"] = "(docker down)",
+		["docker exec -it web sh"] = "in a container",
+	}
+	for line, says in cases do
+		local why = risk.of(line)
+		assert(why and string.find(why, says, 1, true), `{line}: {why}`)
+	end
+end)

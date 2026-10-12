@@ -7,6 +7,7 @@
 -- like it destroys something still asks first.
 
 local greed = require("@greed")
+local core = require("@core")
 local markdown = require("@markdown")
 
 local M = {}
@@ -107,42 +108,11 @@ function M.draw(buffer: greed.Buffer, stop: number?, plain: { [number]: boolean 
 	buffer:decorate("acp-code", marks)
 end
 
--- Commands that destroy something, or stop it, asked about before they run.
-local RISKY = {
-	"^%s*sudo%s",
-	"^%s*rm%s",
-	"^%s*kill%s",
-	"^%s*pkill%s",
-	"^%s*killall%s",
-	"^%s*dd%s",
-	"^%s*mkfs",
-	"^%s*shutdown",
-	"^%s*reboot",
-	"^%s*git%s+push%s.*%-%-force",
-	"^%s*git%s+push.*%s%-f%f[^%w%-]",
-	"^%s*git%s+reset%s+%-%-hard",
-	"^%s*git%s+clean%s",
-	"^%s*jj%s+abandon",
-	"^%s*kubectl%s+delete",
-	"^%s*kubectl%s+drain",
-	"^%s*docker%s+rm",
-	"^%s*docker%s+system%s+prune",
-	"^%s*terraform%s+destroy",
-	"^%s*terraform%s+apply",
-}
-
---- Whether `text` has a command in it that destroys or stops something,
---- like `rm`, `kill` or `kubectl delete`, on a line of its own or after
---- `;`, `&&`, `||` or `|`.
-function M.risky(text: string): boolean
-	for command in string.gmatch(text, "[^\n;&|]+") do
-		for _, pattern in RISKY do
-			if string.find(command, pattern) then
-				return true
-			end
-		end
-	end
-	return false
+--- Why `text` is risky to run, as `core.risk` says: a command in it
+--- destroys or stops something, like `rm`, `kill` or `kubectl delete`; nil
+--- when none does.
+function M.risky(text: string): string?
+	return core.risk.of(text)
 end
 
 -- This project's shell, opened without showing it when there's none, or
@@ -165,11 +135,11 @@ function M.run(code: Code, cwd: string): any?
 	if shell == nil then
 		return nil
 	end
-	if M.risky(code.text) then
+	local why = M.risky(code.text)
+	if why then
 		local first = string.match(code.text, "^[^\n]*") or code.text
-		greed.echo(
-			`run {first}{if string.find(code.text, "\n") then " …" else ""} in the shell? y/n`
-		)
+		local more = if string.find(code.text, "\n") then " …" else ""
+		greed.echo(`run {first}{more} in the shell? It {why}. y/n`)
 		local yes = greed.next_key() == "y"
 		greed.echo("")
 		if not yes then

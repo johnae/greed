@@ -1,0 +1,290 @@
+-- Which command lines change or destroy something that matters, so an
+-- agent running one is asked about it every time: `kubectl delete`, `git
+-- push --force`, `curl -X DELETE`, `rm -rf`. Each program's rules say why
+-- a command of it is risky, given its words; the plugin that knows a
+-- program adds its rules (kubectl's are the kubernetes plugin's).
+--
+-- It reads command lines leniently: every command of a pipeline or list
+-- (`a | b && c; d`, and what's inside `$(...)`), past `env`, `nohup` and
+-- variable assignments. It's there to catch mistakes, not someone hiding
+-- a command; running anything is already something you allow.
+
+local greed = require("@greed")
+local registry = require("./registry")
+
+local M = {}
+
+--- Why a command (its words, the program first, as typed) is risky, or nil
+--- when it isn't.
+export type Rule = (words: { string }) -> string?
+
+type Entry = { program: string, rule: Rule }
+
+local rules: { Entry } = {}
+
+--- Adds `rule` for commands running `program` (its name, without a
+--- folder), until the plugin that added it goes.
+function M.rule(program: string, rule: Rule)
+	local entry: Entry = { program = program, rule = rule }
+	greed.plugin.tie(registry.put(rules, entry, function(other: Entry): boolean
+		return other == entry
+	end))
+end
+
+-- The commands in `line`, each as its words: split at the characters that
+-- end a command outside quotes, quotes taken off.
+local function commands(line: string): { { string } }
+	local out: { { string } } = {}
+	local words: { string } = {}
+	local word: { string }? = nil
+	local quote: string? = nil
+	local function end_word()
+		if word then
+			table.insert(words, table.concat(word))
+			word = nil
+		end
+	end
+	local function end_command()
+		end_word()
+		if #words > 0 then
+			table.insert(out, words)
+		end
+		words = {}
+	end
+	for i = 1, #line do
+		local ch = string.sub(line, i, i)
+		if quote then
+			if ch == quote then
+				quote = nil
+			else
+				table.insert(word :: { string }, ch)
+			end
+		elseif ch == "'" or ch == '"' then
+			quote = ch
+			word = word or {}
+		elseif ch == " " or ch == "\t" then
+			end_word()
+		elseif string.find("|&;\n()`", ch, 1, true) then
+			end_command()
+		elseif ch == "$" and string.sub(line, i + 1, i + 1) == "(" then
+			end_command()
+		else
+			word = word or {}
+			table.insert(word :: { string }, ch)
+		end
+	end
+	end_command()
+	return out
+end
+
+-- Words that run the command after them.
+local RUNS_NEXT: { [string]: boolean } = {
+	sudo = true,
+	doas = true,
+	env = true,
+	nohup = true,
+	time = true,
+	command = true,
+	exec = true,
+	nice = true,
+	xargs = true,
+}
+
+-- `words` from the program it runs: past `sudo`, `env`, their flags and
+-- variable assignments.
+local function program_words(words: { string }): { string }
+	local i = 1
+	while i <= #words do
+		local word = words[i]
+		local assignment = string.match(word, "^[%a_][%w_]*=") ~= nil
+		local flag = i > 1 and RUNS_NEXT[words[i - 1]] and string.sub(word, 1, 1) == "-"
+		if not (assignment or RUNS_NEXT[word] or flag) then
+			break
+		end
+		i += 1
+	end
+	return table.move(words, i, #words, 1, {})
+end
+
+-- Words that run what follows as another user.
+local AS_ROOT: { [string]: boolean } = { sudo = true, doas = true }
+
+--- Why `line` is risky to run: what the first risky command in it does,
+--- by its program's rules, or else that something in it runs as root; nil
+--- when nothing in it is.
+function M.of(line: string): string?
+	local root = false
+	for _, typed in commands(line) do
+		for _, word in typed do
+			root = root or AS_ROOT[word] == true
+		end
+		local words = program_words(typed)
+		local first = words[1]
+		if first then
+			local program = string.match(first, "([^/]+)$") or first
+			for _, entry in rules do
+				if entry.program == program then
+					local ok, why = pcall(entry.rule, words)
+					if ok and why then
+						return why
+					end
+				end
+			end
+		end
+	end
+	return if root then "runs as root" else nil
+end
+
+--- Whether `words` has any of `flags`, alone or with a value (`--force`,
+--- `--force=true`), or a short one among others (`-rf` has `-f`).
+function M.has_flag(words: { string }, flags: { string }): boolean
+	for _, word in words do
+		for _, flag in flags do
+			if word == flag or string.sub(word, 1, #flag + 1) == flag .. "=" then
+				return true
+			end
+			local short = string.match(flag, "^%-(%a)$")
+			if short and string.match(word, "^%-%a+$") and string.find(word, short, 2, true) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+--- The words of `words` that aren't flags, from the second.
+function M.args(words: { string }): { string }
+	local out: { string } = {}
+	for i = 2, #words do
+		if string.sub(words[i], 1, 1) ~= "-" then
+			table.insert(out, words[i])
+		end
+	end
+	return out
+end
+
+-- The rules for programs no plugin knows better.
+
+M.rule("rm", function(words)
+	return if M.has_flag(words, { "-r", "-R", "-f", "--recursive", "--force" })
+		then "deletes files without asking"
+		else "deletes files"
+end)
+
+for _, program in { "dd", "mkfs", "shutdown", "reboot", "halt", "poweroff" } do
+	M.rule(program, function()
+		return `changes the machine itself ({program})`
+	end)
+end
+
+for _, program in { "chmod", "chown" } do
+	M.rule(program, function(words)
+		return if M.has_flag(words, { "-R", "--recursive" })
+			then `changes who may use every file under a folder`
+			else nil
+	end)
+end
+
+M.rule("kill", function()
+	return "stops a program"
+end)
+M.rule("pkill", function()
+	return "stops programs by name"
+end)
+M.rule("killall", function()
+	return "stops programs by name"
+end)
+
+M.rule("git", function(words)
+	local args = M.args(words)
+	local command = args[1]
+	if command == "push" then
+		if M.has_flag(words, { "-f", "--force", "--force-with-lease", "--delete", "-d" }) then
+			return "pushes over or deletes what's on a remote"
+		end
+		return "sends commits to a remote"
+	elseif command == "reset" and M.has_flag(words, { "--hard" }) then
+		return "throws away changes"
+	elseif command == "clean" then
+		return "deletes files git doesn't track"
+	elseif command == "branch" and M.has_flag(words, { "-D" }) then
+		return "deletes a branch, merged or not"
+	elseif command == "checkout" and table.find(words, "--") then
+		return "throws away changes to files"
+	elseif command == "restore" then
+		return "throws away changes to files"
+	end
+	return nil
+end)
+
+M.rule("jj", function(words)
+	local args = M.args(words)
+	if args[1] == "git" and args[2] == "push" then
+		return "sends changes to a remote"
+	elseif args[1] == "abandon" then
+		return "abandons changes"
+	elseif args[1] == "op" and (args[2] == "restore" or args[2] == "abandon") then
+		return "rewinds the repository's history"
+	end
+	return nil
+end)
+
+-- The HTTP methods that change something.
+local CHANGING: { [string]: boolean } = { POST = true, PUT = true, PATCH = true, DELETE = true }
+
+M.rule("curl", function(words)
+	for i, word in words do
+		local method = if word == "-X" or word == "--request"
+			then words[i + 1]
+			else string.match(word, "^%-%-request=(.+)$") or string.match(word, "^%-X(%a+)$")
+		if method and CHANGING[string.upper(method)] then
+			return `sends a {string.upper(method)} request`
+		end
+	end
+	if
+		M.has_flag(words, {
+			"-d",
+			"--data",
+			"--data-raw",
+			"--data-binary",
+			"--json",
+			"-F",
+			"--form",
+			"-T",
+			"--upload-file",
+		})
+	then
+		return "sends data in a request"
+	end
+	return nil
+end)
+
+for _, program in { "http", "https", "xh" } do
+	M.rule(program, function(words)
+		local method = M.args(words)[1]
+		return if method and CHANGING[string.upper(method)]
+			then `sends a {string.upper(method)} request`
+			else nil
+	end)
+end
+
+-- The helm commands that change a cluster.
+local HELM_CHANGES: { [string]: boolean } =
+	{ install = true, upgrade = true, uninstall = true, delete = true, rollback = true }
+
+M.rule("helm", function(words)
+	local command = M.args(words)[1]
+	return if command and HELM_CHANGES[command] then `changes a cluster (helm {command})` else nil
+end)
+
+M.rule("terraform", function(words)
+	local command = M.args(words)[1]
+	if command == "apply" or command == "destroy" or command == "import" or command == "taint" then
+		return `changes real infrastructure (terraform {command})`
+	elseif command == "state" then
+		return "changes terraform's state"
+	end
+	return nil
+end)
+
+return M

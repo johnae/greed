@@ -1883,6 +1883,7 @@ A plugin offering tools lists `agent` in `requires`. The tool's parts:
 | `group` | The group it's offered with; left out, it's always offered (below) |
 | `kind` | What it does beyond reading: `"edit"` (changes files or notes), `"execute"` (runs code or programs) or `"fetch"` (reaches the network); left out, `"read"` |
 | `reviews` | `true` when the tool puts what it does in front of the user itself, as a proposal or a question does |
+| `danger` | `danger(args)` says why a call is risky (`kubectl delete` "changes the cluster"), or nil; such a call asks the user every time, whatever they allowed |
 | `run` | `run(args, caller)` does the work |
 
 Greed's own agent asks the user before a tool whose `kind` isn't `"read"`
@@ -1891,6 +1892,11 @@ MCP clients see the others marked read-only. Set `kind` on every tool
 that changes, runs or fetches something, so it isn't run unasked.
 `sandboxed = true` marks a tool that does more than read but needs no say
 from the user, like checking a plugin in an editor of its own.
+A call whose `danger` says why waits for the user's yes every time, from
+any agent, MCP clients included; only `greed ctl` skips it. For command
+lines, `require("@core").risk.of(line)` says why one is risky, and
+`risk.rule(program, function(words) ... end)` teaches it a program's,
+as the kubernetes and docker plugins do for kubectl and docker.
 `shell_only = true` keeps a tool for `greed ctl` and the programs Greed's
 shell runs, like `greed edit`: agents aren't offered it and can't call it.
 

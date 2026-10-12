@@ -121,3 +121,41 @@ test("act on several ids reviews a destroying action once, and says which the us
 	assert(#deleted == 1 and deleted[1] == "A-2", table.concat(deleted, ","))
 	assert(result.on[1] == "ticket:A-2" and result.declined[1] == "ticket:A-1")
 end)
+
+test("a risky tool call waits for the user's yes, and says so when it doesn't get it", function(t)
+	local ran: { string } = {}
+	agent.tool({
+		name = "frob",
+		description = "Frobs",
+		kind = "execute",
+		danger = function(args)
+			return if args.hard then "frobs hard" else nil
+		end,
+		run = function(args)
+			table.insert(ran, if args.hard then "hard" else "soft")
+			return "frobbed"
+		end,
+	})
+	t:buffer("|x")
+	local soft = agent.call("frob", { hard = false }, agent.caller())
+	assert(not soft.isError and ran[1] == "soft", "a safe call runs")
+	local result: any = nil
+	greed.spawn(function()
+		result = agent.call("frob", { hard = true }, agent.caller())
+	end)
+	local review = table.concat(t:floats(), "\n")
+	assert(string.find(review, "frobs hard", 1, true), review)
+	t:keys("esc")
+	t:wait_for(function()
+		return result ~= nil
+	end)
+	assert(result.isError and #ran == 1, agent.as_text(result))
+	greed.spawn(function()
+		result = agent.call("frob", { hard = true }, agent.caller())
+	end)
+	t:keys("enter")
+	t:wait_for(function()
+		return #ran == 2
+	end)
+	assert(ran[2] == "hard")
+end)

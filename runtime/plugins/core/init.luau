@@ -148,4 +148,6 @@ return {
 	recent = require("@self/recent"),
 	--- Watching objects for changes, with a notification saying how (watch.luau).
 	watch = require("@self/watch"),
+	--- Which command lines are risky for an agent to run, and why (risk.luau).
+	risk = require("@self/risk"),
 }

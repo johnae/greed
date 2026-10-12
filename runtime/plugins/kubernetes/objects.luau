@@ -491,6 +491,54 @@ function M.resources(): { string }
 	return out
 end
 
+-- The kubectl commands that only look.
+local LOOKS: { [string]: boolean } = {
+	get = true,
+	describe = true,
+	logs = true,
+	top = true,
+	explain = true,
+	["api-resources"] = true,
+	["api-versions"] = true,
+	version = true,
+	["cluster-info"] = true,
+	diff = true,
+	auth = true,
+	wait = true,
+	events = true,
+	completion = true,
+	["port-forward"] = true,
+}
+
+-- The `kubectl config` commands that only look.
+local CONFIG_LOOKS: { [string]: boolean } = {
+	view = true,
+	["current-context"] = true,
+	["get-contexts"] = true,
+	["get-clusters"] = true,
+	["get-users"] = true,
+}
+
+-- What kubectl `words` does that's risky, when an agent runs it.
+core.risk.rule("kubectl", function(words: { string }): string?
+	local args = read_line(words).args
+	local command = args[1]
+	if command == nil or LOOKS[command] then
+		return nil
+	elseif command == "config" then
+		return if CONFIG_LOOKS[args[2] or ""] then nil else "changes which cluster kubectl talks to"
+	elseif
+		command == "exec"
+		or command == "attach"
+		or command == "cp"
+		or command == "debug"
+		or command == "run"
+	then
+		return `runs or puts something inside the cluster (kubectl {command})`
+	end
+	return `changes the cluster (kubectl {command})`
+end)
+
 M.VALUED = VALUED
 
 return M

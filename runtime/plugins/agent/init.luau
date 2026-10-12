@@ -73,6 +73,10 @@ return table.freeze({
 	error_text = registry.error_text,
 	--- Whether an agent asks you before a tool runs, by its kind (registry.luau).
 	asks = registry.asks,
+	--- Why a call of a tool is risky, by its `danger`; and a call as a line
+	--- names it, like "read src/main.rs" (registry.luau).
+	danger = registry.danger,
+	title = registry.title,
 	--- Why arguments don't fit a tool's schema, and running a tool by name
 	--- as MCP does, arguments checked first (registry.luau).
 	check = registry.check,

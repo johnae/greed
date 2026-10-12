@@ -271,4 +271,51 @@ shell.action_command("image", "pull", function(value: any): string
 	return docker(`pull {parse.quote(value.name)}`, value)
 end, { doc = "Fetch it again, for what's newest under its name" })
 
+-- The docker commands that only look, and those of `docker OBJECT ...`
+-- (`container ls`, `compose logs`).
+local LOOKS: { [string]: boolean } = {
+	ps = true,
+	images = true,
+	logs = true,
+	inspect = true,
+	version = true,
+	info = true,
+	stats = true,
+	top = true,
+	events = true,
+	history = true,
+	search = true,
+	port = true,
+	diff = true,
+	ls = true,
+	config = true,
+	df = true,
+	show = true,
+}
+local GROUPS: { [string]: boolean } = {
+	container = true,
+	image = true,
+	volume = true,
+	network = true,
+	context = true,
+	compose = true,
+	system = true,
+	builder = true,
+}
+
+-- What docker `words` does that's risky, when an agent runs it.
+core.risk.rule("docker", function(words: { string }): string?
+	local rest = read_line(words)
+	local command = rest[1]
+	if command and GROUPS[command] then
+		command = rest[2]
+	end
+	if command == nil or LOOKS[command] then
+		return nil
+	elseif command == "exec" or command == "run" or command == "cp" then
+		return `runs or puts something in a container (docker {command})`
+	end
+	return `changes containers, images or volumes (docker {command})`
+end)
+
 return {}

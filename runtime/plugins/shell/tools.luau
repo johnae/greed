@@ -232,6 +232,9 @@ return function(shells: Shells)
 				additionalProperties = { type = "string" },
 			},
 		}, { "command" }),
+		danger = function(args)
+			return if type(args.command) == "string" then core.risk.of(args.command) else nil
+		end,
 		run = function(args, caller)
 			if type(args.command) ~= "string" then
 				error("shell_run needs command, the command line to run", 0)

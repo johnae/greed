@@ -483,3 +483,27 @@ test("a pod is found by its id: the row showing it, else asked of kubectl", func
 	local none: { [string]: string | false } = { PATH = "/nonexistent" }
 	assert(objects.find("pod", "c/n/api-0", none) == nil, "no kubectl, no pod")
 end)
+
+test("kubectl that changes the cluster is risky for an agent; looking isn't", function()
+	local risk = core.risk
+	for _, line in
+		{
+			"kubectl get pods -A",
+			"kubectl describe pod x",
+			"kubectl logs -f x",
+			"kubectl config get-contexts",
+		}
+	do
+		assert(risk.of(line) == nil, line)
+	end
+	local cases: { [string]: string } = {
+		["kubectl delete pod x --context prod"] = "changes the cluster (kubectl delete)",
+		["kubectl -n x scale deploy/api --replicas 0"] = "(kubectl scale)",
+		["kubectl exec -it api -- sh"] = "inside the cluster",
+		["kubectl config use-context prod"] = "which cluster",
+	}
+	for line, says in cases do
+		local why = risk.of(line)
+		assert(why and string.find(why, says, 1, true), `{line}: {why}`)
+	end
+end)
