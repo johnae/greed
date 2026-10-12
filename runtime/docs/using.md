@@ -1523,7 +1523,7 @@ A chart line under a table, after any formula lines, draws it:
 ```
 
 What follows `chart:` is what follows `| chart` in the shell (`bar`,
-`line`, `area`, `dot`, a column to chart, `--height`, ...), and its
+`line`, `area`, `scatter`, a column to chart, `--height`, ...), and its
 columns are named as formulas name them. The chart follows the table as
 you change it and the values it uses; on GitHub only the table shows.
 

@@ -452,7 +452,9 @@ with a language server set up for it, Greed asks:
 
 `y` trusts it: its language servers start, it formats on save, its
 config runs, now and whenever it opens again. `n` leaves it as it is for
-this session, and `:trust` trusts the shown project later. A project
+this session, and `:trust` trusts the shown project later. Any other
+key answers `n` and then does what it does, so typing on doesn't get
+lost. A project
 opened with its own config tells you so and waits for `:trust` too (see
 [Configuration](using.md#configuration)). `:format` you run yourself works
 anywhere.
@@ -475,6 +477,7 @@ an agent changed doesn't run for an agent until you've run it.
 | `agent-eval` | How agents' Luau runs: `auto`, `ask`, `allow` or `off` (above) |
 | `agent-auto` | Whether agent sessions start in auto mode, Greed answering their questions where it can (`false`) |
 | `agent-auto-rules` | What the decision model should know in auto mode: what's fine in your setup and what isn't (empty) |
+| `project-trust` | Whether a project's own code (its config, language servers that run it, formatting on save) waits until you trust the project: `ask` or `off` (`ask`) |
 | `agent-workspace-edits` | Whether agents in a workspace of their own edit there without asking (`true`) |
 | `agent-tool-groups` | The [tool groups](agents.md#tool-groups) agents get from the start (`plan`), or `all` |
 | `agent-greed-tools` | Whether agents over ACP get Greed's own tools (`true`) |

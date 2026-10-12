@@ -715,7 +715,10 @@ error rather than touch the root folder, your home folder, a path with `..`
 in it or a folder holding Greed's own approvals or secrets, so a path built
 wrong can't take more than it should. `greed.fs.stat(path)` says what's
 there: its `kind`, `size`, `mode` and when it was `modified` (seconds
-since 1970). `greed.hostname()` is the machine's name.
+since 1970). `greed.hostname()` is the machine's name, and
+`greed.fs.dirs()` gives the folders Greed uses: `home`, `config`, `cache`,
+`data`, `temp` (the system's folder for temporary files) and, at the far
+end of `greed ssh`, `brought`, the copy of your config it brought.
 
 ### History
 
@@ -1030,7 +1033,8 @@ greed.tab.set_layout({
   the terminal and the window. A view is a function from its state to
   widgets; `ui.mount(buffer, render, state)` draws it for the width of the
   buffer's views, and `view:set(patch)` merges into the state and draws
-  again, changing only the lines that changed:
+  again, changing only the lines that changed ([Building
+  interfaces](ui.md) is a guide, with a worked example):
 
   ```lua
   local ui = require("@core").ui
@@ -1126,6 +1130,15 @@ greed.command({
 `color` (the color its cursors show in for the others) and `person`.
 `ctx.client` is the id of the client a command runs for, and events about
 a client carry it as `event.client`.
+
+Other sessions can be asked how they're doing, as `greed ls` does:
+`greed.session.status(name)` gives what the session `name` on this machine
+says of itself (`session`, `attention`, `agents`), and
+`greed.client.home(client)` what the hub on the machine a client attached
+from says, for a session over `greed ssh` to show what waits back home.
+Both ask as an ordinary client, so nothing there can be done through
+them, and both wait, so call them from a command, a handler or
+`greed.spawn`.
 
 ## Waiting
 

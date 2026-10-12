@@ -39,6 +39,8 @@ Greed also has panes, tabs and floating views with zellij's `alt` keys,
 terminals, and a shell (`:shell`) whose commands become blocks you keep,
 search and run again. `greed ssh HOST` shows an editor running on another
 machine, and several terminals and windows can show one session at once.
+Markdown files can work things out as you type: fields, formulas, charts
+under tables, and tables read live from CSV, SQLite or PostgreSQL.
 
 ## Plugins in Luau
 
@@ -68,7 +70,9 @@ Put it in `~/.config/greed/plugins/upper/` with a `plugin.toml` saying
 `name = "upper"`, or run `greed new upper` in `~/.config/greed/plugins/` to
 get one with a test. The API is typed, so `luau-analyze` and `luau-lsp`
 check plugins against it, and `greed test upper` runs a plugin's tests in a
-headless editor.
+headless editor. Plugins draw their own interfaces (lists, fields,
+buttons) with `core.ui`, as text you can search and copy like any other;
+[Building interfaces](runtime/docs/ui.md) shows how.
 
 ## Agents
 
@@ -86,7 +90,9 @@ set up, or Claude Code, Codex, Gemini CLI or opencode over ACP, in the
 project or in a workspace of its own to review and bring in when it's
 done. Claude Code also runs in a pane as itself: `space i C`, connected
 to Greed as it is to VS Code, its edits arriving as proposals, and
-`space i W` for one in a workspace of its own. Agents can
+`space i W` for one in a workspace of its own. In auto mode, commands that only look,
+build or test run by themselves, and a decision model you pick judges the
+rest or asks you. Agents can
 write new plugins too: Greed type checks and tests them, and you review the
 code before it loads.
 
@@ -120,6 +126,15 @@ you around Greed.
 
 The macOS builds are signed and notarized by Apple, so Greed.app opens
 from a download like any other app.
+
+With [Homebrew](https://brew.sh), on macOS or Linux:
+
+```bash
+brew install johnae/greed/greed             # the greed command
+brew install --cask johnae/greed/greed-app  # Greed.app, on macOS
+```
+
+`brew upgrade` brings each new release.
 
 On NixOS, and anywhere with Nix, the flake has it with the window:
 `nix run github:johnae/greed`, or `.#static` for the static binary. Both

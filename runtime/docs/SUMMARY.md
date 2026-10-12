@@ -11,6 +11,7 @@
 - [Keys](keys.md)
 - [Highlighting](highlighting.md)
 - [Writing plugins](plugins.md)
+  - [Building interfaces](ui.md)
 - [Agents](agents.md)
 - [Permissions and sandboxing](permissions.md)
 - [How Greed is built](design.md)

@@ -749,6 +749,33 @@ a panel: move and copy in it as in any other, and `:q` or
 `ctrl-w q` closes the panel while the agent goes on (`space i l` brings it
 back).
 
+#### Setting up auto mode
+
+Auto mode lets commands that only look, build or test run by themselves,
+and asks a `decision` model about the rest. To set it up:
+
+1. Pick the decision model: in `:models`, choose the `decision` role and a
+   model. A System One model made for these answers, like Berget's
+   `Cloudflare/clef-flash`, is fast and cheap; any chat model works too,
+   slower. In your config:
+
+   ```luau
+   require("@models").roles.decision = { provider = "berget", model = "Cloudflare/clef-flash" }
+   ```
+
+2. Try it: `:decision-check` runs it on sixteen commands, some it should
+   let run and some it shouldn't, and shows what auto mode would do with
+   each. Don't rely on a model that lets a wrong one through.
+3. Tell it about your setup, if it helps:
+   `greed.option.set("agent-auto-rules", "Deleting under /tmp is fine.")`.
+4. `alt-a` in a transcript, or `/auto`, switches the session to auto mode;
+   the box's top line says `auto`. New sessions start the way you left the
+   last one.
+
+Some things always ask you, whatever the model says: `sudo`, force pushes,
+deleting your home, changes outside the project, and the rest listed under
+[Auto mode](permissions.md#auto-mode).
+
 What the agent thinks before it answers shows as dimmed rows, for agents
 that share their thinking (Claude Code does, and so does Greed's own agent
 when its model's provider sends it, like Claude with an effort set or

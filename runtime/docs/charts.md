@@ -4,7 +4,9 @@
 [shell](shell.md), a `shell` block in a note, or a card on a
 [board](boards.md). Run it again and again, with `watch` or `every=`, and
 the chart follows the numbers as they change; a page of those is a
-dashboard.
+dashboard. In a Markdown file, a `<!-- chart: bar per_year -->` line under
+a table or a data block charts it, and follows it as it changes (see
+[Live values](using.md#live-values)).
 
 ```text
 ❯ kubectl top pods | chart
