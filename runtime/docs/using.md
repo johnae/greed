@@ -86,7 +86,8 @@ down when it quits and whenever you save a file, in the cache folder
 (`~/.cache/greed/sessions`). Starting with a file keeps that file shown. To
 start one session fresh, without them, use `greed --fresh` (or `greed ssh
 HOST --fresh`); it only matters when a session starts, so quit a running
-one first or start another with `--new`. Turn restoring off for good with
+one first or start another with `--new`. On a Mac, holding Shift while
+Greed opens does the same. Turn restoring off for good with
 `greed.option.set("restore-session", false)`.
 
 ### Quitting or keeping a session

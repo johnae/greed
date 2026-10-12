@@ -37,3 +37,7 @@ gui = ["dep:greed-gui"]
 # build's plugin tests 13 times slower than glibc's.
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc = { version = "0.1", default-features = false, features = ["override"] }
+
+# Whether Shift is held as the app opens, to start fresh.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGEventSource", "CGEventTypes"] }

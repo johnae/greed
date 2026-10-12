@@ -27,6 +27,9 @@ pub fn reopen_as_app(args: &[String]) -> Option<std::io::Error> {
     }
     let mut command = Command::new(&me);
     command.arg("--gui");
+    if shift_held() {
+        command.arg("--fresh");
+    }
     if let Some(home) = std::env::var_os("HOME") {
         command.current_dir(home);
     }
@@ -34,6 +37,15 @@ pub fn reopen_as_app(args: &[String]) -> Option<std::io::Error> {
         command.env_clear().envs(environment);
     }
     Some(command.exec())
+}
+
+/// Whether Shift is held now: opening an app with it held starts it without
+/// what it had open, as Mac apps leave their windows closed.
+#[cfg(target_os = "macos")]
+fn shift_held() -> bool {
+    use objc2_core_graphics::{CGEventFlags, CGEventSource, CGEventSourceStateID};
+    CGEventSource::flags_state(CGEventSourceStateID::CombinedSessionState)
+        .contains(CGEventFlags::MaskShift)
 }
 
 /// The environment the user's login shell sets up, read back through

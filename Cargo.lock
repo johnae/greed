@@ -1469,6 +1469,7 @@ dependencies = [
  "greed-gui",
  "greed-text",
  "mimalloc",
+ "objc2-core-graphics",
  "serde_json",
  "sha2",
  "unicode-segmentation",
