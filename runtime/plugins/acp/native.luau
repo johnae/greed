@@ -1295,12 +1295,13 @@ local function allowed(
 	state: State,
 	title: string,
 	kind: string,
-	locations: { string }?
+	locations: { string }?,
+	command: string?
 ): (boolean, string?)
 	if state.allowed[kind] then
 		return true, nil
 	end
-	local chosen, note = session.ask(s, title, kind, ALLOW, locations)
+	local chosen, note = session.ask(s, title, kind, ALLOW, locations, nil, command)
 	if chosen == "always" then
 		state.allowed[kind] = true
 	end
@@ -1436,7 +1437,10 @@ local function call(
 			local chosen, said = session.ask(s, title, kind, session.ONCE, locations, true)
 			ok, note = chosen == "once", said
 		elseif asks and not outside then
-			ok, note = allowed(s, state, tool.title, kind, locations)
+			local command = if kind == "execute" and type(c.input.command) == "string"
+				then c.input.command
+				else nil
+			ok, note = allowed(s, state, tool.title, kind, locations, command)
 		end
 		if not ok then
 			local why = if widens then session.NOT_WIDENED else "the user didn't allow it"
@@ -2128,7 +2132,7 @@ function M.start(opts: {
 	resume: string?,
 	from: Session?,
 	entries: { session.Entry }?,
-	decide: ((permission: session.Permission) -> string?)?,
+	decide: ((permission: session.Permission) -> (string?, string?))?,
 	changed: () -> (),
 }): (Session?, string?)
 	local kept = if opts.resume then saved.load(opts.root, opts.resume) else nil

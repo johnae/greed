@@ -737,7 +737,9 @@ for you.
 `alt-m` picks the mode the agent works in, when it has modes (Claude Code
 has Manual, Accept edits and Plan), and `alt-M` the model, when it offers
 a choice (for Greed's own agent, a role or any model a provider lists);
-the top of the box you write in shows both. The transcript is a buffer in
+the top of the box you write in shows both. `alt-a` switches auto mode,
+where Greed answers the agent's questions where it safely can and asks you
+the rest (see [Auto mode](permissions.md#auto-mode)). The transcript is a buffer in
 a panel: move and copy in it as in any other, and `:q` or
 `ctrl-w q` closes the panel while the agent goes on (`space i l` brings it
 back).
@@ -771,6 +773,7 @@ of going to the agent:
 | --- | --- |
 | `/model [name]` | Picks the model, as `alt-M` does; with a name, switches to it |
 | `/mode [name]` | Picks the mode, as `alt-m` does; with a name, switches to it |
+| `/auto` | Switches auto mode, as `alt-a` does |
 | `/thoughts` | Hides or shows what agents think |
 | `/fork` | A new session that starts with everything said so far |
 | `/effort [none\|low\|medium\|high\|max]` | Greed's own agent: how hard its model thinks, for this session; without a word, a picker |

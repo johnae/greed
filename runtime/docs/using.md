@@ -1073,7 +1073,11 @@ model.
 Greed's own agent asks for `agent`, which uses `reasoning` until you set
 it; reviewing code an agent wants to run asks for `review`, also
 `reasoning` until set; and compacting a long conversation of Greed's agent
-asks for `compact`, which uses `agent` until set.
+asks for `compact`, which uses `agent` until set. Auto mode asks
+`decision` whether an agent may run a command it can't tell is safe; it
+uses `fast` until set, and a small model made for yes-or-no answers, like
+the decision models Berget offers, suits it (see
+[Auto mode](permissions.md#auto-mode)).
 
 `:models` shows every role, its model and whether its provider's key is
 found, and lets you change them:

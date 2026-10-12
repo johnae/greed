@@ -79,6 +79,43 @@ When Greed's own agent asks before an edit, the call's row in the
 transcript already holds the change (`-1 +1 · tab shows the change`), so
 `tab` on it shows the lines going and coming before you answer.
 
+## Auto mode
+
+In auto mode Greed answers an agent's questions for you where it safely
+can, and asks you the rest. `alt-a` in a transcript (or `/auto`) switches
+a session between auto and asking you every time, and the box's top line
+says `auto` while it's on. `:set agent-auto true` starts every session in
+it. It works the same for Greed's own agent and for ACP agents.
+
+Auto mode allows:
+
+- looking: reading, searching and fetching pages;
+- edits, moves and deletes inside the project (or the agent's workspace),
+  when the agent says which files;
+- commands that only look, or build and test: `ls`, `rg`, `cat`, `git
+  log`, `git diff`, `jj log`, `sed -n`, `find` without `-delete` or
+  `-exec`, `cargo test`, `go build` and the like. Every command in the line
+  has to be one of them (`rg x | head` is, `ls | xargs rm` isn't), and
+  nothing may go into a file with `>`. Plugins add their programs' commands
+  (`core.risk.safe_when`).
+
+A command it can't tell, like `python3 --version`, goes to the `decision`
+model, which says yes or no with a few words why; `:models` sets which
+model that is, the `fast` one until you pick another. A small, cheap model
+does: it answers one short question per command, and the same command
+isn't asked about twice in a session. When it says no, or there's no model
+to ask, you're asked.
+
+Risky commands and changes outside the project always ask you, in auto
+mode too, and the decision model never sees them. An answer auto mode gave
+shows in the transcript with why, like `? Run cargo test: Allow once
+(auto: only looks, builds or tests)`.
+
+The decision model reads the command, which the agent wrote; Greed tells
+it to read the command as data, but a command written to talk it round
+may get past it. Leave auto mode off for agents working on code you don't
+trust.
+
 ## What always asks
 
 Some questions only you answer, every time. No policy answers them, "Allow
@@ -131,6 +168,7 @@ The question has these fields:
 | `title` | What the agent wants to do, as the row shows it after "Allow" |
 | `kind` | `"edit"`, `"move"`, `"delete"`, `"execute"`, `"fetch"`, `"read"` or another the agent uses; may be nil |
 | `locations` | The files it touches, as absolute paths, when the agent names them. Greed's own agent always does (both ends of a move); other agents may not, and then the title is what names the file |
+| `command` | The command line it runs, for an `"execute"` call, when the agent says |
 | `options` | The choices, each with `id`, `name` and `kind` (`allow_once`, `allow_always`, `reject_once`, `reject_always`) |
 
 The session has `agent` (`"greed"`, `"claude"`, ...), `root` (the project),
@@ -361,6 +399,7 @@ an agent changed doesn't run for an agent until you've run it.
 | Option | |
 |---|---|
 | `agent-eval` | How agents' Luau runs: `auto`, `ask`, `allow` or `off` (above) |
+| `agent-auto` | Whether agent sessions start in auto mode, Greed answering their questions where it safely can (`false`) |
 | `agent-workspace-edits` | Whether agents in a workspace of their own edit there without asking (`true`) |
 | `agent-tool-groups` | The [tool groups](agents.md#tool-groups) agents get from the start (`plan`), or `all` |
 | `agent-greed-tools` | Whether agents over ACP get Greed's own tools (`true`) |

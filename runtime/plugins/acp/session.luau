@@ -35,6 +35,8 @@ export type Permission = {
 	kind: string?,
 	--- The files the call touches, as absolute paths, when it says.
 	locations: { string }?,
+	--- The command line it runs, for one that runs a command.
+	command: string?,
 	options: { { id: string, name: string, kind: string } },
 	answer: greed.Signal,
 	--- Only you answer it, never a policy: for writes that let a plugin do
@@ -92,15 +94,18 @@ export type Session = {
 	--- The modes the agent offers, and the one it's in.
 	modes: { Mode },
 	mode: string?,
+	--- Whether Greed answers its questions for you where it safely can
+	--- (auto), or leaves them all to you; nil goes by `agent-auto`.
+	auto: boolean?,
 	--- The models the agent offers, and the one it uses. `model_option` is
 	--- the id of the config option that picks it, for agents that offer
 	--- models that way rather than with `session/set_model`.
 	models: { Mode },
 	model: string?,
 	model_option: string?,
-	--- Answers a question without asking you, with an option's id, when
-	--- it returns one.
-	decide: ((permission: Permission) -> string?)?,
+	--- Answers a question without asking you, with an option's id and why,
+	--- when it returns one.
+	decide: ((permission: Permission) -> (string?, string?))?,
 	--- While set, updates from the agent are left out.
 	quiet: boolean?,
 	--- Called whenever there's something new to show.
@@ -382,6 +387,31 @@ local function take_models(session: Session, from: any)
 	end
 end
 
+-- The command line a tool call runs, from its input: `command` as a line,
+-- or as words (`["bash", "-lc", "line"]` giving the line), when it says.
+local function command_of(input: any): string?
+	local command = if type(input) == "table" then input.command or input.cmd else nil
+	if type(command) == "string" then
+		return command
+	elseif type(command) ~= "table" or #command == 0 then
+		return nil
+	end
+	local shell = string.match(tostring(command[1]), "([^/]+)$")
+	local flag = tostring(command[2] or "")
+	if
+		(shell == "bash" or shell == "sh" or shell == "zsh")
+		and string.match(flag, "^%-%a*c$")
+		and #command == 3
+	then
+		return tostring(command[3])
+	end
+	local words: { string } = {}
+	for _, word in command do
+		table.insert(words, tostring(word))
+	end
+	return table.concat(words, " ")
+end
+
 -- The files a tool call (or an update of one) says it touches: its
 -- locations and the files its diffs change, made absolute from `cwd`. Nil
 -- when it names none.
@@ -540,7 +570,9 @@ local function handlers(session: Session): Handlers
 			M.tool_title(call.title) or (tool and tool.title) or "a tool call",
 			call.kind or (tool and tool.kind),
 			options,
-			paths_of(call, session.cwd) or (tool and tool.locations)
+			paths_of(call, session.cwd) or (tool and tool.locations),
+			nil,
+			command_of(call.rawInput)
 		)
 		if chosen == nil then
 			return { outcome = { outcome = "cancelled" } }
@@ -704,24 +736,26 @@ M.ONCE = {
 M.NOT_WIDENED = "the user didn't allow letting a plugin do more; tell them what you needed it for"
 
 --- Asks you whether the agent may do `title` (a tool call of `kind`,
---- touching the files at `locations` when it says), with `options` to
---- answer by, unless a policy answers first; a `firm` question only you
---- answer. Returns the option chosen, or nil if the question was cancelled,
---- and what you wrote with a rejection. That shows as your message: an
---- agent in the editor tells its model with the rejection, and an ACP agent
---- gets it as the next prompt.
+--- touching the files at `locations` when it says, running `command` for
+--- one that runs a command), with `options` to answer by, unless a policy
+--- answers first; a `firm` question only you answer. Returns the option
+--- chosen, or nil if the question was cancelled, and what you wrote with a
+--- rejection. That shows as your message: an agent in the editor tells its
+--- model with the rejection, and an ACP agent gets it as the next prompt.
 function M.ask(
 	session: Session,
 	title: string,
 	kind: string?,
 	options: { { id: string, name: string, kind: string } },
 	locations: { string }?,
-	firm: boolean?
+	firm: boolean?,
+	command: string?
 ): (string?, string?)
 	local permission: Permission = {
 		title = title,
 		kind = kind,
 		locations = locations,
+		command = command,
 		options = options,
 		answer = greed.signal(),
 		firm = firm,
@@ -735,9 +769,12 @@ function M.ask(
 			end
 		end
 	end
-	local decided = if firm then nil else session.decide and session.decide(permission)
+	local decided, why = nil, nil
+	if not firm and session.decide then
+		decided, why = session.decide(permission)
+	end
 	if decided then
-		chose(decided, " (by policy)")
+		chose(decided, ` ({why or "by policy"})`)
 		session.changed()
 		return decided, nil
 	end
@@ -865,7 +902,7 @@ function M.start(
 		workspace: Workspace?,
 		--- MCP servers the agent should use, as ACP describes them.
 		servers: { any }?,
-		decide: ((permission: Permission) -> string?)?,
+		decide: ((permission: Permission) -> (string?, string?))?,
 		--- An earlier ACP session to take up instead of starting one, or
 		--- one to fork.
 		load: string?,
@@ -1024,7 +1061,7 @@ function M.start_driven(opts: {
 	cwd: string,
 	workspace: Workspace?,
 	entries: { Entry }?,
-	decide: ((permission: Permission) -> string?)?,
+	decide: ((permission: Permission) -> (string?, string?))?,
 	changed: () -> (),
 	driver: Driver,
 }): Session

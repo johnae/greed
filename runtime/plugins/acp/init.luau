@@ -37,6 +37,7 @@ local review = require("@self/review")
 local workspaces = require("@self/workspaces")
 local saved = require("@self/saved")
 local list = require("@self/list")
+local auto = require("@self/auto")
 local panes = require("@panes")
 local statusline = require("@statusline")
 local models = require("@models")
@@ -184,14 +185,21 @@ local function workspace_edits(s: Session, permission: session.Permission): stri
 	return option_of(permission, "allow_once")
 end
 
-local function decide(s: Session, permission: session.Permission): string?
+-- The option a rule picks for `permission`, and why, the rules you added
+-- first, then auto mode's.
+local function decide(s: Session, permission: session.Permission): (string?, string?)
 	for _, rule in policies do
 		local chosen = rule(s, permission)
 		if chosen then
-			return chosen
+			return chosen, nil
 		end
 	end
-	return workspace_edits(s, permission)
+	local why = auto.allows(s, permission)
+	local once = option_of(permission, "allow_once")
+	if why and once then
+		return once, why
+	end
+	return workspace_edits(s, permission), nil
 end
 
 -- Sessions, oldest first, and each transcript's session by buffer id.
@@ -291,7 +299,7 @@ local function launch(
 	end
 	local name = fresh_name(agent.title or agent.name)
 	local s: Session
-	local function decides(permission: session.Permission): string?
+	local function decides(permission: session.Permission): (string?, string?)
 		return decide(s, permission)
 	end
 	-- An agent that exits as it starts changes before it's listed; listing it
@@ -1389,6 +1397,26 @@ local function switch(s: Session, set: (Session, string) -> (boolean, string?), 
 end
 
 greed.command({
+	name = "agent-auto",
+	doc = "Switch the agent between auto mode, where Greed answers its questions where it safely "
+		.. "can, and asking you every time",
+	run = function(ctx)
+		local s = current(ctx)
+		if s == nil then
+			greed.echo(NO_SESSION)
+			return
+		end
+		s.auto = not auto.on(s)
+		greed.echo(
+			if s.auto
+				then `{s.name}: auto, asking you only what Greed can't tell is safe`
+				else `{s.name}: asking you every time`
+		)
+		s.changed()
+	end,
+})
+
+greed.command({
 	name = "agent-mode",
 	doc = "Pick the mode the agent works in, like plan or accept edits, or switch to the one named",
 	args = { { name = "mode", doc = "its name or id; without one, pick it" } },
@@ -1894,6 +1922,7 @@ greed.keymap.bind({ kind = "agent-transcript" }, {
 	["ctrl-c"] = "agent-stop",
 	["alt-q"] = "agent-answer",
 	["alt-m"] = "agent-mode",
+	["alt-a"] = "agent-auto",
 	["alt-M"] = "agent-model",
 	["alt-v"] = "paste-image",
 	["alt-x"] = "agent-drop-images",

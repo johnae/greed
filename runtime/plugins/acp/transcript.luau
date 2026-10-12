@@ -34,6 +34,7 @@ local session = require("./session")
 local question = require("./question")
 local code = require("./code")
 local compact = require("./compact")
+local auto = require("./auto")
 
 type Session = session.Session
 
@@ -458,6 +459,9 @@ function M.top(s: Session, cells: number): (string, { greed.Mark })
 	local mode, model = name_in(s.modes, s.mode), name_in(s.models, s.model)
 	if mode then
 		named ..= ` · {mode}`
+	end
+	if auto.on(s) then
+		named ..= " · auto"
 	end
 	if model then
 		named ..= ` · {model}`

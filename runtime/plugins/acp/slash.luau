@@ -104,6 +104,11 @@ M.COMMANDS = {
 		end,
 	},
 	{
+		name = "auto",
+		doc = "Switch auto mode: Greed answers the agent's questions where it safely can",
+		command = "agent-auto",
+	},
+	{
 		name = "thoughts",
 		doc = "Show or hide what the agent thinks",
 		command = "agent-toggle-thoughts",
