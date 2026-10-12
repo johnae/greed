@@ -131,7 +131,7 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 
 | Key | |
 |---|---|
-| `up` `down` (`k` `j`) | A step through everything you can act on, in order: a command, the rows it printed (a table's rows, like pods or files, or the files and lines it names), the next command. Other text is passed over; `o` opens it to read and search |
+| `up` `down` (`k` `j`) | A step through everything you can act on, in order: a command, the rows it printed (a table's rows, like pods or files, or the files and lines it names), the next command, and last the commands still running on the strip above the prompt, where `enter` watches one and `s` stops it. Other text is passed over; `o` opens it to read and search |
 | `J` `K` (`ctrl-down` `ctrl-up`) | The next or previous command, past its rows |
 | `right` `left` (`l` `h`) | Into the command's rows, or back up to the command |
 | `enter` | On a command, put it at the prompt to change: running it then runs it again in its place (`↻ 2` before the prompt says so; empty the prompt to run something new instead). On a row, what the row does: open the file and line it names, describe the pod |

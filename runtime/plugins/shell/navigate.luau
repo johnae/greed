@@ -107,6 +107,29 @@ local function in_order(shell: Shell): { Block }
 	return list
 end
 
+-- The lines of `shell`'s strip, the running blocks just above the prompt,
+-- in order.
+local function strip_lines(shell: Shell): { number }
+	local strip = shell.strip
+	local at = strip and strip.at:pos()
+	if strip == nil or at == nil then
+		return {}
+	end
+	local first = shell.buffer:line_of(at)
+	local lines = {}
+	for i in strip.blocks do
+		table.insert(lines, first + i - 1)
+	end
+	return lines
+end
+
+-- Where `view`'s cursor is on `shell`'s strip, if it's there: which of its
+-- lines, and them all.
+local function on_strip(view: greed.View, shell: Shell): (number?, { number })
+	local lines = strip_lines(shell)
+	return table.find(lines, shell.buffer:line_of(view:cursor())), lines
+end
+
 --- What `view`'s cursor is on in blocks mode: the block, and the line of
 --- its row when it's on one rather than on the command.
 function M.at(view: greed.View): (Block?, number?)
@@ -152,6 +175,9 @@ local function select_block(view: greed.View, shell: Shell, block: Block)
 	end
 end
 
+-- What can be done with a running command on the strip.
+local STRIP_HINT = "enter watch it · s stop · . actions · J K commands · esc prompt · ? keys"
+
 -- What can be done with what's selected, for the line under it.
 local function hint(on_row: boolean, block: Block): string
 	if on_row then
@@ -196,18 +222,21 @@ function M.draw(view: greed.View)
 	end
 	local buffer = shell.buffer
 	local block, row = M.at(view)
-	local line = if greed.mode.get() == M.MODE and block
-		then row or command_line(shell, block)
-		else nil
-	if line == nil or block == nil then
+	local line = if block then row or command_line(shell, block) else nil
+	local says = if block then hint(row ~= nil, block) else nil
+	local on, lines = on_strip(view, shell)
+	if on then
+		line, says = lines[on], STRIP_HINT
+	end
+	if greed.mode.get() ~= M.MODE or line == nil or says == nil then
 		decorate(buffer, "", {})
 		return
 	end
-	local start, stop = buffer:line_start(line), buffer:line_end(line)
-	local says = hint(row ~= nil, block)
-	decorate(buffer, `{start}:{stop}:{says}`, {
+	local at, text = line :: number, says :: string
+	local start, stop = buffer:line_start(at), buffer:line_end(at)
+	decorate(buffer, `{start}:{stop}:{text}`, {
 		{ from = start, to = stop, style = "shell.selected", line = true },
-		{ from = stop, to = stop, style = "shell.hint", lines = { says } },
+		{ from = stop, to = stop, style = "shell.hint", lines = { text } },
 	})
 end
 
@@ -220,7 +249,10 @@ function M.enter(view: greed.View, quiet: boolean?): boolean
 		return false
 	end
 	local block, row = M.at(view)
-	if block == nil then
+	local on, lines = on_strip(view, shell)
+	if on then
+		land(view, lines[on])
+	elseif block == nil then
 		local all = in_order(shell)
 		block = all[#all]
 		if block == nil then
@@ -264,10 +296,57 @@ local function visible_rows(shell: Shell, block: Block): { number }
 end
 
 -- Moves `view` to the command after or before (`back`) the one it's on.
+-- Past the last command: the strip's first line, or says it's the end.
+local function past_last(view: greed.View, shell: Shell)
+	local _, lines = on_strip(view, shell)
+	if lines[1] then
+		land(view, lines[1])
+	else
+		greed.echo("the last command: esc goes to the prompt")
+	end
+end
+
+-- Up from the strip's first line: the last command, on its last row with
+-- `rows`, else on the command.
+local function before_strip(view: greed.View, shell: Shell, rows: boolean)
+	local all = in_order(shell)
+	local last = all[#all]
+	if last == nil then
+		return
+	end
+	local above = if rows then visible_rows(shell, last) else {}
+	if #above > 0 then
+		land(view, above[#above])
+	else
+		select_block(view, shell, last)
+	end
+end
+
+-- On the strip: a step along it, or off its top end (`rows` landing on
+-- the last command's last row). Whether the cursor was on the strip.
+local function along_strip(view: greed.View, shell: Shell, back: boolean, rows: boolean): boolean
+	local i, lines = on_strip(view, shell)
+	if i == nil then
+		return false
+	end
+	local to = lines[if back then i - 1 else i + 1]
+	if to then
+		land(view, to)
+	elseif back then
+		before_strip(view, shell, rows)
+	end
+	return true
+end
+
+-- Moves `view` to the command after or before (`back`) the one it's on;
+-- the running ones on the strip come after the rest.
 local function to_command(view: greed.View, back: boolean)
 	local shell = shell_in(view)
+	if shell == nil or along_strip(view, shell, back, false) then
+		return
+	end
 	local block = M.at(view)
-	if shell == nil or block == nil then
+	if block == nil then
 		return
 	end
 	local all = in_order(shell)
@@ -276,16 +355,20 @@ local function to_command(view: greed.View, back: boolean)
 	if to then
 		select_block(view, shell, to)
 	elseif not back then
-		greed.echo("the last command: esc goes to the prompt")
+		past_last(view, shell)
 	end
 end
 
 -- Moves `view` a step down, or up with `back`, through everything in
--- order: a command, its rows, the next command.
+-- order: a command, its rows, the next command, and last the running ones
+-- on the strip.
 local function step(view: greed.View, back: boolean)
 	local shell = shell_in(view)
+	if shell == nil or along_strip(view, shell, back, true) then
+		return
+	end
 	local block, row = M.at(view)
-	if shell == nil or block == nil then
+	if block == nil then
 		return
 	end
 	local rows_here = visible_rows(shell, block)
@@ -426,7 +509,8 @@ end)
 
 -- What `?` shows: the keys, as the top of this file lists them.
 local KEYS = [[
-up down (k j)    a step through everything: a command, its rows, the next command
+up down (k j)    a step through everything: a command, its rows, the next command,
+                 and last the running ones on the strip above the prompt
 J K              the next or previous command, past its rows
 right left       into the command's rows, or back up to it
 enter            change the command at the prompt, to run in its place;
@@ -494,7 +578,7 @@ local function settle(view: greed.View, shell: Shell, moved: boolean)
 		and range.anchor == range.head
 		and core.style.is_typing()
 		and not log.in_prompt(shell, range.head)
-		and log.block_at(shell, range.head)
+		and log.block_for(shell, range.head)
 	then
 		M.enter(view, true)
 	end

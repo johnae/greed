@@ -607,11 +607,27 @@ impl Keymap {
     /// The layers that apply in `mode` for a buffer of `kind`, most specific
     /// first, each with the inheritances that brought it in.
     fn lookup_order(&self, mode: &str, kind: &str) -> Vec<Step<'_>> {
+        // An isolated mode keeps the layers it enters with keys of its own,
+        // like the leader: it said so itself.
         if self.isolated.contains_key(mode) {
-            return vec![
-                Step::direct(Layer::mode_kind(mode, kind)),
-                Step::direct(Layer::mode(mode)),
-            ];
+            let entered = self
+                .inherits
+                .get(mode)
+                .map_or(&[][..], Vec::as_slice)
+                .iter()
+                .filter(|i| i.entry.is_some());
+            let mut steps = vec![Step::direct(Layer::mode_kind(mode, kind))];
+            for inherit in entered.clone() {
+                steps.push(Step::through(
+                    Layer::mode_kind(&inherit.parent, kind),
+                    &[inherit],
+                ));
+            }
+            for inherit in entered {
+                steps.push(Step::through(Layer::mode(&inherit.parent), &[inherit]));
+            }
+            steps.push(Step::direct(Layer::mode(mode)));
+            return steps;
         }
         let (mut kinds, mut modes) = (Vec::new(), Vec::new());
         self.expand(mode, kind, &mut Vec::new(), &mut kinds, &mut modes);

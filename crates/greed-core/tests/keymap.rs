@@ -737,3 +737,41 @@ fn a_kinds_keys_come_first_in_the_mode_and_what_it_inherits() {
         "but not in an isolated mode"
     );
 }
+
+#[test]
+fn an_isolated_mode_still_enters_the_layers_it_names() {
+    let mut km = Keymap::default();
+    km.bind(Layer::mode("leader"), &keys("o w"), "running", "shell")
+        .unwrap();
+    km.bind(
+        Layer::mode_kind("leader", "shell"),
+        &keys("r"),
+        "rerun",
+        "shell",
+    )
+    .unwrap();
+    km.bind(Layer::global(), &keys("x"), "everywhere", "core")
+        .unwrap();
+    km.bind(Layer::mode("blocks"), &keys("j"), "down", "shell")
+        .unwrap();
+    km.isolate("blocks", "shell");
+    km.enter("blocks", keys("space"), "leader", "shell");
+    assert_eq!(
+        command(&km, "blocks", "shell", "space o w").as_deref(),
+        Some("running")
+    );
+    assert_eq!(
+        command(&km, "blocks", "shell", "space r").as_deref(),
+        Some("rerun"),
+        "and the leader's keys for the buffer's kind"
+    );
+    assert_eq!(
+        command(&km, "blocks", "shell", "j").as_deref(),
+        Some("down")
+    );
+    assert_eq!(
+        command(&km, "blocks", "shell", "x"),
+        None,
+        "keys bound everywhere stay out"
+    );
+}
