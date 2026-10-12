@@ -1329,3 +1329,19 @@ test("an answer streamed in pieces looks as the same answer drawn at once", func
 	end
 	acp.stop(s)
 end)
+
+test("other views drawn with core.ui aren't read as transcripts", function(t)
+	t:buffer("|")
+	local buffer = greed.create_buffer("test-ui", "", { readonly = true })
+	greed.view():show(buffer)
+	core.ui.mount(buffer, function()
+		return core.ui.column({
+			core.ui.line({ { text = "one", value = 1 } }),
+			core.ui.line({ { text = "two", value = 2 } }),
+		})
+	end)
+	-- Moving about runs the transcript's handlers, which leave it alone.
+	t:keys("j k j")
+	assert(transcript.tool_at(buffer, 0) == nil)
+	assert(transcript.row_at(buffer, 1) == nil)
+end)

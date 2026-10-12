@@ -39,10 +39,6 @@ type Session = session.Session
 
 local M = {}
 
--- What the transcript draws above the box, and emptying the box once it's
--- sent, are kept out of undo, so undo in the box takes back only typing.
-local OUT_OF_UNDO: { undo: boolean? } = { undo = false }
-
 local HINTS = "alt-enter sends · ctrl-c stops"
 
 -- The box's width when no view shows the transcript yet.
@@ -64,15 +60,6 @@ end
 M.FRAME_MS = FRAME_MS
 local spinner_frame = M.spinner_frame
 
-type Style = {
-	from: number,
-	to: number,
-	style: string,
-	text: string?,
-	overlay: boolean?,
-	line: boolean?,
-}
-
 -- Each tool status's mark in its row, and the mark's style.
 local GLYPH: { [string]: string } = {
 	completed = "✓",
@@ -88,23 +75,7 @@ local GLYPH_STYLE: { [string]: string } = {
 }
 
 local width = core.text.width
-
---- What the transcript's history looks like and where things are in it.
-export type History = {
-	text: string,
-	styles: { Style },
-	--- The tool call on each line, by 0-based line number, or the thought
-	--- (`thought_id`).
-	tools: { [number]: string },
-	--- Where each running tool's mark is, to animate it.
-	running: { { from: number, to: number } },
-	--- The lines that aren't what you or the agent said, by 0-based line
-	--- number: headings, tools and their output, plans, questions. They
-	--- show as they are; only what was said shows as Markdown.
-	plain: { [number]: boolean },
-	--- The rows you can act on, top to bottom.
-	rows: { Row },
-}
+local ui = core.ui
 
 --- A row you can act on with enter, tab or a click, by 0-based line, and
 --- what it stands for: a tool call's id, a thought's (`thought_id`), a
@@ -161,211 +132,305 @@ local function elapsed(since: number): string
 	return core.time.duration(greed.now() - since, true)
 end
 
---- The history's text and decorations, for `s` as it is now, for a view
---- `cells` wide (the box's width).
-function M.history(s: Session, cells: number?): History
-	local room = cells or DEFAULT_WIDTH
-	local lines: { string } = {}
-	local styles: { Style } = {}
-	local running: { { from: number, to: number } } = {}
-	local at = 0
-	-- Who said the lines being added, for the bar beside them.
-	local speaker: ("user" | "agent")? = nil
-	local function add(line: string, style: string?, from: number?, to: number?)
-		if style then
-			table.insert(
-				styles,
-				{ from = at + (from or 0), to = at + (to or #line), style = style }
-			)
+-- What a line of the history stands for: the tool call or thought drawn on
+-- it (`tool_at`), the row you can act on there (`Row`), and whether it's
+-- what you or the agent said. Only what was said shows as Markdown; the
+-- rest (headings, tools and their output, plans, questions) shows as it is.
+type Value = { tool: string?, row: string?, said: boolean? }
+
+-- A line of the history: its text, its marks counted from its start, what
+-- it stands for and where a running tool's mark is, to animate it.
+type Said = {
+	text: string,
+	marks: { greed.Mark },
+	value: Value?,
+	spin: { from: number, to: number }?,
+}
+
+-- Lines being added, and who said them, for the bar beside each: the
+-- agent's, or yours with a background too.
+type Lines = { lines: { Said }, speaker: ("user" | "agent")? }
+
+local function add(out: Lines, text: string, style: string?, from: number?, to: number?): Said
+	local marks: { greed.Mark } = {}
+	if style then
+		table.insert(marks, { from = from or 0, to = to or #text, style = style })
+	end
+	local speaker = out.speaker
+	if speaker then
+		-- Over the first of the two spaces every line of theirs starts with.
+		local bar = if speaker == "user" then "agent.you.bar" else "agent.bar"
+		table.insert(marks, { from = 0, to = 1, style = bar, text = "▍", overlay = true })
+		if speaker == "user" then
+			table.insert(marks, { from = 0, to = #text, style = "agent.you", line = true })
 		end
-		if speaker then
-			-- Over the first of the two spaces every line of theirs starts with.
-			local bar = if speaker == "user" then "agent.you.bar" else "agent.bar"
-			table.insert(
-				styles,
-				{ from = at, to = at + 1, style = bar, text = "▍", overlay = true }
-			)
-			if speaker == "user" then
-				table.insert(
-					styles,
-					{ from = at, to = at + #line, style = "agent.you", line = true }
-				)
+	end
+	local line: Said = { text = text, marks = marks }
+	table.insert(out.lines, line)
+	return line
+end
+
+local function gap(out: Lines)
+	out.speaker = nil
+	add(out, "")
+end
+
+-- What was said, a line each, shown as Markdown.
+local function body(out: Lines, text: string, style: string?)
+	for _, line in string.split(text, "\n") do
+		add(out, "  " .. line, style).value = { said = true }
+	end
+end
+
+-- A heading each time the speaker changes; the agent's text, tools and
+-- plans run on under one.
+local function heading(out: Lines, s: Session, who: "user" | "agent")
+	if out.speaker ~= who then
+		gap(out)
+		out.speaker = who
+		add(out, `  {if who == "user" then "You" else s.name}`, "markup.heading")
+	end
+end
+
+-- The lines of entry `index` of `s`, `e`, drawn `room` cells wide after
+-- lines `speaker` said.
+local function entry_lines(
+	s: Session,
+	index: number,
+	e: any,
+	speaker: ("user" | "agent")?,
+	room: number
+): { Said }
+	local out: Lines = { lines = {}, speaker = speaker }
+	if e.kind == "user" or e.kind == "agent" then
+		heading(out, s, e.kind)
+		body(out, string.match(e.text, "^(.-)%s*$") or e.text)
+		return out.lines
+	elseif e.kind == "note" then
+		gap(out)
+		add(out, `  {e.text}`, "comment")
+		return out.lines
+	end
+	heading(out, s, "agent")
+	if e.kind == "thought" then
+		local id = M.thought_id(index)
+		local first_row = true
+		local function row(line: string, style: string)
+			local value: Value = { tool = id }
+			if first_row then
+				value.row = id
+				first_row = false
+			end
+			add(out, line, style).value = value
+		end
+		local text = core.text.trim(e.text)
+		local thought = string.split(text, "\n")
+		local first = thought[1]
+		local tokens = M.tokens(compact.estimate(#e.text))
+		if index == #s.entries and thinking(s) and not e.open then
+			-- Still coming in: its first line, its newest lines and a count
+			-- that goes up, so a long one doesn't look stuck.
+			row(`  … {core.text.clip(first, room - 4)}`, "comment")
+			for _, line in thought_tail(text, room) do
+				row(`    {line}`, "comment")
+			end
+			local took = elapsed(e.since or s.since or greed.now())
+			row(`    thinking · {tokens} tokens · {took}`, "agent.hint")
+		else
+			-- Folded to its first line, tab shows the rest.
+			local about = ` · thought, {tokens} tokens`
+			local shown = if e.open then first else core.text.clip(first, room - 4 - width(about))
+			local mark = if #thought == 1 and shown == first
+				then "…"
+				elseif e.open then "▾"
+				else "▸"
+			row(`  {mark} {shown}{about}`, "comment")
+			if e.open then
+				for i = 2, #thought do
+					row(`    {thought[i]}`, "comment")
+				end
 			end
 		end
-		table.insert(lines, line)
-		at += #line + 1
-	end
-	local function gap()
-		speaker = nil
-		add("")
-	end
-	-- The lines of what was said, by 0-based line number.
-	local said: { [number]: boolean } = {}
-	local function body(text: string, style: string?)
-		for _, line in string.split(text, "\n") do
-			said[#lines] = true
-			add("  " .. line, style)
+	elseif e.kind == "tool" then
+		local tool = e.tool
+		local id: string = tool.id
+		local status = tool.status or "pending"
+		local glyph = GLYPH[status] or GLYPH.pending
+		-- A title of several lines, like a script it runs, shows them all
+		-- under its first.
+		local title_lines = string.split(tool.title, "\n")
+		local text = `  {glyph} {title_lines[1]}`
+		local named = #text
+		local summary = table.concat(tool.detail, " · ")
+		if summary ~= "" then
+			text ..= ` · {summary}`
+		end
+		-- A helper's call: what it does, and its own transcript.
+		if tool.helper then
+			text ..= " · enter shows it"
+		end
+		if #tool.output > 1 then
+			text ..= if tool.open then " ▾" else " ▸"
+		end
+		local glyph_at = { from = 2, to = 2 + #glyph }
+		local line = add(out, text, "agent.hint", named)
+		table.insert(line.marks, 1, {
+			from = glyph_at.from,
+			to = glyph_at.to,
+			style = GLYPH_STYLE[status] or "agent.hint",
+		})
+		if status == "in_progress" then
+			line.spin = glyph_at
+		end
+		local value: Value = { tool = id }
+		if tool.helper or #tool.output > 1 then
+			value.row = id
+		end
+		line.value = value
+		for i = 2, #title_lines do
+			add(out, `    {title_lines[i]}`).value = { tool = id }
+		end
+		if tool.open then
+			for _, output in tool.output do
+				-- An edit's change shows as a diff: gone lines and new ones.
+				local diff = if tool.kind == "edit" then string.sub(output, 1, 2) else ""
+				local style = if diff == "- "
+					then "diff.minus"
+					elseif diff == "+ " then "diff.plus"
+					else "comment"
+				add(out, `    {output}`, style).value = { tool = id }
+			end
+		end
+	elseif e.kind == "plan" then
+		for _, item in e.items do
+			local mark = if item.status == "completed"
+				then "✓"
+				elseif item.status == "in_progress" then "›"
+				else "·"
+			add(out, `  {mark} {item.text}`, "comment")
+		end
+	elseif e.kind == "permission" then
+		-- The tool's row above shows the whole of a long title.
+		local asked = session.first_line(e.permission.title)
+		if e.chosen then
+			add(out, `  ? {asked}: {e.chosen}`, "comment")
+		else
+			add(out, `  ? Allow {asked}?`, "agent.working").value = { row = `question:{index}` }
 		end
 	end
+	return out.lines
+end
+
+-- What entry `index` of `s`, `e`, draws from, after lines `speaker` said:
+-- it's drawn again only when this changes. `e` itself is in it, so a
+-- history put in place of another is drawn anew.
+local function version(s: Session, index: number, e: any, speaker: string?): string
+	local v = `{e}|{speaker}|{e.kind}`
+	if e.kind == "thought" then
+		local live = index == #s.entries and thinking(s) and not e.open
+		v ..= `|{#e.text}|{e.open}|{live}`
+		if live then
+			-- Its time counts up.
+			v ..= `|{greed.now() // SECOND_MS}`
+		end
+	elseif e.kind == "tool" then
+		local tool = e.tool
+		local output = tool.output
+		v ..= `|{tool.status}|{tool.kind}|{tool.open}|{tool.helper ~= nil}|{tool.title}`
+		v ..= `|{table.concat(tool.detail, " · ")}|{#output}|{output[#output]}`
+	elseif e.kind == "plan" then
+		for _, item in e.items do
+			v ..= `|{item.status}:{item.text}`
+		end
+	elseif e.kind == "permission" then
+		v ..= `|{e.chosen}|{e.permission.title}`
+	else
+		v ..= `|{#e.text}|{string.sub(e.text, -16)}`
+	end
+	return v
+end
+
+-- `lines` as a view's lines: a running tool's mark tagged "spin".
+local function laid(lines: { Said }): { core.UiLine }
+	local out: { core.UiLine } = {}
+	for _, line in lines do
+		local spin = line.spin
+		if spin then
+			local before: core.UiSpan = {
+				text = string.sub(line.text, 1, spin.from),
+				marks = line.marks,
+				value = line.value,
+			}
+			local mark: core.UiSpan =
+				{ text = string.sub(line.text, spin.from + 1, spin.to), tag = "spin" }
+			local after: core.UiSpan = { text = string.sub(line.text, spin.to + 1) }
+			table.insert(out, { before, mark, after })
+		else
+			table.insert(out, { { text = line.text, marks = line.marks, value = line.value } })
+		end
+	end
+	return out
+end
+
+-- A part of the view laid out by `lines(cells)`.
+local function part(lines: (cells: number) -> { Said }): core.UiNode
+	return {
+		lay = function(cells: number): { core.UiLine }
+			return laid(lines(cells))
+		end,
+	}
+end
+
+-- The history of `s`: its title, then each entry a part of its own, so
+-- only the one that changed is drawn again, then what you sent while it
+-- worked.
+local function history(s: Session): { core.UiNode }
 	local title = `{s.name} in {core.project.tilde(s.root)}`
 	if s.workspace then
 		title ..= ` (workspace {s.workspace.name})`
 	end
-	add(title, "markup.heading")
-	-- A heading each time the speaker changes; the agent's text, tools and
-	-- plans run on under one.
-	local function heading(who: "user" | "agent")
-		if speaker ~= who then
-			gap()
-			speaker = who
-			add(`  {if who == "user" then "You" else s.name}`, "markup.heading")
-		end
-	end
-	local tools: { [number]: string } = {}
-	local actionable: { Row } = {}
+	local parts: { core.UiNode } = {
+		part(function()
+			local out: Lines = { lines = {} }
+			add(out, title, "markup.heading")
+			return out.lines
+		end),
+	}
 	local thoughts = greed.option.get("agent-thoughts") ~= false
+	local speaker: ("user" | "agent")? = nil
 	for index, entry in s.entries do
 		local e = entry :: any
 		if e.kind == "thought" and (not thoughts or not string.find(e.text or "", "%S")) then
 			continue
-		elseif e.kind == "user" or e.kind == "agent" then
-			heading(e.kind)
-			body(string.match(e.text, "^(.-)%s*$") or e.text)
-		elseif e.kind == "note" then
-			gap()
-			add(`  {e.text}`, "comment")
-		else
-			heading("agent")
-			if e.kind == "thought" then
-				local id = M.thought_id(index)
-				table.insert(actionable, { line = #lines, key = id })
-				local function row(line: string, style: string)
-					tools[#lines] = id
-					add(line, style)
-				end
-				local text = core.text.trim(e.text)
-				local thought = string.split(text, "\n")
-				local first = thought[1]
-				local tokens = M.tokens(compact.estimate(#e.text))
-				if index == #s.entries and thinking(s) and not e.open then
-					-- Still coming in: its first line, its newest lines and a
-					-- count that goes up, so a long one doesn't look stuck.
-					row(`  … {core.text.clip(first, room - 4)}`, "comment")
-					for _, line in thought_tail(text, room) do
-						row(`    {line}`, "comment")
-					end
-					local took = elapsed(e.since or s.since or greed.now())
-					row(`    thinking · {tokens} tokens · {took}`, "agent.hint")
-				else
-					-- Folded to its first line, tab shows the rest.
-					local about = ` · thought, {tokens} tokens`
-					local shown = if e.open
-						then first
-						else core.text.clip(first, room - 4 - width(about))
-					local mark = if #thought == 1 and shown == first
-						then "…"
-						elseif e.open then "▾"
-						else "▸"
-					row(`  {mark} {shown}{about}`, "comment")
-					if e.open then
-						for i = 2, #thought do
-							row(`    {thought[i]}`, "comment")
-						end
-					end
-				end
-			elseif e.kind == "tool" then
-				local tool = e.tool
-				local status = tool.status or "pending"
-				local glyph = GLYPH[status] or GLYPH.pending
-				-- A title of several lines, like a script it runs, shows them
-				-- all under its first.
-				local title_lines = string.split(tool.title, "\n")
-				local line = `  {glyph} {title_lines[1]}`
-				local named = #line
-				local summary = table.concat(tool.detail, " · ")
-				if summary ~= "" then
-					line ..= ` · {summary}`
-				end
-				-- A helper's call: what it does, and its own transcript.
-				if tool.helper then
-					line ..= " · enter shows it"
-				end
-				if #tool.output > 1 then
-					line ..= if tool.open then " ▾" else " ▸"
-				end
-				if status == "in_progress" then
-					table.insert(running, { from = at + 2, to = at + 2 + #glyph })
-				end
-				table.insert(styles, {
-					from = at + 2,
-					to = at + 2 + #glyph,
-					style = GLYPH_STYLE[status] or "agent.hint",
-				})
-				local first = #lines
-				if tool.helper or #tool.output > 1 then
-					table.insert(actionable, { line = first, key = tool.id })
-				end
-				add(line, "agent.hint", named)
-				for i = 2, #title_lines do
-					add(`    {title_lines[i]}`)
-				end
-				if tool.open then
-					for _, output in tool.output do
-						-- An edit's change shows as a diff: gone lines and new ones.
-						local mark = if tool.kind == "edit" then string.sub(output, 1, 2) else ""
-						local style = if mark == "- "
-							then "diff.minus"
-							elseif mark == "+ " then "diff.plus"
-							else "comment"
-						add(`    {output}`, style)
-					end
-				end
-				for i = first, #lines - 1 do
-					tools[i] = tool.id
-				end
-			elseif e.kind == "plan" then
-				for _, item in e.items do
-					local mark = if item.status == "completed"
-						then "✓"
-						elseif item.status == "in_progress" then "›"
-						else "·"
-					add(`  {mark} {item.text}`, "comment")
-				end
-			elseif e.kind == "permission" then
-				-- The tool's row above shows the whole of a long title.
-				local asked = session.first_line(e.permission.title)
-				if e.chosen then
-					add(`  ? {asked}: {e.chosen}`, "comment")
-				else
-					table.insert(actionable, { line = #lines, key = `question:{index}` })
-					add(`  ? Allow {asked}?`, "agent.working")
-				end
+		end
+		local before: ("user" | "agent")? = speaker
+		speaker = if e.kind == "user" then "user" elseif e.kind == "note" then nil else "agent"
+		table.insert(
+			parts,
+			ui.keyed(`entry:{index}`, version(s, index, e, before), function()
+				return part(function(cells: number)
+					return entry_lines(s, index, e, before, cells)
+				end)
+			end)
+		)
+	end
+	table.insert(
+		parts,
+		part(function()
+			local out: Lines = { lines = {} }
+			-- What you sent while it worked, dimmed at the end until it goes.
+			local queued = s.queued
+			if queued and #queued > 0 then
+				gap(out)
+				out.speaker = "user"
+				add(out, "  You · queued", "comment")
+				body(out, table.concat(queued, "\n\n"), "comment")
 			end
-		end
-	end
-	-- What you sent while it worked, dimmed at the end until it goes.
-	local queued = s.queued
-	if queued and #queued > 0 then
-		gap()
-		speaker = "user"
-		add("  You · queued", "comment")
-		body(table.concat(queued, "\n\n"), "comment")
-	end
-	gap()
-	local plain: { [number]: boolean } = {}
-	for line = 0, #lines - 1 do
-		if not said[line] then
-			plain[line] = true
-		end
-	end
-	return {
-		text = table.concat(lines, "\n") .. "\n",
-		styles = styles,
-		tools = tools,
-		running = running,
-		plain = plain,
-		rows = actionable,
-	}
+			gap(out)
+			return out.lines
+		end)
+	)
+	return parts
 end
 
 -- The name of the mode or model `id` among `list`.
@@ -381,7 +446,7 @@ end
 --- The box's top line for `s`, `cells` wide, and its decorations from
 --- where it starts: the agent, its mode and model on the left, and the
 --- keys to send and stop on the right, as far as they fit.
-function M.top(s: Session, cells: number): (string, { Style })
+function M.top(s: Session, cells: number): (string, { greed.Mark })
 	local named = s.name
 	local mode, model = name_in(s.modes, s.mode), name_in(s.models, s.model)
 	if mode then
@@ -406,7 +471,7 @@ function M.top(s: Session, cells: number): (string, { Style })
 		named = s.name
 	end
 	local line = `╭─ {named} ` .. string.rep("─", math.max(room(), 1))
-	local styles: { Style } = {
+	local styles: { greed.Mark } = {
 		{ from = 0, to = #line, style = "agent.box" },
 		{ from = #"╭─ ", to = #"╭─ " + #named, style = "agent.box.title" },
 	}
@@ -586,25 +651,58 @@ function M.prompt(buffer: greed.Buffer): string
 	return if start then buffer:slice(start, buffer:len()) else ""
 end
 
--- Per transcript buffer: its session, the tool call on each line, the
--- lines nobody said and the running tools' marks as last drawn, and
--- whether its status is ticking.
+-- Per transcript buffer: its session, the lines nobody said
+-- (`plain_lines`), the shell blocks in it as last drawn, the box's head
+-- (its top line, the row of choices and their marks) and whether its
+-- status is ticking. Its view (`core.ui`) knows what each line is.
 local shown: { [number]: Session } = {}
-local rows: { [number]: { [number]: string } } = {}
 local plains: { [number]: { [number]: boolean } } = {}
-local spinning: { [number]: { { from: number, to: number } } } = {}
+local blocks: { [number]: { code.Code } } = {}
+local heads: { [number]: { size: number, top: number, marks: { greed.Mark } } } = {}
 local ticking: { [number]: boolean } = {}
 -- The plugin's own handle on each transcript buffer, for drawing above the
 -- box, which is read-only to you.
 local owned: { [number]: greed.Buffer } = {}
--- Per transcript buffer: the rows you can act on as last drawn, the one
--- highlighted (`M.pick`) by its key, where in the box the cursor was
--- before, counted from the end, and what was in the box when last drawn,
--- so typing drops the highlight.
+-- Per transcript buffer: the rows you can act on, worked out when first
+-- asked for after a draw, the one highlighted (`M.pick`) by its key, where
+-- in the box the cursor was before, counted from the end, and what was in
+-- the box when last drawn, so typing drops the highlight.
 local actionable: { [number]: { Row } } = {}
 local picked: { [number]: string } = {}
 local picked_from: { [number]: number } = {}
 local drafts: { [number]: string } = {}
+
+-- The view drawing `buffer`, if it's a transcript; other buffers drawn
+-- with `core.ui` have values of their own.
+local function view_of(buffer: greed.Buffer): core.UiView?
+	return if shown[buffer:id()] then ui.of(buffer) else nil
+end
+
+-- What `line` of `buffer` stands for, as last drawn.
+local function value_at(buffer: greed.Buffer, line: number): Value?
+	local view = view_of(buffer)
+	if view == nil or line < 0 or line >= buffer:line_count() then
+		return nil
+	end
+	return view:value_at(buffer:line_start(line))
+end
+
+-- The lines of `buffer` that aren't what you or the agent said, as
+-- `markdown.plain` takes them, looked up as they're asked for: the
+-- history's tools and headings and the box's head, but not what you write
+-- in the box.
+local function plain_lines(buffer: greed.Buffer): { [number]: boolean }
+	return setmetatable({}, {
+		__index = function(_, line: number): boolean?
+			local view = view_of(buffer)
+			if view == nil or line >= buffer:line_of(view:input_start()) then
+				return nil
+			end
+			local value = value_at(buffer, line)
+			return not (value and value.said)
+		end,
+	}) :: any
+end
 
 --- The shell code block `pos` in `buffer` is on, if you or the agent wrote
 --- it above the box.
@@ -614,18 +712,20 @@ end
 
 --- The id of the tool call drawn on `line` of `buffer`, if any.
 function M.tool_at(buffer: greed.Buffer, line: number): string?
-	local tools = rows[buffer:id()]
-	return tools and tools[line]
+	local value = value_at(buffer, line)
+	return value and value.tool
 end
 
 --- The first line tool call `id` is drawn on in `buffer`, if it is.
 function M.line_of_tool(buffer: greed.Buffer, id: string): number?
-	local found = nil
-	local tools: { [number]: string } = rows[buffer:id()] or {}
-	for line, tool in tools do
-		if tool == id and (found == nil or line < found) then
-			found = line
-		end
+	local view = view_of(buffer)
+	local found: number? = nil
+	if view then
+		view:each(function(line: number, value: Value)
+			if found == nil and value.tool == id then
+				found = line
+			end
+		end)
 	end
 	return found
 end
@@ -641,9 +741,33 @@ local function box_width(buffer: greed.Buffer): number
 	return if widest > 0 then math.max(widest - 1, 20) else DEFAULT_WIDTH
 end
 
--- The rows of `buffer` you can act on, as last drawn.
+-- The rows of `buffer` you can act on, as last drawn, top to bottom.
 local function rows_of(buffer: greed.Buffer): { Row }
-	return actionable[buffer:id()] or {}
+	local id = buffer:id()
+	local known = actionable[id]
+	if known then
+		return known
+	end
+	local rows: { Row } = {}
+	local view = view_of(buffer)
+	if view then
+		view:each(function(line: number, value: Value)
+			if value.row then
+				table.insert(rows, { line = line, key = value.row })
+			end
+		end)
+	end
+	local drawn_blocks = blocks[id]
+	if drawn_blocks then
+		for n, block in drawn_blocks do
+			table.insert(rows, { line = block.open, key = `code:{n}` })
+		end
+	end
+	table.sort(rows, function(a: Row, b: Row)
+		return a.line < b.line
+	end)
+	actionable[id] = rows
+	return rows
 end
 
 -- The highlighted row of `buffer`, if one is.
@@ -674,7 +798,7 @@ end
 -- Draws the highlight over the row picked in `buffer`, dropping it when the
 -- row went.
 local function draw_pick(buffer: greed.Buffer)
-	local row = picked_row(buffer)
+	local row = if picked[buffer:id()] then picked_row(buffer) else nil
 	if row == nil then
 		picked[buffer:id()] = nil
 		buffer:decorate("acp-pick", {})
@@ -736,7 +860,8 @@ local function live(buffer: greed.Buffer, s: Session, now: number?)
 	})
 	if now then
 		local frame = spinner_frame(now)
-		local running: { { from: number, to: number } } = spinning[buffer:id()] or {}
+		local view = view_of(buffer)
+		local running: { { from: number, to: number } } = if view then view:spots("spin") else {}
 		for _, mark in running do
 			table.insert(marks, {
 				from = mark.from,
@@ -779,116 +904,90 @@ local function tick(buffer: greed.Buffer, s: Session)
 	end)
 end
 
--- Puts `history`, the history of `s` drawn `cells` wide, in `buffer`, with
--- the box under it and everything's decorations.
-local function show(buffer: greed.Buffer, s: Session, cells: number, history: History)
-	local id = buffer:id()
-	shown[id] = s
-	rows[id] = history.tools
-	plains[id] = history.plain
-	spinning[id] = history.running
+-- The box's head for `s` in `buffer`, `cells` wide: its top line, the row
+-- of choices for a question under it and the images pasted for your next
+-- message. What it was is kept for drawing the choices after.
+local function head(buffer: greed.Buffer, s: Session, cells: number): { Said }
 	local top, top_styles = M.top(s, cells)
+	local out: { Said } = { { text = top, marks = top_styles } }
+	local size = #top
 	local row, row_marks = question.row(buffer, s, cells)
-	local head = if row then `{top}\n{row}` else top
-	-- The images pasted for your next message, under them.
-	local attached = s.attached
-	local chips = if attached then `  {session.chips(attached)} · alt-x drops them` else nil
-	if chips then
-		head ..= `\n{chips}`
-	end
-	local wanted = history.text .. head
-	-- The box's top line, its row of choices and the images' chips aren't
-	-- Markdown either; what you write under them is.
-	local plain = table.clone(history.plain)
-	local _, lines = string.gsub(history.text, "\n", "")
-	plain[lines] = true
 	if row then
-		plain[lines + 1] = true
+		table.insert(out, { text = row, marks = {} })
+		size += 1 + #row
 	end
-	if chips then
-		plain[lines + (if row then 2 else 1)] = true
+	local attached = s.attached
+	if attached then
+		local chips = `  {session.chips(attached)} · alt-x drops them`
+		table.insert(out, { text = chips, marks = {} })
+		size += 1 + #chips
 	end
-	markdown.plain(buffer, plain)
-	local stop = prompt_end(buffer)
-	if stop == nil then
-		-- The box's top went; everything there was is history now.
-		buffer:edit(function(e)
-			e:replace(0, buffer:len(), wanted .. "\n")
-		end, OUT_OF_UNDO)
-	else
-		local old = buffer:slice(0, stop)
-		if old ~= wanted then
-			-- Only what changed is replaced, so a cursor before or after it,
-			-- like yours up in the history while a helper's row ticks, stays
-			-- where it is.
-			local function inside(text: string, at: number): boolean
-				local byte = string.byte(text, at + 1) or 0
-				return byte >= 0x80 and byte < 0xC0
-			end
-			local same = 0
-			local shortest = math.min(#old, #wanted)
-			while same < shortest and string.byte(old, same + 1) == string.byte(wanted, same + 1) do
-				same += 1
-			end
-			while same > 0 and inside(wanted, same) do
-				same -= 1
-			end
-			local tail = 0
-			while
-				tail < shortest - same
-				and string.byte(old, #old - tail) == string.byte(wanted, #wanted - tail)
-			do
-				tail += 1
-			end
-			while tail > 0 and inside(wanted, #wanted - tail) do
-				tail -= 1
-			end
-			buffer:edit(function(e)
-				e:replace(same, stop - tail, string.sub(wanted, same + 1, #wanted - tail))
-			end, OUT_OF_UNDO)
-		end
+	heads[buffer:id()] = { size = size, top = #top, marks = row_marks }
+	return out
+end
+
+-- What `buffer` shows of the session in its state: the history, then the
+-- box's head, what you write coming under it.
+local function render(buffer: greed.Buffer, state: { [string]: any }): core.UiNode
+	local s: Session = state.s
+	local parts = history(s)
+	table.insert(
+		parts,
+		part(function(cells: number)
+			return head(buffer, s, cells)
+		end)
+	)
+	return ui.column(parts)
+end
+
+-- Draws what goes with the history just drawn in `buffer`: the box's head
+-- and its choices, the shell blocks' buttons, the highlight and the box.
+local function drawn(buffer: greed.Buffer, view: core.UiView)
+	local id = buffer:id()
+	local s = shown[id]
+	local made = heads[id]
+	local stop = view:input_start() - 1
+	local at = stop - made.size
+	buffer:decorate("acp-prompt", { { from = at, to = stop, style = "agent.box" } })
+	local row_at = at + made.top + 1
+	local marks: { greed.Mark } = {}
+	for _, mark in made.marks do
+		local moved = table.clone(mark)
+		moved.from += row_at
+		moved.to += row_at
+		table.insert(marks, moved)
 	end
-	local at = #history.text
-	buffer:decorate("acp-prompt", { { from = at, to = at + #head, style = "agent.box" } })
-	buffer:set_readonly_before(at + #head + 1)
-	local styles = history.styles
-	for _, style in top_styles do
-		local moved = table.clone(style)
-		moved.from += at
-		moved.to += at
-		table.insert(styles, moved)
-	end
-	buffer:decorate("acp", styles :: any)
-	local row_at = at + #top + 1
-	for _, mark in row_marks do
-		mark.from += row_at
-		mark.to += row_at
-	end
-	buffer:decorate("acp-choices", row_marks)
-	local rows = table.clone(history.rows)
-	for n, block in code.draw(buffer, at, history.plain) do
-		table.insert(rows, { line = block.open, key = `code:{n}` })
-	end
-	table.sort(rows, function(a: Row, b: Row)
-		return a.line < b.line
-	end)
-	actionable[id] = rows
+	buffer:decorate("acp-choices", marks)
+	blocks[id] = code.draw(buffer, at, plains[id])
+	actionable[id] = nil
 	draw_pick(buffer)
 	live(buffer, s, if busy(s) and core.effects.enabled() then greed.now() else nil)
 end
 
--- Draws the history of `s` in `buffer` (see `M.render`).
+-- Draws `s` in `buffer` (see `M.render`): only the entries that changed.
 local function draw(buffer: greed.Buffer, s: Session)
+	local id = buffer:id()
 	-- Drawn as the plugin, which may change the history, though a command's
 	-- handle (yours) may not.
-	buffer = owned[buffer:id()] or buffer
-	local cells = box_width(buffer)
-	local history = M.history(s, cells)
-	-- Showing it can't be paused, or a frame would show the new text with
-	-- the old decorations: the box's sides and bottom gone (its top line was
-	-- replaced), bars missing from new lines. Working out the history,
-	-- the long part, can.
-	core.atomic(show, buffer, s, cells, history)
+	buffer = owned[id] or buffer
+	shown[id] = s
+	local view = view_of(buffer)
+	if view == nil then
+		ui.mount(buffer, function(state)
+			return render(buffer, state)
+		end, { s = s }, {
+			ns = "acp",
+			width = box_width,
+			input = true,
+			keys = false,
+			after = function(drawn_view: core.UiView)
+				drawn(buffer, drawn_view)
+			end,
+		})
+	else
+		view.state.s = s
+		view:redraw()
+	end
 	tick(buffer, s)
 end
 
@@ -931,6 +1030,10 @@ function M.create(s: Session): greed.Buffer
 	buffer:set_line_numbers(false)
 	buffer:set_kept(true)
 	owned[buffer:id()] = buffer
+	-- The box's top line, its row of choices and the images' chips aren't
+	-- Markdown either; what you write under them is.
+	plains[buffer:id()] = plain_lines(buffer)
+	markdown.plain(buffer, plains[buffer:id()])
 	M.render(buffer, s)
 	return buffer
 end
@@ -944,9 +1047,10 @@ function M.clear_prompt(buffer: greed.Buffer)
 	local line = buffer:line_of(stop)
 	if line + 1 < buffer:line_count() then
 		local start = buffer:line_start(line + 1)
+		-- Kept out of undo, so undo in the box takes back only typing.
 		buffer:edit(function(e)
 			e:replace(start, buffer:len(), "")
-		end, OUT_OF_UNDO)
+		end, { undo = false })
 	end
 end
 
@@ -1070,9 +1174,9 @@ end)
 
 greed.on("buffer.closed", function(event: greed.BufferClosed)
 	shown[event.id] = nil
-	rows[event.id] = nil
 	plains[event.id] = nil
-	spinning[event.id] = nil
+	blocks[event.id] = nil
+	heads[event.id] = nil
 	owned[event.id] = nil
 	drawing[event.id] = nil
 	actionable[event.id] = nil
