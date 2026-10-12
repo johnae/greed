@@ -1441,6 +1441,25 @@ Tip: {{ fixed(tip) }} kr. Each pays {{ fixed((bill + tip) / people) }} kr.
   by the header's words in lowercase with spaces as `_`.
 - A [named question](#questionnaires)'s answer is a value by its name.
 
+A table's column can be worked out too, row by row, with a formula line
+right under the table:
+
+```markdown
+<!-- id=costs -->
+| Item | Amount | Per year | So far |
+|------|-------:|---------:|-------:|
+| Rent | 900    |          |        |
+| Food | 350    |          |        |
+<!-- formula: per_year = amount * 12 -->
+<!-- formula: so_far = (if prev then prev.so_far else 0) + amount -->
+```
+
+A formula names its row's cells by their column, `prev` for the row
+above, and anything else in the file. Its column's cells can stay empty:
+they show what it works out, and whatever they say in the file gives way.
+Formulas go in order, so a later one can use an earlier one's column, and
+the table's value has them too (`sum(costs.per_year)`).
+
 Formulas are expressions only: arithmetic, comparisons, `and`/`or`/`not`,
 `..` to join text, `if a then b else c`, and functions: `sum`, `avg`,
 `count`, `min`, `max`, `round(x, digits)`, `floor`, `ceil`, `abs`,

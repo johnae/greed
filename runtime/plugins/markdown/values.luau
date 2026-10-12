@@ -31,16 +31,26 @@ local M = {}
 --- buffer (0-based, `to` past its end).
 export type Field = { name: string, value: string, from: number, to: number }
 
+--- A column a formula fills, from a `<!-- formula: key = formula -->`
+--- line under its table.
+export type Column = { key: string, source: string }
+
+--- A table as its text says: its rows, and its columns by name, as
+--- formulas see it (`raw`), and the columns formulas fill.
+export type Sheet = { raw: any, columns: { Column } }
+
 --- What a file's formulas can name, as its text says now: `let`s, fields
 --- and named tables; answers come from the buffer as it's drawn. `key`
 --- changes when any of them does.
 export type Found = {
 	lets: { [string]: string },
 	fields: { Field },
-	--- Each named table: its rows, and its columns by name, as formulas see it.
-	tables: { [string]: any },
+	tables: { [string]: Sheet },
 	key: string,
 }
+
+--- A cell a formula filled, as it shows, and whether it went wrong.
+export type Worked = { text: string, failed: boolean }
 
 -- A column's name from its header: lowercase, other than letters and
 -- digits as `_`.
@@ -56,7 +66,7 @@ end
 
 -- The rows of the table from line `first` to `last` of `s` (0-based), by
 -- their header's words, with each column as a list under its name too.
-local function table_value(s: Structure, first: number, last: number): any
+local function table_value(s: Structure, first: number, last: number): (any, { string })
 	local function texts(n: number): { string }
 		local line = s.lines[n + 1]
 		local out: { string } = {}
@@ -86,7 +96,90 @@ local function table_value(s: Structure, first: number, last: number): any
 		end
 		table.insert(out, row)
 	end
+	return out, keys
+end
+
+-- The formula lines right under the table ending on line `last` of `s`
+-- (0-based).
+local function formulas_below(s: Structure, last: number): { Column }
+	local out: { Column } = {}
+	local n = last + 1
+	while s.lines[n + 1] do
+		local key, source = string.match(
+			s.lines[n + 1],
+			"^%s*<!%-%-%s*formula:%s*([%a_][%w_]*)%s*=%s*(.-)%s*%-%->%s*$"
+		)
+		if key == nil then
+			break
+		end
+		table.insert(out, { key = key :: string, source = source :: string })
+		n += 1
+	end
 	return out
+end
+
+-- `source`, a formula, worked out in `scope`: its value, or what went wrong.
+local function work(source: string, scope: core.FormulaScope): (any, string?)
+	local f, err = formula.compile(source)
+	if f == nil then
+		return nil, err
+	end
+	return formula.eval(f, scope)
+end
+
+-- `raw` (a table's value) with `columns` worked out into each row, in
+-- order: a formula names its row's cells first, then `prev` for the row
+-- before, then `scope`. Also gives each worked-out cell by row and key.
+local function work_rows(
+	raw: any,
+	columns: { Column },
+	scope: (name: string) -> any
+): (any, { { [string]: Worked } })
+	local shown: { { [string]: Worked } } = {}
+	if #columns == 0 then
+		return raw, shown
+	end
+	local rows: any = {}
+	local prev: any = nil
+	for i, cells in ipairs(raw) do
+		local row = table.clone(cells)
+		local function lookup(name: string): any
+			local cell = row[name]
+			if cell ~= nil then
+				return cell
+			elseif name == "prev" then
+				return prev
+			end
+			return scope(name)
+		end
+		shown[i] = {}
+		for _, column in columns do
+			local value, err = work(column.source, lookup)
+			row[column.key] = value
+			shown[i][column.key] = if err
+				then { text = `⚠ {err}`, failed = true }
+				else { text = formula.show(value), failed = false }
+		end
+		table.insert(rows, row)
+		prev = row
+	end
+	-- Each column as a list by its name too, formulas' among them.
+	for key in raw do
+		if type(key) == "string" then
+			rows[key] = {}
+		end
+	end
+	for _, column in columns do
+		rows[column.key] = {}
+	end
+	for _, row in ipairs(rows) do
+		for key, list in rows do
+			if type(key) == "string" then
+				table.insert(list, row[key])
+			end
+		end
+	end
+	return rows, shown
 end
 
 -- What each structure's formulas can name, kept while it's the buffer's.
@@ -122,8 +215,10 @@ function M.found(s: Structure): Found
 		local id = string.match(line, "^%s*<!%-%-%s*id=([%w_]+)%s*%-%->%s*$")
 		local below = s.table_at[n + 1]
 		if id and below and below.first == n + 1 then
-			result.tables[id] = table_value(s, below.first, below.last)
-			for row = below.first, below.last do
+			local columns = formulas_below(s, below.last)
+			result.tables[id] =
+				{ raw = (table_value(s, below.first, below.last)), columns = columns }
+			for row = below.first, below.last + #columns do
 				table.insert(key, s.lines[row + 1])
 			end
 		end
@@ -135,7 +230,7 @@ end
 
 --- The scope `buffer`'s formulas are worked out in: its fields, tables,
 --- answers and `let`s, each `let` worked out when it's first named.
-function M.scope(buffer: greed.Buffer, s: Structure?): core.FormulaScope
+function M.scope(buffer: greed.Buffer, s: Structure?): (name: string) -> any
 	local known = M.found(s or structure.of(buffer))
 	local values: { [string]: any } = {}
 	for name, answer in questions.answers(buffer) do
@@ -146,9 +241,6 @@ function M.scope(buffer: greed.Buffer, s: Structure?): core.FormulaScope
 			values[field.name] = value_of(field.value)
 		end
 	end
-	for name, rows in known.tables do
-		values[name] = rows
-	end
 	local working: { [string]: boolean } = {}
 	local worked: { [string]: { value: any, err: string? } } = {}
 	local function lookup(name: string): any
@@ -156,8 +248,9 @@ function M.scope(buffer: greed.Buffer, s: Structure?): core.FormulaScope
 		if value ~= nil then
 			return value
 		end
-		local source = known.lets[name]
-		if source == nil then
+		-- A table with its formulas worked out, or a `let`: each once.
+		local sheet, source = known.tables[name], known.lets[name]
+		if sheet == nil and source == nil then
 			return nil
 		end
 		local done = worked[name]
@@ -166,10 +259,11 @@ function M.scope(buffer: greed.Buffer, s: Structure?): core.FormulaScope
 				error({ formula = `{name} depends on itself` }, 0)
 			end
 			working[name] = true
-			local f, err = formula.compile(source)
-			local v: any = nil
-			if f then
-				v, err = formula.eval(f, lookup)
+			local v: any, err: string? = nil, nil
+			if sheet then
+				v = work_rows(sheet.raw, sheet.columns, lookup)
+			else
+				v, err = work(source :: string, lookup)
 			end
 			working[name] = nil
 			done = { value = v, err = if err then `{name}: {err}` else nil }
@@ -186,15 +280,36 @@ end
 --- What `source`, a formula, shows as in `scope`: its value, or what went
 --- wrong after a ⚠, and whether it went wrong.
 function M.show(source: string, scope: core.FormulaScope): (string, boolean)
-	local f, err = formula.compile(source)
-	if f then
-		local value: any
-		value, err = formula.eval(f, scope)
-		if err == nil then
-			return formula.show(value), false
-		end
+	local value, err = work(source, scope)
+	if err == nil then
+		return formula.show(value), false
 	end
 	return `⚠ {err}`, true
+end
+
+--- The cells formulas fill in the table `found` of `buffer`, by their row
+--- (the header row 1, as the table look counts them) and column; nil for a
+--- table without formulas.
+function M.worked(
+	buffer: greed.Buffer,
+	s: Structure,
+	found: structure.Table
+): { [number]: { [number]: Worked } }?
+	local columns = formulas_below(s, found.last)
+	if #columns == 0 then
+		return nil
+	end
+	local raw, keys = table_value(s, found.first, found.last)
+	local _, shown = work_rows(raw, columns, M.scope(buffer, s))
+	local out: { [number]: { [number]: Worked } } = {}
+	for i, cells in shown do
+		local row: { [number]: Worked } = {}
+		for c, key in keys do
+			row[c] = cells[key]
+		end
+		out[i + 1] = row
+	end
+	return out
 end
 
 -- Whether byte `at` of `line` is inside a code span.

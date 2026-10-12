@@ -292,13 +292,15 @@ visible = function(text: string, reading: boolean): string
 end
 
 -- The marks for table `found` of `s` go in `out`. False if its rows don't
--- line up with its delimiter row after all.
+-- line up with its delimiter row after all. Cells a formula fills
+-- (`worked`, values.luau) show what it worked out.
 local function draw_table(
 	s: Structure,
 	found: structure.Table,
 	out: { greed.Mark },
 	shows: Reveal,
-	read: boolean
+	read: boolean,
+	worked: { [number]: { [number]: values.Worked } }?
 ): boolean
 	local function text_of(line: number): string
 		return s.lines[line + 1]
@@ -317,8 +319,13 @@ local function draw_table(
 		table.insert(lines, row)
 		table.insert(texts, text_of(row))
 	end
-	local widths, rows = tables.layout(texts, aligns, function(text)
-		return core.text.width(visible(text, read))
+	local function filled(r: number, c: number): values.Worked?
+		local row = worked and worked[r]
+		return if row then row[c] else nil
+	end
+	local widths, rows = tables.layout(texts, aligns, function(text, r, c)
+		local cell = filled(r, c)
+		return core.text.width(if cell then cell.text else visible(text, read))
 	end)
 	local function line_start(line: number): number
 		return s.starts[line + 1]
@@ -332,6 +339,19 @@ local function draw_table(
 	end
 	for r, row in rows do
 		local line = line_of(lines[r], texts[r])
+		-- What a formula worked out for an empty cell goes in where the cell
+		-- is, ahead of what's drawn for the gap after it, at the same place.
+		for c, cell in row.cells do
+			local fill = filled(r, c)
+			if fill and cell.to < cell.from then
+				table.insert(out, {
+					from = line.at + cell.from - 1,
+					to = line.at + cell.from - 1,
+					style = if fill.failed then "markdown.value.error" else "markdown.value",
+					text = fill.text,
+				})
+			end
+		end
 		for _, gap in row.gaps do
 			if gap.to >= gap.from then
 				hide(line, gap.from, gap.to, gap.text, "markdown.table")
@@ -344,9 +364,25 @@ local function draw_table(
 				})
 			end
 		end
-		for _, cell in row.cells do
+		for c, cell in row.cells do
 			local inside = line_of(lines[r], string.sub(texts[r], cell.from, cell.to))
 			inside.at += cell.from - 1
+			local fill = filled(r, c)
+			if fill then
+				-- What the formula worked out, over what the file says there
+				-- (an empty cell's went in above).
+				if #inside.text > 0 then
+					table.insert(out, {
+						from = inside.at,
+						to = inside.at + #inside.text,
+						style = if fill.failed then "markdown.value.error" else "markdown.value",
+						text = fill.text,
+						conceal = true,
+						reveal = shows,
+					})
+				end
+				continue
+			end
 			paint(
 				inside,
 				1,
@@ -463,7 +499,9 @@ local function marks(
 			continue
 		end
 		local found = s.table_at[n - 1]
-		if found and draw_table(s, found, out, shows, read ~= nil) then
+		if
+			found and draw_table(s, found, out, shows, read ~= nil, values.worked(buffer, s, found))
+		then
 			n = found.last + 1
 			continue
 		end
@@ -605,10 +643,13 @@ local function valued(s: Structure, first: number, last: number): boolean
 end
 
 local redraw_values: (buffer: greed.Buffer?) -> ()
+-- Draws a buffer again in full, every layer; set below.
+local redraw: (buffer: greed.Buffer?) -> ()
 
 -- Live values (values.luau). After an edit only its lines are drawn again,
 -- unless it changed what formulas name (a field, a `let`, a table): then
--- the whole file is, as values anywhere in it can change.
+-- the whole file is, every layer, as values and tables anywhere in it can
+-- change.
 redraw_values = conceal.add({
 	ns = "markdown-values",
 	wants = function(buffer: greed.Buffer): boolean
@@ -631,7 +672,7 @@ redraw_values = conceal.add({
 		named_before[id] = key
 		if not whole and before ~= nil and before ~= key then
 			greed.spawn(function()
-				redraw_values(buffer)
+				redraw(buffer)
 			end)
 		end
 		return values.marks(buffer, s, first, last)
@@ -649,7 +690,7 @@ choices.on_pick(function(buffer)
 end)
 
 -- Draws `buffer` (or every Markdown buffer) again as a document.
-local function redraw(buffer: greed.Buffer?)
+function redraw(buffer: greed.Buffer?)
 	redraw_document(buffer)
 	redraw_questions(buffer)
 	redraw_values(buffer)

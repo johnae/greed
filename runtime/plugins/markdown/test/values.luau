@@ -75,3 +75,30 @@ test("a let that names itself, and an empty field", function(t)
 	assert(string.find(rows, "A is ⚠ a: b: a depends on itself", 1, true), rows)
 	assert(string.find(rows, "Name: [      ]", 1, true), rows)
 end)
+
+local BUDGET = [[
+Income: [3000](field:income)
+
+<!-- id=costs -->
+| Item | Amount | Per year | So far |
+|------|-------:|---------:|--------|
+| Rent | 900    |          |        |
+| Food | 350    | 1        |        |
+<!-- formula: per_year = amount * 12 -->
+<!-- formula: so_far = (if prev then prev.so_far else 0) + amount -->
+
+Left {{ income - sum(costs.amount) }}, {{ sum(costs.per_year) }} a year.]]
+
+test("a table's formula columns are worked out row by row, and its values use them", function(t)
+	local rows = shown(t, BUDGET)
+	assert(string.find(rows, "│ Rent │    900 │    10800 │ 900    │", 1, true), rows)
+	-- What the file says in a formula's column gives way to what it works out.
+	assert(string.find(rows, "│ Food │    350 │     4200 │ 1250   │", 1, true), rows)
+	assert(string.find(rows, "Left 1750, 15000 a year.", 1, true), rows)
+	assert(not string.find(rows, "formula:", 1, true), "formulas don't show")
+	-- A field the table's formulas don't use, changed: the values follow.
+	local buffer = greed.view():buffer()
+	values.set(buffer, assert(values.field_at(buffer, 9)), "2000")
+	rows = table.concat(t:draw(60, 30), "\n")
+	assert(string.find(rows, "Left 750,", 1, true), rows)
+end)

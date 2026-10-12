@@ -88,13 +88,14 @@ function M.aligns(text: string): { Align }?
 end
 
 --- Lays out `rows` (without the delimiter row) in columns aligned as
---- `aligns` says, `width` measuring a cell's text as shown. Returns each
+--- `aligns` says, `width` measuring a cell's text as shown (given its row and
+--- column too, for a cell shown as something else). Returns each
 --- column's width, and each row's cells (those past the last column left
 --- out) with what to show between them.
 function M.layout(
 	rows: { string },
 	aligns: { Align },
-	width: (text: string) -> number
+	width: (text: string, row: number, column: number) -> number
 ): ({ number }, { Row })
 	local n = #aligns
 	local widths: { number } = table.create(n, 1)
@@ -103,7 +104,7 @@ function M.layout(
 		local cells = M.cells(text) or {}
 		local shown: { number } = {}
 		for c = 1, math.min(#cells, n) do
-			shown[c] = width(string.sub(text, cells[c].from, cells[c].to))
+			shown[c] = width(string.sub(text, cells[c].from, cells[c].to), r, c)
 			widths[c] = math.max(widths[c], shown[c])
 		end
 		parsed[r] = { cells = cells, shown = shown }
