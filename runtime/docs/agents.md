@@ -63,6 +63,7 @@ to go. The tools:
 | `describe` | What a command, option, event, API function, plugin or mode is: its doc, keys, value, who defined it and where |
 | `why` | How some lines came to be: each change that made them, newest first, with its description and diff |
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
+| `debug_log` | What Greed and its plugins say they do while a debug topic is on (keys, runs, frames, language server messages, programs, a plugin's own `greed.debug.log` lines): turn topics on, do the thing, read the lines |
 | `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them; rewriting a note that's there is proposed for you to review |
 | `notes_todos`, `notes_add_todo`, `notes_add_thought` | The todos in your notes, soonest due first, and adding a todo or a thought |
 | `notes_update_todo` | Change one todo: its text, due date or reminder, or tick it |
@@ -95,7 +96,7 @@ and `tools`.
 | `notes` | the `notes_` tools |
 | `syntax` | `syntax_query` |
 | `blocks` | `blocks_list`, `blocks_run` |
-| `plugins` | `describe`, `plugin_guide`, `plugin_try`, `plugin_install` |
+| `plugins` | `describe`, `plugin_guide`, `plugin_try`, `plugin_install`, `debug_log` |
 | `subagents` | `subagent` |
 | `web` | `web_search`, `web_fetch` |
 | `shell` | `shell_run`, `shell_read`, `shell_wait`, `shell_kill` |
