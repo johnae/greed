@@ -85,8 +85,9 @@ local function listing(words: { string }): (boolean, string?)
 	return lists, context
 end
 
--- The columns `docker ps` and `docker stats` print, in order, and the
--- field of `--format json` each is read from.
+-- The columns `docker ps` and `docker stats` print, the most useful first
+-- (the order they show in), and the field of `--format json` each is read
+-- from.
 local PS_COLUMNS = {
 	{ "NAMES", "Names" },
 	{ "IMAGE", "Image" },
@@ -107,6 +108,15 @@ local STATS_COLUMNS = {
 	{ "CONTAINER ID", "ID" },
 }
 
+-- The names `columns` show under.
+local function names_of(columns: { { string } }): { string }
+	local names: { string } = {}
+	for _, column in columns do
+		table.insert(names, column[1])
+	end
+	return names
+end
+
 -- What `--format json` printed, `text`, a JSON object a line, as the table
 -- with `columns`; nil when a line isn't one.
 local function json_lines(text: string, columns: { { string } }): shell.Table?
@@ -125,11 +135,7 @@ local function json_lines(text: string, columns: { { string } }): shell.Table?
 			table.insert(rows, row)
 		end
 	end
-	local names: { string } = {}
-	for _, column in columns do
-		table.insert(names, column[1])
-	end
-	return { columns = names, rows = rows }
+	return { columns = names_of(columns), rows = rows }
 end
 
 -- Whether `words` asks for its own output: a format, or only ids.
@@ -200,6 +206,8 @@ shell.kind({
 	called = function(): (string, string)
 		return "container", "containers"
 	end,
+	-- A container is known by its name, which docker prints last.
+	order = names_of(PS_COLUMNS),
 	-- Read as data when stages follow: the listing and `stats --no-stream`
 	-- as they print JSON.
 	structured = function(words: { string }): string?

@@ -62,6 +62,37 @@ CONTAINER ID   IMAGE          COMMAND                  CREATED        STATUS    
 	assert(assert(core.objects.get("container:web")).label == "web")
 end)
 
+-- What `docker ps` prints with a long PORTS column, NAMES last as docker
+-- puts it.
+local WIDE_PS = [[
+CONTAINER ID   IMAGE          COMMAND                  CREATED        STATUS        PORTS                                       NAMES
+3f2a1b4c5d6e   nginx:latest   "/docker-entrypoint.…"   2 hours ago    Up 2 hours    0.0.0.0:8080->80/tcp, [::]:8080->80/tcp     web-frontend
+9a8b7c6d5e4f   postgres:16    "docker-entrypoint.s…"   3 days ago     Up 3 days     5432/tcp                                    db
+]]
+
+test("docker ps shows NAMES first, so a narrow pane cuts COMMAND and PORTS instead", function(t)
+	local sh = printing(t, WIDE_PS)
+	local block = ran(t, sh, "docker ps")
+	local tbl = assert(block.table)
+	assert(tbl.columns[1] == "NAMES" and tbl.columns[2] == "IMAGE", table.concat(tbl.columns, ","))
+	local screen = table.concat(t:draw(40, 20), "\n")
+	assert(string.find(screen, "\nNAMES ", 1, true), screen)
+	assert(string.find(screen, "\nweb-frontend ", 1, true), screen)
+	assert(string.find(screen, "\ndb ", 1, true), screen)
+	-- The rows are still the containers, and a cell is still in its column.
+	assert(row_ids(sh, block) == "container:web-frontend,container:db", row_ids(sh, block))
+	assert(tbl.rows[2].PORTS == "5432/tcp", tbl.rows[2].PORTS)
+	-- What it printed is kept as it came.
+	assert(string.find(block.stdout, "^CONTAINER ID"), block.stdout)
+end)
+
+test("columns picked with select keep the order they were picked in", function(t)
+	local sh = printing(t, WIDE_PS)
+	local block = ran(t, sh, "docker ps | select IMAGE,NAMES")
+	local tbl = assert(block.table, block.output)
+	assert(table.concat(tbl.columns, ",") == "IMAGE,NAMES", table.concat(tbl.columns, ","))
+end)
+
 test("a container's image is an object", function(t)
 	local sh = printing(
 		t,

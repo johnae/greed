@@ -875,6 +875,11 @@ folder, a pod or another kubernetes object is described, a container
 shows its logs. `ctrl-o` (`alt-left` in the vscode style) comes back from
 a file you opened to the row you opened it from.
 
+A kind can put the columns its rows are known by first: `docker ps` shows
+`NAMES`, `IMAGE` and `STATUS` first, so a narrow pane cuts `COMMAND` and
+`CONTAINER ID` at its edge rather than the names. The block's output, as
+an agent reads it, stays what docker printed.
+
 A file offers `open`, `float`, `split`, `rename`, `delete`, `diff` (what
 changed since the last commit), `reveal in tree` and `copy-path`; a folder
 `cd`, `new shell here`, `grep here`, `rename`, `delete` and `reveal in

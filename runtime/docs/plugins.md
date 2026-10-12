@@ -1719,6 +1719,13 @@ printing rows again as they change, as `kubectl get pods -w` does. The
 shell then reads it through a pipe and shows each row once, in its place,
 known by its first cell (its first two under a `NAMESPACE` column).
 
+`spec.order` lists the columns to show first, the most useful first. A
+narrow pane cuts a table's rows at its right edge, so a program that
+prints what its rows are known by last (docker's `NAMES`) gets its table
+redrawn with these columns first, and the others follow as they came.
+Only the screen changes: the block's output keeps what the program
+printed, and columns picked with `select` stay as picked.
+
 `shell.action_command(kind, name, command, opts)` adds an action that runs
 a command as a block in the shell, so what it does is there to read and
 run again. `command` is a template whose `{field}`s are the thing's

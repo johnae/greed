@@ -77,6 +77,12 @@ export type Kind = {
 	--- has them: given it read as JSON (nil for JSON lines) and as text.
 	--- Nil when it can't say.
 	from_json: ((value: any, text: string) -> tables.Table?)?,
+	--- The columns to show first, the most useful first, when its rows
+	--- are read from what a command printed: a narrow pane cuts a table at
+	--- its right edge, so these stay in sight and the rest give way. The
+	--- other columns follow as they came. Docker puts NAMES last, its
+	--- kind puts it first. Columns picked with `select` stay as picked.
+	order: { string }?,
 }
 
 local kinds: { Kind } = {}
@@ -165,6 +171,47 @@ local function reads(kind: Kind, block: Block, tbl: tables.Table, by_command: bo
 	return true
 end
 
+-- Redraws `block`'s table with the columns `order` names first, when it
+-- was read from the command's own lines and no stages chose its columns.
+-- What the command printed stays in the block's record as it came.
+local function reorder(shell: Shell, block: Block, order: { string })
+	local tbl = assert(block.table)
+	local first = tbl.first
+	if block.watching or first == nil or tbl.at or tbl.header == false then
+		return
+	elseif tables.after_programs(block.command) then
+		return
+	end
+	local columns: { string } = {}
+	for _, name in order do
+		local column = tables.column(tbl, name)
+		if column and not table.find(columns, column) then
+			table.insert(columns, column)
+		end
+	end
+	for _, column in tbl.columns do
+		if not table.find(columns, column) then
+			table.insert(columns, column)
+		end
+	end
+	if table.concat(columns, "\0") == table.concat(tbl.columns, "\0") then
+		return
+	end
+	local before = log.output_lines(shell, block)
+	if #before < first + #tbl.rows then
+		return
+	end
+	tbl.columns = columns
+	local drawn, starts = tables.draw(tbl)
+	tbl.starts = starts
+	local lines: { log.Line } = table.move(before, 1, first - 1, 1, {})
+	for _, text in drawn do
+		table.insert(lines, { text = text })
+	end
+	table.move(before, first + #drawn, #before, #lines + 1, lines)
+	log.replace_output(shell, block, lines)
+end
+
 --- Works out what `block`'s rows are, as it finishes, or each time a live
 --- block shows new output: the first kind that reads them and whose
 --- `capture` keeps something, those naming the command first.
@@ -185,6 +232,9 @@ function M.finished(shell: Shell, block: Block)
 				end
 				if ok and captured ~= nil then
 					read[block] = { kind = kind, captured = captured }
+					if kind.order then
+						reorder(shell, block, kind.order)
+					end
 					block.called = M.called(block)
 					if block.called then
 						log.draw_block(shell, block)
