@@ -93,6 +93,7 @@ end)
 test("the first time in a mode with an intro, the status line says how to get out", function(t)
 	local hints = require("@hints")
 	hints.intro["hint-test"] = "you're in the test mode"
+	greed.keymap.bind("hint-test", { q = "goto-start" })
 	t:buffer("|abc")
 	greed.mode.set("hint-test")
 	local messages = t:messages()

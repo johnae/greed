@@ -174,7 +174,10 @@ every style's mode for it, styles added later included; `{ style =
 per mode, or per kind of buffer with `{ kind = "tree" }`.
 Bindings made later win, and `greed.keymap.unbind` and `greed.keymap.clear`
 take keys away, so a plugin can rebuild a mode from scratch. A mode is a
-name, and `greed.mode.set("visual")` makes one. `greed.keymap.inherit(mode,
+name, and it exists once something binds keys in it, gives it a fallback,
+a parent or a cursor shape; then `greed.mode.set("visual")` switches to it.
+Switching to a mode nothing made is an error that lists the modes there
+are, so a typo can't leave you where no key works. `greed.keymap.inherit(mode,
 parent, prefixes)` lets a mode use another's keys (some of them, with
 prefixes), and `greed.keymap.enter(mode, keys, layer)` opens a layer with
 keys, the way each style opens the leader; see [Editing

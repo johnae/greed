@@ -258,6 +258,7 @@ fn mode_changes_emit_an_event() {
         "watch",
         r#"
         local greed = require("@greed")
+        greed.keymap.fallback("insert", "insert-char")
         greed.on("mode.changed", function(ev) greed.echo(ev.from .. "->" .. ev.to) end)
         "#,
     )
@@ -265,6 +266,15 @@ fn mode_changes_emit_an_event() {
     h.eval("require('@greed').mode.set('insert')").unwrap();
     h.eval("require('@greed').mode.set('insert')").unwrap();
     assert_eq!(h.with_editor_mut(Editor::take_messages), ["helix->insert"]);
+    let err = h
+        .eval("require('@greed').mode.set('inserd')")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("no mode called inserd; modes: insert"),
+        "{err}"
+    );
+    assert!(h.with_editor_mut(Editor::take_messages).is_empty());
 }
 
 #[test]
@@ -546,6 +556,8 @@ fn handlers_can_be_removed() {
         "watch",
         r#"
         local greed = require("@greed")
+        greed.keymap.fallback("insert", "insert-char")
+        greed.keymap.bind("normal", { i = "insert-mode" })
         local function first(ev) greed.echo("first " .. ev.to) end
         greed.on("mode.changed", first)
         greed.on("mode.changed", function(ev) greed.echo("second " .. ev.to) end)

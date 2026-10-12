@@ -1049,6 +1049,14 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
             let from = {
                 let mut state = state_mut(lua);
                 let from = state.editor.mode().to_owned();
+                let modes = state.editor.modes();
+                if name != from && !modes.contains(name.as_str()) {
+                    let modes: Vec<&str> = modes.into_iter().collect();
+                    return Err(mlua::Error::runtime(format!(
+                        "no mode called {name}; modes: {}",
+                        modes.join(", ")
+                    )));
+                }
                 if !state.editor.set_mode(&name) {
                     return Ok(());
                 }

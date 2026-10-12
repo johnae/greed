@@ -775,3 +775,52 @@ fn an_isolated_mode_still_enters_the_layers_it_names() {
         "keys bound everywhere stay out"
     );
 }
+
+#[test]
+fn modes_are_those_something_defined() {
+    let mut km = Keymap::default();
+    km.bind(Layer::mode("helix"), &keys("w"), "next-word", "core")
+        .unwrap();
+    km.bind(
+        Layer::mode_kind("blocks", "shell"),
+        &keys("q"),
+        "close",
+        "shell",
+    )
+    .unwrap();
+    km.bind(Layer::global(), &keys("ctrl-s"), "save", "core")
+        .unwrap();
+    km.bind(Layer::mode("leader"), &keys("f"), "files", "core")
+        .unwrap();
+    km.bind(
+        Layer::mode(&Layer::role_name("typing")),
+        &keys("esc"),
+        "normal-mode",
+        "core",
+    )
+    .unwrap();
+    km.enter("helix", keys("space"), "leader", "core");
+    km.set_fallback("helix-insert", "insert-char", "core");
+    km.inherit("vim", &Layer::role_name("command"), vec![], "vim");
+    km.isolate("terminal", "terminal");
+    km.enable_counts("counted", "core");
+    let modes: Vec<&str> = km.modes().into_iter().collect();
+    assert_eq!(
+        modes,
+        [
+            "blocks",
+            "counted",
+            "helix",
+            "helix-insert",
+            "terminal",
+            "vim"
+        ]
+    );
+    km.remove_owned_by("vim");
+    assert!(
+        !km.modes().contains("vim"),
+        "gone with the plugin that made it"
+    );
+    km.remove_owned_by("terminal");
+    assert!(!km.modes().contains("terminal"));
+}

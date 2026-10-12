@@ -122,6 +122,7 @@ test("a typing float comes back to the mode for wherever focus ends up", functio
 end)
 
 test("a typing float without focus comes back only from its own mode", function(t)
+	greed.keymap.fallback("test-menu", "insert-char")
 	t:buffer("|x")
 	t:keys("i")
 	local float = floats.typing(

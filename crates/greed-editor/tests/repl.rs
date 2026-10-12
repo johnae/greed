@@ -76,7 +76,7 @@ fn the_user_config_loads_last_and_errors_are_shown() {
     let dir = std::env::temp_dir().join(format!("greed-config-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = dir.join("init.luau");
-    std::fs::write(&config, "require('@greed').mode.set('insert')\n").unwrap();
+    std::fs::write(&config, "require('@greed').mode.set('helix-insert')\n").unwrap();
     let run = |script: &str| {
         let mut child = greed_repl()
             .env("GREED_CONFIG", &config)
@@ -92,7 +92,7 @@ fn the_user_config_loads_last_and_errors_are_shown() {
             .unwrap();
         String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
     };
-    assert_eq!(run(":show\n"), "[insert]\n|\n");
+    assert_eq!(run(":show\n"), "[helix-insert]\n|\n");
 
     std::fs::write(&config, "error('broken config')\n").unwrap();
     let out = run("1\n");

@@ -12,7 +12,7 @@
 //! for every style, other modes), and global. The first layer a
 //! key sequence leads anywhere in decides what it does.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt;
 use std::ops::BitOr;
 use std::sync::Arc;
@@ -780,6 +780,29 @@ impl Keymap {
 
     pub fn counts(&self, mode: &str) -> bool {
         self.counts.contains_key(mode)
+    }
+
+    /// The modes something defined: bound keys in, gave a fallback, counts,
+    /// isolation or a parent. Named layers that are only ever entered with
+    /// keys (the leader) or inherited by role (`role:typing`, `vim:command`)
+    /// aren't modes.
+    pub fn modes(&self) -> BTreeSet<&str> {
+        let entered: HashSet<&str> = self
+            .inherits
+            .values()
+            .flatten()
+            .filter(|inherit| inherit.entry.is_some())
+            .map(|inherit| &*inherit.parent)
+            .collect();
+        self.log
+            .keys()
+            .filter_map(|layer| layer.mode.as_deref())
+            .chain(self.fallbacks.keys().map(|m| &**m))
+            .chain(self.counts.keys().map(|m| &**m))
+            .chain(self.isolated.keys().map(|m| &**m))
+            .chain(self.inherits.keys().map(|m| &**m))
+            .filter(|mode| !mode.contains(':') && !entered.contains(mode))
+            .collect()
     }
 
     /// Makes `mode` use only the keys bound in it, ignoring inherited modes

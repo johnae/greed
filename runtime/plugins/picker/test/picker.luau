@@ -203,13 +203,13 @@ test(
 			{ label = "cc", value = 3 },
 		}
 		t:buffer("|x")
-		greed.mode.set("vscode")
+		greed.mode.set("helix-select")
 		picker.pick("Wrap", list, function(item)
 			got = item.value
 		end)
 		t:keys("up enter")
 		assert(got == 3, "up from the first is the last")
-		t:expect_mode("vscode")
+		t:expect_mode("helix-select")
 		picker.pick("Wrap", list, function(item)
 			got = item.value
 		end)

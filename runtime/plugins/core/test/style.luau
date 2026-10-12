@@ -241,3 +241,27 @@ test("a style name that isn't one keeps the style in use, and says which there a
 	assert(string.find(said, "vim stays", 1, true), said)
 	greed.option.set("editing-style", "helix")
 end)
+
+test("switching to a mode nothing defined is an error that names the modes there are", function(t)
+	t:buffer("|abc")
+	local ok, err = pcall(function()
+		greed.mode.set("helix-normal")
+	end)
+	assert(not ok, "refused")
+	local said = tostring(err)
+	assert(string.find(said, "no mode called helix-normal; modes: ", 1, true), said)
+	assert(string.find(said, "helix, helix-insert", 1, true), said)
+	local listed = string.match(said, "modes: ([^\n]*)") or ""
+	assert(not string.find(listed, ":", 1, true), "role layers aren't modes: " .. said)
+	assert(not string.find(listed, "leader", 1, true), "the leader isn't a mode: " .. said)
+	t:expect_mode("helix")
+	-- A mode is there once a plugin binds keys in it, gives it a fallback or a cursor.
+	greed.keymap.bind("mode-test-keys", { x = "goto-start" })
+	greed.keymap.fallback("mode-test-fallback", "insert-char")
+	greed.mode.set_cursor("mode-test-cursor", "bar")
+	for _, mode in { "mode-test-keys", "mode-test-fallback", "mode-test-cursor" } do
+		greed.mode.set(mode)
+		t:expect_mode(mode)
+	end
+	greed.mode.set("helix")
+end)
