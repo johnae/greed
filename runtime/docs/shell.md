@@ -9,7 +9,7 @@ output to the next command. It's meant for the commands you run while
 editing, and for output you want to keep working with; a terminal pane is
 still the place for a long interactive session.
 
-[![kubectl get pods in the Greed shell, then the pods that aren't running, the failing pod's logs opened from its row, then a chart of their restarts](https://github.com/johnae/greed/releases/download/media/kubectl.png)](https://github.com/johnae/greed/releases/download/media/kubectl.mp4)
+[![kubectl get pods in the Greed shell, then the pods that aren't running, the failing pod's logs opened from its row, then a chart of block 1's restarts](https://github.com/johnae/greed/releases/download/media/kubectl.png)](https://github.com/johnae/greed/releases/download/media/kubectl.mp4)
 
 ```text
 ❯ 1 cargo test -q                         ✗ exit 101 · 4.1s

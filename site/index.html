@@ -137,14 +137,16 @@
     <div class="text">
       <h2>A shell that keeps its output</h2>
       <p>Each command becomes a block you can search, fold, filter and run
-      again. <code>$3</code> is block 3's output. Tables from
-      <code>kubectl</code>, <code>docker</code> or <code>ps</code> filter and
-      sort in place, a <code>watch</code> marks what changed, and the rows are
-      things to act on: a pod's logs, a file, a process. When you want your own
-      shell, a terminal pane runs whatever you like.</p>
+      again. Tables from <code>kubectl</code>, <code>docker</code> or
+      <code>ps</code> go straight into a stage, as in <code>kubectl get pods |
+      where STATUS != Running</code>, and <code>$1 | chart RESTARTS</code>
+      takes block 1's output again without running it. A <code>watch</code>
+      marks what changed, and the rows are things to act on: a pod's logs, a
+      file, a process. When you want your own shell, a terminal pane runs
+      whatever you like.</p>
       <p><a href="docs/shell.html">The shell</a></p>
     </div>
-    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/kubectl.mp4" poster="https://github.com/johnae/greed/releases/download/media/kubectl.png" autoplay muted loop playsinline preload="metadata" aria-label="kubectl get pods in the Greed shell, then only the pods not running, the failing pod's logs opened from its row, then a chart of their restarts"></video>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/kubectl.mp4" poster="https://github.com/johnae/greed/releases/download/media/kubectl.png" autoplay muted loop playsinline preload="metadata" aria-label="kubectl get pods in the Greed shell, then only the pods not running, the failing pod's logs opened from its row, then a chart of block 1's restarts"></video>
   </section>
 
   <section class="showcase">
