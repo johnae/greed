@@ -3,7 +3,8 @@
 --
 --   "auto"   (the default) sandboxed first: it reads the editor and edits
 --            buffers, and nothing more. What needs more (running programs or
---            commands, files, keys, options) goes to a reviewer, the model
+--            commands, files, keys, options, closing or switching views and
+--            buffers, the mode or tabs) goes to a reviewer, the model
 --            playing "review" (or "reasoning"), which can let it run with
 --            every capability; when it doesn't, or there's no reviewer,
 --            you're asked
@@ -407,7 +408,8 @@ registry.tool({
 	name = "eval",
 	description = "Run Luau inside the editor with the plugin API (require('@greed')), and get back "
 		.. "what it returns. It runs sandboxed first, reading the editor and editing buffers; code "
-		.. "that needs more (programs, commands, files, keys, options) is reviewed or shown to the "
+		.. "that needs more (programs, commands, files, keys, options, closing or switching views and "
+		.. "buffers, the mode or tabs) is reviewed or shown to the "
 		.. "user before it runs. Edits it makes are one operation the user can undo in one step. "
 		.. "Look the API up with describe first: describe greed.tab lists a module's functions, "
 		.. "describe View a type's methods, describe greed.tab.current one's doc. "

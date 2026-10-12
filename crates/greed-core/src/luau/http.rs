@@ -17,6 +17,7 @@ use std::time::Duration;
 use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table, Value};
 use url::{Host, Url};
 
+use super::arity::NoArgs;
 use super::jobs::{self, Output};
 use super::{capabilities, state_mut, tasks};
 use crate::registry::PluginId;
@@ -304,7 +305,7 @@ pub(super) fn stream_started(
     };
     let stream = lua.create_table()?;
     head_to_lua(lua, &head, &stream)?;
-    let read_now = lua.create_function(move |lua, ()| read_now(lua, id))?;
+    let read_now = lua.create_function(move |lua, NoArgs| read_now(lua, id))?;
     let read: Function = lua
         .load(
             r"
@@ -323,7 +324,7 @@ pub(super) fn stream_started(
     stream.set("read", read)?;
     stream.set(
         "close",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             let waiter = state_mut(lua).http.open.remove(&id).and_then(|stream| {
                 stream.cancel.store(true, Ordering::Relaxed);
                 stream.waiter

@@ -16,6 +16,7 @@ use mlua::{Function, IntoLuaMulti, Lua, Table};
 use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 
+use super::arity::NoArgs;
 use super::jobs::{self, Output};
 use super::{state, state_mut, tasks};
 use crate::child;
@@ -646,7 +647,7 @@ fn child_to_lua(lua: &Lua, handle: &Arc<Handle>, pid: u32) -> LuaResult<Table> {
     let h = handle.clone();
     child.set(
         "close",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             if let Some(child) = state_mut(lua).children.open.get_mut(&h.id) {
                 child.stdin = None;
             }
@@ -656,7 +657,7 @@ fn child_to_lua(lua: &Lua, handle: &Arc<Handle>, pid: u32) -> LuaResult<Table> {
     let h = handle.clone();
     child.set(
         "kill",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             if let Some(child) = state(lua).children.open.get(&h.id) {
                 child.signal(Signal::SIGKILL);
             }
@@ -678,7 +679,7 @@ fn child_to_lua(lua: &Lua, handle: &Arc<Handle>, pid: u32) -> LuaResult<Table> {
     let h = handle.clone();
     child.set(
         "stderr",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             let state = state(lua);
             match state
                 .children
@@ -692,10 +693,10 @@ fn child_to_lua(lua: &Lua, handle: &Arc<Handle>, pid: u32) -> LuaResult<Table> {
         })?,
     )?;
     let h = handle.clone();
-    let read = lua.create_function(move |lua, ()| read_now(lua, h.id))?;
+    let read = lua.create_function(move |lua, NoArgs| read_now(lua, h.id))?;
     child.set("read", waiting_call(lua, "child.read", read)?)?;
     let h = handle.clone();
-    let wait = lua.create_function(move |lua, ()| wait_now(lua, h.id))?;
+    let wait = lua.create_function(move |lua, NoArgs| wait_now(lua, h.id))?;
     child.set("wait", waiting_call(lua, "child.wait", wait)?)?;
     super::handles::methods(lua, child)
 }

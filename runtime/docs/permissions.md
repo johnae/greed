@@ -255,7 +255,7 @@ Greed's own agents, it runs as the `agent-eval` option says:
 
 | Value | |
 |---|---|
-| `"auto"` (the default) | Sandboxed first: the code can read the editor and how it's set up (options, keys, plugins), open files in the project and edit buffers, and nothing else. When it needs more (running programs or commands, other files, keys, options, plugins), a reviewer decides: the model playing the `review` role, or `reasoning` without one (see `:models`). A small fast model is too easy to talk round, so it never reviews. If the reviewer isn't sure, or there's none, you're asked |
+| `"auto"` (the default) | Sandboxed first: the code can read the editor and how it's set up (options, keys, plugins), open files in the project, edit buffers and move the cursor, and nothing else. When it needs more (running programs or commands, other files, keys, options, plugins, or changing what you see: closing, focusing or switching views and buffers, the mode or the tabs), a reviewer decides: the model playing the `review` role, or `reasoning` without one (see `:models`). A small fast model is too easy to talk round, so it never reviews. If the reviewer isn't sure, or there's none, you're asked |
 | `"ask"` | You see the code and press **Run** every time |
 | `"allow"` | It runs with every capability, as a plugin would |
 | `"off"` | There's no `eval` |

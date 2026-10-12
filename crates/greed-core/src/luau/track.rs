@@ -5,6 +5,7 @@
 use greed_text::Assoc;
 use mlua::{Lua, Table, UserData, UserDataMethods};
 
+use super::arity::NoArgs;
 use super::handles::BufferRef;
 use super::{state, state_mut};
 use crate::{BufferId, TrackId};
@@ -29,16 +30,16 @@ impl TrackedRef {
 
 impl UserData for TrackedRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("pos", |lua, this, ()| {
+        methods.add_method("pos", |lua, this, NoArgs| {
             Ok(this.range(lua).map(|(from, _)| from))
         });
-        methods.add_method("range", |lua, this, ()| {
+        methods.add_method("range", |lua, this, NoArgs| {
             Ok(this
                 .range(lua)
                 .map_or((None, None), |(from, to)| (Some(from), Some(to))))
         });
-        methods.add_method("deleted", |lua, this, ()| Ok(this.range(lua).is_none()));
-        methods.add_method("forget", |lua, this, ()| {
+        methods.add_method("deleted", |lua, this, NoArgs| Ok(this.range(lua).is_none()));
+        methods.add_method("forget", |lua, this, NoArgs| {
             let state = &mut *state_mut(lua);
             state.editor.forget_tracked(this.buffer, this.id);
             state.owned.forget_tracked(this.buffer, this.id);

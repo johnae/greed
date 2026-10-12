@@ -4,6 +4,7 @@
 use greed_text::Author;
 use mlua::{Lua, Table, UserDataRef, Value};
 
+use super::arity::NoArgs;
 use super::handles::{BufferRef, ViewRef, view_closed};
 use super::{state, state_mut};
 use crate::layout::{Axis, Node};
@@ -122,7 +123,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let a = author.clone();
     tab.set(
         "list",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             let state = state(lua);
             let shown = state.editor.current_tab().id();
             let list = lua.create_table()?;
@@ -135,7 +136,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let a = author.clone();
     tab.set(
         "current",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             let state = state(lua);
             let current = state.editor.current_tab();
             tab_to_lua(lua, &current, current.id(), &a)

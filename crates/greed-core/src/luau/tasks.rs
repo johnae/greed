@@ -12,6 +12,7 @@ use greed_text::ClientId;
 use mlua::thread::ThreadStatus;
 use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table, Thread, Value};
 
+use super::arity::NoArgs;
 use super::capabilities::Limit;
 use super::{state, state_mut};
 use crate::registry::PluginId;
@@ -555,7 +556,7 @@ pub(super) fn advance(lua: &Lua, until: Instant) -> LuaResult<()> {
 
 /// `greed.now()`: milliseconds on the editor's clock.
 pub(super) fn now_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|lua, ()| {
+    lua.create_function(|lua, NoArgs| {
         let tasks = &state(lua).tasks;
         Ok(tasks.now().duration_since(tasks.epoch).as_secs_f64() * 1000.0)
     })
@@ -610,7 +611,7 @@ pub(super) fn sleep_function(lua: &Lua) -> LuaResult<Function> {
 /// returns its name, e.g. "g" or "ctrl-s". The key doesn't go through the
 /// keymap.
 pub(super) fn next_key_function(lua: &Lua) -> LuaResult<Function> {
-    let start = lua.create_function(|lua, ()| {
+    let start = lua.create_function(|lua, NoArgs| {
         let state = &mut *state_mut(lua);
         let token = state.tasks.token();
         let client = state.editor.client();
@@ -638,7 +639,7 @@ pub(super) fn next_key_function(lua: &Lua) -> LuaResult<Function> {
 /// another sends, e.g. a tool waiting for the user to review an edit. A
 /// value sent before anyone waits is kept for the first wait.
 pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
-    let new = lua.create_function(|lua, ()| Ok(state_mut(lua).tasks.token()))?;
+    let new = lua.create_function(|lua, NoArgs| Ok(state_mut(lua).tasks.token()))?;
     let send = lua.create_function(|lua, (token, value): (u64, Value)| {
         if state(lua).tasks.waiting.contains_key(&token) {
             wake(lua, token, value)

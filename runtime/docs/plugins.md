@@ -600,9 +600,10 @@ end
 
 Buffers know their files by full path, with `.` and `..` worked out, so
 `greed.buffer_for(path)` finds a file's open buffer however the path is
-written (or gives nil, without opening it). Paths an agent or a user gives
-a plugin are relative to the project, and `core.project` turns them into
-full paths and back:
+written (or gives nil, without opening it), and `greed.buffer(id)` finds one
+by its id, as events give it. Paths an agent or a user gives a plugin are
+relative to the project, and `core.project` turns them into full paths and
+back:
 
 ```luau
 local core = require("@core")
@@ -795,10 +796,11 @@ Each project has tabs (`greed.tab.list`, `new`, `switch`, `close`,
 `rename`), and each tab has panes laid out side by side and one above
 another. `view:split("right", buffer)` opens a pane, `view:neighbor("left")`
 finds the one beside it, `view:resize("down", 2)` moves its edge, and
-`view:close()` closes it. `greed.view()` is the focused view, and the
-shown tab's active pane is where `greed.open` opens files. Tab ids work
-whichever project the tab is in: `greed.tab.switch` and `view:focus()` on a
-tab or view of another project show that project.
+`view:close()` closes it. `greed.view()` is the focused view, `greed.view(id)`
+the view with that id (nil once it's closed), and the shown tab's active
+pane is where `greed.open` opens files. Tab ids work whichever project the
+tab is in: `greed.tab.switch` and `view:focus()` on a tab or view of
+another project show that project.
 
 `greed.tab.layout()` gives a tab's arrangement as a tree, and
 `greed.tab.set_layout(tree)` arranges its panes another way:

@@ -7,6 +7,7 @@ use std::path::Path;
 
 use mlua::{Lua, Table};
 
+use super::arity::NoArgs;
 use super::{state, state_mut};
 use crate::{SwitchTo, control, project};
 
@@ -16,7 +17,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     let session = lua.create_table()?;
     session.set(
         "list",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let current = state(lua).session_name.clone();
             let list = lua.create_table()?;
             for info in control::sessions().map_err(mlua::Error::external)? {
@@ -32,13 +33,19 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     )?;
     session.set(
         "current",
-        lua.create_function(|lua, ()| Ok(state(lua).session_name.clone()))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).session_name.clone()))?,
     )?;
-    session.set("build", lua.create_function(|_, ()| Ok(control::build()))?)?;
-    session.set("fresh", lua.create_function(|_, ()| Ok(control::fresh()))?)?;
+    session.set(
+        "build",
+        lua.create_function(|_, NoArgs| Ok(control::build()))?,
+    )?;
+    session.set(
+        "fresh",
+        lua.create_function(|_, NoArgs| Ok(control::fresh()))?,
+    )?;
     session.set(
         "remote",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             // Before any client attached, whether `greed ssh` started it.
             Ok(state(lua)
                 .remote
@@ -47,11 +54,11 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     )?;
     session.set(
         "attached",
-        lua.create_function(|lua, ()| Ok(state(lua).attached))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).attached))?,
     )?;
     session.set(
         "program",
-        lua.create_function(|_, ()| {
+        lua.create_function(|_, NoArgs| {
             Ok(std::env::current_exe()
                 .ok()
                 .map(|path| path.to_string_lossy().into_owned()))

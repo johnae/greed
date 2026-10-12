@@ -113,6 +113,28 @@ test("a reviewer can let code run, or leave it to you with its reason", function
 	restore()
 end)
 
+test("closing a view or setting the mode in the sandbox asks, and denied does nothing", function(t)
+	for _, case in
+		{
+			{ code = "require('@greed').view():close()", needs = "close a view" },
+			{ code = "require('@greed').mode.set('insert')", needs = "change the mode" },
+		}
+	do
+		reset("auto")
+		t:buffer("hi|")
+		local view, mode = greed.view(), greed.mode.get()
+		local result = call(case.code)
+		t:wait(10)
+		local page = greed.view():buffer():text()
+		assert(string.find(page, `It would {case.needs}.`, 1, true), page)
+		t:keys("d")
+		assert(settle(t, result) == "error: the user didn't let this run", tostring(result()))
+		assert(view:valid(), "the view is still open")
+		assert(greed.mode.get() == mode, greed.mode.get())
+		restore()
+	end
+end)
+
 test("the reviewer hears what the user just rejected of the agent's calls", function(t)
 	local asked = reset("auto", "ASK: the user rejected setting options")
 	t:buffer("hi|")

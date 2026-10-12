@@ -5,6 +5,7 @@ use std::path::Path;
 
 use mlua::{Lua, Table};
 
+use super::arity::NoArgs;
 use super::{state, state_mut};
 use crate::registry::PluginId;
 
@@ -40,7 +41,7 @@ pub(super) fn register(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
 
     greed.set(
         "grammars",
-        lua.create_function(|lua, ()| Ok(state(lua).syntax.names()))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).syntax.names()))?,
     )?;
 
     greed.set(

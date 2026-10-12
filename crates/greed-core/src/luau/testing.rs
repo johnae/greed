@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 use greed_text::ClientId;
 use mlua::{Function, Lua, Table, UserData, UserDataMethods};
 
+use super::arity::NoArgs;
 use super::capabilities::Grant;
 use super::modules::Modules;
 use super::{
@@ -646,7 +647,7 @@ fn add_client_view_methods<T: TestClient + UserData, M: UserDataMethods<T>>(meth
             frame_table(lua, &frame, medium.as_deref())
         },
     );
-    methods.add_method("status", |lua, this, ()| {
+    methods.add_method("status", |lua, this, NoArgs| {
         let join = |spans: &[crate::render::Span]| {
             spans.iter().map(|s| s.text.as_str()).collect::<String>()
         };
@@ -655,7 +656,7 @@ fn add_client_view_methods<T: TestClient + UserData, M: UserDataMethods<T>>(meth
             (Some(join(&l.left)), Some(join(&l.right)))
         }))
     });
-    methods.add_method("marked", |lua, this, ()| {
+    methods.add_method("marked", |lua, this, NoArgs| {
         seen_by(lua, this.id(), || Ok(focused_marked_text(lua)))
     });
     methods.add_method("expect", |lua, this, expected: String| {
@@ -679,7 +680,7 @@ impl TestClient for AddedClient {
 
 impl UserData for AddedClient {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("id", |_, this, ()| Ok(this.0.0));
+        methods.add_method("id", |_, this, NoArgs| Ok(this.0.0));
         add_client_view_methods(methods);
     }
 }
@@ -712,13 +713,13 @@ fn add_client(lua: &Lua, name: Option<String>, kind: Option<String>) -> mlua::Re
 /// `t:quitting`, `t:detached`, `t:switched` and `t:notices`: what the
 /// editor asked of the client.
 fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
-    methods.add_method("quitting", |lua, _, ()| {
+    methods.add_method("quitting", |lua, _, NoArgs| {
         Ok(state(lua).editor.quit_requested())
     });
-    methods.add_method("detached", |lua, _, ()| {
+    methods.add_method("detached", |lua, _, NoArgs| {
         Ok(state_mut(lua).editor.take_detach_request())
     });
-    methods.add_method("switched", |lua, _, ()| {
+    methods.add_method("switched", |lua, _, NoArgs| {
         let to = state_mut(lua).editor.take_switch_request();
         to.map(|to| {
             let table = lua.create_table()?;
@@ -741,7 +742,7 @@ fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
             .find(|(asked, _)| *asked == id)
             .map(|(_, allowed)| *allowed))
     });
-    methods.add_method("notices", |lua, _, ()| {
+    methods.add_method("notices", |lua, _, NoArgs| {
         let notices = state_mut(lua).editor.take_notices();
         notices
             .into_iter()
@@ -937,7 +938,7 @@ impl UserData for TestContext {
                 Duration::from_secs_f64(ms.unwrap_or(15000.0).max(0.0) / 1000.0),
             )
         });
-        methods.add_method("floats", |lua, _, ()| {
+        methods.add_method("floats", |lua, _, NoArgs| {
             let state = state(lua);
             let editor = &state.editor;
             Ok(editor
@@ -947,7 +948,7 @@ impl UserData for TestContext {
                 .collect::<Vec<_>>())
         });
         add_client_methods(methods);
-        methods.add_method("messages", |lua, _, ()| {
+        methods.add_method("messages", |lua, _, NoArgs| {
             Ok(state_mut(lua).editor.take_messages())
         });
     }

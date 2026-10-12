@@ -82,7 +82,7 @@ impl Modules {
             None,
             &capabilities::sandbox_grant(),
         )?;
-        capabilities::sandbox(lua, &modules.greed)?;
+        capabilities::sandbox(lua, &modules.greed, &modules.globals)?;
         modules.sandboxed = true;
         Ok(modules)
     }

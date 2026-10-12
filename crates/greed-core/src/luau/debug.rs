@@ -3,6 +3,7 @@
 
 use mlua::{Lua, Table, Value, Variadic};
 
+use super::arity::NoArgs;
 use crate::debug;
 use crate::registry::PluginId;
 
@@ -45,18 +46,18 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
     module.set(
         "off",
-        lua.create_function(|_, ()| {
+        lua.create_function(|_, NoArgs| {
             debug::off();
             Ok(())
         })?,
     )?;
     module.set(
         "enabled",
-        lua.create_function(|_, ()| Ok(debug::enabled()))?,
+        lua.create_function(|_, NoArgs| Ok(debug::enabled()))?,
     )?;
     module.set(
         "topics",
-        lua.create_function(|_, ()| {
+        lua.create_function(|_, NoArgs| {
             Ok(debug::Topic::ALL
                 .iter()
                 .map(|t| t.name())
@@ -66,7 +67,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     module.set("lines", lua.create_function(lines)?)?;
     module.set(
         "clear",
-        lua.create_function(|_, ()| {
+        lua.create_function(|_, NoArgs| {
             debug::clear();
             Ok(())
         })?,

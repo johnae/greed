@@ -28,6 +28,7 @@ use std::path::{Component, Path};
 
 use mlua::{Function, Lua, Table, Value};
 
+use super::arity::NoArgs;
 use super::{state, state_mut};
 use crate::registry::PluginId;
 
@@ -376,12 +377,12 @@ pub(super) fn started_by(lua: &Lua) -> Limit {
 /// what started that.
 fn vouch_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let name = owner.to_string();
-    let enter = lua.create_function(move |lua, ()| {
+    let enter = lua.create_function(move |lua, NoArgs| {
         // Below this function and the Luau wrapper that called it.
         let outside = depth(lua).saturating_sub(2);
         push_vouch(lua, outside, &name)
     })?;
-    let leave = lua.create_function(|lua, ()| pop_vouch(lua))?;
+    let leave = lua.create_function(|lua, NoArgs| pop_vouch(lua))?;
     // In Luau, so what it runs can wait.
     lua.load(
         r"
@@ -436,7 +437,7 @@ pub(super) fn within_function(lua: &Lua) -> LuaResult<Function> {
         entry.set("within", name.unwrap_or_default())?;
         push_entry(lua, entry)
     })?;
-    let leave = lua.create_function(|lua, ()| pop_vouch(lua))?;
+    let leave = lua.create_function(|lua, NoArgs| pop_vouch(lua))?;
     // In Luau, so what it runs can wait.
     lua.load(
         r"
@@ -650,19 +651,33 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
         &["current", "list", "remote", "attached"],
     ),
     ("clipboard", "use the clipboard", &[]),
-    ("client", "send you desktop notifications", &[]),
+    (
+        "client",
+        "send you desktop notifications or change how a client lays out views",
+        &["current", "list", "id"],
+    ),
+    ("mode", "change the mode", &["get", "cursor_of"]),
+    ("tab", "change the tabs", &["list", "current", "layout"]),
 ];
 
 /// The error for sandboxed code doing `what`, which says it needs approval;
 /// the agent plugin reads the start of it to ask for that.
 pub(super) fn needs_approval(what: &str) -> mlua::Error {
-    mlua::Error::runtime(format!("needs approval: it would {what}"))
+    mlua::Error::runtime(approval(what))
+}
+
+fn approval(what: &str) -> String {
+    format!("needs approval: it would {what}")
 }
 
 /// Replaces what sandboxed code can't use in its `@greed` with functions
 /// that say it needs approval: whole modules as tables of them, single
 /// functions as one. What's left reads the editor and edits buffers.
-pub(super) fn sandbox(lua: &Lua, greed: &Table) -> LuaResult<()> {
+/// Iterating a module, which would show only what's left of it, says it
+/// needs approval too; `globals` gets a `pairs` that does.
+pub(super) fn sandbox(lua: &Lua, greed: &Table, globals: &Table) -> LuaResult<()> {
+    // Each module taken in part, with the error iterating it gives.
+    let modules = lua.create_table()?;
     for &(key, what, readable) in SANDBOXED {
         let deny = lua.create_function(move |_, _: mlua::MultiValue| -> LuaResult<()> {
             Err(needs_approval(what))
@@ -672,17 +687,44 @@ pub(super) fn sandbox(lua: &Lua, greed: &Table) -> LuaResult<()> {
             for name in readable {
                 module.set(*name, original.get::<Value>(*name)?)?;
             }
+            let listing = format!("greed.{key} {}", approval(what));
             let meta = lua.create_table()?;
             meta.set(
                 "__index",
                 lua.create_function(move |_, _: mlua::MultiValue| Ok(deny.clone()))?,
             )?;
+            let error = listing.clone();
+            meta.set(
+                "__iter",
+                lua.create_function(move |_, _: mlua::MultiValue| -> LuaResult<()> {
+                    Err(mlua::Error::runtime(&error))
+                })?,
+            )?;
             module.set_metatable(Some(meta))?;
+            modules.raw_set(&module, listing)?;
             greed.set(key, module)?;
         } else {
             greed.set(key, deny)?;
         }
     }
+    // In Luau, so the modules it holds go with the sandbox: held by a Rust
+    // closure they'd be roots, and keep it all.
+    let pairs: Function = lua
+        .load(
+            r"
+            local pairs, modules = ...
+            return function(t, ...)
+                local listing = modules[t]
+                if listing then
+                    error(listing, 2)
+                end
+                return pairs(t, ...)
+            end
+            ",
+        )
+        .set_name("=greed.sandbox")
+        .call((lua.globals().get::<Function>("pairs")?, modules))?;
+    globals.set("pairs", pairs)?;
     // Files in the project open as buffers, to read and edit; others need
     // approval.
     for key in ["load", "open"] {
@@ -905,6 +947,7 @@ mod tests {
     const FREE: &[&str] = &[
         // The editor itself: buffers, views, commands, keys, events, time.
         "animate",
+        "buffer",
         "buffer_for",
         "buffers",
         "cli",

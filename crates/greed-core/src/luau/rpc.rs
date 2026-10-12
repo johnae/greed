@@ -11,6 +11,7 @@ use std::path::Path;
 
 use mlua::{Function, IntoLuaMulti, Lua, LuaSerdeExt, MultiValue, Table, Value};
 
+use super::arity::NoArgs;
 use super::jobs::{self, Output};
 use super::{state, state_mut, tasks};
 use crate::registry::PluginId;
@@ -235,7 +236,7 @@ fn handle_to_lua(lua: &Lua, id: u64) -> LuaResult<Table> {
     )?;
     conn.set(
         "alive",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             Ok(state(lua)
                 .rpcs
                 .open
@@ -245,7 +246,7 @@ fn handle_to_lua(lua: &Lua, id: u64) -> LuaResult<Table> {
     )?;
     conn.set(
         "stderr",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             Ok(state(lua)
                 .rpcs
                 .open
@@ -256,7 +257,7 @@ fn handle_to_lua(lua: &Lua, id: u64) -> LuaResult<Table> {
     )?;
     conn.set(
         "close",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             let peer = state_mut(lua).rpcs.open.remove(&id);
             if let Some(peer) = peer {
                 fail_waiting(lua, peer.waiting, "it was closed")?;

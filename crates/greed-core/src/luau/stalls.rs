@@ -8,6 +8,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mlua::{Lua, Table};
 
+use super::arity::NoArgs;
 use super::{state, state_mut};
 
 type LuaResult<T> = mlua::Result<T>;
@@ -116,14 +117,14 @@ pub(super) fn profile_module(lua: &Lua) -> LuaResult<Table> {
     let profile = lua.create_table()?;
     profile.set(
         "start",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             state_mut(lua).stalls.profile = Some(HashMap::new());
             Ok(())
         })?,
     )?;
     profile.set(
         "stop",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let counted = state_mut(lua).stalls.profile.take().unwrap_or_default();
             let mut rows: Vec<_> = counted.into_iter().collect();
             rows.sort_by_key(|(_, spent)| std::cmp::Reverse(spent.total));
@@ -142,7 +143,7 @@ pub(super) fn profile_module(lua: &Lua) -> LuaResult<Table> {
     )?;
     profile.set(
         "running",
-        lua.create_function(|lua, ()| Ok(state(lua).stalls.profile.is_some()))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).stalls.profile.is_some()))?,
     )?;
     Ok(profile)
 }

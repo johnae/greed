@@ -2610,23 +2610,125 @@ fn sandboxed_eval_reads_and_edits_buffers_and_needs_approval_for_the_rest() {
             "open a file outside the project",
         ),
     ] {
-        let source = format!("local greed = require('@greed')\n{code}");
-        let lua = format!(
-            "local ok, err = require('@greed').eval({source:?}, {{ sandbox = true }}) return tostring(ok) .. ' ' .. err"
-        );
-        let said = h.eval(&lua).unwrap();
-        assert!(
-            said.starts_with("false ")
-                && said.contains("needs approval: it would")
-                && said.contains(would),
-            "{code}: {said}"
-        );
+        assert_needs_approval(&h, code, would);
     }
     // Without the sandbox, the same code runs with every capability.
     assert_eq!(
         h.eval("require('@greed').eval('1 + 1')").unwrap(),
         "true\t2"
     );
+}
+
+/// Asserts that `code`, run in eval's sandbox, stops needing approval to do
+/// `would`.
+fn assert_needs_approval(h: &Host, code: &str, would: &str) {
+    let source = format!("local greed = require('@greed')\n{code}");
+    let lua = format!(
+        "local ok, err = require('@greed').eval({source:?}, {{ sandbox = true }}) return tostring(ok) .. ' ' .. err"
+    );
+    let said = h.eval(&lua).unwrap();
+    assert!(
+        said.starts_with("false ")
+            && said.contains("needs approval: it would")
+            && said.contains(would),
+        "{code}: {said}"
+    );
+}
+
+#[test]
+fn sandboxed_eval_needs_approval_to_change_what_you_see() {
+    let h = host("hello");
+    for (code, would) in [
+        ("greed.view():close()", "close a view"),
+        ("greed.view():focus()", "focus a view"),
+        (
+            "greed.view():show(greed.create_buffer('x', 'x'))",
+            "show another buffer",
+        ),
+        ("greed.view():buffer():close()", "close a buffer"),
+        ("greed.mode.set('insert')", "change the mode"),
+        ("greed.tab.new()", "change the tabs"),
+        ("greed.tab.close(greed.tab.current().id)", "change the tabs"),
+        ("greed.tab.switch(1)", "change the tabs"),
+        // A gated module says so when iterated, instead of looking empty.
+        ("for _ in greed.keys do end", "greed.keys needs approval"),
+        (
+            "for _ in pairs(greed.keys) do end",
+            "greed.keys needs approval",
+        ),
+        (
+            "for _ in pairs(greed.client) do end",
+            "greed.client needs approval",
+        ),
+    ] {
+        assert_needs_approval(&h, code, would);
+    }
+    // Nothing the sandbox refused happened: the view and its buffer are
+    // still there, in the mode and tab they were.
+    assert_eq!(text(&h), "hello");
+    assert_eq!(
+        h.eval("local g = require('@greed') return #g.tab.list() .. ' ' .. g.mode.get()")
+            .unwrap(),
+        format!("1 {}", h.with_editor(|ed| ed.mode().to_owned()))
+    );
+}
+
+#[test]
+fn sandboxed_eval_still_moves_the_cursor_and_reads_tabs_modes_and_clients() {
+    let h = host("hello");
+    let ran = h
+        .eval(
+            r#"require('@greed').eval([[
+                local greed = require("@greed")
+                greed.view():set_cursor(2)
+                return greed.view():cursor(), greed.mode.get() ~= nil,
+                    greed.tab.current().id ~= nil, #greed.tab.list(), greed.client.id() ~= nil
+            ]], { sandbox = true })"#,
+        )
+        .unwrap();
+    assert_eq!(ran, "true\t2\ttrue\ttrue\t1\ttrue");
+}
+
+#[test]
+fn greed_view_and_buffer_find_one_by_id() {
+    let h = host("main");
+    h.eval("g = require('@greed'); f = g.float(g.create_buffer('x', 'float'))")
+        .unwrap();
+    // The focused view with no id; the one asked for with one.
+    assert_eq!(
+        h.eval("g.view():id() == f:id()").unwrap(),
+        h.eval("g.view(g.view():id()):id() == f:id()").unwrap()
+    );
+    assert_eq!(h.eval("g.view(f:id()):buffer():text()").unwrap(), "float");
+    assert_eq!(h.eval("g.view(f:id()) == f").unwrap(), "true");
+    assert_eq!(h.eval("g.view(9999) == nil").unwrap(), "true");
+    assert_eq!(h.eval("g.buffer(f:buffer():id()):text()").unwrap(), "float");
+    assert_eq!(h.eval("g.buffer(9999) == nil").unwrap(), "true");
+}
+
+#[test]
+fn api_functions_given_arguments_they_dont_take_say_so() {
+    let h = host("main");
+    for (call, said) in [
+        ("g.mode.get(61)", "greed.mode.get takes no arguments"),
+        ("g.tab.current(61)", "greed.tab.current takes no arguments"),
+        ("g.client.id(61)", "greed.client.id takes no arguments"),
+        ("g.messages('x', 'y')", "greed.messages takes no arguments"),
+        // Luau doesn't say which method runs, so a method isn't named.
+        ("g.view():cursor(61)", "this function takes no arguments"),
+    ] {
+        let err = h
+            .eval(&format!(
+                "g = require('@greed') local ok, err = pcall(function() return {call} end) return tostring(ok) .. ' ' .. tostring(err)"
+            ))
+            .unwrap();
+        assert!(
+            err.starts_with("false ") && err.contains(said),
+            "{call}: {err}"
+        );
+    }
+    // With none, they work as before.
+    assert_eq!(h.eval("g.tab.current().id ~= nil").unwrap(), "true");
 }
 
 #[test]

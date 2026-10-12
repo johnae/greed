@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use mlua::{Lua, Table};
 
+use super::arity::NoArgs;
 use super::handles::view_closed;
 use super::{state, state_mut};
 use crate::{Project, ProjectId};
@@ -24,7 +25,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     let project = lua.create_table()?;
     project.set(
         "list",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let state = state(lua);
             let current = state.editor.current_project().id();
             let list = lua.create_table()?;
@@ -36,7 +37,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     )?;
     project.set(
         "current",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let state = state(lua);
             let current = state.editor.current_project();
             project_to_lua(lua, &current, current.id())

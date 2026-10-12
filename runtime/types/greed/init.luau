@@ -1845,8 +1845,8 @@ export type Greed = {
 	echo: (...any) -> (),
 	--- The last messages shown, oldest first and whole (the status line shows a message's first line).
 	messages: () -> { string },
-	--- The focused view.
-	view: () -> View,
+	--- The focused view; with an id (`view:id()`), that view, or nil when it's closed.
+	view: (() -> View) & ((id: number) -> View?),
 	--- Asks the editor to exit.
 	quit: () -> (),
 	--- How line numbers count, where buffers show them: each line's own
@@ -1926,6 +1926,8 @@ export type Greed = {
 	panel: (buffer: Buffer, spec: { side: ("left" | "right")?, width: (number | string)?, title: string?, focus: boolean? }?) -> View,
 	--- Every open buffer.
 	buffers: () -> { Buffer },
+	--- The buffer with id `id` (`buffer:id()`), or nil when it's closed.
+	buffer: (id: number) -> Buffer?,
 	--- Opens a file in the main view.
 	open: (path: string) -> (),
 	--- The buffer for the file at `path`, opening it without showing it.

@@ -9,6 +9,7 @@ use streaming_iterator::StreamingIterator;
 
 use tree_sitter::{Node, QueryCursor, Tree};
 
+use super::arity::NoArgs;
 use super::handles::BufferRef;
 use super::jobs::{self, Output};
 use super::{state, state_mut};
@@ -151,18 +152,18 @@ impl UserData for NodeRef {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("parent", |_, this, ()| Ok(this.parent()));
-        methods.add_method("children", |_, this, ()| Ok(this.children(false)));
-        methods.add_method("named_children", |_, this, ()| Ok(this.children(true)));
+        methods.add_method("parent", |_, this, NoArgs| Ok(this.parent()));
+        methods.add_method("children", |_, this, NoArgs| Ok(this.children(false)));
+        methods.add_method("named_children", |_, this, NoArgs| Ok(this.children(true)));
         methods.add_method("child", |_, this, field: String| {
             let node = this.node();
             Ok(node
                 .child_by_field_name(&field)
                 .map(|child| this.child(child_index(node, child))))
         });
-        methods.add_method("next", |_, this, ()| Ok(this.sibling(1)));
-        methods.add_method("prev", |_, this, ()| Ok(this.sibling(-1)));
-        methods.add_method("text", |lua, this, ()| {
+        methods.add_method("next", |_, this, NoArgs| Ok(this.sibling(1)));
+        methods.add_method("prev", |_, this, NoArgs| Ok(this.sibling(-1)));
+        methods.add_method("text", |lua, this, NoArgs| {
             let state = state(lua);
             let buffer = state
                 .editor
@@ -179,7 +180,7 @@ impl UserData for NodeRef {
                 .byte_slice(node.start_byte()..node.end_byte())
                 .to_string())
         });
-        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+        methods.add_meta_method(MetaMethod::ToString, |_, this, NoArgs| {
             Ok(this.node().to_sexp())
         });
         methods.add_meta_method(
@@ -367,7 +368,7 @@ pub(super) fn tags_to_lua(lua: &Lua, files: Vec<FileTags>) -> LuaResult<Table> {
 
 /// `buffer:tree()`, `buffer:node_at()` and `buffer:query()`.
 pub(super) fn add_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
-    methods.add_method("tree", |lua, this, ()| {
+    methods.add_method("tree", |lua, this, NoArgs| {
         Ok(tree_of(lua, this)?
             .map(|(_, tree, version)| NodeRef::new(this.buffer, version, tree, Vec::new())))
     });

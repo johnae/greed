@@ -8,6 +8,7 @@
 mod api;
 mod approvals;
 mod args;
+mod arity;
 mod capabilities;
 mod cli;
 mod compare;

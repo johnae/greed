@@ -9,6 +9,7 @@ use std::path::{Component, Path, PathBuf};
 
 use mlua::{FromLua, Function, IntoLuaMulti, Lua, MultiValue, Table, Value};
 
+use super::arity::NoArgs;
 use super::jobs::{self, Output};
 use super::state;
 use crate::registry::PluginId;
@@ -117,13 +118,13 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     fs.set(
         "cwd",
-        lua.create_function(|_, ()| {
+        lua.create_function(|_, NoArgs| {
             Ok(std::env::current_dir()
                 .map_or_else(|_| ".".to_owned(), |dir| dir.to_string_lossy().into_owned()))
         })?,
     )?;
 
-    fs.set("dirs", lua.create_function(|lua, ()| dirs(lua))?)?;
+    fs.set("dirs", lua.create_function(|lua, NoArgs| dirs(lua))?)?;
 
     fs.set("grep", grep_function(lua)?)?;
     Ok(fs)

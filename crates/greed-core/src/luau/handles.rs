@@ -18,6 +18,7 @@ use mlua::{
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::api::{emit, float_options, single_keys};
+use super::arity::NoArgs;
 use super::{state, state_mut};
 use crate::image::ImageId;
 use crate::layout::Direction;
@@ -122,18 +123,18 @@ impl ViewRef {
 
 impl UserData for ViewRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("id", |_, this, ()| Ok(this.id.0));
+        methods.add_method("id", |_, this, NoArgs| Ok(this.id.0));
         methods.add_meta_method(MetaMethod::Eq, |_, this, other: Value| {
             Ok(same_handle(&other, |o: &ViewRef| o.id == this.id))
         });
-        methods.add_method("valid", |lua, this, ()| {
+        methods.add_method("valid", |lua, this, NoArgs| {
             Ok(state(lua).editor.find_view(this.id).is_some())
         });
         add_selection_methods(methods);
-        methods.add_method("size", |lua, this, ()| {
+        methods.add_method("size", |lua, this, NoArgs| {
             this.with_view(lua, |v| Ok(v.size.unzip()))
         });
-        methods.add_method("visible", |lua, this, ()| {
+        methods.add_method("visible", |lua, this, NoArgs| {
             let state = state(lua);
             let view = state
                 .editor
@@ -143,7 +144,7 @@ impl UserData for ViewRef {
             let visible = view.visible.clone().unwrap_or(0..len);
             Ok((visible.start.min(len), visible.end.min(len)))
         });
-        methods.add_method("hidden_lines", |lua, this, ()| {
+        methods.add_method("hidden_lines", |lua, this, NoArgs| {
             let state = state(lua);
             let view = state
                 .editor
@@ -159,7 +160,7 @@ impl UserData for ViewRef {
             Ok(list)
         });
         add_part_methods(methods);
-        methods.add_method("scroll", |lua, this, ()| {
+        methods.add_method("scroll", |lua, this, NoArgs| {
             this.with_view(lua, |v| Ok(v.scroll.line))
         });
         methods.add_method("set_scroll", |lua, this, line: usize| {
@@ -178,7 +179,7 @@ impl UserData for ViewRef {
                 Ok(())
             })
         });
-        methods.add_method("buffer", |lua, this, ()| {
+        methods.add_method("buffer", |lua, this, NoArgs| {
             Ok(BufferRef {
                 buffer: this.buffer(lua)?,
                 view: Some(this.id),
@@ -186,17 +187,22 @@ impl UserData for ViewRef {
             })
         });
         methods.add_method("show", |lua, this, buffer: UserDataRef<BufferRef>| {
-            this.with_view(lua, |_| Ok(()))?;
+            let shown = this.buffer(lua)?;
             buffer.with_buffer(lua, |_| Ok(()))?;
+            if shown != buffer.buffer {
+                super::capabilities::unless_sandboxed(lua, "show another buffer in a view")?;
+            }
             state_mut(lua).editor.show(this.id, buffer.buffer);
             Ok(())
         });
-        methods.add_method("focus", |lua, this, ()| {
+        methods.add_method("focus", |lua, this, NoArgs| {
             this.with_view(lua, |_| Ok(()))?;
+            super::capabilities::unless_sandboxed(lua, "focus a view")?;
             state_mut(lua).editor.set_focus(this.id);
             Ok(())
         });
-        methods.add_method("close", |lua, this, ()| {
+        methods.add_method("close", |lua, this, NoArgs| {
+            super::capabilities::unless_sandboxed(lua, "close a view")?;
             let closed = state_mut(lua).editor.close(this.id);
             if closed {
                 view_closed(lua, this.id)?;
@@ -212,7 +218,7 @@ impl UserData for ViewRef {
 /// `view:selection()`, `set_selection(selection)`, `cursor()` and
 /// `set_cursor(pos)`.
 fn add_selection_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
-    methods.add_method("selection", |lua, this, ()| {
+    methods.add_method("selection", |lua, this, NoArgs| {
         this.with_view(lua, |v| selection_to_lua(lua, &v.selection))
     });
     methods.add_method("set_selection", |lua, this, t: Table| {
@@ -224,7 +230,7 @@ fn add_selection_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
             Ok(())
         })
     });
-    methods.add_method("cursor", |lua, this, ()| {
+    methods.add_method("cursor", |lua, this, NoArgs| {
         this.with_view(lua, |v| Ok(v.selection.primary().head))
     });
     methods.add_method("set_cursor", |lua, this, pos: usize| {
@@ -239,7 +245,7 @@ fn add_selection_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
 
 /// `view:undo()`, `undo_to(node)` and `redo()`.
 fn add_history_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
-    methods.add_method("undo", |lua, this, ()| this.history_step(lua, true));
+    methods.add_method("undo", |lua, this, NoArgs| this.history_step(lua, true));
     methods.add_method("undo_to", |lua, this, node: usize| {
         let buffer = this.buffer(lua)?;
         let changed = state_mut(lua)
@@ -251,7 +257,7 @@ fn add_history_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
         }
         Ok(changed)
     });
-    methods.add_method("redo", |lua, this, ()| this.history_step(lua, false));
+    methods.add_method("redo", |lua, this, NoArgs| this.history_step(lua, false));
 }
 
 /// A buffer. When it came from a view, edits map that view's selection;
@@ -274,6 +280,19 @@ impl BufferRef {
             .find_buffer(self.buffer)
             .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))?;
         f(buffer)
+    }
+
+    /// Closes the buffer, then tells plugins with "buffer.closed".
+    fn close(&self, lua: &Lua) -> LuaResult<()> {
+        self.with_buffer(lua, |_| Ok(()))?;
+        super::capabilities::unless_sandboxed(lua, "close a buffer")?;
+        state_mut(lua)
+            .editor
+            .close_buffer(self.buffer)
+            .map_err(mlua::Error::external)?;
+        let payload = lua.create_table()?;
+        payload.set("id", self.buffer.0)?;
+        emit(lua, "buffer.closed", &payload)
     }
 
     /// Writes the buffer to its file, or to `path`, then tells plugins with
@@ -410,15 +429,15 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
             Ok(())
         },
     );
-    methods.add_method("filter", |lua, this, ()| {
+    methods.add_method("filter", |lua, this, NoArgs| {
         this.with_view(lua, |v| Ok(v.filter.as_ref().map(|f| f.text.clone())))
     });
-    methods.add_method("narrowed", |lua, this, ()| {
+    methods.add_method("narrowed", |lua, this, NoArgs| {
         this.with_view(lua, |v| {
             Ok(v.lines.as_ref().map(|l| (l.start, l.end - 1)).unzip())
         })
     });
-    methods.add_method("side_scroll", |lua, this, ()| {
+    methods.add_method("side_scroll", |lua, this, NoArgs| {
         this.with_view(lua, |v| Ok(v.columns))
     });
     methods.add_method("set_side_scroll", |lua, this, columns: usize| {
@@ -442,10 +461,10 @@ fn add_float_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
         state_mut(lua).editor.configure_float(this.id, options);
         Ok(true)
     });
-    methods.add_method("raise", |lua, this, ()| {
+    methods.add_method("raise", |lua, this, NoArgs| {
         Ok(state_mut(lua).editor.raise_float(this.id))
     });
-    methods.add_method("float_spec", |lua, this, ()| {
+    methods.add_method("float_spec", |lua, this, NoArgs| {
         let options = state(lua).editor.float_options(this.id).cloned();
         options
             .map(|options| super::api::float_spec(lua, &options))
@@ -455,10 +474,10 @@ fn add_float_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
 
 /// Splitting panes, moving between them and resizing them.
 fn add_pane_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
-    methods.add_method("is_pane", |lua, this, ()| {
+    methods.add_method("is_pane", |lua, this, NoArgs| {
         Ok(state(lua).editor.is_pane(this.id))
     });
-    methods.add_method("area", |lua, this, ()| {
+    methods.add_method("area", |lua, this, NoArgs| {
         let Some(area) = this.with_view(lua, |v| Ok(v.area))? else {
             return Ok(None);
         };
@@ -963,7 +982,7 @@ fn mark_scene_from_lua(t: &Table) -> LuaResult<MarkScene> {
 
 /// Whether the buffer, or its start, is read-only.
 fn add_readonly_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
-    methods.add_method("readonly", |lua, this, ()| {
+    methods.add_method("readonly", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| Ok(b.is_readonly()))
     });
     methods.add_method("set_readonly", |lua, this, readonly: bool| {
@@ -972,7 +991,7 @@ fn add_readonly_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         state_mut(lua).editor.set_readonly(this.buffer, readonly);
         Ok(())
     });
-    methods.add_method("readonly_before", |lua, this, ()| {
+    methods.add_method("readonly_before", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| Ok(b.readonly_before()))
     });
     methods.add_method("set_readonly_before", |lua, this, pos: Option<usize>| {
@@ -985,7 +1004,7 @@ fn add_readonly_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
 
 /// The buffer's name, its settings, its history kept or not, and its language.
 fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
-    methods.add_method("name", |lua, this, ()| {
+    methods.add_method("name", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| Ok(b.name().map(str::to_owned)))
     });
     methods.add_method("set_name", |lua, this, name: Option<String>| {
@@ -995,10 +1014,10 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             .set_buffer_name(this.buffer, name.as_deref());
         Ok(())
     });
-    methods.add_method("title", |lua, this, ()| {
+    methods.add_method("title", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| Ok(b.title()))
     });
-    methods.add_method("line_numbers", |lua, this, ()| {
+    methods.add_method("line_numbers", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| Ok(b.line_numbers()))
     });
     methods.add_method("set_line_numbers", |lua, this, on: bool| {
@@ -1006,7 +1025,7 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         state_mut(lua).editor.set_line_numbers(this.buffer, on);
         Ok(())
     });
-    methods.add_method("views", |lua, this, ()| {
+    methods.add_method("views", |lua, this, NoArgs| {
         this.with_buffer(lua, |_| Ok(()))?;
         let list = lua.create_table()?;
         for id in state(lua).editor.views_of(this.buffer) {
@@ -1017,15 +1036,15 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         }
         Ok(list)
     });
-    methods.add_method("kept", |lua, this, ()| {
+    methods.add_method("kept", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| Ok(b.is_kept()))
     });
-    methods.add_method("forget_history", |lua, this, ()| {
+    methods.add_method("forget_history", |lua, this, NoArgs| {
         this.with_buffer(lua, |_| Ok(()))?;
         state_mut(lua).editor.forget_history(this.buffer);
         Ok(())
     });
-    methods.add_method("clear_history", |lua, this, ()| {
+    methods.add_method("clear_history", |lua, this, NoArgs| {
         this.with_buffer(lua, |_| Ok(()))?;
         state_mut(lua).editor.clear_history(this.buffer);
         Ok(())
@@ -1041,7 +1060,7 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         state_mut(lua).editor.set_screen_size(this.buffer, size);
         Ok(())
     });
-    methods.add_method("screen_size", |lua, this, ()| {
+    methods.add_method("screen_size", |lua, this, NoArgs| {
         let size = this.with_buffer(lua, |b| Ok(b.screen_size().cloned()))?;
         size.map(|size| {
             let t = lua.create_table()?;
@@ -1063,7 +1082,7 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             Ok(())
         },
     );
-    methods.add_method("language", |lua, this, ()| {
+    methods.add_method("language", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| Ok(b.language().map(str::to_owned)))
     });
     methods.add_method("set_language", |lua, this, language: Option<String>| {
@@ -1077,17 +1096,17 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
 
 impl UserData for BufferRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("id", |_, this, ()| Ok(this.buffer.0));
+        methods.add_method("id", |_, this, NoArgs| Ok(this.buffer.0));
         methods.add_meta_method(MetaMethod::Eq, |_, this, other: Value| {
             Ok(same_handle(&other, |o: &BufferRef| o.buffer == this.buffer))
         });
-        methods.add_method("valid", |lua, this, ()| {
+        methods.add_method("valid", |lua, this, NoArgs| {
             Ok(state(lua).editor.find_buffer(this.buffer).is_some())
         });
-        methods.add_method("len", |lua, this, ()| {
+        methods.add_method("len", |lua, this, NoArgs| {
             this.with_text(lua, |t| Ok(t.len_bytes()))
         });
-        methods.add_method("text", |lua, this, ()| {
+        methods.add_method("text", |lua, this, NoArgs| {
             this.with_text(lua, |t| Ok(t.to_string()))
         });
         methods.add_method("slice", |lua, this, (from, to): (usize, usize)| {
@@ -1124,14 +1143,14 @@ impl UserData for BufferRef {
                 Ok(sentence_at(t, pos))
             })
         });
-        methods.add_method("kind", |lua, this, ()| {
+        methods.add_method("kind", |lua, this, NoArgs| {
             this.with_buffer(lua, |b| Ok(b.kind().to_owned()))
         });
-        methods.add_method("project", |lua, this, ()| {
+        methods.add_method("project", |lua, this, NoArgs| {
             this.with_buffer(lua, |_| Ok(()))?;
             Ok(state(lua).editor.buffer_project(this.buffer).map(|id| id.0))
         });
-        methods.add_method("path", |lua, this, ()| {
+        methods.add_method("path", |lua, this, NoArgs| {
             this.with_buffer(lua, |b| {
                 Ok(b.path().map(|p| p.to_string_lossy().into_owned()))
             })
@@ -1150,7 +1169,7 @@ impl UserData for BufferRef {
         methods.add_method("save", |lua, this, path: Option<String>| {
             this.save(lua, path)
         });
-        methods.add_method("reload", |lua, this, ()| {
+        methods.add_method("reload", |lua, this, NoArgs| {
             this.with_buffer(lua, |_| Ok(()))?;
             let changed = state_mut(lua)
                 .editor
@@ -1161,22 +1180,13 @@ impl UserData for BufferRef {
             }
             Ok(changed)
         });
-        methods.add_method("modified", |lua, this, ()| {
+        methods.add_method("modified", |lua, this, NoArgs| {
             this.with_buffer(lua, |b| Ok(b.is_modified()))
         });
-        methods.add_method("version", |lua, this, ()| {
+        methods.add_method("version", |lua, this, NoArgs| {
             this.with_buffer(lua, |b| Ok(b.history().applied()))
         });
-        methods.add_method("close", |lua, this, ()| {
-            this.with_buffer(lua, |_| Ok(()))?;
-            state_mut(lua)
-                .editor
-                .close_buffer(this.buffer)
-                .map_err(mlua::Error::external)?;
-            let payload = lua.create_table()?;
-            payload.set("id", this.buffer.0)?;
-            emit(lua, "buffer.closed", &payload)
-        });
+        methods.add_method("close", |lua, this, NoArgs| this.close(lua));
     }
 }
 
@@ -1211,7 +1221,7 @@ fn tab_width(given: Option<usize>, own: usize) -> LuaResult<usize> {
 /// `line_end(line)`, `line_text(line)`, `display_column(pos)`,
 /// `at_display_column(line, col)`, `tab_width()` and `set_tab_width(n)`.
 fn add_line_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
-    methods.add_method("tab_width", |lua, this, ()| {
+    methods.add_method("tab_width", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| Ok(b.tab_width()))
     });
     methods.add_method("set_tab_width", |lua, this, width: usize| {
@@ -1220,7 +1230,7 @@ fn add_line_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         state_mut(lua).editor.set_tab_width(this.buffer, width);
         Ok(())
     });
-    methods.add_method("line_count", |lua, this, ()| {
+    methods.add_method("line_count", |lua, this, NoArgs| {
         this.with_text(lua, |t| Ok(t.len_lines()))
     });
     methods.add_method("line_of", |lua, this, pos: usize| {
@@ -1297,7 +1307,7 @@ impl UserData for Edits {
             this.selection = Some(selection_from_lua(&t)?);
             Ok(())
         });
-        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+        methods.add_meta_method(MetaMethod::ToString, |_, this, NoArgs| {
             Ok(format!("edits({})", this.changes.len()))
         });
     }

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use mlua::{IntoLuaMulti, Lua, Table, Value};
 
+use super::arity::NoArgs;
 use super::{state, state_mut};
 use crate::image::{Image, ImageId};
 use crate::registry::PluginId;
@@ -75,7 +76,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
     image.set(
         "cell_size",
-        lua.create_function(|lua, ()| Ok(state(lua).editor.cell_size()))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).editor.cell_size()))?,
     )?;
     image.set(
         "forget",

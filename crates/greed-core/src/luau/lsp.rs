@@ -10,6 +10,7 @@ use greed_text::Author;
 use mlua::serde::SerializeOptions;
 use mlua::{Function, Lua, LuaSerdeExt, Table, UserDataRef, Value};
 
+use super::arity::NoArgs;
 use super::handles::BufferRef;
 use super::{api, capabilities, state, state_mut, tasks};
 use crate::lsp::{self, Event, Handled, ServerConfig};
@@ -218,7 +219,7 @@ fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
 
     lsp.set(
         "problems",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let list = lua.create_table()?;
             let state = state(lua);
             for p in state.lsp.problems(&state.editor) {
@@ -286,7 +287,7 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
 fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
     lsp.set(
         "servers",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let servers = lua.create_table()?;
             for config in state(lua).lsp.configs() {
                 servers.set(config.language.as_str(), config.commands.clone())?;
@@ -297,7 +298,7 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
 
     lsp.set(
         "running",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let list = lua.create_table()?;
             for server in state(lua).lsp.running() {
                 let entry = lua.create_table()?;

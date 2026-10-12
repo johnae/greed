@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use mlua::{Function, Lua, Table};
 
+use super::arity::NoArgs;
 use super::jobs::{self, Output};
 use super::{
     api, capabilities, load_dir, plugin_dirs, plugin_name, plugin_names, state, state_mut,
@@ -58,7 +59,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     add_registry_functions(lua, &plugin, owner)?;
     plugin.set(
         "list",
-        lua.create_function(|lua, ()| Ok(plugin_names(lua)))?,
+        lua.create_function(|lua, NoArgs| Ok(plugin_names(lua)))?,
     )?;
     plugin.set(
         "unload",
@@ -81,7 +82,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
     plugin.set(
         "pending",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let list = lua.create_table()?;
             let pending = state(lua).pending.clone();
             for dir in pending {
@@ -107,7 +108,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
     plugin.set(
         "dirs",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let dirs = lua.create_table()?;
             for (name, dir) in plugin_dirs(lua) {
                 dirs.set(name.to_string(), dir.to_string_lossy().into_owned())?;
@@ -340,7 +341,7 @@ fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaRes
     let o = owner.clone();
     plugin.set(
         "caller",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             Ok(capabilities::caller(lua, Some(&o)).map(|name| name.to_string()))
         })?,
     )?;

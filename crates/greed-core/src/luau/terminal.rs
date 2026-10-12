@@ -9,6 +9,7 @@ use crossbeam_channel::{Receiver, Sender};
 use mlua::{Lua, MetaMethod, Table, UserData, UserDataMethods, Value};
 
 use super::api::emit;
+use super::arity::NoArgs;
 use super::handles::same_handle;
 use super::{state, state_mut};
 use crate::image::ImageId;
@@ -246,14 +247,14 @@ fn modes_to_lua(lua: &Lua, modes: Modes) -> LuaResult<Table> {
 
 impl UserData for TerminalRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("id", |_, this, ()| Ok(this.0));
+        methods.add_method("id", |_, this, NoArgs| Ok(this.0));
         methods.add_meta_method(MetaMethod::Eq, |_, this, other: Value| {
             Ok(same_handle(&other, |o: &TerminalRef| o.0 == this.0))
         });
-        methods.add_method("valid", |lua, this, ()| {
+        methods.add_method("valid", |lua, this, NoArgs| {
             Ok(state(lua).terminals.open.contains_key(&this.0))
         });
-        methods.add_method("screen", |lua, this, ()| {
+        methods.add_method("screen", |lua, this, NoArgs| {
             let screen = this.with(lua, |t| t.screen())?;
             share_images(lua, this, &screen.rows)?;
             let t = lua.create_table()?;
@@ -275,10 +276,10 @@ impl UserData for TerminalRef {
             t.set("rows", rows_to_lua(lua, scrollback.rows)?)?;
             Ok(t)
         });
-        methods.add_method("cwd", |lua, this, ()| {
+        methods.add_method("cwd", |lua, this, NoArgs| {
             this.with(lua, |t| t.cwd().map(|p| p.to_string_lossy().into_owned()))
         });
-        methods.add_method("marks_made", |lua, this, ()| {
+        methods.add_method("marks_made", |lua, this, NoArgs| {
             this.with(lua, |t| t.marks_made())
         });
         methods.add_method("marks", |lua, this, from: Option<u64>| {
@@ -301,10 +302,10 @@ impl UserData for TerminalRef {
             this.with(lua, |t| t.resize(rows, cols, cell))?
                 .map_err(mlua::Error::external)
         });
-        methods.add_method("modes", |lua, this, ()| {
+        methods.add_method("modes", |lua, this, NoArgs| {
             modes_to_lua(lua, this.with(lua, |t| t.modes())?)
         });
-        methods.add_method("wants_mouse", |lua, this, ()| {
+        methods.add_method("wants_mouse", |lua, this, NoArgs| {
             this.with(lua, |t| t.wants_mouse())
         });
         methods.add_method(
@@ -330,19 +331,19 @@ impl UserData for TerminalRef {
                 this.send(lua, |t| t.mouse(mouse))
             },
         );
-        methods.add_method("title", |lua, this, ()| this.with(lua, |t| t.title()));
-        methods.add_method("program", |lua, this, ()| {
+        methods.add_method("title", |lua, this, NoArgs| this.with(lua, |t| t.title()));
+        methods.add_method("program", |lua, this, NoArgs| {
             this.with(lua, |t| t.program().to_owned())
         });
-        methods.add_method("exit_code", |lua, this, ()| {
+        methods.add_method("exit_code", |lua, this, NoArgs| {
             this.with(lua, |t| t.exit_code())
         });
-        methods.add_method("busy", |lua, this, ()| this.with(lua, |t| t.busy()));
-        methods.add_method("kill", |lua, this, ()| this.with(lua, Terminal::kill));
-        methods.add_method("interrupt", |lua, this, ()| {
+        methods.add_method("busy", |lua, this, NoArgs| this.with(lua, |t| t.busy()));
+        methods.add_method("kill", |lua, this, NoArgs| this.with(lua, Terminal::kill));
+        methods.add_method("interrupt", |lua, this, NoArgs| {
             this.with(lua, |t| t.interrupt())
         });
-        methods.add_method("close", |lua, this, ()| {
+        methods.add_method("close", |lua, this, NoArgs| {
             state_mut(lua).terminals.open.remove(&this.0);
             Ok(())
         });

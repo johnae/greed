@@ -10,6 +10,7 @@ use mlua::{Function, Lua, Table, UserDataRef, Value, Variadic};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
+use super::arity::NoArgs;
 use super::capabilities::{self, Limit};
 use super::fs::UserPath;
 use super::handles::{self, BufferRef, ViewRef};
@@ -533,7 +534,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     greed.set(
         "messages",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let state = state(lua);
             let list: Vec<String> = state.editor.recent_messages().map(str::to_owned).collect();
             Ok(list)
@@ -543,11 +544,17 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let o = owner.clone();
     greed.set(
         "view",
-        lua.create_function(move |lua, ()| {
-            Ok(ViewRef {
-                id: state(lua).editor.focus(),
+        lua.create_function(move |lua, id: Option<u32>| {
+            let editor = &state(lua).editor;
+            let id = match id {
+                None => editor.focus(),
+                Some(id) if editor.find_view(crate::ViewId(id)).is_some() => crate::ViewId(id),
+                Some(_) => return Ok(None),
+            };
+            Ok(Some(ViewRef {
+                id,
                 author: Author::Plugin(o.clone()),
-            })
+            }))
         })?,
     )?;
 
@@ -561,13 +568,13 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     greed.set("spawn", spawn_function(lua, owner)?)?;
     greed.set(
         "stalls",
-        lua.create_function(|lua, ()| super::stalls::list(lua))?,
+        lua.create_function(|lua, NoArgs| super::stalls::list(lua))?,
     )?;
     greed.set("profile", super::stalls::profile_module(lua)?)?;
     greed.set("debug", super::debug::module(lua, owner)?)?;
     greed.set(
         "errors",
-        lua.create_function(|lua, ()| super::errors::list(lua))?,
+        lua.create_function(|lua, NoArgs| super::errors::list(lua))?,
     )?;
     greed.set("now", now)?;
     greed.set("next_key", tasks::next_key_function(lua)?)?;
@@ -666,7 +673,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("text", super::text::module(lua)?)?;
     greed.set(
         "hostname",
-        lua.create_function(|_, ()| Ok(gethostname::gethostname().into_string().ok()))?,
+        lua.create_function(|_, NoArgs| Ok(gethostname::gethostname().into_string().ok()))?,
     )?;
     greed.set("control", super::requests::module(lua, owner)?)?;
     greed.set("json", super::json::module(lua)?)?;
@@ -687,7 +694,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("signal", tasks::signal_function(lua)?)?;
     greed.set(
         "detach",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             state_mut(lua).editor.request_detach();
             Ok(())
         })?,
@@ -1020,7 +1027,7 @@ fn keymap_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
 /// `greed.keymap.active()`: what runs a command in the current mode and
 /// buffer, as `{ keys, command }`.
-fn active_keys(lua: &Lua, (): ()) -> LuaResult<Table> {
+fn active_keys(lua: &Lua, _: NoArgs) -> LuaResult<Table> {
     let found = {
         let state = state(lua);
         let editor = &state.editor;
@@ -1041,7 +1048,7 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
     let mode = lua.create_table()?;
     mode.set(
         "get",
-        lua.create_function(|lua, ()| Ok(state(lua).editor.mode().to_owned()))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).editor.mode().to_owned()))?,
     )?;
     mode.set(
         "set",
@@ -1140,11 +1147,13 @@ fn clipboard_module(lua: &Lua) -> LuaResult<Table> {
     )?;
     clipboard.set(
         "get",
-        lua.create_function(|lua, ()| Ok(state(lua).editor.clipboard().map(<[String]>::to_vec)))?,
+        lua.create_function(|lua, NoArgs| {
+            Ok(state(lua).editor.clipboard().map(<[String]>::to_vec))
+        })?,
     )?;
     clipboard.set(
         "history",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             Ok(state(lua)
                 .editor
                 .clipboard_history()
@@ -1154,7 +1163,7 @@ fn clipboard_module(lua: &Lua) -> LuaResult<Table> {
     )?;
     // The client reads its own clipboard, on its own machine, and answers;
     // one that doesn't within a few seconds has none to give.
-    let ask = lua.create_function(|lua, ()| {
+    let ask = lua.create_function(|lua, NoArgs| {
         const WAIT: std::time::Duration = std::time::Duration::from_secs(5);
         let answer = state_mut(lua).editor.ask_clipboard_image();
         Ok(super::jobs::start(
@@ -1196,7 +1205,7 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
     let client = lua.create_table()?;
     client.set(
         "current",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let state = state(lua);
             let editor = &state.editor;
             let current = editor
@@ -1207,7 +1216,7 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
     )?;
     client.set(
         "list",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let state = state(lua);
             state
                 .editor
@@ -1226,7 +1235,7 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
     )?;
     client.set(
         "id",
-        lua.create_function(|lua, ()| Ok(state(lua).editor.client().0))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).editor.client().0))?,
     )?;
     client.set(
         "set_layout",
@@ -1270,25 +1279,25 @@ fn history_module(lua: &Lua) -> LuaResult<Table> {
     let history = lua.create_table()?;
     history.set(
         "start_group",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             state_mut(lua).editor.start_group();
             Ok(())
         })?,
     )?;
     history.set(
         "end_group",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             state_mut(lua).editor.end_group();
             Ok(())
         })?,
     )?;
     history.set(
         "new_group",
-        lua.create_function(|lua, ()| Ok(state_mut(lua).editor.new_group()))?,
+        lua.create_function(|lua, NoArgs| Ok(state_mut(lua).editor.new_group()))?,
     )?;
     history.set(
         "group",
-        lua.create_function(|lua, ()| Ok(state(lua).editor.group()))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).editor.group()))?,
     )?;
     history.set(
         "set_group",
@@ -1299,7 +1308,7 @@ fn history_module(lua: &Lua) -> LuaResult<Table> {
     )?;
     history.set(
         "cause",
-        lua.create_function(|lua, ()| Ok(state(lua).editor.cause().map(ToString::to_string)))?,
+        lua.create_function(|lua, NoArgs| Ok(state(lua).editor.cause().map(ToString::to_string)))?,
     )?;
     history.set(
         "set_cause",
@@ -1350,7 +1359,7 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     option.set("set", lua.create_function(set_option)?)?;
     option.set(
         "list",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let state = state(lua);
             let mut options: Vec<_> = state.registry.option_states().collect();
             options.sort_by(|a, b| a.def.name.cmp(&b.def.name));
@@ -1561,12 +1570,13 @@ pub(super) fn into_lua(err: HostError) -> mlua::Error {
     }
 }
 
-/// `greed.buffers` and `greed.buffer_for`: open buffers, all or by path.
+/// `greed.buffers`, `greed.buffer` and `greed.buffer_for`: open buffers, all,
+/// by id or by path.
 fn buffer_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     let o = owner.clone();
     greed.set(
         "buffers",
-        lua.create_function(move |lua, ()| {
+        lua.create_function(move |lua, NoArgs| {
             let ids: Vec<_> = state(lua).editor.buffers().map(crate::Buffer::id).collect();
             let list = lua.create_table()?;
             for buffer in ids {
@@ -1577,6 +1587,18 @@ fn buffer_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()>
                 })?;
             }
             Ok(list)
+        })?,
+    )?;
+    let o = owner.clone();
+    greed.set(
+        "buffer",
+        lua.create_function(move |lua, id: u32| {
+            let buffer = crate::BufferId(id);
+            Ok(state(lua).editor.find_buffer(buffer).map(|_| BufferRef {
+                buffer,
+                view: None,
+                author: Author::Plugin(o.clone()),
+            }))
         })?,
     )?;
     let o = owner.clone();
@@ -1636,7 +1658,7 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
 
     greed.set(
         "commands",
-        lua.create_function(|lua, ()| {
+        lua.create_function(|lua, NoArgs| {
             let list = lua.create_table()?;
             let state = state(lua);
             for command in state.registry.commands() {
@@ -2191,7 +2213,7 @@ fn reveal_function(lua: &Lua) -> LuaResult<Function> {
 
 /// `greed.quit`, which tells plugins with "editor.quitting" first.
 fn quit_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|lua, ()| {
+    lua.create_function(|lua, NoArgs| {
         emit(lua, "editor.quitting", &lua.create_table()?)?;
         state_mut(lua).editor.request_quit();
         Ok(())
@@ -2379,7 +2401,7 @@ fn set_source(
 
 /// `greed.handlers()`: every event handler, by event and then the order
 /// they were added, with the plugin that added it and where.
-fn handlers(lua: &Lua, (): ()) -> LuaResult<Table> {
+fn handlers(lua: &Lua, _: NoArgs) -> LuaResult<Table> {
     let state = state(lua);
     let mut events: Vec<_> = state.registry.events().collect();
     events.sort_by_key(|(event, _)| *event);

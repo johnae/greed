@@ -8,6 +8,7 @@ use std::time::UNIX_EPOCH;
 use greed_text::{Author, ChangeSet, Operation, Transaction};
 use mlua::{Lua, Table, UserDataMethods};
 
+use super::arity::NoArgs;
 use super::handles::BufferRef;
 
 type LuaResult<T> = mlua::Result<T>;
@@ -41,7 +42,7 @@ pub(super) fn add_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                 .map(|text| text.to_string()))
         })
     });
-    methods.add_method("undo_tree", |lua, this, ()| {
+    methods.add_method("undo_tree", |lua, this, NoArgs| {
         this.with_buffer(lua, |b| {
             let history = b.history();
             let nodes = lua.create_table()?;
