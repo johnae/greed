@@ -898,7 +898,9 @@ local OWN: { Own } = {
 				error(err or "it didn't start", 0)
 			end
 			local out = done.stdout .. (if done.stderr ~= "" then "\n" .. done.stderr else "")
-			return `{out}\n(exit {done.code or "killed"})`
+			-- Someone else wrote it, and it may hold secrets.
+			local said = agent.untrusted(`what \`{args.command}\` printed`, out)
+			return `{said}\n(exit {done.code or "killed"})`
 		end,
 	},
 }

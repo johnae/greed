@@ -86,6 +86,8 @@ return table.freeze({
 	--- Text someone else wrote, wrapped so a model reads it as information
 	--- (untrusted.luau).
 	untrusted = untrusted,
+	--- `text` with the secrets it holds hidden, and how many (redact.luau).
+	redact = require("@self/redact").redact,
 	propose = proposals.propose,
 	propose_files = proposals.propose_files,
 	propose_changes = proposals.propose_changes,

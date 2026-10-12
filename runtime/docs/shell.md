@@ -1082,7 +1082,9 @@ project's root unless they ask for a folder, in `sh` without its startup
 files. Their blocks are marked `◆`, and their `cd` and `export` show in
 their block without changing your shell. What a command prints goes back
 to the model marked as someone else's text, to use as information and not
-to follow; `greed ctl` gets it as it is. `shell-agent-max-output` (30000
+to follow, with secrets in it hidden (private keys, cloud and API tokens,
+bearer tokens, the values of variables like `DB_PASSWORD`); `greed ctl`
+gets it as it is. `shell-agent-max-output` (30000
 bytes) is how much of the output and of the errors an agent gets; where
 it's cut says how many lines are left out and that `$ID | where`, `select`
 or `get` narrows it.

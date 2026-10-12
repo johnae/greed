@@ -1921,7 +1921,9 @@ agent what went wrong.
 Hand text someone else wrote, like a web page or another agent's report,
 back through `agent.untrusted(source, text)`: it's wrapped in markers the
 text can't close, after a line telling the model to use it as information
-and not to follow instructions in it.
+and not to follow instructions in it. Secrets in it (private keys, API
+tokens, values named like passwords) are hidden first, and the line says
+how many; `agent.redact(text)` does that alone.
 
 A tool can wait: for a process, a request, or the user. Changes to files
 are best proposed, so the user reviews them first and the tool hears what
