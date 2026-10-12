@@ -97,6 +97,10 @@ test("prom alone is a table; one that fails says why", function(t)
 	assert(string.find(bad.output, "parse error at char 5", 1, true), bad.output)
 	local usage = finished(t, assert(shell.run(sh, "prom --range")))
 	assert(string.find(usage.output, "takes a duration", 1, true), usage.output)
+	serve('{"status":"success","data":{"resultType":"vector","result":[]}}')
+	local empty = finished(t, assert(shell.run(sh, "prom nothing_here | chart")))
+	assert(empty.status == "failed", empty.status)
+	assert(string.find(empty.output, "matched no series", 1, true), empty.output)
 end)
 
 test("in a watch, prom | chart draws a line a series over time", function(t)
@@ -120,4 +124,28 @@ test("in a watch, prom | chart draws a line a series over time", function(t)
 	end)
 	assert(block.drawn, "a chart")
 	shell.interrupt(block)
+end)
+
+test("prom asks the server whatever plugin's code runs it, and only asks for queries", function(t)
+	-- A plugin without the network, as the shell is, running prom's fetch.
+	greed.plugin.load(t:tempdir({
+		["plugin.toml"] = 'name = "offline"\nrequires = ["prometheus"]\n',
+		["init.luau"] = [[
+local greed = require("@greed")
+local prom = require("@prometheus")
+greed.command({ name = "offline-ask", run = function(ctx)
+	local _, err = prom.fetch(ctx.args[1])
+	greed.echo("answered: " .. tostring(err))
+end })
+]],
+	}))
+	-- Nothing listens on port 1: refused, not kept from the network.
+	t:run("offline-ask", { "http://127.0.0.1:1/api/v1/query?query=up" })
+	local said = t:messages()
+	local last = said[#said] or ""
+	assert(not string.find(last, "capabilities", 1, true), last)
+	t:run("offline-ask", { "http://127.0.0.1:1/somewhere/else" })
+	said = t:messages()
+	last = said[#said] or ""
+	assert(string.find(last, "only asks for queries", 1, true), last)
 end)

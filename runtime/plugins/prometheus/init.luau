@@ -22,9 +22,16 @@ greed.option.define({
 	default = "http://localhost:9090",
 })
 
---- Gets `url`: the body, or nil and why. Tests put their own here.
+--- Gets `url`, a query to Prometheus's API: the body, or nil and why.
+--- Tests put their own here.
 function M.fetch(url: string): (string?, string?)
-	local response, err = greed.http.request({ url = url, timeout = 30 })
+	if not string.match(url, "^https?://[^/]+[^?]*/api/v1/query[_%w]*%?") then
+		return nil, `prom only asks for queries, not {url}`
+	end
+	-- As prom's own: the shell running it can't use the network.
+	local response, err = greed.vouch(function()
+		return greed.http.request({ url = url, timeout = 30000 })
+	end)
 	if response == nil then
 		return nil, err
 	end
@@ -200,6 +207,10 @@ shell.builtin({
 	local rows, err = M.query(query, opts)
 	if rows == nil then
 		ctx.error((err or "") .. "\n")
+		return 1
+	end
+	if #rows == 0 then
+		ctx.error(`{query} matched no series\n`)
 		return 1
 	end
 	ctx.write(greed.json.encode(rows) .. "\n")
