@@ -1381,3 +1381,24 @@ test("an image sent while the agent works is queued with the message, and shown 
 	assert(words == "" and images and #images == 1, "taken out together")
 	s.status = "idle"
 end)
+
+test(
+	"typing in the box while it works keeps the status animated, never still for a moment",
+	function(t)
+		local s = start(t)
+		greed.option.set("effects", true)
+		s.status = "working"
+		s.since = greed.now()
+		s.changed()
+		t:wait(50)
+		-- Typed in the box, looked at before the next frame of the animation.
+		local buffer = greed.view():buffer()
+		buffer:edit(function(e)
+			e:insert(buffer:len(), "h")
+		end)
+		-- A still status starts with a dot; an animated one with the spinner.
+		assert(not string.find(bottom(), "^╰─ ●"), bottom())
+		s.status = "idle"
+		greed.option.set("effects", false)
+	end
+)

@@ -549,6 +549,13 @@ local function busy(s: Session): boolean
 	return s.status == "working" or s.status == "waiting"
 end
 
+-- The time `s`'s status is drawn at: now while it animates (it works or
+-- waits, effects on), else nil to draw it still. Every drawing of it uses
+-- this, or one in between would draw it still and it would flicker.
+local function moment(s: Session): number?
+	return if busy(s) and core.effects.enabled() then greed.now() else nil
+end
+
 --- The box's bottom line for `s`, `cells` wide, as pieces with styles: what
 --- the agent is doing and for how long on the left, the tokens it has used
 --- on the right. `now` is the clock, for animations; nil draws them still.
@@ -965,7 +972,7 @@ local function drawn(buffer: greed.Buffer, view: core.UiView)
 	blocks[id] = code.draw(buffer, at, plains[id])
 	actionable[id] = nil
 	draw_pick(buffer)
-	live(buffer, s, if busy(s) and core.effects.enabled() then greed.now() else nil)
+	live(buffer, s, moment(s))
 end
 
 -- Draws `s` in `buffer` (see `M.render`): only the entries that changed.
@@ -1150,7 +1157,7 @@ end)
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local s = shown[event.buffer:id()]
 	if s then
-		live(event.buffer, s, nil)
+		live(event.buffer, s, moment(s))
 	end
 end)
 
@@ -1171,7 +1178,7 @@ greed.on("mode.changed", function()
 	for _, buffer in greed.buffers() do
 		local s = shown[buffer:id()]
 		if s then
-			live(buffer, s, nil)
+			live(buffer, s, moment(s))
 		end
 	end
 end)
