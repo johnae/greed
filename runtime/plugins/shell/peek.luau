@@ -31,6 +31,9 @@ type Peek = {
 	line: number,
 	height: number,
 	tail: boolean,
+	-- The block's last line when the cursor was last placed, to tell a
+	-- cursor moved off it before the move's event arrived.
+	last: number?,
 	kept: boolean,
 	-- Never follows the last line, as asked with `tail = false`: it shows its
 	-- block from the top however it grows.
@@ -105,7 +108,8 @@ local function keep_cursor(p: Peek)
 		cursor = if cursor < from then from else last
 		p.view:set_cursor(cursor)
 	end
-	p.tail = not p.still and buffer:line_of(cursor) == buffer:line_of(last)
+	p.last = buffer:line_of(last)
+	p.tail = not p.still and buffer:line_of(cursor) == p.last
 end
 
 -- Fits `p`'s float to its block, showing none of the shell around it, and
@@ -119,6 +123,11 @@ local function fit(p: Peek)
 	local line = buffer:line_of(from)
 	local last = buffer:line_of(math.max(to - 1, from))
 	p.view:narrow(line, last)
+	-- Moved off the last line, by a key whose event hasn't come yet: it
+	-- stays where it was moved to.
+	if p.tail and p.last and buffer:line_of(p.view:cursor()) ~= p.last then
+		p.tail = false
+	end
 	if p.tail then
 		p.view:set_cursor(buffer:line_start(last))
 	end
@@ -158,7 +167,7 @@ function M.open(shell: Shell, block: Block, how: How?): greed.View?
 				p.view:raise()
 				p.view:focus()
 				if tail then
-					p.tail = true
+					p.tail, p.last = true, nil
 					fit(p)
 				end
 				greed.mode.set(core.style.home())
