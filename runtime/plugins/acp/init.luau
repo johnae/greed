@@ -44,7 +44,6 @@ local agent_api = require("@agent")
 local agent_context = agent_api.context
 local terminal = require("@terminal")
 local slash = require("@self/slash")
-local hooks = require("@self/hooks")
 local overlap = require("@self/overlap")
 
 type Session = session.Session
@@ -1773,10 +1772,10 @@ greed.on("buffer.opened", function()
 	participants.draw(sessions)
 end)
 
---- How many agents work and wait for you, as the status line shows it;
---- nil when none do.
+--- How many agents work and wait for you, in sessions and in terminals, as
+--- the status line shows it; nil when none do.
 function M.status(): string?
-	return participants.status(sessions)
+	return participants.status(sessions, terminal.agents())
 end
 
 statusline.add("right", "agents", function()
@@ -1860,8 +1859,6 @@ M.code = code
 
 --- Agents handing tasks to other agents (subagent.luau).
 M.subagent = require("@self/subagent")
---- Agents in terminals saying how they're doing through their hooks (hooks.luau).
-M.hooks = hooks
 --- An agent's workspace changes as proposals on your files (review.luau).
 M.review = review
 M.subagent.offer(M)

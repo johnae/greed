@@ -6,47 +6,51 @@
 -- program could print.
 
 local core = require("@core")
-local agent = require("@agent")
+local registry = require("./registry")
 local terminal = require("@terminal")
 
 local M = {}
 
+-- The hook events that say how the agent is doing, by what they say. A
+-- permission request or a question (an elicitation) comes as the prompt
+-- shows; its notification only some time after.
+local STATES: { [string]: terminal.AgentState | "gone" } = {
+	UserPromptSubmit = "working",
+	PreToolUse = "working",
+	PostToolUse = "working",
+	PostToolUseFailure = "working",
+	PermissionDenied = "working",
+	PermissionRequest = "waiting",
+	Elicitation = "waiting",
+	Stop = "idle",
+	SessionStart = "idle",
+	SessionEnd = "gone",
+}
+
+--- The hook events that say something here, by name, for asking Claude
+--- Code for those hooks (claude.luau).
+M.EVENTS = {} :: { string }
+for event in STATES do
+	table.insert(M.EVENTS, event)
+end
+table.sort(M.EVENTS)
+
 --- What a Claude Code hook's input says about the agent: its state, "gone"
---- when the session ended, or nil when it says nothing about that.
+--- when the session ended, or nil when it says nothing about that. Its
+--- notifications say nothing here: one can come after you answered the
+--- prompt it was about, and the events above already said it.
 function M.state_of(hook: { [string]: any }): (terminal.AgentState | "gone")?
-	local event = hook.hook_event_name
-	if event == "UserPromptSubmit" or event == "PreToolUse" or event == "PostToolUse" then
-		return "working"
-	elseif event == "Stop" or event == "SessionStart" then
-		return "idle"
-	elseif event == "SessionEnd" then
-		return "gone"
-	elseif event == "Notification" then
-		local kind = hook.notification_type
-		if kind == "permission_prompt" or kind == "elicitation_dialog" then
-			return "waiting"
-		elseif kind == "idle_prompt" then
-			return "idle"
-		end
-		-- Older versions say it only in the message.
-		local message = string.lower(tostring(hook.message or ""))
-		if string.find(message, "permission", 1, true) then
-			return "waiting"
-		elseif string.find(message, "waiting for your input", 1, true) then
-			return "idle"
-		end
-	end
-	return nil
+	return STATES[tostring(hook.hook_event_name)]
 end
 
-agent.tool({
+registry.tool({
 	name = "agent_hook",
 	shell_only = true,
 	description = "For an agent's hooks in one of Greed's terminals: says what happened (the "
 		.. "hook's input as JSON) so Greed knows whether the agent works, waits for you or "
 		.. "is idle. Claude Code: `greed ctl agent_hook terminal=$GREED_TERMINAL_ID "
 		.. "hook=@-` (the input on stdin)",
-	input = agent.schema.object({
+	input = registry.schema.object({
 		terminal = { type = "number", description = "The terminal, $GREED_TERMINAL_ID" },
 		hook = { type = "object", description = "What the hook was given, as JSON" },
 		agent = { type = "string", description = 'Which agent (default "claude")' },

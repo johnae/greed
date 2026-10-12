@@ -166,7 +166,7 @@ fn an_agents_hooks_in_a_terminal_reach_the_status() {
     hook.stdin
         .take()
         .unwrap()
-        .write_all(br#"{"hook_event_name": "Notification", "notification_type": "permission_prompt", "message": "Claude needs your permission"}"#)
+        .write_all(br#"{"hook_event_name": "PermissionRequest", "tool_name": "Bash"}"#)
         .unwrap();
     let said = hook.wait_with_output().unwrap();
     assert_eq!(text(&said).0.trim(), "waiting", "{:?}", text(&said));

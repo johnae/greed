@@ -2191,7 +2191,8 @@ to what was saved takes it away. On the right it shows:
   `tabs` (or `spaces`) where its language indents the other way, or
   `read-only`
 - how many selections there are, once there's more than one
-- agents at work or waiting for you, like `◆ 1 working · 1 waiting for you`
+- agents at work or waiting for you, in sessions and in terminals, like
+  `◆ 1 working · 1 waiting for you`
 - the cursor's line and column (the character the cursor is drawn on, at
   the end of a selection too), the machine and the session
 

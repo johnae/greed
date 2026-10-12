@@ -52,7 +52,7 @@ export type Term = {
 	-- Whether its views were opened for it (a pane, a float), so they close
 	-- with it.
 	owns: boolean,
-	-- What it runs, as typed.
+	-- What it runs, as typed, or the title it was opened with.
 	command: string,
 	-- The command it was asked to run, or nil for your shell.
 	asked: { string }?,
@@ -289,6 +289,17 @@ function M.agent_report(
 	end
 	reconcile(term)
 	return true
+end
+
+--- The agents running in terminals now, as their reports say.
+function M.agents(): { Agent }
+	local found = {}
+	for _, term in terms do
+		if term.agent then
+			table.insert(found, term.agent)
+		end
+	end
+	return found
 end
 
 --- The terminal shown in `buffer`, if it's one.
@@ -685,6 +696,9 @@ export type OpenOptions = {
 	--- like the shell a command came from has (`KUBECONFIG`, `PATH`);
 	--- `false` leaves one out.
 	env: { [string]: string | false }?,
+	--- What to call it, rather than by its command line, like the agent it
+	--- runs when that command line is long.
+	title: string?,
 }
 
 --- Environment variables every new terminal gets, on top of the editor's;
@@ -830,7 +844,7 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local term = track(started, buffer, {
 		previous = previous,
 		owns = previous == nil,
-		command = if given then table.concat(given, " ") else "shell",
+		command = opts.title or if given then table.concat(given, " ") else "shell",
 		asked = if command and #command > 0 then table.clone(command) else nil,
 		keep = opts.keep == true,
 		client = greed.client.id(),

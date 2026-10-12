@@ -5,6 +5,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local session = require("./session")
+local terminal = require("@terminal")
 
 type Session = session.Session
 
@@ -62,16 +63,23 @@ function M.draw(sessions: { Session })
 	end
 end
 
---- What the status line shows about `sessions`: how many work and how
+--- What the status line shows about `sessions` and the agents running in
+--- terminals (`in_terminals`, as their hooks say): how many work and how
 --- many wait for you; nil when none do.
-function M.status(sessions: { Session }): string?
+function M.status(sessions: { Session }, in_terminals: { terminal.Agent }): string?
 	local working, waiting = 0, 0
-	for _, s in sessions do
-		if s.status == "working" then
+	local function count(state: string)
+		if state == "working" then
 			working += 1
-		elseif s.status == "waiting" then
+		elseif state == "waiting" then
 			waiting += 1
 		end
+	end
+	for _, s in sessions do
+		count(s.status)
+	end
+	for _, agent in in_terminals do
+		count(agent.state)
 	end
 	local parts = {}
 	if working > 0 then

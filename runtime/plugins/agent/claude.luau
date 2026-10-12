@@ -6,6 +6,7 @@
 local greed = require("@greed")
 local terminal = require("@terminal")
 local ide = require("./ide")
+local agent_hooks = require("./hooks")
 
 greed.option.define({
 	name = "claude-command",
@@ -34,16 +35,37 @@ end
 
 local M = {}
 
---- Starts Claude Code in a new pane on the right, as `claude-command` says
---- with `extra` arguments after it, in `cwd` (the project by default). A
---- folder outside the project, like an agent's workspace, is named to
---- Claude Code as open, so it finds Greed from there. Errors when it
---- can't start.
+-- What each hook Greed gives Claude Code runs (hooks.luau's EVENTS): hands
+-- what the hook was told to Greed (`agent_hook`), so Greed knows when it
+-- works, waits for you or is idle. Outside a Greed terminal it does nothing.
+local HOOK = '[ -z "$GREED_TERMINAL_ID" ] || "$GREED_BIN" ctl agent_hook '
+	.. 'terminal="$GREED_TERMINAL_ID" hook=@- >/dev/null 2>&1; true'
+
+--- Settings for `claude --settings`, for the Claude Code Greed starts: the
+--- hooks that tell Greed how it's doing, for that run only, beside your
+--- own settings and without writing them.
+function M.settings(): string
+	local hooks = {}
+	for _, event in agent_hooks.EVENTS do
+		hooks[event] = greed.json.array({
+			{ hooks = greed.json.array({ { type = "command", command = HOOK } }) },
+		})
+	end
+	return greed.json.encode({ hooks = hooks })
+end
+
+--- Starts Claude Code in a new pane on the right, as `claude-command` says,
+--- with the hooks that tell Greed how it's doing (`settings`) and `extra`
+--- arguments after it, in `cwd` (the project by default). A folder
+--- outside the project, like an agent's workspace, is named to Claude Code
+--- as open, so it finds Greed from there. Errors when it can't start.
 function M.open(cwd: string?, extra: { string }?): terminal.Term
 	local command = {}
 	for word in string.gmatch(greed.option.get("claude-command") :: string, "%S+") do
 		table.insert(command, word)
 	end
+	table.insert(command, "--settings")
+	table.insert(command, M.settings())
 	if extra then
 		table.move(extra, 1, #extra, #command + 1, command)
 	end
@@ -52,7 +74,8 @@ function M.open(cwd: string?, extra: { string }?): terminal.Term
 	end
 	-- From a float, like the session list, beside the pane behind it.
 	local from = if greed.view():is_pane() then nil else greed.tab.current().active
-	return terminal.open(command, { split = "right", from = from, cwd = cwd })
+	-- Named after it, not after the settings on its command line.
+	return terminal.open(command, { split = "right", from = from, cwd = cwd, title = "claude" })
 end
 
 --- Stops naming `folder`, given to `open`, to Claude Code as open.

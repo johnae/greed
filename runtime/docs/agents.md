@@ -335,21 +335,31 @@ it again there with `claude --continue`.
 
 ### Knowing when it waits for you
 
-Claude Code in a Greed terminal can tell Greed when it's working, waiting
-for your answer or idle, through its hooks. One waiting for you gets a dot
-on its float and shows in `greed ctl status`. Greed doesn't guess this from
-the screen, since any program could print a prompt that looks like Claude's.
-Add the hooks to `~/.claude/settings.json` (or a project's
-`.claude/settings.json`); outside Greed's terminals they do nothing:
+Greed knows when Claude Code is working, waiting for your answer or idle,
+through Claude Code's hooks, with nothing for you to set up: the Claude Code
+Greed starts (`space i C`, `space i W`) gets them for that run, beside your
+own settings and without writing them. The status line counts it with the
+other agents (`◆ 1 waiting for you`), its float gets a dot, and
+`greed ctl status` lists it. Greed doesn't guess this from the screen, since
+any program could print a prompt that looks like Claude's.
+
+A `claude` you start yourself in a Greed terminal doesn't get them. To have
+those tell Greed too, add the same hooks to `~/.claude/settings.json`;
+outside Greed's terminals they do nothing:
 
 ```json
 {
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }],
-    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }],
-    "Notification": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }],
-    "Stop": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }],
-    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true" }] }]
+    "Elicitation":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "PermissionDenied":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "PermissionRequest":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "PostToolUse":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "PostToolUseFailure":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "PreToolUse":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "SessionEnd":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "SessionStart":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "Stop":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}],
+    "UserPromptSubmit":[{"hooks":[{"type":"command","command":"[ -z \"$GREED_TERMINAL_ID\" ] || \"$GREED_BIN\" ctl agent_hook terminal=\"$GREED_TERMINAL_ID\" hook=@- >/dev/null 2>&1; true"}]}]
   }
 }
 ```

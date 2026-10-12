@@ -12,7 +12,8 @@ local function terminals(): { greed.Buffer }
 end
 
 test("space i C opens Claude Code in a pane, then goes back to it", function(t)
-	greed.option.set("claude-command", "cat")
+	-- Something that runs on, whatever arguments it gets.
+	greed.option.set("claude-command", "sh -c cat")
 	local dir = t:tempdir({ ["a.txt"] = "text" })
 	greed.open(dir .. "/a.txt")
 	local files = greed.view()
@@ -51,4 +52,23 @@ test("without Claude Code installed, it says so and leaves the panes alone", fun
 	)
 	assert(greed.view():buffer():path() == dir .. "/a.txt")
 	assert(#terminals() == 0)
+end)
+
+test("the Claude Code Greed starts gets the hooks that tell Greed how it's doing", function(t)
+	local claude = require("@agent").claude
+	local settings = greed.json.decode(claude.settings())
+	for _, event in { "UserPromptSubmit", "PreToolUse", "PermissionRequest", "Stop", "SessionEnd" } do
+		local command = settings.hooks[event][1].hooks[1].command
+		assert(string.find(command, "agent_hook", 1, true), event)
+		assert(
+			string.find(command, '[ -z "$GREED_TERMINAL_ID" ] ||', 1, true),
+			"nothing outside Greed"
+		)
+	end
+	greed.option.set("claude-command", "sh -c cat")
+	t:buffer("|")
+	local term = claude.open()
+	assert(table.find(term.asked or {}, "--settings"), "given its settings")
+	assert(term.command == "claude", term.command)
+	t:keys("ctrl-d")
 end)
