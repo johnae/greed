@@ -1617,7 +1617,11 @@ kind out for one the editor has already, like `file`.
 `fresh = shell.fresh(function(value) return "ps -p " .. value.pid end)`
 on the kind lets `watch` see a thing as it is now: the command line that
 lists just it runs where the row came from, and its first row is the
-thing's state.
+thing's state. `shell.env_of(value)` is the variables of the block a
+thing's row came from (its `KUBECONFIG`), to ask a program about it as
+that block would. `shell.log_prefix(read)` teaches the log view a prefix
+a program puts before merged lines, like kubectl's `[pod/api-1/app] `:
+`read(text)` returns the fields it says and the rest of the line, or nil.
 
 `spec.complete` makes the rows complete later commands. It maps a
 program's name to a function given the command's words (the word being

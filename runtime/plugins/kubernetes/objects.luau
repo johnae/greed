@@ -468,26 +468,35 @@ local function owner_of(value: any, described: any): Thing?
 	return thing_of(resource_of_kind(owner.kind), owner.name, value.namespace, value.context)
 end
 
+-- The label selector of deployment `value`'s pods, `app=api,tier=web`, as
+-- kubectl says; nil when it can't say.
+local function selector_of(value: any, env: Env): string?
+	local deployment = ask_json(value, { "get", "deployment", value.name, "-o", "json" }, env)
+	local labels = deployment
+		and deployment.spec
+		and deployment.spec.selector
+		and deployment.spec.selector.matchLabels
+	if type(labels) ~= "table" then
+		return nil
+	end
+	local selector: { string } = {}
+	for label, wanted in labels do
+		table.insert(selector, `{label}={wanted}`)
+	end
+	table.sort(selector)
+	return table.concat(selector, ",")
+end
+
 --- What the kubernetes object with `value` relates to, asked of kubectl
 --- (`env` as `find` takes it): a deployment's `pods`, by its selector, and
 --- what owns a pod (`deployment`, through its ReplicaSet, or `owner`).
 function M.related(value: any, env: Env): { [string]: { core.Object } }
 	if value.resource == "deployments" then
-		local deployment = ask_json(value, { "get", "deployment", value.name, "-o", "json" }, env)
-		local labels = deployment
-			and deployment.spec
-			and deployment.spec.selector
-			and deployment.spec.selector.matchLabels
-		if type(labels) ~= "table" then
+		local selector = selector_of(value, env)
+		if selector == nil then
 			return {}
 		end
-		local selector: { string } = {}
-		for label, wanted in labels do
-			table.insert(selector, `{label}={wanted}`)
-		end
-		table.sort(selector)
-		local pods =
-			ask_json(value, { "get", "pods", "-l", table.concat(selector, ","), "-o", "json" }, env)
+		local pods = ask_json(value, { "get", "pods", "-l", selector, "-o", "json" }, env)
 		local out: { core.Object } = {}
 		local items: { any } = if pods and type(pods.items) == "table" then pods.items else {}
 		for _, pod in items do
@@ -582,6 +591,35 @@ end, { doc = "Start its pods again, one by one", danger = true })
 shell.action_command("deployment", "rollout status", function(value: any): string
 	return kubectl(`rollout status deployment {parse.quote(value.name)}`, value)
 end, { doc = "How its rollout is going" })
+
+-- `kubectl logs` of every pod of deployment `value`, each line saying its
+-- pod: by the deployment's selector, or else the deployment itself, which
+-- is one of its pods. `follow` keeps printing.
+local function pods_logs(value: any, follow: boolean): string
+	local selector = selector_of(value, shell.env_of(value))
+	local which = if selector
+		then `-l {parse.quote(selector)} --max-log-requests 20`
+		else `deployment/{parse.quote(value.name)}`
+	local tail = if follow then "-f --tail 20" else "--tail 50"
+	return kubectl(`logs {which} --all-containers --prefix {tail}`, value)
+end
+
+shell.action_command("deployment", "logs", function(value: any): string
+	return pods_logs(value, false)
+end, { doc = "The end of what all its pods logged, merged, each line saying its pod" })
+shell.action_command("deployment", "follow logs", function(value: any): string
+	return pods_logs(value, true)
+end, { doc = "What all its pods log, as they log it", follow = true })
+
+-- `kubectl logs --prefix` puts the pod and container before each line, as
+-- `[pod/api-1/app] `: shown as fields, after the line's message.
+shell.log_prefix(function(text: string): ({ [string]: any }?, string)
+	local pod, container, rest = string.match(text, "^%[pod/([^/%]]+)/([^%]]+)%] (.*)$")
+	if pod == nil or container == nil or rest == nil then
+		return nil, text
+	end
+	return { pod = pod, container = container }, rest
+end)
 
 --- The resources people get most, by their full plural names.
 function M.resources(): { string }

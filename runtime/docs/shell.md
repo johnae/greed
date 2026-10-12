@@ -923,6 +923,10 @@ where `ctrl-c` stops them. An action whose command still runs in the shell
 doesn't start a second one: it opens the one running (`already running as
 $7`).
 
+A deployment's `logs` and `follow logs` merge the logs of all its pods
+(`kubectl logs -l SELECTOR --prefix`), and each line shows which pod it
+came from as a field after its message, `pod=api-1`.
+
 A row remembers where it came from. The kubernetes context and namespace
 are the ones the command ran against, from its flags or else kubectl's
 config as it was when the block finished, so acting on a row of an old

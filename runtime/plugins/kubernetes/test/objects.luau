@@ -541,3 +541,23 @@ esac
 	local gone = { resource = "pods", name = "nope", namespace = "shop", context = "prod" }
 	assert(next(objects.related(gone, env)) == nil, "nothing when kubectl fails")
 end)
+
+test("merged logs show each line's pod as a field, and deployments have them", function(t)
+	local sh = fake(t, "prod-eu")
+	local line =
+		[[printf '%s\n' '[pod/api-1/app] {"level":"info","msg":"ready"}' '[pod/api-2/app] plain words']]
+	ran(t, sh, line)
+	local screen = table.concat(t:draw(120, 30), "\n")
+	assert(string.find(screen, "info  ready", 1, true), screen)
+	assert(string.find(screen, "pod=api-1", 1, true), screen)
+	assert(
+		string.find(screen, "plain words", 1, true) and string.find(screen, "pod=api-2", 1, true),
+		screen
+	)
+	local names = {}
+	for _, action in core.actions.for_kind("deployment") do
+		table.insert(names, action.name)
+	end
+	local all = table.concat(names, ",")
+	assert(string.find(all, ",logs,", 1, true) and string.find(all, "follow logs", 1, true), all)
+end)

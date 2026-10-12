@@ -76,13 +76,43 @@ local function logfmt(text: string): { [string]: any }?
 	return if count >= 2 then fields else nil
 end
 
+--- Reads what a program puts before each line of a log it merged from
+--- several, like kubectl's `[pod/api-1/app] `: the fields it says, and
+--- the line after it; nil for a line without one.
+export type Prefix = (text: string) -> ({ [string]: any }?, string)
+
+local prefixes: { Prefix } = {}
+
+--- Adds a reader of line prefixes, until the plugin that added it goes.
+function M.prefix(read: Prefix)
+	greed.plugin.tie(core.registry.put(prefixes, read, function(other: Prefix): boolean
+		return other == read
+	end))
+end
+
 -- The fields of a line of JSON (an object) or of logfmt, if it's one.
-local function object(text: string): { [string]: any }?
+local function fields_of(text: string): { [string]: any }?
 	if string.sub(text, 1, 1) ~= "{" then
 		return logfmt(text)
 	end
-	local value = greed.json.decode(text)
-	return if type(value) == "table" then value else nil
+	local ok, value = pcall(greed.json.decode, text)
+	return if ok and type(value) == "table" then value else nil
+end
+
+-- The fields of a log line: of its JSON or logfmt, with those of a prefix
+-- before it, whose plain text is then its message.
+local function object(text: string): { [string]: any }?
+	for _, read in prefixes do
+		local ok, fields, rest = pcall(read, text)
+		if ok and fields then
+			local inner = fields_of(rest) or { msg = rest }
+			for name, value in fields do
+				inner[name] = value
+			end
+			return inner
+		end
+	end
+	return fields_of(text)
 end
 
 -- The first of `names` that `fields` has, taken out of it.

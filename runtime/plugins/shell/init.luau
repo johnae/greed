@@ -186,6 +186,10 @@ M.action_command = kinds.command
 --- lists just one; see `kinds.fresh`.
 M.fresh = kinds.fresh
 
+--- Reads what a program puts before each line of a log it merged, like
+--- kubectl's `[pod/api-1/app] `, as fields; see `pretty.prefix`.
+M.log_prefix = pretty.prefix
+
 --- The variables the block a thing's row came from ran with; see
 --- `kinds.env_of`.
 M.env_of = kinds.env_of
