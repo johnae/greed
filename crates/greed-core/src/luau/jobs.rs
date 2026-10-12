@@ -211,6 +211,20 @@ pub(super) fn await_child(lua: &Lua) -> LuaResult<bool> {
     Ok(true)
 }
 
+/// Waits up to `wait` for what a program prints next, for tests, and
+/// finishes it. Returns whether something came.
+pub(super) fn await_child_for(lua: &Lua, wait: Duration) -> LuaResult<bool> {
+    let finished = state(lua).jobs.finished.clone();
+    match finished.recv_timeout(wait) {
+        Ok(done) => {
+            finish(lua, done)?;
+            Ok(true)
+        }
+        Err(RecvTimeoutError::Timeout) => Ok(false),
+        Err(err) => Err(mlua::Error::external(err)),
+    }
+}
+
 /// Waits for every running job and finishes it, and lets work cut into time
 /// slices finish, for tests, which have no event loop to do it. Time spent
 /// waiting for a job doesn't count against the test's budget. Gives up,

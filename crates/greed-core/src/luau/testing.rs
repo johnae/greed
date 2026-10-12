@@ -20,8 +20,8 @@
 //! Buffers are written with markers: `|` at each head and `^` at the anchor
 //! of a non-empty range.
 
-use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap};
+use std::cell::{Cell, RefCell};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -197,13 +197,51 @@ impl Watched {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         let what = format!("{} {name:?}", file.display());
         running().push((id, what, Instant::now()));
+        WATCHED.set(Some(id));
         Self(id)
     }
 }
 
 impl Drop for Watched {
     fn drop(&mut self) {
+        WATCHED.set(None);
         running().retain(|(id, ..)| *id != self.0);
+        busy().remove(&self.0);
+    }
+}
+
+thread_local! {
+    /// The test this thread runs, while the watchdog watches it.
+    static WATCHED: Cell<Option<usize>> = const { Cell::new(None) };
+}
+
+/// What each test running has resumed lately: the task, how many times,
+/// and where it was, so a test that never ends says what keeps it busy.
+#[derive(Default)]
+struct Busy {
+    what: String,
+    resumed: u64,
+    traceback: String,
+}
+
+static BUSY: Mutex<BTreeMap<usize, Busy>> = Mutex::new(BTreeMap::new());
+
+fn busy() -> std::sync::MutexGuard<'static, BTreeMap<usize, Busy>> {
+    BUSY.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Notes that the test on this thread, if the watchdog watches one, just
+/// resumed task `what`; `traceback` says where it is, asked now and then.
+pub(super) fn resumed(what: &str, traceback: impl FnOnce() -> String) {
+    let Some(id) = WATCHED.get() else {
+        return;
+    };
+    let mut busy = busy();
+    let entry = busy.entry(id).or_default();
+    entry.resumed += 1;
+    if entry.what != what || entry.resumed % 256 == 1 {
+        what.clone_into(&mut entry.what);
+        entry.traceback = traceback();
     }
 }
 
@@ -220,6 +258,15 @@ fn watchdog() {
                 // Past `cargo test`'s capture, which shows nothing of a
                 // test that never ends.
                 let _ = writeln!(std::io::stderr(), "still running after {STUCK:?}: {what}");
+                if let Some(busy) = busy().get(id) {
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "  it resumed {} {} times, last at:\n{}",
+                        busy.what,
+                        busy.resumed,
+                        busy.traceback
+                    );
+                }
             }
         }
     }

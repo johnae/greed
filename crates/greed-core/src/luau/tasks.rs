@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use greed_text::ClientId;
 use mlua::thread::ThreadStatus;
-use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Thread, Value};
+use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table, Thread, Value};
 
 use super::capabilities::Limit;
 use super::{state, state_mut};
@@ -321,6 +321,16 @@ fn key(thread: &Thread) -> usize {
     thread.to_pointer() as usize
 }
 
+/// Where coroutine `thread` is, as `debug.traceback` says, for a test the
+/// watchdog finds stuck.
+fn traceback(lua: &Lua, thread: &Thread) -> String {
+    lua.globals()
+        .get::<Table>("debug")
+        .and_then(|debug| debug.get::<Function>("traceback"))
+        .and_then(|traceback| traceback.call::<String>(thread))
+        .unwrap_or_default()
+}
+
 fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
     let id = key(&thread);
     let (outer, outer_owner, outer_limit, outer_client, owner, cause, label) = {
@@ -357,6 +367,7 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
         )
     };
     let what = label.as_deref().or(cause.as_deref()).unwrap_or("a handler");
+    super::testing::resumed(what, || traceback(lua, &thread));
     let (yielded, ran) = super::stalls::timed(lua, owner.as_deref(), what, || {
         super::sliced(lua, id, || {
             // A bug the plugin's call ran into is its error, kept like one.
@@ -676,13 +687,34 @@ pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
 /// a test's body. Fails if it waits for something nothing will bring, like
 /// a key.
 pub(super) fn run_to_end(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> LuaResult<()> {
+    const QUIET: Duration = Duration::from_secs(10);
     let thread = lua.create_thread(f)?;
     resume(lua, thread.clone(), args)?;
+    // When a program the test waits on last said something.
+    let mut heard = Instant::now();
     while thread.status() == ThreadStatus::Resumable {
         let waited = Instant::now();
         super::jobs::settle(lua)?;
         if thread.status() == ThreadStatus::Resumable {
             match next_timer(lua) {
+                // A program is waited on: timers fire as the real time
+                // reaches them, as the editor fires them, rather than racing
+                // ahead (a plugin polling every second would spin) while
+                // the program takes the time it takes.
+                Some(at) if super::process::awaited(lua) => {
+                    let due = at.saturating_duration_since(state(lua).tasks.now());
+                    if due.is_zero() {
+                        advance(lua, at)?;
+                    } else if super::jobs::await_child_for(lua, due)? {
+                        heard = Instant::now();
+                    } else if heard.elapsed() > QUIET {
+                        return Err(mlua::Error::runtime(
+                            "a program waited on said nothing for 10s",
+                        ));
+                    } else {
+                        advance(lua, at)?;
+                    }
+                }
                 Some(at) => advance(lua, at)?,
                 None if super::jobs::await_child(lua)? => {}
                 None => {
