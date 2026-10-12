@@ -60,8 +60,9 @@ type Run = {
 	-- Whether a draw is under way, and whether more came in meanwhile.
 	drawing: boolean,
 	stale: boolean,
-	-- The program's exit code, once it exited.
+	-- The program's exit code once it exited, and whether a signal ended it.
 	exited: number?,
+	signaled: boolean?,
 }
 
 -- Runs by their terminal's id.
@@ -310,9 +311,13 @@ end
 local function finish(r: Run, code: number)
 	runs[r.terminal:id()] = nil
 	draw(r, true)
-	-- A terminal says a program ended by a signal as a failure; the shell
-	-- knows when it sent one.
-	local signal = if code ~= 0 then r.stopped else nil
+	-- A terminal says a signal ended it, not which; the shell knows which it
+	-- sent. A program that exits as a shell does after one (128 and the
+	-- signal's number) was stopped too; one that caught it and went on to
+	-- exit on its own wasn't.
+	local sent = r.stopped
+	local stopped = r.signaled or code == (if sent == "INT" then 130 else 137)
+	local signal = if sent and stopped then sent else nil
 	local exit = if signal then nil else code
 	run.exited(r.shell, r.block, exit, signal, r.before)
 	-- The terminal plugin may still be giving its view back; close it after.
@@ -450,6 +455,7 @@ greed.on("terminal.exited", function(event)
 	local r = run_of(event.terminal)
 	if r then
 		r.exited = event.code
+		r.signaled = event.signaled
 		pump(r)
 	end
 end)

@@ -21,14 +21,15 @@ fn start(command: &[&str], rows: u16, cols: u16) -> (Terminal, Receiver<Event>) 
     (terminal, received)
 }
 
-/// Waits until the program has ended, returning its exit code.
-fn exited(events: &Receiver<Event>) -> u32 {
+/// Waits until the program has ended, returning its exit code and whether
+/// a signal ended it.
+fn exited(events: &Receiver<Event>) -> (u32, bool) {
     loop {
         match events
             .recv_timeout(Duration::from_secs(10))
             .expect("the program ends")
         {
-            Event::Exited(_, code) => return code,
+            Event::Exited(_, code, signaled) => return (code, signaled),
             Event::Output(_) => {}
         }
     }
@@ -61,7 +62,7 @@ fn output_lands_on_the_screen_with_its_colors() {
         5,
         40,
     );
-    assert_eq!(exited(&events), 0);
+    assert_eq!(exited(&events), (0, false));
     let screen = terminal.screen();
     let row = &screen.rows[0];
     assert_eq!(row.text, "plain red both");
@@ -78,10 +79,12 @@ fn output_lands_on_the_screen_with_its_colors() {
 }
 
 #[test]
-fn the_exit_code_comes_with_the_end() {
+fn the_exit_code_comes_with_the_end_and_says_if_a_signal_ended_it() {
     let (terminal, events) = start(&["sh", "-c", "exit 3"], 5, 40);
-    assert_eq!(exited(&events), 3);
+    assert_eq!(exited(&events), (3, false));
     assert_eq!(terminal.exit_code(), Some(3));
+    let (_terminal, events) = start(&["sh", "-c", "kill -TERM $$"], 5, 40);
+    assert!(exited(&events).1, "ended by a signal");
 }
 
 #[test]

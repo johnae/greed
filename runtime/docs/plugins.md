@@ -1069,7 +1069,7 @@ end)
 | `pane.opened` | A split opened, from whichever plugin made it | `view`, and `from`, the pane beside it |
 | `mouse` | The mouse pressed, released, dragged, moved or scrolled | `kind`, `button` or `dir`, the screen `col` and `row`, the keys held, and what's under it: `view`, `pos` in the buffer, a floating view's `border`, or a `tab` |
 | `terminal.output` | A terminal's program printed something | `terminal`; read it with `terminal:screen()` |
-| `terminal.exited` | A terminal's program ended | `terminal`, `code` |
+| `terminal.exited` | A terminal's program ended | `terminal`, `code`, `signaled` (a signal ended it) |
 | `client.attached` | A client attached to the session, e.g. `greed FILE` | `path` it asked to open, whether it wants a `terminal`, whether it came over `greed ssh` (`remote`) |
 | `client.detached` | A terminal or window went; the session goes on without it | `client` |
 | `client.paste` | Text was pasted from the system clipboard | `text` |

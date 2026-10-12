@@ -42,8 +42,8 @@ pub enum Event {
     /// There's new output. Sent once until the screen or the scrollback
     /// is next read.
     Output(TerminalId),
-    /// The program ended, with its exit code.
-    Exited(TerminalId, u32),
+    /// The program ended, with its exit code, and whether a signal ended it.
+    Exited(TerminalId, u32, bool),
 }
 
 #[derive(Debug, Clone)]
@@ -300,9 +300,11 @@ impl Terminal {
             .name("greed-terminal-out".into())
             .spawn(move || {
                 pump(&pumped, reader, id, &events, &replies);
-                let code = child.wait().map_or(1, |status| status.exit_code());
+                let (code, signaled) = child.wait().map_or((1, false), |status| {
+                    (status.exit_code(), status.signal().is_some())
+                });
                 *lock(&ended) = Some(code);
-                let _ = events.send(Event::Exited(id, code));
+                let _ = events.send(Event::Exited(id, code, signaled));
             })?;
         Ok(Terminal {
             shared,

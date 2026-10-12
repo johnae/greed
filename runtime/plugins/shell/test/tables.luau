@@ -974,3 +974,25 @@ test("a stage taking text reads its words, a first line without numbers as the h
 	assert(made.rows[1].NOTE == "a b", "past the header, in its last column")
 	assert(seen.ctx.block == "b", "it gets what it runs for")
 end)
+
+test("a where condition splits at its first operator, wherever that is in the list", function()
+	local pods = assert(tables.detect(PODS, "kubectl get pods"))
+	local condition = assert((tables.condition(pods, "NAME=a<b")))
+	assert(condition.column == "NAME" and condition.op == "=", condition.op)
+	assert(condition.value == "a<b", condition.value)
+	local at_most = assert((tables.condition(pods, "RESTARTS<=2")))
+	assert(at_most.op == "<=" and at_most.value == "2", at_most.op)
+end)
+
+test("a filter's field values are cut whole characters short", function()
+	local block: any = { output = '{"msg":"' .. string.rep("å", 40) .. '"}\n' }
+	local what: string? = nil
+	for _, word in shell.filtering.words(block) do
+		if word.word == "msg=" then
+			what = word.what
+		end
+	end
+	local said = assert(what)
+	assert(utf8.len(said) ~= nil, "valid UTF-8")
+	assert(string.sub(said, -#"…") == "…", said)
+end)

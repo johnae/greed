@@ -182,6 +182,22 @@ test("ctrl-c interrupts a program in a pseudo terminal", function(t)
 	assert(not block.handed)
 end)
 
+test("a program that catches ctrl-c and exits on its own failed, it wasn't stopped", function(t)
+	local sh = open(t)
+	local block = type_line(
+		t,
+		sh,
+		"sh -c 'trap \"echo caught; exit 1\" INT; echo started; while :; do sleep 0.1; done'"
+	)
+	t:wait_for(function()
+		return string.find(sh.buffer:text(), "\nstarted", 1, true) ~= nil
+	end)
+	t:keys("ctrl-c")
+	finished(t, block)
+	assert(block.status == "failed" and block.code == 1, `{block.status} {block.code}`)
+	assert(block.signal == nil, tostring(block.signal))
+end)
+
 test("only the client that ran a block sizes its terminal", function(t)
 	t:draw(70, 20)
 	local sh = open(t)

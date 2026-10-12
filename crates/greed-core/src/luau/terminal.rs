@@ -83,8 +83,9 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
     let payload = lua.create_table()?;
     let (name, id) = match event {
         Event::Output(TerminalId(id)) => ("terminal.output", id),
-        Event::Exited(TerminalId(id), code) => {
+        Event::Exited(TerminalId(id), code, signaled) => {
             payload.set("code", code)?;
+            payload.set("signaled", signaled)?;
             ("terminal.exited", id)
         }
     };

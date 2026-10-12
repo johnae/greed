@@ -755,6 +755,8 @@ export type TerminalOutput = {
 export type TerminalExited = {
 	terminal: Terminal,
 	code: number,
+	--- Whether a signal ended the program, rather than its own exit.
+	signaled: boolean,
 }
 
 --- A state of a buffer's text in its undo tree, from `buffer:undo_tree()`.

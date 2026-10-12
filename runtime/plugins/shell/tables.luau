@@ -1344,19 +1344,26 @@ export type Condition = { column: string, op: string, value: string }
 
 --- `text` read as a condition on a column of `tbl`, or nil and why not.
 function M.condition(tbl: Table, text: string): (Condition?, string?)
+	-- The first operator in the text; at one place, the longest (`<=`
+	-- before `<`), as OPS lists them.
+	local first: { at: number, op: string }? = nil
 	for _, op in M.OPS do
 		local at = string.find(text, op, 1, true)
-		if at then
-			local name = trim(string.sub(text, 1, at - 1))
-			local column = M.column(tbl, name)
-			if column == nil then
-				return nil, no_column(tbl, name)
-			end
-			local value = unquote(trim(string.sub(text, at + #op)))
-			return { column = column, op = op, value = value }, nil
+		if at and (first == nil or at < first.at) then
+			first = { at = at, op = op }
 		end
 	end
-	return nil, "where COLUMN = VALUE (or !=, ~, !~, <, >, <=, >=)"
+	if first == nil then
+		return nil, "where COLUMN = VALUE (or !=, ~, !~, <, >, <=, >=)"
+	end
+	local at, op = first.at, first.op
+	local name = trim(string.sub(text, 1, at - 1))
+	local column = M.column(tbl, name)
+	if column == nil then
+		return nil, no_column(tbl, name)
+	end
+	local value = unquote(trim(string.sub(text, at + #op)))
+	return { column = column, op = op, value = value }, nil
 end
 
 --- The rows (indexes) of `tbl` that pass `condition`, from `rows` (all by

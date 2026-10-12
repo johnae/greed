@@ -193,10 +193,7 @@ local function sample(seen: { string }, value: any)
 	if #seen >= SAMPLES or type(value) == "table" then
 		return
 	end
-	local text = tostring(value)
-	if #text > SAMPLE_WIDTH then
-		text = string.sub(text, 1, SAMPLE_WIDTH - 1) .. "…"
-	end
+	local text = core.text.clip(tostring(value), SAMPLE_WIDTH)
 	if text ~= "" and not table.find(seen, text) then
 		table.insert(seen, text)
 	end
