@@ -175,9 +175,10 @@ type as they do elsewhere, and the window opens at the size it last had. On
 Linux it needs Wayland or X11 and a Vulkan or GL driver.
 
 On macOS the menu bar holds Greed's menus (File, Edit, View, Pane, Help),
-each item a command. Elsewhere there's no menu bar, and the command
-palette (`space ?`, or `ctrl-P` in the vscode style) lists every command. Plugins
-and your config add items:
+each item a command, after the Greed menu with Hide and Quit Greed (⌘Q).
+Elsewhere there's no menu bar, and the command palette (`space ?`, or
+`ctrl-P` in the vscode style) lists every command. Plugins and your
+config add items:
 `require("@core").menus.add("Tools", "Run tests", "test-run")`.
 
 What you copy in Greed goes on the system clipboard, and what you copied in
@@ -646,7 +647,33 @@ your plugins and config, as a picture: for a bug report, or to show a
 setup. Steps before it go in order: `--keys "space e"`, `--type TEXT`,
 `--run COMMAND`, `--wait SECONDS` and `--wait-for TEXT` (until the screen
 shows it), then `--size 1280x800` and `--out PATH` (`greed-shot.png`). It
-needs no window, but a GPU or software Vulkan to draw with.
+needs no window, but a GPU or software Vulkan to draw with. `--run` takes
+a command's name alone; for one with arguments, type it at `:` as you
+would: `--keys ":" --type "board ops" --keys enter`.
+
+`greed --record SCRIPT [FILE]` records the editor the same way, every
+frame a picture, for a video or a set of screenshots. The script has a
+step a line, and `#` starts a comment:
+
+```text
+size 1280 800          the pictures' size, before any step
+scale 2                pixels per point, for sharper pictures
+fps 30                 frames a second
+typing 0.04            seconds between the keys `type` presses
+output media/shell     where the frames and screenshots go (beside the script)
+hide                   stop keeping frames, while setting things up
+show                   keep them again
+keys space f           press keys, named as in keymaps
+type kubectl get pods  type text, a key at a time
+run shell              run a command
+wait 1.5               let seconds pass
+wait-for Running       wait until the screen shows the text (10 seconds at most)
+shot pods              save the screen as pods.png
+```
+
+The frames go in `frames` under the output folder, numbered, to make a
+video of with ffmpeg: `ffmpeg -framerate 30 -i frames/%05d.png -pix_fmt
+yuv420p demo.mp4`.
 
 In the file tree, `enter` or `l` opens a file or folds a folder, `h` folds
 the folder you're in, `r` reads the disk again and `q` closes it. `a`
