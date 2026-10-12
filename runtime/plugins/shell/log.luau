@@ -192,9 +192,12 @@ function M.prompt_text(shell: Shell): string
 end
 
 -- Follows the prompt from `pos`; typing at its start goes into it.
+-- Everything before it, the blocks and the strip, is read-only: only the
+-- shell changes it, and typing there goes to the prompt (`core.writable`).
 local function track_prompt(shell: Shell, pos: number)
 	shell.prompt:forget()
 	shell.prompt = shell.buffer:track(pos, { gravity = "left" })
+	shell.buffer:set_readonly_before(pos)
 end
 
 --- Where the blocks end: where the strip starts, or else the prompt.

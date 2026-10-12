@@ -28,6 +28,18 @@ function M.cursor(view: greed.View): boolean
 	return false
 end
 
+--- Where deleting back from `head` to `from` in `buffer` can start: at
+--- most back to the read-only start, so backspace or ctrl-w at the start
+--- of what you write deletes nothing. A `head` inside the read-only part
+--- keeps `from`, and the edit is refused.
+function M.back_to(buffer: greed.Buffer, from: number, head: number): number
+	local before = buffer:readonly_before()
+	if before and head >= before then
+		return math.max(from, before)
+	end
+	return from
+end
+
 greed.on("mode.changed", function()
 	local view = greed.view()
 	if view:valid() and style.is_typing() then

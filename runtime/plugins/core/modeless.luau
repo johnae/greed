@@ -59,8 +59,12 @@ local function erase(ctx: greed.Context, forward: boolean)
 				e:delete(span(range))
 			elseif forward and range.head < ctx.buffer:len() then
 				e:delete(range.head, text.after(ctx.buffer, range.head))
-			elseif not forward and range.head > 0 then
-				e:delete(text.before(ctx.buffer, range.head), range.head)
+			elseif not forward then
+				local from =
+					writable.back_to(ctx.buffer, text.before(ctx.buffer, range.head), range.head)
+				if from < range.head then
+					e:delete(from, range.head)
+				end
 			end
 		end
 	end)

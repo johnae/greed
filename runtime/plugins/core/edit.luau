@@ -111,20 +111,6 @@ greed.command({
 	end,
 })
 
-greed.command({
-	name = "delete-back",
-	doc = "Delete the character before each cursor",
-	run = function(ctx)
-		ctx.buffer:edit(function(e)
-			for _, range in ctx.view:selection().ranges do
-				if range.head > 0 then
-					e:delete(text.before(ctx.buffer, range.head), range.head)
-				end
-			end
-		end)
-	end,
-})
-
 -- Adds command `name`, which deletes from each cursor to where
 -- `target(buffer, head)` says, back or forward, for typing keys like ctrl-w.
 local function delete_to_command(
@@ -138,7 +124,8 @@ local function delete_to_command(
 		run = function(ctx)
 			ctx.buffer:edit(function(e)
 				for _, range in ctx.view:selection().ranges do
-					local at = target(ctx.buffer, range.head)
+					local at =
+						writable.back_to(ctx.buffer, target(ctx.buffer, range.head), range.head)
 					if at ~= range.head then
 						e:delete(math.min(at, range.head), math.max(at, range.head))
 					end
@@ -148,6 +135,7 @@ local function delete_to_command(
 	})
 end
 
+delete_to_command("delete-back", "Delete the character before each cursor", text.before)
 delete_to_command("delete-forward", "Delete the character after each cursor", text.after)
 delete_to_command(
 	"delete-word-back",

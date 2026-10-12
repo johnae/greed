@@ -834,10 +834,10 @@ test("deleting and pasting above the box leave the transcript as it was", functi
 	assert(history() == before, history())
 	refused(t, "x d")
 	assert(history() == before, history())
-	-- Backspace at the start of the box doesn't join it to its top.
+	-- Backspace at the start of the box does nothing: it doesn't join it
+	-- to its top.
 	view:set_cursor(view:buffer():len())
-	refused(t, "i backspace")
-	t:keys("esc")
+	t:keys("i backspace esc")
 	assert(history() == before, history())
 	-- A paste goes in the box.
 	greed.clipboard.set("pasted")

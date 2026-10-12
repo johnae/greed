@@ -118,6 +118,12 @@ A prompt of more than `shell-confirm-lines` (5) lines, as pasting a
 transcript or a file can leave there, asks `y/n` before it runs as one
 command.
 
+Everything above the prompt, the commands that ran and what they printed,
+is read-only: you can select and copy it, but deleting or changing it is
+refused. Typing or pasting there, in any style and with or without blocks
+mode, goes to the end of the prompt instead, and backspace at the prompt's
+start deletes nothing.
+
 Undo at the prompt takes back what you typed since the last command ran,
 while output keeps streaming in above it; it never reaches back into a
 command that ran.
