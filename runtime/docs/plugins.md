@@ -1071,6 +1071,12 @@ greed.tab.set_layout({
   end))
   ```
 
+  A keyed part is laid out again for a new width too, unless
+  `ui.keyed(key, version, build, { any_width = true })` says its lines
+  don't depend on it (the view wraps them, as it does a message's text).
+  While a view goes on resizing, as when its edge is dragged, it's drawn
+  at once, then at most every 100 ms, then for where it ends.
+
   With `ui.mount(..., { input = true })` the view is drawn at the top of
   the buffer and what's written under it is yours, like a chat's box:
   `view:input()` reads it, and the view is read-only above it. A span's

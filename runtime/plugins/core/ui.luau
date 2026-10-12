@@ -48,12 +48,14 @@ export type Span = {
 export type Line = { Span }
 
 --- A part of an interface: its lines, laid out for a width in cells. A
---- column has its `parts`; a keyed part its `key` and `version`.
+--- column has its `parts`; a keyed part its `key`, `version` and whether
+--- it fits any width.
 export type Node = {
 	lay: (cells: number) -> { Line },
 	parts: { Node }?,
 	key: string?,
 	version: any?,
+	any_width: boolean?,
 }
 
 --- A mounted view: its buffer, its state, and what draws it.
@@ -175,11 +177,14 @@ end
 --- changes; until then a view keeps its lines, its marks and its place in
 --- the buffer as they are. A history of messages, each keyed by its id and
 --- versioned by its length, draws only the one streaming in. Keys are the
---- view's own, one per part; a part is kept among a column's parts.
-function M.keyed(key: string, version: any, build: () -> Node): Node
+--- view's own, one per part; a part is kept among a column's parts. With
+--- `any_width`, its lines don't depend on the width (the view wraps them,
+--- like a message's text), so a resize keeps them too.
+function M.keyed(key: string, version: any, build: () -> Node, opts: { any_width: boolean? }?): Node
 	return {
 		key = key,
 		version = version,
+		any_width = opts and opts.any_width,
 		lay = function(cells: number): { Line }
 			return build().lay(cells)
 		end,
@@ -677,7 +682,10 @@ local function flatten(
 		if key ~= nil then
 			flush()
 			local piece = cache[key]
-			if piece == nil or piece.version ~= part.version or piece.cells ~= cells then
+			local stale = piece == nil
+				or piece.version ~= part.version
+				or (piece.cells ~= cells and not part.any_width)
+			if stale then
 				piece = piece_of(part.lay(cells))
 				piece.key, piece.version, piece.cells = key, part.version, cells
 			end
@@ -803,6 +811,10 @@ type Mounted = {
 	input: boolean,
 	--- Whether its first line is an input instead, drawn below it.
 	above: boolean,
+	--- Whether a burst of resizes is being drawn, and whether another
+	--- came since it was drawn last.
+	resizing: boolean?,
+	resized: boolean?,
 }
 
 -- Where what `placed` draws ends, from where it starts.
@@ -1020,6 +1032,9 @@ end
 
 -- How long `View:soon` waits to draw, gathering what's set meanwhile.
 local SOON_MS = 16
+
+-- How often a view that goes on resizing is drawn again.
+local RESIZE_MS = 100
 
 --- Draws `render(state)` into `buffer` for the width of its views, and
 --- again whenever the state is set or a view of it is resized. Gives the
@@ -1251,7 +1266,7 @@ function M.mount(
 		ns = opts and opts.ns or "ui",
 		input = input,
 		above = above,
-	}
+	} :: Mounted
 	mounted[buffer:id()] = entry
 	if not (opts and opts.keys == false) then
 		buffer:set_keys({ tab = "ui-next", ["shift-tab"] = "ui-prev" })
@@ -1349,11 +1364,29 @@ greed.command({
 	end,
 })
 
+-- A view resized is drawn for its new width at once; while it goes on
+-- resizing, as when its edge is dragged, it's drawn again at most every
+-- RESIZE_MS, and once more for where it ends.
 greed.on("view.resized", function(event: greed.ViewResized)
 	local entry = mounted[event.view:buffer():id()]
-	if entry then
-		entry.view:redraw()
+	if entry == nil then
+		return
 	end
+	if entry.resizing then
+		entry.resized = true
+		return
+	end
+	entry.resizing = true
+	entry.view:redraw()
+	greed.spawn(function()
+		greed.sleep(RESIZE_MS)
+		while entry.resized do
+			entry.resized = false
+			entry.view:redraw()
+			greed.sleep(RESIZE_MS)
+		end
+		entry.resizing = false
+	end)
 end)
 
 greed.on("buffer.closed", function(event)

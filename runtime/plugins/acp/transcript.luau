@@ -405,13 +405,15 @@ local function history(s: Session): { core.UiNode }
 		end
 		local before: ("user" | "agent")? = speaker
 		speaker = if e.kind == "user" then "user" elseif e.kind == "note" then nil else "agent"
+		-- Everything wraps in the view but thoughts, cut to its width.
+		local wraps = e.kind ~= "thought"
 		table.insert(
 			parts,
 			ui.keyed(`entry:{index}`, version(s, index, e, before), function()
 				return part(function(cells: number)
 					return entry_lines(s, index, e, before, cells)
 				end)
-			end)
+			end, { any_width = wraps })
 		)
 	end
 	table.insert(
@@ -1158,15 +1160,6 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local s = shown[event.buffer:id()]
 	if s then
 		live(event.buffer, s, moment(s))
-	end
-end)
-
--- The box fits the view it's in.
-greed.on("view.resized", function(event: greed.ViewResized)
-	local buffer = event.view:buffer()
-	local s = shown[buffer:id()]
-	if s then
-		M.render(buffer, s)
 	end
 end)
 

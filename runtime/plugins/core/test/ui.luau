@@ -541,3 +541,41 @@ test("a list marks its current row, and opens a row when pressed", function(t)
 	t:keys("enter")
 	assert(opened[1] == "one", opened[1])
 end)
+
+test("a part that fits any width keeps its lines when the view resizes", function(t)
+	local buffer = shown(t)
+	local laid = { wraps = 0, cut = 0 }
+	ui.mount(buffer, function()
+		return ui.column({
+			ui.keyed("said", 1, function()
+				laid.wraps += 1
+				return ui.line({ ui.span("words the view wraps") })
+			end, { any_width = true }),
+			ui.keyed("tool", 1, function()
+				laid.cut += 1
+				return ui.line({ ui.span("cut to the width") })
+			end),
+		})
+	end)
+	assert(laid.wraps == 1 and laid.cut == 1)
+	t:draw(60, 20)
+	t:wait(250)
+	assert(laid.wraps == 1, `laid out again: {laid.wraps}`)
+	assert(laid.cut >= 2, "the other one is laid out for the new width")
+end)
+
+test("a burst of resizes draws at once, then once more where it ends", function(t)
+	local buffer = shown(t)
+	local draws = 0
+	ui.mount(buffer, function()
+		draws += 1
+		return ui.line({ ui.span("x") })
+	end)
+	draws = 0
+	for cols = 60, 79 do
+		t:draw(cols, 20)
+	end
+	assert(draws == 1, `drawn {draws} times at once`)
+	t:wait(350)
+	assert(draws == 2, `then once for where it ended, drawn {draws} times`)
+end)
