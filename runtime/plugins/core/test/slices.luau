@@ -2,12 +2,13 @@ local test = require("@greed/test")
 local greed = require("@greed")
 
 -- Keeps the editor's thread busy for `ms`, as heavy plugin code would. On
--- a busy machine the thread gets less of that time to work in, and only
--- work counts toward a slice, so it does a set amount of work too.
+-- a busy machine the thread gets less of that time to work in, and the
+-- clock counts every thread's work, while only this one's counts toward a
+-- slice: so it does about that much work itself too, whatever the clock.
 local function busy(ms: number)
 	local until_ = os.clock() + ms / 1000
 	local spins = 0
-	while os.clock() < until_ or spins < ms * 2000 do
+	while os.clock() < until_ or spins < ms * 100000 do
 		for _ = 1, 100 do
 			spins += 1
 		end
