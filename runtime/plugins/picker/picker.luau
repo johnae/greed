@@ -2,7 +2,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
-local menu = core.menu
+local ui = core.ui
 
 export type Item = {
 	label: string,
@@ -66,6 +66,8 @@ type Open = {
 	client: number,
 	buffer: greed.Buffer,
 	view: greed.View,
+	-- What draws the list under the query.
+	drawn: core.UiView,
 	items: { Item },
 	labels: { string },
 	query: string?,
@@ -146,15 +148,13 @@ local function query(o: Open): string
 	return o.buffer:slice(0, o.buffer:line_end(0))
 end
 
--- Rewrites the lines below the query to show the matches, keeping the
--- cursor where it is in the query.
-local function render(o: Open)
-	local lines = {}
-	local marks: { greed.Mark } = {}
-	local from = o.buffer:line_end(0) + 1
+-- The matches, a row each under the query, what's typed picked out in
+-- each and the current one marked.
+local function draw(o: Open): core.UiNode
 	-- A label too long for the float is cut with an ellipsis, so every item
 	-- keeps one row.
 	local _, cols = o.view:size()
+	local rows: { core.UiNode } = {}
 	for i, index in o.matches do
 		if i > LIMIT then
 			break
@@ -162,7 +162,6 @@ local function render(o: Open)
 		local label = o.labels[index]
 		local shown = if cols then core.text.clip(label, math.max(cols - 2, 1)) else label
 		local kept = if shown == label then #label else #shown - #"…"
-		local line = " " .. shown
 		local matched: { number } = if o.source
 			then {}
 			else greed.fuzzy_positions(
@@ -176,24 +175,31 @@ local function render(o: Open)
 				table.insert(visible, pos)
 			end
 		end
-		menu.mark_row(marks, from, line, i == o.current, visible, 1)
-		table.insert(lines, line)
-		from += #line + 1
+		local spans: { core.UiSpan } = {
+			{ text = " ", line = if i == o.current then "ui.menu.selected" else nil },
+		}
+		for _, span in ui.matched(shown, visible) do
+			table.insert(spans, span)
+		end
+		table.insert(rows, ui.line(spans))
 	end
+	return ui.column(rows)
+end
+
+-- Draws the matches under the query, keeping the cursor where it is in
+-- the query.
+local function render(o: Open)
+	o.drawn:redraw()
 	-- Typing that matches nothing says so, rather than leaving the list blank.
+	local hint: { greed.Mark } = {}
 	if #o.matches == 0 and (o.query or "") ~= "" then
 		local at = o.buffer:line_end(0)
 		table.insert(
-			marks,
+			hint,
 			{ from = at, to = at, text = "  nothing matches", eol = true, style = "comment" }
 		)
 	end
-	local selection = o.view:selection()
-	o.buffer:edit(function(e)
-		e:replace(o.buffer:line_end(0), o.buffer:len(), "\n" .. table.concat(lines, "\n"))
-		e:select(selection)
-	end)
-	o.buffer:decorate("picker", marks)
+	o.buffer:decorate("picker-hint", hint)
 	update_preview(o)
 	local index = o.matches[o.current]
 	local item = if index then o.items[index] else nil
@@ -589,6 +595,9 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		client = client,
 		buffer = float.buffer,
 		view = float.view,
+		drawn = ui.mount(float.buffer, function()
+			return draw(o)
+		end, nil, { ns = "picker", keys = false, input = true, above = true, draw = false }),
 		float = float,
 		items = items,
 		labels = labels,
