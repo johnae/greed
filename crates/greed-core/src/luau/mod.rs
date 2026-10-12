@@ -126,8 +126,11 @@ pub(crate) struct State {
     pub connections: HashMap<u64, crate::control::Notifier>,
     /// Where requests from other transports go, when there is a session.
     pub request_sender: Option<crossbeam_channel::Sender<crate::control::Request>>,
-    /// Claude Code's IDE connection, once a plugin starts it.
-    pub ide: Option<crate::ide::Ide>,
+    /// Claude Code's IDE connection, once a plugin starts it, and that
+    /// plugin.
+    pub ide: Option<(PluginId, crate::ide::Ide)>,
+    /// The plugin that set the menus last.
+    pub menus_owner: Option<PluginId>,
     /// The name of the session this editor is, when it is one.
     pub session_name: Option<String>,
     /// Whether the attached client, or the last one, came over `greed ssh`;
@@ -449,6 +452,7 @@ impl Host {
             connections: HashMap::new(),
             request_sender: None,
             ide: None,
+            menus_owner: None,
             session_name: None,
             remote: None,
             attached: true,
@@ -1524,6 +1528,13 @@ fn remove_owned_by(state: &mut State, name: &str) -> Vec<crate::ViewId> {
     state.terminals.remove_owned_by(name);
     state.children.remove_owned_by(name);
     state.watches.remove_owned_by(name);
+    state.http.remove_owned_by(name);
+    // Dropping the connection removes its lock file.
+    state.ide.take_if(|(owner, _)| &**owner == name);
+    if state.menus_owner.as_deref() == Some(name) {
+        state.menus_owner = None;
+        state.editor.set_menus(Vec::new());
+    }
     let closed = state
         .owned
         .remove_owned_by(name, &mut state.editor, &mut state.lsp);

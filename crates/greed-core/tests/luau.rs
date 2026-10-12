@@ -2421,3 +2421,33 @@ fn edits_kept_out_of_undo_are_skipped_by_it() {
     assert_eq!(text(&h), "out\n$ ");
     assert!(!h.with_editor_mut(|ed| ed.undo(view)).unwrap());
 }
+
+#[test]
+fn a_plugins_menus_and_claude_code_connection_go_with_it() {
+    let dir = std::env::temp_dir().join(format!("greed-unload-ide-{}", std::process::id()));
+    let h = host("");
+    let (sender, _requests) = crossbeam_channel::unbounded();
+    h.set_request_sender(sender);
+    h.load_str(
+        "connects",
+        &format!(
+            "local greed = require('@greed')
+             greed.set_menus({{ {{ title = 'File', items = {{ {{ label = 'Save', command = 'write' }} }} }} }})
+             greed.control.serve_ide({{ '/project' }}, {:?})",
+            dir.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let locks = || std::fs::read_dir(&dir).map_or(0, Iterator::count);
+    assert_eq!(locks(), 1);
+    assert_eq!(h.with_editor(|ed| ed.menus().len()), 1);
+
+    h.unload("connects").unwrap();
+    assert_eq!(
+        locks(),
+        0,
+        "its lock file went, so Claude Code stops finding it"
+    );
+    assert!(h.with_editor(|ed| ed.menus().is_empty()));
+    let _ = std::fs::remove_dir_all(&dir);
+}

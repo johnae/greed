@@ -593,7 +593,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         })?,
     )?;
 
-    greed.set("set_menus", menus_function(lua)?)?;
+    greed.set("set_menus", menus_function(lua, owner)?)?;
 
     workspace_functions(lua, &greed, owner)?;
     submodules(lua, &greed, owner)?;
@@ -601,8 +601,9 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 }
 
 /// `greed.set_menus(menus)`: the menus a window shows as its menu bar.
-fn menus_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|lua, list: Vec<Table>| {
+fn menus_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let owner = owner.clone();
+    lua.create_function(move |lua, list: Vec<Table>| {
         let menus = list
             .iter()
             .map(|menu| {
@@ -622,7 +623,9 @@ fn menus_function(lua: &Lua) -> LuaResult<Function> {
                 })
             })
             .collect::<LuaResult<_>>()?;
-        state_mut(lua).editor.set_menus(menus);
+        let mut state = state_mut(lua);
+        state.editor.set_menus(menus);
+        state.menus_owner = Some(owner.clone());
         Ok(())
     })
 }
@@ -643,7 +646,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
         "hostname",
         lua.create_function(|_, ()| Ok(gethostname::gethostname().into_string().ok()))?,
     )?;
-    greed.set("control", super::requests::module(lua)?)?;
+    greed.set("control", super::requests::module(lua, owner)?)?;
     greed.set("json", super::json::module(lua)?)?;
     greed.set("project", super::projects::module(lua)?)?;
     greed.set("tab", super::tabs::module(lua, owner)?)?;

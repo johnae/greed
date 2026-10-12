@@ -61,6 +61,7 @@ pub(super) enum Chunk {
 /// A stream being read: what arrived and wasn't read yet, and the command
 /// waiting for more.
 struct Stream {
+    owner: PluginId,
     queue: VecDeque<Chunk>,
     waiter: Option<u64>,
     cancel: Arc<AtomicBool>,
@@ -71,6 +72,19 @@ struct Stream {
 pub(crate) struct Streams {
     next: u64,
     open: HashMap<u64, Stream>,
+}
+
+impl Streams {
+    /// Closes `owner`'s streams, stopping their reads.
+    pub(crate) fn remove_owned_by(&mut self, owner: &str) {
+        self.open.retain(|_, stream| {
+            let theirs = &*stream.owner == owner;
+            if theirs {
+                stream.cancel.store(true, Ordering::Relaxed);
+            }
+            !theirs
+        });
+    }
 }
 
 /// The host a URL names, for the capability check; only http and https.
@@ -396,6 +410,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
             state.http.open.insert(
                 id,
                 Stream {
+                    owner: o.clone(),
                     queue: VecDeque::new(),
                     waiter: None,
                     cancel: cancel.clone(),
@@ -428,7 +443,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Url, host_of, redirected};
+    use super::{Arc, AtomicBool, Ordering, Stream, Streams, Url, VecDeque, host_of, redirected};
 
     fn host(url: &str) -> Option<String> {
         Url::parse(url).ok().as_ref().and_then(host_of)
@@ -476,5 +491,26 @@ mod tests {
             redirected("http://localhost/a", "https://localhost/b").as_deref(),
             Some("https://localhost/b")
         );
+    }
+
+    #[test]
+    fn a_plugins_streams_close_with_it() {
+        let mut streams = Streams::default();
+        let mut open = |id: u64, owner: &str| {
+            let cancel = Arc::new(AtomicBool::new(false));
+            let stream = Stream {
+                owner: owner.into(),
+                queue: VecDeque::new(),
+                waiter: None,
+                cancel: cancel.clone(),
+            };
+            streams.open.insert(id, stream);
+            cancel
+        };
+        let (gone, kept) = (open(1, "gone"), open(2, "kept"));
+        streams.remove_owned_by("gone");
+        assert!(gone.load(Ordering::Relaxed), "its read stops");
+        assert!(!kept.load(Ordering::Relaxed));
+        assert_eq!(streams.open.keys().collect::<Vec<_>>(), [&2]);
     }
 }

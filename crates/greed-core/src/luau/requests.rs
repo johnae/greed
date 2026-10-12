@@ -12,6 +12,7 @@ use super::{api, lsp, state, state_mut};
 
 use crate::control::Request;
 use crate::ide;
+use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -47,7 +48,8 @@ pub(super) fn handle(lua: &Lua, request: Request) -> LuaResult<()> {
     api::emit(lua, "control.request", &payload)
 }
 
-pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
+/// `greed.control` for `owner`.
+pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let control = lua.create_table()?;
     control.set(
         "reply",
@@ -65,9 +67,10 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             Ok(())
         })?,
     )?;
+    let o = owner.clone();
     control.set(
         "serve_ide",
-        lua.create_function(|lua, (folders, dir): (Vec<String>, Option<String>)| {
+        lua.create_function(move |lua, (folders, dir): (Vec<String>, Option<String>)| {
             let sender = state(lua).request_sender.clone().ok_or_else(|| {
                 mlua::Error::runtime("Claude Code can only connect to an editor with a session")
             })?;
@@ -81,7 +84,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             state_mut(lua).ide = None;
             let ide = ide::listen(&dir, &folders, sender).map_err(mlua::Error::external)?;
             let port = ide.port;
-            state_mut(lua).ide = Some(ide);
+            state_mut(lua).ide = Some((o.clone(), ide));
             Ok(port)
         })?,
     )?;
@@ -104,7 +107,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         "notify",
         lua.create_function(|lua, (method, params): (String, Value)| {
             let params: serde_json::Value = lua.from_value(params)?;
-            if let Some(ide) = &state(lua).ide {
+            if let Some((_, ide)) = &state(lua).ide {
                 ide.notify(&method, &params);
             }
             Ok(())
