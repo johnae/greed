@@ -299,13 +299,43 @@ the same here.
 `greed --shell` (or `greed ssh HOST --shell`) shows the project's greed
 shell instead, opening one if there's none (see [The shell](shell.md)).
 
-Your config comes along: `greed ssh` copies `~/.config/greed` (your
-`init.luau` and plugins) to the other machine first, and a session it
-starts there runs that copy, so the editor works the way you set it up.
-The other machine's own `~/.config/greed` runs after it and wins, and
-`greed ssh` never touches it. Changes you make there, or an agent makes, or
-plugins an agent installs, stay on that machine across connections. A
-session that was already running keeps the config it started with.
+### What runs where
+
+The session runs on the other machine, and so does everything in it:
+your config and plugins (all the Luau), files and saving, shells and
+terminals, language servers, search and agents, with that machine's
+programs, folders and variables. The Greed in front of you only draws the
+screen and sends your keys, mouse and clipboard, so it needs nothing of
+the project.
+
+### Your config, both ways
+
+Each `greed ssh` copies your `~/.config/greed` (`init.luau` and your
+plugins) to the other machine first, into
+`~/.cache/greed/config-from-<this machine>`, replacing the copy from last
+time, and a session it starts runs that copy. So the editor there works
+the way you set it up here.
+
+- **Changed your config here?** Connect again and it's copied over. A
+  session that was already running keeps the config it loaded; run
+  `:config-reload` in it to run the fresh copy.
+- **Something different on that machine?** Its own `~/.config/greed` runs
+  after the copy and wins, and `greed ssh` never touches it. Put what's
+  for that machine alone there: a setting in its `init.luau`, or a plugin
+  with the same name as one of yours, which replaces yours there.
+
+  ```luau
+  -- ~/.config/greed/init.luau on build-box: only there.
+  local greed = require("@greed")
+  greed.option.set("line-numbers", "relative")
+  ```
+
+- **Changed something over there?** It stays there, across connections:
+  edits to that machine's own config, and plugins you or an agent made or
+  installed there. Nothing is copied back by itself. A plugin comes home
+  with `greed bring` (below); a setting you want everywhere, copy into
+  your own `init.luau` here.
+
 `GREED_SSH_CONFIG=0` leaves your config at home.
 
 To keep a plugin you made over there, bring it home. `greed bring HOST`
@@ -321,11 +351,21 @@ build-box has these; greed bring build-box PLUGIN copies one here:
 $ greed bring build-box todo-sync
 ```
 
+### What the other machine needs
+
 Your login shell on the other machine can be anything (bash, fish,
 nushell): `greed ssh` only asks it to start `sh`, and needs a POSIX `sh`
 and `tar` there. Where commands over ssh come without `XDG_RUNTIME_DIR`,
 a session it starts uses `/run/user/<uid>` like a login would, and so do
 the programs in its terminals.
+
+Your ssh agent reaches the other machine the way your `~/.ssh/config`
+says: with `ForwardAgent yes` for the host, the session and its shells
+can use your keys. A session outlives the connection that started it,
+though, and it and every shell in it keep the agent socket of that first
+connection: after reconnecting, `git push` there can't reach your keys
+until the session starts again. Forwarding that follows you across
+reconnects is planned.
 
 Greed doesn't have to be installed on the other machine. The first time
 you connect with a version, `greed ssh` puts the same version there, in
