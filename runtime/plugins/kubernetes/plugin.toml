@@ -1,5 +1,5 @@
 name = "kubernetes"
-requires = ["core", "shell", "picker"]
+requires = ["core", "shell", "picker", "terminal"]
 # Reads kubectl's config files for the context and namespace in use, runs
 # kubectl to switch them, and writes a shell's own kubeconfig when it
 # switches alone.

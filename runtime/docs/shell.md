@@ -886,6 +886,14 @@ A kind can put the columns its rows are known by first: `docker ps` shows
 `CONTAINER ID` at its edge rather than the names. The block's output, as
 an agent reads it, stays what docker printed.
 
+Rows a table stage kept are still what the command listed: after
+`kubectl get pods -A | where name ~ api`, each row is still a pod.
+
+A pod offers `describe`, `logs`, `follow logs`, `events`, `yaml`, `json`,
+`delete` and `shell`, which opens a shell in it (bash if the image has it,
+else `sh`) in a floating terminal, asking which container when it has
+several; `ctrl-d` or `exit` ends it, and `esc esc` stops typing into it.
+
 A file offers `open`, `float`, `split`, `rename`, `delete`, `diff` (what
 changed since the last commit), `reveal in tree` and `copy-path`; a folder
 `cd`, `new shell here`, `grep here`, `rename`, `delete` and `reveal in

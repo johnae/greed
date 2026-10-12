@@ -7,6 +7,8 @@
 local greed = require("@greed")
 local core = require("@core")
 local shell = require("@shell")
+local picker = require("@picker")
+local terminal = require("@terminal")
 local config = require("./config")
 local json = require("./json")
 
@@ -581,9 +583,62 @@ end, { doc = "The end of what it logged" })
 shell.action_command("pod", "follow logs", function(value: any): string
 	return kubectl(`logs -f {parse.quote(value.name)} --tail 50`, value)
 end, { doc = "What it logs, as it logs it", follow = true })
-shell.action_command("pod", "shell", function(value: any): string
-	return "!" .. kubectl(`exec -it {parse.quote(value.name)}`, value) .. " -- sh"
-end, { doc = "A shell in it, in a terminal" })
+-- What a pod's shell runs in it: bash where the image has it, else sh.
+local POD_SHELL = { "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh" }
+
+-- Opens a shell in container `container` (kubectl's default if nil) of pod
+-- `value`, in a floating terminal, with the environment of the shell its
+-- row came from (its kubeconfig and PATH).
+local function pod_shell(value: any, container: string?)
+	local argv: { string } = { "kubectl", "exec", "-it", value.name }
+	local flags = where_words(value)
+	table.move(flags, 1, #flags, #argv + 1, argv)
+	if container then
+		table.insert(argv, "-c")
+		table.insert(argv, container)
+	end
+	table.insert(argv, "--")
+	table.move(POD_SHELL, 1, #POD_SHELL, #argv + 1, argv)
+	local name: string = value.name
+	local float: greed.FloatSpec = { title = if container then `{name} › {container}` else name }
+	local ok, err = pcall(function()
+		return terminal.open(argv, { float = float, env = shell.env_of(value), keep = true })
+	end)
+	if not ok then
+		greed.echo(`can't open a shell in {value.name}: {err}`)
+	end
+end
+
+core.actions.action({
+	kind = "pod",
+	name = "shell",
+	doc = "A shell in it (bash if it has one) in a floating terminal; with several containers, pick one",
+	run = function(target)
+		local value = target.value
+		local pod = ask_json(value, { "get", "pod", value.name, "-o", "json" }, shell.env_of(value))
+		local containers: { string } = {}
+		local spec = if type(pod) == "table" then pod.spec else nil
+		local listed = if type(spec) == "table" then spec.containers else nil
+		if type(listed) == "table" then
+			for _, c in listed do
+				if type(c) == "table" and type(c.name) == "string" then
+					table.insert(containers, c.name)
+				end
+			end
+		end
+		if #containers <= 1 then
+			pod_shell(value, containers[1])
+			return
+		end
+		local items: { picker.Item } = {}
+		for _, name in containers do
+			table.insert(items, { label = name, value = name })
+		end
+		picker.pick(`Container in {value.name}`, items, function(item)
+			pod_shell(value, item.value)
+		end)
+	end,
+})
 
 shell.action_command("deployment", "restart", function(value: any): string
 	return kubectl(`rollout restart deployment {parse.quote(value.name)}`, value)

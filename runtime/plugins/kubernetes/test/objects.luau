@@ -147,6 +147,32 @@ test("kubectl get's rows are pods, in the context and namespace it ran against",
 	assert(string.find(described, "kubectl describe pods api-7d9f8b6c5-2xkqz", 1, true), described)
 end)
 
+test("a pod's shell opens in a floating terminal, bash if it has one", function(t)
+	local sh = fake(t, "prod-eu")
+	local pods = ran(t, sh, "kubectl get pods")
+	on(sh, pods, "worker-5c6b7d8f9-abcde")
+	local pod = assert(thing_here("pod"))
+	for _, action in core.actions.for_kind("pod") do
+		if action.name == "shell" then
+			action.run(pod)
+		end
+	end
+	-- The fake kubectl says what it was asked, and the terminal stays.
+	local wanted = "kubectl exec -it worker-5c6b7d8f9-abcde --context prod-eu -n payments -- sh -c"
+	local float: greed.View? = nil
+	t:wait_for(function()
+		for _, view in greed.floats() do
+			if string.find(view:buffer():text(), wanted, 1, true) then
+				float = view
+				return true
+			end
+		end
+		return false
+	end)
+	local shown = assert(float):buffer():text()
+	assert(string.find(shown, "exec bash || exec sh", 1, true), shown)
+end)
+
 test("an action that destroys asks first, and says when it's production", function(t)
 	local sh = fake(t, "prod-eu")
 	local pods = ran(t, sh, "kubectl get pods")

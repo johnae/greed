@@ -570,6 +570,10 @@ export type OpenOptions = {
 	--- The folder to start in, instead of the focused terminal's or the
 	--- project's.
 	cwd: string?,
+	--- Environment variables for its program on top of every terminal's,
+	--- like the shell a command came from has (`KUBECONFIG`, `PATH`);
+	--- `false` leaves one out.
+	env: { [string]: string | false }?,
 }
 
 --- Environment variables every new terminal gets, on top of the editor's;
@@ -676,6 +680,11 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 	local env: { [string]: string | false } = {}
 	for name, value in M.env do
 		env[name] = value
+	end
+	if opts.env then
+		for name, value in opts.env do
+			env[name] = value :: string | false
+		end
 	end
 	local session = greed.session.current()
 	if session then
