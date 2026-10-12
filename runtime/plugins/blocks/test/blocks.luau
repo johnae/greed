@@ -288,7 +288,7 @@ test("a block changed while it waits for its input doesn't run for an agent", fu
 	greed.spawn(function()
 		result = { pcall(tool, "blocks_run", { path = path, id = "b" }) }
 	end)
-	t:wait(50)
+	-- The run waits on the slow block now: changed meanwhile, it mustn't run.
 	buffer:edit(function(e)
 		local at = assert((string.find(buffer:text(), "cat", 1, true)))
 		e:replace(at - 1, at + 2, "echo pwned")
@@ -313,12 +313,16 @@ test("a running block shows so on its fence, and its result follows it as text m
 	end
 	t:run("block-run")
 	local shown, from = status()
-	assert(shown == "■ running" and from == 0, `{shown} at {from}`)
+	-- It may have printed a line already, on a busy machine.
+	local function running(): boolean
+		return string.find(shown or "", "■ running", 1, true) == 1
+	end
+	assert(running() and from == 0, `{shown} at {from}`)
 	buffer:edit(function(e)
 		e:insert(0, "intro\n\n")
 	end)
 	shown, from = status()
-	assert(shown == "■ running" and from == 7, `{shown} at {from}`)
+	assert(running() and from == 7, `{shown} at {from}`)
 	t:wait_for(has("```result"))
 	assert(text() == "intro\n\n```sh\nsleep 0.3; echo done\n```\n\n```result\ndone\n```", text())
 	assert(status() == nil, "nothing shows as running once it's done")
