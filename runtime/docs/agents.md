@@ -59,6 +59,7 @@ to go. The tools:
 | `ask` | Ask you questions, with choices or a typed answer, on a page you fill in and send; the answers come back to the agent |
 | `project` | The project's root folder |
 | `objects`, `inspect`, `act` | The objects of the running editor (buffers, views, tabs, terminals, shells and their blocks, language servers, proposals, agent sessions, plugins and what plugins add): list them by kind or by what they relate to, see one's state, relations, actions and what was done to it (by you or an agent), and run an action on it as you would from the inspector (`space h i`). Agents in Greed ask before `act`, which takes several ids at once; an action that deletes or stops something always goes to you to review first, all of them together, whatever the agent was allowed, and you may run some and not others. Deciding on proposed changes stays yours |
+| `commands`, `run_command` | Find the editor's commands by what they do, with how each is typed and what its arguments are, and run one with its arguments checked as the command line checks them (a wrong one gives back the usage and nothing runs). A command that may close, delete or stop something asks you every time |
 | `eval` | Run Luau inside the editor: sandboxed first, then a reviewer or you for anything more (below); what it edits is one operation you can review and undo |
 | `describe` | What a command, option, event, API function, plugin or mode is: its doc, keys, value, who defined it and where |
 | `why` | How some lines came to be: each change that made them, newest first, with its description and diff |
@@ -85,6 +86,7 @@ the tools above come in groups that an agent switches on with `tools` when
 it needs them. These are always offered: `focus`, `buffers`, `read`,
 `diagnostics`, `propose`, `open`, `project`, `files`, `grep`, `symbols`,
 `outline`, `ask`, `eval`, `context_get`, `objects`, `inspect`, `act`,
+`commands`, `run_command`,
 `memory_list`, `memory_propose` and `tools`.
 
 | Group | Tools |

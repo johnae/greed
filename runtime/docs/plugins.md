@@ -260,6 +260,11 @@ fails when the command is added. Commands whose arguments have no `type`
 work as they always have: nothing is checked, and `ctx.values` has the
 words by name.
 
+A command that takes one object of a kind (its other arguments optional)
+is also one of that kind's actions, so it shows in `space .` and the
+inspector for those objects. Agents find commands with the `commands`
+tool and run them with `run_command`, checked the same way.
+
 The command line completes a typed argument from its type when it has no
 `complete`: files, folders, true and false, the choices, or the objects of
 its kind. `greed.commands()` lists each argument's `type`, `optional`,

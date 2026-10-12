@@ -159,3 +159,32 @@ test("a risky tool call waits for the user's yes, and says so when it doesn't ge
 	end)
 	assert(ran[2] == "hard")
 end)
+
+test("agents find commands by what they do and run one, its arguments checked", function(t)
+	local greeted: string? = nil
+	greed.command({
+		name = "test-greet",
+		doc = "Greets someone by name",
+		args = {
+			{ name = "who", type = "string" },
+			{ name = "times", type = "number", optional = true },
+		},
+		run = function(ctx)
+			greeted = `{ctx.values.who} x{ctx.values.times or 1}`
+		end,
+	})
+	local found = run("commands", { query = "greets someone" })
+	assert(type(found) == "table" and found[1].name == "test-greet", greed.json.encode(found))
+	assert(
+		found[1].usage == "test-greet WHO [TIMES]" or string.find(found[1].usage, "WHO", 1, true),
+		found[1].usage
+	)
+	assert(found[1].args[2] == "times number optional", greed.json.encode(found[1].args))
+	run("run_command", { name = "test-greet", args = { "you", "2" } })
+	assert(greeted == "you x2", tostring(greeted))
+	local ok, err = pcall(run, "run_command", { name = "test-greet", args = { "you", "lots" } })
+	assert(not ok and string.find(tostring(err), "isn't a number", 1, true), tostring(err))
+	local danger = assert(tool("run_command").danger)
+	assert(danger({ name = "quit-session" }) ~= nil, "quitting asks")
+	assert(danger({ name = "test-greet" }) == nil)
+end)

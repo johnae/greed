@@ -150,6 +150,35 @@ function M.for_kind(kind: string, target: Target?): { Action }
 			end
 		end
 	end
+	-- Commands that act on one thing of this kind are its actions too.
+	for _, command in greed.commands() do
+		local takes = false
+		local others_optional = true
+		for _, arg in command.args do
+			if arg.type == "object" and arg.kind == kind and not takes then
+				takes = true
+			elseif not arg.optional then
+				others_optional = false
+			end
+		end
+		local named = false
+		for _, action in out do
+			named = named or action.name == command.name
+		end
+		if takes and others_optional and not named then
+			table.insert(out, {
+				kind = kind,
+				name = command.name,
+				doc = command.doc,
+				run = function(target: Target)
+					local key = if target.id
+						then string.sub(target.id, #kind + 2)
+						else tostring(target.value)
+					greed.run(command.name, { args = { key } })
+				end,
+			})
+		end
+	end
 	return out
 end
 

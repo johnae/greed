@@ -244,3 +244,31 @@ test("a kind's default action comes first in its list", function()
 	end
 	assert(string.sub(table.concat(names, ","), 1, 5) == "b,a,c", table.concat(names, ","))
 end)
+
+test("a command taking one thing of a kind is one of its actions", function()
+	local got: string? = nil
+	greed.command({
+		name = "test-poke-gizmo",
+		doc = "Pokes a gizmo",
+		args = { { name = "gizmo", type = "object", kind = "gizmo" } },
+		run = function(ctx)
+			got = ctx.values.gizmo.id
+		end,
+	})
+	local core = require("@core")
+	core.objects.kind({
+		name = "gizmo",
+		get = function(key)
+			return { kind = "gizmo", id = `gizmo:{key}`, label = key, value = key }
+		end,
+	})
+	local action: any = nil
+	for _, found in actions.for_kind("gizmo") do
+		if found.name == "test-poke-gizmo" then
+			action = found
+		end
+	end
+	assert(action and action.doc == "Pokes a gizmo", "listed")
+	actions.run(action, { kind = "gizmo", label = "g1", value = "g1", id = "gizmo:g1" })
+	assert(got == "gizmo:g1", tostring(got))
+end)

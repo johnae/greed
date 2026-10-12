@@ -289,7 +289,8 @@ registry.tool({
 	description = "Run Luau inside the editor with the plugin API (require('@greed')), and get back "
 		.. "what it returns. It runs sandboxed first, reading the editor and editing buffers; code "
 		.. "that needs more (programs, commands, files, keys, options) is reviewed or shown to the "
-		.. "user before it runs. Edits it makes are one operation the user can undo in one step",
+		.. "user before it runs. Edits it makes are one operation the user can undo in one step. "
+		.. "For what a command does, use run_command instead",
 	input = registry.schema.object({ code = { type = "string" } }, { "code" }),
 	kind = "execute",
 	reviews = true,
