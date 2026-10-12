@@ -9,7 +9,14 @@
 -- they say to its own status (`machine`); the others follow only the hub.
 -- Every message is a whole status, so a missed one only means a later look.
 --
---   space i A   the agents of every session here: enter goes there
+-- Hubs follow hubs: the hosts in `hub-hosts` are other machines whose hubs
+-- this one follows over ssh (`greed ssh HOST ctl watch --hub`), and what
+-- they say of the machines they know comes along (`machines`). There's no
+-- main hub: every entry names the machine it's about, a hub ignores news
+-- of its own machine, and of each other machine it keeps what it heard
+-- itself, else the freshest, so loops die out.
+--
+--   space i A   the agents of every session you can reach: enter goes there
 
 local greed = require("@greed")
 local agent = require("@agent")
@@ -22,14 +29,24 @@ greed.option.define({
 	default = "",
 })
 
+greed.option.define({
+	name = "hub-hosts",
+	doc = 'Other machines whose hubs this machine\'s hub follows, as ssh hosts separated by spaces, like "eris mini"',
+	default = "",
+})
+
 local M = {}
 
 --- How often a session looks again at which sessions run, in milliseconds.
 M.LOOK = 3000
 
---- How long a session that couldn't be followed (an older greed) is left
---- alone, in milliseconds.
+--- How long a session or machine that couldn't be followed (an older
+--- greed, a machine that's off) is left alone, in milliseconds.
 M.SKIP = 60000
+
+--- How old, in seconds, news of another machine may be before it's
+--- dropped: a hub says its status at least every 15 seconds.
+M.STALE = 90
 
 --- The hub among `sessions` (as `greed.session.list` gives them): the one
 --- `wanted` names if it runs, else the first by name of those of `build`.
@@ -56,6 +73,16 @@ function M.hub(): string?
 	)
 end
 
+--- The other machines' hosts the hub follows (`hub-hosts`).
+function M.hosts(): { string }
+	local hosts: { string } = {}
+	local said = greed.option.get("hub-hosts")
+	for host in string.gmatch(if type(said) == "string" then said else "", "[^%s,]+") do
+		table.insert(hosts, host)
+	end
+	return hosts
+end
+
 --- The whole lines in `pending`, and what's left after them.
 function M.lines(pending: string): ({ string }, string)
 	local lines = {}
@@ -69,13 +96,22 @@ function M.lines(pending: string): ({ string }, string)
 	end
 end
 
--- The sessions followed, by name: the program following it and the status
--- it said last.
-type Followed = { child: greed.Child, status: { [string]: any }? }
-local followed: { [string]: Followed } = {}
+--- What one session says, as its status gives it.
+export type Status = { [string]: any }
 
--- When each session that couldn't be followed was last tried.
-local tried: { [string]: number } = {}
+-- One followed: the program following it, the status it said last and when
+-- (in seconds, like `os.time()`).
+type Followed = { child: greed.Child, status: Status?, at: number? }
+
+-- What's followed of one kind, by name, and when each that couldn't be
+-- followed was last tried.
+type Following = { now: { [string]: Followed }, tried: { [string]: number } }
+
+-- The sessions on this machine, by name.
+local sessions: Following = { now = {}, tried = {} }
+
+-- The other machines' hubs, by ssh host.
+local hosts: Following = { now = {}, tried = {} }
 
 -- Looks for what to tell you soon, when this is the hub (set below).
 local announce_soon = function() end
@@ -88,19 +124,24 @@ local function changed()
 	announce_soon()
 end
 
--- Follows the session `name` with `greed ctl watch`, keeping what it says.
-local function follow(name: string)
+-- Follows with `greed ARGS`, a `greed ctl watch` of some kind, keeping what
+-- it says as `following.now[name]`.
+local function follow(following: Following, name: string, args: { string })
 	local program = greed.session.program()
 	if program == nil then
 		return
 	end
-	local child = greed.process.spawn({ program, "ctl", "watch", name })
+	local command = { program }
+	for _, arg in args do
+		table.insert(command, arg)
+	end
+	local child = greed.process.spawn(command)
 	if child == nil then
-		tried[name] = greed.now()
+		following.tried[name] = greed.now()
 		return
 	end
 	local mine: Followed = { child = child }
-	followed[name] = mine
+	following.now[name] = mine
 	greed.spawn(function()
 		local pending = ""
 		while true do
@@ -112,63 +153,71 @@ local function follow(name: string)
 			lines, pending = M.lines(pending .. piece)
 			for _, line in lines do
 				local status = greed.json.decode(line)
-				if followed[name] == mine and type(status) == "table" then
+				if following.now[name] == mine and type(status) == "table" then
 					mine.status = status
+					-- To ten seconds, so hubs following each other don't
+					-- tell each other of every second that passes.
+					local now = os.time()
+					mine.at = now - now % 10
 					changed()
 				end
 			end
 		end
-		-- It ended: the session went, or it can't be watched (an older greed).
-		if followed[name] == mine then
-			followed[name] = nil
-			tried[name] = greed.now()
+		-- It ended: the session went, or it can't be watched (an older greed,
+		-- a machine that's off).
+		if following.now[name] == mine then
+			following.now[name] = nil
+			following.tried[name] = greed.now()
 			changed()
 		end
 	end)
 end
 
-local function unfollow(name: string)
-	local gone = followed[name]
-	followed[name] = nil
-	if gone then
-		gone.child:kill()
+-- Follows what `want` names, with its arguments, and nothing else.
+local function keep(following: Following, want: { [string]: { string } })
+	for name, gone in following.now do
+		if not want[name] then
+			following.now[name] = nil
+			gone.child:kill()
+		end
+	end
+	for name, args in want do
+		local last = following.tried[name]
+		if following.now[name] == nil and (last == nil or greed.now() - last > M.SKIP) then
+			follow(following, name, args)
+		end
 	end
 end
 
---- Follows what this session should: every other session when it's the
---- hub, else the hub alone.
+--- Follows what this session should: every other session and the other
+--- machines' hubs when it's the hub, else the hub alone.
 function M.reconcile()
 	local me = greed.session.current()
 	local hub = M.hub()
-	local want: { [string]: boolean } = {}
+	local here: { [string]: { string } } = {}
+	local there: { [string]: { string } } = {}
 	if me and hub == me then
 		for _, session in greed.session.list() do
 			if session.name ~= me then
-				want[session.name] = true
+				here[session.name] = { "ctl", "watch", session.name }
 			end
 		end
+		for _, host in M.hosts() do
+			there[host] = { "ssh", host, "ctl", "watch", "--hub" }
+		end
 	elseif me and hub then
-		want[hub] = true
+		here[hub] = { "ctl", "watch", hub }
 	end
-	for name in followed do
-		if not want[name] then
-			unfollow(name)
-		end
-	end
-	for name in want do
-		local last = tried[name]
-		if followed[name] == nil and (last == nil or greed.now() - last > M.SKIP) then
-			follow(name)
-		end
-	end
+	keep(sessions, here)
+	keep(hosts, there)
 end
 
 --- What each session on the machine says, by name, this one included: as
 --- this session follows them when it's the hub, else as the hub says.
-function M.machine(): { [string]: { [string]: any } }
-	local all: { [string]: { [string]: any } } = {}
+function M.machine(): { [string]: Status }
+	local all: { [string]: Status } = {}
 	local me = greed.session.current()
-	for name, follower in followed do
+	for name, follower in sessions.now do
 		local status = follower.status
 		if status then
 			all[name] = status
@@ -186,42 +235,154 @@ function M.machine(): { [string]: { [string]: any } }
 	return all
 end
 
--- The hub adds the others to its status, so they follow only it. Each
--- session there is said without its own `machine`.
+--- Another machine: its id and name, its sessions by name, when it was
+--- last heard of (seconds, like `os.time()`), and the ssh host it's
+--- reached by, when a hub here follows it.
+export type Machine = {
+	host: { id: string, name: string },
+	sessions: { [string]: Status },
+	at: number,
+	via: string?,
+}
+
+-- `status` without the others it says of, the way it's passed on.
+local function slim(status: Status): Status
+	local out = table.clone(status)
+	out.machine = nil
+	out.machines = nil
+	return out
+end
+
+--- The other machines, by id: the ones the hub follows itself, as they say,
+--- and the ones they and the hub say of, the freshest of each, none older
+--- than `M.STALE` and never this one. A session that isn't the hub has
+--- them from the hub.
+function M.machines(): { [string]: Machine }
+	local me = agent.host().id
+	local now = os.time()
+	local out: { [string]: Machine } = {}
+	local heard: { [string]: boolean } = {}
+	local function consider(found: Machine, itself: boolean)
+		local id = found.host.id
+		if id == me or now - found.at > M.STALE or heard[id] then
+			return
+		end
+		local had = out[id]
+		if itself or had == nil or found.at > had.at then
+			out[id] = found
+			heard[id] = itself
+		end
+	end
+	-- What a status says of other machines; `via` holds only where the ssh
+	-- hosts are this machine's.
+	local function told(status: Status, via: boolean)
+		local others = status.machines
+		if type(others) ~= "table" then
+			return
+		end
+		for _, said in others do
+			if
+				type(said) == "table"
+				and type(said.host) == "table"
+				and type(said.at) == "number"
+			then
+				consider({
+					host = said.host,
+					sessions = if type(said.sessions) == "table" then said.sessions else {},
+					at = said.at,
+					via = if via then said.via else nil,
+				}, false)
+			end
+		end
+	end
+	for host, follower in hosts.now do
+		local status = follower.status
+		local at, session, machine = follower.at, status and status.session, status and status.host
+		if status and at and type(session) == "string" and type(machine) == "table" then
+			local there: { [string]: Status } = {}
+			if type(status.machine) == "table" then
+				for name, said in status.machine do
+					there[name] = said
+				end
+			end
+			there[session] = slim(status)
+			consider({ host = machine :: any, sessions = there, at = at, via = host }, true)
+			told(status, false)
+		end
+	end
+	for _, follower in sessions.now do
+		if follower.status then
+			told(follower.status, true)
+		end
+	end
+	return out
+end
+
+-- The hub adds the others to its status, so they follow only it: the
+-- sessions here, each without its own picture, and the other machines.
 agent.status_part("machine", function()
 	if M.hub() ~= greed.session.current() then
 		return nil
 	end
-	local out: { [string]: any } = {}
-	for name, follower in followed do
+	local out: { [string]: Status } = {}
+	for name, follower in sessions.now do
 		local status = follower.status
 		if status then
-			local slim = table.clone(status)
-			slim.machine = nil
-			out[name] = slim
+			out[name] = slim(status)
 		end
 	end
 	return out
 end)
 
---- An agent somewhere on the machine: the session it's in, and what that
---- session's status says of it.
-export type Found = { session: string, agent: { [string]: any } }
+agent.status_part("machines", function()
+	if M.hub() ~= greed.session.current() then
+		return nil
+	end
+	return M.machines()
+end)
 
---- The agents of the other sessions on the machine, by session then label.
+-- Which session is the hub, for `greed ctl watch --hub`.
+agent.method("hub/name", function()
+	return M.hub()
+end)
+
+--- An agent somewhere: the session it's in, what that session's status
+--- says of it, and for another machine its name and the ssh host that
+--- reaches it.
+export type Found = { session: string, agent: { [string]: any }, machine: string?, via: string? }
+
+--- Where `found` is, as you're told it: its session, and the machine when
+--- it's another.
+function M.place(found: Found): string
+	return if found.machine then `{found.session} on {found.machine}` else found.session
+end
+
+--- The agents of the other sessions here and on the other machines, by
+--- machine, session, then label.
 function M.elsewhere(): { Found }
 	local out: { Found } = {}
 	local me = greed.session.current()
-	for name, status in M.machine() do
-		local agents = status.agents
-		if name ~= me and type(agents) == "table" then
-			for _, found in agents do
-				table.insert(out, { session = name, agent = found })
+	local function add(statuses: { [string]: Status }, machine: string?, via: string?)
+		for name, status in statuses do
+			local agents = status.agents
+			if (machine or name ~= me) and type(agents) == "table" then
+				for _, said in agents do
+					table.insert(
+						out,
+						{ session = name, agent = said, machine = machine, via = via }
+					)
+				end
 			end
 		end
 	end
+	add(M.machine())
+	for _, there in M.machines() do
+		add(there.sessions, there.host.name, there.via or there.host.name)
+	end
 	table.sort(out, function(a: Found, b: Found): boolean
-		if a.session ~= b.session then
+		if a.machine ~= b.machine then
+			return (a.machine or "") < (b.machine or "")
+		elseif a.session ~= b.session then
 			return a.session < b.session
 		end
 		return tostring(a.agent.label) < tostring(b.agent.label)
@@ -238,8 +399,9 @@ statusline.add("right", "elsewhere", function()
 	for _, found in M.elsewhere() do
 		table.insert(states, tostring(found.agent.status))
 		if found.agent.status == "waiting" or found.agent.status == "working" then
-			if not where[found.session] then
-				where[found.session] = true
+			local place = M.place(found)
+			if not where[place] then
+				where[place] = true
 				count += 1
 			end
 		end
@@ -248,42 +410,42 @@ statusline.add("right", "elsewhere", function()
 	if said == nil then
 		return nil
 	end
-	local session = next(where)
-	local place = if count == 1 and session then `in {session}` else "elsewhere"
-	return { text = `{said} {place}`, style = "ui.statusline.message" }
+	local place = next(where)
+	local text = if count == 1 and place then `in {place}` else "elsewhere"
+	return { text = `{said} {text}`, style = "ui.statusline.message" }
 end, "agents")
 
 greed.command({
 	name = "machine",
-	doc = "The agents of every session on this machine: enter goes to its session (space i A)",
+	doc = "The agents of every other session, here and on the machines the hub follows: enter goes there (space i A)",
 	run = function()
 		local items: { picker.Item } = {}
 		for _, found in M.elsewhere() do
 			local said = found.agent
 			table.insert(items, {
-				label = `{found.session}  {said.agent or said.label}  {said.status}`,
-				value = found.session,
+				label = `{M.place(found)}  {said.agent or said.label}  {said.status}`,
+				value = found,
 			})
 		end
 		if #items == 0 then
-			greed.echo("no agents in the other sessions on this machine")
+			greed.echo("no agents in your other sessions")
 			return
 		end
-		picker.pick("Agents on this machine", items, function(item)
-			greed.session.switch({ name = item.value })
+		picker.pick("Agents in your sessions", items, function(item)
+			local found: Found = item.value
+			greed.session.switch({ name = found.session, host = found.via })
 		end)
 	end,
 })
 
 -- Telling you ----------------------------------------------------------------
 --
--- The hub tells you when an agent starts waiting, anywhere on the machine:
--- each machine you're attached from gets it once, through one of its
--- clients, so two windows on one machine don't both say it. What it told
--- is kept, so a restart or a new hub doesn't tell it again.
-
---- What one session says, as its status gives it.
-export type Status = { [string]: any }
+-- The hub tells you when an agent starts waiting, here or on a machine it
+-- follows: each machine you're attached from gets it once, through one of
+-- its clients, so two windows on one machine don't both say it. An agent on
+-- another machine is that machine's hub's to tell where it can, so this hub
+-- tells only the machines that one doesn't reach. What it told is kept, so
+-- a restart or a new hub doesn't tell it again.
 
 --- Where you can be told: for each machine with a client attached in any
 --- of `statuses` (by session), a session it's attached to and that client's
@@ -314,8 +476,12 @@ end
 --- from another time it waits (`key`), and the words to tell you with.
 export type Waiting = { key: string, session: string, title: string, body: string }
 
---- The agents waiting for you in `statuses`, by session name.
-function M.waiting(statuses: { [string]: Status }): { Waiting }
+--- The agents waiting for you in `statuses`, by session name, on this
+--- machine or the one `machine` names.
+function M.waiting(
+	statuses: { [string]: Status },
+	machine: { id: string, name: string }?
+): { Waiting }
 	local out: { Waiting } = {}
 	for name, status in statuses do
 		local agents = status.agents
@@ -323,11 +489,14 @@ function M.waiting(statuses: { [string]: Status }): { Waiting }
 			for _, found in agents do
 				if found.status == "waiting" then
 					local what = found.question or found.label or found.agent
+					local key = `{name}|{found.id}|{found.since or found.question or ""}`
 					table.insert(out, {
-						key = `{name}|{found.id}|{found.since or found.question or ""}`,
+						key = if machine then `{machine.id}|{key}` else key,
 						session = name,
 						title = `{found.label or found.agent} waits for you`,
-						body = `{what} · {name}`,
+						body = if machine
+							then `{what} · {name} on {machine.name}`
+							else `{what} · {name}`,
 					})
 				end
 			end
@@ -410,12 +579,25 @@ local function announce()
 	statuses[me] = agent.status()
 	local list = was_told()
 	local where = M.reachable(statuses)
-	for _, waiting in M.waiting(statuses) do
-		if not table.find(list, waiting.key) then
-			remember(waiting.key)
-			for _, target in where do
+	-- Tells each machine in `where` but those in `skip`, once.
+	local function tell(waiting: Waiting, skip: { [string]: any })
+		if table.find(list, waiting.key) then
+			return
+		end
+		remember(waiting.key)
+		for machine, target in where do
+			if skip[machine] == nil then
 				tell_client(target.session, target.client, waiting.title, waiting.body)
 			end
+		end
+	end
+	for _, waiting in M.waiting(statuses) do
+		tell(waiting, {})
+	end
+	for _, there in M.machines() do
+		local theirs = M.reachable(there.sessions)
+		for _, waiting in M.waiting(there.sessions, there.host) do
+			tell(waiting, theirs)
 		end
 	end
 end

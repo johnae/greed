@@ -6,6 +6,7 @@ use std::io::Write;
 use std::process::{Child, Command, Stdio};
 
 use common::{GREED, World, running};
+use greed_core::control;
 
 /// A headless session for `project`, started like `greed serve` does it.
 fn serve(world: &World, project: &std::path::Path) -> Child {
@@ -404,27 +405,15 @@ fn the_hub_follows_the_other_sessions_and_the_rest_follow_the_hub() {
     }
 }
 
-#[test]
-fn an_agent_waiting_in_one_session_is_told_to_your_client_in_another() {
-    use greed_core::server::{Input, Output};
-    use std::io::{BufRead, Write};
-    let Some(world) = World::new("ctl-told") else {
-        return;
-    };
-    let mut servers: Vec<Child> = ["alpha", "beta", "gamma"]
-        .iter()
-        .map(|name| serve(&world, &world.project(name, &[("a.txt", "one\n")])))
-        .collect();
-    world.wait_for("three sessions", |w| w.sessions().lines().count() == 3);
-    // A window on "testbox" is attached to gamma.
-    let (socket, token) = {
-        let dir = world.root.join("run/greed");
-        (dir.join("gamma.sock"), dir.join("gamma.token"))
-    };
-    let token = std::fs::read_to_string(token).unwrap();
-    let mut params = greed_core::control::handshake();
-    params["client"] = serde_json::json!({ "kind": "gui", "name": "gui@testbox" });
-    let mut attached = greed_core::control::Client::connect(&socket, token.trim())
+/// A window called `client` ("gui@testbox") attached to the session `name`
+/// in the sessions folder `run`.
+fn attach_window(run: &std::path::Path, name: &str, client: &str) -> control::Attachment {
+    use greed_core::server::Input;
+    let dir = run.join("greed");
+    let token = std::fs::read_to_string(dir.join(format!("{name}.token"))).unwrap();
+    let mut params = control::handshake();
+    params["client"] = serde_json::json!({ "kind": "gui", "name": client });
+    let mut attached = control::Client::connect(&dir.join(format!("{name}.sock")), token.trim())
         .unwrap()
         .attach_with(&params)
         .unwrap();
@@ -438,6 +427,69 @@ fn an_agent_waiting_in_one_session_is_told_to_your_client_in_another() {
         serde_json::to_string(&resize).unwrap()
     )
     .unwrap();
+    attached
+}
+
+/// The next notification `attached` gets, within 30 seconds.
+fn next_notice(attached: &mut control::Attachment) -> greed_core::Notice {
+    use greed_core::server::Output;
+    use std::io::BufRead;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        assert!(std::time::Instant::now() < deadline, "no notification came");
+        let mut line = String::new();
+        attached.reader.read_line(&mut line).unwrap();
+        if let Ok(Output::Notify(notice)) = serde_json::from_str::<Output>(&line) {
+            return notice;
+        }
+    }
+}
+
+/// Fails if `attached` gets a notification in the next four seconds.
+fn no_notice(attached: &mut control::Attachment) {
+    use greed_core::server::Output;
+    use std::io::BufRead;
+    let quiet = std::time::Instant::now() + std::time::Duration::from_secs(4);
+    attached
+        .reader
+        .get_ref()
+        .set_read_timeout(Some(std::time::Duration::from_millis(500)))
+        .unwrap();
+    // A line cut off by the timeout is read on into the same buffer.
+    let mut line = String::new();
+    while std::time::Instant::now() < quiet {
+        if attached.reader.read_line(&mut line).is_ok() {
+            assert!(
+                !matches!(serde_json::from_str::<Output>(&line), Ok(Output::Notify(_))),
+                "told twice: {line}"
+            );
+            line.clear();
+        }
+    }
+    attached.reader.get_ref().set_read_timeout(None).unwrap();
+}
+
+/// Starts an agent waiting in a terminal of the session `name`, as its
+/// hooks say it, through `eval` (the world's, or another machine's).
+fn agent_waits(eval: impl Fn(&str) -> String) {
+    let terminal = eval("return require('@terminal').open({ 'sh', '-c', 'sleep 60' }).buffer:id()");
+    eval(&format!(
+        "require('@terminal').agent_report(require('@greed').buffer({terminal}), \
+         {{ source = 'hook', trusted = true, name = 'claude', state = 'waiting' }})"
+    ));
+}
+
+#[test]
+fn an_agent_waiting_in_one_session_is_told_to_your_client_in_another() {
+    let Some(world) = World::new("ctl-told") else {
+        return;
+    };
+    let mut servers: Vec<Child> = ["alpha", "beta", "gamma"]
+        .iter()
+        .map(|name| serve(&world, &world.project(name, &[("a.txt", "one\n")])))
+        .collect();
+    world.wait_for("three sessions", |w| w.sessions().lines().count() == 3);
+    let mut attached = attach_window(&world.root.join("run"), "gamma", "gui@testbox");
     // Wait until the hub knows of the client before the agent waits.
     world.wait_for("the hub to see the client", |w| {
         w.eval(
@@ -445,32 +497,163 @@ fn an_agent_waiting_in_one_session_is_told_to_your_client_in_another() {
             "local s = require('@hub').machine().gamma return tostring(s and s.clients and s.clients[1])",
         ) == "gui@testbox"
     });
-    let terminal = world.eval(
-        "beta",
-        "return require('@terminal').open({ 'sh', '-c', 'sleep 60' }).buffer:id()",
-    );
-    world.eval(
-        "beta",
-        &format!(
-            "require('@terminal').agent_report(require('@greed').buffer({terminal}), \
-             {{ source = 'hook', trusted = true, name = 'claude', state = 'waiting' }})"
-        ),
-    );
+    agent_waits(|code| world.eval("beta", code));
     // The window in gamma hears that an agent waits in beta.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    let notice = loop {
-        assert!(std::time::Instant::now() < deadline, "no notification came");
-        let mut line = String::new();
-        attached.reader.read_line(&mut line).unwrap();
-        if let Ok(Output::Notify(notice)) = serde_json::from_str::<Output>(&line) {
-            break notice;
-        }
-    };
+    let notice = next_notice(&mut attached);
     assert!(notice.title.contains("waits for you"), "{notice:?}");
     assert!(notice.body.contains("beta"), "{notice:?}");
     for name in ["alpha", "beta", "gamma"] {
         world.eval(name, "require('@greed').quit()");
     }
+    for server in &mut servers {
+        let _ = server.wait();
+    }
+}
+
+/// Folders standing in for another machine's, beside the world's: its
+/// sessions, data (so its own machine id) and cache.
+const THERE: [(&str, &str); 3] = [
+    ("XDG_RUNTIME_DIR", "there/run"),
+    ("XDG_DATA_HOME", "there/data"),
+    ("XDG_CACHE_HOME", "there/cache"),
+];
+
+/// The world's own folders of those, as `World::env` sets them.
+const HERE: [(&str, &str); 3] = [
+    ("XDG_RUNTIME_DIR", "run"),
+    ("XDG_DATA_HOME", "data"),
+    ("XDG_CACHE_HOME", "cache"),
+];
+
+/// Stands in for ssh between the world ("here") and the machine "there":
+/// runs the line it's given with the folders of the host it names.
+fn two_machines_ssh(world: &World) -> std::path::PathBuf {
+    let set = |folders: [(&str, &str); 3]| -> String {
+        let pairs: Vec<String> = folders
+            .iter()
+            .map(|(var, dir)| format!("{var}={}", world.root.join(dir).display()))
+            .collect();
+        pairs.join(" ") + " "
+    };
+    let (here, there) = (set(HERE), set(THERE));
+    let script = format!(
+        "#!/bin/sh\n\
+         while [ \"$2\" != sh ]; do shift; done\n\
+         case \"$1\" in there) exec env {there}sh -s;; here) exec env {here}sh -s;; esac\n\
+         echo \"no host $1\" >&2; exit 255\n"
+    );
+    let path = world.root.join("two-machines-ssh");
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    path
+}
+
+/// Kills the sessions in a sessions folder when it goes.
+struct Ends(std::path::PathBuf);
+
+impl Drop for Ends {
+    fn drop(&mut self) {
+        common::kill_sessions(&self.0, |_| true);
+    }
+}
+
+#[test]
+fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
+    let Some(world) = World::new("ctl-hosts") else {
+        return;
+    };
+    let ssh = two_machines_ssh(&world);
+    for (_, dir) in THERE {
+        std::fs::create_dir_all(world.root.join(dir)).unwrap();
+    }
+    // The other machine's sessions go too, failed or not.
+    let _ends = Ends(world.root.join("there/run/greed"));
+    let with = |command: &mut Command, there: bool| {
+        world.env(command);
+        command.env("GREED_SSH", &ssh).env("GREED_REMOTE", GREED);
+        if there {
+            for (var, dir) in THERE {
+                command.env(var, world.root.join(dir));
+            }
+        }
+    };
+    let start = |name: &str, there: bool| {
+        let mut command = Command::new(GREED);
+        command
+            .arg("serve")
+            .arg(world.project(name, &[("a.txt", "one\n")]))
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        with(&mut command, there);
+        command.spawn().unwrap()
+    };
+    let eval = |name: &str, there: bool, code: &str| {
+        let mut command = Command::new(GREED);
+        command.args(["ctl", "eval", &format!("code={code}")]);
+        with(&mut command, there);
+        command.env("GREED_SESSION", name);
+        let out = command.output().unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    };
+    let mut servers = [start("alpha", false), start("beta", true)];
+    for (name, there, other) in [("alpha", false, "there"), ("beta", true, "here")] {
+        common::wait_until(name, || {
+            eval(
+                name,
+                there,
+                &format!("require('@greed').option.set('hub-hosts', '{other}') return 'set'"),
+            ) == "set"
+        });
+    }
+    let mut attached = attach_window(&world.root.join("run"), "alpha", "gui@desk");
+    // Each hub sees the other machine, and not itself through it.
+    let machines = |name: &str, there: bool| {
+        eval(
+            name,
+            there,
+            "local n = 0 for _, m in require('@hub').machines() do n += 1 end \
+             local me = require('@agent').host().id \
+             return `{n} {require('@hub').machines()[me] == nil}`",
+        )
+    };
+    common::wait_until("alpha to follow there", || {
+        machines("alpha", false) == "1 true"
+    });
+    common::wait_until("beta to follow here", || machines("beta", true) == "1 true");
+    agent_waits(|code| eval("beta", true, code));
+    // alpha has the agent on the other machine, and tells the window here.
+    common::wait_until("alpha to see the agent there", || {
+        eval(
+            "alpha",
+            false,
+            "for _, f in require('@hub').elsewhere() do \
+             if f.session == 'beta' and f.machine and f.agent.status == 'waiting' then return 'yes' end end \
+             return 'no'",
+        ) == "yes"
+    });
+    let notice = next_notice(&mut attached);
+    assert!(notice.title.contains("waits for you"), "{notice:?}");
+    assert!(notice.body.contains("beta on "), "{notice:?}");
+    // And only once, though both hubs see it.
+    no_notice(&mut attached);
+    // With a window from this desk on the other machine too, its own hub
+    // tells it there, and this one leaves it be.
+    let mut there = attach_window(&world.root.join("there/run"), "beta", "tui@desk");
+    common::wait_until("alpha to see the window there", || {
+        eval(
+            "alpha",
+            false,
+            "for _, m in require('@hub').machines() do local s = m.sessions.beta \
+             if s and s.clients[1] == 'tui@desk' then return 'yes' end end return 'no'",
+        ) == "yes"
+    });
+    agent_waits(|code| eval("beta", true, code));
+    let notice = next_notice(&mut there);
+    assert!(notice.body.contains("beta"), "{notice:?}");
+    no_notice(&mut attached);
+    eval("alpha", false, "require('@greed').quit()");
+    eval("beta", true, "require('@greed').quit()");
     for server in &mut servers {
         let _ = server.wait();
     }

@@ -88,3 +88,29 @@ test("hub_notify tells the client of this session it names, and says when there'
 		run({ title = "x", client = "gui@nowhere" }, agent.caller()) == "no client gui@nowhere here"
 	)
 end)
+
+test("an agent on another machine is told with the machine, and apart from one here", function()
+	local statuses: any = {
+		["greed-2"] = {
+			agents = { { id = "terminal:5", label = "claude", status = "waiting", since = 100 } },
+		},
+	}
+	local there = hub.waiting(statuses, { id = "ab12", name = "eris" })[1]
+	assert(there.key == "ab12|greed-2|terminal:5|100", there.key)
+	assert(there.body == "claude · greed-2 on eris", there.body)
+	assert(hub.waiting(statuses)[1].key ~= there.key, "the same agent here is another")
+end)
+
+test("hub-hosts names the machines to follow", function()
+	local greed = require("@greed")
+	greed.option.set("hub-hosts", "eris  mini,box")
+	local hosts = hub.hosts()
+	greed.option.set("hub-hosts", "")
+	assert(table.concat(hosts, " ") == "eris mini box", table.concat(hosts, " "))
+	assert(#hub.hosts() == 0)
+end)
+
+test("another machine's agent is placed on it", function()
+	assert(hub.place({ session = "greed-2", agent = {} }) == "greed-2")
+	assert(hub.place({ session = "greed-2", agent = {}, machine = "eris" }) == "greed-2 on eris")
+end)

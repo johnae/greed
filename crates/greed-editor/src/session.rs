@@ -884,15 +884,40 @@ fn settle_remote(
 /// Runs `line` on `host` with its shell, giving back what it printed; its
 /// errors show here.
 fn remote_run(host: &str, line: &str) -> Result<String, Error> {
+    let mut out = Vec::new();
+    remote_run_into(host, line, &mut out)?;
+    Ok(String::from_utf8_lossy(&out).into_owned())
+}
+
+/// [`remote_run`], passing what it prints on to `out` as it comes.
+fn remote_run_into(host: &str, line: &str, out: &mut impl Write) -> Result<(), Error> {
     let (mut child, input, mut output) = remote(host, line)?;
     // The shell there ends after the line once its input does.
     drop(input);
-    let mut out = String::new();
-    output.read_to_string(&mut out)?;
+    std::io::copy(&mut output, out)?;
     if !child.wait()?.success() {
         return Err(format!("{line} failed on {host}").into());
     }
-    Ok(out)
+    Ok(())
+}
+
+/// Whether ssh may ask anything (a password, a new host key): not for
+/// `greed ssh HOST ctl`, which programs run.
+static NO_QUESTIONS: AtomicBool = AtomicBool::new(false);
+
+/// `greed ssh HOST ctl ARGS`: `greed ctl ARGS` on `host`, with the greed
+/// `greed ssh` uses there (put there if it isn't), printing what it prints
+/// as it does. ssh asks nothing, so it fails rather than waits when it
+/// would have to, as a program like a hub following another machine needs.
+pub fn ssh_ctl(host: &str, args: &[String]) -> Result<(), Error> {
+    NO_QUESTIONS.store(true, Ordering::Relaxed);
+    let greed = remote_greed(host)?;
+    let mut line = format!("exec {} ctl", quote(&greed));
+    for arg in args {
+        line.push(' ');
+        line.push_str(&quote(arg));
+    }
+    remote_run_into(host, &line, &mut std::io::stdout().lock())
 }
 
 /// The greed to run on `host`: `$GREED_REMOTE`, or this version, put there
@@ -1061,7 +1086,11 @@ fn handshake(
 
 /// The ssh command, which `$GREED_SSH` replaces.
 fn ssh_command() -> Command {
-    Command::new(std::env::var("GREED_SSH").unwrap_or_else(|_| "ssh".to_owned()))
+    let mut command = Command::new(std::env::var("GREED_SSH").unwrap_or_else(|_| "ssh".to_owned()));
+    if NO_QUESTIONS.load(Ordering::Relaxed) {
+        command.args(["-o", "BatchMode=yes"]);
+    }
+    command
 }
 
 /// What the remote sh prints once it has read the line it runs.

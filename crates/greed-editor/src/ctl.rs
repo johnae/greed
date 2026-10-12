@@ -18,6 +18,8 @@ usage: greed ctl tools                 list the tools the editor offers
        greed ctl sessions              list running editors
        greed ctl watch [SESSION]       the session's status as JSON, a line at once, whenever
                                       it changes and at least every 15 seconds
+       greed ctl watch --hub           the same of this machine's hub, which follows the other
+                                      sessions here
        greed ctl agent-socket [SESSION]
                                       the socket a session from greed ssh reaches your
                                       ssh agent on, for SSH_AUTH_SOCK
@@ -63,6 +65,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd] if cmd == "agent-socket" => agent_socket(None),
         [cmd, name] if cmd == "agent-socket" => agent_socket(Some(name)),
+        [cmd, flag] if cmd == "watch" && flag == "--hub" => watch(Some(&hub()?)),
         [cmd] if cmd == "watch" => watch(None),
         [cmd, name] if cmd == "watch" => watch(Some(name)),
         [cmd] if cmd == "sessions" => {
@@ -117,6 +120,22 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [] => Err(USAGE.into()),
     }
+}
+
+/// This machine's hub, as its sessions say (the hub plugin's `hub/name`):
+/// the first by name that answers.
+fn hub() -> Result<String, Box<dyn std::error::Error>> {
+    let mut names = live_sessions()?;
+    names.sort();
+    for name in names {
+        let said = session_client(Some(&name), false)
+            .ok()
+            .and_then(|mut client| client.call("hub/name", &Value::Null).ok());
+        if let Some(Ok(Value::String(hub))) = said {
+            return Ok(hub);
+        }
+    }
+    Err("no session on this machine says which is its hub".into())
 }
 
 /// How long `greed ctl watch` waits to hear from the session before taking

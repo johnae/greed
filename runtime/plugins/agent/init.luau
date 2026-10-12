@@ -70,6 +70,11 @@ return table.freeze({
 	--- Adding to the status, and saying it changed (status.luau).
 	status_part = status.part,
 	status_changed = status.changed,
+	--- The machine this runs on, its id and name (status.luau).
+	host = status.host,
+	--- Answering a session method beside MCP's, like `status/watch`
+	--- (registry.luau).
+	method = registry.method,
 	tools = registry.tools,
 	--- Groups of tools agents switch on when they need them (registry.luau).
 	group = registry.group,

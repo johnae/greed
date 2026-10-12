@@ -42,7 +42,7 @@ use greed_core::luau::{Host, HostError, run_suites};
 use greed_core::server;
 use greed_text::ClientId;
 
-const USAGE: &str = "usage: greed [FILE]\n       greed --session NAME [FILE]\n                            show the session NAME, starting it if it isn't running\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--run COMMAND] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --fresh              with greed [FILE] or greed ssh: a session started now opens nothing it had open before\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed --session NAME [FILE]\n                            show the session NAME, starting it if it isn't running\n       greed --new [FILE]   start another session for the project, with this greed\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed ssh HOST ctl ARGS\n                            greed ctl on another machine, asking nothing (for programs)\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--run COMMAND] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --fresh              with greed [FILE] or greed ssh: a session started now opens nothing it had open before\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -124,10 +124,7 @@ fn main() -> ExitCode {
             };
             named.and_then(|name| session::bridge(name.as_deref(), file.map(Path::new)))
         }
-        [cmd, host, rest @ ..] if cmd == "ssh" => {
-            let (name, file, new) = session_and_file(rest);
-            session::ssh(host, name, file, opening, new)
-        }
+        [cmd, host, rest @ ..] if cmd == "ssh" => ssh(host, rest, opening),
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
         [cmd] if cmd == "test" => runtime::dir()
@@ -550,6 +547,17 @@ fn session_and_file(args: &[String]) -> (Option<&str>, Option<&str>, bool) {
         [flag, rest @ ..] if flag == "--new" => (None, rest.first().map(String::as_str), true),
         rest => (None, rest.first().map(String::as_str), false),
     }
+}
+
+/// `greed ssh HOST ...`: a session there, or with `ctl` a `greed ctl` there.
+fn ssh(host: &str, args: &[String], opening: Opening) -> Result<(), Box<dyn std::error::Error>> {
+    if let [ctl, rest @ ..] = args
+        && ctl == "ctl"
+    {
+        return session::ssh_ctl(host, rest);
+    }
+    let (name, file, new) = session_and_file(args);
+    session::ssh(host, name, file, opening, new)
 }
 
 /// Whether `name` could be a command plugins add with `greed.cli`: plain
