@@ -10,12 +10,14 @@ local greed = require("@greed")
 local sources = require("@self/sources")
 local document = require("@self/document")
 local open = require("@self/open")
+local data_shell = require("@self/shell")
 
 local M = {}
 
 M.sources = sources
 M.document = document
 M.open = open
+M.shell = data_shell
 
 --- The keys, by layer. Change them before this plugin loads, or rebind
 --- and unbind from your config afterwards.

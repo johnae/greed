@@ -296,6 +296,7 @@ The shell runs a few commands itself:
 | `stop [N ... \| all]` | Stop running blocks by their number, or all of them; without one, list them |
 | `watch [-n SECONDS] COMMAND` | Run a command again and again, every two seconds, its block showing what it printed last with the changes marked |
 | `prom QUERY [--range DURATION] [--step DURATION] [--url URL]` | Ask Prometheus: a row a series as it is now, or over a range a row a time, to table or chart |
+| `data SOURCE [KEY=VALUE...] [QUERY]` | Read a table from a data source: `csv`, `sqlite`, `psql` (see "Databases and files" below) |
 
 What `open` opens comes up in your style's own mode, to read and move
 around in, not typing as at the prompt. Plugins add commands of their own
@@ -805,6 +806,23 @@ series, which `| chart` draws as a line a series (`--step 30s` sets the
 time between points). In a watch, `watch -n 5 prom 'QUERY' | chart`, each
 run adds a point, so the chart moves as Prometheus's numbers do; on a
 board, a card with `every=5` does the same.
+
+### Databases and files
+
+`data SOURCE` reads a table from a data source, the same ones a Markdown
+document's data blocks use: `csv` (`path=FILE`), `sqlite` (`db=FILE` and a
+query) and `psql` (`db=` a connection and a query). `@name` in a query is
+the shell's variable of that name, passed to the database as a parameter:
+
+```text
+❯ export city=oslo
+❯ data sqlite db=shop.db "SELECT name, total FROM customers WHERE city = @city"
+❯ data csv path=sales.csv | where units > 10 | chart bar units
+```
+
+Its table keeps the source's columns in order, so stages, charts, a watch
+and a board's cards work on it as on any command's. Databases open
+read-only unless you add `write=true`.
 
 ## Running blocks above the prompt
 

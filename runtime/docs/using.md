@@ -1592,6 +1592,8 @@ the editor up.
 - The programs are `sqlite3` and `psql` unless `:set data-sqlite3` or
   `:set data-psql` names others.
 
+In the shell, `data SOURCE ...` reads the same sources into a block's table, so a
+board's cards can show them too (see the shell's "Databases and files").
 Plugins add sources with `require("@core").data.source({ name, read, ... })`;
 see `core.data` for what a source gives.
 
