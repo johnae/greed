@@ -28,6 +28,7 @@ local function apply(name: string, language: Language)
 		unit = if language.indent then string.rep(" ", language.indent) else "\t",
 		openers = language.indent_after,
 		closers = language.outdent_before,
+		tab_width = language.tab_width,
 	})
 end
 
@@ -166,6 +167,7 @@ greed.command({
 			error(`there's no language called {name}; tab after :language lists them`, 0)
 		end
 		ctx.buffer:set_language(name)
+		indent.apply_tab_width(ctx.buffer)
 		greed.echo(`{ctx.buffer:title()} is {name} now`)
 	end,
 })

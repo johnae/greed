@@ -1065,10 +1065,7 @@ fn mode_module(lua: &Lua) -> LuaResult<Table> {
             },
         )
     })?;
-    // `cursor` and `shape` are the older names.
-    mode.set("cursor", set_cursor.clone())?;
     mode.set("set_cursor", set_cursor)?;
-    mode.set("shape", cursor_of.clone())?;
     mode.set("cursor_of", cursor_of)?;
     Ok(mode)
 }

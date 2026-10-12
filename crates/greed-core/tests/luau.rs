@@ -1332,8 +1332,7 @@ fn plugins_set_the_cursor_shape_per_mode() {
     let h = host("");
     h.eval("require('@greed').mode.set_cursor('edit', 'bar')")
         .unwrap();
-    // The older name still works.
-    h.eval("require('@greed').mode.cursor('replace', 'underline')")
+    h.eval("require('@greed').mode.set_cursor('replace', 'underline')")
         .unwrap();
     h.with_editor_mut(|ed| {
         ed.set_mode("edit");
@@ -1342,7 +1341,7 @@ fn plugins_set_the_cursor_shape_per_mode() {
         assert_eq!(ed.cursor_shape(), greed_core::CursorShape::Underline);
     });
     let shapes = h
-        .eval("local m = require('@greed').mode return m.cursor_of('edit') .. m.shape() .. m.cursor_of('other')")
+        .eval("local m = require('@greed').mode return m.cursor_of('edit') .. m.cursor_of() .. m.cursor_of('other')")
         .unwrap();
     assert_eq!(shapes, "barunderlineblock");
     let err = h

@@ -15,6 +15,9 @@ export type Language = {
 	comment: string?,
 	--- Spaces per indent level; leave out to indent with tabs.
 	indent: number?,
+	--- How many columns apart tab stops are; the "tab-width" option if left
+	--- out.
+	tab_width: number?,
 	--- Luau patterns for a line after which the next goes a level in,
 	--- matched against the line without its trailing spaces, e.g.
 	--- `{ "[%(%[{:]$" }`. Used without an indents query, and with one where

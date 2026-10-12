@@ -469,9 +469,12 @@ closer like `end`, `else` or `}` lines up with its block when you press
 `enter` on it, and a closing bracket does as you type it at a line's
 start. Each language has its own indent, like two
 spaces in Nix or a tab in Go, set with `require("@languages").set("nix",
-{ indent = 4 })`; the `indent` option is for files in no language. A file
-gets its language from its name; `:language NAME` gives a buffer another
-one (`:setf` too, as in Vim), and `:language` alone says which it has.
+{ indent = 4 })`; the `indent` option is for files in no language. Tabs
+show 4 columns wide; a language's `tab_width` changes that for its files
+(`require("@languages").set("go", { tab_width = 8 })`), and `:set
+tab-width 8` for the rest. A file gets its language from its name;
+`:language NAME` gives a buffer another one (`:setf` too, as in Vim), and
+`:language` alone says which it has.
 
 **Many selections**
 

@@ -36,6 +36,8 @@ pub struct Buffer {
     lossy: bool,
     /// Whether the main view shows line numbers beside it.
     line_numbers: bool,
+    /// How many columns apart its tab stops are.
+    tab_width: usize,
     /// Kept open while nothing shows it, though it has no file.
     kept: bool,
     /// Single keys bound for this buffer alone, ahead of every keymap layer.
@@ -223,6 +225,7 @@ impl Buffer {
             readonly: false,
             lossy: false,
             line_numbers: true,
+            tab_width: crate::render::TAB_WIDTH,
             kept: false,
             keys: HashMap::new(),
             language: None,
@@ -396,6 +399,16 @@ impl Buffer {
 
     pub(crate) fn set_line_numbers(&mut self, on: bool) {
         self.line_numbers = on;
+    }
+
+    /// How many columns apart its tab stops are.
+    pub fn tab_width(&self) -> usize {
+        self.tab_width
+    }
+
+    /// Sets how many columns apart its tab stops are, at least 1.
+    pub(crate) fn set_tab_width(&mut self, width: usize) {
+        self.tab_width = width.max(1);
     }
 
     /// Whether it stays open while nothing shows it, though it has no file.

@@ -632,7 +632,6 @@ struct ActionArea {
 
 pub struct Renderer<M> {
     measure: M,
-    pub tab_width: usize,
     /// Images placed while laying out the frame being drawn.
     images: RefCell<Vec<ImagePlacement>>,
     /// Scenes placed while laying out the frame being drawn.
@@ -655,7 +654,6 @@ impl<M: Measure> Renderer<M> {
     pub fn new(measure: M) -> Self {
         Self {
             measure,
-            tab_width: TAB_WIDTH,
             images: RefCell::default(),
             scenes: RefCell::default(),
             actions: RefCell::default(),
@@ -1229,7 +1227,7 @@ impl<M: Measure> Renderer<M> {
             }
             let scale = scale_at(byte);
             let (text, w) = if grapheme == "\t" {
-                let w = width_at(&self.measure, grapheme, x, self.tab_width);
+                let w = width_at(&self.measure, grapheme, x, buffer.tab_width());
                 (" ".repeat(w), w)
             } else {
                 let w = self.measure.width(grapheme) * usize::from(scale);

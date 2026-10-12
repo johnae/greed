@@ -863,6 +863,12 @@ impl Editor {
         }
     }
 
+    pub fn set_tab_width(&mut self, buffer: BufferId, width: usize) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_tab_width(width);
+        }
+    }
+
     /// Stops keeping `buffer`'s undo history (see [`Buffer::forget_history`]).
     pub fn forget_history(&mut self, buffer: BufferId) {
         if let Some(b) = self.buffers.get_mut(&buffer) {

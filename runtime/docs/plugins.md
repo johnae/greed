@@ -444,7 +444,10 @@ whichever way it points. `buffer:line_text(line)` is a line without its
 line break. `buffer:display_column(pos)` is the screen column `pos` is
 drawn at, counting wide characters as two columns and tabs up to the next
 tab stop, and `buffer:at_display_column(line, col)` goes back from a
-column to a position, which is how up and down keep their column.
+column to a position, which is how up and down keep their column. Tab
+stops are `buffer:tab_width()` apart, which core sets from the language
+or the `tab-width` option; `buffer:set_tab_width(n)` changes it for one
+buffer.
 
 Copying and pasting goes through `require("@core").registers`, so text
 keeps whether it was whole lines in every editing style. A register holds

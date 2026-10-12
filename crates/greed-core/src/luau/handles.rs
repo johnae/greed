@@ -1164,19 +1164,28 @@ fn kept_to_undo(opts: Option<&Table>) -> LuaResult<bool> {
     })
 }
 
-/// The tab width a display column method was given, or the default.
-fn tab_width(given: Option<usize>) -> LuaResult<usize> {
+/// The tab width given, or the buffer's, `own`.
+fn tab_width(given: Option<usize>, own: usize) -> LuaResult<usize> {
     match given {
         Some(0) => Err(mlua::Error::runtime("a tab width is at least 1")),
         Some(n) => Ok(n),
-        None => Ok(crate::render::TAB_WIDTH),
+        None => Ok(own),
     }
 }
 
 /// `buffer:line_count()`, `line_of(pos)`, `line_start(line)`,
-/// `line_end(line)`, `line_text(line)`, `display_column(pos)` and
-/// `at_display_column(line, col)`.
+/// `line_end(line)`, `line_text(line)`, `display_column(pos)`,
+/// `at_display_column(line, col)`, `tab_width()` and `set_tab_width(n)`.
 fn add_line_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method("tab_width", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.tab_width()))
+    });
+    methods.add_method("set_tab_width", |lua, this, width: usize| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        let width = tab_width(Some(width), width)?;
+        state_mut(lua).editor.set_tab_width(this.buffer, width);
+        Ok(())
+    });
     methods.add_method("line_count", |lua, this, ()| {
         this.with_text(lua, |t| Ok(t.len_lines()))
     });
@@ -1207,20 +1216,20 @@ fn add_line_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method(
         "display_column",
         |lua, this, (pos, tabs): (usize, Option<usize>)| {
-            let tabs = tab_width(tabs)?;
-            this.with_text(lua, |t| {
-                char_index(t, pos)?;
-                Ok(crate::render::display_column(t, pos, tabs))
+            this.with_buffer(lua, |b| {
+                let tabs = tab_width(tabs, b.tab_width())?;
+                char_index(b.text(), pos)?;
+                Ok(crate::render::display_column(b.text(), pos, tabs))
             })
         },
     );
     methods.add_method(
         "at_display_column",
         |lua, this, (line, col, tabs): (usize, usize, Option<usize>)| {
-            let tabs = tab_width(tabs)?;
-            this.with_text(lua, |t| {
-                check_line(t, line)?;
-                Ok(crate::render::at_display_column(t, line, col, tabs))
+            this.with_buffer(lua, |b| {
+                let tabs = tab_width(tabs, b.tab_width())?;
+                check_line(b.text(), line)?;
+                Ok(crate::render::at_display_column(b.text(), line, col, tabs))
             })
         },
     );

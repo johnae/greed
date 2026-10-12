@@ -100,9 +100,18 @@ M.openers = {} :: { [string]: { string }? }
 --- after the break without leading spaces. Used where `openers` are.
 M.closers = {} :: { [string]: { string }? }
 
---- How a language indents: one level (`unit`), and its `openers` and
---- `closers` (see above).
-export type Indents = { unit: string?, openers: { string }?, closers: { string }? }
+--- How many columns apart tab stops are in each language, where it isn't
+--- the "tab-width" option.
+M.tab_widths = {} :: { [string]: number? }
+
+--- How a language indents: one level (`unit`), its `openers` and
+--- `closers` (see above), and how wide a tab shows (`tab_width`).
+export type Indents = {
+	unit: string?,
+	openers: { string }?,
+	closers: { string }?,
+	tab_width: number?,
+}
 
 --- Sets how `language` indents, replacing what it had: those left out are
 --- cleared. It goes when the plugin that set it does.
@@ -110,7 +119,13 @@ function M.set(language: string, how: Indents)
 	M.units[language] = how.unit
 	M.openers[language] = how.openers
 	M.closers[language] = how.closers
+	M.tab_widths[language] = how.tab_width
+	M.apply_tab_widths()
 	greed.plugin.tie(function()
+		if M.tab_widths[language] == how.tab_width then
+			M.tab_widths[language] = nil
+			M.apply_tab_widths()
+		end
 		if M.units[language] == how.unit then
 			M.units[language] = nil
 		end
@@ -300,5 +315,36 @@ function M.open(view: greed.View, below: boolean)
 	view:set_selection(selection)
 	break_lines(view, above)
 end
+
+greed.option.define({
+	name = "tab-width",
+	doc = "How many columns apart tab stops are, in languages that don't set their own",
+	default = 4,
+})
+
+--- Shows `buffer`'s tabs as wide as its language says, or the "tab-width"
+--- option; again after its language changes.
+function M.apply_tab_width(buffer: Buffer)
+	local language = buffer:language()
+	local width = language and M.tab_widths[language] or greed.option.get("tab-width") :: number
+	buffer:set_tab_width(math.max(1, math.floor(width)))
+end
+
+--- Applies `apply_tab_width` to every open buffer.
+function M.apply_tab_widths()
+	for _, buffer in greed.buffers() do
+		M.apply_tab_width(buffer)
+	end
+end
+
+greed.on("buffer.opened", function(event: greed.BufferChanged)
+	M.apply_tab_width(event.buffer)
+end)
+
+greed.on("option.changed", function(event)
+	if event.name == "tab-width" then
+		M.apply_tab_widths()
+	end
+end)
 
 return M

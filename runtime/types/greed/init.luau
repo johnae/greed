@@ -3,6 +3,20 @@
 --- This file only describes types, for `luau-analyze` and `luau-lsp`; the
 --- editor provides the real module. Positions are 0-based byte offsets and
 --- lines are 0-based, like LSP.
+---
+--- Conventions, which new API follows and older API moves to as it's
+--- touched:
+---
+--- - What fails for reasons outside the plugin (a file, a program, the
+---   network, a pattern someone typed) returns nil, or false, and a
+---   message. Misuse raises: a wrong argument, a closed handle, a
+---   capability the plugin doesn't have, a write that's refused.
+--- - What lives on and is acted on (buffers, views, terminals, programs,
+---   connections) is a handle with methods; what a module keeps for you
+---   (images, scenes, tabs, projects) is a number its functions take.
+--- - A range is `from, to` with `to` exclusive. Spans of whole lines, given
+---   as a first and last line, include both and say so. Indexes into a
+---   Luau list, and what mirrors `string.find`, are 1-based.
 
 --- A range of text. `anchor` is where it started and `head` is where the
 --- cursor is; a cursor is a range where the two are equal.
@@ -52,7 +66,7 @@ export type Buffer = {
 	line_end: (self: Buffer, line: number) -> number,
 	--- The text of `line`, without its line break.
 	line_text: (self: Buffer, line: number) -> string,
-	--- The screen column `pos` is drawn at in its line: wide characters take two columns and tabs reach the next tab stop, every `tab_width` columns (4 if not given).
+	--- The screen column `pos` is drawn at in its line: wide characters take two columns and tabs reach the next tab stop, every `tab_width` columns (the buffer's own if not given).
 	display_column: (self: Buffer, pos: number, tab_width: number?) -> number,
 	--- The position in `line` drawn at screen column `col`: the start of the character covering it, or the line's end if the line is shorter.
 	at_display_column: (self: Buffer, line: number, col: number, tab_width: number?) -> number,
@@ -81,6 +95,10 @@ export type Buffer = {
 	--- Whether the main view shows line numbers beside it (the default).
 	line_numbers: (self: Buffer) -> boolean,
 	set_line_numbers: (self: Buffer, on: boolean) -> (),
+	--- How many columns apart its tab stops are, as it's drawn; 4 until set. Core sets it from the language or the "tab-width" option.
+	tab_width: (self: Buffer) -> number,
+	--- Sets how many columns apart its tab stops are, at least 1.
+	set_tab_width: (self: Buffer, width: number) -> (),
 	--- The views showing it.
 	views: (self: Buffer) -> { View },
 	--- Whether it stays open while nothing shows it, though it has no file.
@@ -470,10 +488,6 @@ export type Mode = {
 	set_cursor: (mode: string, shape: "block" | "bar" | "underline") -> (),
 	--- The cursor shape of `mode`, or of the current mode. A block or underline sits on a character, the last of a selection going forward; a bar sits between characters.
 	cursor_of: (mode: string?) -> "block" | "bar" | "underline",
-	--- The older name of `set_cursor`.
-	cursor: (mode: string, shape: "block" | "bar" | "underline") -> (),
-	--- The older name of `cursor_of`.
-	shape: (mode: string?) -> "block" | "bar" | "underline",
 }
 
 export type OptionValue = boolean | number | string
