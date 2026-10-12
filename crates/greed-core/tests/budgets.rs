@@ -254,9 +254,15 @@ fn host(text: &str, path: Option<PathBuf>) -> Host {
     host.set_lsp_launcher(Box::new(|_, _| Ok(None)));
     host.load_dirs(&sessions::default_plugins()).unwrap();
     // A measurement isn't a first start to set up: the page would take the
-    // first client's keys.
-    host.eval("require('@greed').option.set('setup-first-start', false)")
-        .unwrap();
+    // first client's keys. Nor is it about trusting the folders it opens,
+    // whose question would wait for an answer where a language server is
+    // installed.
+    host.eval(
+        "local option = require('@greed').option
+         option.set('setup-first-start', false)
+         option.set('project-trust', 'off')",
+    )
+    .unwrap();
     host.announce_open_files().unwrap();
     host
 }
