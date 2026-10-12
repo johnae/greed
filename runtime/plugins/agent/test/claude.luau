@@ -66,6 +66,12 @@ test("the Claude Code Greed starts gets the hooks that tell Greed how it's doing
 			"nothing outside Greed"
 		)
 	end
+	-- Its multiple-choice questions go to agent_ask, only them.
+	local chooses = settings.hooks.PreToolUse[2]
+	assert(
+		chooses.matcher == "AskUserQuestion"
+			and string.find(chooses.hooks[1].command, "agent_ask", 1, true)
+	)
 	-- Claude Code waits for its permission hook longer than Greed holds it.
 	local permission = settings.hooks.PermissionRequest[1].hooks[1]
 	assert(permission.timeout * 1000 > require("../hooks").HOLD, tostring(permission.timeout))

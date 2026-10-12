@@ -47,20 +47,33 @@ local HOOK = '[ -z "$GREED_TERMINAL_ID" ] || "$GREED_BIN" ctl agent_hook '
 local PERMISSION = '[ -z "$GREED_TERMINAL_ID" ] || "$GREED_BIN" ctl agent_permission '
 	.. 'terminal="$GREED_TERMINAL_ID" hook=@- 2>/dev/null; true'
 
+-- And its multiple-choice questions, asked on a page (`agent_ask`), with
+-- your answers printed as the tool's own.
+local ASK = '[ -z "$GREED_TERMINAL_ID" ] || "$GREED_BIN" ctl agent_ask '
+	.. 'terminal="$GREED_TERMINAL_ID" hook=@- 2>/dev/null; true'
+
 --- Settings for `claude --settings`, for the Claude Code Greed starts: the
 --- hooks that tell Greed how it's doing, and through which a question can
 --- be answered from anywhere, for that run only, beside your own settings
 --- and without writing them.
 function M.settings(): string
+	-- Claude Code waits for these, a little longer than Greed holds a question.
+	local waits = agent_hooks.HOLD // 1000 + 60
 	local hooks = {}
 	for _, event in agent_hooks.EVENTS do
 		local hook: { [string]: any } = { type = "command", command = HOOK }
 		if event == "PermissionRequest" then
-			-- Claude Code waits for it, a little longer than Greed holds it.
 			hook.command = PERMISSION
-			hook.timeout = agent_hooks.HOLD // 1000 + 60
+			hook.timeout = waits
 		end
-		hooks[event] = greed.json.array({ { hooks = greed.json.array({ hook }) } })
+		local matchers = { { hooks = greed.json.array({ hook }) } }
+		if event == "PreToolUse" then
+			table.insert(matchers, {
+				matcher = "AskUserQuestion",
+				hooks = greed.json.array({ { type = "command", command = ASK, timeout = waits } }),
+			})
+		end
+		hooks[event] = greed.json.array(matchers)
 	end
 	return greed.json.encode({ hooks = hooks })
 end

@@ -1027,7 +1027,9 @@ npm test`), and takes `allow`, `allow-always` (the rule Claude Code offers
 for not asking again) or `reject` from anywhere. Look at its terminal and
 it asks there, in its own screen, as it always does; so does a question
 asked while you're looking, and one nobody answers for half an hour. Its
-multiple-choice questions stay in its own screen.
+multiple-choice questions go the same way: while you're elsewhere Greed
+asks them on a page, as it does its own agent's (below), and gives your
+answers back to it as if you had picked them in its screen.
 
 Questions Greed's own agent asks on a page (its `ask` tool) can be answered
 from anywhere too: they show in `space space` as questions waiting for you,

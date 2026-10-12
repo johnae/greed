@@ -83,9 +83,10 @@ function M.status(): { [string]: any }
 		local running = core.objects.inspect(found).agent
 		if running then
 			-- What it asks, while Greed holds its question for you.
-			local held = hooks.held(found.value.buffer:id())
+			local buffer = found.value.buffer:id()
+			local held = hooks.held(buffer)
 			table.insert(agents, {
-				question = held and held.title,
+				question = held and held.title or hooks.asking(buffer),
 				id = found.id,
 				label = found.label,
 				agent = running.name,

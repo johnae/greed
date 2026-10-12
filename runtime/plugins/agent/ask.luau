@@ -187,8 +187,14 @@ core.actions.action({
 core.actions.set_default("questions", "show")
 
 --- Shows `questions` as a page and waits until you send or cancel it.
---- Returns the answers by id and whether you cancelled.
-function M.ask(title: string, questions: { Question }): ({ [string]: string }, boolean)
+--- Returns the answers by id and whether you cancelled. With `until_gone`,
+--- the page also goes, as if cancelled, once that says so: the questions
+--- are being asked somewhere else instead.
+function M.ask(
+	title: string,
+	questions: { Question },
+	until_gone: (() -> boolean)?
+): ({ [string]: string }, boolean)
 	local buffer = greed.create_buffer("file", page(title, questions), { language = "markdown" })
 	asked += 1
 	local a: Asking = {
@@ -225,6 +231,17 @@ function M.ask(title: string, questions: { Question }): ({ [string]: string }, b
 		width = math.max(widest + 24, 50),
 		height = buffer:line_count() + 3,
 	})
+	if until_gone then
+		greed.spawn(function()
+			while table.find(asking, a) do
+				if until_gone() then
+					finish(a, { answers = {}, cancelled = true })
+					return
+				end
+				greed.sleep(500)
+			end
+		end)
+	end
 	local result = a.done:wait()
 	return result.answers, result.cancelled
 end

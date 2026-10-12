@@ -56,22 +56,21 @@ test("a terminal's agent waiting for you needs you, until its hooks say otherwis
 	terminal.close(term)
 end)
 
--- Claude Code's permission hook for the terminal `term`, as `greed ctl
--- agent_permission` runs it: in the background, since it waits for you,
--- giving back what it prints once it's done.
-local function permission(term: terminal.Term, input: { [string]: any }): { printed: string? }
-	local tool: agent.Tool? = nil
-	for _, found in agent.tools() do
-		if found.name == "agent_permission" then
-			tool = found
-		end
-	end
+-- A hook's tool `name` run with `input`, as `greed ctl NAME` runs it, in the
+-- background, giving back what it prints once it's done.
+local function hook_tool(
+	name: string,
+	term: terminal.Term,
+	input: { [string]: any }
+): { printed: string? }
 	local out: { printed: string? } = {}
 	greed.spawn(function()
-		out.printed = (tool :: agent.Tool).run(
-			{ terminal = term.buffer:id(), hook = input },
-			agent.caller()
-		)
+		for _, tool in agent.tools() do
+			if tool.name == name then
+				out.printed =
+					tool.run({ terminal = term.buffer:id(), hook = input }, agent.caller())
+			end
+		end
 	end)
 	return out
 end
@@ -89,7 +88,7 @@ test(
 		t:buffer("|")
 		local term = terminal.open({ "sh", "-c", "sleep 5" })
 		greed.view():split("right", greed.create_buffer("text", "elsewhere")):focus()
-		local asked = permission(term, ASKS)
+		local asked = hook_tool("agent_permission", term, ASKS)
 		t:wait(10)
 		assert(asked.printed == nil, "held")
 		local found = assert(core.objects.get(`terminal:{term.buffer:id()}`))
@@ -128,14 +127,14 @@ test("looking at Claude Code's terminal leaves the question to its own screen", 
 	t:buffer("|")
 	local term = terminal.open({ "sh", "-c", "sleep 5" })
 	-- Asked while you look at it: it asks there at once.
-	local now = permission(term, ASKS)
+	local now = hook_tool("agent_permission", term, ASKS)
 	t:wait_for(function()
 		return now.printed ~= nil
 	end)
 	assert(now.printed == "", tostring(now.printed))
 	-- Asked while you're elsewhere, held until you look.
 	greed.view():split("right", greed.create_buffer("text", "elsewhere")):focus()
-	local later = permission(term, ASKS)
+	local later = hook_tool("agent_permission", term, ASKS)
 	t:wait(10)
 	assert(later.printed == nil, "held")
 	term.buffer:views()[1]:focus()
@@ -145,3 +144,67 @@ test("looking at Claude Code's terminal leaves the question to its own screen", 
 	assert(later.printed == "", "let go for its own screen")
 	terminal.close(term)
 end)
+
+local CHOOSES: { [string]: any } = {
+	hook_event_name = "PreToolUse",
+	tool_name = "AskUserQuestion",
+	tool_input = {
+		questions = {
+			{
+				question = "Do you prefer red or blue?",
+				header = "Color",
+				options = {
+					{ label = "Red", description = "Pick red" },
+					{ label = "Blue", description = "Pick blue" },
+				},
+				multiSelect = false,
+			},
+		},
+	},
+}
+
+test(
+	"Claude Code's multiple-choice questions are asked on a page while you're elsewhere",
+	function(t)
+		assert(hooks.state_of(CHOOSES) == "waiting", "its questions wait for you")
+		t:buffer("|")
+		local term = terminal.open({ "sh", "-c", "sleep 5" })
+		greed.view():split("right", greed.create_buffer("text", "elsewhere")):focus()
+		local asked = hook_tool("agent_ask", term, CHOOSES)
+		t:wait(10)
+		assert(asked.printed == nil, "asked on a page")
+		-- Answered from anywhere, as Greed's own agent's questions are.
+		local waiting = agent.status().asking
+		assert(#waiting == 1 and waiting[1].questions[1].choices[2] == "Blue", "in the status")
+		local said = nil
+		for _, one in agent.status().agents do
+			if one.id == `terminal:{term.buffer:id()}` then
+				said = one.question
+			end
+		end
+		assert(said == "Do you prefer red or blue?", tostring(said))
+		for _, tool in agent.tools() do
+			if tool.name == "ask_answer" then
+				tool.run(
+					{ id = waiting[1].id, answers = { ["Do you prefer red or blue?"] = "Red" } },
+					agent.caller()
+				)
+			end
+		end
+		t:wait_for(function()
+			return asked.printed ~= nil
+		end)
+		local out = greed.json.decode(tostring(asked.printed)).hookSpecificOutput
+		assert(out.permissionDecision == "allow", tostring(out.permissionDecision))
+		assert(out.updatedInput.answers["Do you prefer red or blue?"] == "Red")
+		assert(out.updatedInput.questions[1].header == "Color", "the rest as it was")
+		-- Looking at its terminal leaves them to its own screen.
+		term.buffer:views()[1]:focus()
+		local there = hook_tool("agent_ask", term, CHOOSES)
+		t:wait_for(function()
+			return there.printed ~= nil
+		end)
+		assert(there.printed == "", tostring(there.printed))
+		terminal.close(term)
+	end
+)

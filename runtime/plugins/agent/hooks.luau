@@ -9,6 +9,7 @@ local greed = require("@greed")
 local core = require("@core")
 local registry = require("./registry")
 local terminal = require("@terminal")
+local ask = require("./ask")
 
 local M = {}
 
@@ -41,6 +42,10 @@ table.sort(M.EVENTS)
 --- notifications say nothing here: one can come after you answered the
 --- prompt it was about, and the events above already said it.
 function M.state_of(hook: { [string]: any }): (terminal.AgentState | "gone")?
+	-- Its multiple-choice questions come as a tool it uses: waiting for you.
+	if hook.hook_event_name == "PreToolUse" and hook.tool_name == "AskUserQuestion" then
+		return "waiting"
+	end
 	return STATES[tostring(hook.hook_event_name)]
 end
 
@@ -204,6 +209,80 @@ registry.tool({
 		held[id] = nil
 		core.objects.changed(`terminal:{id}`)
 		return decision(tostring(answer), mine)
+	end,
+})
+
+-- Its multiple-choice questions (its AskUserQuestion tool) come before the
+-- tool runs, so the same goes for them: while you aren't looking at its
+-- terminal, Greed asks them as its own agent's questions are asked (a page,
+-- answered from anywhere: ask.luau), and gives your answers back as the
+-- tool's own, in its input.
+
+--- What a terminal's agent asks on a page now, its first question, by the
+--- terminal's buffer id.
+local asking_in: { [number]: string } = {}
+
+--- The first question the agent in the terminal in `buffer` asks on a page
+--- now, if it does.
+function M.asking(buffer: number): string?
+	return asking_in[buffer]
+end
+
+registry.tool({
+	name = "agent_ask",
+	shell_only = true,
+	description = "For Claude Code's PreToolUse hook on its AskUserQuestion tool, in one of "
+		.. "Greed's terminals: asks its questions on a page while you aren't looking at that "
+		.. "terminal, answered from anywhere, and prints them as the tool's answers; prints "
+		.. "nothing for Claude Code to ask in its own screen. `greed ctl agent_ask "
+		.. "terminal=$GREED_TERMINAL_ID hook=@-`",
+	input = HOOK_INPUT,
+	run = function(args)
+		local term, hook = report(args)
+		local id = term.buffer:id()
+		local input: { [string]: any } = if type(hook.tool_input) == "table"
+			then hook.tool_input :: any
+			else {}
+		local asked: { any } = if type(input.questions) == "table"
+			then input.questions :: any
+			else {}
+		if #asked == 0 or looked_at(id) or asking_in[id] then
+			return ""
+		end
+		-- Each question by its text, the key Claude Code answers it by.
+		local questions: { ask.Question } = {}
+		for _, q in asked do
+			local choices: { string } = {}
+			local options: { any } = if type(q.options) == "table" then q.options else {}
+			for _, option in options do
+				table.insert(choices, tostring(option.label))
+			end
+			local text = tostring(q.question)
+			table.insert(questions, { id = text, question = text, choices = choices })
+		end
+		asking_in[id] = questions[1].question
+		core.objects.changed(`terminal:{id}`)
+		local answers, cancelled = ask.ask(
+			`{term.agent and term.agent.name or "claude"} asks`,
+			questions,
+			function()
+				return looked_at(id) or not term.terminal:valid()
+			end
+		)
+		asking_in[id] = nil
+		core.objects.changed(`terminal:{id}`)
+		if cancelled then
+			return ""
+		end
+		local given = table.clone(input)
+		given.answers = answers
+		return greed.json.encode({
+			hookSpecificOutput = {
+				hookEventName = "PreToolUse",
+				permissionDecision = "allow",
+				updatedInput = given,
+			},
+		})
 	end,
 })
 
