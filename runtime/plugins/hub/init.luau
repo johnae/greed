@@ -526,14 +526,23 @@ function M.go(found: { session: string, via: string?, home: boolean? })
 end
 
 --- The other sessions here and on the other machines, by machine then
---- name; those here even before the hub has heard from them.
-function M.sessions(): { Session }
+--- name: those the hub has heard from, and with `all` the ones here it
+--- hasn't yet. Listing those looks at every session's socket, so the
+--- status line, drawn on every frame, leaves `all` off.
+function M.sessions(all: boolean?): { Session }
 	local out: { Session } = {}
 	local me = greed.session.current()
 	local here = M.machine()
-	for _, running in greed.session.list() do
-		if running.name ~= me then
-			table.insert(out, { session = running.name, status = here[running.name] })
+	for name, status in here do
+		if name ~= me then
+			table.insert(out, { session = name, status = status })
+		end
+	end
+	if all then
+		for _, running in greed.session.list() do
+			if running.name ~= me and here[running.name] == nil then
+				table.insert(out, { session = running.name })
+			end
 		end
 	end
 	for _, there in M.machines() do
@@ -587,7 +596,7 @@ end
 --- (`@waiting`) or a machine's name (`@eris`, `@here`) those.
 function M.places(): { picker.Place }
 	local out: { picker.Place } = {}
-	for _, found in M.sessions() do
+	for _, found in M.sessions(true) do
 		local states: { string } = {}
 		local agents = found.status and found.status.agents
 		if type(agents) == "table" then
