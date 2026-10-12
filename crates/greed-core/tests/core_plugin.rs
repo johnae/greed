@@ -109,6 +109,31 @@ fn failures_name_the_line_and_what_differed() {
 }
 
 #[test]
+fn a_test_waiting_for_nothing_fails_even_while_timers_go_round() {
+    let dir = std::env::temp_dir().join(format!("greed-test-nothing-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    std::fs::write(
+        dir.join("test/stuck.luau"),
+        r"local test = require('@greed/test')
+local greed = require('@greed')
+test('waits', function()
+    greed.spawn(function()
+        while true do
+            greed.sleep(60000)
+        end
+    end)
+    greed.signal():wait()
+end)
+",
+    )
+    .unwrap();
+    let results = run_tests(&[core()], &dir).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    let failure = results[0].failure.as_deref().unwrap_or_default();
+    assert!(failure.contains("nothing will bring"), "{failure}");
+}
+
+#[test]
 fn statusline_plugin_tests_pass() {
     // The mode says COMMAND on the command line.
     assert_all_pass(

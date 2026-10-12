@@ -688,6 +688,9 @@ pub(super) fn signal_function(lua: &Lua) -> LuaResult<Function> {
 /// a key.
 pub(super) fn run_to_end(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> LuaResult<()> {
     const QUIET: Duration = Duration::from_secs(10);
+    // How far timers may run ahead of the real time before the test is
+    // taken to wait for nothing.
+    const NOTHING_COMES: Duration = Duration::from_secs(24 * 60 * 60);
     let thread = lua.create_thread(f)?;
     resume(lua, thread.clone(), args)?;
     // When a program the test waits on last said something.
@@ -714,6 +717,14 @@ pub(super) fn run_to_end(lua: &Lua, f: Function, args: impl IntoLuaMulti) -> Lua
                     } else {
                         advance(lua, at)?;
                     }
+                }
+                Some(at) if at.saturating_duration_since(Instant::now()) > NOTHING_COMES => {
+                    // Only timers that keep coming back, like a plugin's
+                    // look every minute, have fired for a day: what the
+                    // test waits for isn't coming.
+                    return Err(mlua::Error::runtime(
+                        "the test waits for something nothing will bring, like a key or a signal nobody sends; timers only went round",
+                    ));
                 }
                 Some(at) => advance(lua, at)?,
                 None if super::jobs::await_child(lua)? => {}
