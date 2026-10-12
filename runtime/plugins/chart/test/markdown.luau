@@ -70,3 +70,15 @@ test("a chart that can't be drawn says why where it would be", function(t)
 	local buffer = open(t, "| a | b |\n|---|---|\n| x | y |\n<!-- chart: bar nosuch -->\n")
 	assert(string.find(drawn(buffer), "⚠", 1, true), drawn(buffer))
 end)
+
+test("a chart line under a data block draws the table it read", function(t)
+	local buffer = open(
+		t,
+		"```csv\nregion,units\nnorth,1200\nsouth,700\n```\n<!-- chart: bar units -->\n\nafter"
+	)
+	t:wait_for(function()
+		local chart = drawn(buffer)
+		return string.find(chart, "north", 1, true) ~= nil
+			and string.find(chart, "south", 1, true) ~= nil
+	end)
+end)

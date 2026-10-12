@@ -18,6 +18,7 @@ local shell = require("@shell")
 local scene = require("@scene")
 local core = require("@core")
 local markdown = require("@markdown")
+local data_blocks = require("@data").document
 local draw = require("@self/draw")
 local read = require("@self/read")
 
@@ -323,43 +324,83 @@ greed.on("buffer.closed", function(event)
 	document_scenes[event.id] = nil
 end)
 
+-- The charts the comment lines from line `n` of `s` ask for (formula lines
+-- may come first), drawing the table `data` gives, into `out`; only those
+-- on lines `first` to `last`. `data` is asked once, if a chart needs it,
+-- and gives nil while there's no table yet.
+local function charts_from(
+	buffer: greed.Buffer,
+	s: markdown.Structure,
+	n: number,
+	first: number,
+	last: number,
+	data: () -> markdown.Data?,
+	out: { greed.Mark }
+)
+	local got: markdown.Data? = nil
+	while n < #s.lines and string.match(s.lines[n + 1], "^%s*<!%-%-") do
+		local ask = string.match(s.lines[n + 1], "^%s*<!%-%-%s*chart:%s*(.-)%s*%-%->%s*$")
+		if ask and n >= first and n <= last then
+			got = got or data()
+		end
+		if ask and got and n >= first and n <= last then
+			local chart = charted(buffer, got, ask)
+			local from, to = s.starts[n + 1], s.starts[n + 1] + #s.lines[n + 1]
+			table.insert(out, { from = from, to = to, style = "", lines = chart.lines })
+			-- For the clients that draw one, the chart's scene over its
+			-- lines, a row under the comment line, which stays in sight
+			-- to edit. Empty, as those lines are only drawn, not the
+			-- file's: the scene is placed from the line's start.
+			local spec = chart.spec
+			if spec and scene.drawn() then
+				table.insert(out, {
+					from = from,
+					to = from,
+					style = "",
+					scene = {
+						id = scene_for(buffer, n, spec),
+						cols = chart.cols,
+						rows = #chart.lines,
+						row = -1,
+					},
+				})
+			end
+		end
+		n += 1
+	end
+end
+
+-- A data table (a data block's, see the data plugin) as a chart reads a
+-- Markdown table: its columns named as formulas name them.
+local function from_data(t: core.DataTable): markdown.Data
+	local keys: { string } = {}
+	for _, column in t.columns do
+		table.insert(keys, markdown.values.key(column.name))
+	end
+	local rows: { { [string]: any } } = {}
+	for _, row in ipairs(markdown.values.table(t)) do
+		table.insert(rows, row)
+	end
+	return { keys = keys, rows = rows }
+end
+
 markdown.conceal({
 	ns = "chart-tables",
 	wants = markdown.drawn,
 	draw = function(buffer, s, first, last): { greed.Mark }
 		local out: { greed.Mark } = {}
 		for _, found in s.tables do
-			local data: markdown.Data? = nil
-			-- The comment lines right under the table: formulas, then charts.
-			local n = found.last + 1
-			while n < #s.lines and string.match(s.lines[n + 1], "^%s*<!%-%-") do
-				local ask = string.match(s.lines[n + 1], "^%s*<!%-%-%s*chart:%s*(.-)%s*%-%->%s*$")
-				if ask and n >= first and n <= last then
-					local d = data or markdown.values.data(buffer, s, found)
-					data = d
-					local chart = charted(buffer, d, ask)
-					local from, to = s.starts[n + 1], s.starts[n + 1] + #s.lines[n + 1]
-					table.insert(out, { from = from, to = to, style = "", lines = chart.lines })
-					-- For the clients that draw one, the chart's scene over its
-					-- lines, a row under the comment line, which stays in sight
-					-- to edit. Empty, as those lines are only drawn, not the
-					-- file's: the scene is placed from the line's start.
-					local spec = chart.spec
-					if spec and scene.drawn() then
-						table.insert(out, {
-							from = from,
-							to = from,
-							style = "",
-							scene = {
-								id = scene_for(buffer, n, spec),
-								cols = chart.cols,
-								rows = #chart.lines,
-								row = -1,
-							},
-						})
-					end
-				end
-				n += 1
+			charts_from(buffer, s, found.last + 1, first, last, function(): markdown.Data?
+				return markdown.values.data(buffer, s, found)
+			end, out)
+		end
+		-- Under a data block, the table it read.
+		for _, code in s.code do
+			if code.closed and core.data.get(code.lang) then
+				charts_from(buffer, s, code.close + 1, first, last, function(): markdown.Data?
+					local t = data_blocks.table(buffer, code)
+					return if t then from_data(t) else nil
+				end, out)
 			end
 		end
 		return out
