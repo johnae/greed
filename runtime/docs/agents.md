@@ -447,7 +447,10 @@ context window or 16k tokens, whichever is more, but at most a quarter of
 it). A request the provider still turns down as too long is compacted and
 tried again, keeping half as much of the end each time, up to three
 times. The transcript shows a folded `conversation compacted (N messages → summary)`
-row; `tab` on it shows the summary. `:agent-compact` does it by hand. The
+row; `tab` on it shows the summary. `:agent-compact` does it by hand, and
+`:set agent-compact-at 200000` compacts once a conversation reaches that
+many tokens, well before a large window fills: every request sends the
+whole conversation, so a long one costs more each turn. The
 summary goes to the model as its own earlier words rather than as
 instructions, and the system prompt (your project's instructions, where
 it works) is built fresh as always. The model playing the `compact` role

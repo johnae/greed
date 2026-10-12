@@ -85,6 +85,12 @@ greed.option.define({
 })
 
 greed.option.define({
+	name = "agent-compact-at",
+	doc = "Compact conversations with Greed's own agent once they reach this many tokens; 0 waits until they near the model's limit",
+	default = 0,
+})
+
+greed.option.define({
 	name = "agent-workspace-edits",
 	needs = "eval",
 	doc = "Let agents in a workspace of their own edit, move and delete files there without asking",

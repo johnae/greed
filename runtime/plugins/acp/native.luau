@@ -1395,6 +1395,10 @@ local function prompt(
 		local specs, by_name = tools(state)
 		local window = models.window(state.role)
 		local room = compact.room(window, models.output(state.role))
+		local at = greed.option.get("agent-compact-at")
+		if type(at) == "number" and at > 0 then
+			room = math.min(room, at)
+		end
 		local extra = #said_system + #greed.json.encode(specs)
 		local tail = compact.keep(window)
 		if may_compact and estimate(state, extra) > room and compact.cut(state.said, tail) then
