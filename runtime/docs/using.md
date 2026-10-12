@@ -1471,8 +1471,8 @@ What follows `chart:` is what follows `| chart` in the shell (`bar`,
 columns are named as formulas name them. The chart follows the table as
 you change it and the values it uses; on GitHub only the table shows.
 
-A command button runs a command in the project's shell, where its output
-shows:
+A command button runs a command in the project's shell and shows its output
+in a float as it comes (`esc` closes it, `ctrl-c` stops it):
 
 ```markdown
 Crate: [greed-core](field:crate)
