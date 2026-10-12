@@ -586,3 +586,27 @@ test("an MCP tool's title reads as the tool's name", function(t)
 	assert(string.find(text, "✓ github: list_issues\n", 1, true), text)
 	assert(not string.find(text, "mcp__", 1, true), text)
 end)
+
+test(
+	"a session is an object: listed, inspected, its transcript related, shown by default",
+	function(t)
+		local core = require("@core")
+		local s = start(t, t:tempdir({}))
+		local found: any = nil
+		for _, object in core.objects.list("agent-session") do
+			if object.value == s then
+				found = object
+			end
+		end
+		assert(found and found.id == `agent-session:{s.id}`, "listed")
+		assert(core.objects.get(found.id) ~= nil, "found again by id")
+		local state = core.objects.inspect(found)
+		assert(state.agent == "fake" and state.status == "idle", greed.json.encode(state))
+		local transcript = core.objects.related(found).transcript
+		assert(transcript and #transcript == 1, "its transcript")
+		local first = core.objects.actions(found)[1]
+		assert(first.name == "show", first.name)
+		acp.close(s)
+		assert(core.objects.get(found.id) == nil, "gone once closed")
+	end
+)

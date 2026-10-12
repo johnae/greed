@@ -287,8 +287,8 @@ The things in a running Greed are objects, each with a kind and an id
 objects it relates to and its kind's actions. `space h i` inspects one, and
 agents read them through the `describe` tool. Greed's own kinds are
 `editor` (where the inspector starts), `buffer`, `view`, `tab`, `plugin`,
-`client`, `file`, `folder`, `terminal`, `shell-block`, `language-server`
-and `proposal`.
+`client`, `file`, `folder`, `terminal`, `shell-block`, `language-server`,
+`proposal` and `agent-session` (an agent session: show, stop, close).
 
 A plugin adds a kind for its own things. Everything but the name is
 optional: `list` when there's a way to list them all, `get` to find one by

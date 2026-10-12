@@ -1319,4 +1319,76 @@ core.file.running("agents", function()
 	return found
 end)
 
+-- Sessions as objects, for the inspector and agents: what each runs, how
+-- it's doing, its transcript, and showing, stopping and closing it.
+local function session_object(s: Session): core.Object
+	return { kind = "agent-session", id = `agent-session:{s.id}`, label = s.name, value = s }
+end
+
+core.objects.kind({
+	name = "agent-session",
+	doc = "An agent session: the agent it runs, how it's doing and its transcript",
+	list = function()
+		local out = {}
+		for _, s in sessions do
+			table.insert(out, session_object(s))
+		end
+		return out
+	end,
+	get = function(key)
+		for _, s in sessions do
+			if tostring(s.id) == key then
+				return session_object(s)
+			end
+		end
+		return nil
+	end,
+	inspect = function(s: Session)
+		return {
+			name = s.name,
+			agent = s.agent,
+			status = s.status,
+			folder = s.cwd,
+			workspace = if s.workspace then s.workspace.path else nil,
+			tool = s.tool,
+			failed = s.failed,
+			tokens = s.tokens,
+			window = s.window,
+		}
+	end,
+	relations = function(s: Session)
+		local buffer = buffers[s.id]
+		local transcript = if buffer then core.objects.get(`buffer:{buffer:id()}`) else nil
+		return { transcript = if transcript then { transcript } else {} }
+	end,
+})
+
+core.actions.action({
+	kind = "agent-session",
+	name = "show",
+	doc = "Show its transcript",
+	run = function(target)
+		M.show(target.value)
+	end,
+})
+core.actions.set_default("agent-session", "show")
+core.actions.action({
+	kind = "agent-session",
+	name = "stop",
+	doc = "Stop what its agent is doing, keeping the session",
+	danger = true,
+	run = function(target)
+		M.stop(target.value)
+	end,
+})
+core.actions.action({
+	kind = "agent-session",
+	name = "close",
+	doc = "Stop it and close it, its workspace removed",
+	danger = true,
+	run = function(target)
+		M.close(target.value)
+	end,
+})
+
 return M
