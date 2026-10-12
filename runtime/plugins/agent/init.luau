@@ -84,6 +84,10 @@ return table.freeze({
 	call = registry.call,
 	--- Whether a tool's caller is a shell, `greed ctl` (registry.luau).
 	from_shell = registry.from_shell,
+	--- Saying an agent's caller is done, its session over, and hearing of
+	--- callers that are (registry.luau).
+	done = registry.done,
+	on_done = registry.on_done,
 	--- Text someone else wrote, wrapped so a model reads it as information
 	--- (untrusted.luau).
 	untrusted = untrusted,

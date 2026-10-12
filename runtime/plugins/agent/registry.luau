@@ -475,8 +475,29 @@ greed.on("control.request", function(request: greed.ControlRequest)
 	end
 end)
 
+-- Who hears of callers that are done.
+local ended: { (caller: Caller) -> () } = {}
+
+--- Calls `listener` with each caller that's done: an MCP client whose
+--- connection closed, or an agent in the editor whose session ended
+--- (`done`), so what was kept for it, like an answer for the rest of its
+--- session, goes. It goes when the plugin that added it does.
+function M.on_done(listener: (caller: Caller) -> ())
+	table.insert(ended, listener)
+	greed.plugin.tie(registry.remover(ended, listener))
+end
+
+--- Says `caller`, an agent's in the editor, is done: its session ended.
+function M.done(caller: Caller)
+	registry.tell(ended, caller)
+end
+
 greed.on("control.closed", function(event: greed.ControlClosed)
+	local caller = switched[event.connection]
 	switched[event.connection] = nil
+	if caller then
+		M.done(caller)
+	end
 end)
 
 -- The names of the tools in `group`, sorted, with commas between.

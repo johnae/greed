@@ -144,6 +144,8 @@ export type Driver = {
 	sees_images: ((session: Session) -> boolean)?,
 	--- What keeps it from working now, like a missing key, if anything.
 	check: ((session: Session) -> string?)?,
+	--- Its session is over: it's stopped or closed.
+	stop: ((session: Session) -> ())?,
 }
 
 -- A terminal the agent asked for: a program and what it printed.
@@ -366,6 +368,16 @@ function M.within(session: Session, path: string): boolean
 	return core.project.inside(core.project.resolve(path, session.cwd), session.cwd)
 end
 
+--- The first of `paths` outside the folder `session` works in, if any.
+function M.outside(session: Session, paths: { string }): string?
+	for _, path in paths do
+		if not M.within(session, path) then
+			return path
+		end
+	end
+	return nil
+end
+
 -- Applies one session/update notification.
 local function update(session: Session, u: any)
 	local kind = u.sessionUpdate
@@ -497,22 +509,9 @@ local function handlers(session: Session): Handlers
 		if type(params.path) ~= "string" or string.sub(params.path, 1, 1) ~= "/" then
 			return nil, "the path must be absolute"
 		end
-		-- An agent in a workspace of its own writes only there; one in the
-		-- project asks before writing anywhere else.
-		if not M.within(session, params.path) then
-			if session.workspace then
-				return nil, `{params.path} is outside the workspace ({session.cwd})`
-			end
-			local chosen = M.ask(
-				session,
-				`Write {params.path}, outside the project`,
-				"edit",
-				M.ONCE,
-				{ params.path }
-			)
-			if chosen ~= "once" then
-				return nil, "the user didn't allow writing outside the project"
-			end
+		local refused = M.may_write(session, `Write {params.path}`, "edit", { params.path })
+		if refused then
+			return nil, refused
 		end
 		-- Whatever the agent was allowed before, a write letting a plugin do
 		-- more asks you, and only you.
@@ -696,6 +695,22 @@ function M.ask(
 	end
 	session.changed()
 	return chosen
+end
+
+--- Whether the agent of `session` may change the files at `paths` (full
+--- paths), doing `title` (a call of `kind`). Inside where it works it may.
+--- An agent in a workspace of its own changes nothing outside it; one in
+--- the project asks first, Allow once or Reject, whatever you allowed it
+--- before. Nil when it may, else why not.
+function M.may_write(session: Session, title: string, kind: string, paths: { string }): string?
+	local outside = M.outside(session, paths)
+	if outside == nil then
+		return nil
+	elseif session.workspace then
+		return `{outside} is outside the workspace ({session.cwd})`
+	end
+	local chosen = M.ask(session, `{title}, outside the project`, kind, M.ONCE, paths)
+	return if chosen == "once" then nil else "the user didn't allow writing outside the project"
 end
 
 local next_id = 0
@@ -1158,6 +1173,10 @@ end
 --- Stops the agent program.
 function M.stop(session: Session)
 	M.cancel(session)
+	local driver = session.driver
+	if driver and driver.stop then
+		driver.stop(session)
+	end
 	if session.conn then
 		session.conn:close()
 	end

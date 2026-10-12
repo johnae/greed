@@ -380,9 +380,10 @@ language server reports about the file right after. Several changes to a
 file in one `edit_file` are one change to undo. It won't write a whole file
 over one it hasn't read, or over your changes made since it read it, and
 it can't write a line like `// ... existing code ...` in place of code it
-left out. When it edits your config, the config runs again right away, and
-the agent hears whether it ran or what error it hit, so a setting that
-doesn't exist gets fixed in the same turn.
+left out. A file outside the project, your config too, asks before every
+change, even with edits allowed always. When it edits your config, the
+config runs again right away, and the agent hears whether it ran or what
+error it hit, so a setting that doesn't exist gets fixed in the same turn.
 
 By default the model edits by giving the text to replace. Some models copy
 text badly and do better naming lines instead: with `edits = "hashline"`

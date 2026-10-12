@@ -154,7 +154,9 @@ local function results(t: any, calls: { { any } }, files: { [string]: string }):
 	local s, dir = ask(t, "go", files)
 	t:wait_for(function()
 		if s.status == "waiting" then
-			waiting(s).answer:send("always")
+			-- Writes outside the project can only be allowed once.
+			local question = waiting(s)
+			question.answer:send(if #question.options == 3 then "always" else "once")
 		end
 		return s.status == "idle"
 	end)
@@ -1359,6 +1361,8 @@ test("a write letting a plugin do more asks every time, and no policy answers it
 		question.title
 	)
 	assert(#question.options == 2, "no allowing it for good")
+	local locations = question.locations
+	assert(locations and locations[1] == `{dir}/plugin.toml`, "it names the file")
 	question.answer:send("no")
 	t:wait(10)
 	remove()
@@ -1721,6 +1725,125 @@ test("move_file and delete_file move and delete files", function(t)
 	)
 	assert(not got[2].error and greed.fs.stat(`{dir}/old.txt`) == nil, got[2].text)
 	assert(got[3].error and string.find(got[3].text, "there's no nope.rs", 1, true), got[3].text)
+end)
+
+-- What the model got back from its `n`th call.
+local function result_of(asked: { any }, n: number): any
+	local count = 0
+	for _, one in asked[#asked].said do
+		if one.role == "tool" then
+			count += 1
+			if count == n then
+				return one
+			end
+		end
+	end
+	error(`no result {n}`)
+end
+
+test("a change outside the project asks apart, only once, whatever was allowed", function(t)
+	local elsewhere = t:tempdir({ ["gone.txt"] = "g\n" })
+	local asked = script({
+		calling("write_file", { path = "b.txt", text = "b" }),
+		calling("write_file", { path = `{elsewhere}/new.txt`, text = "x" }),
+		calling("delete_file", { path = `{elsewhere}/gone.txt` }),
+		calling("move_file", { from = "a.txt", to = `{elsewhere}/a.txt` }),
+		calling("write_file", { path = "c.txt", text = "c" }),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "spread out")
+	waiting(s).answer:send("always")
+	t:wait(10)
+	-- Edits are allowed always, yet the one outside asks, by itself.
+	local question = waiting(s)
+	assert(question.title == `Write {elsewhere}/new.txt, outside the project`, question.title)
+	assert(#question.options == 2, "it can only be allowed once")
+	local locations = question.locations
+	assert(locations and locations[1] == `{elsewhere}/new.txt`, "it names the file")
+	question.answer:send("no")
+	t:wait(10)
+	question = waiting(s)
+	assert(question.title == `Delete {elsewhere}/gone.txt, outside the project`, question.title)
+	assert(#question.options == 2, "it can only be allowed once")
+	question.answer:send("once")
+	t:wait(10)
+	question = waiting(s)
+	locations = question.locations
+	assert(
+		locations and locations[1] == `{dir}/a.txt` and locations[2] == `{elsewhere}/a.txt`,
+		"a move names both ends"
+	)
+	question.answer:send("once")
+	t:wait(10)
+	-- Back in the project, edits are still allowed always.
+	assert(s.status == "idle", said(s))
+	assert(greed.fs.read(`{elsewhere}/new.txt`) == nil, "the refused write wasn't made")
+	local refused = result_of(asked, 2)
+	assert(
+		refused.error and string.find(refused.text, "outside the project", 1, true),
+		refused.text
+	)
+	assert(greed.fs.stat(`{elsewhere}/gone.txt`) == nil, "deleted once allowed")
+	assert(greed.fs.read(`{elsewhere}/a.txt`) == "one\ntwo\n", "moved once allowed")
+	assert(greed.fs.read(`{dir}/c.txt`) == "c", "written")
+end)
+
+test("in a workspace of its own it changes nothing outside, and edits there don't ask", function(t)
+	local elsewhere = t:tempdir({})
+	local asked = script({
+		calling("write_file", { path = "b.txt", text = "b" }),
+		calling("write_file", { path = `{elsewhere}/x.txt`, text = "x" }),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = assert(acp.start(GREED, dir))
+	-- Greed's agent can't have a workspace yet; this stands in for one.
+	s.workspace = { kind = "jj", name = "ws", path = dir }
+	greed.spawn(function()
+		acp.prompt(s, "go")
+	end)
+	t:wait(10)
+	assert(s.status == "idle", said(s))
+	-- Its edits name their files, so agent-workspace-edits answers them.
+	assert(greed.fs.read(`{dir}/b.txt`) == "b", "written without asking")
+	assert(greed.fs.read(`{elsewhere}/x.txt`) == nil, "not written")
+	local refused = result_of(asked, 2)
+	assert(
+		refused.error and string.find(refused.text, "outside the workspace", 1, true),
+		refused.text
+	)
+end)
+
+test("its questions name the files, so a policy keyed on them answers", function(t)
+	local remove = acp.policy(function(_, permission)
+		local paths = permission.locations
+		if paths == nil then
+			return nil
+		end
+		for _, path in paths do
+			if string.match(path, "/%.env$") then
+				return "no"
+			end
+		end
+		return nil
+	end)
+	local asked = script({
+		calling("write_file", { path = ".env", text = "KEY=1\n" }),
+		calling("edit_file", { path = "a.txt", old_text = "two", new_text = "2" }),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "go")
+	-- The policy turned the .env write down; the edit waits for you.
+	local question = waiting(s)
+	assert(question.title == "Edit a.txt", question.title)
+	local locations = question.locations
+	assert(locations and locations[1] == `{dir}/a.txt`, "it names the file")
+	question.answer:send("no")
+	t:wait(10)
+	remove()
+	assert(greed.fs.read(`{dir}/.env`) == nil, "not written")
+	local refused = result_of(asked, 1)
+	assert(refused.error and string.find(refused.text, "didn't allow", 1, true), refused.text)
 end)
 
 test("a command the agent runs is a block of the project's shell", function(t)

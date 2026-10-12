@@ -51,6 +51,7 @@ M.installed = agents.installed
 
 greed.option.define({
 	name = "agent-greed-tools",
+	needs = "eval",
 	doc = "Give agents Greed's own tools (buffers, diagnostics, syntax queries, proposals) through greed mcp",
 	default = true,
 })
@@ -127,13 +128,9 @@ local function workspace_edits(s: Session, permission: session.Permission): stri
 		or not EDITS[permission.kind or ""]
 		or greed.option.get("agent-workspace-edits") ~= true
 		or locations == nil
+		or session.outside(s, locations)
 	then
 		return nil
-	end
-	for _, path in locations do
-		if not session.within(s, path) then
-			return nil
-		end
 	end
 	return option_of(permission, "allow_once")
 end
@@ -217,8 +214,12 @@ local function launch(
 	local function decides(permission: session.Permission): string?
 		return decide(s, permission)
 	end
+	-- An agent that exits as it starts changes before it's listed; listing it
+	-- shows that.
 	local function changes()
-		changed(s)
+		if s ~= nil then
+			changed(s)
+		end
 	end
 	if agent.native then
 		local started, err = native.start({

@@ -33,8 +33,27 @@ greed.option.define({
 	choices = { "auto", "ask", "allow", "off" },
 })
 
--- Whether you allowed every run until the editor quits.
-local allowed_for_session = false
+-- Who you let every run through for, until they're done: an MCP client
+-- (an ACP agent's `greed mcp` too) by its connection, until it closes, and
+-- an agent in the editor by its caller, until its session ends.
+local allowed_for: { [any]: boolean } = {}
+
+-- What `caller`'s runs are allowed by for the rest of its session, or nil
+-- for one that can't be told apart from the next call's, like Claude
+-- Code's IDE connection.
+local function session_of(caller: registry.Caller): any
+	if caller.connection then
+		return caller.connection
+	end
+	return if caller.kind == "agent" then caller else nil
+end
+
+registry.on_done(function(caller)
+	local key = session_of(caller)
+	if key ~= nil then
+		allowed_for[key] = nil
+	end
+end)
 
 --- A run past the sandbox: when, its code, what it needed, and who let it.
 export type Entry = { time: number, code: string, needs: string, by: string }
@@ -107,10 +126,16 @@ end
 local UNANSWERED = 5 * 60 * 1000
 
 -- A page asking you whether `code` may run.
-type Asking = { buffer: greed.Buffer, view: greed.View?, done: greed.Signal }
+type Asking = {
+	buffer: greed.Buffer,
+	view: greed.View?,
+	done: greed.Signal,
+	--- Whether it may be allowed for the rest of the agent's session.
+	lasting: boolean,
+}
 local asking: { Asking } = {}
 
-local function page(code: string, needs: string, why: string?): string
+local function page(code: string, needs: string, why: string?, lasting: boolean): string
 	local longest = 2
 	for ticks in string.gmatch(code, "`+") do
 		longest = math.max(longest, #ticks)
@@ -127,7 +152,9 @@ local function page(code: string, needs: string, why: string?): string
 		code,
 		fence,
 		"",
-		"r runs it · s runs it and every run until the editor quits · d denies it",
+		if lasting
+			then "r runs it · s runs it and every run of this agent's session · d denies it"
+			else "r runs it · d denies it",
 		"",
 		"Run it?",
 	}, "\n")
@@ -135,10 +162,12 @@ end
 
 local answer: (buffer: greed.Buffer, choice: string) -> ()
 
--- Shows `code` and waits for you: "run", "session" or "deny".
-local function ask_you(code: string, needs: string, why: string?): string
-	local buffer = greed.create_buffer("file", page(code, needs, why), { language = "markdown" })
-	local a: Asking = { buffer = buffer, done = greed.signal() }
+-- Shows `code` and waits for you: "run", "session" (offered when `lasting`)
+-- or "deny".
+local function ask_you(code: string, needs: string, why: string?, lasting: boolean): string
+	local buffer =
+		greed.create_buffer("file", page(code, needs, why, lasting), { language = "markdown" })
+	local a: Asking = { buffer = buffer, done = greed.signal(), lasting = lasting }
 	table.insert(asking, a)
 	local last = buffer:line_start(buffer:line_count() - 1)
 	local function button(text: string, action: string): greed.Mark
@@ -151,12 +180,17 @@ local function ask_you(code: string, needs: string, why: string?): string
 			action = action,
 		}
 	end
-	buffer:decorate("eval", {
-		button("Run", "eval-run"),
-		button("Allow for this session", "eval-allow-session"),
-		button("Deny", "eval-deny"),
-	})
-	buffer:set_keys({ r = "eval-run", s = "eval-allow-session", d = "eval-deny" })
+	if lasting then
+		buffer:decorate("eval", {
+			button("Run", "eval-run"),
+			button("Allow for this session", "eval-allow-session"),
+			button("Deny", "eval-deny"),
+		})
+		buffer:set_keys({ r = "eval-run", s = "eval-allow-session", d = "eval-deny" })
+	else
+		buffer:decorate("eval", { button("Run", "eval-run"), button("Deny", "eval-deny") })
+		buffer:set_keys({ r = "eval-run", d = "eval-deny" })
+	end
 	a.view = greed.float(buffer, { title = "Run this?", width = "80%", height = "70%" })
 	-- Nobody answering, like a session no one is looking at, is denying.
 	greed.spawn(function()
@@ -172,6 +206,11 @@ end
 function answer(buffer: greed.Buffer, choice: string)
 	for i, a in asking do
 		if a.buffer == buffer then
+			-- The command run by name on a page that doesn't offer it.
+			if choice == "session" and not a.lasting then
+				greed.echo("this agent's runs can't be allowed for its session")
+				return
+			end
 			table.remove(asking, i)
 			local view = a.view
 			a.view = nil
@@ -190,7 +229,7 @@ for name, spec in
 		["eval-run"] = { "run", "Let the agent's code run, this once" },
 		["eval-allow-session"] = {
 			"session",
-			"Let the agent's code run, and every run until the editor quits",
+			"Let the agent's code run, and every run until its session ends",
 		},
 		["eval-deny"] = { "deny", "Don't let the agent's code run" },
 	} :: { [string]: { string } }
@@ -230,41 +269,43 @@ local function run_fully(code: string, needs: string, by: string): string
 	return run_unsandboxed(code)
 end
 
--- Asks you about `code` and runs it if you let it.
-local function with_you(code: string, needs: string, why: string?): string
+-- Asks you about `code` and runs it if you let it, offering to allow the
+-- rest of `session` (session_of) when there is one.
+local function with_you(code: string, needs: string, why: string?, session: any): string
 	-- After any other page asking you, so it shows, and waits, where you see it.
 	local choice = pages.one_at_a_time(function()
-		return ask_you(code, needs, why)
+		return ask_you(code, needs, why, session ~= nil)
 	end)
 	if choice == "deny" then
 		error("the user didn't let this run", 0)
 	end
 	local by = "you"
-	if choice == "session" then
-		allowed_for_session = true
+	if choice == "session" and session ~= nil then
+		allowed_for[session] = true
 		by = "you, for the session"
 	end
 	return run_fully(code, needs, by)
 end
 
--- Runs `code` as `agent-eval` says, and returns what it returned; errors
--- with why when it didn't run. From a shell (`greed ctl`), whose user can
--- run anything already, it runs as you.
-local function eval(code: string, from_shell: boolean): string
-	if from_shell then
+-- Runs `code` from `caller` as `agent-eval` says, and returns what it
+-- returned; errors with why when it didn't run. From a shell (`greed
+-- ctl`), whose user can run anything already, it runs as you.
+local function eval(code: string, caller: registry.Caller): string
+	if registry.from_shell(caller) then
 		return run_unsandboxed(code)
 	end
 	local mode = greed.option.get("agent-eval")
+	local session = session_of(caller)
 	if mode == "off" then
 		error("eval is turned off (the agent-eval option)", 0)
-	elseif mode == "allow" or allowed_for_session then
+	elseif mode == "allow" or (session ~= nil and allowed_for[session]) then
 		return run_fully(
 			code,
 			"run Luau with every capability",
 			if mode == "allow" then "agent-eval allow" else "you, for the session"
 		)
 	elseif mode == "ask" then
-		return with_you(code, "run Luau with every capability", nil)
+		return with_you(code, "run Luau with every capability", nil, session)
 	end
 	local ok, result, op = run(code, true)
 	if ok then
@@ -281,7 +322,7 @@ local function eval(code: string, from_shell: boolean): string
 	if verdict == "allow" then
 		return run_fully(code, needs, `the reviewer: {why}`)
 	end
-	return with_you(code, needs, why)
+	return with_you(code, needs, why, session)
 end
 
 registry.tool({
@@ -295,7 +336,7 @@ registry.tool({
 	kind = "execute",
 	reviews = true,
 	run = function(args, caller)
-		return eval(args.code, registry.from_shell(caller))
+		return eval(args.code, caller)
 	end,
 })
 

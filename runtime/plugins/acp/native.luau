@@ -180,7 +180,25 @@ type Own = {
 	--- The change it would make, as lines starting "- " (gone) and "+ "
 	--- (new), shown on its row before you're asked.
 	preview: ((s: Session, args: any) -> { string })?,
+	--- The files it changes, as full paths, which its questions name. One
+	--- outside the project asks apart (session.may_write).
+	paths: ((s: Session, args: any) -> { string })?,
 }
+
+-- What gives the full paths in the fields `keys` of a call's arguments,
+-- those that are strings.
+local function paths_in(keys: { string }): (s: Session, args: any) -> { string }
+	return function(s, args)
+		local out = {}
+		for _, key in keys do
+			if type(args[key]) == "string" then
+				table.insert(out, core.project.resolve(args[key], s.cwd))
+			end
+		end
+		return out
+	end
+end
+local PATH = paths_in({ "path" })
 
 -- The most lines of a change shown before you're asked.
 local PREVIEW_LINES = 200
@@ -689,6 +707,7 @@ local OWN: { Own } = {
 			}, { "path", "old_text", "new_text" }),
 		},
 		kind = "edit",
+		paths = PATH,
 		title = function(args)
 			return `Edit {args.path}`
 		end,
@@ -759,6 +778,7 @@ local OWN: { Own } = {
 			}, { "path", "edits" }),
 		},
 		kind = "edit",
+		paths = PATH,
 		title = function(args)
 			return `Edit {args.path}`
 		end,
@@ -796,6 +816,7 @@ local OWN: { Own } = {
 			),
 		},
 		kind = "edit",
+		paths = PATH,
 		title = function(args)
 			return `Write {args.path}`
 		end,
@@ -849,6 +870,7 @@ local OWN: { Own } = {
 			),
 		},
 		kind = "move",
+		paths = paths_in({ "from", "to" }),
 		title = function(args)
 			return `Move {args.from} to {args.to}`
 		end,
@@ -871,6 +893,7 @@ local OWN: { Own } = {
 			input = object({ path = { type = "string" } }, { "path" }),
 		},
 		kind = "delete",
+		paths = PATH,
 		title = function(args)
 			return `Delete {args.path}`
 		end,
@@ -1085,11 +1108,17 @@ end
 
 -- Whether you let `kind` of call happen, asking unless you allowed it for
 -- the session (or a policy answers).
-local function allowed(s: Session, state: State, title: string, kind: string): boolean
+local function allowed(
+	s: Session,
+	state: State,
+	title: string,
+	kind: string,
+	locations: { string }?
+): boolean
 	if state.allowed[kind] then
 		return true
 	end
-	local chosen = session.ask(s, title, kind, ALLOW)
+	local chosen = session.ask(s, title, kind, ALLOW, locations)
 	if chosen == "always" then
 		state.allowed[kind] = true
 	end
@@ -1111,11 +1140,21 @@ local function call(
 	local own = if found.spec then found :: Own else nil
 	local registered = if own then nil else found :: agent.Tool
 	local kind = if own then own.kind else (registered and registered.kind) or "read"
+	-- The files it touches, as its questions name them: its own tools say,
+	-- Greed's name one by their path.
+	local locations = if own and own.paths
+		then own.paths(s, c.input)
+		elseif type(c.input.path) == "string" then { core.project.resolve(c.input.path, s.cwd) }
+		else nil
+	if locations and #locations == 0 then
+		locations = nil
+	end
 	local tool: session.Tool = {
 		id = c.id,
 		title = if own then own.title(c.input) else agent.title(c.name, c.input, s.root),
 		kind = kind,
 		status = "pending",
+		locations = locations,
 		detail = {},
 		output = {},
 		open = false,
@@ -1123,8 +1162,8 @@ local function call(
 	s.tools[c.id] = tool
 	table.insert(s.entries, { kind = "tool", tool = tool })
 	s.tool = tool.title
-	if type(c.input.path) == "string" then
-		s.where = { path = core.project.resolve(c.input.path, s.cwd) }
+	if locations then
+		s.where = { path = locations[1] }
 	end
 	s.changed()
 	-- Its own tools all change something; Greed's ask unless they only
@@ -1151,18 +1190,26 @@ local function call(
 	local danger = if own
 		then (if own.danger then own.danger(c.input) else nil)
 		else agent.danger(registered :: agent.Tool, c.input)
-	local refused = nil
-	if widens then
-		local title = `{tool.title}, which {widens}`
-		if session.ask(s, title, kind, session.ONCE, nil, true) ~= "once" then
-			refused = session.NOT_WIDENED
-		end
-	elseif danger then
-		if session.ask(s, `{tool.title}: {danger}`, kind, session.ONCE, nil, true) ~= "once" then
+	-- A change outside the project asks apart, whatever you allowed always;
+	-- in a workspace of its own it can't change anything outside.
+	local outside = if own and own.paths and locations then session.outside(s, locations) else nil
+	local refused = if outside and locations
+		then session.may_write(s, tool.title, kind, locations)
+		else nil
+	if refused == nil then
+		if widens then
+			local title = `{tool.title}, which {widens}`
+			if session.ask(s, title, kind, session.ONCE, locations, true) ~= "once" then
+				refused = session.NOT_WIDENED
+			end
+		elseif danger then
+			local title = `{tool.title}: {danger}`
+			if session.ask(s, title, kind, session.ONCE, locations, true) ~= "once" then
+				refused = "the user didn't allow it"
+			end
+		elseif asks and not outside and not allowed(s, state, tool.title, kind, locations) then
 			refused = "the user didn't allow it"
 		end
-	elseif asks and not allowed(s, state, tool.title, kind) then
-		refused = "the user didn't allow it"
 	end
 	if refused then
 		tool.status = "failed"
@@ -1523,6 +1570,10 @@ local DRIVER: session.Driver = {
 	end,
 	check = function(s)
 		return models.check(states[s.id].role)
+	end,
+	-- What was allowed for the session, like eval, goes with it.
+	stop = function(s)
+		agent.done(states[s.id].caller)
 	end,
 }
 

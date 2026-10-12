@@ -36,6 +36,7 @@ local providers: { { name: string, provider: Provider } } = {}
 
 greed.option.define({
 	name = "shell-production-contexts",
+	needs = "eval",
 	doc = "Patterns for kubernetes contexts a shell's prompt warns about, like prod; space between them",
 	default = "prod",
 })

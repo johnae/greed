@@ -52,6 +52,8 @@ What "Allow always" covers depends on the agent:
   always allows every edit in that session, but not a move, a delete, a
   command or a fetch, which each ask once for themselves. It lasts for that
   session only. A session taken up again from the session list asks again.
+  It never covers a file outside the project: writing, moving or deleting
+  one asks every time, with only **Allow once** and **Reject**.
 - Claude Code, Gemini, Codex and other ACP agents send their own choices,
   and what their "allow always" means is up to the agent. Greed passes on
   your answer and doesn't remember it. Claude Code's modes (`alt-m`:
@@ -112,7 +114,7 @@ The question has these fields:
 |---|---|
 | `title` | What the agent wants to do, as the row shows it after "Allow" |
 | `kind` | `"edit"`, `"move"`, `"delete"`, `"execute"`, `"fetch"`, `"read"` or another the agent uses; may be nil |
-| `locations` | The files it touches, as absolute paths, when the agent names them; Greed's own agent doesn't yet, so its title is what names the file |
+| `locations` | The files it touches, as absolute paths, when the agent names them. Greed's own agent always does (both ends of a move); other agents may not, and then the title is what names the file |
 | `options` | The choices, each with `id`, `name` and `kind` (`allow_once`, `allow_always`, `reject_once`, `reject_always`) |
 
 The session has `agent` (`"greed"`, `"claude"`, ...), `root` (the project),
@@ -174,7 +176,8 @@ acp.policy(function(_, permission)
 end)
 
 -- Anything naming a .env file (.env.local and .envrc too) is turned down
--- without asking.
+-- without asking. The title counts too, for agents that don't name their
+-- files in locations.
 acp.policy(function(_, permission)
 	local named = permission.title
 	if permission.locations then
@@ -213,6 +216,8 @@ How an agent's edits reach your files differs by agent:
 - Claude Code over `/ide` sends its edits as proposals the same way.
 - Greed's own agent edits through the file's buffer after asking (or
   after you allowed edits always), so `u` takes an edit back, and saves.
+  Before it writes, moves or deletes a file outside the project it asks
+  again, whatever you allowed always.
 - ACP agents write files themselves after their own question; Greed
   writes them through the buffer when the file is open. An agent working
   in the project asks again before Greed writes a file outside the project
@@ -250,11 +255,14 @@ to `"ask"` if you'd rather see every run past the sandbox yourself.
 
 When you're asked, a page shows the code, what it would do and the
 reviewer's reason, with **Run**, **Allow for this session** and **Deny**
-(or `r`, `s` and `d`). **Allow for this session** lets every later run
-through, from any agent, until the editor quits. Closing the page, or
-leaving it five minutes, denies. Pages like this one show one at a time,
-so a second waits until you've answered the first. `:eval-log` lists every
-run past the sandbox and who let it.
+(or `r`, `s` and `d`). **Allow for this session** lets the later runs of
+the agent that asked through, until its session ends: Greed's own agent's
+until you stop or close it, and an ACP agent's or other MCP client's until
+its connection to Greed closes. Other agents are still asked. Claude Code
+over `/ide` isn't offered it, since Greed can't tell its sessions apart.
+Closing the page, or leaving it five minutes, denies. Pages like this one
+show one at a time, so a second waits until you've answered the first.
+`:eval-log` lists every run past the sandbox and who let it.
 
 What `eval` edits is one operation you can review and undo in one step
 (see [Operations](using.md#operations)).
@@ -343,7 +351,8 @@ an agent changed doesn't run for an agent until you've run it.
 
 Some options decide what code may do, so only code holding a capability
 can set them, besides you with `:set` or your config: `agent-eval`,
-`agent-workspace-edits` and `agent-tool-groups` need `eval`, the
+`agent-workspace-edits`, `agent-tool-groups`, `agent-greed-tools` and
+`shell-production-contexts` need `eval`, the
 `ssh-agent-confirm` options need `ssh-agent`, and options whose value gets
 run as a program, like `terminal-shell`, need `proc`. `:describe-option`
 shows an option's value and doc.

@@ -159,3 +159,28 @@ test("a context matching shell-production-contexts is a production one", functio
 	assert(not segments.production("prod-eu"))
 	greed.option.set("shell-production-contexts", "prod")
 end)
+
+test("only you, or code that may eval, change shell-production-contexts", function(t)
+	t:buffer("|x")
+	-- A plugin without eval tries, and fails; one with it may.
+	local function setter(name: string, capabilities: string): string
+		return t:tempdir({
+			["plugin.toml"] = `name = "{name}"\ncapabilities = [{capabilities}]\n`,
+			["init.luau"] = `local greed = require("@greed")\n`
+				.. `greed.command(\{ name = "{name}-go", run = function()\n`
+				.. `  local ok, err = pcall(greed.option.set, "shell-production-contexts", "{name}")\n`
+				.. `  greed.echo(if ok then "ok" else tostring(err))\n`
+				.. `end \})\n`,
+		})
+	end
+	greed.plugin.load(setter("plain", ""))
+	t:run("plain-go")
+	local messages = t:messages()
+	local said = messages[#messages]
+	assert(string.find(said, 'add "eval" to capabilities', 1, true), said)
+	assert(greed.option.get("shell-production-contexts") == "prod", "unchanged")
+	greed.plugin.load(setter("trusted", '"eval"'))
+	t:run("trusted-go")
+	assert(greed.option.get("shell-production-contexts") == "trusted", "changed")
+	greed.option.set("shell-production-contexts", "prod")
+end)

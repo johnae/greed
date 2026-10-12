@@ -191,6 +191,31 @@ test("agents get greed mcp for this session, unless the option is off", function
 	assert(string.find(shown(), "servers: 0", 1, true), shown())
 end)
 
+test("only you, or code that may eval, change agent-greed-tools", function(t)
+	t:buffer("|x")
+	-- A plugin without eval tries, and fails; one with it may.
+	local function setter(name: string, capabilities: string): string
+		return t:tempdir({
+			["plugin.toml"] = `name = "{name}"\ncapabilities = [{capabilities}]\n`,
+			["init.luau"] = `local greed = require("@greed")\n`
+				.. `greed.command(\{ name = "{name}-go", run = function()\n`
+				.. `  local ok, err = pcall(greed.option.set, "agent-greed-tools", false)\n`
+				.. `  greed.echo(if ok then "ok" else tostring(err))\n`
+				.. `end \})\n`,
+		})
+	end
+	greed.plugin.load(setter("plain", ""))
+	t:run("plain-go")
+	local messages = t:messages()
+	local said = messages[#messages]
+	assert(string.find(said, 'add "eval" to capabilities', 1, true), said)
+	assert(greed.option.get("agent-greed-tools") == true, "unchanged")
+	greed.plugin.load(setter("trusted", '"eval"'))
+	t:run("trusted-go")
+	assert(greed.option.get("agent-greed-tools") == false, "changed")
+	greed.option.set("agent-greed-tools", true)
+end)
+
 test("the file you're in goes with a prompt as a block before it, once", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a\n" })
 	greed.open(dir .. "/a.txt")
