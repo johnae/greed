@@ -1149,9 +1149,15 @@ function M.turn(
 		local named = if request.cache_key then ` {request.cache_key}` else ""
 		traced = `{chosen.provider}/{chosen.model}{named}, {said}`
 	end
+	-- When the request went out and its first bytes came back, for the
+	-- debug line's timing.
+	local started = greed.now()
+	local first: number? = nil
 	local function failed_with(err: string?): (turn.Turn?, string?)
 		if traced then
-			greed.debug.log(`{traced}; failed: {err}`)
+			greed.debug.log(
+				`{traced}; failed: {err}; {turn.timing(started, first, greed.now(), nil)}`
+			)
 		end
 		return nil, err
 	end
@@ -1176,14 +1182,16 @@ function M.turn(
 			local share = if done.input and done.input > 0
 				then ` ({math.floor(cached / done.input * 100 + 0.5)}%)`
 				else ""
+			local timing = turn.timing(started, first, greed.now(), done.output)
 			greed.debug.log(
-				`{traced}; {done.input or "?"} in, {cached} cached{share}, {done.output or "?"} out`
+				`{traced}; {done.input or "?"} in, {cached} cached{share}, {done.output or "?"} out; {timing}`
 			)
 		end
 		return done
 	end
 	while true do
 		local piece, failed = response:read()
+		first = first or (if piece and piece ~= "" then greed.now() else nil)
 		if piece == nil then
 			if failed then
 				return failed_with(failed)

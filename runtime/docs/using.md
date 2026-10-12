@@ -1121,7 +1121,11 @@ sent, a short hash of all of it but the newest message, what it changed of
 the session's last request (nothing, when it's that one with more on the
 end), and the tokens sent, read from the cache and written. A request that
 starts with all of the last one and still shows little cached was missed
-by the provider, not changed by Greed.
+by the provider, not changed by Greed. Each line ends with the request's
+timing: how long until its first bytes came back, how long it took in
+all, and how many tokens a second it wrote while it streamed. A long wait
+for the first bytes is the provider (queueing, or reading a long uncached
+conversation); a low pace is the model writing slowly, or thinking.
 
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
 `GREED_SECRET_NAME`. The built-in providers send their keys only to their

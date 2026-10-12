@@ -5,6 +5,7 @@
 -- OpenAI's chat completions (which most other servers speak too).
 
 local greed = require("@greed")
+local core = require("@core")
 local sse = require("./sse")
 
 local M = {}
@@ -385,6 +386,22 @@ local function hashes(list: { any }?): { string }
 		table.insert(out, short_hash(unmarked(item)))
 	end
 	return out
+end
+
+--- What a debug line says of a request's timing, all in milliseconds from
+--- greed.now(): sent at `sent`, its first bytes back at `first` (nil if
+--- none came), ended at `done`, having written `output` tokens. The pace
+--- is over the time it streamed, which tells a slow model from a long wait.
+function M.timing(sent: number, first: number?, done: number, output: number?): string
+	local duration = core.time.duration
+	if first == nil then
+		return `nothing back, done in {duration(done - sent)}`
+	end
+	local said = `first bytes after {duration(first - sent)}, done in {duration(done - sent)}`
+	if output and done > first then
+		said ..= `, {math.floor(output / ((done - first) / 1000) + 0.5)} tokens/s`
+	end
+	return said
 end
 
 --- What a debug line says of `body` (from `M.body`), a request after

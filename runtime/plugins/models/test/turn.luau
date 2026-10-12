@@ -725,3 +725,18 @@ test("compare says what a request changed of the last one in its conversation", 
 	local said = turn.compare(other, last)
 	assert(string.find(said, "another system prompt", 1, true), said)
 end)
+
+test("a request's timing says the wait for its first bytes, the whole, and the pace", function()
+	assert(
+		turn.timing(1000, 4500, 9500, 500) == "first bytes after 3.50s, done in 8.50s, 100 tokens/s",
+		turn.timing(1000, 4500, 9500, 500)
+	)
+	assert(
+		turn.timing(1000, nil, 2000, nil) == "nothing back, done in 1.00s",
+		turn.timing(1000, nil, 2000, nil)
+	)
+	assert(
+		turn.timing(1000, 1200, 1200, 40) == "first bytes after 0.20s, done in 0.20s",
+		"no pace over no time"
+	)
+end)
