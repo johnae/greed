@@ -44,7 +44,7 @@ to go. The tools:
 | `read` | A file as the editor has it, unsaved changes included |
 | `diagnostics` | Errors and warnings from language servers |
 | `history_recent` | What changed lately in open files, who changed it (you, a plugin, an agent, the disk) and a diff |
-| `context_get` | What you pinned for agents: selections, files, problems, the changes in progress, objects as they are now |
+| `context_get` | What you pinned for agents (`space i p`, see [the context](using.md#the-context)): selections, files, problems, the changes in progress, objects as they are now |
 | `working_set` | The files you've worked in lately, most active first, with how much you and agents edited each and the lines you were on |
 | `repo_map` | A map of the project: the functions and types that matter most, with their files and lines, ranked toward what you're working on (below) |
 | `symbols` | Functions and types anywhere in the project whose names match, with their files and lines |
@@ -84,8 +84,8 @@ Every tool an agent is offered costs tokens on every request, so most of
 the tools above come in groups that an agent switches on with `tools` when
 it needs them. These are always offered: `focus`, `buffers`, `read`,
 `diagnostics`, `propose`, `open`, `project`, `files`, `grep`, `symbols`,
-`outline`, `ask`, `eval`, `context_get`, `memory_list`, `memory_propose`
-and `tools`.
+`outline`, `ask`, `eval`, `context_get`, `objects`, `inspect`, `act`,
+`memory_list`, `memory_propose` and `tools`.
 
 | Group | Tools |
 |---|---|

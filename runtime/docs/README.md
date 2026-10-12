@@ -22,6 +22,7 @@ followed with `enter`; `esc` shows the Markdown.
 - [Several clients](clients.md): terminals and windows on one session.
 - [The shell](shell.md): commands as blocks you keep, search and run again.
 - [Boards](boards.md): live shell commands saved as a page of cards.
+- [Charts](charts.md): any table as a chart that follows the numbers.
 - [Editing styles](editing-styles.md): the Vim, Helix and VS Code styles,
   their keys, and making your own.
 - [Keys](keys.md): finding out what a key does, binding your own, panes

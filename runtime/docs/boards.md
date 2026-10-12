@@ -56,8 +56,8 @@ df -h /
 ````
 
 A card's language is `shell`, as for a [`shell` block](using.md#runnable-code-blocks)
-anywhere: it runs in the Greed shell. `sh`, `bash`, `zsh`, `fish` and `nu`
-blocks are cards too, and run the same way. After the language:
+anywhere: it runs in the Greed shell. `sh`, `bash`, `zsh`, `fish`, `nu`
+and `console` blocks are cards too, and run the same way. After the language:
 
 - `every=SECONDS` runs it again that often; `live` alone is every two
   seconds. Without either it runs once, and again when the board does. A

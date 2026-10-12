@@ -185,7 +185,10 @@ macros and the like; several recordings can run at once. `greed.keymap.fallback(
 command)` runs a command for any single key nothing else takes (a mode
 inheriting all of another's keys uses that one's), and
 `greed.keymap.isolate(mode)` keeps keys bound for every mode out of one,
-the way a terminal takes every key.
+the way a terminal takes every key. `greed.keymap.overlay({ ["1"] =
+"hint-1" })` binds single keys for the next key press only, and
+`greed.mode.set_cursor(mode, "bar")` sets how the cursor looks in a mode.
+`greed.keymap.find(command)` lists the keys that run a command.
 
 Keys bound for a kind of buffer alone work in every editing style and
 every mode, ahead of the mode's own, so a panel binds them once, with
@@ -799,6 +802,11 @@ greed.tab.set_layout({
   its pages, `doc:render(page, scale)` draws one as an image id at `scale`
   pixels per point, and `doc:text(page)` gives its text, line by line. All
   three wait, like `greed.sleep`.
+- A view can show part of its buffer: `view:narrow(from, to)` shows only
+  those lines (no arguments shows all again), and `view:set_filter(text)`
+  keeps only the lines with every word of `text`, as `/` in a shell block
+  does, fields like `level>=warn` and `.a.b` sections included; the other
+  lines stay in the buffer.
 - Floats show a buffer over the main view, and panels beside it:
   `greed.float(buffer, { title = "Info", width = "60%" })`,
   `greed.panel(buffer, { side = "right", width = 40 })`. For text to read,
@@ -837,13 +845,16 @@ greed.tab.set_layout({
   path lists the folder's contents, and `tab` completes one into the query.
   `tags = function(item, word) ... end` makes words like `@shell` in the
   query keep the items it says have them, as `space space` does with kinds.
+  `keys = { ["ctrl-e"] = function(items, current) ... end }` adds keys of
+  the picker's own, and `fallback(query)` runs on `enter` when nothing
+  matches.
 - The completion menu asks sources before the language server, in any
   buffer, a file or not: `require("@lsp").completion.source(function(view,
   ask) ... end)` returns items like `{ label = "src/", text = "src/", from
   = 12 }` (`from` is where the text it replaces starts; the word before the
   cursor by default), or nil to leave it to the next source. `detail`
-  shows dimmed after the label and `badge` before it, a word saying whose
-  it is (the shell's own things say `greed`). `ask.explicit` is true when
+  shows dimmed after the label, and `badge` goes between the two, a word
+  saying whose it is (the shell's own things say `greed`). `ask.explicit` is true when
   you asked with `tab` or `ctrl-space` rather than by a pause in typing. A
   source can wait, for a program say; its answer is dropped if more was
   typed meanwhile. A second argument says how its menu behaves:
@@ -866,7 +877,10 @@ greed.tab.set_layout({
   `require("@statusline").add` and `.remove`, or replace with `greed.statusline`.
   A piece returning `{ text = "3 due", action = "notes-agenda" }` runs the
   command when clicked, and `style = "ui.statusline.warning"` draws it as a
-  warning.
+  warning. A piece that takes time to work out, like a repository's state,
+  goes in with `add_async(side, name, { refresh, every, on })`: `refresh`
+  runs in the background (every `every` ms, and on the events in `on`) and
+  the status line shows what it last returned, never waiting for it.
 - `greed.client.notify(title, body)` sends a notification to your desktop
   through the client you used last: the terminal shows it (OSC 9, or OSC
   777 in foot and urxvt) with a bell while it isn't focused.
@@ -1043,6 +1057,13 @@ servers running, each with its language, root, command, whether it's ready,
 and the last lines it wrote to stderr. A request whose server stops before
 answering returns nil and an error saying so.
 
+`greed.lsp.request(buffer, method, params)` asks the buffer's server
+anything and waits for the answer. `greed.lsp.uri(buffer)`,
+`greed.lsp.position(buffer, pos)` and `greed.lsp.offset(buffer,
+position)` turn files and byte offsets into what servers count in and
+back, and `greed.lsp.capabilities(buffer)` is what the server said it
+can do.
+
 ## Events
 
 A plugin reacts to what happens in the editor with `greed.on(event,
@@ -1078,16 +1099,16 @@ end)
 | `selection.changed` | A view's selection changed for a client, or it shows another buffer, by anything: keys, the mouse, undo, a plugin or an agent. Once a frame per view, before it's drawn, however many changes there were | `view` |
 | `view.focused` | Another view has a client's focus: a pane, a float or a panel. Once a frame, before it's drawn | `view`, `from`, the view that had it (nil if it was closed), and `moved`, true when it moved under the client: another client showed another tab or closed what it had focused, or it followed again |
 | `keys.pending` | A key sequence is under way, e.g. after `space`; `""` once it's done | `keys` |
-| `option.changed` | An option was set | `name`, `value` |
+| `option.changed` | An option was set | `name`, `value`, and `client` when it was set for one client alone |
 | `lsp.diagnostics` | A language server reported problems for a buffer | `buffer`; read them with `greed.lsp.diagnostics(buffer)` |
 | `view.resized` | A view has room, for a client, for a different number of rows or columns | `view`, `rows`, `cols` |
 | `view.scrolled` | A view starts, for a client, at a different line; what the handler changes shows in the same frame, so one view can scroll another along | `view`, `line` |
 | `view.closed` | A view was closed, e.g. a plugin's panel | `view`, the closed view's id |
 | `pane.opened` | A split opened, from whichever plugin made it | `view`, and `from`, the pane beside it |
-| `mouse` | The mouse pressed, released, dragged, moved or scrolled | `kind`, `button` or `dir`, the screen `col` and `row`, the keys held, and what's under it: `view`, `pos` in the buffer, a floating view's `border`, or a `tab` |
+| `mouse` | The mouse pressed, released, dragged, moved or scrolled | `kind`, `button` or `dir`, the screen `col` and `row`, the keys held, and what's under it: `view`, `pos` in the buffer, a mark's or status line piece's `action`, a floating view's `border`, the `edge` between panes, or a `tab` |
 | `terminal.output` | A terminal's program printed something | `terminal`; read it with `terminal:screen()` |
 | `terminal.exited` | A terminal's program ended | `terminal`, `code`, `signaled` (a signal ended it) |
-| `client.attached` | A client attached to the session, e.g. `greed FILE` | `path` it asked to open, whether it wants a `terminal`, whether it came over `greed ssh` (`remote`) |
+| `client.attached` | A client attached to the session, e.g. `greed FILE` | `client`, the `path` it asked to open, whether it wants a `terminal` or the project's `shell` (`greed --shell`), whether it came over `greed ssh` (`remote`) |
 | `client.detached` | A terminal or window went; the session goes on without it | `client` |
 | `client.paste` | Text was pasted from the system clipboard | `text` |
 | `control.request` | A request came on the session socket (`greed ctl`, agents) | `id`, `method`, `params`, `client`, `connection`; answer with `greed.control.reply` |
@@ -1237,7 +1258,8 @@ end
 ```
 
 Like a spawned program, it's your plugin's and goes with it.
-`greed.terminal.spawn({ command, rows, cols })` starts one
+`greed.which("kubectl")` says where a program is, or nil when it isn't
+installed. `greed.terminal.spawn({ command, rows, cols })` starts one
 in a terminal: `terminal.output` events say there's something new to read
 with `terminal:screen()` and `terminal:scrollback(from)`, and
 `terminal:key("ctrl-c")`, `terminal:write(text)` and `terminal:resize(rows,
@@ -2010,7 +2032,10 @@ folder of files to work on; `t:open(path)` opens one of them as
 `local dir, git = t:repo("git", files)` makes a repository (jj or git)
 with the files committed and returns a function that runs git there and
 fails the test if it fails; `t:vcs("jj", dir)` gives that function for a
-folder you set up yourself.
+folder you set up yourself. `t:marked()` is the buffer with its markers,
+and `t:quitting()`, `t:detached()` and `t:switched()` say whether
+something asked the editor to exit, to let the client go, or to send it
+to another session.
 
 Tests don't show the message about code that held the editor up, so a
 busy machine doesn't change what `t:messages()` returns. Each key a test
@@ -2020,8 +2045,8 @@ doesn't count toward it.
 
 `t` acts as the session's first client. `t:client(name)` adds another, as
 if a second terminal attached, seeing what the first one does; it has
-`keys`, `run`, `mouse`, `draw`, `screen`, `status`, `marked`, `expect`,
-`expect_mode` and `id`, all as that client:
+`keys`, `type`, `run`, `mouse`, `draw`, `screen`, `frame`, `status`,
+`marked`, `expect`, `expect_mode` and `id`, all as that client:
 
 ```luau
 test("each client has its own mode", function(t)
@@ -2041,7 +2066,7 @@ check your plugin against it.
 
 `greed reference DIR` writes the reference pages this site has, as
 Markdown: every loaded plugin with its commands, keys and options, every
-option, and the whole API. With your config and plugins loaded, they
+option, every event, and the whole API. With your config and plugins loaded, they
 describe your own setup.
 
 ## Loading and reloading

@@ -42,7 +42,8 @@ over `greed ssh` too: end it and start your version in its place, open it
 with the version it runs to save your work first (when that greed is still
 on this machine), or start your version beside it. A number picks, `esc`
 leaves it as it is. `greed ctl state NAME` prints what's unsaved and running
-in a session of any version.
+in a session of any version, and `greed ctl quit NAME` ends one from a shell
+(both work across versions); the next `greed` then starts a new one.
 
 Several terminals can show one session at once: run `greed` or `greed
 attach` in another terminal, or `greed ssh` from another machine, and both
@@ -74,11 +75,6 @@ and returns, rather than starting an editor inside the editor, and
 
 If a session can't start in the background, `GREED_NO_SESSION=1 greed FILE`
 runs the editor directly in the terminal.
-
-A session keeps running the greed it started with. After an upgrade, a
-session from before may not understand the new client: Greed then asks what
-to do about it, as above. `greed ctl quit NAME` ends such a session from a
-shell (it works across versions), and the next `greed` starts a new one.
 
 A session that quits remembers its projects, their open files and where the
 cursor was, and opens them again the next time it starts. It writes this
@@ -130,8 +126,8 @@ can say what of theirs is running with `require("@core").file.running`.
 Started without a config (`~/.config/greed/init.luau`), Greed shows a page
 with a few questions: how you like to edit, which theme, whether your font
 has icons (in a terminal, which needs a Nerd Font for them; the window has
-them built in and doesn't ask), whether to add Greed's tools to Claude Code, and which language
-model to use (Anthropic, OpenAI, Berget, Ollama on this machine, or none
+them built in and doesn't ask), whether to add Greed's tools to Claude Code,
+and which language model to use (Anthropic, OpenAI, Berget, Ollama on this machine, or none
 for now). A style or theme you pick switches at once, so you can try it on
 the page.
 
@@ -193,13 +189,14 @@ along too, so the session gets paths it can read.
 
 What you copy in Greed goes on the system clipboard, and what you copied in
 another program becomes Greed's clipboard when the window gets focus, so
-`p` (or `ctrl-v` in the vscode style) pastes it. `ctrl-shift-v` and `shift-insert`
-(`cmd-v` on macOS) paste the system clipboard at the cursors in any mode,
-as a terminal's paste does.
+`p` (or `ctrl-v` in the vscode style) pastes it. `ctrl-shift-v` and
+`shift-insert` (`cmd-v` on macOS) paste the system clipboard at the cursors
+in any mode, as a terminal's paste does.
 
 Whole lines stay whole lines from one editing style to another: lines
 copied with `y y` in the Vim style, `x y` in Helix's or `ctrl-c` with
-nothing selected in the vscode style paste above or below the line in all three.
+nothing selected in the vscode style paste above or below the line in all
+three.
 Text copied in another program pastes where the cursor is.
 
 `ctrl-=` and `ctrl--` make the text bigger and smaller, and `ctrl-0` puts
@@ -417,7 +414,7 @@ cursor is a selection one character wide.
 | `G`, `5 G` | The last line, or line 5 |
 | `g h` `g l` `g s` | Start and end of the line, first character that isn't a space |
 | `m m` | The matching bracket |
-| `g w` | Label every word on screen; type a label to jump there |
+| `g w` | Label every word on screen; type a label to jump there (`jump-label-alphabet` sets the letters, easiest first) |
 | `;` `alt-;` | Collapse the selection to the cursor, swap its ends |
 | `ctrl-h` `ctrl-k` | Back to the selection before the last command, and forward again |
 | `%` | Select the whole file |
@@ -467,8 +464,8 @@ back.
 
 In insert mode, `tab` types a level of indent, `ctrl-w` (or
 `alt-backspace`) and `alt-d` delete a word back or forward, `ctrl-u` and
-`ctrl-k` delete to the start or end of the line, `ctrl-x` asks for completions, and `ctrl-r` + a
-register inserts what it holds.
+`ctrl-k` delete to the start or end of the line, `ctrl-x` asks for
+completions, and `ctrl-r` + a register inserts what it holds.
 
 A number before a motion repeats it: `3 j`, `2 w`. It also counts for `x`
 (lines), `p` and `P`, `u` and `U`, `>` and `<` (levels), `C` and `alt-C`,
@@ -514,7 +511,9 @@ show 4 columns wide; a language's `tab_width` changes that for its files
 (`require("@languages").set("go", { tab_width = 8 })`), and `:set
 tab-width 8` for the rest. A file gets its language from its name;
 `:language NAME` gives a buffer another one (`:setf` too, as in Vim), and
-`:language` alone says which it has.
+`:language` alone says which it has. `:reindent-lines` indents the selected
+lines again the way the language says, for code pasted in at the wrong
+indent.
 
 **Many selections**
 
@@ -639,7 +638,8 @@ matching line under its file's name and beside its line number. Edit
 those lines with any of the editing keys above (`s` to select the
 matches, then `c` to change them all) and the files change as you type;
 `:w` saves them, `enter` goes to the line and `q` closes the panel. A file
-that changed on disk since the search is left alone and reported. `:grep PATTERN` fills the panel directly.
+that changed on disk since the search is left alone and reported. `:grep
+PATTERN` fills the panel directly.
 
 ## Files and buffers
 
@@ -654,10 +654,10 @@ that changed on disk since the search is left alone and reported. `:grep PATTERN
 | `space j` | Pick a place from the jumplist |
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
 | `space e` | File tree in a side panel |
-| `:w` `:w PATH` | Save, or save as; an untitled buffer asks where to save it (`ctrl-s` too, in the vscode style) |
+| `:w` `:w PATH` | Save, or save as; an untitled buffer asks where to save it |
 | `:wa` (`:write-all`) | Save every file with unsaved changes |
 | `:e PATH` | Open a file |
-| `ctrl-s` | Save |
+| `ctrl-s` | Save, in every style |
 | `:b NAME` | Switch to the open file whose path is NAME or has it in it; `:b#` (or `ctrl-^` in normal mode) goes back to the one before |
 | `:ls` (`:buffers`) | Pick an open file, like `space b` |
 | `:bn` `:bp` | Next and previous open file |
@@ -667,7 +667,7 @@ that changed on disk since the search is left alone and reported. `:grep PATTERN
 | `:sp` `:vs` `:new` `:vnew` `:tabnew` | Split the pane, or open a new pane or tab, as in Vim |
 | `:reload` (`:rl`), `:rla` | Load the file again from disk, or every open file |
 | `:noh` | Take away search highlights |
-| `:set NAME VALUE` | Set an option. Yes-or-no ones also take Vim's `:set NAME`, `:set noNAME` and `:set NAME!`, `:set NAME?` shows one, and `:set nu`, `nonu`, `rnu` and `nornu` show and hide line numbers. `:toggle NAME` flips one, as in Helix. A name that isn't an option gets the names like it |
+| `:set NAME VALUE` | Set an option. Yes-or-no ones also take Vim's `:set NAME`, `:set noNAME` and `:set NAME!`, `:set NAME?` (or `:get NAME`) shows one, and `:set nu`, `nonu`, `rnu` and `nornu` show and hide line numbers. Vim's `tw`, `ic` and `scs` work too. `:toggle NAME` flips one, as in Helix. A name that isn't an option gets the names like it |
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
 | `:errors` | Errors from plugin code that nothing caught, newest first: the plugin, what it was doing, the message and where in its code it failed |
 | `:profile` | Start counting where the editor's time goes; again, stop and show it by plugin and what it did |
@@ -837,7 +837,9 @@ changed with each edit, so big files stay quick.
 | `] d` `[ d` | Next and previous problem; `] D` `[ D` the last and first |
 
 Problems are underlined, and their lines get a sign and a colored line
-number. They move with your edits until the server checks the file again.
+number. Each line's worst problem also shows after the end of the line;
+`:set diagnostic-messages false` hides those. They move with your edits
+until the server checks the file again.
 
 In the `g r` and `space D` lists, `ctrl-e` puts the places shown in a panel
 like the project search's: each reference with a line around it, or each
@@ -1113,9 +1115,9 @@ and `` `code` `` without their markers, links as their underlined text,
 fenced code on a background of its own, quotes with a bar, `---` as a
 line, list bullets (`-`, `*` or `+`) as dots and tables in aligned columns
 with borders. Code blocks keep their markup: a `# comment` there is code,
-not a heading. The file stays plain Markdown: while you type on a line (insert mode) it shows as
-written, and in the vscode style markup shows once the cursor is inside it. The
-window draws big headings big and sets the text in a proportional font
+not a heading. The file stays plain Markdown: while you type on a line
+(insert mode) it shows as written, and in the vscode style markup shows
+once the cursor is inside it. The window draws big headings big and sets the text in a proportional font
 (code and tables stay monospaced); terminals other than kitty show
 headings at the normal size.
 
@@ -1836,22 +1838,26 @@ tells you what a key does. `space h h` describes anything the editor is
 made of (commands, options with their values, events and who listens to
 them, the plugin API, plugins, modes and editing styles), and `enter` in
 the help window goes to where it's defined. `space h i` inspects what's
-under the cursor (a buffer, a shell block or a row of its table, a terminal, a file), or with
-nothing there the editor itself: its state, the objects it relates to
-(`enter` goes to one, `backspace` or `ctrl-o` comes back, `ctrl-i` goes
-forward again), what was done to it, by you or an agent, and what it can
-do (`enter` runs that); `history` on `space .` lists what was done to
-anything. After a key like
-`space`, a hint at the bottom right shows what can follow, with groups of
-keys named (`w  panes…`), and `f1` shows the keys of the mode you're in, in every mode. A message on the status line goes away with the next key.
+under the cursor (a buffer, a shell block or a row of its table, a
+terminal, a file), or with nothing there the editor itself: its state, the
+objects it relates to (`enter` goes to one, `backspace` or `ctrl-o` comes
+back, `ctrl-i` goes forward again), what was done to it, by you or an
+agent, and what it can do (`enter` runs that); `history` on `space .` lists
+what was done to anything. After a key like `space`, a hint at the bottom
+right shows what can follow, with groups of keys named (`w  panes…`), and
+`f1` shows the keys of the mode you're in, in every mode. A message on the
+status line goes away with the next key.
+
+`:lua CODE` runs a line of Luau with the whole plugin API, and `:= EXPR`
+shows what an expression is (`:= #greed.buffers()`).
 
 The short names Vim and Helix users type work too: `:w` `:wa` `:q` `:qa`
 `:wq` `:wqa` `:x` `:e` `:b` `:bn` `:bp` `:bc` `:ls` `:sp` `:vs` `:only`
 `:tabnew` `:noh` `:rl` `:rla` `:set` `:toggle`, `:colo` (`:colorscheme`)
-for `:theme`, `:setf` for `:language`, Neovim's `:checkhealth` for `:health`, and Helix's long ones like
-`:write-all` and `:buffer-close`. Arguments go after a space (`:w notes.md`);
-only Vim's line commands and `:b` take one right after the name (`:m0`,
-`:t$`, `:b#`). A command that refuses, like `:q` with unsaved changes, says
+for `:theme`, `:setf` for `:language`, Neovim's `:checkhealth` for
+`:health`, and Helix's long ones like `:write-all` and `:buffer-close`.
+Arguments go after a space (`:w notes.md`); only Vim's line commands and
+`:b` take one right after the name (`:m0`, `:t$`, `:b#`). A command that refuses, like `:q` with unsaved changes, says
 why in plain words; an error from a bug in a plugin also names the plugin,
 and `:errors` has the details.
 

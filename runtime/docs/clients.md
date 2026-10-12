@@ -23,7 +23,8 @@ Each client keeps these to itself:
   on the client that opened them, and only its keys reach them;
 - `.`, which repeats that client's own last change, and macro recording;
 - the font size of a window: `ctrl-=` and `ctrl--` zoom the window you type
-  them in, and setting `gui-font-size` sets it for every window again;
+  them in, `ctrl-0` puts it back, and setting `gui-font-size` sets it for
+  every window again;
 - copies, which go to the system clipboard of the client that copied.
 
 Buffers, their undo history, the clipboard history, projects and options
@@ -89,7 +90,8 @@ client has, so the second terminal on a laptop to come back gets what
 `tui@laptop#2` had. A new one follows the others and starts where the
 last-used client is.
 
-`:quit-session` ends the session for every client, whatever runs in it.
+`:quit-session` ends the session for every client, whatever runs in it,
+unless files have unsaved changes (`:quit-session!` ends it anyway).
 From a shell, `greed ctl quit NAME` ends it unless files have unsaved
 changes (`--force` ends it anyway); it works on a session of another
 Greed version too, as after an upgrade.
@@ -98,7 +100,8 @@ Greed version too, as after an upgrade.
 
 Code always acts for one client: the one whose key, click or menu ran a
 command, or the one an event is about. `ctx.client` and
-`greed.client.id()` say which, `greed.client.list()` lists them, and
+`greed.client.id()` say which, `greed.client.current()` gives its name,
+kind, size and layout, `greed.client.list()` lists them all, and
 `greed.client.set_layout("independent" | "follow", id?)` is what the two
 commands use. State a plugin keeps for what a client has open, like a
 picker, belongs in a table keyed by `greed.client.id()`. A float is shown

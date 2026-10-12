@@ -9,10 +9,10 @@ runs.
 $ greed src/main.rs          # edit; the session keeps running if you detach
 :detach                      # leave it running in the background
 $ greed ls
-48211
+myapp                /home/you/myapp
 $ greed attach               # come back to it, here or in a window (--gui)
 $ greed ctl focus            # ask the running editor what you're looking at
-{ "path": "src/main.rs", "mode": "vim", "selections": [ ... ], ... }
+{ "path": "/home/you/myapp/src/main.rs", "mode": "normal", "style": "vim", "selections": [ ... ], ... }
 ```
 
 Edit the way you already like to. The first time Greed starts it asks
@@ -143,6 +143,9 @@ To use your own copy of them, point `GREED_RUNTIME` at a folder shaped like
   session, following each other or laid out on their own.
 - [The shell](runtime/docs/shell.md): commands as blocks you keep, search and run
   again, sending output to buffers or the next command; agents use it too.
+- [Boards](runtime/docs/boards.md) and [Charts](runtime/docs/charts.md): live shell
+  commands saved as a page of cards, and any table drawn as a chart.
+- [Highlighting](runtime/docs/highlighting.md): how code is highlighted and themed.
 - [Writing plugins](runtime/docs/plugins.md): commands, keys, decorations, panels,
   tests and types.
 - [Agents](runtime/docs/agents.md): `greed ctl`, MCP, proposals, `/ide`, agents

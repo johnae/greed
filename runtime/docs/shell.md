@@ -27,9 +27,13 @@ one; with several, or from the only one, it lists them with a new one to
 open. `:shell NAME` opens another. Each shell has its own folder and
 variables, and a project can have several. Shells and their blocks last
 until you close them or the session ends, and what you type in one is
-nothing to save: `:q` doesn't ask about it. A new shell says to type `help`, which
-lists what the shell runs itself, what a line can hold, which shell runs
-the rest, and the keys in the style you use; `help TOPIC` shows one part.
+nothing to save: `:q` doesn't ask about it. A new shell says to type
+`help`, which lists what the shell runs itself, what a line can hold,
+which shell runs the rest, and the keys in the style you use; `help TOPIC`
+shows one part (`builtins`, `line`, `tables`, `prompt` or `keys`).
+
+From anywhere, `:!cargo test` runs a line in this project's shell,
+opening one if there's none, and its output stays there as a block.
 
 ## The prompt
 
@@ -62,10 +66,12 @@ namespaces, the current one and production ones marked; `space o K`
 `ctrl-s` switches only in this shell, which then reads a small kubeconfig
 of its own ahead of yours, so other shells and terminals keep theirs: prod
 in one shell and staging in the next. `:kube-context NAME` switches
-straight to one, and `:kube-context! NAME` only in this shell.
+straight to one, and `:kube-context! NAME` only in this shell;
+`:kube-namespace NAME` and `:kube-namespace! NAME` do the same for the
+namespace.
 
-Plugins add pieces of their own, like a cloud profile; `help prompt` lists
-them.
+Plugins can add pieces of their own, a cloud profile say; `help prompt`
+lists what's there.
 
 Each piece has a color of its own from the theme (`shell.segment.git`,
 `shell.segment.kubernetes`, `shell.segment.environment`). With a Nerd Font,
@@ -146,7 +152,9 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 | `o` | Open what it printed in a buffer of its own, to edit or search |
 | `v` | Show it in a pane beside, following it while it runs, to filter there on its own |
 | `p` | Its JSON lines readably, or as they came (see [JSON lines](#json-lines)) |
-| `s` | Stop it |
+| `s` `ctrl-c` | Stop it |
+| `ctrl-t` | Type into its program, in a terminal in the shell's place |
+| `ctrl-r` | Pick a command typed before, in any shell |
 | `tab` `shift-tab` | Fold it under its command or unfold it, or all of them |
 | `:` | The command line |
 | `?` | These keys |
@@ -154,8 +162,14 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 | `esc` `i` `a` | Back to the prompt |
 
 Typing a character goes back to the prompt with it, and other keys with
-nothing on them do nothing, so you never type into a command's output: in blocks mode the shell's text can't
-be changed, only acted on. `space` and its keys work as elsewhere.
+nothing on them do nothing, so you never type into a command's output: in
+blocks mode the shell's text can't be changed, only acted on. `space` and
+its keys work as elsewhere.
+
+`:set shell-blocks false` goes back to moving about the shell as text, with
+`esc` going to your style's own normal mode and the keys under
+[Keys](#keys).
+
 ### Drilling down
 
 What an action on a row runs comes up where you are, as k9s shows it: `enter`
@@ -187,8 +201,6 @@ in its actions) opens it in a pane beside, as many times as you like, and
 
 A float showing a block, like the one `enter` on a running block opens,
 keeps its own keys: `esc` closes it.
-`:set shell-blocks false` goes back to moving about the shell as text, with
-`esc` going to your style's own normal mode and the keys below.
 
 ## Keys
 
@@ -884,7 +896,7 @@ worker-5c6b7d8f9-abcde: RESTARTS 12 → 13; STATUS Running → CrashLoopBackOff
 A pod is looked at with `kubectl get pods NAME`, a container with `docker
 ps`, a process with `ps -p`, each run where its row came from. Once it's
 gone the notification says so and watching it stops. `watch` again stops
-it, and `:watches` lists what's watched.
+it, and `:watches` lists what's watched, where `enter` stops one.
 
 ```text
 ❯ 4 kubectl get pods                      ✓ 0.38s · table · 3 pods
@@ -997,7 +1009,7 @@ the variable that sets the key, like `ANTHROPIC_API_KEY`.
 ## History and completion
 
 The commands you type at every shell are kept in your data folder
-(`~/.local/share/greed/shell/history.jsonl`), the last
+(`~/.local/share/greed/shell/history.jsonl` on Linux), the last
 `shell-history-size` (5000) of them, so `up` and `ctrl-r` find them in
 every session. An agent's commands aren't kept.
 

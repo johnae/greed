@@ -14,6 +14,7 @@ how keymaps are organised.
 | `space h i` | Inspect what's under the cursor, or with nothing there the editor itself: an object's state, the objects it relates to (`enter` goes to one, `backspace` or `ctrl-o` comes back, `ctrl-i` goes forward again) and its actions (`enter` runs one) |
 | `space h o` `space h e` `space h a` `space h p` `space h m` `space h s` | Describe an option (its value, default and who set it), an event (what handlers get, who listens), an API function, a plugin, a mode and its keys, or an editing style: its modes, the role each plays and its leader |
 | `space ?` | Every command, with its keys; enter runs one |
+| `f1` | The keys of the mode you're in and what each does, in the pane, tab and resize modes and in terminals too |
 | `space h d` | Go to a page or heading of this manual, which comes with Greed (`:docs WORDS` goes straight to one) |
 | `space h /` | Search this manual as you type |
 | `space .` (`alt-.` in the vscode style) | What you can do with what's under the cursor: a file path, a link, a symbol, a problem, a change, a button, the selection; `alt-.` in a picker does the same for the current item |
@@ -107,7 +108,7 @@ Key names:
   Capitals are shifted letters.
 - Named keys: `space`, `enter`, `esc`, `tab`, `backspace`, `delete`,
   `insert`, `up`, `down`, `left`, `right`, `home`, `end`, `pageup`,
-  `pagedown`.
+  `pagedown`, and the function keys `f1`, `f2` and on.
 - Modifiers in front, joined with `-`: `ctrl-s`, `alt-x`, `ctrl-shift-left`,
   `ctrl--` for ctrl and minus.
 
@@ -142,8 +143,8 @@ two modes where single keys act until `esc`.
 | `alt-<` `alt->`, `alt-1` to `alt-9` | The tab before or after (round the ends), or tab N. `alt-[` and `alt-]` too, in terminals with the kitty keyboard protocol: in others they start an escape code |
 | `alt-space` | Arrange the tab with the next layout |
 | `alt-m` | Swap the pane with the main one |
-| `alt-p` | Pane mode: `h j k l` move, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type (`esc` leaves the mode), `w` (or `z`) hide or show the floats, `W` another floating terminal, `E` this file floating, `e` (or `F`) float the pane or panel (the tab's last pane shows another buffer instead) or put a float back, `b` move the pane to a new tab, `t` to a tab you pick, `P` into a panel, `T` tile the floats, `C` cascade them, `O` one at a time, `Y` pick a float layout, `{ }` the float before or after, `H J K L` make the pane bigger toward that side, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `f1` every key, `esc` done. Keys that open or move something (`n`, `x`, `b`, `t`, `P`, `y`, `Y`, `p`) leave the mode |
-| `alt-t` | Tab mode: `h l` switch, `n` new, `t` new with a terminal, `x` close, `r` rename (these four leave the mode), `f1` every key, `esc` done |
+| `alt-p` | Pane mode: `h j k l` move, `tab` the next pane, `n` / `r` / `d` a terminal (anywhere, right, below), `v` / `s` this file again (right, below), `x` close, `f` zoom in on the pane, `g` label the panes and go to the one you type (`esc` leaves the mode), `w` (or `z`) hide or show the floats, `W` another floating terminal, `E` this file floating, `e` (or `F`) float the pane or panel (the tab's last pane shows another buffer instead) or put a float back, `b` move the pane to a new tab, `t` to a tab you pick, `P` into a panel, `T` tile the floats, `C` cascade them, `O` one at a time, `Y` pick a float layout, `{ }` the float before or after, `H J K L` make the pane bigger toward that side, `= -` resize, `R` the resize mode, `p` place a new pane (a frame shows where; `h j k l` move it, `enter` opens it, `t` a terminal, `esc` cancels), `space` next layout, `y` pick a layout, `m` swap with main, `o` rotate, `[ ]` main smaller or bigger, `f1` every key, `esc` done. Keys that open or move something (`n`, `x`, `b`, `t`, `P`, `y`, `Y`, `p`) leave the mode |
+| `alt-t` | Tab mode: `h l` (or `[ ]`) switch, `n` new, `t` new with a terminal, `x` close, `r` rename (these four leave the mode), `f1` every key, `esc` done |
 | `alt-r` | Resize mode: `h j k l` make the pane, panel or floating view bigger toward that side, `H J K L` smaller from that side (at the screen's edge the other edge moves), arrows move a floating view, `= -` every way, `esc` done |
 
 The window keys from Vim and Helix follow `ctrl-w` in normal mode, and
@@ -180,7 +181,8 @@ The terminal's mode takes every key, so the `alt` keys are bound in the
 program. `require("@panes").keys` holds the defaults, by layer.
 
 In a terminal, keys go to the program except those bound in the
-`terminal` layer: `ctrl-\` to stop typing into it, `ctrl-space` to stop
+`terminal` layer: `ctrl-\` to stop typing into it (or `esc` twice
+quickly; once goes to the program), `ctrl-space` to stop
 and open the leader (so `ctrl-space f` finds a file), and the `alt` keys
 above. Bind more there the same way:
 

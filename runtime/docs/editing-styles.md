@@ -5,8 +5,8 @@ you can switch between them while it runs. They're equals: each is a
 plugin with its own modes, written against the same API, and each follows
 the editor it comes from closely, so what your hands know works here:
 Helix's selections and motions, Vim's operators, text objects, registers,
-macros and visual modes, the usual shortcuts of modeless editors. Where one still differs from the original, its section
-below says so.
+macros and visual modes, the usual shortcuts of modeless editors. Where
+one still differs from the original, its section below says so.
 
 | Style | How it works | Like |
 |---|---|---|
@@ -136,6 +136,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `ctrl-f` `ctrl-b` `ctrl-d` `ctrl-u` `ctrl-e` `ctrl-y` | Page, half page and a line down and up |
 | `z z` `z t` `z b`, `z a` `z c` `z o` `z R` `z M` `z f` `z j` `z k` `z d` `z E` | Center the view, cursor line to the top or bottom; folds |
 | `R` | Type over the text; `backspace` puts back what it replaced |
+| `[ space` `] space` | A blank line above or below, as vim-unimpaired does |
 | `g ;` `g ,` | Back and forward through the places you changed |
 | `ctrl-o` `ctrl-t` `ctrl-d` `ctrl-n` `ctrl-p` in insert mode | One normal mode command, indent, dedent, complete from words in open files |
 | `ctrl-o` `ctrl-i` | Back and forward through where you jumped from |
@@ -242,8 +243,8 @@ same hint after it; keys plugins bind for the command role (`:`, `g d`,
 tree, pickers, help and other panels keep their keys in it. Completion,
 signature help and Markdown shown as written while typing follow the
 typing mode; a style without modes makes its own mode the typing one
-(`roles = { typing = "mine" }`). `.` works in any style: it types the keys
-of the last change again;
+(`roles = { typing = "mine" }`). `repeat-change` (`.` in Helix and Vim)
+works in any style once bound: it types the keys of the last change again;
 `require("@core").commands.tag("no-repeat", { "my-undo" })` leaves out
 commands that shouldn't count as one. The `vim` plugin, which is the Vim
 style, is a full example to read.
