@@ -48,6 +48,10 @@ pub enum Input {
     /// The answer to `Output::ReadClipboardImage`: the image on the system
     /// clipboard, as PNG in base64, or none.
     ClipboardImage(u64, Option<String>),
+    /// A file dropped on the client's window: its path there, and what's in it
+    /// as base64 when it's small enough to send (see [`crate::dropped`]). It's
+    /// pasted as a path the session can read.
+    Dropped(String, Option<String>),
     /// A debug line from the client's side, sent while the frames it gets
     /// say the `client` topic is on (see [`crate::debug`]).
     Log(String),
@@ -327,6 +331,7 @@ fn turn_of(input: &Input) -> Turn {
         | Input::KeyOrText(..)
         | Input::Mouse(_)
         | Input::Paste(_)
+        | Input::Dropped(..)
         | Input::Run(_) => Turn::Waits,
         Input::Resize(_)
         | Input::CellSize(..)
@@ -785,6 +790,21 @@ impl Server<'_> {
                     .and_then(|png| base64::engine::general_purpose::STANDARD.decode(png).ok());
                 self.host
                     .with_editor_mut(|ed| ed.answer_image_ask(id, ask, png));
+            }
+            Input::Dropped(ref path, ref data) => {
+                let remote = self
+                    .host
+                    .with_editor(|ed| ed.client_state(id).is_some_and(crate::ClientState::remote));
+                let dir = crate::dirs::dir(crate::dirs::Kind::Cache)
+                    .unwrap_or_else(std::env::temp_dir)
+                    .join("dropped");
+                match crate::dropped::paste_text(path, data.as_deref(), remote, &dir) {
+                    Ok(text) => {
+                        let pasted = self.host.paste(id, &text);
+                        self.report(pasted);
+                    }
+                    Err(why) => self.say(why),
+                }
             }
             Input::Log(ref text) => crate::debug!(Client, "client {}: {text}", id.0),
             // The client in this process ends the editor; another leaves it.

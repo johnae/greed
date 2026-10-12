@@ -19,6 +19,7 @@ pub mod debug;
 pub mod delta;
 pub mod diff;
 pub mod dirs;
+pub mod dropped;
 mod editor;
 pub mod files;
 mod filetypes;

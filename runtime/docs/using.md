@@ -182,6 +182,12 @@ Elsewhere there's no menu bar, and the command palette (`space ?`, or
 config add items:
 `require("@core").menus.add("Tools", "Run tests", "test-run")`.
 
+Dropping a file on the window pastes its path where you are, as a terminal
+does, so dropping a screenshot on a terminal pane running Claude Code
+hands it the picture. With the session on another machine (`greed ssh`),
+the file is copied there first, into the cache folder's `dropped`, and that
+path is pasted; files over 50 MB stay behind with a message saying so.
+
 What you copy in Greed goes on the system clipboard, and what you copied in
 another program becomes Greed's clipboard when the window gets focus, so
 `p` (or `ctrl-v` in the vscode style) pastes it. `ctrl-shift-v` and `shift-insert`

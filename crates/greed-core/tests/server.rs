@@ -689,3 +689,23 @@ fn with_the_client_topic_on_frames_ask_for_the_clients_side_and_its_lines_are_ke
     greed_core::debug::set("client", false).unwrap();
     assert!(kept("client 1: drew a frame in 1.00 ms"));
 }
+
+#[test]
+fn a_file_dropped_on_a_window_is_pasted_as_its_path() {
+    let conn = start("", None);
+    conn.input
+        .send(Input::Resize(Size {
+            width: 40,
+            height: 3,
+        }))
+        .unwrap();
+    frame(&conn);
+    keys(&conn, "i");
+    conn.input
+        .send(Input::Dropped("/tmp/My Shot.png".into(), None))
+        .unwrap();
+    let mut f = frame(&conn);
+    while !screen_rows(&f)[0].text().contains("/tmp/My\\ Shot.png") {
+        f = frame(&conn);
+    }
+}
