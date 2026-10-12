@@ -1,0 +1,47 @@
+# Updates the Homebrew tap (johnae/homebrew-greed) when a release is
+# published: the formula and the cask point at its downloads, with the
+# checksums from its SHA256SUMS. Run by hand, it does the same for a tag.
+name: homebrew
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, like v0.2.0"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  tap:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: johnae/homebrew-greed
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS -D "$RUNNER_TEMP"
+      - name: formula and cask
+        run: dist/homebrew.sh "${TAG#v}" "$RUNNER_TEMP/SHA256SUMS" tap
+      - name: push
+        working-directory: tap
+        run: |
+          git add Formula Casks
+          if git diff --cached --quiet; then
+            echo "already at $TAG"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -m "greed ${TAG#v}"
+          git push
