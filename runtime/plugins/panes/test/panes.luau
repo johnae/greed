@@ -80,6 +80,21 @@ test("a terminal pane closes when its program ends well", function(t)
 	assert(greed.mode.get() == "helix")
 end)
 
+test("closing a terminal's float ends its program, with pane-close or :q", function(t)
+	local terminal = require("@terminal")
+	t:buffer("|hello")
+	t:draw(80, 20)
+	for _, close in { "pane-close", "quit" } do
+		local term = terminal.open({ "cat" }, { float = true })
+		local buffer = term.buffer
+		assert(greed.view():float_spec(), "in a float")
+		t:keys("ctrl-\\")
+		t:run(close)
+		assert(not terminal.is_open(term), `{close} ended it`)
+		assert(terminal.terminal(buffer) == nil, "no terminal left")
+	end
+end)
+
 test("the pane mode takes single keys until esc", function(t)
 	t:buffer("|hello")
 	t:keys("alt-p")

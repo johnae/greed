@@ -228,9 +228,9 @@ end
 -- open, so this never refuses. Says whether there was one to close.
 local function close_window(): boolean
 	local view = greed.view()
+	-- pane-close also ends a terminal the float was the last to show.
 	if not view:is_pane() then
-		view:close()
-		return true
+		return run_if("pane-close") or view:close()
 	end
 	if #greed.tab.current().panes > 1 and (run_if("pane-close") or view:close()) then
 		return true

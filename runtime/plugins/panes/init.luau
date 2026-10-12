@@ -331,14 +331,16 @@ function M.to_panel(side: ("left" | "right")?)
 	end)
 end
 
---- Closes `view`: a pane, ending a terminal nothing shows any more, or a
---- panel or a float. False for the last pane of the tab, which stays open.
+--- Closes `view`: a pane, a panel or a float, ending a terminal nothing
+--- shows any more (a `kubectl exec` in a float ends with it). False for
+--- the last pane of the tab, which stays open.
 function M.close(view: greed.View): boolean
+	local buffer = view:buffer()
 	if not view:is_pane() then
 		view:close()
+		terminal.forget(buffer)
 		return true
 	end
-	local buffer = view:buffer()
 	if not view:close() then
 		return false
 	end
