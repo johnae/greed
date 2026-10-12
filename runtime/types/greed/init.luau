@@ -325,6 +325,10 @@ export type View = {
 	--- Where it was last drawn on the screen, in cells, its gutter included;
 	--- nil before it's drawn.
 	area: (self: View) -> { x: number, y: number, width: number, height: number }?,
+	--- The column `pos` is drawn at in its line in this view, the line as one long row: hidden text (a table's pipes, a link's brackets) takes no room and text marks show takes theirs, as it looks now. Vertical moves aim for it, so a table's column is kept.
+	drawn_column: (self: View, pos: number) -> number,
+	--- The position drawn at column `col` of `line` in this view, the line as one long row: the text there, or where the text drawn next starts when `col` is on text a mark shows or past the line's end.
+	at_drawn_column: (self: View, line: number, col: number) -> number,
 	--- The lines folds hide, and those outside the lines it is narrowed to, 0-based and inclusive.
 	hidden_lines: (self: View) -> { { from: number, to: number } },
 	--- Shows only lines `from` to `to` (0-based, inclusive) of its buffer, as a float showing one part of it; no arguments shows all of it again. Showing another buffer does too.

@@ -1404,6 +1404,58 @@ fn concealed_text_shows_as_its_mark_says_on_the_cursors_line() {
 }
 
 #[test]
+fn a_cursor_on_hidden_text_shows_where_the_text_drawn_there_starts() {
+    use greed_core::{Mark, Reveal};
+    // "a [  ] b": the brackets and spaces are bytes 2-5, drawn as a border.
+    let mut ed = editor("|a [  ] b");
+    let buffer = ed.view(ed.main()).buffer;
+    ed.decorate(
+        buffer,
+        "md",
+        vec![
+            Mark {
+                range: 2..6,
+                style: "table".into(),
+                conceal: true,
+                text: Some("│ ".into()),
+                reveal: Reveal::Never,
+                ..Mark::default()
+            },
+            Mark {
+                range: 7..7,
+                style: "hint".into(),
+                text: Some("::".into()),
+                ..Mark::default()
+            },
+        ],
+    );
+    let at = |ed: &mut Editor, pos: usize| {
+        let main = ed.main();
+        ed.view_mut(main).selection = greed_text::Selection::point(pos);
+        frame(ed, 20, 2)
+    };
+    let f = at(&mut ed, 2);
+    assert_eq!(body(&f)[0], "a │  ::b");
+    assert_eq!(
+        f.cursor,
+        Some(Position { col: 4, row: 0 }),
+        "on the border, its first cell"
+    );
+    let f = at(&mut ed, 4);
+    assert_eq!(
+        f.cursor,
+        Some(Position { col: 6, row: 0 }),
+        "inside the hidden text: on what's drawn next"
+    );
+    let f = at(&mut ed, 7);
+    assert_eq!(
+        f.cursor,
+        Some(Position { col: 9, row: 0 }),
+        "on shown text: past text a mark shows before it"
+    );
+}
+
+#[test]
 fn concealed_text_marked_auto_shows_as_the_editor_says() {
     use greed_core::{Mark, Reveal};
     let mut ed = editor("|- [ ] task");

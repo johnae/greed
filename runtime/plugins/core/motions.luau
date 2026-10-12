@@ -174,9 +174,10 @@ local function extend_word(name: string, doc: string, target: Target, word: word
 	})
 end
 
--- Vertical moves aim for the column each cursor started from, so moving
--- through a short line doesn't lose it. The goal columns are kept while
--- nothing but vertical moves has touched the selection.
+-- Vertical moves aim for the column each cursor started from, as it's drawn
+-- (a table's column, with its pipes hidden), so moving through a short
+-- line doesn't lose it. The goal columns are kept while nothing but
+-- vertical moves has touched the selection.
 local goal: { view: number?, buffer: number?, selection: Selection?, columns: { number } } = {
 	columns = {},
 }
@@ -205,7 +206,8 @@ local function vertical(name: string, doc: string, delta: number, keep_anchor: b
 			if not same_place or not same_selection(sel, goal.selection) then
 				goal.columns = {}
 				for i, range in sel.ranges do
-					goal.columns[i] = text.column(buffer, origin(buffer, range, block))
+					goal.columns[i] =
+						text.drawn_column(buffer, origin(buffer, range, block), ctx.view)
 				end
 			end
 			-- Folded lines are stepped over, like the one line they look like.
@@ -231,7 +233,7 @@ local function vertical(name: string, doc: string, delta: number, keep_anchor: b
 					end
 					line = next
 				end
-				local head = text.at_column(buffer, line, goal.columns[i])
+				local head = text.at_drawn_column(buffer, line, goal.columns[i], ctx.view)
 				sel.ranges[i] = if keep_anchor
 					then extend_to(buffer, range, head, block)
 					else point(head)
@@ -244,12 +246,14 @@ local function vertical(name: string, doc: string, delta: number, keep_anchor: b
 	})
 end
 
+-- A character left or right in the line, over what the look hides (a
+-- table's pipes), so the cursor stays on what's drawn.
 local function left(buffer: Buffer, head: number): number
-	return math.max(buffer:line_start(buffer:line_of(head)), buffer:prev_char(head))
+	return text.step(buffer, head, -1)
 end
 
 local function right(buffer: Buffer, head: number): number
-	return math.min(buffer:line_end(buffer:line_of(head)), buffer:next_char(head))
+	return text.step(buffer, head, 1)
 end
 
 local function line_start(buffer: Buffer, head: number): number

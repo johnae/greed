@@ -144,6 +144,7 @@ impl UserData for ViewRef {
             let visible = view.visible.clone().unwrap_or(0..len);
             Ok((visible.start.min(len), visible.end.min(len)))
         });
+        add_drawn_methods(methods);
         methods.add_method("hidden_lines", |lua, this, NoArgs| {
             let state = state(lua);
             let view = state
@@ -213,6 +214,38 @@ impl UserData for ViewRef {
         add_pane_methods(methods);
         add_history_methods(methods);
     }
+}
+
+/// Columns as the view draws its lines, hidden text taking no room.
+fn add_drawn_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
+    use crate::render::{CellWidth, Renderer};
+    fn with_drawn<R>(
+        lua: &Lua,
+        this: &ViewRef,
+        f: impl FnOnce(&Renderer<CellWidth>, &crate::Editor, &View) -> LuaResult<R>,
+    ) -> LuaResult<R> {
+        let state = state(lua);
+        let view = state
+            .editor
+            .find_view(this.id)
+            .ok_or_else(|| mlua::Error::runtime("this view was closed"))?;
+        f(&Renderer::new(CellWidth), &state.editor, view)
+    }
+    methods.add_method("drawn_column", |lua, this, pos: usize| {
+        with_drawn(lua, this, |renderer, editor, view| {
+            char_index(editor.buffer(view.buffer).text(), pos)?;
+            Ok(renderer.drawn_column(editor, view, pos))
+        })
+    });
+    methods.add_method(
+        "at_drawn_column",
+        |lua, this, (line, col): (usize, usize)| {
+            with_drawn(lua, this, |renderer, editor, view| {
+                check_line(editor.buffer(view.buffer).text(), line)?;
+                Ok(renderer.at_drawn_column(editor, view, line, col))
+            })
+        },
+    );
 }
 
 /// `view:selection()`, `set_selection(selection)`, `cursor()` and

@@ -15,7 +15,7 @@ local class, is_blank, line_bounds = common.class, common.is_blank, common.line_
 local wanted: number? = nil
 
 local function wanted_column(buffer: Buffer, pos: number): number
-	local column = wanted or core.text.column(buffer, pos)
+	local column = wanted or core.text.drawn_column(buffer, pos)
 	wanted = column
 	return column
 end
@@ -278,31 +278,26 @@ local function screen_line(where: "top" | "middle" | "bottom"): Motion
 end
 
 local motions: { [string]: Motion } = {
+	-- Over what the look hides (a table's pipes), onto what's drawn.
 	h = function(buffer, pos, count)
-		local _, start = line_bounds(buffer, pos)
 		for _ = 1, count do
-			if pos > start then
-				pos = buffer:prev_char(pos)
-			end
+			pos = core.text.step(buffer, pos, -1)
 		end
 		return pos, "exclusive"
 	end,
 	l = function(buffer, pos, count)
-		local _, _, finish = line_bounds(buffer, pos)
 		for _ = 1, count do
-			if pos < finish then
-				pos = buffer:next_char(pos)
-			end
+			pos = core.text.step(buffer, pos, 1)
 		end
 		return pos, "exclusive"
 	end,
 	j = function(buffer, pos, count)
 		local line = math.min(buffer:line_of(pos) + count, buffer:line_count() - 1)
-		return core.text.at_column(buffer, line, wanted_column(buffer, pos)), "line"
+		return core.text.at_drawn_column(buffer, line, wanted_column(buffer, pos)), "line"
 	end,
 	k = function(buffer, pos, count)
 		local line = math.max(buffer:line_of(pos) - count, 0)
-		return core.text.at_column(buffer, line, wanted_column(buffer, pos)), "line"
+		return core.text.at_drawn_column(buffer, line, wanted_column(buffer, pos)), "line"
 	end,
 	w = repeat_step(next_word_start),
 	b = repeat_step(prev_word_start),

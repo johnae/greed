@@ -1021,6 +1021,7 @@ impl<M: Measure> Renderer<M> {
             // The line's bytes; an empty last line still counts as one.
             let start = text.line_to_byte(line);
             let lines = start..text.line_to_byte(line + 1).max(start + 1);
+            let head_shown = !lines.contains(&head) || shows(&layout, head);
             let on_line = |m: &&&Mark| m.range.start < lines.end && m.range.end >= lines.start;
             let line_gutter = Gutter::for_line(gutter, signs, &styled, &lines);
             let mut overlay = Overlay::default();
@@ -1041,8 +1042,11 @@ impl<M: Measure> Renderer<M> {
                 }
                 let mut x = gutter;
                 for cell in &cells {
+                    let place = screen_position(area, x, rows.len());
+                    if cursor_here(cell, (head, head_shown), &lines, cursor.is_some()) {
+                        cursor = Some(place);
+                    }
                     if cell.repeated || cell.inserted.is_some() {
-                        let place = screen_position(area, x, rows.len());
                         self.push_not_text(&mut row, cell, &styled, view_id, place);
                         x += cell.width;
                         continue;
@@ -1050,9 +1054,6 @@ impl<M: Measure> Renderer<M> {
                     first_shown = first_shown.or(Some(cell.byte));
                     if !cell.end_of_line {
                         last_shown = Some(cell.byte);
-                    }
-                    if cursor_here(cell.byte, head, &lines, cursor.is_some()) {
-                        cursor = Some(screen_position(area, x, rows.len()));
                     }
                     if let Some((text, tag)) = overlay.over(&styled, cell) {
                         row.push_scaled(&text, smallvec![tag], cell.scale);
@@ -1206,6 +1207,45 @@ impl<M: Measure> Renderer<M> {
         } else {
             wrap(cells, width, end)
         }
+    }
+
+    /// The column byte `pos` is drawn at in its line in `view`, the line as
+    /// one long row: hidden text takes no room and text marks show takes
+    /// theirs, as the line looks now. Where hidden text is, it's the column
+    /// of what's drawn next, text a mark shows from `pos` included (a
+    /// link in the reading view), where the cursor is drawn.
+    pub fn drawn_column(&self, editor: &Editor, view: &View, pos: usize) -> usize {
+        let text = editor.buffer(view.buffer).text();
+        let pos = pos.min(text.len_bytes());
+        let (cells, _) = self.line_cells(editor, view, text.byte_to_line(pos));
+        let shown = cells.iter().any(|c| c.byte == pos && c.inserted.is_none());
+        cells
+            .iter()
+            .take_while(|c| c.byte < pos || (shown && c.byte == pos && c.inserted.is_some()))
+            .map(|c| c.width)
+            .sum()
+    }
+
+    /// The position drawn at column `col` of `line` in `view`, the line as
+    /// one long row: the text there, where a button's mark starts when `col`
+    /// is on one, or where the text drawn next starts when `col` is on other
+    /// text a mark shows (a table's border, say) or past the line's end.
+    pub fn at_drawn_column(&self, editor: &Editor, view: &View, line: usize, col: usize) -> usize {
+        let (cells, end) = self.line_cells(editor, view, line);
+        let mut x = 0;
+        let mut past = false;
+        for cell in &cells {
+            past = past || col < x + cell.width;
+            if past {
+                match (&cell.inserted, &cell.action) {
+                    (None, _) => return cell.byte,
+                    (Some(_), Some((_, start))) => return *start,
+                    (Some(_), None) => {}
+                }
+            }
+            x += cell.width;
+        }
+        end
     }
 
     /// The cells of `line` as one long row, and the byte its text ends at.
@@ -2190,11 +2230,30 @@ fn shown_bytes(text: &Rope, first: Option<usize>, last: Option<usize>) -> Range<
     })
 }
 
-/// Whether the cursor at `head` goes on the cell for `byte` of the line
-/// `lines`: its own cell, or when it's on hidden text (a heading's `#`), the
-/// first cell shown after it, unless it's `placed` already.
-fn cursor_here(byte: usize, head: usize, lines: &Range<usize>, placed: bool) -> bool {
-    byte == head || (!placed && byte > head && lines.contains(&head))
+/// Whether the line laid out as `layout` draws the text at `byte`.
+fn shows(layout: &[Vec<Cell>], byte: usize) -> bool {
+    layout
+        .iter()
+        .flatten()
+        .any(|c| c.byte == byte && c.inserted.is_none() && !c.repeated)
+}
+
+/// Whether the cursor at `head` goes on `cell` of the line `lines`: its own
+/// cell, or when it's on hidden text (a heading's `#`, `shown` false), the
+/// first cell drawn from there on, text a mark shows (an empty table cell's
+/// padding) too, unless it's `placed` already.
+fn cursor_here(
+    cell: &Cell,
+    (head, shown): (usize, bool),
+    lines: &Range<usize>,
+    placed: bool,
+) -> bool {
+    let first_after = |from: usize| !placed && cell.byte >= from && lines.contains(&head);
+    match (&cell.inserted, cell.repeated) {
+        (_, true) => false,
+        (Some(_), false) => !shown && first_after(head),
+        (None, false) => cell.byte == head || first_after(head + 1),
+    }
 }
 
 /// The lines hidden in `view`: each fold's lines after its first, unless a

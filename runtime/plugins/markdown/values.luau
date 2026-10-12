@@ -32,8 +32,8 @@ local M = {}
 export type Field = { name: string, value: string, from: number, to: number }
 
 --- A column a formula fills, from a `<!-- formula: key = formula -->`
---- line under its table.
-export type Column = { key: string, source: string }
+--- line under its table, on line `line` (0-based).
+export type Column = { key: string, source: string, line: number }
 
 --- A table as its text says: its rows, and its columns by name, as
 --- formulas see it (`raw`), and the columns formulas fill.
@@ -52,9 +52,9 @@ export type Found = {
 --- A cell a formula filled, as it shows, and whether it went wrong.
 export type Worked = { text: string, failed: boolean }
 
--- A column's name from its header: lowercase, other than letters and
--- digits as `_`.
-local function key_of(header: string): string
+--- A column's name from its header: lowercase, other than letters and
+--- digits as `_`.
+function M.key(header: string): string
 	return (string.gsub(string.lower(header), "[^%w]+", "_"))
 end
 
@@ -68,18 +68,11 @@ end
 -- their header's words, with each column as a list under its name too.
 local function table_value(s: Structure, first: number, last: number): (any, { string })
 	local function texts(n: number): { string }
-		local line = s.lines[n + 1]
-		local out: { string } = {}
-		local cells: { tables.Cell } = tables.cells(line) or {}
-		for _, cell in cells do
-			local text = string.sub(line, cell.from, cell.to)
-			table.insert(out, (string.match(text, "^%s*(.-)%s*$") or ""))
-		end
-		return out
+		return tables.texts(s.lines[n + 1])
 	end
 	local keys: { string } = {}
 	for _, header in texts(first) do
-		table.insert(keys, key_of(header))
+		table.insert(keys, M.key(header))
 	end
 	local out: any = {}
 	for _, key in keys do
@@ -99,9 +92,9 @@ local function table_value(s: Structure, first: number, last: number): (any, { s
 	return out, keys
 end
 
--- The formula lines right under the table ending on line `last` of `s`
--- (0-based).
-local function formulas_below(s: Structure, last: number): { Column }
+--- The formula lines right under the table ending on line `last` of `s`
+--- (0-based).
+function M.formulas(s: Structure, last: number): { Column }
 	local out: { Column } = {}
 	local n = last + 1
 	while s.lines[n + 1] do
@@ -112,7 +105,7 @@ local function formulas_below(s: Structure, last: number): { Column }
 		if key == nil then
 			break
 		end
-		table.insert(out, { key = key :: string, source = source :: string })
+		table.insert(out, { key = key :: string, source = source :: string, line = n })
 		n += 1
 	end
 	return out
@@ -215,7 +208,7 @@ function M.found(s: Structure): Found
 		local id = string.match(line, "^%s*<!%-%-%s*id=([%w_]+)%s*%-%->%s*$")
 		local below = s.table_at[n + 1]
 		if id and below and below.first == n + 1 then
-			local columns = formulas_below(s, below.last)
+			local columns = M.formulas(s, below.last)
 			result.tables[id] =
 				{ raw = (table_value(s, below.first, below.last)), columns = columns }
 			for row = below.first, below.last + #columns do
@@ -342,7 +335,7 @@ function M.worked(
 	s: Structure,
 	found: structure.Table
 ): { [number]: { [number]: Worked } }?
-	local columns = formulas_below(s, found.last)
+	local columns = M.formulas(s, found.last)
 	if #columns == 0 then
 		return nil
 	end
@@ -366,7 +359,7 @@ export type Data = { keys: { string }, rows: { { [string]: any } } }
 
 --- The data of the table `found` in `buffer`.
 function M.data(buffer: greed.Buffer, s: Structure, found: structure.Table): Data
-	local columns = formulas_below(s, found.last)
+	local columns = M.formulas(s, found.last)
 	local raw, keys = table_value(s, found.first, found.last)
 	local rows = work_rows(raw, columns, M.scope(buffer, s))
 	local all = table.clone(keys)

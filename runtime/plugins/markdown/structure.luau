@@ -255,6 +255,16 @@ local function underlined(s: Structure, first: number, last: number, col: number
 	})
 end
 
+-- The last line of a table's rows going on from line `last`: each line up
+-- to a blank one that has a pipe, a row of empty cells too.
+local function rows_from(s: Structure, last: number): number
+	local lines = s.lines
+	while last + 1 < #lines and not blank(lines[last + 2]) and tables.cells(lines[last + 2]) do
+		last += 1
+	end
+	return last
+end
+
 -- The table whose header is line `n`, if one is.
 local function table_at(s: Structure, n: number): Table?
 	local lines = s.lines
@@ -266,11 +276,7 @@ local function table_at(s: Structure, n: number): Table?
 	if header == nil or aligns == nil or #header ~= #aligns then
 		return nil
 	end
-	local last = n + 1
-	while last + 1 < #lines and not blank(lines[last + 2]) and tables.cells(lines[last + 2]) do
-		last += 1
-	end
-	return { first = n, last = last }
+	return { first = n, last = rows_from(s, n + 1) }
 end
 
 -- The blocks, read line by line: CommonMark's main rules, enough where
@@ -429,7 +435,8 @@ local function from_tree(s: Structure, buffer: greed.Buffer): boolean
 			while last > first and blank(s.lines[last + 1]) do
 				last -= 1
 			end
-			table.insert(s.tables, { first = first, last = last })
+			-- The tree ends a table at a row of empty cells; GitHub doesn't.
+			table.insert(s.tables, { first = first, last = rows_from(s, last) })
 		end
 	end
 	-- Matches come in the tree's order, nested ones after their parents.

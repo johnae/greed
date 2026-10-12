@@ -37,6 +37,12 @@ M.questions = questions
 --- Live values: `{{ formula }}`, `<!-- let name = formula -->` and fields.
 M.values = values
 
+--- Tables' text: their cells, layout, and grids to edit and write back.
+M.tables = tables
+
+--- Editing tables as they're drawn: cell to cell, rows and columns.
+M.table_edit = require("@self/table_edit")
+
 export type Structure = structure.Structure
 export type Heading = structure.Heading
 export type Code = structure.Code

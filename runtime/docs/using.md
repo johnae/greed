@@ -1335,6 +1335,31 @@ program (the `link-opener` option says which), and a `file://` link opens
 the file in Greed. Links of other kinds, which any file you read could
 hold, don't open.
 
+### Tables
+
+A table is edited as it's drawn, from normal mode. `h` and `l` step over
+the pipes and padding, `j` and `k` keep to the column you see, and
+`alt-h` and `alt-l` go a whole cell back or on, row after row (outside a
+table they still move between panes). `enter` on a cell asks for its text;
+in a column a [formula](#live-values) fills, it asks for the formula. The
+rest is on the leader:
+
+| Keys | |
+|---|---|
+| `space m t o`, `space m t O` | Add a row below or above |
+| `space m t d` | Delete the row |
+| `space m t j`, `space m t k` | Move the row down or up |
+| `space m t c`, `space m t C` | Add a column right or left |
+| `space m t D` | Delete the column |
+| `space m t l`, `space m t h` | Move the column right or left |
+| `space m t s`, `space m t S` | Sort the rows by the column, smallest or largest first |
+| `space m t =` | Line up the pipes |
+| `space m t e` | Edit the cell, as `enter` does |
+
+Each change writes the table back with its pipes lined up, so the file
+reads well as plain text too, and is one step to undo. The keys are in
+`require("@markdown").table_edit.keys`, to rebind like any others.
+
 ### Choices
 
 A list whose items start with `( )`, one of them `(x)`, is a set of

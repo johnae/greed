@@ -200,6 +200,61 @@ function M.at_column(buffer: Buffer, line: number, column: number): number
 	return buffer:at_display_column(line, column)
 end
 
+-- The view to measure `buffer` in as it's drawn: `view`, or the focused
+-- one when it shows `buffer`.
+local function drawn_in(buffer: Buffer, view: greed.View?): greed.View?
+	local shown = view or greed.view()
+	return if shown:buffer():id() == buffer:id() then shown else nil
+end
+
+--- The column `pos` is drawn at in `view` (the focused one unless given):
+--- hidden text, like a table's pipes, takes no room. As `column` counts
+--- where no view shows `buffer`. Vertical moves aim for it.
+function M.drawn_column(buffer: Buffer, pos: number, view: greed.View?): number
+	local shown = drawn_in(buffer, view)
+	return if shown then shown:drawn_column(pos) else M.column(buffer, pos)
+end
+
+--- The position drawn at `column` of `line` in `view` (the focused one
+--- unless given), past text that's hidden or only drawn; as `at_column`
+--- finds it where no view shows `buffer`.
+function M.at_drawn_column(buffer: Buffer, line: number, column: number, view: greed.View?): number
+	local shown = drawn_in(buffer, view)
+	return if shown then shown:at_drawn_column(line, column) else M.at_column(buffer, line, column)
+end
+
+--- Whether `pos` is drawn in `view` (the focused one unless given), rather
+--- than in text the look hides there, like a table's pipes. Moves left and
+--- right step over what isn't. Always where no view shows `buffer`.
+function M.drawn(buffer: Buffer, pos: number, view: greed.View?): boolean
+	local shown = drawn_in(buffer, view)
+	if shown == nil then
+		return true
+	end
+	return shown:at_drawn_column(buffer:line_of(pos), shown:drawn_column(pos)) == pos
+end
+
+--- One character left (`by` -1) or right (1) from `pos` in its line, past
+--- what isn't drawn (`drawn`), so a cursor stays on what's shown; `pos`
+--- itself when nothing drawn is left that way.
+function M.step(buffer: Buffer, pos: number, by: number): number
+	local line = buffer:line_of(pos)
+	local first, last = buffer:line_start(line), buffer:line_end(line)
+	local at = pos
+	while true do
+		local next = if by < 0
+			then math.max(first, buffer:prev_char(at))
+			else math.min(last, buffer:next_char(at))
+		if next == at then
+			return pos
+		end
+		at = next
+		if M.drawn(buffer, at) then
+			return at
+		end
+	end
+end
+
 --- The text of lines `first` to `last`, without the last one's line break.
 function M.lines(buffer: Buffer, first: number, last: number): string
 	return buffer:slice(buffer:line_start(first), buffer:line_end(last))

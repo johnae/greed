@@ -120,8 +120,11 @@ function M.layout(
 		local left: { string }, right: { string } = {}, {}
 		for c = 1, n do
 			local room = widths[c] - (shown[c] or 0)
-			local before = if aligns[c] == "right"
-				then room
+			-- An empty cell's padding all goes after it, where its gap's
+			-- text starts, so a cursor in it shows at the cell's start.
+			local before = if shown[c] == 0
+				then 0
+				elseif aligns[c] == "right" then room
 				elseif aligns[c] == "center" then room // 2
 				else 0
 			left[c], right[c] = string.rep(" ", before), string.rep(" ", room - before)
@@ -161,6 +164,105 @@ function M.border(widths: { number }, left: string, middle: string, right: strin
 		table.insert(parts, string.rep("─", w + 2))
 	end
 	return left .. table.concat(parts, middle) .. right
+end
+
+--- Which cell of row `text` byte `at` (1-based) is in: 1 up to the first
+--- pipe between cells, and so on, a cell's pipe on the right counting as
+--- its own. Nil when `text` isn't a row.
+function M.column_at(text: string, at: number): number?
+	local cells = M.cells(text)
+	if cells == nil or #cells == 0 then
+		return nil
+	end
+	for c = 1, #cells - 1 do
+		-- The next cell starts past the pipe after this one.
+		local pipe = string.find(text, "|", cells[c].to + 1, true) or #text
+		if at <= pipe then
+			return c
+		end
+	end
+	return #cells
+end
+
+--- How a delimiter row's cell is written: `---`, `:--`, `--:` or `:-:`.
+export type Spec = "plain" | Align
+
+--- A table's text as cells: its header, how each column lines up as the
+--- delimiter row writes it, and its rows, each cell trimmed. Edit it, then
+--- `write` it back.
+export type Grid = { header: { string }, specs: { Spec }, rows: { { string } } }
+
+--- The text of each cell of row `text`, trimmed; none if it isn't a row.
+function M.texts(text: string): { string }
+	local out: { string } = {}
+	local cells: { Cell } = M.cells(text) or {}
+	for _, cell in cells do
+		table.insert(out, string.sub(text, cell.from, cell.to))
+	end
+	return out
+end
+
+--- The grid of a table's lines: the header, the delimiter row, then the
+--- rows. Nil if they aren't a table.
+function M.grid(lines: { string }): Grid?
+	if #lines < 2 or M.aligns(lines[2]) == nil then
+		return nil
+	end
+	local specs: { Spec } = {}
+	for _, text in M.texts(lines[2]) do
+		local left, right = string.sub(text, 1, 1) == ":", string.sub(text, -1) == ":"
+		local spec: Spec = if left and right
+			then "center"
+			elseif right then "right"
+			elseif left then "left"
+			else "plain"
+		table.insert(specs, spec)
+	end
+	local rows: { { string } } = {}
+	for i = 3, #lines do
+		table.insert(rows, M.texts(lines[i]))
+	end
+	return { header = M.texts(lines[1]), specs = specs, rows = rows }
+end
+
+--- The lines of `grid` with its pipes lined up: each column as wide as its
+--- widest cell, its text placed as the column aligns, rows filled out to
+--- the header's width.
+function M.write(grid: Grid, width: (text: string) -> number): { string }
+	local n = #grid.header
+	local widths: { number } = table.create(n, 3)
+	local function measure(row: { string })
+		for c = 1, n do
+			widths[c] = math.max(widths[c], width(row[c] or ""))
+		end
+	end
+	measure(grid.header)
+	for _, row in grid.rows do
+		measure(row)
+	end
+	local function line(row: { string }): string
+		local parts: { string } = {}
+		for c = 1, n do
+			local text = row[c] or ""
+			local room = widths[c] - width(text)
+			local spec = grid.specs[c]
+			local before = if spec == "right" then room elseif spec == "center" then room // 2 else 0
+			table.insert(parts, string.rep(" ", before) .. text .. string.rep(" ", room - before))
+		end
+		return "| " .. table.concat(parts, " | ") .. " |"
+	end
+	local delimiter: { string } = {}
+	for c = 1, n do
+		local spec = grid.specs[c]
+		local left = if spec == "left" or spec == "center" then ":" else "-"
+		local right = if spec == "right" or spec == "center" then ":" else "-"
+		table.insert(delimiter, left .. string.rep("-", widths[c] - 2) .. right)
+	end
+	local out = { line(grid.header), "| " .. table.concat(delimiter, " | ") .. " |" }
+	for _, row in grid.rows do
+		table.insert(out, line(row))
+	end
+	return out
 end
 
 return M
