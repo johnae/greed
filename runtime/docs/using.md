@@ -3,16 +3,15 @@
 ## Starting and sessions
 
 `greed FILE` opens a file. The editor runs as a session in the background,
-and what you see is a client attached to it: the editor in your terminal,
-or a window with `greed --gui`, several at once if you like, on this
-machine or over `greed ssh`. Closing a client (or typing `:detach`) leaves
-the session as it was: open files, undo history, language servers.
+and what you see is a client attached to it: the terminal, a window
+(`greed --gui`), or several at once, here or over `greed ssh`. Closing a
+client (or `:detach`) leaves the session as it was: open files, undo
+history, language servers.
 
-Each project gets its own session, named after its folder. Running `greed`
-anywhere in a project attaches to that project's session if it's running
-(opening the file you named), or starts it. Projects in separate sessions
-don't affect each other: a slow plugin or a crash in one leaves the others
-alone.
+Each project gets its own session, named after its folder. `greed` anywhere
+in a project attaches to that session (opening the file you named), or
+starts it. A slow plugin or a crash in one project's session leaves the
+others alone.
 
 | Command | What it does |
 |---|---|
@@ -23,44 +22,47 @@ alone.
 | `greed attach [NAME]` | Attach to a session; the only one if there's one |
 | `greed ls` | List running sessions, their projects and how their agents are doing (`◆ 1 waiting for you`), marking those running another build than this greed |
 | `greed serve [PATH]` | Run a project's session with no terminal |
-| `:q` | Close the pane, as Vim closes a window, when the tab has others; the tab, when it's the last pane and there are other tabs. Otherwise close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
+| `:q` | Close the pane, as Vim closes a window, when the tab has others; the tab, when it's the last pane and there are other tabs. Otherwise close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes only that |
 | `:quit-session`, `:qa` | End the session, whatever runs in it. With unsaved files it lists them and stops; `:wa` saves them, `:wqa` saves them and ends it, `:qa!` ends it anyway |
 | `greed edit [--wait] FILE...` | Open files in the running editor; with `--wait`, return once each is closed with `:q` or `:wq` (`:cq` fails it), as `$EDITOR` for `git commit`. Greed's own shells set this up already |
 | `greed ctl quit [--force] [NAME]` | End a session from a shell, unless it has unsaved changes (`--force` ends it anyway) |
 
-A session keeps running the greed it started with. `greed --version` says
-which build a greed is (`greed 0.2.0 (build b5432b407145)`, a hash of what it
-was built from), and attaching to a session of another build, as after
-rebuilding greed while it ran, says so on the status line: `greed --new`
-starts a session of your build beside it, and `greed ctl quit NAME` ends the
-old one. `greed ssh` puts your build on the other machine when it runs the
-same system, so a rebuild gets there too; the last few builds are kept there.
+A session keeps running the greed it started with. `greed --version` names
+the build (`greed 0.2.0 (build b5432b407145)`, a hash of what it was built
+from). Attaching to a session of another build, as after rebuilding greed
+while it ran, says so on the status line: `greed --new` starts a session of
+your build beside it, and `greed ctl quit NAME` ends the old one. `greed
+ssh` puts your build on the other machine when it runs the same system, and
+keeps the last few builds there.
 
 A session of another version of Greed, as after upgrading while it ran,
-can't be shown at all: the two don't speak the same protocol. Greed then
-shows a page saying so, with the files that have unsaved changes there and
-what's running, and asks what to do, in the terminal or the window, and
-over `greed ssh` too: end it and start your version in its place, open it
-with the version it runs to save your work first (when that greed is still
-on this machine), or start your version beside it. A number picks, `esc`
-leaves it as it is. `greed ctl state NAME` prints what's unsaved and running
-in a session of any version, and `greed ctl quit NAME` ends one from a shell
-(both work across versions); the next `greed` then starts a new one.
+can't be shown: the two speak different protocols. Greed shows a page with
+the session's unsaved files and what's running, in the terminal, the window
+or over `greed ssh`, and offers to:
 
-Several terminals can show one session at once: run `greed` or `greed
-attach` in another terminal, or `greed ssh` from another machine, and both
-stay attached. They share the buffers and their undo history; each has its
-own cursors, focus and mode, and `:detach` lets only that one go. A terminal
-that comes back from the same machine gets its cursors, focus and mode back;
-a new one starts where the one used last is. Copies go to the clipboard of
-the terminal that copied, and desktop notifications to the one used last.
+- end it and start your version in its place,
+- open it with the version it runs, to save your work first (when that
+  greed is still on this machine),
+- start your version beside it.
 
-Attached terminals follow each other: they show the same project, tab and
-panes, each with its own focus and pane zoom. `:client-independent` lays one
-out on its own, and `:client-follow` has it follow again. Pickers, prompts
-and the command line show only on the terminal that opened them, and a
-program in a terminal pane is sized for the client that last typed into it.
-[Several clients](clients.md) has the details.
+A number picks, `esc` leaves it as it is. From a shell, `greed ctl state
+NAME` prints what's unsaved and running in a session of any version, and
+`greed ctl quit NAME` ends it; the next `greed` then starts a new one.
+
+Several terminals can show one session: run `greed` or `greed attach` in
+another terminal, or `greed ssh` from another machine. They share buffers
+and undo history; each has its own cursors, focus and mode, and `:detach`
+lets only that one go. A terminal coming back from the same machine gets
+its cursors, focus and mode back; a new one starts where the one used last
+is. Copies go to the clipboard of the terminal that copied, desktop
+notifications to the one used last.
+
+Attached terminals follow each other: same project, tab and panes, each
+with its own focus and pane zoom. `:client-independent` lays one out on its
+own, `:client-follow` has it follow again. Pickers, prompts and the command
+line show only on the terminal that opened them, and a program in a
+terminal pane is sized for the client that last typed into it. [Several
+clients](clients.md) has the details.
 
 `greed commands` lists every command line command, including the ones
 plugins add (`greed ls`, `greed new` and `greed bring` are plugins too).
@@ -79,39 +81,41 @@ terminal and `$GREED_BIN` which greed runs the session.
 If a session can't start in the background, `GREED_NO_SESSION=1 greed FILE`
 runs the editor directly in the terminal.
 
-A session that quits remembers its projects, their open files and where the
-cursor was, and the tabs of the project you were in: their panes, what
-each showed, and the terminals in them, which run what they ran again (a
-terminal that ran something risky, like `rm -rf` or `kubectl delete`,
-comes back as a plain shell). It opens them again the next time it
-starts. It writes this down when it quits and whenever you save a file, in
-the cache folder (`~/.cache/greed/sessions`). Starting with a file keeps that file shown. To
-start one session fresh, without them, use `greed --fresh` (or `greed ssh
-HOST --fresh`); it only matters when a session starts, so quit a running
-one first or start another with `--new`. On a Mac, holding Shift while
-Greed opens does the same. Turn restoring off for good with
-`greed.option.set("restore-session", false)`.
+A session that quits remembers its projects, their open files and cursors,
+and the tabs of the project you were in: panes, what each showed, and their
+terminals, which run what they ran again (one that ran something risky,
+like `rm -rf` or `kubectl delete`, comes back as a plain shell). The next
+start opens them again. This is written when the session quits and on
+every save, in the cache folder (`~/.cache/greed/sessions`). Starting with a file keeps that
+file shown.
+
+| To | |
+|---|---|
+| Start one session fresh | `greed --fresh` (or `greed ssh HOST --fresh`); quit a running one first, or start another with `--new` |
+| The same on a Mac | Hold Shift while Greed opens |
+| Turn restoring off | `greed.option.set("restore-session", false)` |
 
 ### Quitting or keeping a session
 
-`:q` and `:wq` in a pane with others beside it close just that pane, as
-they close a window in Vim, and in a tab's last pane they close the tab
-while there are others. The file stays open, so this never asks about
-unsaved changes. `ctrl-q` in the vscode style asks whether to save
-unsaved files, quit without saving or cancel, as VS Code does.
+`:q` and `:wq` in a pane with others beside it close that pane, as Vim
+closes a window; in a tab's last pane they close the tab while there are
+others. The file stays open, so this never asks about unsaved changes.
+`ctrl-q` in the vscode style asks to save, quit without saving or cancel,
+as VS Code does.
 
-`:q` on the last project ends the session, unless ending it would stop
-something: a command running in one of its terminals, a program like a
-task, or an agent at work. Then it detaches instead and the session keeps
-going, so `greed` comes back to it. A shell waiting at its prompt doesn't
-count. Over `greed ssh`, `:q` keeps the session by default, since coming back
-to a running one is quicker than starting again over the network.
-`:quit-session` (or `:qa`) ends it whatever runs in it. Files with unsaved
-changes stop it: it lists them, `:wa` saves them and `:qa!` ends the
-session anyway. Terminals, shells, agents' panes and other scratch buffers
-never count as unsaved.
+`:q` on the last project ends the session, unless that would stop a
+command in one of its terminals, a program like a task, or an agent at
+work. Then it detaches and the session keeps going, so `greed` comes back
+to it. A shell waiting at its prompt doesn't count. Over `greed ssh`, `:q`
+keeps the session by default, since reattaching is quicker than starting
+again over the network.
 
-To decide for yourself, set what `:q` does, here and over `greed ssh`:
+`:quit-session` (or `:qa`) ends it whatever runs in it. Unsaved files stop
+it: it lists them, `:wa` saves them and `:qa!` ends the session anyway.
+Terminals, shells, agents' panes and other scratch buffers never count as
+unsaved.
+
+Set what `:q` does, here and over `greed ssh`:
 
 ```luau
 local greed = require("@greed")
@@ -129,47 +133,48 @@ can say what of theirs is running with `require("@core").file.running`.
 
 ### The first time
 
-Started without a config (`~/.config/greed/init.luau`), Greed shows a page
-with a few questions: how you like to edit, which theme, whether your font
-has icons (in a terminal, which needs a Nerd Font for them; the window has
-them built in and doesn't ask), whether to add Greed's tools to the agents
-installed here (Claude Code, Codex, Gemini CLI), and which language model
-Greed's own agent and other features use (Anthropic, OpenAI, Berget,
-Mistral, Ollama on this machine, or none for now). A style or theme you
-pick switches at once, so you can try it on the page.
+Started without a config (`~/.config/greed/init.luau`), Greed shows a setup
+page that asks:
 
-The page is a [questionnaire](#questionnaires) in Markdown, and works the
-same in every editing style: `tab` and `shift-tab` go from
-choice to choice, `enter` or `space` picks one or presses a button, and a
-click does too. Under the models, a button sets the API key (it goes in the
-system keyring) or signs you in; for Ollama the page says whether it
-answers, and if not, to run `ollama serve` and `ollama pull llama3.2`.
+- how you like to edit, and which theme (both switch at once, to try them),
+- whether your font has icons (in a terminal, which needs a Nerd Font; the
+  window has them built in and doesn't ask),
+- whether to add Greed's tools to the agents installed here (Claude Code,
+  Codex, Gemini CLI),
+- which language model Greed's agent and other features use (Anthropic,
+  OpenAI, Berget, Mistral, Ollama on this machine, or none for now).
 
-**Save** writes an `init.luau` from your answers and opens it, and has the
-`fast` and `reasoning` roles use the provider you picked (`:models` changes
-them later). Under your answers it lists settings worth trying, commented
-out: remove the `--` in front of one and save, and it applies at once. It
-also says how to find the rest: `space h o` describes an option, and
-`:set NAME VALUE` tries one for the session. **Not now**, `esc`, `q` or
-closing the page any other way closes it without writing anything. Either
-way it doesn't show again by itself, and `:setup` brings it back, or goes
-to it if it's open. Save never replaces a config that's there; it shows
-what to add instead, and `esc` closes that.
+The page is a [questionnaire](#questionnaires) and works the same in every
+editing style: `tab` and `shift-tab` move between choices, `enter`,
+`space` or a click picks one or presses a button. Under the models, a
+button sets the API key (kept in the system keyring) or signs you in; for
+Ollama the page says whether it answers, and if not, to run `ollama serve`
+and `ollama pull llama3.2`.
 
-`:tutor` teaches the keys of the style you picked, with a few lines to
-practise on in each lesson, which say done once you've got them right, and
-then shows you around Greed: the leader, finding files, panes, the shell
-and sessions. Picking another style on the page switches to it, and the
-lessons change with it. Nothing on the page is saved; `:tutor` gives you a
-fresh one.
+**Save** writes an `init.luau` from your answers and opens it, and points
+the `fast` and `reasoning` roles at the provider you picked (`:models`
+changes them later). Below your answers it lists more settings, commented
+out: remove the `--` and save, and one applies at once. `space h o`
+describes an option, and `:set NAME VALUE` tries one for the session.
+Save never replaces an existing config; it shows what to add instead, and
+`esc` closes that.
+
+**Not now**, `esc`, `q` or closing the page writes nothing. Either way the
+page doesn't come back by itself; `:setup` opens it again, or goes to it if
+it's open.
+
+`:tutor` teaches the keys of the style you picked, with lines to practise
+on in each lesson (each says done once you get it right), then shows the
+leader, finding files, panes, the shell and sessions. Picking another style
+on the page switches the lessons too. Nothing on the page is saved;
+`:tutor` gives a fresh one.
 
 ### In a window
 
-`greed --gui [FILE]` shows the session in a window instead of the terminal,
-drawn on the GPU. It's the same session either way: attach from a terminal
-later and you see the same files, and `greed ssh HOST --gui` shows a session
-on another machine in a window here. Closing the window lets the session
-go, as `:detach` does. Going to another session (`space P`, `:session`)
+`greed --gui [FILE]` shows the session in a window, drawn on the GPU. It's
+the same session a terminal attaches to, and `greed ssh HOST --gui` shows a
+session on another machine in a window here. Closing the window detaches,
+as `:detach` does. Going to another session (`space P`, `:session`)
 shows it in the same window, as a terminal would; `alt-w` in `space P`
 opens one in another window instead.
 
@@ -192,31 +197,28 @@ Elsewhere there's no menu bar, and the command palette (`space ?`, or
 config add items:
 `require("@core").menus.add("Tools", "Run tests", "test-run")`.
 
-Dropping a file on the window pastes its path where you are, as a terminal
-does, so dropping a screenshot on a terminal pane running Claude Code
-hands it the picture. With the session on another machine (`greed ssh`),
-the file is copied there first, into the cache folder's `dropped`, and that
-path is pasted; files over 50 MB stay behind with a message saying so.
-In a terminal, dropping a file pastes its path the same way; over `greed
-ssh` a paste of nothing but paths to files on your machine sends the files
-along too, so the session gets paths it can read.
+Dropping a file on the window pastes its path, as a terminal does, so a
+screenshot dropped on a terminal pane running Claude Code hands it the
+picture. With the session on another machine (`greed ssh`), the file is
+copied there first, into the cache folder's `dropped`, and that path is
+pasted; files over 50 MB stay behind with a message. In a terminal,
+dropping a file pastes its path too; over `greed ssh` a paste of nothing
+but paths to files on your machine sends the files along, so the session
+gets paths it can read.
 
-What you copy in Greed goes on the system clipboard, and what you copied in
-another program becomes Greed's clipboard when the window gets focus, so
-`p` (or `ctrl-v` in the vscode style) pastes it. `ctrl-shift-v` and
-`shift-insert` (`cmd-v` on macOS) paste the system clipboard at the cursors
-in any mode, as a terminal's paste does.
+Copies in Greed go to the system clipboard, and what another program
+copied becomes Greed's clipboard when the window gets focus, so `p` (or
+`ctrl-v` in the vscode style) pastes it. `ctrl-shift-v` and `shift-insert`
+(`cmd-v` on macOS) paste the system clipboard at the cursors in any mode,
+as a terminal's paste does.
 
-Whole lines stay whole lines from one editing style to another: lines
-copied with `y y` in the Vim style, `x y` in Helix's or `ctrl-c` with
-nothing selected in the vscode style paste above or below the line in all
-three.
-Text copied in another program pastes where the cursor is.
+Lines copied whole (`y y` in the Vim style, `x y` in Helix's, `ctrl-c` with
+nothing selected in the vscode style) paste above or below the line in all
+three styles. Text copied in another program pastes at the cursor.
 
-`ctrl-=` and `ctrl--` make the text bigger and smaller, and `ctrl-0` puts
-it back to the size it had before; with several windows on one session,
-each zooms on its own. Pick another font and size in your `init.luau`; the
-windows follow as soon as they change:
+`ctrl-=` and `ctrl--` zoom in and out, `ctrl-0` puts the size back; each
+window zooms on its own. Font and size go in your `init.luau`, and windows follow as
+soon as they change:
 
 ```luau
 local greed = require("@greed")
@@ -230,8 +232,8 @@ proportional font, the system's sans-serif unless `gui-font-prose` names
 one, at its own width; code stays in the grid's font. The cursor,
 selections and clicks follow the text where it's drawn.
 
-A view that scrolls glides to its new place, whether you scroll it or a
-reply streaming in keeps it following the end. To have it jump there:
+Scrolling glides, whether you scroll or a streaming reply keeps the view at
+its end. To jump instead:
 
 ```luau
 greed.option.set("gui-smooth-scroll", false)
@@ -241,11 +243,11 @@ Buttons, fields and choices light up as the mouse goes over them. With an
 input method (for Japanese, Chinese or Korean, say), what you're composing
 shows underlined at the cursor until it's typed.
 
-Floats (pickers, prompts, hover info) show as boxes with rounded corners
-and a soft shadow, as the theme says for the window; terminals draw box
-lines. Floats cast a shadow unless the theme turns it off, a lighter one on
-a light background. The window draws the round ends of the status line's pills itself,
-so they need no Powerline font. For square floats without shadows:
+In the window, floats (pickers, prompts, hover info) have rounded corners
+and a shadow (lighter on a light background) unless the theme turns them
+off; terminals draw box lines. The window draws the round ends of the
+status line's pills itself, so they need no Powerline font. Square floats
+without shadows:
 
 ```luau
 greed.theme.set({ ["ui.float"] = { gui = { rounded = false, shadow = false } } })
@@ -253,11 +255,10 @@ greed.theme.set({ ["ui.float"] = { gui = { rounded = false, shadow = false } } }
 
 ## Projects
 
-A project is a folder you work in: the nearest folder above a file that
-holds `.jj` or `.git`, or the folder itself if none does. A session can also
-hold several projects, for ones you work on together: each has its own
-files, main view and panels (the file tree, search results), and the file
-picker, project search and tree work within the shown one.
+A project is the nearest folder above a file that holds `.jj` or `.git`,
+or the folder itself if none does. A session can hold several projects:
+each has its own files, main view and panels (file tree, search results),
+and the file picker, project search and tree work within the shown one.
 
 | Keys | |
 |---|---|
@@ -276,8 +277,8 @@ picker, project search and tree work within the shown one.
 A recent project or a folder typed into `space P` opens in its own session,
 starting it if it isn't running, like `greed FOLDER` from a terminal.
 `:project PATH` opens a project in this session instead. Like every
-`space` key here, it's the leader's: in the vscode style, where space types, it's
-`ctrl-space P`.
+`space` key here, `space P` is on the leader: in the vscode style, where
+space types, it's `ctrl-space P`.
 
 To find projects you haven't opened yet, give `space P` sources in your
 `init.luau`: folders to look in, and commands that print one path per line.
@@ -305,50 +306,44 @@ greed ssh build-box src/main.rs
 ```
 
 `greed ssh HOST [--session NAME | --new] [FILE]` shows a session running on
-another machine, starting one there if none is running; `--new` starts
-another one beside it. Files, language servers,
-search and agents all run on that machine, and only keys and screen updates
-cross the network. If you `:detach`, the session keeps running, and `greed
-ssh HOST` comes back to it. If the connection drops, as when the network
-goes or the laptop sleeps, `greed ssh` says so and comes back to the same
-session by itself as soon as it can, trying again after a little longer each
-time (`ctrl-c` stops it). The two ends say they're there every few seconds,
-so a connection that went quiet is noticed within about fifteen seconds,
-and the session lets that client go then too.
+another machine, starting one if none is running; `--new` starts another
+beside it. Files, language servers, search and agents run on that machine;
+only keys and screen updates cross the network. After `:detach` the session
+keeps running, and `greed ssh HOST` comes back to it.
+
+If the connection drops (the network goes, the laptop sleeps), `greed ssh`
+says so and reconnects to the same session by itself, waiting a little
+longer between tries (`ctrl-c` stops it). The two ends check in every few
+seconds, so a quiet connection is noticed within about fifteen seconds, and
+the session lets that client go then too.
 
 From inside Greed, `space C` (`:connect`, or Connect to Host… in the
-window's File menu) does the same without a terminal: it lists the hosts
+window's File menu) does the same without a terminal: pick from the hosts
 you connected to lately and those in `~/.ssh/config`, and the window or
-terminal you're in moves to that machine's session. That way Greed.app on
-a Mac, or a window on a Linux laptop, can be the screen for a workstation
-where the work runs. `space B` goes back to where you were, and pressing it
-again returns, so two sessions on two machines are a key apart; on another
-machine `space C` lists home first (`:session-home`), the session on your
+terminal you're in moves to that machine's session. `space B` goes back,
+and again returns, so sessions on two machines are a key apart. On another
+machine `space C` lists home first (`:session-home`): the session on your
 own machine you were in last.
 
-`greed ssh HOST --terminal` shows the session and opens a terminal on that
-machine in a new tab, for when a shell is what you're after. It runs in the
-session, so it's still there after you disconnect. `greed --terminal` does
-the same here.
-`greed --shell` (or `greed ssh HOST --shell`) shows the project's greed
-shell instead, opening one if there's none (see [The shell](shell.md)).
+| Command | |
+|---|---|
+| `greed ssh HOST --terminal` | Show the session and open a terminal on that machine in a new tab; it runs in the session, so it survives a disconnect. `greed --terminal` does the same here |
+| `greed ssh HOST --shell` | Show the project's greed shell, opening one if there's none (see [The shell](shell.md)); `greed --shell` here |
 
 ### What runs where
 
-The session runs on the other machine, and so does everything in it:
-your config and plugins (all the Luau), files and saving, shells and
-terminals, language servers, search and agents, with that machine's
-programs, folders and variables. The Greed in front of you only draws the
-screen and sends your keys, mouse and clipboard, so it needs nothing of
-the project.
+Everything in the session runs on the other machine, with its programs,
+folders and variables: your config and plugins, files and saving, shells
+and terminals, language servers, search and agents. The Greed in front of
+you draws the screen and sends keys, mouse and clipboard, and needs nothing
+of the project.
 
 ### Your config, both ways
 
 Each `greed ssh` copies your `~/.config/greed` (`init.luau` and your
 plugins) to the other machine first, into
 `~/.cache/greed/config-from-<this machine>`, replacing the copy from last
-time, and a session it starts runs that copy. So the editor there works
-the way you set it up here.
+time, and a session it starts runs that copy.
 
 - **Changed your config here?** Connect again and it's copied over. A
   session that was already running keeps the config it loaded; run
@@ -372,11 +367,10 @@ the way you set it up here.
 
 `GREED_SSH_CONFIG=0` leaves your config at home.
 
-To keep a plugin you made over there, bring it home. `greed bring HOST`
-lists the plugins in the other machine's own config and data folders, and
-`greed bring HOST PLUGIN` copies one into your config's `plugins` folder.
-A running Greed loads it at once, asking you first to approve what it
-uses.
+`greed bring HOST` lists the plugins in the other machine's own config and
+data folders, and `greed bring HOST PLUGIN` copies one into your config's
+`plugins` folder. A running Greed loads it at once, after asking you to
+approve what it uses.
 
 ```sh
 $ greed bring build-box
@@ -393,15 +387,14 @@ and `tar` there. Where commands over ssh come without `XDG_RUNTIME_DIR`,
 a session it starts uses `/run/user/<uid>` like a login would, and so do
 the programs in its terminals.
 
-Greed doesn't have to be installed on the other machine. The first time
-you connect with a version, `greed ssh` puts the same version there, in
-`~/.local/share/greed/server`, and uses it from then on. It copies the
-greed you run when it runs there; otherwise, as when the other machine is
-NixOS or an arm machine, it fetches that version's static build from the
-releases and checks it against the release's checksums. A greed of the same
-version already on the other machine's `PATH` is used as it is. Where
-there's no greed on its `PATH`, a session puts its own at the end of its
-programs' `PATH`, so `greed FILE` in its terminal opens the file there.
+Greed doesn't have to be installed there. The first time you connect with
+a version, `greed ssh` puts the same version in
+`~/.local/share/greed/server` and uses it from then on: a copy of the greed
+you run when it runs there, otherwise (NixOS, or an arm machine) that
+version's static build from the releases, checked against the release's
+checksums. A greed of the same version already on that machine's `PATH` is
+used as it is. Where there's no greed on its `PATH`, a session puts its own at the end of
+its programs' `PATH`, so `greed FILE` in its terminal opens the file there.
 
 `GREED_REMOTE` sets the path of `greed` on the other machine, and nothing
 is copied (the two ends check they speak the same protocol, and say so if
@@ -413,21 +406,19 @@ program to use. It's run as one program, so for options like a port use
 ### Your ssh agent
 
 For a host your `~/.ssh/config` forwards the agent to (`ForwardAgent
-yes`, as `ssh -G HOST` shows it), Greed brings your ssh agent along
-itself. The session there has an agent socket of its own, which its
-shells and terminals get as `SSH_AUTH_SOCK`, and each request on it goes
-to the agent on the machine you're attached from. The socket stays the
-same across reconnects, so `git push` in a shell that has been open for a
-week reaches your keys after you come back, from this machine or another.
-With nobody attached, a request fails at once. Greed turns ssh's own
-forwarding off for its connection, so the session has one way to your
-keys.
+yes`, as `ssh -G HOST` shows it), Greed forwards your ssh agent itself.
+The session there has its own agent socket, which its shells and
+terminals get as `SSH_AUTH_SOCK`; each request on it goes to the agent on
+the machine you're attached from. The socket stays the same across
+reconnects, so `git push` in a shell open for a week reaches your keys
+after you come back, from this machine or another. With nobody attached, a
+request fails at once. Greed turns ssh's own forwarding off for its
+connection, so the session has one way to your keys.
 
-The agent brought along is the one `SSH_AUTH_SOCK` names where you run
-`greed ssh`, if it answers. A shell can keep one that's gone, like a
-terminal's whose window closed; then Greed uses the `IdentityAgent` your
-ssh config names for the host, if that answers. When the agent can't be
-reached, the status line says so and why, rather than leaving only
+The agent used is the one `SSH_AUTH_SOCK` names where you run `greed ssh`,
+if it answers; otherwise (a shell can keep a stale one, say from a closed
+terminal window) the `IdentityAgent` your ssh config names for the host.
+When neither answers, the status line says so and why, instead of only
 "agent refused operation" in the program that asked.
 
 Before a program there signs with one of your keys, Greed asks on your
@@ -458,29 +449,27 @@ means nothing signs without you pressing `y`.
 
 ## Editing
 
-Greed has three editing styles, and you pick the one you like: Helix's
-(select, then act), Vim's (act, then where) or modeless editing as in
-VS Code. Greed asks the first time it starts, `:style vim` switches at any
-time, and [Editing styles](editing-styles.md) has each one's keys and how
-to make one your own.
+Greed has three editing styles: Helix's (select, then act), Vim's (act,
+then where) and modeless, as in VS Code. Greed asks which the first time it
+starts, `:style vim` switches at any time, and [Editing
+styles](editing-styles.md) has each one's keys and how to make one your
+own.
 
-Keys you type while a key's command is still working (say, on a slow
-program) wait for it and then run in order, so typing ahead does what
-typing slowly would. They wait half a second at most; `esc` and `ctrl-c`
-reach a working command at once, unless keys typed before them are
-still waiting.
+Keys typed while a command is still working (say, on a slow program) wait
+for it, up to half a second, and then run in order. `esc` and `ctrl-c`
+reach a working command at once, unless keys typed before them are still
+waiting.
 
-A line longer than its view wraps, breaking after a space where it can,
-and its wrapped rows start at its indent, so they line up under its text
-(unless the indent would take more than half the view).
+Long lines wrap after a space where they can, and wrapped rows start at
+the line's indent (unless that would take more than half the view).
 
 Messages show on the status line, one line each; a longer one, like an
 error with its stack trace, ends in `…`. `:messages` shows the last ones
 in full.
 
-This page shows the Helix style, Greed's default. In the Helix style you
-select text, then say what to do with it. There is always a selection; a
-cursor is a selection one character wide.
+This page shows the Helix style, Greed's default: select text, then say
+what to do with it. There is always a selection; a cursor is a selection
+one character wide.
 
 **Moving and selecting** (normal mode)
 
@@ -509,10 +498,9 @@ cursor is a selection one character wide.
 | `alt-.` | Do the last `f` or `t` again |
 | `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened from anywhere, the shell included) started, and forward again, like a browser's back and forward. Each pane has its own, and going back puts the cursor and scroll where they were (`ctrl-i` needs a terminal that tells it from `tab`, as most do now) |
 
-`:set line-numbers relative` numbers the lines by how far they are from the
-cursor's line, so the line marked 5 below is `5 j` away. `hybrid` does the
-same with the cursor's line showing its own number, and `absolute` goes
-back.
+`:set line-numbers relative` numbers lines by distance from the cursor's
+line, so the line marked 5 below is `5 j` away. `hybrid` also shows the
+cursor's line's own number, and `absolute` goes back.
 
 **Changing**
 
@@ -578,23 +566,29 @@ were. See [Models](#models) to set one up.
 New lines from `enter`, `o` and `O` start at the indent the code calls
 for: a level in inside a block, bracket or `let`, and lined up with the
 block's first line before its `}` or `end`. Between a pair of brackets,
-`enter` puts the closing one on a line of its own. Languages without a
-grammar keep the line's indent, one level more after an opening bracket
-(or a `:` in Python and YAML), and so does code that doesn't parse yet,
-like a Ruby `def` before its `end`, going by the language's keywords
-(`indent_after` and `outdent_before` in its entry). A line holding just a
-closer like `end`, `else` or `}` lines up with its block when you press
-`enter` on it, and a closing bracket does as you type it at a line's
-start. Each language has its own indent, like two
-spaces in Nix or a tab in Go, set with `require("@languages").set("nix",
-{ indent = 4 })`; the `indent` option is for files in no language. Tabs
-show 4 columns wide; a language's `tab_width` changes that for its files
-(`require("@languages").set("go", { tab_width = 8 })`), and `:set
-tab-width 8` for the rest. A file gets its language from its name;
-`:language NAME` gives a buffer another one (`:setf` too, as in Vim), and
-`:language` alone says which it has. `:reindent-lines` indents the selected
-lines again the way the language says, for code pasted in at the wrong
-indent.
+`enter` puts the closing one on its own line. A line holding only a closer
+like `end`, `else` or `}` lines up with its block when you press `enter` on
+it, and a closing bracket does as you type it at a line's start.
+
+Languages without a grammar, and code that doesn't parse yet (a Ruby `def`
+before its `end`), keep the line's indent, one level more after an opening
+bracket (or a `:` in Python and YAML), going by the language's keywords
+(`indent_after` and `outdent_before` in its entry).
+
+Each language has its own indent, like two spaces in Nix or a tab in Go;
+the `indent` option is for files in no language. Tabs show 4 columns wide;
+a language's `tab_width` changes that for its files, and `:set tab-width 8`
+for the rest:
+
+```luau
+require("@languages").set("nix", { indent = 4 })
+require("@languages").set("go", { tab_width = 8 })
+```
+
+A file gets its language from its name; `:language NAME` gives a buffer
+another one (`:setf` too, as in Vim), and `:language` alone says which it
+has. `:reindent-lines` indents the selected lines again, for code pasted in
+at the wrong indent.
 
 **Many selections**
 
@@ -668,17 +662,18 @@ In Vim's style the same objects are `if` `af`, `ia` `aa` and `ic` `ac`, as in
 | `z R` | Unfold everything |
 
 A block is the smallest function, body, table or similar around the
-cursor's line, from the language's grammar. In a language without one,
-it's the lines indented under the nearest line indented less, and in
-Markdown it's a fenced code block, a list item with lines under it (a todo
-and its subtasks) or the section under a heading, whichever is innermost.
-Vim's style folds with `tab`, `z a`, `z o`, `z R` and `z c` (it has no
-`z C` or `shift-tab`), and also `z M` to fold every outermost block, `z f`
-+ a motion to fold those lines, `z j` `z k` to go to the next or previous
-fold, and `z d` `z E` to unfold.
+cursor's line, from the language's grammar. Without a grammar, it's the
+lines indented under the nearest line indented less. In Markdown it's the
+innermost fenced code block, list item with lines under it (a todo and its
+subtasks) or section under a heading.
 
-If you'd rather edit like Vim, or without modes, `:style vim` and `:style
-vscode` switch to those; [Editing styles](editing-styles.md) explains each.
+Vim's style folds with `tab`, `z a`, `z o`, `z R` and `z c` (no `z C` or
+`shift-tab`), plus `z M` to fold every outermost block, `z f` + a motion to
+fold those lines, `z j` `z k` for the next or previous fold, and `z d` `z E`
+to unfold.
+
+`:style vim` and `:style vscode` switch styles; [Editing
+styles](editing-styles.md) explains each.
 
 **Prose**: `m i p`, `m i s` and `m i h` select a paragraph, sentence or
 Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
@@ -694,12 +689,12 @@ Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
 | `alt-*` | The same, also inside longer words |
 | `space /` | Search the whole project as you type |
 
-Patterns are regexes. How searches you type mind case is one option,
-`search-case`: `"smart"` (the default) ignores case unless what you type
-has a capital letter, and `"ignore"` and `"match"` always do one thing.
-It covers searching a file, the project search, `:g` and the pickers'
-fuzzy matching. A few kinds of search have their own option, with the
-default that suits them, which `"default"` hands back to `search-case`:
+Patterns are regexes. The `search-case` option sets how searches mind
+case: `"smart"` (the default) ignores case unless what you type has a
+capital letter; `"ignore"` and `"match"` always do one or the other. It
+covers searching a file, the project search, `:g` and the pickers' fuzzy
+matching. A few searches have their own option and default; `"default"`
+hands them back to `search-case`:
 
 | Option | Default | |
 |---|---|---|
@@ -713,14 +708,14 @@ option.set("search-case", "ignore") -- every search ignores case...
 option.set("substitute-search-case", "default") -- ...:s too
 ```
 
-In the project search, `enter` opens a match and `ctrl-e` puts what was
-found in a panel, a third of the screen wide: a multibuffer, with each
-matching line under its file's name and beside its line number. Edit
-those lines with any of the editing keys above (`s` to select the
-matches, then `c` to change them all) and the files change as you type;
-`:w` saves them, `enter` goes to the line and `q` closes the panel. A file
-that changed on disk since the search is left alone and reported. `:grep
-PATTERN` fills the panel directly.
+In the project search, `enter` opens a match and `ctrl-e` puts the results
+in a panel a third of the screen wide: a multibuffer, each matching line
+under its file's name and beside its line number. Edit those lines with
+the usual keys (`s` to select the matches, then `c` to change them all)
+and the files change as you type; `:w` saves them, `enter` goes to the
+line and `q` closes the panel. A file that changed on disk since the
+search is left alone and reported. `:grep PATTERN` fills the panel
+directly.
 
 ## Files and buffers
 
@@ -759,35 +754,39 @@ PATTERN` fills the panel directly.
 
 Closing a terminal's buffer ends its program.
 
-Saving writes a new copy of the file beside it and moves it into place, so a
+Saving writes a new copy beside the file and moves it into place, so a
 crash or a full disk never leaves a file half written. The file keeps its
 permissions, and saving through a symlink writes the file it points to. A
-file that isn't UTF-8 opens read-only, with what can't be read shown as `�`,
-and `:w` refuses to write over it, since that would replace those bytes;
+file that isn't UTF-8 opens read-only, with unreadable bytes shown as `�`;
+`:w` refuses to write over it, since that would replace those bytes, and
 `:w PATH` saves what you see to another file.
 
-`greed bench [FILE]` measures how quickly keys show: it starts a session
+`greed bench [FILE]` measures how quickly keys show. It starts a session
 with your plugins and config on the file (a large generated Rust file
-without one), types and moves around as you would, and prints how long
-each kind of key took from leaving the client to the frame showing it
-arriving, with the slowest named, and where the time went per key (as
-`:profile` shows it). It types into a terminal too, timing each character
-until its echo shows. `greed bench --draw` also draws each frame in the
-terminal you run it in, the way `greed` does, and says how long that took,
-how many bytes went out, and how long your terminal took to take them in.
+without one), types and moves around, and prints per kind of key the time
+from leaving the client to the frame showing it, the slowest named, and
+where the time went (as `:profile` shows it). It also types into a
+terminal, timing each character until its echo shows. `--draw` also draws
+each frame in your terminal, as `greed` does, and reports how long that
+took, how many bytes went out, and how long the terminal took to take
+them in.
 
-`greed shot [FILE]` saves the editor as the window would show it, with
-your plugins and config, as a picture: for a bug report, or to show a
-setup. Steps before it go in order: `--keys "space e"`, `--type TEXT`,
-`--run COMMAND`, `--wait SECONDS` and `--wait-for TEXT` (until the screen
-shows it), then `--size 1280x800` and `--out PATH` (`greed-shot.png`). It
-needs no window, but a GPU or software Vulkan to draw with. `--run` takes
-a command's name alone; for one with arguments, type it at `:` as you
-would: `--keys ":" --type "board ops" --keys enter`.
+`greed shot [FILE]` saves the editor as the window would show it, with your
+plugins and config, as a picture, for a bug report or to show a setup:
 
-`greed --record SCRIPT [FILE]` records the editor the same way, every
-frame a picture, for a video or a set of screenshots. The script has a
-step a line, and `#` starts a comment:
+```bash
+greed shot --keys ":" --type "board ops" --keys enter --size 1280x800 --out ops.png
+```
+
+Steps run in order: `--keys "space e"`, `--type TEXT`, `--run COMMAND`,
+`--wait SECONDS` and `--wait-for TEXT` (until the screen shows it). Then
+`--size 1280x800` and `--out PATH` (default `greed-shot.png`). `--run`
+takes a command's name alone; for one with arguments, type it at `:` as
+above. It needs no window, but a GPU or software Vulkan to draw with.
+
+`greed --record SCRIPT [FILE]` records the editor the same way, every frame
+a picture, for a video or screenshots. One step a line, `#` starts a
+comment:
 
 ```text
 size 1280 800          the pictures' size, before any step
@@ -809,45 +808,49 @@ The frames go in `frames` under the output folder, numbered, to make a
 video of with ffmpeg: `ffmpeg -framerate 30 -i frames/%05d.png -pix_fmt
 yuv420p demo.mp4`.
 
-In the file tree, `enter` or `l` opens a file or folds a folder, `h` folds
-the folder you're in, `r` reads the disk again and `q` closes it. `a`
-makes a file in the folder under the cursor (end the name with `/` for a
-folder), `R` renames or moves what's under the cursor, taking files you
-have open along, and `d` deletes it once you press `y`. A click does what
-`enter` does, and the row under the mouse lights up.
+In the file tree:
+
+| Keys | |
+|---|---|
+| `enter` `l`, a click | Open a file or fold a folder |
+| `h` | Fold the folder you're in |
+| `a` | Make a file in the folder under the cursor (end the name with `/` for a folder) |
+| `R` | Rename or move what's under the cursor, taking files you have open along |
+| `d` | Delete it, once you press `y` |
+| `r` | Read the disk again |
+| `q` | Close the tree |
 
 Without the tree, `:file-rename NAME` renames the file you're in (a path
-moves it, from the project's root), and `:file-delete` deletes it once
-you press `y`.
-`:set tree-icons nerd` shows an icon by each name (see [Icons](#icons)).
+moves it, from the project's root), and `:file-delete` deletes it once you
+press `y`. `:set tree-icons nerd` shows an icon by each name (see
+[Icons](#icons)).
 
 When a file changes on disk, from another program or an agent, its buffer
 loads the change as an edit you can undo with `u`. A buffer with unsaved
 changes is left alone and Greed tells you; `:reload` loads the file into it
-anyway. `:set auto-reload false` stops loading changes by itself.
+anyway. `:set auto-reload false` turns this off.
 
-`:set auto-save true` saves files on their own a second after you stop
-editing them, so a burst of typing is one save; `:set auto-save-delay 3000`
-waits three seconds instead. Put it in your `init.luau` to keep it:
+`:set auto-save true` saves a file a second after you stop editing it, so
+a burst of typing is one save; `:set auto-save-delay 3000` waits three
+seconds. To keep it, in your `init.luau`:
 `require("@greed").option.set("auto-save", true)`.
 
 ### Icons
 
 The file tree's icons and the status line's rounded ends come from
 [Nerd Fonts](https://www.nerdfonts.com). The window (`greed --gui`) has
-them built in, so they show whatever font you draw in, even when another
-installed font claims the same characters. A terminal shows them only if
-its own font has them: install a Nerd Font, or one of its icon-only
-"Symbols" fonts, and set your terminal to use it. Without one you see
-boxes where icons should be.
+them built in, whatever font you draw in, even when another installed font
+claims the same characters. A terminal shows them only if its font has
+them: install a Nerd Font, or one of its icon-only "Symbols" fonts, and
+set your terminal to use it. Without one you see boxes.
 
 In the window, emoji come from your system's emoji font; one it can't draw
 in color, like the newest Noto Color Emoji, is passed over for another, or
 the plain Noto Emoji.
 
-Two options use them. Out of the box you see plain text that works
-anywhere: `tree-icons` is `"none"`, and the rounded ends show only once
-`statusline-pills` is on (see [The status line](#the-status-line)).
+Two options use them. By default `tree-icons` is `"none"`, and the rounded
+ends show only once `statusline-pills` is on (see [The status
+line](#the-status-line)).
 
 ```luau
 local option = require("@greed").option
@@ -855,16 +858,16 @@ option.set("tree-icons", "nerd") -- "none" for no icons
 option.set("statusline-caps", "round") -- "none" for square ends
 ```
 
-Setup turns icons on when you run it in the window, or when you say a
-terminal shows them. The same config works for the window and terminals,
-so if you set Greed up in the window and later use a terminal without a
-Nerd Font, set both options back to `"none"` in your `init.luau`.
+Setup turns icons on when run in the window, or when you say the terminal
+shows them. The window and terminals share one config, so if you set
+Greed up in the window and later use a terminal without a Nerd Font, set
+both options back to `"none"`.
 
 ## Debugging
 
-When something feels off, like keys going missing or a pause, debug topics
-say what happens inside, and `:debug-log` shows it as it comes. Turn on
-what you're after, do the thing again, and read the log:
+Debug topics log what happens inside, for keys going missing or a pause;
+`:debug-log` shows the log as it comes. Turn a topic on, do the thing
+again, and read the log:
 
 | Topic | What it says |
 |---|---|
@@ -876,33 +879,35 @@ what you're after, do the thing again, and read the log:
 | `client` | The terminal's or window's side: keys and input method events as the system gave them, focus, and how long drawing each frame took |
 | `plugins` | What plugins say with `greed.debug.log`; `plugin:NAME` for one |
 
-`:debug keys client` turns two on, `:debug -client` one off, `:debug off`
-all of them, and `:debug all` everything. A topic that's off costs next to
-nothing, so they can stay in a release build; one that's on keeps its last
-10 000 lines in memory. To catch what happens at start, set them in your
-`init.luau` (`greed.debug.switch("keys frames")`), or start with
-`GREED_DEBUG=keys,frames greed` (a session started in the background gets
-it too). Agents and scripts read the same lines with `greed ctl debug_log`
-(`set=keys` turns topics on, `after=ID` reads only newer lines).
+| Command | |
+|---|---|
+| `:debug keys client` | Turn two topics on |
+| `:debug -client` | Turn one off |
+| `:debug off`, `:debug all` | Turn all off, or all on |
+| `greed.debug.switch("keys frames")` | In `init.luau`, to catch what happens at start |
+| `GREED_DEBUG=keys,frames greed` | The same from the shell; a session started in the background gets it too |
+| `greed ctl debug_log` | Read the lines from an agent or script (`set=keys` turns topics on, `after=ID` reads only newer lines) |
+
+A topic that's off costs next to nothing, so they stay in release builds;
+one that's on keeps its last 10 000 lines in memory.
 
 ## Language servers
 
-Greed knows some 340 languages, their files, comments, indentation and
-servers, most of them from [Helix](https://helix-editor.com)'s list, and
-starts a server when a file needs one and it's installed. `:health` shows each language's server,
-whether it was found, and the servers running. Without a server nothing
-complains until you ask for something only a server can answer, like `g d`;
-then it says which program to install.
+Greed knows some 340 languages (files, comments, indentation, servers),
+most from [Helix](https://helix-editor.com)'s list, and starts a language
+server when a file needs one and it's installed. `:health` shows each
+language's server, whether it was found, and the servers running. Without
+a server nothing complains until you ask for something only a server can
+answer, like `g d`; then it says which program to install.
 
-Each project gets a server of its own, so files from two projects (or two
-jj workspaces of one) are checked separately. A server runs in the topmost
-folder of the file's project that has one of the language's root files
-(`Cargo.toml` for Rust, `package.json` for TypeScript), so one server covers
-a whole Cargo or npm workspace; without one, it runs in the project's root.
-A server that crashes starts again, up to three times in a row, and
-`:lsp-restart` starts this file's server again when it's stuck
-(`:lsp-restart all` every one). Servers that support it hear only what
-changed with each edit, so big files stay quick.
+Each project gets its own servers, so two projects (or two jj workspaces
+of one) are checked separately. A server runs in the topmost folder of the
+project that has one of the language's root files (`Cargo.toml` for Rust,
+`package.json` for TypeScript), so one server covers a whole Cargo or npm
+workspace; without one, it runs in the project's root. A crashed server
+starts again, up to three times in a row; `:lsp-restart` restarts this
+file's server (`:lsp-restart all` every one). Servers that support it get
+only what changed with each edit.
 
 | Keys | |
 |---|---|
@@ -919,23 +924,22 @@ changed with each edit, so big files stay quick.
 | `] d` `[ d` | Next and previous problem; `] D` `[ D` the last and first |
 
 Problems are underlined, and their lines get a sign and a colored line
-number. Each line's worst problem also shows after the end of the line;
-`:set diagnostic-messages false` hides those. They move with your edits
-until the server checks the file again.
+number. Each line's worst problem also shows after the line's end; `:set
+diagnostic-messages false` hides those. They move with your edits until
+the server checks the file again.
 
-In the `g r` and `space D` lists, `ctrl-e` puts the places shown in a panel
-like the project search's: each reference with a line around it, or each
-problem's line with its message beside the file name (two on one line get
-a line each, and one too long for the panel ends in `…`). Edit them there the
-same way.
+In the `g r` and `space D` lists, `ctrl-e` puts the places in a panel like
+the project search's, to edit the same way: each reference with a line
+around it, or each problem's line with its message beside the file name
+(two on one line get a line each; one too long for the panel ends in `…`).
 
-A rename or code action that changes other files opens them without showing
-them and leaves them unsaved, so you can look the change over (`space b`)
-and undo it before saving.
+A rename or code action that changes other files opens them in the
+background, unsaved, so you can look the change over (`space b`) and undo
+it before saving.
 
-Completions show as you type, in a menu at the cursor, once typing pauses
-after a letter or a `.`. The menu narrows as you keep typing, with what
-starts with what you typed first, then what holds it, then looser matches.
+Completions show in a menu at the cursor once typing pauses after a letter
+or a `.`. The menu narrows as you type: what starts with what you typed
+first, then what holds it, then looser matches.
 
 | Keys | |
 |---|---|
@@ -961,11 +965,14 @@ These apply to every completion menu, the shell's included:
 In Vim's style, `ctrl-n` and `ctrl-p` in insert mode complete from the
 words in open files.
 
-Typing `(` or `,` in a call shows what the function takes, above the
-cursor, with the parameter you're on picked out. It follows along as you
-type and closes when the call does or you leave insert mode. To ask for it
-with a key, bind `signature-help` in insert mode, e.g.
-`greed.keymap.bind({ role = "typing" }, { ["ctrl-k"] = "signature-help" })`.
+Typing `(` or `,` in a call shows the function's parameters above the
+cursor, the one you're on picked out, until the call closes or you leave
+insert mode. To ask for it with a key, bind `signature-help` in insert
+mode:
+
+```luau
+greed.keymap.bind({ role = "typing" }, { ["ctrl-k"] = "signature-help" })
+```
 
 ## Version control
 
@@ -988,13 +995,13 @@ against what's staged, so a change loses its sign once you stage it.
 
 `:set vcs-signs false` hides the signs.
 
-`space g s` shows each change in every file, with a couple of lines around
-it: added lines in green, and removed ones in red where they were, under
-each file's name. With git it shows what's not staged yet. It's a
-multibuffer like the project search's results, so you can edit the
-changes there and `:w` saves the files; `space g r` on a change puts it
-back, `space g a` stages just that change, and `enter` goes to it in its
-file. New files show whole, and deleted ones are left out.
+`space g s` shows each change in every file under the file's name, with a
+couple of lines around it: added lines in green, removed ones in red where
+they were. With git it shows what's not staged yet. It's a multibuffer like
+the project search's results: edit the changes and `:w` saves the files,
+`space g r` on a change puts it back, `space g a` stages that change, and
+`enter` goes to it in its file. New files show whole; deleted ones are left
+out.
 
 `space g S` shows what's staged as a diff: `u` on a hunk unstages it, `c`
 commits with a message you type, `r` reads it again and `q` closes it.
@@ -1023,32 +1030,31 @@ In a git repository it lists the last 30 commits, and `enter` shows one.
 
 ## Operations
 
-An operation is a piece of work across files taken as one thing: a
-rename an agent did in 14 files, a plugin's refactor, the changes you
-accepted from a proposal. Its edits in every file undo together, and you
-can review it in one buffer.
+An operation is a piece of work across files, kept as one: a rename an
+agent did in 14 files, a plugin's refactor, the changes you accepted from a
+proposal. Its edits in every file undo together, and you can review it in
+one buffer.
 
 | Keys | What it does |
 |---|---|
 | `space u o` (`:operations`) | Pick a recent operation to review |
 | `space u u` (`:operation-undo`) | Undo the latest operation, in every file at once |
-| `space u c` (`:operation-commit`) | Save the latest operation's files and commit just them, named after it |
+| `space u c` (`:operation-commit`) | Save the latest operation's files and commit only them, named after it |
 
 The review is a multibuffer of the operation's changes, with the programs
 it ran (a test run, a formatter) and how they exited at the top. Edit it
 like any multibuffer, `space g r` puts a change back, and `space u u` in it
 undoes that operation.
 
-If you've edited its files since, undo keeps your edits: it puts back each
-of the operation's changes you haven't touched, leaves the ones you have,
-and says how many it left. Operations are kept across restarts (in the
-cache folder), so you can still review and undo yesterday's agent work
-the same way.
+If you've edited its files since, undo keeps your edits: it puts back the
+operation's changes you haven't touched, leaves the ones you have, and
+says how many it left. Operations are kept across restarts (in the cache
+folder), so yesterday's agent work can still be reviewed and undone.
 
-`space u c` turns an operation into a commit of its own (a jj change, or a
-git commit): it saves the operation's files and commits only them, with the
-operation's name as the message, so other changes you have going stay
-where they were. In a review it commits the operation shown.
+`space u c` saves the operation's files and commits only them (a jj
+change, or a git commit) with the operation's name as the message; your
+other changes stay where they were. In a review it commits the operation
+shown.
 
 Every edit also records who made it (you, a plugin, an agent, or a change
 on disk) and the command it came from. Agents can ask with the
@@ -1065,19 +1071,21 @@ model plays it. Out of the box:
 | `reasoning` | Claude Opus 5.5, at Anthropic |
 | `local` | Llama 3.2, on [Ollama](https://ollama.com) on this machine |
 
-That's only where they start. The model question in `:setup` moves the
-roles to another provider at once (OpenAI, Berget, Mistral or Ollama, each
-with models it suggests), and in `:models` any role can use any provider's
-model.
+The model question in `:setup` moves the roles to another provider at
+once (OpenAI, Berget, Mistral or Ollama, each with models it suggests), and
+in `:models` any role can use any provider's model.
 
-Greed's own agent asks for `agent`, which uses `reasoning` until you set
-it; reviewing code an agent wants to run asks for `review`, also
-`reasoning` until set; and compacting a long conversation of Greed's agent
-asks for `compact`, which uses `agent` until set. Auto mode asks
-`decision` whether an agent may run a command it can't tell is safe; it
-uses `fast` until set, and a small model made for yes-or-no answers, like
-the decision models Berget offers, suits it (see
-[Auto mode](permissions.md#auto-mode)).
+Other roles fall back to these until you set them:
+
+| Role | Used for | Until set |
+|---|---|---|
+| `agent` | Greed's own agent | `reasoning` |
+| `review` | Reviewing code an agent wants to run | `reasoning` |
+| `compact` | Compacting a long conversation of Greed's agent | `agent` |
+| `decision` | Auto mode: whether an agent may run a command it can't tell is safe | `fast` |
+
+A small model made for yes-or-no answers, like the decision models Berget
+offers, suits `decision` (see [Auto mode](permissions.md#auto-mode)).
 
 `:models` shows every role, its model and whether its provider's key is
 found, and lets you change them:
@@ -1090,36 +1098,34 @@ found, and lets you change them:
 | `l` | Sign in to the role's provider, for those with an account instead of a key, like Berget or Mistral (with Vibe) |
 | `q` | Close |
 
-The model picker lists what the provider offers (for Ollama, the models
-it has pulled), the role's current model or the provider's suggested one
-first; type to narrow it down. A name that isn't listed can still be
-typed: enter on one that matches nothing takes it as it is, and "type a
-name…" asks for it. When the list can't be had, say without a key yet or
-with the server down, Greed says why and asks for the name instead. Lists
-are kept for ten minutes.
+The model picker lists what the provider offers (for Ollama, the models it
+has pulled), the role's current or the provider's suggested model first;
+type to narrow it down. `enter` on a name that matches nothing takes it as
+typed, and "type a name…" asks for one. When there's no list, say without
+a key yet or with the server down, Greed says why and asks for the name.
+Lists are kept for ten minutes.
 
-What you pick there is kept in Greed's data folder and comes back next
-time. Your `init.luau` is read after it, so a role set there wins, and
-`:models` says "(set in your config)" beside it. Instead of the key, you
-can set the variable `:models` names, like `ANTHROPIC_API_KEY`, or run
-`:secret-set anthropic`. Anything that needs a model and has no key says
-the same: which variable sets it, and that `:models` adds one.
+What you pick is kept in Greed's data folder. Your `init.luau` is read
+after it, so a role set there wins, and `:models` says "(set in your
+config)" beside it. Instead of a key in `:models`, set the variable it
+names, like `ANTHROPIC_API_KEY`, or run `:secret-set anthropic`. Anything
+that needs a model and has no key says which variable sets it, and that
+`:models` adds one.
 
 Keys and sign-ins go in the system keyring through `secret-tool` on Linux
-(`security` on macOS). When Greed can't reach it, say in a session started
-where `secret-tool` isn't installed or there's no D-Bus session, a key kept
-there looks missing, so the message says the keyring couldn't be reached
-and why. Keeping a key or signing in then goes to Greed's own secrets file,
-and Greed says so; keys there are found whether the keyring answers or not.
+(`security` on macOS). When Greed can't reach it (`secret-tool` isn't
+installed, or there's no D-Bus session), a key kept there looks missing,
+and the message says the keyring couldn't be reached and why. New keys and
+sign-ins then go to Greed's own secrets file, and Greed says so; keys there
+are found whether the keyring answers or not.
 
-`:usage` shows how many tokens the models were sent and wrote: today, by
-model, and each day of the last week, as the providers reported them for
-Greed's agent and the features with tools. Tokens read from the provider's
-cache are shown apart, as "(52.1k cached)": they cost a fraction of the
-rest, so a low share means caching isn't working. Under each model, how
-many of Greed's agent's edits worked, by the way it made them. It's kept a
-file a day in
-Greed's data folder (`usage/2026-10-09.json`), by hour and model.
+`:usage` shows the tokens the models were sent and wrote, as the providers
+reported them for Greed's agent and the features with tools: today, by
+model, and each day of the last week. Tokens read from the provider's cache
+show apart, as "(52.1k cached)"; they cost a fraction of the rest, so a low
+share means caching isn't working. Under each model it shows how many of
+Greed's agent's edits worked, by the way it made them. It's kept a file a
+day in Greed's data folder (`usage/2026-10-09.json`), by hour and model.
 
 Ollama needs no key, but it has to run: `ollama serve` starts it, and
 `ollama pull llama3.2` fetches a model. Greed says so when it can't reach
@@ -1143,65 +1149,75 @@ conversations (see [Agents](agents.md#greeds-own-agent)).
 
 A role's `effort` says how hard its model thinks before it answers:
 `"none"`, `"low"`, `"medium"`, `"high"` or `"max"`. Unset, nothing is sent
-and the model does what it does by default. `e` in `:models` picks it and
-keeps it with the role, and the role's line shows it; a provider's `effort`
-is the default for its roles. Servers with OpenAI's API get it as
-`reasoning_effort`, up to `high` (`max` is sent as `high`). A provider that
-takes only some sets `efforts`, and the nearest of those is sent: the
-`mistral` provider takes `none` and `high`, so `low` is sent as `none` and
-`medium` as `high`, and `:models` says so ("effort low (sent as none)").
-Some models take their own whoever serves them: GLM 5 always thinks and
-takes `low`, `high` and `max`, so `none` is sent as `low` and `medium` as
-`high`. Claude models get it as their effort, with their thinking
-summarised so Greed's agent can show it; models before Claude 4.6, like
-Haiku 4.5, think within a budget instead (2k, 8k or 24k tokens, `max`
-the same as `high`). In Greed's agent, `/effort` changes it for one
-session (see [Agents](agents.md#slash-commands)).
+and the model uses its default. A provider's `effort` is the default for
+its roles.
 
 ```luau
 models.roles.agent = { provider = "mistral", model = "mistral-large-4", effort = "high" }
 models.providers.work = { kind = "openai", url = "https://llm.example.com/v1", effort = "low" }
 ```
 
-Greed's agent sends the whole conversation each turn, and providers charge
-far less for the part they've seen before and cached. Some, like Mistral,
-only cache a request that names its conversation: `cache_key = true` on a
-provider has Greed's agent send its session's id as `prompt_cache_key`.
-The `mistral` provider has it on. `:usage` shows how much was cached.
+`e` in `:models` picks it and keeps it with the role, whose line shows it.
+In Greed's agent, `/effort` changes it for one session (see
+[Agents](agents.md#slash-commands)). How it's sent:
 
-Mistral's reasoning models also work better when they get back what they
+- Servers with OpenAI's API get it as `reasoning_effort`, up to `high`
+  (`max` is sent as `high`).
+- A provider that takes only some sets `efforts`, and the nearest is sent:
+  the `mistral` provider takes `none` and `high`, so `low` is sent as
+  `none` and `medium` as `high`, and `:models` says so ("effort low (sent
+  as none)").
+- Some models take their own whoever serves them: GLM 5 always thinks and
+  takes `low`, `high` and `max`, so `none` is sent as `low` and `medium` as
+  `high`.
+- Claude models get it as their effort, with their thinking summarised so
+  Greed's agent can show it; models before Claude 4.6, like Haiku 4.5,
+  think within a budget instead (2k, 8k or 24k tokens, `max` the same as
+  `high`).
+
+Greed's agent sends the whole conversation each turn, and providers charge
+far less for the part they've cached. Some, like Mistral, only cache a
+request that names its conversation: `cache_key = true` on a provider has
+Greed's agent send its session's id as `prompt_cache_key`. The `mistral`
+provider has it on. `:usage` shows how much was cached.
+
+Mistral's reasoning models work better when they get back what they
 thought before each answer: `thinking_back = true` on a provider sends it
 back with what the model said, and the `mistral` provider has it on. It
 takes room in the conversation, so it's compacted a little sooner.
 
-To see which requests missed, `:debug plugin:models` logs a line for each
-in `:debug-log`: the provider, model and session id, how many messages it
-sent, a short hash of all of it but the newest message, what it changed of
-the session's last request (nothing, when it's that one with more on the
-end), and the tokens sent, read from the cache and written. A request that
-starts with all of the last one and still shows little cached was missed
-by the provider, not changed by Greed. Each line ends with the request's
-timing: how long until its first bytes came back, how long it took in
-all, and how many tokens a second it wrote while it streamed. A long wait
-for the first bytes is the provider (queueing, or reading a long uncached
-conversation); a low pace is the model writing slowly, or thinking.
+To see which requests missed the cache, `:debug plugin:models` logs a line
+for each in `:debug-log`:
 
-A model's answer that goes quiet for 90 seconds counts as failed, and the
-first bytes get three times as long, since a long uncached conversation
-or thinking the model doesn't show can take minutes. `:set
-models-idle-timeout 180` changes it for all of them, `idle = 180` on a
-role or provider for its models (a slow local one, say), and `0` waits for
-ever. The `mistral`, `ollama` and `berget` providers wait ten minutes:
-they send a tool call whole once the model has written it, so a long file
-is a long quiet. A request that failed that way, lost its connection, or was turned
-away as too busy (429, 502, 503 or 504) is sent once more after a moment,
-or as long as the server's `Retry-After` says, up to 30 seconds. It isn't
-sent again once some of the answer was shown, as the second answer would
-repeat it.
+- the provider, model and session id, and how many messages it sent;
+- a short hash of all of it but the newest message, and what it changed of
+  the session's last request (nothing, when it's that one with more on the
+  end);
+- the tokens sent, read from the cache and written;
+- the time until the first bytes came back, the total time, and tokens a
+  second while it streamed.
+
+A request that starts with all of the last one and still shows little
+cached was missed by the provider. A long wait for the first bytes is the
+provider (queueing, or reading a long uncached conversation); a low pace is
+the model writing slowly, or thinking.
+
+A model's answer that goes quiet for 90 seconds counts as failed; the
+first bytes get three times as long, since a long uncached conversation or
+hidden thinking can take minutes. `:set models-idle-timeout 180` changes it
+for all of them, `idle = 180` on a role or provider for its models (a slow
+local one, say), and `0` waits for ever. The `mistral`, `ollama` and
+`berget` providers wait ten minutes: they send a tool call whole once the
+model has written it, so a long file is a long quiet.
 
 ```luau
 models.providers.ollama.idle = 600
 ```
+
+A request that timed out, lost its connection, or was turned away as too
+busy (429, 502, 503 or 504) is sent once more after a moment, or as long as
+the server's `Retry-After` says, up to 30 seconds. It isn't sent again once
+some of the answer was shown, as the second answer would repeat it.
 
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
 `GREED_SECRET_NAME`. The built-in providers send their keys only to their
@@ -1210,9 +1226,9 @@ asks (`y` yes, `n` no) and keeps your answer, so a plugin can't add a
 provider that sends your key somewhere you didn't choose.
 
 Some plans come with an account instead of a key, like Berget Code's fixed
-monthly price. `:login berget` signs you in: it shows a link and a code,
-you approve it in a browser on any device, and the `berget` provider uses
-that sign-in from then on, renewing it as needed. `:models` says "signed
+monthly price. `:login berget` shows a link and a code; approve it in a
+browser on any device, and the `berget` provider uses that sign-in from
+then on, renewing it as needed. `:models` says "signed
 in (Berget Code)"; `:logout berget` forgets it, and the provider goes back
 to its key.
 
@@ -1222,13 +1238,13 @@ models.roles.agent = { provider = "berget", model = "the model you want" }
 
 With a Le Chat Pro or Team plan, sign in to Mistral with Vibe, as Mistral's
 `vibe` command does: `:login vibe` (or `:login mistral` and pick Vibe)
-shows a link to open, you sign in and pick a workspace there, and Mistral
-makes an API key for Vibe, kept as your `mistral` key. Requests made with
-it count against your plan's allowance instead of API credits; past that,
-your plan's pay-as-you-go applies, at API prices. `:models` says "signed
-in (Vibe)", and `:logout vibe` forgets the key (unless you've set a key of
-your own since). It's an ordinary API key with nothing to renew; you can
-see or revoke it in Mistral's console.
+shows a link; sign in and pick a workspace there, and Mistral makes an API
+key for Vibe, kept as your `mistral` key. Requests with it count against
+your plan's allowance instead of API credits; past that, your plan's
+pay-as-you-go applies, at API prices. `:models` says "signed in (Vibe)",
+and `:logout vibe` forgets the key (unless you've set a key of your own
+since). It's an ordinary API key with nothing to renew; Mistral's console
+shows it and can revoke it.
 
 For a key you already have, `:login mistral` and picking an API key keeps
 it (or set `MISTRAL_API_KEY`). Either way, the `mistral` provider uses
@@ -1273,27 +1289,26 @@ Pin what a model or an agent should see, and it goes with every question:
 | `:context-add-diff` | Pin the changes in progress |
 | `:context-clear` | Drop everything |
 
-Anything you can inspect pins too: `pin to context` is among the actions
-of every object (`space .`, or the inspector), so a pod, a shell block or
-a terminal can go with your messages, as its state is when you send each
-one.
+Anything you can inspect pins too: `pin to context` is among every
+object's actions (`space .`, or the inspector), so a pod, a shell block or
+a terminal goes with your messages, in its state at the time of each one.
 
 Items are read fresh each time they're sent: a pinned selection follows the
-text as you edit, the diff is the diff as it is now, and a pinned pod is
-its row from the newest block that lists it. The assist commands send the
-context with each question. The agent pane sends it with a message when
-it changed since the last one, so a pinned file goes again only after it
-was edited; other agents read it with the `context_get` tool. Each
-project keeps its own across restarts, except pinned objects, which
-belong to the session.
+text as you edit, the diff is the current diff, and a pinned pod is its
+row from the newest block that lists it. The assist commands send the
+context with each question. The agent pane sends it with a message when it
+changed since the last one, so a pinned file goes again only after an
+edit; other agents read it with the `context_get` tool. Each project keeps
+its context across restarts, except pinned objects, which belong to the
+session.
 
 ## Formatting
 
-Saving a file formats it, and `:format` does it without saving. Greed uses
-the language's formatter when it's installed (`gofmt`, `ruff`, `stylua`,
-`prettier`, `shfmt`, ...) and otherwise asks the language server, which is
-how Rust gets `rustfmt` through rust-analyzer. Only what the formatter
-changed is replaced, so your cursor stays put.
+Saving a file formats it; `:format` formats without saving. Greed uses the
+language's formatter when it's installed (`gofmt`, `ruff`, `stylua`,
+`prettier`, `shfmt`, ...), otherwise the language server (Rust gets
+`rustfmt` through rust-analyzer). Only what the formatter changed is
+replaced, so the cursor stays put.
 
 ```luau
 -- A different formatter for a language
@@ -1308,27 +1323,33 @@ its command stands for the file's path.
 
 ## Markdown
 
-Markdown files show as documents: headings without their hashes (a
-top-level heading twice the size), `**bold**`, `*italic*`, `~~struck~~`
-and `` `code` `` without their markers, links as their underlined text,
-fenced code on a background of its own, quotes with a bar, `---` as a
-line, list bullets (`-`, `*` or `+`) as dots and tables in aligned columns
-with borders. Code blocks keep their markup: a `# comment` there is code,
-not a heading. The file stays plain Markdown: while you type on a line
-(insert mode) it shows as written, and otherwise markup shows as written
-once the cursor steps inside it. On its first character a field, a box or
-a button stays as it's drawn, so `enter` presses it; one step further in,
-`l` say, and it opens up to edit with the usual keys. Table borders open
-only while typing. `:set markup-reveal never` keeps markup drawn outside
-insert mode. The window draws big headings big and sets the text in a proportional font
-(code and tables stay monospaced); terminals other than kitty show
+Markdown files show as documents. The file stays plain Markdown.
+
+- Headings show without their hashes, a top-level one twice the size.
+- `**bold**`, `*italic*`, `~~struck~~` and `` `code` `` show without their
+  markers, links as their underlined text.
+- Fenced code gets a background of its own and keeps its markup: a
+  `# comment` there stays code.
+- Quotes get a bar, `---` a line, list bullets (`-`, `*` or `+`) dots, and
+  tables aligned columns with borders.
+
+While you type on a line (insert mode) it shows as written; otherwise
+markup shows as written once the cursor steps inside it. A field, a box or
+a button stays drawn while the cursor is on its first character, so
+`enter` presses it; one step further in (`l`) opens it to edit with the
+usual keys. Table borders open only while typing. `:set markup-reveal
+never` keeps markup drawn outside insert mode.
+
+The window draws big headings big and sets text in a proportional font
+(code and tables stay monospaced). Terminals other than kitty show
 headings at the normal size.
 
-`:set markdown-look false` turns the look off everywhere. To see one file
-as written, or one file as a document while the option is off, toggle it
-for that file with `space m l` (`alt-V` in the vscode style, or
-`:markdown-look-toggle`). The status line shows `markdown · plain` while a
-file shows as written.
+| | |
+|---|---|
+| `:set markdown-look false` | Turn the look off everywhere |
+| `space m l` (`alt-V` in the vscode style, `:markdown-look-toggle`) | Toggle it for this file: as written, or as a document while the option is off |
+
+The status line shows `markdown · plain` while a file shows as written.
 
 ### Reading view
 
@@ -1347,12 +1368,16 @@ key again goes back to editing, at the same place.
 | `enter` or a click on a link | Follow it |
 | `esc`, `q` | Back to editing |
 
-A link to `#a-heading` goes to that heading, a link to another Markdown
-file opens it in the reading view too (at its heading, with
-`other.md#a-heading`), a web or mail link opens in your browser or mail
-program (the `link-opener` option says which), and a `file://` link opens
-the file in Greed. Links of other kinds, which any file you read could
-hold, don't open.
+Following a link:
+
+- `#a-heading` goes to that heading.
+- Another Markdown file opens in the reading view too, at its heading with
+  `other.md#a-heading`.
+- A web or mail link opens in your browser or mail program (the
+  `link-opener` option says which).
+- A `file://` link opens the file in Greed.
+
+Links of other kinds don't open, since any file you read could hold them.
 
 ### Tables
 
@@ -1375,10 +1400,10 @@ rest is on the leader:
 | `space m t =` | Line up the pipes |
 | `space m t e` | Edit the cell, as `enter` does |
 
-Each change writes the table back with its pipes lined up, so the file
-reads well as plain text too, and is one step to undo. Typing in a table
-yourself works too: leaving insert mode lines it up again and fills out a
-row you typed short of cells, so its formula columns show. The keys are in
+Each change writes the table back with its pipes lined up and is one step
+to undo. When you type in a table yourself, leaving insert mode lines it up
+again and fills out a row you typed short of cells, so its formula columns
+show. The keys are in
 `require("@markdown").table_edit.keys`, to rebind like any others.
 
 ### Choices
@@ -1401,9 +1426,9 @@ Picking only changes the text. Plugins read the answers and act on them
 
 ### Questionnaires
 
-Choices and runnable blocks together make a page of questions that does
-things, which still reads as plain Markdown anywhere. Comments, which
-GitHub and the like don't show either, hold what makes it work:
+Choices and runnable blocks make a page of questions that acts on the
+answers and still reads as plain Markdown. HTML comments, which GitHub and
+the like don't show, hold the rest:
 
 ````markdown
 Which theme? <!-- id=theme -->
@@ -1456,17 +1481,16 @@ require("@greed").echo(`theme {answers.theme}, model {answers.provider}`)
   (`▸ shows if trip is abroad`); with the cursor on that line the part
   opens, dimmed, to read and edit without changing the answer.
 
-Blocks that make choices or hear picks hide behind the page, and buttons
-show as buttons: put the cursor there to see their code. They run as any
-block does: in a file you haven't trusted, the first asks whether to. A
-Luau block can't wait, so one that asks for something, like a prompt or a
-secret, does it in `greed.spawn`. Greed's own setup page is a questionnaire
-like this: `setup.md` in the `setup` plugin.
+Blocks that make choices or hear picks are hidden, and buttons show as
+buttons: put the cursor there to see their code. They run as any block
+does: in a file you haven't trusted, the first asks whether to. A Luau
+block can't wait, so one that asks for something, like a prompt or a
+secret, does it in `greed.spawn`. Greed's own setup page, `setup.md` in
+the `setup` plugin, is a questionnaire like this.
 
 ### Live values
 
-A Markdown file can work things out as you change it, with formulas in
-Luau's syntax:
+Formulas in Luau's syntax work values out as you change the file:
 
 ```markdown
 Bill: [840](field:bill) kr, we're [3](field:people) people.
@@ -1529,7 +1553,7 @@ you change it and the values it uses; on GitHub only the table shows.
 
 A command button runs a command in the project's shell and shows its output
 in a float as it comes (`esc` closes it, `ctrl-c` stops it). It runs with
-`sh`, whatever shell you use, so it works the same for anyone you share the
+`sh` whatever shell you use, so it works the same for anyone you share the
 file with:
 
 ```markdown
@@ -1538,19 +1562,20 @@ Crate: [greed-core](field:crate)
 [Run its tests](run:cargo test -p {{ crate }})
 ```
 
-A `{{ formula }}` in the command goes in as one argument, quoted, so a
+A `{{ formula }}` in the command goes in as one quoted argument, so a
 field can't add to the command whatever it holds. For output that stays in
-the file, under the button, use a code block with a button; it gets the
+the file under the button, use a code block with a button; it gets the
 page's values as variables:
 
 ````markdown
 ```sh button="Run its tests"
 cargo test -p "$crate"
 ```
-```` As the label hides the
-command, the first press shows it and asks: `y` runs it this time, `a`
-always. A command changed since (in the file, by a pull or an agent) asks
-again.
+````
+
+The label hides the command, so the first press shows it and asks: `y`
+runs it this time, `a` always. A command changed since (in the file, by a
+pull or an agent) asks again.
 
 Formulas are expressions only: arithmetic, comparisons, `and`/`or`/`not`,
 `..` to join text, `if a then b else c`, and functions: `sum`, `avg`,
@@ -1579,9 +1604,9 @@ The best customer: {{ customers[1].name }}.
 
 Its first line says what it reads and how it went (`▦ sqlite · shop.db · 10
 rows`), and the query folds under it: with the cursor on that line it shows,
-dimmed, to edit. A table is read again when what it asks changes, a moment
-after you stop typing, and when the file it reads changes. Reading never holds
-the editor up.
+dimmed, to edit. The table is read again a moment after what it asks
+changes, and when the file it reads changes. Reading runs in the
+background, so typing never waits for it.
 
 | Source | Reads |
 |---|---|
@@ -1615,9 +1640,9 @@ see `core.data` for what a source gives.
 ### Runnable code blocks
 
 A fenced block in a language Greed can run runs when you ask, and its
-output is saved in a `result` block right under it. That way the file
-shows the output anywhere, from GitHub to your phone, and a diff shows
-what changed. Running a block again replaces its result.
+output is saved in a `result` block right under it, so it shows wherever
+the file is read and a diff shows what changed. Running a block again
+replaces its result.
 
 [![A note with a live load chart under a shell block, and a block filtering another block's table of pods](https://github.com/johnae/greed/releases/download/media/notes.png)](https://github.com/johnae/greed/releases/download/media/notes.mp4)
 
@@ -1648,14 +1673,13 @@ Blocks run as `shell`, `sh`, `bash`, `zsh`, `fish`, `python`, `node`,
   draw one. With `every=SECONDS` its line runs again that often and the
   result keeps up, without filling undo, until `space m s` stops it; the
   fence shows `● live` meanwhile.
-
 - A program gets the code to run, and prints the result. When it fails,
   the result block says how it exited (`result exit=1`).
 - A `luau` block runs in the editor, with the whole API: its result is what
   it prints and what it returns. A one-line expression like `6 * 7` is its
   own result.
 - An `http` block is a request: the method and URL on its first line (or
-  just a URL, for GET), then header lines, then after a blank line the
+  a URL alone, for GET), then header lines, then after a blank line the
   body. The result is the status and the body; `headers=true` adds the
   response's headers.
 
@@ -1664,10 +1688,10 @@ Options go after the language:
 - `id=NAME` names a block, and `input=NAME` gives another block that
   block's result: on stdin for a program, as `input` in Luau, and into
   the first line of a `shell` block, so `where STATUS != Running` alone
-  works on it. The named
-  block runs first if it has no result yet, so a page of blocks works like
-  a small pipeline. With `rerun=true` on the block taking the input, its
-  input runs again every time, so it never reads a stale result.
+  works on it. The named block runs first if it has no result yet, so a
+  page of blocks works like a small pipeline. With `rerun=true` on the
+  block taking the input, its input runs again every time, so it never
+  reads a stale result.
 - `dir=PATH` runs a program in another folder than the file's.
 - `timeout=SECONDS` stops it after that long.
 - `every=SECONDS`, on a `shell` block, keeps it live (above).
@@ -1677,24 +1701,27 @@ While a block runs, its fence shows `■ running`; click that or press
 result keeps at most `blocks-max-lines` lines of output (1000).
 
 Nothing runs when a file opens. The first time you run a block in a file,
-Greed asks whether to: `y` for now, `a` to always trust that file
-(`:blocks-untrust` takes it back). Trusted files, and files whose front
-matter says `greed: run`, show a `▶ run` button after each block's fence.
-Front matter only shows the buttons; running still asks. The status line
-shows `markdown · blocks` when they're on. Agents can list and run blocks
-too (`blocks_list`, `blocks_run`), but only in files you trust, and only
-blocks as they were when you last ran them yourself or trusted the file
-(`a`, or `:blocks-trust`). A block an agent changed, in the buffer or on
-disk, doesn't run for an agent until you've run it, and neither does a
-block taking its input from one.
+Greed asks whether to:
 
-Trusting a file trusts what it holds, not whatever it holds later. What
-runs by itself (choices made as the file opens, a block a pick runs, a
-board's cards) runs only as you last let it run. When the file changes
-from outside, as after a `git pull` or an agent's edit, a changed block
-waits until you run it yourself (`space m r`), and a changed card on a
-board shows the command it would run and waits for `enter`. What you
-write or change yourself and save is let run as it is.
+- `y` runs it this time; `a` always trusts that file (`:blocks-untrust`
+  takes it back).
+- Trusted files, and files whose front matter says `greed: run`, show a
+  `▶ run` button after each block's fence. Front matter only shows the
+  buttons; running still asks. The status line shows `markdown · blocks`
+  when they're on.
+- Agents can list and run blocks too (`blocks_list`, `blocks_run`), only
+  in files you trust, and only blocks as they were when you last ran them
+  yourself or trusted the file (`a`, or `:blocks-trust`). A block an agent
+  changed, in the buffer or on disk, doesn't run for an agent until you've
+  run it, and neither does a block taking its input from one.
+
+Trust covers what a file holds when you trust it. What runs by itself
+(choices made as the file opens, a block a pick runs, a board's cards)
+runs only as you last let it run. When the file changes from outside, as
+after a `git pull` or an agent's edit, a changed block waits until you run
+it yourself (`space m r`), and a changed card on a board shows the command
+it would run and waits for `enter`. What you write or change yourself and
+save may run as it is.
 
 Add a language from Luau:
 
@@ -1780,13 +1807,12 @@ to call the bank" (see [Agents](agents.md)).
 
 ### Connecting your notes
 
-Jot thoughts and todos down as they come (`space n t`, `space n c`), then
-let Greed's agent make sense of them: `space n l` has it go through your
-inbox, or the note you're in, find the notes each item relates to, link
-them with `[[name]]` and add a line of context. It changes notes that are
-there only as proposed edits you accept or reject one by one, makes new
-notes for items that belong together, and ends with a summary. It uses the
-model playing the `agent` role.
+`space n l` has Greed's agent go through your inbox (filled by `space n t`
+and `space n c`), or the note you're in, find the notes each item relates
+to, link them with `[[name]]` and add a line of context. Changes to
+existing notes come as proposed edits you accept or reject one by one. It
+makes new notes for items that belong together and ends with a summary. It
+uses the model playing the `agent` role.
 
 Any agent can work with your notes the same way through the `notes` tool
 group (see [Agents](agents.md#tool-groups)); `:set agent-tool-groups "plan
@@ -1799,12 +1825,12 @@ proposed with `decision_propose`.
 ### Notes in a project, and other places
 
 A project can keep notes of its own in `.greed/notes/` (or wherever
-`notes-project-folder` says, inside the project). Make the folder and its
-notes count: they're found, searched and linked with yours, their todos
-are in the agenda, and capture puts todos in the project's inbox. Their
-names start with `project:`, like `project:plan`; a link in a project note
-goes to a note beside it first, so `[[design]]` there means
-`project:design` when there is one. The plan and decisions you share with
+`notes-project-folder` says, inside the project). Once the folder exists,
+its notes are found, searched and linked with yours, their todos are in
+the agenda, and capture puts todos in the project's inbox. Their names
+start with `project:`, like `project:plan`; a link in a project note goes
+to a note beside it first, so `[[design]]` there means `project:design`
+when there is one. The plan and decisions you share with
 agents (see [Agents](agents.md#a-plan-and-decisions-you-share)) are notes
 there too. Commit the folder to share it, or leave it out of the
 repository to keep it yours.
@@ -1822,11 +1848,10 @@ the window; done ones dimmed and struck through), headings as a symbol for
 their level, list bullets as dots, `due:2026-10-03` as 📅 3 Oct (red
 once it's past, yellow on the day and in the three days before), and
 `remind:2026-10-06 18:00` as ⏰ 6 Oct 18:00. Code blocks keep their
-markup, and the agenda leaves out todos in them. The file
-stays plain Markdown: while you type on a line (insert mode), it shows as
-written; in the vscode style, markup shows once the cursor is inside it. Click a
-box to tick it, or press `enter` on it, and a heading's symbol folds its
-section.
+markup, and the agenda leaves out todos in them. The file stays plain
+Markdown: while you type on a line (insert mode), it shows as written; in
+the vscode style, markup shows once the cursor is inside it. Click a box
+or press `enter` on it to tick it; a heading's symbol folds its section.
 
 The symbols, rules of your own and how they all look are set from your
 config:
@@ -1980,17 +2005,27 @@ PROMPT_COMMAND='printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'"${PROMPT_COMMAND
 
 ## Shells
 
-`:shell` opens a shell in a buffer, and `space o s` switches to one: type a
-command at the prompt at the bottom and `enter` runs it. Each command
-becomes a block above the prompt, its command, what it printed and how it
-ended, which stays to search, fold, copy, run again and send to the next
-command or to a buffer (`$3 | sort`, `cargo test > buf:tests`). Agents run
-their commands there too. `space o w` lists what's running in every shell:
-`enter` opens one in a float, `ctrl-o` goes to it and `ctrl-x` stops it.
-Programs a shell runs that want an editor, like `git commit`, open the
-file in Greed (`$EDITOR` is `greed edit --wait` there; `:set shell-editor
-false` turns that off). [The shell](shell.md) has the rest: keys,
-builtins, which shell runs a line, terminals, and limits.
+A shell is a buffer with a prompt at the bottom; `enter` runs the command
+typed there. Each command becomes a block above the prompt (the command,
+what it printed and how it ended) that you can search, fold, copy, run
+again and send to the next command or to a buffer:
+
+```text
+$3 | sort
+cargo test > buf:tests
+```
+
+| | |
+|---|---|
+| `:shell` | Open a shell |
+| `space o s` | Switch to one |
+| `space o w` | What's running in every shell: `enter` opens one in a float, `ctrl-o` goes to it, `ctrl-x` stops it |
+
+Agents run their commands there too. Programs a shell runs that want an
+editor, like `git commit`, open the file in Greed (`$EDITOR` is `greed
+edit --wait` there; `:set shell-editor false` turns that off).
+[The shell](shell.md) has the rest: keys, builtins, which shell runs a
+line, terminals, and limits.
 
 ## Panes and tabs
 
@@ -2025,17 +2060,20 @@ layouts) leave the mode, so what they open goes back to where you were.
 All the keys, and how to change them, are in
 [Keys](keys.md#panes-tabs-and-terminals).
 
-On a Mac, `alt` is Option, which also types characters of its own: `π`,
-or `[` and `{` on a Swedish keyboard. In the window, Option with a key is
-the `alt` key where that's bound, and types its character otherwise; plain
-characters like `[ ] { } | @ $ \` are always typed, since a keyboard puts
-them there to type them. With Shift, letters work as `alt` keys (`alt-F`),
-other keys type their character. In a terminal, the terminal decides
-(iTerm2, kitty, Ghostty and others can treat Option as Alt). Command with
-a key is for the Mac and the menus (⌘V pastes, ⌘Q quits); the editor
-leaves it alone. A keyboard in Windows layout on a Mac may send Command
-from the key labelled Alt: switch it to its Windows mode, or swap the two
-in System Settings > Keyboard > Modifier Keys.
+On a Mac, `alt` is Option, which also types characters of its own (`π`,
+or `[` and `{` on a Swedish keyboard):
+
+- In the window, Option with a key is the `alt` key where that's bound,
+  and types its character otherwise. Characters like `[ ] { } | @ $ \`
+  are always typed. With Shift, letters work as `alt` keys (`alt-F`),
+  other keys type their character.
+- In a terminal, the terminal decides (iTerm2, kitty, Ghostty and others
+  can treat Option as Alt).
+- Command with a key is for the Mac and the menus (⌘V pastes, ⌘Q quits);
+  the editor leaves it alone.
+- A keyboard in Windows layout may send Command from the key labelled
+  Alt: switch it to its Windows mode, or swap the two in
+  System Settings > Keyboard > Modifier Keys.
 
 To act on a pane without moving to it first, `alt-p g` puts a number over
 each pane; type one to go there, and you're still in the pane mode, so
@@ -2044,17 +2082,14 @@ leaves the pane mode. `ctrl-w g` and `space w g` label them too. While a
 pane is zoomed the status line says "zoomed".
 
 Floating views belong to the tab they opened in: switching tabs hides them
-and closing the tab closes them. As in zellij, `alt-f` hides all of the
-tab's floats and shows them again where they were (terminals keep
-running), and opens a floating terminal when there are none. While floats
-are shown, `alt-n` opens another floating terminal rather than a pane.
-`alt-F` opens the file you're in as a floating view (`:float-file PATH`
-for another), and `alt-p e` takes the pane or panel you're in out to float
-over the tab, or puts a floating view back in as a pane. Floating the tab's
-last pane leaves that pane showing another open file. Drag a float by its top
-border to move it or by an edge to resize it, or use the resize mode
-(`alt-r`). How the floats are laid out is up to the tab's
-[float layout](#float-layouts).
+and closing the tab closes them. Floats `alt-f` hid come back where they
+were, and hidden terminals keep running. `:float-file PATH` opens another
+file as a floating view, as `alt-F` does this one. `alt-p e` takes the
+pane or panel you're in out to float over the tab, or puts a floating view
+back in as a pane; floating the tab's last pane leaves that pane showing
+another open file. Drag a float by its top border to move it or by an edge
+to resize it, or use the resize mode (`alt-r`). The tab's
+[float layout](#float-layouts) decides where floats go.
 
 To move what a pane shows somewhere else, `alt-p b` takes it to a new tab,
 `alt-p t` to a tab you pick (or a new one), and `alt-p P` into a panel on
@@ -2125,17 +2160,18 @@ one:
 - `cascade`: overlapping, each a step down and right of the one before, so
   every title shows.
 
-In `one` the float in front says where it is on its border:
-`‹ 2/5 ›` at the right of the top, with the names of the floats either
-side when it's wide (`‹ nu ~/src · 2/5 · claude ›`; of two, the other on
-its side: `‹ 1/2 · claude ›`), and a dot for each
-float along the bottom, the one in front filled. Click `‹` or a name before
-it for the float before, `›` or a name after it for the next, or a dot
-for that float (`:float-go N` does the same). A dock along the bottom
-of the tab lists them all by number and name; click a name to bring that
-float to the front, or press `alt-W` and then its number (or move with the
-arrows and press `enter`). `:float-dock` shows or hides the dock in any
-layout.
+In `one` the float in front shows where it is on its border:
+
+- `‹ 2/5 ›` at the right of the top, with the names of the floats either
+  side when it's wide (`‹ nu ~/src · 2/5 · claude ›`; of two, the other on
+  its side: `‹ 1/2 · claude ›`). Click `‹` or a name before it for the
+  float before, `›` or a name after it for the next.
+- A dot for each float along the bottom, the one in front filled. Click a
+  dot for that float (`:float-go N` does the same).
+- A dock along the bottom of the tab lists them all by number and name.
+  Click a name to bring that float to the front, or press `alt-W` and then
+  its number (or move with the arrows and press `enter`). `:float-dock`
+  shows or hides the dock in any layout.
 
 A float that needs you gets a colored dot, in its place along the border
 and in the dock: an agent session waiting for your answer, or a terminal
@@ -2179,13 +2215,18 @@ way puts the text on Greed's clipboard, so `p` pastes it.
 
 ## Mouse
 
-A click puts the cursor where you click and focuses that pane, dragging
-selects, and the wheel scrolls whatever's under it. A double click selects
-the word, a triple click the line, `shift`-click extends the selection to
-where you click and `alt`-click adds a cursor there. Clicking a tab in the
-tab line shows it. Drag a floating view by its top border (where the title
-is) to move it, or by another edge or a corner to resize it. Drag the line
-between two panes, or beside a panel, to give one more room.
+| Mouse | |
+|---|---|
+| Click | Put the cursor there and focus that pane |
+| Drag | Select |
+| Wheel | Scroll whatever's under it |
+| Double click, triple click | Select the word, the line |
+| `shift`-click | Extend the selection to there |
+| `alt`-click | Add a cursor there |
+| Click a tab in the tab line | Show it |
+| Drag a floating view's top border (the title) | Move it |
+| Drag a floating view's other edge or a corner | Resize it |
+| Drag the line between two panes, or beside a panel | Give one more room |
 
 Clicking a button (a proposal's accept and reject, a todo's box) presses
 it. So does `enter` in normal mode with the cursor on it; where several
@@ -2236,21 +2277,25 @@ read-only, so saving can't change them.
 
 ## The command line
 
-`:` (or `alt-x` in the vscode style) runs any command by name, with completion.
-`space ?` lists every command, `space h c` describes one and `space h k`
-tells you what a key does. `space h h` describes anything the editor is
-made of (commands, options with their values, events and who listens to
-them, the plugin API, plugins, modes and editing styles), and `enter` in
-the help window goes to where it's defined. `space h i` inspects what's
-under the cursor (a buffer, a shell block or a row of its table, a
-terminal, a file), or with nothing there the editor itself: its state, the
-objects it relates to (`enter` goes to one, `backspace` or `ctrl-o` comes
-back, `ctrl-i` goes forward again), what was done to it, by you or an
-agent, and what it can do (`enter` runs that); `history` on `space .` lists
-what was done to anything. After a key like `space`, a hint at the bottom
-right shows what can follow, with groups of keys named (`w  panes…`), and
-`f1` shows the keys of the mode you're in, in every mode. A message on the
-status line goes away with the next key.
+`:` (or `alt-x` in the vscode style) runs any command by name, with
+completion.
+
+| Keys | |
+|---|---|
+| `space ?` | List every command |
+| `space h c` | Describe a command |
+| `space h k` | What a key does |
+| `space h h` | Describe anything the editor is made of: commands, options with their values, events and who listens to them, the plugin API, plugins, modes and editing styles. `enter` in the help window goes to where it's defined |
+| `space h i` | Inspect what's under the cursor (a buffer, a shell block or a row of its table, a terminal, a file), or with nothing there the editor itself |
+| `history` on `space .` | What was done to anything |
+| `f1` | The keys of the mode you're in, in every mode |
+
+`space h i` shows a thing's state, the objects it relates to (`enter` goes
+to one, `backspace` or `ctrl-o` comes back, `ctrl-i` goes forward again),
+what was done to it, by you or an agent, and what it can do (`enter` runs
+that). After a key like `space`, a hint at the bottom right shows what can
+follow, with groups of keys named (`w  panes…`). A message on the status
+line goes away with the next key.
 
 `:lua CODE` runs a line of Luau with the whole plugin API, and `:= EXPR`
 shows what an expression is (`:= #greed.buffers()`).
@@ -2261,9 +2306,9 @@ The short names Vim and Helix users type work too: `:w` `:wa` `:q` `:qa`
 for `:theme`, `:setf` for `:language`, Neovim's `:checkhealth` for
 `:health`, and Helix's long ones like `:write-all` and `:buffer-close`.
 Arguments go after a space (`:w notes.md`); only Vim's line commands and
-`:b` take one right after the name (`:m0`, `:t$`, `:b#`). A command that refuses, like `:q` with unsaved changes, says
-why in plain words; an error from a bug in a plugin also names the plugin,
-and `:errors` has the details.
+`:b` take one right after the name (`:m0`, `:t$`, `:b#`). A command that
+refuses, like `:q` with unsaved changes, says why; an error from a bug in
+a plugin also names the plugin, and `:errors` has the details.
 
 Vim's line commands work in every style. A range in front picks the lines
 a command works on; without one, it's the lines the selection touches
@@ -2322,16 +2367,21 @@ greed --profile "$(mktemp -d)"           # Greed as on its first run
 ```
 
 The profile holds `config`, `data`, `cache`, `state` and `run` (its
-sessions' sockets). Each folder can also be set on its own with
-`--config-dir`, `--data-dir`, `--cache-dir` and `--state-dir`, for scripts
-that move only one. Each flag has a variable too (`GREED_PROFILE`,
-`GREED_CONFIG_DIR`, `GREED_DATA_DIR`, `GREED_CACHE_DIR`, `GREED_STATE_DIR`):
-a folder's own setting wins over the profile, which wins over the XDG
-variables. Sessions' sockets go in `GREED_RUN_DIR` when it's set, which
-helps when a profile's path is too long for a socket (they're limited to
-about a hundred characters). Sessions, terminals, shells and agents Greed
-starts get the same folders, so `greed ctl` inside one of its terminals
-finds its session.
+sessions' sockets).
+
+| Flag | Variable |
+|---|---|
+| `--profile` | `GREED_PROFILE` |
+| `--config-dir` | `GREED_CONFIG_DIR` |
+| `--data-dir` | `GREED_DATA_DIR` |
+| `--cache-dir` | `GREED_CACHE_DIR` |
+| `--state-dir` | `GREED_STATE_DIR` |
+
+A folder's own setting wins over the profile, which wins over the XDG
+variables. Sessions' sockets go in `GREED_RUN_DIR` when it's set, for when
+a profile's path is too long for a socket (about a hundred characters at
+most). Sessions, terminals, shells and agents Greed starts get the same
+folders, so `greed ctl` inside one of its terminals finds its session.
 `HOME` stays yours, so git, kubectl and your keys work as usual.
 
 Saving your config, in Greed or anywhere else, runs it again within a
@@ -2422,7 +2472,7 @@ to what was saved takes it away. On the right it shows:
 - the cursor's line and column (the character the cursor is drawn on, at
   the end of a selection too), the machine and the session
 
-Two options make it livelier, both off unless you turn them on:
+Two options, both off by default, add color and motion:
 
 ```luau
 local option = require("@greed").option
@@ -2441,8 +2491,8 @@ in a dark theme, the accent in a light one. Effects need a theme with
 
 ### Highlights that show what changed
 
-Some highlights tell you something, so they're on unless you turn them
-off. Each has an option of its own:
+These highlights are on by default (except `effects-dim`), each with an
+option of its own:
 
 - `effects-changes`: text someone other than you changes (an agent, a
   formatter, a language server's rename or fix, a plugin, the file changing
@@ -2575,14 +2625,16 @@ their palette, with selections underlined.
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
 `["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
-`rounded`, `shadow`, `badge`, `hover`, `checkbox` and `font` are for the
-window only: the first two make floats boxes with rounded corners and a
-soft shadow, `badge` draws a style's background as a small box with
-rounded corners, like a key cap (motion hints and buttons use it), `hover`
-lights up what's under the mouse (buttons, fields, choices, tabs), `checkbox =
-"empty"` or `"checked"` draws a checkbox over the text (todo boxes use it),
-`"choice"` or `"chosen"` a round button (Markdown choices use it),
-and `font = "prose"` sets text in the proportional font.
+These fields are for the window only:
+
+| Field | |
+|---|---|
+| `rounded`, `shadow` | Floats as boxes with rounded corners and a soft shadow |
+| `badge` | The style's background as a small box with rounded corners, like a key cap (motion hints and buttons use it) |
+| `hover` | Light up what's under the mouse (buttons, fields, choices, tabs) |
+| `checkbox = "empty"` or `"checked"` | A checkbox over the text (todo boxes use it) |
+| `checkbox = "choice"` or `"chosen"` | A round button (Markdown choices use it) |
+| `font = "prose"` | Text in the proportional font |
 
 `#rrggbb` colors go out as they are when the terminal says it shows 24-bit
 color (`COLORTERM=truecolor`, as most do), and as the nearest of 256 colors
@@ -2595,13 +2647,15 @@ Greed has grammars built in for Rust, Nix, Bash, Python, Go, JavaScript,
 TypeScript, C, Luau, JSON, TOML, YAML and Markdown. For C++, C#, Java,
 Ruby, Scala, Haskell, OCaml, Julia, HTML, CSS and HCL (Terraform and
 OpenTofu, whose language servers `terraform-ls` and `tofu-ls` start when
-installed) it downloads the grammar
-the first time you open a file in that language, checks it against a
-checksum Greed knows, and keeps it in `~/.cache/greed/grammars`.
-`:health` shows which languages are built in, which download, and which
-have no grammar. `:grammar-fetch ruby` downloads one ahead of time, say
-before going offline, and `greed.option.set("grammar-download", false)`
-turns downloading off.
+installed) it downloads the grammar the first time you open a file in that
+language, checks it against a checksum Greed knows, and keeps it in
+`~/.cache/greed/grammars`.
+
+| | |
+|---|---|
+| `:health` | Which languages are built in, which download, and which have no grammar |
+| `:grammar-fetch ruby` | Download one ahead of time, say before going offline |
+| `greed.option.set("grammar-download", false)` | Turn downloading off |
 
 What gets highlighted, and what counts as a function for `m i f`, comes
 from tree-sitter queries: files named `queries/LANGUAGE/KIND.scm`, where

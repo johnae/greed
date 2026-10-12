@@ -2,11 +2,10 @@
 
 `core.ui` draws an interface into a buffer as text and marks. A plugin
 describes what to show for its state, and `core.ui` lays it out for the
-view's width and changes only the lines that changed. Because the result
-is text, search, copy, `y`, an agent's `read` and every key you already
-know work on it, in the terminal and in the window alike. The picker,
-completion, the command line, the undo tree and the agent's chat are built
-with it.
+view's width and changes only the lines that changed. The result is text,
+so search, copy, `y`, an agent's `read` and the usual keys work on it, in
+the terminal and in the window. The picker, completion, the command line,
+the undo tree and the agent's chat are built with it.
 
 ## A first view
 

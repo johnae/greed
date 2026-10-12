@@ -8,8 +8,8 @@ Knowing where the line is tells you what you can change from a plugin
 
 If it can be written in Luau, it is. The core holds what needs speed,
 threads or the operating system, and offers it to Luau as small, general
-functions. Everything you see and use is built from those functions, the
-same way any plugin would build it.
+functions. Everything you see is built from those functions, as any plugin
+would build it.
 
 In Luau:
 
@@ -58,9 +58,8 @@ Because the session owns the state, a terminal can detach and reattach
 without losing anything, and `greed ssh` attaches a terminal on one machine
 to a session on another. Any number of clients can be attached at once,
 each with its own cursors, focus, mode and screen size; the server draws a
-frame for each. A client says which protocol it speaks when it
-attaches, and the session refuses clients it can't talk to instead of
-misreading them.
+frame for each. A client says which protocol it speaks when it attaches,
+and the session refuses clients it can't talk to.
 
 The editor acts for one client at a time, and every command, key and event
 handler knows which. Clients that follow share one layout of projects,
@@ -101,14 +100,14 @@ callbacks, and the editor keeps responding meanwhile.
 Agents see the same editor state you do, and their edits still go
 through you: they arrive as proposals in the buffer that you accept or
 reject, or, for Greed's own agent, ask first with the change shown as a
-diff, unless you allowed that kind of change for the session. When they extend Greed,
-their plugins go through the same type checking and tests as any other, and
-you review them before they load.
+diff, unless you allowed that kind of change for the session. Plugins they
+write go through the same type checking and tests as any other, and you
+review them before they load.
 
 ## Performance budgets
 
-How fast Greed is gets checked like everything else: `cargo test` runs a
-set of budgets, each a measurement with a limit it must stay under.
+`cargo test` runs a set of budgets, each a measurement with a limit it
+must stay under:
 
 - Starting with every default plugin, to the first frame, on an empty
   file and on a 10,000 line Rust file.

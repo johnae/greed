@@ -3,8 +3,7 @@
 A board is a page of live shell commands, saved by name: pods that
 aren't running, the disks filling up, the last deploys. Each command is a
 card showing what it prints now. Cards sit side by side as far as the
-window is wide and go on down the page, so a board scrolls like any other
-buffer however many it has.
+window is wide and go on down the page, which scrolls like any buffer.
 
 [![A board of live charts: load average, memory used and restarts by pod](https://github.com/johnae/greed/releases/download/media/board.png)](https://github.com/johnae/greed/releases/download/media/board.mp4)
 
@@ -37,9 +36,9 @@ project's root keeps it.
 
 ## The file
 
-A board is Markdown, so it can go in git and be read anywhere. Its `#`
-heading is its title, `##` headings are its sections, and every shell code
-block is a card; the rest is there to read in the file and isn't shown:
+A board is a Markdown file. Its `#` heading is its title, `##` headings
+are its sections, and every shell code block is a card; other text stays
+in the file and isn't shown:
 
 ````markdown
 # ops
@@ -59,10 +58,10 @@ A card's language is `shell`, as for a [`shell` block](using.md#runnable-code-bl
 anywhere: it runs in the Greed shell. `sh`, `bash`, `zsh`, `fish`, `nu`
 and `console` blocks are cards too, and run the same way. After the language:
 
-- `every=SECONDS` runs it again that often; `live` alone is every two
-  seconds. Without either it runs once, and again when the board does. A
-  command that keeps printing, like `kubectl get pods -w`, stays live by
-  itself. It's the board's own `watch`: the command needs none.
+- `every=SECONDS` runs it again that often (the board's own `watch`, so
+  the command needs none); `live` alone is every two seconds. Without
+  either it runs once, and again when the board does. A command that
+  keeps printing, like `kubectl get pods -w`, stays live by itself.
 - `title=NAME` names the card, which is its command otherwise.
 - `height=LINES` is how many lines of it show (10); past that the card
   says how many more there are.
@@ -82,10 +81,9 @@ Cards are at least `board-card-width` columns wide (50), so a window of
 starts a row of its own, and a row is as tall as its tallest card. What's
 wider than a card is cut at its edge: `enter` shows all of it.
 
-For the same layout in any window, give the board its number of columns
-in front matter at the top of its file. With two, a card is half the
-row, and `wide` (or `span=2`) the whole of it; a window too narrow for
-two shows one.
+For the same layout in any window, set `columns` in front matter. With
+two, a card is half the row and `wide` (or `span=2`) the whole of it; a
+window too narrow for two shows one.
 
 ````markdown
 ---

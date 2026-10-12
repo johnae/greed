@@ -1,22 +1,26 @@
 # Greed
 
-Greed (Get, Reflect, Eval, Edit, Delegate) is an execution environment
-with a good editor built in, which you use in a terminal or a window, on
-your machine or on the one where the work runs. It has a small Rust core
-and everything else in Luau plugins you can read, change or replace while
-it runs. You edit in the Vim, Helix or VS Code style, modal or without
-modes, and switch with `:style`. Agents run inside it, Greed's own with
-the model you choose or any ACP agent, or use it from outside through MCP
-and the shell (and Claude Code's `/ide`), and propose edits you review in
-the buffer.
+Greed is a modal text editor with Helix, Vim and VS Code keys, a shell,
+terminals and agent support. It runs in a terminal or a window, locally or
+over ssh. The core is a small Rust program; everything else is Luau
+plugins you can read, change or replace while it runs.
 
-New to Greed? Start it, answer its few questions, and run `:tutor`: it
-teaches your style's keys with lines to practise on, then shows you around.
+- You edit in the Vim, Helix or VS Code style, and `:style` switches.
+- Agents run inside it (Greed's own with the model you choose, or any ACP
+  agent) or use it from outside through MCP, the shell and Claude Code's
+  `/ide`. They propose edits you review in the buffer.
 
-This manual comes with Greed too, as the version you run has it:
-`space h d` goes to a page or heading (`:docs boards` straight to one),
-and `space h /` searches it. Pages open as documents, their links
-followed with `enter`; `esc` shows the Markdown.
+To start, run `greed`, answer its few questions, then `:tutor`: it teaches
+your style's keys with lines to practise on, then shows you around.
+
+This manual comes with Greed, matching the version you run:
+
+| Keys | |
+|---|---|
+| `space h d` | Go to a page or heading (`:docs boards` goes straight to one) |
+| `space h /` | Search the manual |
+
+Pages open as documents: `enter` follows a link, `esc` shows the Markdown.
 
 - [Using Greed](using.md): editing, searching, files, sessions,
   configuration.

@@ -1,12 +1,12 @@
 # Editing styles
 
-Greed comes with three ways to edit, two with modes and one without, and
-you can switch between them while it runs. They're equals: each is a
-plugin with its own modes, written against the same API, and each follows
-the editor it comes from closely, so what your hands know works here:
-Helix's selections and motions, Vim's operators, text objects, registers,
-macros and visual modes, the usual shortcuts of modeless editors. Where
-one still differs from the original, its section below says so.
+Greed has three editing styles, two with modes and one without, and you
+can switch between them while it runs. Each is a plugin with its own
+modes, written against the same API, and follows the editor it comes
+from: Helix's selections and motions, Vim's operators, text objects,
+registers, macros and visual modes, the usual shortcuts of modeless
+editors. Where one still differs from the original, its section below
+says so.
 
 | Style | How it works | Like |
 |---|---|---|
@@ -32,13 +32,18 @@ To start in a style every time, set it in `~/.config/greed/init.luau`
 require("@greed").option.set("editing-style", "vim")
 ```
 
-The keys that aren't about editing live in the leader, which every style
-opens its own way: `space` in Helix and Vim, `ctrl-space` in the vscode style,
-where typing a letter inserts it. So `space f` finds files and `space /`
-searches the project, and in the vscode style `ctrl-space f` and `ctrl-space /`
-do the same; after the leader a hint lists what can follow. Helix and Vim
-also share `:` for commands, `g d` to go to a definition and `] d` to the
-next problem. Prompts and pickers work the same in all three.
+The keys that aren't about editing live in the leader: `space` in Helix
+and Vim, `ctrl-space` in the vscode style (where typing a letter inserts
+it). After the leader a hint lists what can follow.
+
+| Helix, Vim | vscode style | |
+|---|---|---|
+| `space f` | `ctrl-space f` | Find files |
+| `space /` | `ctrl-space /` | Search the project |
+
+Helix and Vim also share `:` for commands, `g d` to go to a definition
+and `] d` to the next problem. Prompts and pickers work the same in all
+three.
 
 ## Keys in every style
 
@@ -78,23 +83,21 @@ character it was on, and `d` on a bare cursor deletes that character.
 
 With `:set motion-hints true` (off by default), a word motion (`w` `b`
 `e` and their WORD forms) numbers the next nine places doing it again
-would take you, and typing a number goes there in one key: `w 3` instead
-of `w w w w`. In select mode it extends the selection. Right after such a
-motion a digit is then a number to jump to rather than the start of a
-count; any other key drops the numbers. Vim's style has the same option
-for `w b e W B E g e g E`, in normal and visual mode. The nearest three
-numbers use the theme's `ui.motion.hint` style and the rest the quieter
-`ui.motion.hint.far`; in the window both are drawn as badges, like key caps.
-A number sits on the space beside its place when the place is a letter, so
-it hides none of the text.
+would take you, and typing a number goes there: `w 3` instead of
+`w w w w`. In select mode it extends the selection. Right after such a
+motion a digit is a number to jump to rather than the start of a count;
+any other key drops the numbers. Vim's style has the same option for
+`w b e W B E g e g E`, in normal and visual mode. The nearest three
+numbers use the theme's `ui.motion.hint` style and the rest
+`ui.motion.hint.far`; in the window both are drawn as badges, like key
+caps. A number sits on the space beside its place when the place is a
+letter, so it hides none of the text.
 
-Why it's here: you see what a command will act on before you run
-it, and many selections are part of the model rather than a separate
-feature. `s`, `S`, `C` and `alt-s` make selections, and every edit then
-happens at each one, which covers most of what macros and
-search-and-replace are used for. [Using Greed](using.md#editing) lists
-the keys. The style is the `helix` plugin, and its modes are `helix`,
-`helix-insert` and `helix-select`.
+You see what a command will act on before you run it. `s`, `S`, `C` and
+`alt-s` make selections, and every edit then happens at each one, which
+covers most of what macros and search-and-replace are used for.
+[Using Greed](using.md#editing) lists the keys. The style is the `helix`
+plugin, and its modes are `helix`, `helix-insert` and `helix-select`.
 
 ## Vim
 
@@ -129,7 +132,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `K`, `g r n` `g r a` `g r r` `g r i` `g r t`, `g O` | As in Neovim: hover, rename, code actions, references, implementations, type definition, symbols in the file |
 | `g s` | Label the words on screen and jump to the one you type |
 | `ctrl-n` | Select the word under the cursor, then add its next match each time, as vim-visual-multi does; `c` `d` `y` `i` `a` `I` `A` act on every selection, `ctrl-x` skips a match, `ctrl-p` drops the last; `esc` after typing keeps a cursor in each place, and `esc` then goes back to one |
-| `Z Z` `Z Q` | Save and close, close without saving; in a split, like `:wq` and `:q`, they close just that window |
+| `Z Z` `Z Q` | Save and close, close without saving; in a split, like `:wq` and `:q`, they close only that window |
 | `ctrl-^` | The file you were in before, like `:b#` |
 | `I` `A` in visual block mode | Type before or after the block on every line (`$` takes it to each line's end) |
 | `*` `#` | Search for the word under the cursor, forward or back |
@@ -146,11 +149,9 @@ character, and `v` starts a visual mode for selecting by hand.
 | `@` + a letter, `@ @` | Play a macro, play the last one again |
 | `"` + a letter | Use that register for the next yank, delete or paste; an uppercase letter appends; `"0` holds the last yank, `"1`–`"9` the last line deletes, `"-` a small one |
 
-Why it's here: Vim's keys are in a lot of people's hands, and switching
-editors shouldn't mean relearning them. It also shows how far a plugin can
-go: the Vim style is plain Luau against the same API any plugin uses, with
-its own modes (`vim`, `vim-insert`, `vim-visual`, `vim-visual-line`,
-`vim-visual-block`, `vim-replace`, `vim-multi`) beside Helix's.
+The Vim style is the `vim` plugin, plain Luau against the same API any
+plugin uses, with its own modes: `vim`, `vim-insert`, `vim-visual`,
+`vim-visual-line`, `vim-visual-block`, `vim-replace` and `vim-multi`.
 
 The unnamed register is the system clipboard, so `p` pastes what you
 copied in another program too; `"+` is the same and `"_` keeps nothing.
@@ -202,12 +203,11 @@ there is one, and the keys are the ones VS Code and most editors use.
 Keys with `ctrl-shift` need a terminal that reports them, such as one with
 the kitty keyboard protocol (kitty, WezTerm, foot, Ghostty).
 
-Why it's here: for people who don't want modes, or don't want them yet,
-and for the odd edit where modes get in the way. Everything else in Greed
-still works, through the leader, `ctrl-P` and the command line (`alt-x`).
-Completion comes up as you type; `ctrl-space` is the leader here. The
-style is the `vscode` plugin: VS Code's keys over core's editing without
-modes, which another modeless keymap can use the same way (see below).
+Everything else in Greed works through the leader (`ctrl-space`),
+`ctrl-P` and the command line (`alt-x`). Completion comes up as you type.
+The style is the `vscode` plugin: VS Code's keys over core's editing
+without modes, which another modeless keymap can use the same way (see
+below).
 
 ## Making your own
 
@@ -235,19 +235,23 @@ require("@core").style.define({
 })
 ```
 
-That's enough for `:style mine` to switch to it and for it to show in the
-`:style` list and the setup page. The leader opens with `space`, with the
-same hint after it; keys plugins bind for the command role (`:`, `g d`,
-`] d`) work in `mine`, and the typing keys every style shares (`enter`,
-`backspace`, the arrows, `esc` back to `mine`) in `mine-insert`. The file
-tree, pickers, help and other panels keep their keys in it. Completion,
-signature help and Markdown shown as written while typing follow the
-typing mode; a style without modes makes its own mode the typing one
-(`roles = { typing = "mine" }`). `repeat-change` (`.` in Helix and Vim)
-works in any style once bound: it types the keys of the last change again;
-`require("@core").commands.tag("no-repeat", { "my-undo" })` leaves out
-commands that shouldn't count as one. The `vim` plugin, which is the Vim
-style, is a full example to read.
+With that, `:style mine` switches to it, and it shows in the `:style`
+list and the setup page. What comes with it:
+
+- The leader opens with `space`, with the same hint after it.
+- Keys plugins bind for the command role (`:`, `g d`, `] d`) work in
+  `mine`, and the typing keys every style shares (`enter`, `backspace`,
+  the arrows, `esc` back to `mine`) in `mine-insert`.
+- The file tree, pickers, help and other panels keep their keys.
+- Completion, signature help and Markdown shown as written while typing
+  follow the typing mode. A style without modes makes its own mode the
+  typing one (`roles = { typing = "mine" }`).
+- `repeat-change` (`.` in Helix and Vim) works in any style once bound: it
+  types the keys of the last change again.
+  `require("@core").commands.tag("no-repeat", { "my-undo" })` leaves out
+  commands that shouldn't count as one.
+
+The `vim` plugin, which is the Vim style, is a full example to read.
 
 A style without modes, like a JetBrains keymap, is shorter still: bind
 its keys in its one mode, and core's editing without modes (the vscode

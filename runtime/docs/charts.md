@@ -1,12 +1,8 @@
 # Charts
 
-`| chart` turns any table into a chart: a command's output in the
+`| chart` turns a table into a chart: a command's output in the
 [shell](shell.md), a `shell` block in a note, or a card on a
-[board](boards.md). Run it again and again, with `watch` or `every=`, and
-the chart follows the numbers as they change; a page of those is a
-dashboard. In a Markdown file, a `<!-- chart: bar per_year -->` line under
-a table or a data block charts it, and follows it as it changes (see
-[Live values](using.md#live-values)).
+[board](boards.md).
 
 ```text
 ❯ kubectl top pods | chart
@@ -15,10 +11,16 @@ worker-5c6b7d8f9-abcde ███████████████████
 redis-0                █▊ 0.035
 ```
 
+Run it again with `watch` or `every=` and the chart follows the numbers as
+they change; a [board](boards.md) of those is a dashboard. In a Markdown
+file, a `<!-- chart: bar per_year -->` line under a table or a data block
+charts it and follows it as it changes (see [Live
+values](using.md#live-values)).
+
 In a terminal a chart is drawn in characters (braille for lines, eighth
-blocks for bars) so it shows everywhere. In the window, and in terminals
-that draw pictures (kitty, Ghostty, WezTerm, Konsole), it's drawn as a
-picture with smooth lines; `:set scene-drawing cells` keeps characters.
+blocks for bars). In the window, and in terminals that draw pictures
+(kitty, Ghostty, WezTerm, Konsole), it's drawn as a picture with smooth
+lines; `:set scene-drawing cells` keeps characters.
 
 ## Kinds of chart
 
@@ -79,9 +81,9 @@ because the rows have names (NAME): a bar each, of CPU(cores)
 
 There are three ways to get a chart over time.
 
-Running it again, in a watch or a block or card with `every=SECONDS`,
-each run adds a point to every line, so the chart is of how the numbers
-went. Each row becomes a line, named by its name column:
+Run it again, in a watch or a block or card with `every=SECONDS`: each
+run adds a point to every line. Each row becomes a line, named by its
+name column:
 
 ```text
 ❯ watch -n 2 kubectl top pods | chart
@@ -92,8 +94,8 @@ row, like the load average, gets a line a number column instead. Rows
 with the same name in one run add up to one point, so a program with ten
 processes is one line of their total.
 
-A table with a time column is drawn along it, a line a number
-column. When a name column's names come again, as in samples of
+Chart a table with a time column: it's drawn along that column, a line a
+number column. When a name column's names come again, as in samples of
 several hosts, it's a line for each name, or say which column with `by`:
 
 ```text
@@ -108,12 +110,13 @@ time,host,cpu
 2026-10-12T07:27:40Z,db,53
 ```
 
-From Prometheus over a range: `prom QUERY --range 3h` gives a row a time
-and a column a series, a line each (see below).
+Ask Prometheus for a range: `prom QUERY --range 3h` gives a row a time
+and a column a series, a line each (see [Prometheus](#prometheus)).
 
 ## A line for each thing
 
-Lines are the dimensions you split by. A few that work as written:
+Each line is one thing in the table: a pod, a node, a program, a host.
+These work as written:
 
 ```text
 ❯ watch -n 2 kubectl top pods | chart                 a line a pod, of its CPU
@@ -202,8 +205,8 @@ ending in `| chart` keeps its chart up to date where it is, until
 
 Many commands print differently on the two, or take other flags: `free`
 is Linux's, `ps -o comm` is a cut-off path on a Mac, `df -h` says `Use%`
-on Linux and `Capacity` on a Mac. A board meant for both can use the
-forms both agree on. This one works as it is on both:
+on Linux and `Capacity` on a Mac. This board uses forms both agree on and
+works as it is on both:
 
 ````markdown
 ---

@@ -26,11 +26,10 @@ they start with `ctrl-space` instead.
 
 ## Binding keys
 
-Bindings go in `~/.config/greed/init.luau`. Most commands you reach for
-by name, like finding a file or searching the project, live in the
-leader: a layer every editing style opens its own way, `space` in Helix
-and Vim, `ctrl-space` in the vscode style. Bind there and the key works in
-whichever style you use:
+Bindings go in `~/.config/greed/init.luau`. Commands like finding a file
+or searching the project live in the leader, a layer every editing style
+opens its own way (`space` in Helix and Vim, `ctrl-space` in the vscode
+style). Bind there and the key works in whichever style you use:
 
 ```luau
 local greed = require("@greed")
@@ -43,19 +42,23 @@ greed.keymap.bind({ layer = "leader" }, {
 })
 ```
 
-After the leader's keys, a hint lists what can follow, the same in every
-style. Check a key is free first (`space h k`, or the hint): a binding
-replaces every longer sequence that starts with the same keys, so binding
-the leader's `w` alone would take away `space w v` and the other window
-keys. `space h k` shows what a key hides, under the command it runs.
+Check a key is free first (`space h k`, or the hint after the leader): a
+binding replaces every longer sequence that starts with the same keys, so
+binding the leader's `w` alone would take away `space w v` and the other
+window keys. `space h k` shows what a key hides, under the command it
+runs.
 
 Other keys belong to a role. Each style says which of its modes plays
-each one: `command` is where you move around and run commands (Helix's
-and Vim's normal mode; the vscode style has none), `typing` is where what you
-type goes in (insert mode, or the vscode style's one mode), and `selecting` is where
-moving selects (Helix's select mode, Vim's visual mode). Bind for a role
-and the key works in every style's mode for it, including styles a
-plugin adds later; add `style` for one style only:
+each one:
+
+| Role | For | Helix | Vim | vscode |
+|---|---|---|---|---|
+| `command` | Moving around and running commands | normal mode | normal mode | none |
+| `typing` | What you type goes in | insert mode | insert mode | its one mode |
+| `selecting` | Moving selects | select mode | visual mode | none |
+
+Bind for a role and the key works in every style's mode for it,
+including styles a plugin adds later; add `style` for one style only:
 
 ```luau
 -- In every style's typing mode: insert mode in Helix and Vim, vscode's mode
@@ -75,10 +78,10 @@ greed.keymap.bind("helix", { ["g q"] = "quit-all" })
 ```
 
 The mode names depend on your editing style: `helix`, `helix-insert` and
-`helix-select` are the Helix style's, the Vim style's are `vim`,
-`vim-insert` and `vim-visual`, and the vscode style has one, `vscode`. The status
-line shows them as you'd expect (NORMAL, INSERT, VISUAL); all of them are
-listed under [Modes and layers](#modes-and-layers).
+`helix-select` for Helix, `vim`, `vim-insert` and `vim-visual` for Vim,
+and `vscode` for the vscode style. The status line shows them as NORMAL,
+INSERT, VISUAL and so on; [Modes and layers](#modes-and-layers) lists
+them all.
 
 A binding maps a key, or a sequence of keys separated by spaces, to a
 command name. When the same keys are bound in several places, the more

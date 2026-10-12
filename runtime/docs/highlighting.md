@@ -2,14 +2,14 @@
 
 Greed highlights code with tree-sitter. A language's `highlights` query
 gives pieces of the text names like `keyword.control.return` or
-`markup.heading.1`, and the theme gives each name a look. The names are
+`markup.heading.1`, and the theme gives each name a style. The names are
 the same in every language, so one theme entry styles keywords everywhere.
 Files are parsed again in the background after each edit; until that's
-done, the highlights from before move along with the text you typed.
+done, the highlights from before move with the text you typed.
 
 A name falls back to its parent when the theme has no entry for it:
 `keyword.control.return` uses `keyword.control`, then `keyword`. A theme
-can be as short as the top-level names, or style any of the finer ones.
+can style only the top-level names, or any of the finer ones.
 
 ```luau
 require("@greed").theme.set({
@@ -19,10 +19,10 @@ require("@greed").theme.set({
 })
 ```
 
-These are the names Greed's queries and themes use, and the ones to use in
-queries you write. They're the names Helix uses, so its queries work as
-they are. A theme entry can also be set for one kind of client only, with
-`tui` and `gui` parts:
+The tables below list the names Greed's queries and themes use; use them
+in queries you write. They're Helix's names, so its queries work as they
+are. A theme entry can also be set for one kind of client only, with `tui`
+and `gui` parts:
 
 ```luau
 require("@greed").theme.set({

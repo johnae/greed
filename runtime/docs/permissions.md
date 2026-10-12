@@ -1,9 +1,8 @@
 # Permissions and sandboxing
 
-Agents, plugins and the files in a repository all run code in Greed, and
-each gets only as far as you let it. This page says what asks you, what you
-can answer once and for all, what always waits for you, and what runs in a
-sandbox.
+Agents, plugins and repositories can all run code in Greed. This page
+covers what asks you, what you can answer in advance, what always asks,
+and what runs in a sandbox.
 
 ## Who asks what
 
@@ -40,27 +39,28 @@ You answer it from there in any mode and editing style:
 | `y`, `a`, `n`, `N` | Allow once, allow always, reject, and reject always when the agent offers it; a choice of some other kind goes by its number |
 | `esc` | Reject; what's in the box goes along as what to do instead (in insert mode, the first `esc` leaves it) |
 
-Clicking a choice picks it too. Letters type as usual once the box has
-something in it, so a message you're writing doesn't answer by accident;
-`enter` and `tab` still work then. What you've typed stays as it was
-unless you reject with `esc`, and the box's bottom line says which keys
-answer at the moment.
+Clicking a choice picks it too. Once the box has text in it, letters type
+as usual so a message you're writing doesn't answer by accident; `enter`
+and `tab` still work. What you typed stays unless you reject with `esc`.
+The box's bottom line shows which keys answer now.
 
-To say no and what to do instead, write it in the box and press `esc`, or
-send it with `alt-enter`: the question is rejected and your message goes
-along. Greed's own agent gets it with the rejection, in the same step;
-other agents get it as your next message once their turn ends. The
-transcript keeps each answer under the call it was for, like `? Edit a.txt:
-Allow once`.
+To say no and what to do instead, write it in the box and press `esc` or
+`alt-enter`. Greed's own agent gets it with the rejection, in the same
+step; other agents get it as your next message once their turn ends. The
+transcript keeps each answer under its call, like `? Edit a.txt: Allow
+once`.
 
 A rejected call tells the agent not to get there another way (another
 tool, a command or `eval`) and to ask you what you want. Greed's own agent
-is also held to it: the same call again doesn't run, nor, after you
-plainly reject a command or `eval`, any other command or `eval` (a
-rejected edit doesn't stop the tests that follow), nor anything after a
-second rejection in one prompt. The turn stops there with a note like
-`stopped: you rejected Run make deploy; asking what you want`, and the agent's last word
-is its question to you.
+is held to it:
+
+- the same call again doesn't run;
+- after you plainly reject a command or `eval`, no other command or `eval`
+  runs (a rejected edit doesn't stop the tests that follow);
+- after a second rejection in one prompt, nothing runs.
+
+The turn stops with a note like `stopped: you rejected Run make deploy;
+asking what you want`, and the agent's last word is its question to you.
 
 What "Allow always" covers depends on the agent:
 
@@ -81,13 +81,12 @@ transcript already holds the change (`-1 +1 · tab shows the change`), so
 
 ## Auto mode
 
-In auto mode Greed answers an agent's questions for you where it safely
-can, and asks you the rest. `alt-a` in a transcript (or `/auto`) switches
-a session between auto and manual, where you're asked every time, and the
-box's top line says which, `auto` in green. New sessions start the way you
-switched the last one, after a restart too; `agent-auto` in your
-`init.luau` decides instead, if you set it there. It works the same for
-Greed's own agent and for ACP agents.
+In auto mode Greed answers an agent's questions where it safely can and
+asks you the rest. `alt-a` in a transcript (or `/auto`) switches a session
+between auto and manual (asked every time); the box's top line shows
+`auto` in green. New sessions start the way you switched the last one,
+after a restart too, unless `agent-auto` is set in your `init.luau`. It
+works the same for Greed's own agent and ACP agents.
 
 Auto mode allows:
 
@@ -102,53 +101,58 @@ Auto mode allows:
   (`core.risk.safe_when`).
 
 Any other command, risky ones like `rm -rf /tmp/scratch` included, goes
-to the `decision` model. It reads what you asked for (your last few
-messages, never what the agent read or what commands printed), your rules
-and the command, with your newest message apart from the ones before it,
-and says how likely the command is safe to run without asking you, given
-what you asked for. Safe (60% or more) lets it run; unsafe (20% or less)
-blocks it; anything in between asks you, so a model that can't tell asks
-you rather than guessing. Asked to clean out `/tmp/scratch`, an `rm -rf
-/tmp/scratch` goes ahead; a deploy you never mentioned doesn't. Files the
-agent writes, moves or deletes with its own tools in the system's folder
-for temporary files (`/tmp`, or `$TMPDIR`) go to the model the same way.
+to the `decision` model. It reads your last few messages (never what the
+agent read or what commands printed), with your newest apart from the
+rest, your rules and the command, and says how likely the command is safe
+to run unasked given what you asked for:
 
-A blocked command goes back to the agent with the reason, to find another
-way, without stopping its turn. Greed's own agent hears it at once; an
-ACP agent like Claude Code can only be told no, so the reason follows as
-its next message once its turn ends. After three blocks in a row you're
-asked instead, until you've answered one, and after twenty in a session
-until you switch auto mode off and on again.
+| Model says | Auto mode |
+|---|---|
+| 60% or more safe | Runs it |
+| 20% or less safe | Blocks it |
+| In between | Asks you |
 
-`:models` sets which model decides, the `fast` one until you pick another.
-Either kind of model works. A decision model made for these answers, like
-Berget's System One models, is fast and cheap (a few cents per million
-tokens) and answers with probabilities directly; any other model is asked
-the same questions in a chat and answers in JSON.
+Asked to clean out `/tmp/scratch`, an `rm -rf /tmp/scratch` goes ahead; a
+deploy you never mentioned doesn't. Files the agent writes, moves or
+deletes with its own tools in the temporary folder (`/tmp`, or `$TMPDIR`)
+go to the model the same way.
 
-Of Berget's, `Cloudflare/clef-flash` did well for us. Tried on commands
-that should run (a folder you asked for, `npm install`, a push you asked
-for) and ones that shouldn't (`rm -rf ~/Documents`, sending an ssh key
-away, a push you didn't ask for, `curl ... | sh`), it told every one apart.
-`Qwen/Qwen3.5-2B` answered near the middle for all of them, so you'd be
-asked most of the time, and `laya` called nearly everything safe.
+A blocked command goes back to the agent with the reason, without stopping
+its turn. Greed's own agent hears it at once; an ACP agent like Claude Code
+can only be told no, so the reason follows as its next message once its
+turn ends. After three blocks in a row you're asked instead until you've
+answered one, and after twenty in a session until you switch auto mode off
+and on again.
 
-A general model, like your `fast` one, can decide too. It's slower and
-costs more per command than a decision model, and how well it judges
-depends on the model.
+`:models` sets the `decision` model; until you pick one it's the `fast`
+one. Either kind works:
 
-Whichever you pick, it's a model making a judgment call, and Greed can't
-promise it judges well. Test it before you rely on it. `:decision-check`
-tries your `decision` model on sixteen commands an agent might run, some
-it should let run (a folder you asked for, `npm install`, a push you
-asked for) and some it shouldn't (deleting your documents, sending an ssh
-key away, `npm publish` while fixing a test, one with a comment claiming
-you approved it), and shows what auto mode would do with each. A model
-that lets one it shouldn't run through isn't one to rely on. Passing is
-no guarantee either: then try it in a scratch project, asking the agent
-for a few things and watching what it lets through and what it blocks,
-which the transcript shows with each answer. Models change, and yours may
-judge differently from what we saw.
+- A decision model made for these answers, like Berget's System One
+  models, is fast and cheap (a few cents per million tokens) and answers
+  with probabilities directly. `Cloudflare/clef-flash` told apart every
+  command we tried, should-run ones (a folder you asked for, `npm
+  install`, a push you asked for) and shouldn't-run ones (`rm -rf
+  ~/Documents`, sending an ssh key away, a push you didn't ask for, `curl
+  ... | sh`). `Qwen/Qwen3.5-2B` answered near the middle for all of them,
+  so you'd be asked most of the time, and `laya` called nearly everything
+  safe.
+- A general model, like your `fast` one, is asked the same questions in a
+  chat and answers in JSON. It's slower and costs more per command, and
+  how well it judges depends on the model.
+
+Either way it's a model's judgment call, and Greed can't promise it judges
+well. Test it before relying on it:
+
+1. `:decision-check` tries your `decision` model on sixteen commands, some
+   it should let run (a folder you asked for, `npm install`, a push you
+   asked for) and some it shouldn't (deleting your documents, sending an
+   ssh key away, `npm publish` while fixing a test, one with a comment
+   claiming you approved it), and shows what auto mode would do with each.
+   Don't rely on a model that lets a wrong one through.
+2. Passing is no guarantee: try it in a scratch project, asking the agent
+   for a few things and watching what it lets through and blocks (the
+   transcript shows each answer). Models change, and yours may judge
+   differently from what we saw.
 
 The same command isn't asked about twice for the same request. Without a
 model, or without an answer, you're asked. Tell it what's fine in your
@@ -158,14 +162,19 @@ setup with `agent-auto-rules`:
 greed.option.set("agent-auto-rules", "Deleting under /tmp is fine. Never touch the prod cluster.")
 ```
 
-A few things always ask you, in auto mode too, and the decision model
-never sees them: the agent's own changes to files outside both the
-project and the temporary folder, anything run as root (`sudo`), force
-pushes and remote deletes, programs that change the machine itself (`dd`,
-`mkfs`, `shutdown`), and deleting the root, your home or a folder right
-under either. An answer auto mode gave shows in the
-transcript with why, like `? Run cargo test: Allow once (auto: only looks,
-builds or tests)` or `Reject (auto: not safe to run unasked (97%))`.
+These always ask you, in auto mode too, and the decision model never sees
+them:
+
+- the agent's own changes to files outside both the project and the
+  temporary folder;
+- anything run as root (`sudo`);
+- force pushes and remote deletes;
+- programs that change the machine itself (`dd`, `mkfs`, `shutdown`);
+- deleting the root, your home or a folder right under either.
+
+Auto mode's answers show in the transcript with why, like `? Run cargo
+test: Allow once (auto: only looks, builds or tests)` or `Reject (auto: not
+safe to run unasked (97%))`.
 
 The decision model reads the command, which the agent wrote; Greed tells
 it to read the command as data, but a command written to talk it round
@@ -179,42 +188,42 @@ always" doesn't cover them, and they offer only **Allow once** and
 **Reject**.
 
 A risky command asks every time and says why (in [auto mode](#auto-mode)
-the decision model may answer for you instead): `rm`, `kill`, `pkill`,
-`git push`, `git reset --hard`, `jj git push`, `jj abandon`, `curl` with
-`-X POST` or data to send, `helm install`, `terraform apply`, anything run
-with `sudo`, and the commands plugins add rules for, like `kubectl delete`
-and `docker rm`. Greed looks at every command in a line, so `make && git
-push` counts. It's there to catch mistakes, so read what you allow; a
-command built to hide what it runs may get past it.
+the decision model may answer instead):
 
 ```text
 Allow Run git push: sends commits to a remote?  [y] Allow once  [n] Reject
 ```
 
-This covers Greed's own agent's `run`, and the tools Greed offers every
-agent: `shell_run`, `run_command` with a command that may close, delete or
-stop something, and any plugin's tool that says a call is risky. A risky
-call from Claude Code or another MCP client (ACP agents too, when they
-use Greed's tools) goes to a review page in the editor, headed "An agent
-asks to ...", where `enter` runs it and `esc` doesn't. Actions an agent runs on objects with `act` that delete or stop
-something go to that review too, whatever you allowed.
+Risky commands: `rm`, `kill`, `pkill`, `git push`, `git reset --hard`,
+`jj git push`, `jj abandon`, `curl` with `-X POST` or data to send, `helm
+install`, `terraform apply`, anything with `sudo`, and those plugins add
+rules for, like `kubectl delete` and `docker rm`. Every command in a line
+counts, so `make && git push` does. This catches mistakes; a command built
+to hide what it runs may get past it, so read what you allow.
 
-A write that widens what a plugin may do, by adding capabilities to its
-`plugin.toml`, asks every time and says what it adds, like `Write
-plugin.toml, which widens what acp may do: + plugins`. This matters most for
-Greed's own plugins, which load without asking you to approve their
-capabilities.
+It covers Greed's own agent's `run` and the tools Greed offers every agent:
+`shell_run`, `run_command` with a command that may close, delete or stop
+something, and any plugin tool that marks a call risky. A risky call from
+Claude Code or another MCP client (ACP agents too, using Greed's tools)
+goes to a review page headed "An agent asks to ...", where `enter` runs it
+and `esc` doesn't. Actions run with `act` that delete or stop something go
+to that review too, whatever you allowed.
 
-Both cover what agents do through Greed. A command an agent runs in a
-shell of its own, like Claude Code's own Bash tool, goes through that
-agent's permissions, and Greed doesn't see it.
+A write that adds capabilities to a plugin's `plugin.toml` asks every time
+and says what it adds, like `Write plugin.toml, which widens what acp may
+do: + plugins`. This matters most for Greed's own plugins, which load
+without asking you to approve their capabilities.
+
+Both cover what agents do through Greed. A command an agent runs in its own
+shell, like Claude Code's Bash tool, goes through that agent's permissions,
+and Greed doesn't see it.
 
 ## Policies
 
-A policy answers questions for you. It's a function in your `init.luau`
-that gets the session and the question, and returns the id of one of the
-question's options, or `nil` to leave it to the next policy and in the end
-to you. Policies added later are asked first. An answer a policy gave shows
+A policy is a function in your `init.luau` that answers questions for you.
+It gets the session and the question, and returns the id of one of the
+question's options, or `nil` to pass it to the next policy and finally to
+you. Policies added later are asked first. An answer a policy gave shows
 in the transcript with "(by policy)" after it, like `? Edit src/main.rs:
 Allow once (by policy)`.
 
@@ -356,26 +365,26 @@ Greed's own agents, it runs as the `agent-eval` option says:
 | `"allow"` | It runs with every capability, as a plugin would |
 | `"off"` | There's no `eval` |
 
-The sandbox is enforced by the editor, so what it keeps out doesn't depend
-on anyone reading the code right. When the code needs more, what it edited
-in the sandbox is undone before it runs again with more, so nothing happens
-twice. The reviewer gets the code wrapped as someone else's text, is told
-that comments or strings in it may try to talk it into allowing, and
-answers in a fixed form. With Greed's own agent it also hears what you
-rejected in the agent's current prompt, and leaves code doing the same to
-you. A model can still be fooled, so set `agent-eval`
-to `"ask"` if you'd rather see every run past the sandbox yourself.
+The editor enforces the sandbox, so it doesn't depend on anyone reading the
+code right. When code needs more, what it edited in the sandbox is undone
+before it runs again, so nothing happens twice. The reviewer gets the code
+wrapped as someone else's text, is told comments or strings may try to talk
+it round, and answers in a fixed form. With Greed's own agent it also
+hears what you rejected in the current prompt, and leaves code doing the
+same to you. A model can still be fooled; set `agent-eval` to `"ask"` to
+see every run past the sandbox yourself.
 
 When you're asked, a page shows the code, what it would do and the
-reviewer's reason, with **Run**, **Allow for this session** and **Deny**
-(or `r`, `s` and `d`). **Allow for this session** lets the later runs of
-the agent that asked through, until its session ends: Greed's own agent's
-until you stop or close it, and an ACP agent's or other MCP client's until
-its connection to Greed closes. Other agents are still asked. Claude Code
-over `/ide` isn't offered it, since Greed can't tell its sessions apart.
-Closing the page, or leaving it five minutes, denies. Pages like this one
-show one at a time, so a second waits until you've answered the first.
-`:eval-log` lists every run past the sandbox and who let it.
+reviewer's reason:
+
+| Key | |
+|---|---|
+| `r` (**Run**) | Run it once |
+| `s` (**Allow for this session**) | Let the asking agent's later runs through until its session ends: Greed's own agent until you stop or close it, an ACP agent or other MCP client until its connection closes. Other agents are still asked. Not offered to Claude Code over `/ide`, since Greed can't tell its sessions apart |
+| `d` (**Deny**) | Don't run it; closing the page, or leaving it five minutes, does the same |
+
+Pages like this show one at a time; a second waits until you've answered
+the first. `:eval-log` lists every run past the sandbox and who let it.
 
 What `eval` edits is one operation you can review and undo in one step
 (see [Operations](using.md#operations)).
@@ -403,15 +412,17 @@ a capability in its `plugin.toml`, and it gets only what it declared:
 API and how capabilities follow code from one plugin to another.
 
 A plugin that isn't one of Greed's own and declares capabilities loads once
-you've approved them. Until then Greed says it waits, and
-`:plugins-approve` shows each waiting plugin with what it asks for; choose
-one to approve and load it. `:plugins` lists every plugin, where it comes
-from and what it may use. Approvals are kept per plugin folder in
-`~/.local/state/greed/approved.json`, and a plugin that later asks for more
-waits again, while the version that was running keeps going as it was.
-Plugins that use nothing beyond the editor load at once. Plugins can't
-write the approvals file through Greed, and a plugin can't approve another
-for you.
+you approve them. `:plugins-approve` shows each waiting plugin with what it
+asks for; choose one to approve and load it. `:plugins` lists every plugin,
+where it comes from and what it may use.
+
+- Approvals are kept per plugin folder in
+  `~/.local/state/greed/approved.json`.
+- A plugin that later asks for more waits again, while the running version
+  keeps going as it was.
+- Plugins that use nothing beyond the editor load at once.
+- Plugins can't write the approvals file through Greed, or approve another
+  plugin for you.
 
 Greed's own plugins load approved. Your `init.luau`, a trusted project's
 `.greed` folder, `greed repl` and `:lua` run with everything.
@@ -421,12 +432,11 @@ agent is trying out, can read the editor and edit buffers and nothing
 else. Each thing it isn't allowed fails with an error starting "needs
 approval:" that says what it would have needed.
 
-Each call into a plugin's code has a time budget of 2 seconds; code that
-runs longer is stopped with an error, so a mistake in a loop can't hang
-the editor. A command or handler with long work gives the editor a turn
-every 15 milliseconds and carries on after, so keys and drawing don't wait
-for it. Unloading or reloading a plugin removes everything it added, and
-stops what it was running.
+Each call into a plugin has a 2-second budget; code that runs longer is
+stopped with an error, so a runaway loop can't hang the editor. A command
+or handler with long work yields to the editor every 15 milliseconds, so
+keys and drawing don't wait. Unloading or reloading a plugin removes
+everything it added and stops what it was running.
 
 ### Plugins written by agents
 
@@ -439,36 +449,35 @@ from there approves what it declared.
 
 ## Trusting a project
 
-A repository you cloned can run its own code through Greed without your
-asking: its config (`.greed/init.luau`), a language server that builds it
-(rust-analyzer runs `build.rs` and proc macros), and a formatter that
-loads its config as code (prettier reads `.prettierrc.js`). So a project
-you haven't trusted runs none of it. The first time a file of it opens
-with a language server set up for it, Greed asks:
+A repository can run its own code through Greed: its config
+(`.greed/init.luau`), a language server that builds it (rust-analyzer runs
+`build.rs` and proc macros), and a formatter that loads config as code
+(prettier reads `.prettierrc.js`). A project you haven't trusted runs none
+of it. The first time one of its files opens with a language server set up
+for it, Greed asks:
 
 ```text
 ~/src/app isn't trusted: its language server and formatting on save would run its code (build scripts, config files). Trust it? y yes, n not now
 ```
 
-`y` trusts it: its language servers start, it formats on save, its
-config runs, now and whenever it opens again. `n` leaves it as it is for
-this session, and `:trust` trusts the shown project later. Any other
-key answers `n` and then does what it does, so typing on doesn't get
-lost. A project
-opened with its own config tells you so and waits for `:trust` too (see
-[Configuration](using.md#configuration)). `:format` you run yourself works
-anywhere.
+`y` trusts it: its language servers start, it formats on save and its
+config runs, now and whenever it opens again. `n` leaves it untrusted for
+this session; `:trust` trusts the shown project later. Any other key
+answers `n` and then does what it normally does, so your typing isn't
+lost. A project opened with its own config says so and waits for `:trust`
+too (see [Configuration](using.md#configuration)). `:format` run by hand
+works anywhere.
 
 Trust goes by folder: a project somewhere else, even a copy, asks again.
 Your own config folder is always trusted. `:set project-trust off` trusts
 every project, as Greed did before 0.2.
 
-Code blocks in Markdown files don't run when a file opens either. The first
-time you run one in a file, Greed asks whether to: `y` for now, `a` to
-always trust that file, and `:blocks-trust` does the same (`:blocks-untrust`
-takes it back). Agents may run blocks (`blocks_run`) only in files you
-trust, and only as you last ran them yourself or trusted the file; a block
-an agent changed doesn't run for an agent until you've run it.
+Code blocks in Markdown files don't run when a file opens. The first time
+you run one in a file, Greed asks: `y` for now, `a` to always trust that
+file (as `:blocks-trust` does; `:blocks-untrust` takes it back). Agents may
+run blocks (`blocks_run`) only in trusted files, and only as you last ran
+them or trusted the file; a block an agent changed doesn't run for an agent
+until you've run it.
 
 ## Options
 
@@ -508,7 +517,7 @@ Pick an agent:
   `space i n`, the agent, then where it works. "In a workspace of its own"
   keeps its changes away from your files until you review them.
 
-Then a few settings that save questions without giving much away:
+Then, to be asked less:
 
 - Leave `agent-workspace-edits` on, and give agents that change a lot a
   workspace of their own.

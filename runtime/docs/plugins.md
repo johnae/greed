@@ -1,23 +1,26 @@
 # Writing plugins
 
-Everything you use in Greed is a plugin written against the API described
-here, so the default plugins in `runtime/plugins` are the best examples:
-`core` holds the editing commands, `helix` gives them Helix's keys, `grep`
-is the project search, `agent` the MCP tools.
+Greed's own features are plugins written against this API, so the default
+plugins in `runtime/plugins` serve as examples: `core` holds the editing
+commands, `helix` gives them Helix's keys, `grep` is the project search,
+`agent` the MCP tools.
 
-Plugins are written in [Luau](https://luau.org), Lua with gradual types,
-made at Roblox to run code from many authors safely in one process. If
-you've configured Neovim you know most of it; Luau adds types you can
-leave out or check strictly, string interpolation with backticks, `+=`,
-and `if a then b else c` as an expression. Greed uses it for what it was
-built for: it's fast, small to embed, and starts with no access to files,
-programs or the network, so Greed decides what each plugin may reach
-([capabilities](#capabilities), and
+Plugins are written in [Luau](https://luau.org), a typed dialect of Lua. If
+you know Lua, the differences you'll meet are types (`local n: number = 1`,
+optional or checked strictly), `if a then b else c` as an expression,
+backtick strings with `{interpolation}`, `+=`, and `for k, v in t do`
+without `pairs`.
+
+A plugin starts with no access to files, programs or the network; Greed
+decides what each one may reach ([capabilities](#capabilities), and
 [Plugins and the sandbox](permissions.md#plugins-and-the-sandbox)). The
 types let Greed check a plugin against its API before it loads, which is
 also how a plugin an agent wrote is tried before you approve it.
 
 ## A plugin
+
+A plugin is a folder. Run in `~/.config/greed/plugins`, `greed new greet`
+creates one with a working test and type checking set up:
 
 ```text
 ~/.config/greed/plugins/greet/
@@ -26,8 +29,6 @@ also how a plugin an agent wrote is tried before you approve it.
   test/greet.luau    tests, run with `greed test greet`
 ```
 
-Run in `~/.config/greed/plugins`, `greed new greet` creates this, with a
-working test and type checking set up.
 `plugin.toml` can list plugins this one uses, like
 `requires = ["core", "picker"]`; they load first and are available as
 `require("@core")` and `require("@picker")`. A plugin's `init.luau`
@@ -140,11 +141,6 @@ which before you install it is nothing. A test that needs more fails with
 plugin it uses does. `greed test` from your shell runs a plugin's tests
 with everything it declares.
 
-Plugins are Luau, a typed dialect of Lua. If you know Lua, the differences
-you'll meet are types (`local n: number = 1`), `if a then b else c` as an
-expression, backtick strings with `{interpolation}`, `+=`, and `for k, v in
-t do` without `pairs`.
-
 ## Commands and keys
 
 ```luau
@@ -172,37 +168,51 @@ shorter ones (`g` over `g z`); your config's keys stay quiet, and `space h
 k` shows what a key hides. `greed.plugin.check` reports all of these as
 warnings.
 
-Commands get a context: `ctx.buffer` and `ctx.view` where they run,
-`ctx.args` from the command line (`:greet world`), `ctx.count` when a count
-was typed, `ctx.keys` that ran it, `ctx.force` for `!` (as in `:q!`),
-`ctx.char` for keys that type a character, and `ctx.client`, the
-id of the client that ran it (see [Clients](#clients)). Keys for
-commands people reach for by name go in the leader, `{ layer = "leader" }`,
-which every editing style opens its own way (`space g` in Helix and Vim,
-`ctrl-space g` in the vscode style). Keys for normal mode or for typing go to a
-role, `{ role = "command" }` or `{ role = "typing" }`, so they work in
-every style's mode for it, styles added later included; `{ style =
-"helix", role = "command" }` is for one style's. Other keymaps are bound
-per mode, or per kind of buffer with `{ kind = "tree" }`.
+Commands get a context:
+
+| Field | |
+|---|---|
+| `ctx.buffer`, `ctx.view` | Where it runs |
+| `ctx.args` | The words from the command line (`:greet world`) |
+| `ctx.count` | The count, when one was typed |
+| `ctx.keys` | The keys that ran it |
+| `ctx.force` | `!` was given (as in `:q!`) |
+| `ctx.char` | The character, for keys that type one |
+| `ctx.client` | The id of the client that ran it (see [Clients](#clients)) |
+
+The first argument of `greed.keymap.bind` says where keys go:
+
+| Where | For |
+|---|---|
+| `{ layer = "leader" }` | Commands people reach for by name. Every editing style opens the leader its own way (`space g` in Helix and Vim, `ctrl-space g` in the vscode style) |
+| `{ role = "command" }`, `{ role = "typing" }` | Normal mode or typing, in every style's mode for it, styles added later included |
+| `{ style = "helix", role = "command" }` | One style's mode for a role |
+| `"vim-visual"` | One mode, by name |
+| `{ kind = "tree" }` | One kind of buffer |
+
 Bindings made later win, and `greed.keymap.unbind` and `greed.keymap.clear`
 take keys away, so a plugin can rebuild a mode from scratch. A mode is a
 name, and it exists once something binds keys in it, gives it a fallback,
 a parent or a cursor shape; then `greed.mode.set("visual")` switches to it.
 Switching to a mode nothing made is an error that lists the modes there
-are, so a typo can't leave you where no key works. `greed.keymap.inherit(mode,
-parent, prefixes)` lets a mode use another's keys (some of them, with
-prefixes), and `greed.keymap.enter(mode, keys, layer)` opens a layer with
-keys, the way each style opens the leader; see [Editing
-styles](editing-styles.md#making-your-own).
-`greed.keys.record(name)` and `greed.keys.stop(name)` keep what's typed, for
-macros and the like; several recordings can run at once. `greed.keymap.fallback(mode,
-command)` runs a command for any single key nothing else takes (a mode
-inheriting all of another's keys uses that one's), and
-`greed.keymap.isolate(mode)` keeps keys bound for every mode out of one,
-the way a terminal takes every key. `greed.keymap.overlay({ ["1"] =
-"hint-1" })` binds single keys for the next key press only, and
-`greed.mode.set_cursor(mode, "bar")` sets how the cursor looks in a mode.
-`greed.keymap.find(command)` lists the keys that run a command.
+are, so a typo can't leave you where no key works.
+
+- `greed.keymap.inherit(mode, parent, prefixes)` lets a mode use another's
+  keys (some of them, with prefixes).
+- `greed.keymap.enter(mode, keys, layer)` opens a layer with keys, the way
+  each style opens the leader; see [Editing
+  styles](editing-styles.md#making-your-own).
+- `greed.keymap.fallback(mode, command)` runs a command for any single key
+  nothing else takes (a mode inheriting all of another's keys uses that
+  one's).
+- `greed.keymap.isolate(mode)` keeps keys bound for every mode out of one,
+  the way a terminal takes every key.
+- `greed.keymap.overlay({ ["1"] = "hint-1" })` binds single keys for the
+  next key press only.
+- `greed.mode.set_cursor(mode, "bar")` sets how the cursor looks in a mode.
+- `greed.keymap.find(command)` lists the keys that run a command.
+- `greed.keys.record(name)` and `greed.keys.stop(name)` keep what's typed,
+  for macros and the like; several recordings can run at once.
 
 Keys bound for a kind of buffer alone work in every editing style and
 every mode, ahead of the mode's own, so a panel binds them once, with
@@ -212,11 +222,15 @@ style's typing mode, and `core.floats.typing` opens a float in it.
 `core.style.label_kind("my-prompt", "rename")` has the status line call
 the mode RENAME while one has focus, rather than the typing mode's name.
 Rather than naming other styles' modes, ask `core.style`:
-`is_typing()` says whether the current mode types (insert, Vim's insert,
-the vscode style), `role()` which role the current mode plays, `mode_for(role)`
-the style in use's mode for a role, and `each_typing(function(mode) ...
-end)` calls back with every style's typing modes, including styles added
-later, for modes of your own made from them, like the completion menu's.
+
+- `is_typing()`: whether the current mode types (insert, Vim's insert, the
+  vscode style)
+- `role()`: which role the current mode plays
+- `mode_for(role)`: the style in use's mode for a role
+- `each_typing(function(mode) ... end)`: calls back with every style's
+  typing modes, including styles added later, for modes of your own made
+  from them, like the completion menu's
+
 Commands can carry tags others check:
 `core.commands.tag("typing", { "my-type-char" })` keeps them out of the
 selection history and in one undo step in the vscode style, and `"no-repeat"`
@@ -346,8 +360,8 @@ The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 selection) and `command`; the shell adds `shell-block`, `row`, `cell` and
 `process`, the vcs plugin `changed-file`, `commit` and `revision`, the
 kubernetes plugin `pod`, `deployment` and `kubernetes`, and the docker
-plugin `container` and `image`, so a plugin can add actions to those too. A plugin's finders and actions go
-when it's unloaded.
+plugin `container` and `image`, so a plugin can add actions to those too.
+A plugin's finders and actions go when it's unloaded.
 
 ### Objects
 
@@ -861,33 +875,40 @@ greed.tab.set_layout({
   `buffer:decorate("my-plugin", { { from = 0, to = 5, style = "diagnostic.error" } })`.
   A mark can style whole lines, add virtual text inside or after a line,
   put a sign in the gutter, or draw text over the buffer's (like jump
-  labels). It can also hide text (`conceal`, like a link's brackets), shown
-  again as `reveal` says: `"line"` (the default) when a cursor is on its
-  line, `"cursor"` when one is inside it, `"never"`, `"auto"`, which
-  follows the mode: on the cursor's line while typing, otherwise once the
-  cursor is inside it past its start (as the `markup-reveal` option says),
-  or `"typing"`, as `"auto"` while typing and never otherwise, as for a
-  table's borders. Markdown and notes use `"auto"`, so their marks stay as
-  they are when the mode changes (`greed.reveal(how, typing)` is what core
-  calls as it does). `buffer:decorate(ns, marks, { from = a, to = b })`
-  replaces only the marks starting from `a` up to `b`, for plugins that
-  draw again just the lines an edit changed. `plain = true` draws a mark's
-  text without syntax highlighting, as for a tool's output in a Markdown
-  buffer. A mark can fold lines away under the first one (`fold`; with
-  `peek` they show while a cursor is on that first line too), keep
-  the lines it touches from wrapping (`nowrap`, cut at the edge with the
-  view scrolling sideways to the cursor, `view:side_scroll()`),
-  or show lines that aren't in the buffer under its own (`lines`), whole
-  or in pieces with styles of their own. A mark's text with an `action`
-  (a command name) is a button: clicking it, or `enter` on it in normal
-  mode, puts the cursor at the mark and runs the command. `scale = 2`
-  (up to 4) makes its text bigger, like a heading: each character takes
-  twice the cells across and its row two rows down. The window draws it
-  big, and so does kitty; other terminals show it at the normal size.
-  `gutter` styles the line numbers of the lines a mark touches, and `data`
-  keeps anything you like with a mark (plain tables, strings, numbers),
-  given back by `buffer:decorations(ns)`.
-  `buffer:marks_at(pos)` gives the marks over a place in every namespace.
+  labels). Other things a mark can do:
+
+  - `conceal` hides text (like a link's brackets), shown again as `reveal`
+    says: `"line"` (the default) when a cursor is on its line, `"cursor"`
+    when one is inside it, `"never"`, `"auto"`, which follows the mode: on
+    the cursor's line while typing, otherwise once the cursor is inside it
+    past its start (as the `markup-reveal` option says), or `"typing"`, as
+    `"auto"` while typing and never otherwise, as for a table's borders.
+    Markdown and notes use `"auto"`, so their marks stay as they are when
+    the mode changes (`greed.reveal(how, typing)` is what core calls as it
+    does).
+  - `plain = true` draws a mark's text without syntax highlighting, as for
+    a tool's output in a Markdown buffer.
+  - `fold` folds lines away under the first one; with `peek` they show
+    while a cursor is on that first line too.
+  - `nowrap` keeps the lines it touches from wrapping, cut at the edge with
+    the view scrolling sideways to the cursor (`view:side_scroll()`).
+  - `lines` shows lines that aren't in the buffer under its own, whole or
+    in pieces with styles of their own.
+  - `action` (a command name) makes a mark's text a button: clicking it, or
+    `enter` on it in normal mode, puts the cursor at the mark and runs the
+    command.
+  - `scale = 2` (up to 4) makes its text bigger, like a heading: each
+    character takes twice the cells across and its row two rows down. The
+    window draws it big, and so does kitty; other terminals show it at the
+    normal size.
+  - `gutter` styles the line numbers of the lines a mark touches.
+  - `data` keeps anything you like with a mark (plain tables, strings,
+    numbers), given back by `buffer:decorations(ns)`.
+
+  `buffer:decorate(ns, marks, { from = a, to = b })` replaces only the
+  marks starting from `a` up to `b`, for plugins that draw again only the
+  lines an edit changed. `buffer:marks_at(pos)` gives the marks over a
+  place in every namespace.
   Language servers' diagnostics are marks too, in the `"diagnostics"`
   namespace, which is how they follow edits.
 - Multibuffers show excerpts of many files in one buffer, edited in place:
@@ -1166,19 +1187,24 @@ greed.command({
 })
 ```
 
-`greed.sleep(ms)`, `greed.next_key()`, `greed.process.run(...)`,
-`greed.http.request(...)`, `greed.lsp.request(...)`, `greed.fs.grep(...)` and
-`greed.plugin.check(...)` wait like this, and so do
-`picker.choose(title, items)` and `core.prompt.ask(title)`, which give nil
-when you close them. (`picker.pick` and `core.prompt.open` take callbacks
-instead, for pickers that stay open while you work. `core.prompt.open`
-returns the prompt's view, to put a label on its border, and its `kind`
-option gives the prompt keys of its own, the way the vscode style's find bar
-binds `enter` to the next match.) `greed.signal()` lets
-one piece of code wait for a value another sends. `greed.animate(ms, step)`
-calls `step(t)` once a frame, which is all the flash on copy is.
-`greed.fs.watch(path)` makes a "file.changed" event come whenever that file
-changes, from anywhere; it's how your config reloads.
+These wait like this:
+
+- `greed.sleep(ms)`, `greed.next_key()`, `greed.process.run(...)`,
+  `greed.http.request(...)`, `greed.lsp.request(...)`, `greed.fs.grep(...)`
+  and `greed.plugin.check(...)`
+- `picker.choose(title, items)` and `core.prompt.ask(title)`, which give
+  nil when you close them
+
+`picker.pick` and `core.prompt.open` take callbacks instead, for pickers
+that stay open while you work. `core.prompt.open` returns the prompt's
+view, to put a label on its border, and its `kind` option gives the prompt
+keys of its own, the way the vscode style's find bar binds `enter` to the
+next match.
+
+`greed.signal()` lets one piece of code wait for a value another sends.
+`greed.animate(ms, step)` calls `step(t)` once a frame; the flash on copy
+is built on it. `greed.fs.watch(path)` makes a "file.changed" event come
+whenever that file changes, from anywhere; it's how your config reloads.
 
 A search the user types should mind case as they set it:
 `core.search.pattern(regex)` gives the regex to search with, as
@@ -1206,19 +1232,22 @@ more than 15 ms without waiting is paused, the editor handles keys and
 draws, and it carries on where it was, so a slow plugin is only slow
 itself. On Linux only time spent working counts toward the 15 ms, so a
 busy machine doesn't change where code is paused. `coroutine.yield()`
-with nothing pauses the same way on purpose. Your own coroutines, like a generator made with `coroutine.wrap`, are never
-paused this way. A pause shows what's half done, like a buffer's new text
-with its old decorations; `core.atomic(f, ...)` runs `f` to its end with
-no frame drawn in between, so do the long work before it and only the
-changes that belong together inside it, which can't wait. A command or
-handler that works for a whole minute without finishing is stopped and
-Greed says so. Code that can't be paused, like a status line
-piece or a plugin's top level, is timed instead: anything that holds the
-editor up for 50 ms or more is kept with its plugin and what it was doing,
-`:stalls` lists them, and over 250 ms Greed tells you right away. To see
-where time goes when nothing stalls, `:profile` (or `greed.profile.start()`
-and `stop()`) counts every run of plugin code and the editor's own work by
-plugin and what it did, the most time first.
+with nothing pauses the same way on purpose. Your own coroutines, like a
+generator made with `coroutine.wrap`, are never paused this way.
+
+A pause shows what's half done, like a buffer's new text with its old
+decorations; `core.atomic(f, ...)` runs `f` to its end with no frame drawn
+in between, so do the long work before it and only the changes that
+belong together inside it, which can't wait. A command or handler that
+works for a whole minute without finishing is stopped and Greed says so.
+
+Code that can't be paused, like a status line piece or a plugin's top
+level, is timed instead: anything that holds the editor up for 50 ms or
+more is kept with its plugin and what it was doing, `:stalls` lists them,
+and over 250 ms Greed tells you right away. To see where time goes when
+nothing stalls, `:profile` (or `greed.profile.start()` and `stop()`)
+counts every run of plugin code and the editor's own work by plugin and
+what it did, the most time first.
 
 To see what your plugin does as it runs, `greed.debug.log(...)` keeps a
 line while the `plugins` debug topic is on, or `plugin:NAME` for yours
@@ -1278,8 +1307,7 @@ can do.
 
 A plugin reacts to what happens in the editor with `greed.on(event,
 handler)`. The handler gets one table describing what happened. Format on
-save, the status line, reloading files changed on disk, auto-save and
-following an agent around are all built this way.
+save, auto-save and the status line use it.
 
 ```luau
 local greed = require("@greed")
@@ -1700,8 +1728,8 @@ before its folder, after the shell's own (the git branch and the project
 environment) and those added before it, like the kubernetes plugin's
 context. `provider(ctx)` gets the `shell`, its `cwd` and the `env` its
 programs get, and returns `{ text, style, warning }` or nil for nothing;
-`warning = true` turns the prompt's `❯` red too. It runs in the background when a shell opens and after each command,
-so it can run a program; the prompt shows the new pieces once every
+`warning = true` turns the prompt's `❯` red too. It runs in the background
+when a shell opens and after each command, so it can run a program; the prompt shows the new pieces once every
 segment is done. With `shell-prompt` set to `starship`, starship draws the
 prompt instead, and segments only add their warnings.
 
@@ -2004,8 +2032,8 @@ itself.
 
 ## Models
 
-The `models` plugin talks to language models for you. Ask for a role, not a
-provider, and the user's config decides which model plays it:
+The `models` plugin talks to language models. A plugin asks for a role, like
+`fast`, and the user's config decides which model plays it:
 
 ```luau
 local models = require("@models")
@@ -2219,8 +2247,8 @@ same conversation.
 `run` gets the arguments as a table, and who called as `caller`, whose
 `kind` is `"shell"` for `greed ctl`, `"socket"` for MCP clients through
 `greed mcp` (agents Greed runs over ACP use it too), `"ide"` for Claude
-Code's IDE connection and `"agent"` for Greed's own agent. Any plugin can call a tool with any `caller`, so don't
-decide trust on `kind`: `agent.from_shell(caller)` says whether the call
+Code's IDE connection and `"agent"` for Greed's own agent. Any plugin can
+call a tool with any `caller`, so don't decide trust on `kind`: `agent.from_shell(caller)` says whether the call
 came from `greed ctl`, whose user can run anything already.
 
 A string `run` returns goes to the agent as it is, and any other value as
@@ -2393,7 +2421,7 @@ end)
 
 ## Types
 
-The API is fully typed in `runtime/types/greed`. `greed new` sets up a
+The API's types are in `runtime/types/greed`. `greed new` sets up a
 `.luaurc` so `luau-lsp` in your editor and `luau-analyze --mode=strict`
 check your plugin against it.
 
@@ -2464,7 +2492,7 @@ functions don't see through it.
 `:= EXPR` shows what an expression is. In any buffer, `space l e` runs the
 selection, or the line the cursor is on, the same way, and shows what it
 returned at the end of its last line (or the error); the next edit takes
-it away. Handy while writing a plugin or your `init.luau`:
+it away, as while writing a plugin or your `init.luau`:
 
 ```luau
 #greed.buffers()  -- space l e here shows how many are open, like  ⇒ 3

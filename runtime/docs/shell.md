@@ -1,13 +1,10 @@
 # The shell
 
-`:shell` opens a shell in a buffer, and `greed --shell` starts Greed in
-one. You type a command at the prompt at the bottom, `enter` runs it,
-and it becomes a block above the prompt: the command, what it printed,
-and how it ended. Blocks stay, so you can
-search them, fold them, copy from them, run them again and send their
-output to the next command. It's meant for the commands you run while
-editing, and for output you want to keep working with; a terminal pane is
-still the place for a long interactive session.
+`:shell` opens a shell in a buffer; `greed --shell` starts Greed in one.
+Type a command at the prompt and `enter` runs it. It becomes a block above
+the prompt: the command, what it printed and how it ended. Blocks stay, so
+you can search, fold, copy and rerun them, and send their output to the
+next command. For a long interactive session, use a terminal pane.
 
 [![kubectl get pods in the Greed shell, then the pods that aren't running, the failing pod's logs opened from its row, then a chart of block 1's restarts](https://github.com/johnae/greed/releases/download/media/kubectl.png)](https://github.com/johnae/greed/releases/download/media/kubectl.mp4)
 
@@ -20,69 +17,69 @@ error[E0308]: mismatched types
 ⎇ main ~/s/app ❯ |
 ```
 
-The prompt shows the shell's folder, every folder but the last cut to its
-first letter, and before it what [the prompt](#the-prompt) knows, like the
-git branch. `space o s` switches to the shell of this project, or opens
-one; with several, or from the only one, it lists them with a new one to
-open. `:shell NAME` opens another. Each shell has its own folder and
-variables, and a project can have several. Shells and their blocks last
-until you close them or the session ends, and what you type in one is
-nothing to save: `:q` doesn't ask about it. A new shell says to type
-`help`, which lists what the shell runs itself, what a line can hold,
-which shell runs the rest, and the keys in the style you use; `help TOPIC`
-shows one part (`builtins`, `line`, `tables`, `prompt` or `keys`).
+The prompt shows the shell's folder (every folder but the last cut to its
+first letter), and before it what [the prompt](#the-prompt) knows, like
+the git branch.
 
-From anywhere, `:!cargo test` runs a line in this project's shell,
-opening one if there's none, and its output stays there as a block.
+| | |
+|---|---|
+| `space o s` | Switch to this project's shell, or open one; with several, or from the only one, list them with a new one to open |
+| `:shell NAME` | Open another shell |
+| `:!cargo test` | From anywhere, run a line in this project's shell (opening one if there's none); its output stays there as a block |
+
+Each shell has its own folder and variables, and a project can have
+several. Shells and their blocks last until you close them or the session
+ends. There's nothing to save, so `:q` doesn't ask about them.
+
+A new shell says to type `help`, which lists what the shell runs itself,
+what a line can hold, which shell runs the rest, and the keys in your
+style; `help TOPIC` shows one part (`builtins`, `line`, `tables`, `prompt`
+or `keys`).
 
 ## The prompt
-
-Before the folder, the prompt shows the branch of the repository the shell
-is in (with jj, the nearest bookmark and the change), and the kubernetes
-context and namespace `kubectl` would use, which the `kubernetes` plugin
-adds. The context comes from kubectl's config file, the ones `KUBECONFIG`
-names or `~/.kube/config`, read without running kubectl, so it's there
-at once and costs nothing. They're worked out again after every command,
-so a `cd`, a checkout or `kubectl config use-context` shows on the next
-prompt.
 
 ```text
 ⎇ main ⎈ prod-eu:payments ~/s/infra ❯ kubectl get pods
 ```
 
-In a project with a devenv environment, `❄ devenv` shows too (see [Project
-environments](#project-environments)).
+Before the folder, the prompt shows:
+
+- the branch of the repository the shell is in (with jj, the nearest
+  bookmark and the change)
+- the kubernetes context and namespace `kubectl` would use (from the
+  `kubernetes` plugin), read from the config files `KUBECONFIG` names or
+  `~/.kube/config` without running kubectl, so it costs nothing
+- `❄ devenv` in a project with a devenv environment (see [Project
+  environments](#project-environments))
+
+They're worked out again after every command, so a `cd`, a checkout or
+`kubectl config use-context` shows on the next prompt. Plugins can add
+pieces of their own, a cloud profile say; `help prompt` lists what's
+there.
 
 A context matching a pattern in `shell-production-contexts` (`prod` by
 default; several go with spaces between them, as Luau patterns, like
 `:set shell-production-contexts "prod ^live%-"`) shows in red, and so
-does the `❯`, so a command about to run against production looks like it.
+does the `❯`.
 
-`space o k` (`:kube-context`, or a click on the context in the prompt)
-switches the context, from a list of those your kubeconfig has with their
-namespaces, the current one and production ones marked; `space o K`
-(`:kube-namespace`) switches the namespace, from those the cluster has.
-`enter` switches everywhere, as `kubectl config use-context` does;
-`ctrl-s` switches only in this shell, which then reads a small kubeconfig
-of its own ahead of yours, so other shells and terminals keep theirs: prod
-in one shell and staging in the next. `:kube-context NAME` switches
-straight to one, and `:kube-context! NAME` only in this shell;
-`:kube-namespace NAME` and `:kube-namespace! NAME` do the same for the
-namespace.
-
-Plugins can add pieces of their own, a cloud profile say; `help prompt`
-lists what's there.
+| | |
+|---|---|
+| `space o k` (`:kube-context`) | Switch the context, from those your kubeconfig has with their namespaces, the current and production ones marked. A click on the context in the prompt does the same |
+| `space o K` (`:kube-namespace`) | Switch the namespace, from those the cluster has |
+| `enter` in either list | Switch everywhere, as `kubectl config use-context` does |
+| `ctrl-s` in either list | Switch only in this shell, which then reads a small kubeconfig of its own ahead of yours; other shells and terminals keep theirs (prod in one shell, staging in the next) |
+| `:kube-context NAME` | Switch to one directly; `:kube-context! NAME` only in this shell |
+| `:kube-namespace NAME` | The same for the namespace; `:kube-namespace! NAME` only in this shell |
 
 Each piece has a color of its own from the theme (`shell.segment.git`,
 `shell.segment.kubernetes`, `shell.segment.environment`). With a Nerd Font,
 `:set shell-icons nerd` uses its icons in place of `⎇ ⎈ ❄`.
 
-If you use [starship](https://starship.rs), `:set shell-prompt starship`
-shows your starship prompt instead, as your other shells do, with its
-colors: Greed runs `starship prompt` after each command with the shell's
-folder, variables, the last exit code and how long it took. The `❯` stays
-Greed's own, red in production, so starship's prompt character is left
-out. Put it in your config to keep it:
+With [starship](https://starship.rs), `:set shell-prompt starship` shows
+your starship prompt instead, with its colors. Greed runs `starship
+prompt` after each command with the shell's folder, variables, the last
+exit code and how long it took. The `❯` stays Greed's own (red in
+production), so starship's prompt character is left out. In your config:
 
 ```lua
 greed.option.set("shell-prompt", "starship")
@@ -90,16 +87,23 @@ greed.option.set("shell-prompt", "starship")
 
 ## Blocks
 
-A block's command is the line it starts on, with `❯` before it (`◆` for
-one an agent ran) and its number, the `3` of `$3`. After the command comes
-how it went: `◐` while it runs with how long so far, then `✓`, `✗ exit 1`,
-`■ INT` when it was stopped, `↗` when it was handed to a terminal, or `?`
-for a question to a model that brought no command back, how
-long it took, where `cd` went and which variables it set. A block that went
-quiet while it could be reading a line says it may be waiting for input.
-One that has printed nothing after a second says so where its output
-will go, so a slow command, like kubectl reaching a far cluster, shows
-it's at work.
+A block starts with its command, `❯` before it (`◆` for one an agent ran)
+and its number, the `3` of `$3`. After the command come how it went, how
+long it took, where `cd` went and which variables it set:
+
+| | |
+|---|---|
+| `◐` | Running, with how long so far |
+| `✓` | Done |
+| `✗ exit 1` | Failed, with its exit code |
+| `■ INT` | Stopped |
+| `↗` | Handed to a terminal |
+| `?` | A question to a model that brought no command back |
+
+A block that went quiet while it could be reading a line says it may be
+waiting for input. One that has printed nothing after a second says so
+where its output will go, so a slow command (kubectl reaching a far
+cluster) shows it's at work.
 
 Output that's JSON or a table is kept as a value on the block too, and
 the status says so (`JSON · 3 items`, `table · 12 rows`); see [Filtering
@@ -118,25 +122,23 @@ A prompt of more than `shell-confirm-lines` (5) lines, as pasting a
 transcript or a file can leave there, asks `y/n` before it runs as one
 command.
 
-Everything above the prompt, the commands that ran and what they printed,
-is read-only: you can select and copy it, but deleting or changing it is
-refused. Typing or pasting there, in any style and with or without blocks
-mode, goes to the end of the prompt instead, and backspace at the prompt's
+Everything above the prompt is read-only: you can select and copy it, but
+not change it. Typing or pasting there, in any style and with or without
+blocks mode, goes to the end of the prompt, and backspace at the prompt's
 start deletes nothing.
 
 Undo at the prompt takes back what you typed since the last command ran,
-while output keeps streaming in above it; it never reaches back into a
-command that ran.
+even while output streams in above it; it never reaches into a command
+that ran.
 
 ## Moving between commands
 
-You type at the prompt. `esc` there goes to blocks mode (`BLOCKS` on the
-status line), where the commands you ran, and the rows they printed, are
-things to move between and act on, a key each. It's what the shell has in
-place of your style's normal mode, so coming back to a shell from a file
-you opened lands here too, and so does clicking in what a command
-printed. The selected command or row is marked, with what you can do with
-it on a line under it:
+`esc` at the prompt goes to blocks mode (`BLOCKS` on the status line),
+where the commands you ran and the rows they printed are things to move
+between and act on, a key each. It takes the place of your style's normal
+mode, so coming back to a shell from a file you opened lands here, and so
+does clicking in a command's output. The selected command or row is
+marked, with its keys on a line under it:
 
 ```text
 ❯ 2 df -kP ✓ 0.04s · table · 13 rows
@@ -167,9 +169,8 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 | `g` `G` | The first or last command |
 | `esc` `i` `a` | Back to the prompt |
 
-Typing a character goes back to the prompt with it, and other keys with
-nothing on them do nothing, so you never type into a command's output: in
-blocks mode the shell's text can't be changed, only acted on. `space` and
+Typing a character goes back to the prompt with it, and keys with nothing
+on them do nothing, so you never type into a command's output. `space` and
 its keys work as elsewhere.
 
 `:set shell-blocks false` goes back to moving about the shell as text, with
@@ -198,12 +199,11 @@ and leaves it running instead, on the strip above the prompt, as `ctrl-z`
 puts a job in the background in a shell. The float's footer says which
 key does what.
 
-`/` in the float filters what it shows, as you type, and nothing else: the
-shell keeps every line, and the lines still to come are filtered as they
-arrive. Change the filter and the lines it hid before show again. To watch
-the same log two ways, `v` on the block in blocks mode (or "open beside"
-in its actions) opens it in a pane beside, as many times as you like, and
-`/` in each pane filters it its own way.
+`/` in the float filters what it shows, as you type. The shell keeps every
+line, lines still to come are filtered as they arrive, and changing the
+filter shows the lines it hid. To watch the same log two ways, `v` on the
+block in blocks mode (or "open beside" in its actions) opens it in a pane
+beside, as many times as you like, each with its own `/` filter.
 
 A float showing a block, like the one `enter` on a running block opens,
 keeps its own keys: `esc` closes it.
@@ -239,12 +239,17 @@ and files, `g o` and the `space` keys work in normal mode; `up`, `down`,
 | `tab` `shift-tab` | On a block, fold it under its command or unfold it; fold or unfold every block (see [Folding blocks](#folding-blocks)) |
 
 In the vscode style you're always typing, so the keys that need normal
-mode have others: `ctrl-c` copies when something is selected and
-interrupts otherwise, `ctrl-up` and `ctrl-down` go between blocks, `f8`
-and `shift-f8` between the files and lines the output names, `ctrl-f`
-filters a block, `ctrl-k ctrl-l` folds or unfolds a block (`ctrl-k ctrl-0` folds
-them all, `ctrl-k ctrl-j` unfolds them all), and the `space` keys above are
-`ctrl-space` ones.
+mode have others:
+
+| Keys | |
+|---|---|
+| `ctrl-c` | Copy when something is selected, else interrupt |
+| `ctrl-up` `ctrl-down` | Between blocks |
+| `f8` `shift-f8` | Between the files and lines the output names |
+| `ctrl-f` | Filter a block |
+| `ctrl-k ctrl-l` | Fold or unfold a block; `ctrl-k ctrl-0` folds them all, `ctrl-k ctrl-j` unfolds them all |
+| `ctrl-space` | In place of `space` for the keys above |
+
 `space .` (`alt-.` in the vscode style) on a block, or on a row that's a
 thing (see [Rows you can act on](#rows-you-can-act-on)), lists what you
 can do with it.
@@ -252,8 +257,7 @@ can do with it.
 ## Folding blocks
 
 A folded block shows only its command line, with how it ended and how many
-lines it hides (`⋯ 240 lines`), so a long session stays easy to look
-through. `tab` on a block folds or unfolds it, and `shift-tab` folds or
+lines it hides (`⋯ 240 lines`). `tab` on a block folds or unfolds it, and `shift-tab` folds or
 unfolds them all. In what a command printed, `tab` folds the lines indented
 under the line instead, a section of YAML or of `kubectl describe`. A block
 that's still printing stays folded as its output grows.
@@ -304,13 +308,13 @@ around in, not typing as at the prompt. Plugins add commands of their own
 with these.
 
 Every other line goes to your shell, so `ls` and `ls | head` behave the
-same: your `$SHELL` when it's a POSIX shell (sh, bash, zsh, dash, ksh and
-the like), fish or nu, and `sh` otherwise; `:set shell-fallback bash` picks
-one. `cd` and `export` there carry over to the commands after, as they
-would in a terminal. If `shell-fallback` names a shell of another kind, the
+same. That's your `$SHELL` when it's a POSIX shell (sh, bash, zsh, dash,
+ksh and the like), fish or nu, and `sh` otherwise; `:set shell-fallback
+bash` picks one. `cd` and `export` there carry over to the commands after,
+as in a terminal. If `shell-fallback` names a shell of another kind, the
 line still runs in it, and its block says `cd` and `export` in it don't
-carry over. Your shell's startup files aren't read for each line, so its
-functions aren't there unless you `:set shell-fallback-rc true`.
+carry over. Startup files aren't read for each line, so your shell's
+functions are missing unless you `:set shell-fallback-rc true`.
 
 With nu, a table a line gives back (`ls`, `ps`, `open data.csv | where
 size > 10`) is data in the block as well as drawn by nu: its rows are
@@ -319,21 +323,28 @@ and the stages work on it with its real values: sizes in bytes, dates
 in full. Its first 10000 rows are kept that way. nu numbers each row so
 the shell knows which line is which.
 
-Your aliases are. The shell asks your shell for them once, with its
-startup files, and a line starting with one runs what it stands for, as
-in a terminal; the block shows what you typed. The shell's own commands
-win over an alias of the same name, `^NAME` runs the program `NAME`
-whatever else has that name (`^env`, or `$3 | ^sort` for the `sort`
-program rather than the table stage), and `which NAME` says what runs.
-`:set shell-aliases false` leaves aliases alone.
+Your aliases work too. The shell asks your shell for them once, with its
+startup files, and a line starting with one runs what it stands for; the
+block shows what you typed.
+
+- The shell's own commands win over an alias of the same name.
+- `^NAME` runs the program `NAME` whatever else has that name (`^env`, or
+  `$3 | ^sort` for the `sort` program rather than the table stage).
+- `which NAME` says what runs.
+- `:set shell-aliases false` leaves aliases alone.
 
 As in bash and zsh, `!!` in a line is the command before, `!$` its last
 word, and a line `^old^new` runs the command before with `old` changed to
 `new`. The block shows the command as it ran.
 
-Programs get `PAGER=cat` and `GIT_PAGER=cat`, so their output comes back as
-text, `GREED_BIN`, the greed program running the editor, `GREED_SESSION`
-and `GREED_BLOCK`, the block they run in.
+Programs get these variables:
+
+| | |
+|---|---|
+| `PAGER=cat`, `GIT_PAGER=cat` | So their output comes back as text |
+| `GREED_BIN` | The greed program running the editor |
+| `GREED_SESSION` | The session's name |
+| `GREED_BLOCK` | The block they run in |
 
 ## Editing files from a command
 
@@ -435,17 +446,20 @@ can read out of it, and every layer below works on what's under it.
 ### Filtering a block
 
 `/` on a block's output keeps the lines with what you type in them, as you
-type it; several words keep the lines with all of them, in any case
-(`shell-filter-search-case` changes that), and a filter that starts with
-`/` is a regex (`/^error|warn`). `enter` keeps the filter; `esc`, while
-typing it or after in normal mode on the block, shows every line again,
-and `space S` also undoes a sort. The block shows the lines kept and the
-status says so (`2 of 340 lines · / error`), and so does the prompt as you
-type, while its record keeps them all, so `$3`, `space y` and `space v`
-give the whole output. On a block's command or at the prompt, `/` searches as
-usual.
+type:
 
-Two kinds of words look at the structure of what's printed:
+- Several words keep the lines with all of them, in any case
+  (`shell-filter-search-case` changes that).
+- A filter that starts with `/` is a regex (`/^error|warn`).
+- `enter` keeps the filter. `esc`, while typing it or after in normal mode
+  on the block, shows every line again; `space S` also undoes a sort.
+
+The status shows what's kept (`2 of 340 lines · / error`), and so does the
+prompt as you type. The block's record keeps every line, so `$3`, `space
+y` and `space v` give the whole output. On a block's command or at the
+prompt, `/` searches as usual.
+
+These words look at the structure of what's printed:
 
 | | |
 |---|---|
@@ -495,8 +509,10 @@ header in capitals with the columns lined up under it in every row, and
 when it isn't sure, the output is text: prose is never taken for a table.
 
 A table's lines don't wrap: one wider than the view goes on past its
-right edge, where `›` marks it, and moving along the line scrolls it
-sideways, `‹` marking what's gone off the left.
+right edge, where `›` marks it. The view scrolls sideways when the cursor
+goes there (or with the wheel sideways, shift and the wheel in most
+terminals), `‹` marking what's gone off the left. Other output wraps as
+text does.
 
 A table the shell draws itself (after a stage, a filter or a sort) shows
 its values as people read them: sizes in bytes as `142.6 kB`, dates as
@@ -511,11 +527,6 @@ shows green, `Error` or `CrashLoopBackOff` red and `Pending` yellow, as
 does `READY` short of all (`0/1`); `<none>` and nested JSON show faint.
 The colors are the theme's `shell.table.header`, `.good`, `.bad`,
 `.warn` and `.dim`. A table nu drew keeps nu's own colors.
-
-A table's rows don't wrap in a narrow pane: what's past the edge is cut,
-and the view scrolls sideways when the cursor goes there (or with the
-wheel sideways, shift and the wheel in most terminals). Other output wraps
-as text does.
 
 In a table, `/` keeps rows: a word like `STATUS=Running` or `NAME~api`
 looks in one column, `RESTARTS>0` and `AGE<1h` compare numbers, and other
@@ -539,15 +550,16 @@ Running`:
 | `select COL,...` | Only those columns, in that order |
 | `sort COL [-r]` | Sorted by a column, from the greatest with -r |
 
-Column names don't mind case, and `container_id` names `CONTAINER ID`.
-Numbers are compared as numbers, with sizes (`512Mi`, `1.5G`, `250m` of a
-CPU), percentages and ages (`45s`, `12m`, `3d16h`) read as what they
-mean, so `$3 | where AGE < 1h` and `$3 | sort RESTARTS` do what they
-say; kubectl's `3 (3d16h ago)` restarts count as 3. Log levels compare in
-their order, other text without minding case: `=` and `!=` the whole
-value, `~` and `!~` text in it. A filter's fields (`/level>=warn`) compare
-the same way. They chain, and a
-program after them reads the table as text:
+- Column names don't mind case, and `container_id` names `CONTAINER ID`.
+- Numbers compare as numbers, with sizes (`512Mi`, `1.5G`, `250m` of a
+  CPU), percentages and ages (`45s`, `12m`, `3d16h`) read as what they
+  mean, so `$3 | where AGE < 1h` and `$3 | sort RESTARTS` work. kubectl's
+  `3 (3d16h ago)` restarts count as 3.
+- Log levels compare in their order, other text without minding case:
+  `=` and `!=` the whole value, `~` and `!~` text in it.
+- A filter's fields (`/level>=warn`) compare the same way.
+
+Stages chain, and a program after them reads the table as text:
 
 ```text
 ❯ $1 | where STATUS != Running | select NAME,STATUS,AGE
@@ -572,9 +584,10 @@ program, since no program goes by those names. `sort`, `split`, `uniq`,
 `sum` and `last` are programs too: after a program they're the stages
 when given something that isn't a flag (`ls | sort size -r`, `ls | last
 2`), and the programs otherwise (`sort`, `sort -n`); `^sort` is always
-the program. What the program prints before the stages isn't shown,
-only what comes out at the end, and its errors. A stage on output that
-isn't a table says so, and what makes one.
+the program.
+
+Only what comes out at the end shows, with the program's errors. A stage
+on output that isn't a table says so, and what makes one.
 
 Some programs are asked for JSON when stages follow them, so the stages
 read their data rather than columns on screen: `kubectl get` gets `-o
@@ -681,12 +694,10 @@ found no table in, from a command jc knows (`ifconfig`, `dig`, `mount`,
 
 ## Watching a command
 
-`watch COMMAND` runs a command again and again, every two seconds (`-n 5`
-for every five), and its block shows what it printed last in place of
-what it printed before, with the lines that changed since the time before
-marked. It's the shell's own, so it stays a block among the others
-rather than taking the screen; `^watch` runs the watch program in a
-terminal.
+`watch COMMAND` runs a command every two seconds (`-n 5` for every five).
+Its block shows what it printed last, with the lines that changed since
+the run before marked. It stays a block among the others; `^watch` runs
+the watch program in a terminal.
 
 ```text
 ❯ 7 watch kubectl get pods       ◐ 1m12s · every 2s · 1 changed · 14:05:02
@@ -700,8 +711,9 @@ or a `space s` sort stays on what each run shows, `space .` on a pod acts
 on it as it is now, and `$7 | where STATUS != Running` reads
 what it shows. The whole line is watched, pipes and table stages
 included, so `watch kubectl get pods | where RESTARTS > 0` shows only the
-pods that restarted, as they are now. `ctrl-c` or `space x` stops it,
-keeping what it showed last; it also stops by itself after
+pods that restarted, as they are now.
+
+`ctrl-c` or `space x` stops it, keeping what it showed last; it also stops by itself after
 `shell-watch-minutes` (60), and `space r` starts it again. Agents can't
 watch, as a watch runs until someone stops it.
 
@@ -731,8 +743,8 @@ resource or namespace flags changed, as k9s's views do:
 
 `| chart` draws a table as a chart, in characters every terminal shows:
 braille for lines, eighth blocks for bars, in the theme's colours.
-[Charts](charts.md) goes further: a line for each thing, Prometheus,
-dashboards, boards that work on Linux and macOS, and what to watch out for.
+[Charts](charts.md) has the rest: every option, a line for each thing,
+Prometheus, dashboards, boards for Linux and macOS, and pitfalls.
 
 [![A table, the rows of it over 20, a bar chart of it, and the load average charted as it goes](https://github.com/johnae/greed/releases/download/media/shell-live.png)](https://github.com/johnae/greed/releases/download/media/shell.mp4)
 
@@ -759,27 +771,16 @@ lines and bars in the theme's colours, with its labels and numbers still
 text. `:set scene-drawing cells` keeps charts in characters everywhere,
 and `GREED_IMAGES=none` in one terminal.
 
-Numbers keep their unit: `128Mi` and `1.5Gi` for bytes, `250m` for
-kubectl's CPU, `45%` for percents, on the axis and beside the bars. Bars
-of two columns in different units, like CPU and memory, are each as long
-as their own greatest.
+Numbers keep their unit (`128Mi`, `250m` of a CPU, `45%`) on the axis and
+beside the bars.
 
-Anything it guesses can be said: `chart bar CPU MEMORY` (both, a bar
-each), `chart line rate over time`, `chart area`, `chart scatter`,
-`chart bar --stacked`, `chart --log`, `--width` and `--height` (it's as
-wide as the view and `chart-height` lines tall, 12). When it can't draw
-one, it says why, naming the columns it found. `chart --why` shows how
-it read each column and why it picked the chart it did:
-
-```text
-❯ 5 kubectl top pods | chart --why
-NAME           names, for the rows
-CPU(cores)     numbers, in cores, charted
-MEMORY(bytes)  numbers, in bytes, left out
-
-bar: CPU(cores) by NAME: api-7d9f8b6c5-2xkqz 250m, worker-5c6b7d8f9-abcde 1.2, redis-0 35m, +1 more
-because the rows have names (NAME): a bar each, of CPU(cores)
-```
+Anything it guesses can be said, as in `chart bar CPU MEMORY` (both
+columns, a bar each); [Kinds of chart](charts.md#kinds-of-chart) lists
+every option (`line`, `area`, `scatter`, `--stacked`, `--log`, `--width`,
+`--height`). A chart is as wide as the view and `chart-height` lines tall
+(12). When it can't draw one, it says why, naming the columns it found,
+and `chart --why` shows how it read each column and why it picked the
+chart it did.
 
 In a watch every run adds a point, so the chart is of how the numbers
 went: `watch -n 2 kubectl top pods | chart` draws a line a pod, of its
@@ -849,16 +850,22 @@ changes" (`shell-notify`): each change then sends a desktop notification
 saying the same, while Greed isn't focused. Again to stop.
 
 Such a line stands for its block, a line or two up from the prompt:
-`ctrl-c` or `space x` there stops that block rather than the latest,
-`space .` lists what you can do with it, and `space r` runs it again.
-`enter` (or a click on its number) opens the block in a float, and `/`
-opens it there to filter. The float shows that block and nothing around it,
-and works as the block does in the shell: `enter` or `space .` on a row
-acts on the pod or file it is, and `ctrl-c` stops it. `/` filters what
-the float shows, leaving the shell as it is (see [Filtering a
-block](#filtering-a-block)). A watch's float follows it as it refreshes.
-`esc` closes it. `space .` on any block offers
-"open in a float" too. A line goes when its block ends.
+
+| Key | |
+|---|---|
+| `ctrl-c` `space x` | Stop that block rather than the latest |
+| `space .` | What you can do with it |
+| `space r` | Run it again |
+| `enter`, or a click on its number | Open the block in a float |
+| `/` | Open it in a float to filter |
+
+The float shows that block and nothing around it, and works as the block
+does in the shell: `enter` or `space .` on a row acts on the pod or file
+it is, and `ctrl-c` stops it. `/` filters what the float shows, leaving
+the shell as it is (see [Filtering a block](#filtering-a-block)). A
+watch's float follows it as it refreshes, and `esc` closes it. `space .`
+on any block offers "open in a float" too. A line goes when its block
+ends.
 
 These floats stay while you work elsewhere, one for each block, so you
 can keep several watches, logs and builds in sight at once: opening
@@ -879,25 +886,26 @@ in every shell, this project's first, with each one's output beside it:
 
 ## Rows you can act on
 
-Some tables' rows are things: an `ls -l` row is a file or a folder, a
-`ps` row a process, a `kubectl get` row a pod, deployment or other
-kubernetes object (from the `kubernetes` plugin), a `docker ps` row a
-container (from the `docker` plugin). Some are known by their columns,
-whatever printed them: a row with a `PID` (from `ps` on any
-system, `lsof`, `docker top`) is a process, and rows with a name and a
-type of `file` or `dir`, as nu's `ls` gives, are files. In a repository,
-`git status` (short or long) and `jj st` list changed files (`diff`,
-`open`, `restore`, and with git `stage` and `unstage`), `git log` lists
-commits (`show`, `checkout`, `cherry-pick`, `revert`) and `jj log`
-revisions (`show`, `diff`, `new`, `edit`, `squash`, `abandon`), from the
-`vcs` plugin; each command names the repository the block ran in. The
-status says so
-(`table · 5 pods`). On such a row, `space .` lists what you can do with
-it, the same actions that kind of thing has anywhere in Greed, and
-`enter` does the usual one: a file opens, a folder becomes the shell's
-folder, a pod or another kubernetes object is described, a container
-shows its logs. `ctrl-o` (`alt-left` in the vscode style) comes back from
-a file you opened to the row you opened it from.
+Some tables' rows are things, and the status says so (`table · 5 pods`):
+
+| Rows of | Are |
+|---|---|
+| `ls -l`, or any table with a name and a type of `file` or `dir` (nu's `ls`) | Files and folders |
+| `ps` on any system, or any table with a `PID` (`lsof`, `docker top`) | Processes |
+| `kubectl get` | Pods, deployments and other kubernetes objects (the `kubernetes` plugin) |
+| `docker ps` | Containers (the `docker` plugin) |
+| `git status` (short or long), `jj st` | Changed files: `diff`, `open`, `restore`, and with git `stage` and `unstage` (the `vcs` plugin) |
+| `git log` | Commits: `show`, `checkout`, `cherry-pick`, `revert` (the `vcs` plugin) |
+| `jj log` | Revisions: `show`, `diff`, `new`, `edit`, `squash`, `abandon` (the `vcs` plugin) |
+
+The `vcs` plugin's commands name the repository the block ran in.
+
+On such a row, `space .` lists what you can do with it, the same actions
+that kind of thing has anywhere in Greed, and `enter` does the usual one:
+a file opens, a folder becomes the shell's folder, a pod or another
+kubernetes object is described, a container shows its logs. `ctrl-o`
+(`alt-left` in the vscode style) comes back from a file you opened to the
+row you opened it from.
 
 A kind can put the columns its rows are known by first: `docker ps` shows
 `NAMES`, `IMAGE` and `STATUS` first, so a narrow pane cuts `COMMAND` and
@@ -909,17 +917,18 @@ Rows a table stage kept are still what the command listed: after
 after `$3 | where name ~ api` from block 3's pods, in the cluster block 3
 ran against.
 
-A pod offers `describe`, `logs`, `follow logs`, `events`, `yaml`, `json`,
-`delete` and `shell`, which opens a shell in it (bash if the image has it,
-else `sh`) in a floating terminal, asking which container when it has
-several; `ctrl-d` or `exit` ends it, and `esc esc` stops typing into it.
+| Kind | Actions |
+|---|---|
+| Pod | `describe`, `logs`, `follow logs`, `events`, `yaml`, `json`, `delete`, `shell` |
+| File | `open`, `float`, `split`, `rename`, `delete`, `diff` (what changed since the last commit), `reveal in tree`, `copy-path` |
+| Folder | `cd`, `new shell here`, `grep here`, `rename`, `delete`, `reveal in tree` |
+| Process | `stop`, `interrupt`, `hang up`, `kill`, `open files`, `its folder` |
 
-A file offers `open`, `float`, `split`, `rename`, `delete`, `diff` (what
-changed since the last commit), `reveal in tree` and `copy-path`; a folder
-`cd`, `new shell here`, `grep here`, `rename`, `delete` and `reveal in
-tree`; a process `stop`, `interrupt`, `hang up`, `kill`, `open files` and
-`its folder`. These are the same wherever a file or folder shows up, a
-path in any buffer included.
+A pod's `shell` opens a shell in it (bash if the image has it, else `sh`)
+in a floating terminal, asking which container when it has several;
+`ctrl-d` or `exit` ends it, and `esc esc` stops typing into it. A file's
+and folder's actions are the same wherever one shows up, a path in any
+buffer included.
 
 Select several rows (`x` a few times in Helix, `V` in Vim, shift and the
 arrows in the vscode style) and `space .` offers each action once for all
@@ -1043,14 +1052,21 @@ Plugins add kinds of rows and actions of their own
 
 ## Asking for a command
 
-A line that starts with `?` asks a model for a command instead of running
-anything: `? the ten biggest files under here`. So does a line ending in
-`?` that reads as a question (three words or more, so `ls a?` stays a
-glob), and one with a `?` between what you've typed so far and the
-question, `ls | where ? only files over 1 MB`. The model gets the shell's
-folder, which shell runs your lines, and your last few commands with how
-they ended and the end of their output, marked as text someone else
-wrote. Its command goes to the prompt for you to read, change and run.
+These lines ask a model for a command instead of running anything:
+
+```text
+❯ ? the ten biggest files under here
+❯ ls | where ? only files over 1 MB
+```
+
+A line starting with `?` asks, and so does one with a `?` between what
+you've typed so far and the question. A line ending in `?` asks when it
+reads as a question (three words or more, so `ls a?` stays a glob).
+
+The model gets the shell's folder, which shell runs your lines, and your
+last few commands with how they ended and the end of their output, marked
+as text someone else wrote. Its command goes to the prompt for you to
+read, change and run.
 
 It asks the model playing `shell-ask-role` (`fast`); `:models` shows and
 sets them up. Without one, or without its key, a block marked `?` (nothing
@@ -1099,15 +1115,18 @@ does beside it:
 - `$` for variables and earlier blocks, `buf:` for buffers, and `@sel`
   and `@file`.
 
-A program's arguments come from what knows them, the first that answers:
-a completer a plugin added for the program; the program itself when it's
-built with Cobra (kubectl, helm, gh, docker, flux, argocd, and any other
-with Cobra's completion inside); fish's completions when fish is
-installed; carapace's when it is; and for a flag, the program's man page,
-read from the file. Last, when you press `tab` on a flag, what the
-program prints for `--help` (and for a subcommand its help lists, that
-one's). Files and folders when none of them knows, or the program says
-files fit.
+A program's arguments come from the first of these that answers:
+
+1. A completer a plugin added for the program.
+2. The program itself when it's built with Cobra (kubectl, helm, gh,
+   docker, flux, argocd, and any other with Cobra's completion inside).
+3. fish's completions, when fish is installed.
+4. carapace's, when it is.
+5. For a flag, the program's man page, read from the file.
+6. When you press `tab` on a flag, what the program prints for `--help`
+   (and for a subcommand its help lists, that one's).
+
+Files and folders when none of them knows, or the program says files fit.
 
 ```text
 ~/s/app ❯ kubectl get po
@@ -1119,8 +1138,9 @@ files fit.
 The programs asked run in the background, in the shell's folder with its
 variables, for at most `shell-completion-timeout` (2000) milliseconds;
 typing on stops one that's no longer needed, and an answer is kept a few
-seconds, so typing more of a word narrows it without asking again. Your
-program runs only for `--help`: a Cobra program is asked with its
+seconds, so typing more of a word narrows it without asking again.
+
+Your program runs only for `--help`: a Cobra program is asked with its
 `__complete` command, the way every shell asks it, and whether a program
 is Cobra's is found by looking inside it. `:set shell-help-completion
 never` stops `--help` from running at all, and `shell-help-never` lists
@@ -1143,7 +1163,9 @@ without taking your screen) with the `shell` [tool group](agents.md#tool-groups)
 An agent's commands run through a pipe with their input closed, from the
 project's root unless they ask for a folder, in `sh` without its startup
 files. Their blocks are marked `◆`, and their `cd` and `export` show in
-their block without changing your shell. What a command prints goes back
+their block without changing your shell.
+
+What a command prints goes back
 to the model between `<untrusted-…>` tags it's told to read as data and
 not to follow, with secrets in it hidden (private keys, cloud and API tokens,
 bearer tokens, the values of variables like `DB_PASSWORD`); `greed ctl`

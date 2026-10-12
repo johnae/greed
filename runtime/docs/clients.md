@@ -43,14 +43,12 @@ project is shown, or the pane closes), you move to the shown tab's active
 pane, what you had typed halfway is dropped, and you're back in normal
 mode there, so keys meant for a terminal never land in a file.
 
-`:client-independent` gives the client you type it in a layout of its own.
-It starts from a copy of what it showed (the same tabs, panes, panels and
-the tab's floating terminals, as new views of the same buffers, scrolled
-and selected the same) and from then on its tabs, panes and project change
-apart from the others'. `:client-follow` has it follow again: the panes it
-had on its own close, while their buffers stay open, and you go on in the
-file you were in, in the pane the others show it in. Both say what they did
-at the bottom.
+| Command | |
+|---|---|
+| `:client-independent` | Give this client a layout of its own. It starts from a copy of what it showed (the same tabs, panes, panels and the tab's floating terminals, as new views of the same buffers, scrolled and selected the same); from then on its tabs, panes and project change apart from the others' |
+| `:client-follow` | Follow the others again. The panes it had on its own close, their buffers stay open, and you go on in the file you were in, in the pane the others show it in |
+
+Both say what they did at the bottom.
 
 Floats keep their place and size in proportion on screens of different
 sizes: a float in the middle of a big window is in the middle of a small
@@ -99,17 +97,21 @@ Greed version too, as after an upgrade.
 ## For plugins
 
 Code always acts for one client: the one whose key, click or menu ran a
-command, or the one an event is about. `ctx.client` and
-`greed.client.id()` say which, `greed.client.current()` gives its name,
-kind, size and layout, `greed.client.list()` lists them all, and
-`greed.client.set_layout("independent" | "follow", id?)` is what the two
-commands use. State a plugin keeps for what a client has open, like a
-picker, belongs in a table keyed by `greed.client.id()`. A float is shown
-only to the client it opened for unless its spec says `shared = true`;
-sizes and places like `"37.5%"` keep it in proportion on every client.
-`greed.option.set(name, value, { client = true })` gives the acting
-client a value of its own, and `buffer:set_screen_size` lays a buffer out
-at one size in every view, as terminals do. [Writing plugins](plugins.md)
+command, or the one an event is about.
+
+| API | |
+|---|---|
+| `ctx.client`, `greed.client.id()` | Which client is acting |
+| `greed.client.current()` | Its name, kind, size and layout |
+| `greed.client.list()` | Every attached client |
+| `greed.client.set_layout("independent" \| "follow", id?)` | What the two commands above use |
+| `greed.option.set(name, value, { client = true })` | A value of its own for the acting client |
+| `buffer:set_screen_size` | Lays a buffer out at one size in every view, as terminals do |
+
+State a plugin keeps for what a client has open, like a picker, belongs in
+a table keyed by `greed.client.id()`. A float is shown only to the client
+it opened for unless its spec says `shared = true`; sizes and places like
+`"37.5%"` keep it in proportion on every client. [Writing plugins](plugins.md)
 has more.
 
 A client that attaches over the session socket can ask to be laid out on

@@ -1,9 +1,10 @@
-Greed (Get, Reflect, Eval, Edit, Delegate) is a text environment with a
-good editor built in. You use it in a terminal or a window, on your
-machine or on the one where the work runs. It's a small Rust core with
-everything else in Luau: keys, modes, commands, pickers, themes and the
-agent integration are plugins you can read, change or replace while it
-runs.
+Greed is a modal text editor with Helix, Vim and VS Code keys, a shell,
+terminals and agent support. It runs in a terminal or a window, locally or
+over ssh. The core is a small Rust program; keys, modes, commands,
+pickers, themes and the agent support are Luau plugins you can read,
+change or replace while it runs.
+
+[![A Rust file with the file tree beside it and a terminal below running kubectl get pods](https://github.com/johnae/greed/releases/download/media/hero.png)](https://github.com/johnae/greed/releases/download/media/hero.mp4)
 
 ```text
 $ greed src/main.rs          # edit; the session keeps running if you detach
@@ -15,10 +16,9 @@ $ greed ctl focus            # ask the running editor what you're looking at
 { "path": "/home/you/myapp/src/main.rs", "mode": "normal", "style": "vim", "selections": [ ... ], ... }
 ```
 
-Edit the way you already like to. The first time Greed starts it asks
-which style you want, and `:style` switches while it runs. The three
-styles are equals: each follows the editor it comes from closely, down to
-text objects, registers, macros and counts, so your habits carry over.
+The first time Greed starts it asks which editing style you want;
+`:style` switches while it runs. Each style follows the editor it comes
+from, down to text objects, registers, macros and counts.
 
 - Vim: say what to do, then where: `d w`, `c i w`, `.` to repeat.
 - Helix: select first, then act. `x` selects a line, `s` every regex match
@@ -26,21 +26,28 @@ text objects, registers, macros and counts, so your habits carry over.
 - VS Code: no modes, VS Code's keys. Typing inserts, shift and the arrows
   select, `ctrl-d` adds the next match as another cursor.
 
-Everything that isn't editing lives in the leader, which every style
-opens: `space` in Vim and Helix, `ctrl-space` in the VS Code style. So
-`space f` finds files (`ctrl-space f` or `ctrl-p` in the VS Code style)
-and `space /` searches the project as you type. `:` runs any command in Vim and Helix;
-in the VS Code style `ctrl-P` picks one and `alt-x` opens the same command
-line. Language servers start on their own when they're installed;
-`:health` shows which ones were found. [Editing styles](runtime/docs/editing-styles.md)
-has the keys for each.
+Everything that isn't editing is under the leader key:
 
-Greed also has panes, tabs and floating views with zellij's `alt` keys,
-terminals, and a shell (`:shell`) whose commands become blocks you keep,
-search and run again. `greed ssh HOST` shows an editor running on another
-machine, and several terminals and windows can show one session at once.
-Markdown files can work things out as you type: fields, formulas, charts
-under tables, and tables read live from CSV, SQLite or PostgreSQL.
+| | Vim, Helix | VS Code style |
+| --- | --- | --- |
+| Leader | `space` | `ctrl-space` |
+| Find files | `space f` | `ctrl-space f` or `ctrl-p` |
+| Search the project as you type | `space /` | `ctrl-space /` |
+| Run a command | `:` | `ctrl-P` picks one, `alt-x` opens the command line |
+
+Language servers start on their own when they're installed; `:health`
+shows which ones were found. [Editing styles](runtime/docs/editing-styles.md)
+has the keys for each style.
+
+Also in Greed:
+
+- Panes, tabs and floating views with zellij's `alt` keys, and terminals.
+- A shell (`:shell`) whose commands become blocks you keep, search and run
+  again.
+- `greed ssh HOST` shows an editor running on another machine, and several
+  terminals and windows can show one session at once.
+- Markdown files that compute as you type: fields, formulas, charts under
+  tables, and tables read live from CSV, SQLite or PostgreSQL.
 
 ## Plugins in Luau
 
@@ -85,14 +92,16 @@ claude mcp add greed -- greed mcp     # Greed's tools in Claude Code
 codex mcp add greed -- greed mcp      # or Codex, or any MCP client
 ```
 
-`space i n` starts an agent inside Greed: Greed's own, with any model you
-set up, or Claude Code, Codex, Gemini CLI or opencode over ACP, in the
-project or in a workspace of its own to review and bring in when it's
-done. Claude Code also runs in a pane as itself: `space i C`, connected
-to Greed as it is to VS Code, its edits arriving as proposals, and
-`space i W` for one in a workspace of its own. In auto mode, commands that only look,
-build or test run by themselves, and a decision model you pick judges the
-rest or asks you. Agents can
+Inside Greed:
+
+| Keys | |
+| --- | --- |
+| `space i n` | Start an agent: Greed's own, with any model you set up, or Claude Code, Codex, Gemini CLI or opencode over ACP, in the project or in a workspace of its own to review and bring in when it's done |
+| `space i C` | Claude Code in a pane, connected to Greed as it is to VS Code; its edits arrive as proposals |
+| `space i W` | Claude Code in a pane, in a workspace of its own |
+
+In auto mode, commands that only look, build or test run by themselves,
+and a decision model you pick judges the rest or asks you. Agents can
 write new plugins too: Greed type checks and tests them, and you review the
 code before it loads.
 

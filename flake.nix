@@ -1,5 +1,5 @@
 {
-  description = "Greed (Get, Reflect, Eval, Edit, Delegate): an execution environment with a good editor built in";
+  description = "Greed: a modal text editor with Helix, Vim and VS Code keys and Luau plugins";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
