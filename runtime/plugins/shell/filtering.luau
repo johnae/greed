@@ -51,7 +51,10 @@ function M.prompt(block: Block, options: Options): greed.View
 		end
 	end
 	return core.prompt.open({
-		title = options.title,
+		-- Says where the names are: a readable log line doesn't show them.
+		title = if #M.words(block) > 0
+			then `{options.title} · tab lists fields`
+			else options.title,
 		text = options.text,
 		kind = M.KIND,
 		on_change = options.on_change,
@@ -84,8 +87,28 @@ local function shape(line: string): (number?, string?)
 	return indent, key
 end
 
--- Adds the fields of a JSON object to `into`, dotted inside objects.
-local function fields(object: { [string]: any }, prefix: string, into: { [string]: boolean })
+-- How many values of a field are shown beside it, and how long each may be.
+local SAMPLES = 3
+local SAMPLE_WIDTH = 20
+
+-- Adds `value`, as a filter would match it, to the values seen of a field,
+-- up to `SAMPLES` different ones.
+local function sample(seen: { string }, value: any)
+	if #seen >= SAMPLES or type(value) == "table" then
+		return
+	end
+	local text = tostring(value)
+	if #text > SAMPLE_WIDTH then
+		text = string.sub(text, 1, SAMPLE_WIDTH - 1) .. "…"
+	end
+	if text ~= "" and not table.find(seen, text) then
+		table.insert(seen, text)
+	end
+end
+
+-- Adds the fields of a JSON object to `into` with values they have, dotted
+-- inside objects.
+local function fields(object: { [string]: any }, prefix: string, into: { [string]: { string } })
 	for name, value in object do
 		if type(name) ~= "string" then
 			continue
@@ -93,17 +116,20 @@ local function fields(object: { [string]: any }, prefix: string, into: { [string
 		if type(value) == "table" and next(value) ~= nil and value[1] == nil then
 			fields(value, `{prefix}{name}.`, into)
 		else
-			into[`{prefix}{name}`] = true
+			local key = `{prefix}{name}`
+			into[key] = into[key] or {}
+			sample(into[key], value)
 		end
 	end
 end
 
 --- What a filter of `block` can complete: its sections, as `.a.b`, its
 --- JSON lines' fields and its table's columns, as `name=`, each with what
---- it is.
+--- it is: values a field has, since a readable log line doesn't name its
+--- fields (`level` or `severity`).
 function M.words(block: Block): { { word: string, what: string } }
 	local sections: { [string]: boolean } = {}
-	local named: { [string]: boolean } = {}
+	local named: { [string]: { string } } = {}
 	local above: { { indent: number, key: string } } = {}
 	local count = 0
 	for line in string.gmatch(block.output or "", "[^\n]+") do
@@ -132,14 +158,23 @@ function M.words(block: Block): { { word: string, what: string } }
 			end
 		end
 	end
-	if block.table then
-		for _, column in block.table.columns do
-			named[column] = true
+	local tbl = block.table
+	if tbl then
+		for _, column in tbl.columns do
+			local seen = named[column] or {}
+			named[column] = seen
+			for _, row in tbl.rows do
+				if #seen >= SAMPLES then
+					break
+				end
+				sample(seen, row[column] or "")
+			end
 		end
 	end
 	local words: { { word: string, what: string } } = {}
-	for name in named do
-		table.insert(words, { word = name .. "=", what = "field" })
+	for name, seen in named do
+		local what = if #seen > 0 then table.concat(seen, ", ") else "field"
+		table.insert(words, { word = name .. "=", what = what })
 	end
 	-- Sections only of text that nests; a flat list of `key: value` lines
 	-- has nothing to keep under a key.

@@ -115,3 +115,23 @@ test("tab in a filter completes sections and fields from what the block printed"
 	local field = greed.view():buffer():text()
 	assert(field == "level=", field)
 end)
+
+test(
+	"a filter's fields come with values they have, as a readable line hides their names",
+	function(t)
+		local sh = open(t)
+		local logs = run(t, sh, "cat log.json")
+		local level: string? = nil
+		for _, word in shell.filtering.words(logs) do
+			if word.word == "level=" then
+				level = word.what
+			end
+		end
+		assert(level == "info, error", tostring(level))
+		local main = greed.view()
+		main:set_cursor(assert((shell.log.output_range(sh, logs))))
+		t:run("shell-filter")
+		local spec = assert(greed.view():float_spec())
+		assert(string.find(tostring(spec.title), "tab lists fields", 1, true), tostring(spec.title))
+	end
+)
