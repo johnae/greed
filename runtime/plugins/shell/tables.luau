@@ -1127,7 +1127,10 @@ local function normal(name: string): string
 end
 
 --- The column of `tbl` that `name` names, without minding case, spaces or
---- marks: "container_id" is "CONTAINER ID".
+--- marks: "container_id" is "CONTAINER ID". A dotted name, like
+--- `status.phase`, is a field inside a column of JSON objects, as a table
+--- of kubectl's items has: its cells are added to the rows under that
+--- name, when any row has one.
 function M.column(tbl: Table, name: string): string?
 	local want = normal(name)
 	for _, column in tbl.columns do
@@ -1135,7 +1138,19 @@ function M.column(tbl: Table, name: string): string?
 			return column
 		end
 	end
-	return nil
+	local head, path = string.match(name, "^([^%.]+)%.(.+)$")
+	local outer = head and M.column(tbl, head)
+	if outer == nil or path == nil then
+		return nil
+	end
+	local found = false
+	for _, row in tbl.rows do
+		local value = M.json(row[outer] or "")
+		local inner = if value ~= nil then M.get(value, path) else nil
+		row[name] = if inner ~= nil then as_text(inner) else ""
+		found = found or inner ~= nil
+	end
+	return if found then name else nil
 end
 
 -- `a` before `b`: as numbers when both are, numbers first, then as text

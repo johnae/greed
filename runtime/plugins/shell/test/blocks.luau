@@ -439,3 +439,18 @@ test("v shows a command in panes beside, each filtered its own way", function(t)
 	assert(shows(second, "ERROR") and not shows(second, "INFO"), "the second keeps ERROR")
 	assert(shows(main, "INFO") and shows(main, "ERROR"), "the shell shows it all")
 end)
+
+test("a level's footer stops offering to stop its command once it ends", function(t)
+	local sh = open(t)
+	local main = greed.view()
+	local block = assert(shell.run(sh, "echo up; sleep 0.5", { view = main }))
+	shell.drill.open(sh, block, "sleeping", main, false, true)
+	local float = greed.view()
+	local function footer(): string
+		local spec = assert(float:float_spec())
+		return tostring(spec.footer)
+	end
+	assert(string.find(footer(), "ctrl-z", 1, true), footer())
+	finished(t, block)
+	assert(not string.find(footer(), "ctrl-z", 1, true), footer())
+end)

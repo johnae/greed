@@ -2153,10 +2153,18 @@ greed.command({
 		end
 		local shown = block.shown
 		local sort, desc = if shown then shown.sort else nil, shown ~= nil and shown.desc
+		-- From blocks mode, the command stays selected, with what it kept
+		-- under it.
+		local from_blocks = greed.mode.get() == navigate.MODE
 		local function set(text: string)
 			rows.set(shell, block, text, sort, desc)
 			peek.follow(block)
-			to_output(shell, block, view)
+			local command = log.range(block)
+			if from_blocks and command then
+				view:set_cursor(command)
+			else
+				to_output(shell, block, view)
+			end
 		end
 		core.prompt.open({
 			title = if block.table then "Filter rows" else "Filter lines",

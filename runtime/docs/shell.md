@@ -592,8 +592,9 @@ printed.
 The stages work on an object too: its fields are the columns of one row,
 so `$3 | select name` gives its name, and when one of its fields holds an
 array of objects, like kubectl's `items`, the columns it doesn't have are
-that array's, so `$3 | where phase = Failed` looks through the items.
-`get` picks a field:
+that array's. A dotted column reaches inside a column of objects, so
+`$3 | where status.phase = Failed | select metadata.name` looks through
+kubectl's pods. `get` picks a field:
 
 | | |
 |---|---|

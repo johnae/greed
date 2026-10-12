@@ -9,6 +9,7 @@ local greed = require("@greed")
 local state = require("./state")
 local log = require("./log")
 local peek = require("./peek")
+local run = require("./run")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -153,6 +154,16 @@ greed.on("view.closed", function(event: greed.ViewClosed)
 				level.from:set_cursor(level.at)
 			end
 			return
+		end
+	end
+end)
+
+-- A level's command ending has nothing left to stop or keep running: its
+-- footer says what's left to do.
+run.on_finish(function(_, block: Block)
+	for _, level in levels do
+		if level.block == block and not level.replaced and level.view:valid() then
+			level.view:configure({ footer = FOOTER })
 		end
 	end
 end)

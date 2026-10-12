@@ -27,8 +27,11 @@ local M = {}
 local SETTLE_MS = 100
 
 -- How long a program in a line mode prints nothing before the block says
--- it may be waiting for input.
+-- it may be waiting for input: after a question, which leaves the cursor
+-- after it, or else much longer, since a program fetching something, like
+-- kubectl, is as quiet.
 local QUIET_MS = 1000
+local SILENT_MS = 10000
 
 -- How many lines that scrolled off its screen a block's terminal keeps
 -- until they're read; they're read as they come, so only output faster
@@ -211,6 +214,13 @@ local function wants_terminal(t: greed.Terminal): boolean
 	return modes.alternate or not modes.canonical or not modes.echo
 end
 
+-- Whether `t`'s program left the cursor after something on its line, as a
+-- question does (`Continue? [y/N] `).
+local function asked(t: greed.Terminal): boolean
+	local cursor = t:screen().cursor
+	return cursor ~= nil and cursor.col > 0
+end
+
 -- A view to hand `r`'s program over in: the one it ran from, while that
 -- shows the shell, else one that shows it, else the focused one.
 local function view_for(r: Run): greed.View
@@ -284,7 +294,10 @@ local function watch(r: Run)
 				M.handoff(block)
 			end
 			wanted = wants
-			local waiting = r.shown == nil and not wants and greed.now() - r.printed >= QUIET_MS
+			local quiet = greed.now() - r.printed
+			local waiting = r.shown == nil
+				and not wants
+				and (quiet >= SILENT_MS or quiet >= QUIET_MS and asked(r.terminal))
 			if waiting ~= block.waiting then
 				block.waiting = waiting
 				log.draw_block(r.shell, block)

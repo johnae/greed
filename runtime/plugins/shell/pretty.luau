@@ -146,6 +146,9 @@ function M.marks(text: string): { greed.Mark }?
 			{ from = i - 1, to = to, style = piece.style, text = piece.text, conceal = true }
 		)
 	end
+	-- A line a row, as `tail` shows a log: the fields after the message
+	-- go past the edge, rather than wrapping under it.
+	marks[1].nowrap = true
 	return marks
 end
 

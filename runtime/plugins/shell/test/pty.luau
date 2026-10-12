@@ -126,24 +126,37 @@ test("a program reading keys raw is handed to a terminal", function(t)
 	assert(string.find(block.output, "got it", 1, true), block.output)
 end)
 
-test("a quiet program may be waiting for input, and ctrl-t types into it", function(t)
+test(
+	"a program quiet after a question may be waiting for input, and ctrl-t types into it",
+	function(t)
+		local sh = open(t)
+		local view = greed.view()
+		local block = type_line(t, sh, "sh -c 'printf \"name? \"; read x; echo got $x'")
+		assert(not block.waiting)
+		t:wait_for(function()
+			return (block.waiting :: boolean?) == true
+		end)
+		local said = status(sh, block)
+		assert(string.find(said, "waiting for input", 1, true), said)
+		assert(view:buffer() == sh.buffer, "a line mode program isn't handed over on its own")
+		t:keys("ctrl-t")
+		assert(view:buffer():kind() == "terminal", view:buffer():kind())
+		t:keys("h i enter")
+		finished(t, block)
+		assert(string.find(block.output, "got hi", 1, true), block.output)
+		t:wait_for(function()
+			return view:buffer() == sh.buffer
+		end)
+	end
+)
+
+test("a program quiet at the start of a line isn't said to wait as soon", function(t)
 	local sh = open(t)
-	local view = greed.view()
-	local block = type_line(t, sh, "sh -c 'read x; echo got $x'")
-	assert(not block.waiting)
+	-- As likely fetching something, as kubectl is.
+	local block = type_line(t, sh, "sh -c 'echo fetching; sleep 30'")
 	t:wait(1100)
-	assert(block.waiting, "says it may be waiting")
-	local said = status(sh, block)
-	assert(string.find(said, "waiting for input", 1, true), said)
-	assert(view:buffer() == sh.buffer, "a line mode program isn't handed over on its own")
-	t:keys("ctrl-t")
-	assert(view:buffer():kind() == "terminal", view:buffer():kind())
-	t:keys("h i enter")
-	finished(t, block)
-	assert(string.find(block.output, "got hi", 1, true), block.output)
-	t:wait_for(function()
-		return view:buffer() == sh.buffer
-	end)
+	assert(block.status == "running" and not block.waiting, "not waiting yet")
+	shell.kill(block)
 end)
 
 test("a line typed with ! runs in a terminal right away", function(t)

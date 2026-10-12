@@ -617,6 +617,32 @@ test("a stage on text says why it can't run, after a program too", function(t)
 	assert(lines.output == "line\na 2\n", lines.output)
 end)
 
+test("a dotted column reaches inside JSON objects, as kubectl's items are", function(t)
+	local list: { [string]: any } = {
+		kind = "List",
+		metadata = { resourceVersion = "" },
+		-- Items of different shapes, as kubectl's are.
+		items = {
+			{ metadata = { name = "api" }, status = { phase = "Running", podIP = "10.0.0.1" } },
+			{ metadata = { name = "job" }, status = { phase = "Succeeded" } },
+		} :: { any },
+	}
+	local pods = greed.json.encode(list)
+	local sh = open(t, t:tempdir({ ["pods.json"] = pods }))
+	local first = run(t, sh, "cat pods.json")
+	local running = run(
+		t,
+		sh,
+		`${first.number} | where status.phase = Running | select metadata.name status.podIP`
+	)
+	assert(running.status == "done", running.stderr)
+	local tbl = assert(running.table, running.output)
+	assert(#tbl.rows == 1 and tbl.rows[1]["metadata.name"] == "api", running.output)
+	assert(tbl.rows[1]["status.podIP"] == "10.0.0.1", running.output)
+	local missing = run(t, sh, `${first.number} | where status.nothing = x`)
+	assert(missing.status ~= "done", "no such column")
+end)
+
 test("stages after a program read what it prints as a table", function(t)
 	local sh = open(t, t:tempdir())
 	local table_line = "printf 'NAME   AGE\\nann    3\\nbob    5\\ncid    9\\n'"

@@ -183,6 +183,10 @@ end
 local OWN: { [string]: boolean } =
 	{ _ = true, PWD = true, OLDPWD = true, SHLVL = true, LAST_EXIT_CODE = true }
 
+-- A tag keeping this editor's run folders apart from those of others sharing
+-- the cache folder (two sessions, say), whose blocks are numbered from 1 too.
+local INSTANCE = string.format("%06x%06x", math.random(0, 0xffffff), math.random(0, 0xffffff))
+
 --- A run of a line in a real shell: the program to start, and the folder
 --- its wrapper writes to.
 export type Run = {
@@ -200,7 +204,7 @@ function M.prepare(block: Block, line: string, opts: { program: string?, rc: boo
 		block.note = "cd and export here don't carry over"
 		return { argv = { "sh", "-c", line } }
 	end
-	local dir = `{cache}/shell/run/{block.uid}`
+	local dir = `{cache}/shell/run/{INSTANCE}-{block.uid}`
 	greed.fs.remove(dir, { recursive = true })
 	greed.fs.mkdir(dir)
 	local nu = string.gsub(NU, "DIR", function()
