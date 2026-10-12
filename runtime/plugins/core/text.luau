@@ -283,6 +283,20 @@ function M.width(text: string): number
 	return utf8.len(text) or #text
 end
 
+--- How many bytes `a` and `b` start with in common, in whole lines, each
+--- with its line break: what an edit replacing `a` with `b` can leave be,
+--- so the cursor and marks in those lines stay put.
+function M.same_lines(a: string, b: string): number
+	local at = 1
+	while true do
+		local stop = string.find(a, "\n", at, true)
+		if stop == nil or string.sub(a, at, stop) ~= string.sub(b, at, stop) then
+			return at - 1
+		end
+		at = stop + 1
+	end
+end
+
 --- `text` cut to `width` characters, the last an ellipsis when it's longer.
 function M.clip(text: string, width: number): string
 	if M.width(text) <= width then

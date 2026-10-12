@@ -756,7 +756,10 @@ local function update(
 		if drop_shown > 0 then
 			e:delete(buffer:line_start(first + head), buffer:line_start(first + head + drop_shown))
 		end
-		e:replace(volatile_from, replace_to, text)
+		-- Lines that read the same stay, so a cursor or a mark on them
+		-- isn't swept to the end by the lines drawn again.
+		local same = core.text.same_lines(buffer:slice(volatile_from, replace_to), text)
+		e:replace(volatile_from + same, replace_to, string.sub(text, same + 1))
 	end, OUT_OF_UNDO)
 	s.stable = s.stable - drop_shown + #kept
 	if volatile then
