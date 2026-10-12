@@ -1451,14 +1451,10 @@ local function call(
 	return M.fit(text, `{s.id}-{c.id}`), not ok
 end
 
--- Adds `text` to the agent's last words in the transcript, or starts them.
-local function say(s: Session, text: string)
-	local last = s.entries[#s.entries]
-	if last and last.kind == "agent" then
-		last.text = (last.text or "") .. text
-	else
-		table.insert(s.entries, { kind = "agent", text = text })
-	end
+-- Adds `text` to the agent's last words in the transcript (or what it
+-- thought, by `kind`), or starts them.
+local function say(s: Session, text: string, kind: string?)
+	session.append(s, kind or "agent", text)
 	s.changed()
 end
 
@@ -1605,6 +1601,7 @@ local function prompt(
 				said = state.said,
 				tools = specs,
 				cache_key = s.session_id,
+				effort = s.effort,
 			}, function(piece)
 				if state.run == run then
 					say(s, piece)
@@ -1614,6 +1611,10 @@ local function prompt(
 					state.close = close
 				else
 					close()
+				end
+			end, function(thought)
+				if state.run == run then
+					say(s, thought, "thought")
 				end
 			end)
 		end)
@@ -1649,7 +1650,7 @@ local function prompt(
 		local calls = if cut or asking then {} else turn.calls
 		table.insert(
 			state.said,
-			{ role = "assistant", text = turn.text, calls = calls } :: models.Said
+			{ role = "assistant", text = turn.text, calls = calls, signed = turn.signed } :: models.Said
 		)
 		if turn.tokens then
 			state.reported = { tokens = turn.tokens, at = #state.said }
@@ -2028,6 +2029,18 @@ function M.pick_model(s: Session): string?
 		end
 	end
 	return said
+end
+
+--- How hard the model of `s`, a session of Greed's own agent, thinks: as
+--- set for the session (`/effort`), else as its role says, and what's
+--- sent for that (models.effort). Nil when nothing says.
+function M.effort(s: Session): (string?, string?)
+	local state = states[s.id]
+	if state == nil then
+		return nil, nil
+	end
+	local role = models.roles[models.playing(state.role)]
+	return s.effort or (role and role.effort), models.effort(state.role, s.effort)
 end
 
 --- Has Greed's agent in `s` only read and search from now on: it's offered

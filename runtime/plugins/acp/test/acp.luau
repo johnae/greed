@@ -656,3 +656,66 @@ test(
 		assert(core.objects.get(found.id) == nil, "gone once closed")
 	end
 )
+
+-- The completion menu's text, once tab opened it.
+local function menu(t: test.TestContext): string
+	t:wait(30)
+	for _, view in greed.floats() do
+		if view:buffer():kind() == "completion" then
+			return view:buffer():text()
+		end
+	end
+	return ""
+end
+
+test("tab after / completes Greed's chat commands and the agent's own", function(t)
+	local s = start(t, t:tempdir({}))
+	t:wait_for(function()
+		return s.commands ~= nil
+	end)
+	local view = greed.view()
+	local pos = view:buffer():len()
+	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	t:keys("i / tab")
+	local listed = menu(t)
+	assert(string.find(listed, "/model", 1, true), listed)
+	assert(string.find(listed, "/review", 1, true), "the agent's own: " .. listed)
+	assert(string.find(listed, "Review the changes", 1, true), "with what it does: " .. listed)
+	-- Greed's /effort and /compact are its own agent's; Claude Code has its own /compact.
+	assert(not string.find(listed, "/effort", 1, true), listed)
+	t:keys("esc")
+	-- A tab that isn't after a slash is typed.
+	pos = view:buffer():len()
+	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	t:keys("i backspace h tab")
+	local typed = require("../transcript").prompt(greed.view():buffer())
+	assert(string.match(typed, "^h%s+$"), typed)
+end)
+
+test(
+	"an agent's own /command goes to it as typed, and so does one Greed's agent alone has",
+	function(t)
+		local s = start(t, t:tempdir({}))
+		send(t, s, "/review the pager")
+		assert(string.find(shown(), "  /review the pager\n", 1, true), shown())
+		assert(string.find(shown(), "  reviewing\n", 1, true), shown())
+		send(t, s, "/compact")
+		assert(string.find(shown(), "  compacted by the agent\n", 1, true), shown())
+	end
+)
+
+test("/mode with a name switches to it, and /model without one opens the picker", function(t)
+	local s = start(t, t:tempdir({}))
+	send(t, s, "/mode plan")
+	t:wait_for(function()
+		return s.mode == "plan"
+	end)
+	assert(not string.find(shown(), "/mode plan", 1, true), "not sent: " .. shown())
+	send(t, s, "/model")
+	local picker = t:floats()[1] or ""
+	assert(string.find(picker, "Big", 1, true), picker)
+	t:keys("B i g enter")
+	t:wait_for(function()
+		return s.model == "berget/big"
+	end)
+end)

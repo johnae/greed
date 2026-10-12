@@ -597,6 +597,38 @@ a panel: move and copy in it as in any other, and `:q` or
 `ctrl-w q` closes the panel while the agent goes on (`space i l` brings it
 back).
 
+What the agent thinks before it answers shows as a dimmed row folded to
+its first line (`… The user wants the pager fixed ▸`), for agents that share
+their thinking (Claude Code does, and so does Greed's own agent when its
+model's provider sends it, like Claude with an effort set or Mistral's
+reasoning models). `tab` on the row shows all of it. `/thoughts` hides them
+in every transcript, and shows them again; `:set agent-thoughts false` does
+the same from your config.
+
+#### Slash commands
+
+A message whose first word is one of Greed's chat commands runs it instead
+of going to the agent:
+
+| Command | What it does |
+| --- | --- |
+| `/model [name]` | Picks the model, as `alt-M` does; with a name, switches to it |
+| `/mode [name]` | Picks the mode, as `alt-m` does; with a name, switches to it |
+| `/thoughts` | Hides or shows what agents think |
+| `/fork` | A new session that starts with everything said so far |
+| `/effort [none\|low\|medium\|high]` | Greed's own agent: how hard its model thinks, for this session; without a word, a picker |
+| `/compact` | Greed's own agent: summarises all but its last few turns, to save room |
+
+`/effort` changes the session only, shown at the top of the box
+(`Greed · reasoning · effort high`); `/effort unset` goes back to what the
+role says, and `e` in `:models` sets the role's own for every session.
+Any other `/word` goes to the agent as you wrote it, so Claude Code's own
+commands, like `/review`, work as they do in Claude Code, and so do
+`/effort` and `/compact` for agents other than Greed's (and `/mode` or `/model`
+for an agent that offers none). `tab` after the
+`/` lists the commands that fit what you typed, Greed's and those the
+agent offers, each with what it does.
+
 ### The session list
 
 `space i l` lists the sessions of the repository you're in: those running

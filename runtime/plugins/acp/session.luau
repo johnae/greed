@@ -50,10 +50,12 @@ export type Mode = { id: string, name: string, description: string? }
 --- What a transcript shows, in order. `kind` says which fields it has:
 --- "user", "agent", "thought" and "note" have `text`, "tool" a `tool`,
 --- "plan" its `items`, and "permission" a `permission` and, once
---- answered, what was `chosen`.
+--- answered, what was `chosen`. A thought shows all of its text while
+--- `open`, else only its first line.
 export type Entry = {
 	kind: string,
 	text: string?,
+	open: boolean?,
 	tool: Tool?,
 	items: { { text: string, status: string } }?,
 	permission: Permission?,
@@ -134,7 +136,17 @@ export type Session = {
 	--- The helpers (subagent.luau) working on tasks it handed them now:
 	--- its box counts them, and stopping its turn stops theirs.
 	helpers: { Session }?,
+	--- The slash commands the agent offers (ACP's
+	--- `available_commands_update`), which the box completes.
+	commands: { Command }?,
+	--- How hard Greed's own agent's model thinks in this session, when
+	--- not as its role says (`/effort`).
+	effort: string?,
 }
+
+--- A slash command an agent offers: `/name`, what it does, and a hint for
+--- what it takes, if anything.
+export type Command = { name: string, description: string, hint: string? }
 
 --- An image pasted for a prompt: where it's kept, its PNG bytes and its
 --- size in pixels.
@@ -174,8 +186,9 @@ type Term = {
 	waiters: { greed.Signal },
 }
 
--- Adds `text` to the last entry if it's of `kind`, or to a new one.
-local function append(session: Session, kind: string, text: string)
+--- Adds `text` to the last entry if it's of `kind` ("agent", "thought",
+--- "user"), or to a new one.
+function M.append(session: Session, kind: string, text: string)
 	local entry = session.entries[#session.entries]
 	if entry and entry.kind == kind then
 		entry.text = (entry.text or "") .. text
@@ -401,11 +414,26 @@ local function update(session: Session, u: any)
 		session.where = { path = place.path, line = place.line }
 	end
 	if kind == "agent_message_chunk" then
-		append(session, "agent", text_of(u.content))
+		M.append(session, "agent", text_of(u.content))
 	elseif kind == "agent_thought_chunk" then
-		append(session, "thought", text_of(u.content))
+		M.append(session, "thought", text_of(u.content))
 	elseif kind == "user_message_chunk" then
-		append(session, "user", text_of(u.content))
+		M.append(session, "user", text_of(u.content))
+	elseif kind == "available_commands_update" then
+		local commands: { Command } = {}
+		for _, c in
+			(if type(u.availableCommands) == "table" then u.availableCommands else {}) :: { any }
+		do
+			if type(c) == "table" and type(c.name) == "string" then
+				local input = type(c.input) == "table" and c.input
+				table.insert(commands, {
+					name = (string.gsub(c.name, "^/", "")),
+					description = if type(c.description) == "string" then c.description else "",
+					hint = if input and type(input.hint) == "string" then input.hint else nil,
+				})
+			end
+		end
+		session.commands = commands
 	elseif kind == "tool_call" then
 		local detail, output = detail_of(u.content, session.cwd)
 		local tool: Tool = {

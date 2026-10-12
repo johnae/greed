@@ -3,7 +3,7 @@
 -- no plugin hard-codes a provider and switching to a local model is one line.
 --
 --   :models   each role's provider and model and whether its key is found;
---             enter changes a role, k sets a key, l signs in
+--             enter changes a role, e its effort, k sets a key, l signs in
 --
 -- What you pick in :models (or the setup page) is kept in Greed's data
 -- folder and read before your config, which has the last word.
@@ -41,7 +41,9 @@ export type TurnRequest = turn.Request
 --- `output` how long one of their answers may be, and `edits` how Greed's
 --- agent has them edit files (see `M.edits`). `cache_key` sends each
 --- conversation's name as `prompt_cache_key`, for providers that only
---- cache what's sent again with one, like Mistral.
+--- cache what's sent again with one, like Mistral. `effort` is how hard
+--- its models think when a role doesn't say (see `M.effort`), and
+--- `efforts` the ones it takes, when it doesn't take them all.
 export type Provider = {
 	kind: string,
 	url: string,
@@ -51,12 +53,15 @@ export type Provider = {
 	output: number?,
 	edits: string?,
 	cache_key: boolean?,
+	effort: string?,
+	efforts: { string }?,
 }
 
 --- Which provider and model play a role, and optionally how many tokens
 --- the model has room for (its context window) and may write in one answer,
 --- whether it sees images, when its name doesn't tell (see `M.sees_images`),
---- and how Greed's agent has it edit files (see `M.edits`).
+--- how Greed's agent has it edit files (see `M.edits`), and how hard it
+--- thinks before answering (see `M.effort`).
 export type Role = {
 	provider: string,
 	model: string,
@@ -64,17 +69,20 @@ export type Role = {
 	output: number?,
 	edits: string?,
 	images: boolean?,
+	effort: string?,
 }
 
 export type Message = { role: "user" | "assistant", content: string }
 
 --- What to ask: the conversation so far, and optionally instructions and
---- how long the answer may be (in tokens).
+--- how long the answer may be (in tokens), and how hard the model thinks
+--- first, when not as the role says (see `effort`).
 export type Request = {
 	messages: { Message },
 	system: string?,
 	max_tokens: number?,
 	temperature: number?,
+	effort: string?,
 }
 
 --- An answer arriving piece by piece. `next` waits for the next piece of
@@ -97,6 +105,7 @@ M.providers = {
 		url = "https://api.mistral.ai/v1",
 		secret = "mistral",
 		cache_key = true,
+		efforts = { "none", "high" },
 	},
 	berget = {
 		kind = "openai",
@@ -217,28 +226,67 @@ do
 			and type(role.model) == "string"
 		then
 			local chosen: Role = { provider = role.provider, model = role.model }
+			if table.find(turn.EFFORTS, role.effort) then
+				chosen.effort = role.effort
+			end
 			M.roles[name] = chosen
 			own[name] = chosen
 		end
 	end
 end
 
---- Has `role` played by `model` at `provider` from now on, kept in Greed's
---- data folder for next time (your config's own settings still come
---- first). Returns why not, if it can't keep it.
-function M.choose(role: string, provider: string, model: string): string?
-	local chosen: Role = { provider = provider, model = model }
-	M.roles[role] = chosen
-	own[role] = chosen
+-- Keeps `chosen` as `role` in Greed's data folder. Returns why not, if it
+-- can't.
+local function keep_chosen(role: string, chosen: Role): string?
 	local path = chosen_path()
 	if path == nil then
 		return "there's no data folder to keep it in"
 	end
 	local out = read_chosen(path)
 	out.roles = if type(out.roles) == "table" then out.roles else {}
-	out.roles[role] = { provider = provider, model = model }
+	out.roles[role] = { provider = chosen.provider, model = chosen.model, effort = chosen.effort }
 	local written, err = greed.fs.write(path, greed.json.encode(out))
 	return if written then nil else err
+end
+
+--- Has `role` played by `model` at `provider` from now on, kept in Greed's
+--- data folder for next time (your config's own settings still come
+--- first), with the effort it had. Returns why not, if it can't keep it.
+function M.choose(role: string, provider: string, model: string): string?
+	local before = M.roles[role]
+	local chosen: Role = { provider = provider, model = model, effort = before and before.effort }
+	M.roles[role] = chosen
+	own[role] = chosen
+	return keep_chosen(role, chosen)
+end
+
+--- How hard a model may think before it answers, least first: "none",
+--- "low", "medium", "high".
+M.EFFORTS = turn.EFFORTS
+
+--- Has the model playing `role` (following its fallback) think as hard as
+--- `effort` says (`EFFORTS`), or as its provider says when nil, kept with
+--- the role as `choose` keeps it. A role your config set changes until
+--- your config runs again. Returns why not, if it can't keep it.
+function M.set_effort(role: string, effort: string?): string?
+	if effort and not table.find(M.EFFORTS, effort) then
+		return `{effort} isn't an effort; one of {table.concat(M.EFFORTS, ", ")}`
+	end
+	local name = M.playing(role)
+	local before = M.roles[name]
+	if before == nil then
+		return `no model plays the role "{name}"`
+	end
+	if not M.is_own(name) then
+		-- In place, so requests still run as the plugin that set it may.
+		before.effort = effort
+		return "your config sets the role, so it's for now; set its effort there to keep it"
+	end
+	local chosen = table.clone(before)
+	chosen.effort = effort
+	M.roles[name] = chosen
+	own[name] = chosen
+	return keep_chosen(name, chosen)
 end
 
 --- The models the `fast` and `reasoning` roles get when you pick a
@@ -388,6 +436,34 @@ function M.edits(role: string): string
 	return known(chosen and chosen.edits) or known(provider and provider.edits) or "replace"
 end
 
+--- How hard the model playing `role` thinks, as sent: `wanted`, else the
+--- role's `effort`, else its provider's, as the nearest of the provider's
+--- `efforts` (the higher of two as near). Nil when none says, and then
+--- nothing is sent.
+function M.effort(role: string, wanted: string?): string?
+	local chosen, provider = M.resolve(M.playing(role))
+	local effort = wanted or (chosen and chosen.effort) or (provider and provider.effort)
+	local at = effort and table.find(M.EFFORTS, effort)
+	if at == nil then
+		return nil
+	end
+	local takes = provider and provider.efforts
+	if takes == nil or #takes == 0 then
+		return effort
+	end
+	local best, distance = nil, math.huge
+	for _, offered in takes do
+		local there = table.find(M.EFFORTS, offered)
+		if there then
+			local far = math.abs(there - at)
+			if far < distance or (far == distance and best and there > best) then
+				best, distance = there, far
+			end
+		end
+	end
+	return if best then M.EFFORTS[best] else effort
+end
+
 -- The headers that carry `key` to `provider`, as its API wants them.
 local function auth(provider: Provider, key: string?): { [string]: string }
 	if provider.kind == "anthropic" then
@@ -405,7 +481,8 @@ local function http_request(
 	provider: Provider,
 	model: string,
 	request: Request,
-	key: string?
+	key: string?,
+	effort: string?
 ): greed.HttpRequest
 	local headers = auth(provider, key)
 	headers["content-type"] = "application/json"
@@ -416,6 +493,7 @@ local function http_request(
 		temperature = request.temperature,
 		stream = true,
 	}
+	turn.reasoning(provider.kind, model, effort, body)
 	if provider.kind == "anthropic" then
 		body.system = request.system
 		return {
@@ -755,8 +833,9 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	if chosen == nil or provider == nil then
 		return nil, why
 	end
+	local effort = M.effort(role, request.effort)
 	local response, err =
-		greed.vouch(send, role, chosen, http_request(provider, chosen.model, request, key))
+		greed.vouch(send, role, chosen, http_request(provider, chosen.model, request, key, effort))
 	-- Newer models refuse a temperature; they're asked again without one.
 	if
 		response == nil
@@ -765,8 +844,12 @@ function M.stream(role: string, request: Request): (Stream?, string?)
 	then
 		local plain = table.clone(request)
 		plain.temperature = nil
-		response, err =
-			greed.vouch(send, role, chosen, http_request(provider, chosen.model, plain, key))
+		response, err = greed.vouch(
+			send,
+			role,
+			chosen,
+			http_request(provider, chosen.model, plain, key, effort)
+		)
 	end
 	if response == nil then
 		return nil, err
@@ -1021,12 +1104,16 @@ end
 --- `on_text` gets its text as it arrives, and the turn says what it said,
 --- the tool calls it asked for and why it stopped. `on_open` gets what
 --- closes the answer's stream once it starts, to stop it early: the turn
---- then ends with what came so far. Waits like greed.sleep.
+--- then ends with what came so far. `on_thinking` gets what the model
+--- thinks as it arrives, when the provider shows it. The request's
+--- `effort` is the role's unless it says (see `effort`). Waits like
+--- greed.sleep.
 function M.turn(
 	role: string,
 	request: turn.Request,
 	on_text: ((text: string) -> ())?,
-	on_open: ((close: () -> ()) -> ())?
+	on_open: ((close: () -> ()) -> ())?,
+	on_thinking: ((text: string) -> ())?
 ): (turn.Turn?, string?)
 	local chosen, provider, key, why = greed.vouch(connect, role)
 	if chosen == nil or provider == nil then
@@ -1035,8 +1122,9 @@ function M.turn(
 	if not M.sees_images(role) then
 		request = unseen(request)
 	end
+	request = table.clone(request)
+	request.effort = M.effort(role, request.effort)
 	if request.cache_key and not provider.cache_key then
-		request = table.clone(request)
 		request.cache_key = nil
 	end
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
@@ -1070,10 +1158,13 @@ function M.turn(
 		local events
 		events, buffered = sse.parse(buffered .. piece)
 		for _, event in events do
-			local text, finished, problem = reader.feed(event)
+			local text, finished, problem, thinking = reader.feed(event)
 			if problem then
 				response:close()
 				return nil, problem
+			end
+			if thinking and on_thinking then
+				on_thinking(thinking)
 			end
 			if text and on_text then
 				on_text(text)
@@ -1164,7 +1255,13 @@ local function played(name: string): string
 		return why or "not set up"
 	end
 	local key = key_text(chosen.provider, provider)
-	return `{chosen.model} at {chosen.provider} ({provider.url}), {key}`
+	local said = chosen.effort or provider.effort
+	local sent = M.effort(name)
+	local thinks = if sent == nil
+		then ""
+		elseif said ~= sent then `, effort {said} (sent as {sent})`
+		else `, effort {sent}`
+	return `{chosen.model} at {chosen.provider} ({provider.url}){thinks}, {key}`
 end
 
 type Row = { role: string, text: string }
@@ -1354,7 +1451,7 @@ end
 -- The :models page while it's open, and the role on each of its lines.
 local page: { buffer: greed.Buffer, roles: { [number]: string } }? = nil
 
-local PAGE_HINT = "enter changes the role's model · k sets its provider's API key · "
+local PAGE_HINT = "enter changes the role's model · e its effort · k sets its provider's API key · "
 	.. "l signs in · q closes"
 
 -- Writes the page again, as roles and keys change.
@@ -1419,6 +1516,7 @@ greed.command({
 		render()
 		buffer:set_keys({
 			enter = "models-change",
+			e = "models-effort",
 			k = "models-key",
 			l = "models-login",
 			q = "models-close",
@@ -1435,6 +1533,65 @@ greed.command({
 	run = function(ctx)
 		local role = role_at(ctx)
 		local said = role and M.ask_role(role)
+		if said then
+			greed.echo(said)
+			render()
+		end
+	end,
+})
+
+-- What each effort does, as the effort picker says it.
+local EFFORT_DOCS: { [string]: string } = {
+	none = "answers without thinking, or as little as the model goes",
+	low = "thinks a little",
+	medium = "thinks some",
+	high = "thinks hard, slower and using more tokens",
+}
+
+--- Asks for an effort (`EFFORTS`) in a picker titled `title`, `now`
+--- marked, or for none, which `unset` says what it means. Returns whether
+--- you picked one, and which.
+function M.pick_effort(title: string, now: string?, unset: string): (boolean, string?)
+	local items: { picker.Item } = {}
+	local function add(name: string, doc: string, value: string, current: boolean)
+		local mark = if current then "  (now)" else ""
+		table.insert(items, { label = `{name}: {doc}{mark}`, value = value })
+	end
+	for _, effort in M.EFFORTS do
+		add(effort, EFFORT_DOCS[effort], effort, effort == now)
+	end
+	add("unset", unset, "", now == nil)
+	local item = picker.choose(title, items)
+	if item == nil then
+		return false, nil
+	end
+	return true, if item.value == "" then nil else item.value
+end
+
+--- Asks which effort the model playing `role` gets (see `set_effort`),
+--- or the provider's default. Returns what happened, to tell you, or nil
+--- when you picked none.
+function M.ask_effort(role: string): string?
+	local name = M.playing(role)
+	local chosen = M.roles[name]
+	if chosen == nil then
+		return `no model plays the role "{name}"`
+	end
+	local picked, effort = M.pick_effort(`Effort for {name}`, chosen.effort, "as the provider says")
+	if not picked then
+		return nil
+	end
+	local unkept = M.set_effort(name, effort)
+	local said = `{name} thinks with effort {effort or "unset"}`
+	return if unkept then `{said} ({unkept})` else said
+end
+
+greed.command({
+	name = "models-effort",
+	doc = "On the :models page, pick how hard the model of the role under the cursor thinks",
+	run = function(ctx)
+		local role = role_at(ctx)
+		local said = role and M.ask_effort(role)
 		if said then
 			greed.echo(said)
 			render()

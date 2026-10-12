@@ -19,7 +19,8 @@ export type Call = { id: string, name: string, input: { [string]: any } }
 --- What was said: by you (`text`), by the model (`text` and the `calls` it
 --- asked for), or a tool's result for the call `call`. What you said can
 --- have `images` with it, PNG files by their paths, read when the request
---- is made.
+--- is made. `signed` is Anthropic's thinking blocks as they came, with
+--- their signatures, for the models that want them back (see `body`).
 export type Said = {
 	role: "user" | "assistant" | "tool",
 	text: string?,
@@ -27,6 +28,7 @@ export type Said = {
 	call: string?,
 	error: boolean?,
 	images: { string }?,
+	signed: { any }?,
 }
 
 --- How a turn ended: "done" (the model has finished), "tools" (it wants
@@ -34,7 +36,9 @@ export type Said = {
 --- provider said. `tokens` is how much of the model's context the
 --- conversation takes after the turn, when the provider says; `input`
 --- and `output` are the tokens this request read and wrote, `cached` how
---- many of those read came from the provider''s cache.
+--- many of those read came from the provider's cache. `thinking` is what
+--- the model thought before answering, when the provider shows it, and
+--- `signed` Anthropic's thinking blocks, to keep with what it said.
 export type Turn = {
 	text: string,
 	calls: { Call },
@@ -43,7 +47,59 @@ export type Turn = {
 	input: number?,
 	output: number?,
 	cached: number?,
+	thinking: string?,
+	signed: { any }?,
 }
+
+--- How hard a model may think before it answers, least first.
+M.EFFORTS = { "none", "low", "medium", "high" }
+
+-- Claude models that think within a budget of tokens rather than by an
+-- effort, by a pattern in their name: those before the 4.6 family.
+local BUDGETED = { "claude%-3", "%-4%-5", "%-4%-1", "%-4%-0", "%-4%-%d%d%d%d%d%d%d%d", "%-4$" }
+
+-- The thinking budget of each effort, for those.
+local BUDGETS: { [string]: number } = { low = 2048, medium = 8192, high = 24576 }
+
+-- Whether the Claude model `model` thinks within a budget.
+local function budgeted(model: string): boolean
+	local name = string.lower(model)
+	for _, pattern in BUDGETED do
+		if string.find(name, pattern) then
+			return true
+		end
+	end
+	return false
+end
+
+--- Puts `effort` (one of `EFFORTS`) in `body`, a request to a provider of
+--- `kind` for `model`, as its API wants it: `reasoning_effort` for
+--- OpenAI-like servers; for Claude, an effort and summarised thinking, or
+--- a thinking budget for models before the 4.6 family, with room for the
+--- answer above it. Claude gets no temperature with either. Nil changes
+--- nothing.
+function M.reasoning(kind: string, model: string, effort: string?, body: { [string]: any })
+	if effort == nil then
+		return
+	elseif kind ~= "anthropic" then
+		body.reasoning_effort = effort
+		return
+	end
+	body.temperature = nil
+	if budgeted(model) then
+		local budget = BUDGETS[effort]
+		if budget then
+			body.thinking = { type = "enabled", budget_tokens = budget }
+			body.max_tokens = (body.max_tokens or 0) + budget
+		end
+		return
+	end
+	-- Current models always think some; none is as little as they go.
+	body.output_config = { effort = if effort == "none" then "low" else effort }
+	if effort ~= "none" then
+		body.thinking = { type = "adaptive", display = "summarized" }
+	end
+end
 
 -- A tool's schema, with an empty object for one that takes nothing.
 local function schema(tool: ToolSpec): { [string]: any }
@@ -75,8 +131,12 @@ end
 
 -- The conversation as Anthropic's messages: tool results go in the next
 -- user message, and messages by the same side are joined, since its API
--- wants them to take turns.
-local function anthropic_messages(said: { Said }): { any }
+-- wants them to take turns. With `signed`, the model's thinking blocks go
+-- back from your last message on, in the tool loop going on, as models
+-- that think within a budget want. Current models get none back: they
+-- turn down thinking once anything before it changed, as compacting or a
+-- tool group switched on does.
+local function anthropic_messages(said: { Said }, signed: boolean): { any }
 	local messages: { { role: string, content: { any } } } = {}
 	local function add(role: string, block: any)
 		local last = messages[#messages]
@@ -86,7 +146,13 @@ local function anthropic_messages(said: { Said }): { any }
 			table.insert(messages, { role = role, content = { block } })
 		end
 	end
-	for _, s in said do
+	local last_user = 0
+	for i, s in said do
+		if s.role == "user" then
+			last_user = i
+		end
+	end
+	for i, s in said do
 		if s.role == "tool" then
 			add("user", {
 				type = "tool_result",
@@ -95,6 +161,10 @@ local function anthropic_messages(said: { Said }): { any }
 				is_error = s.error or nil,
 			})
 		elseif s.role == "assistant" then
+			local blocks: { any } = if signed and i > last_user then s.signed or {} else {}
+			for _, block in blocks do
+				add("assistant", block)
+			end
 			if s.text and s.text ~= "" then
 				add("assistant", { type = "text", text = s.text })
 			end
@@ -180,6 +250,8 @@ export type Request = {
 	--- Names the conversation for the provider's cache, as
 	--- `prompt_cache_key`; set only for providers with `cache_key`.
 	cache_key: string?,
+	--- How hard the model may think (`EFFORTS`); nil sends nothing.
+	effort: string?,
 }
 
 --- The body to send to a provider of `kind` for `model`, as a table.
@@ -226,7 +298,7 @@ function M.body(
 		if request.system then
 			body.system = { { type = "text", text = request.system, cache_control = cached } }
 		end
-		local messages = anthropic_messages(request.said)
+		local messages = anthropic_messages(request.said, request.effort ~= nil and budgeted(model))
 		local last = messages[#messages]
 		if last and #last.content > 0 then
 			last.content[#last.content].cache_control = cached
@@ -236,6 +308,7 @@ function M.body(
 		body.messages = openai_messages(request.system, request.said)
 		body.prompt_cache_key = request.cache_key
 	end
+	M.reasoning(kind, model, request.effort, body)
 	return body
 end
 
@@ -252,16 +325,17 @@ local STOPS = {
 
 export type Reader = {
 	--- Takes one event of the stream; returns text that arrived, whether
-	--- the turn is over, and an error if the provider sent one.
-	feed: (event: sse.Event) -> (string?, boolean, string?),
+	--- the turn is over, an error if the provider sent one, and thinking
+	--- that arrived.
+	feed: (event: sse.Event) -> (string?, boolean, string?, string?),
 	--- The turn as read so far.
 	turn: () -> Turn,
 }
 
 --- The answer's text in a streamed `delta.content` of OpenAI's API: a
 --- string, or with Mistral's reasoning models a list of parts, the
---- thinking (left out) and the text, whose first word comes in the same
---- list as the end of the thinking.
+--- thinking (left out, see `content_thinking`) and the text, whose first
+--- word comes in the same list as the end of the thinking.
 function M.content_text(content: any): string?
 	if type(content) == "string" then
 		return content
@@ -275,6 +349,39 @@ function M.content_text(content: any): string?
 		end
 	end
 	return table.concat(parts)
+end
+
+--- The thinking in a streamed `delta` of OpenAI's API: Mistral's thinking
+--- parts of `content`, each a list of text parts, or the
+--- `reasoning_content` (or `reasoning`) other servers send. Nil when
+--- there's none.
+function M.content_thinking(delta: any): string?
+	if type(delta) ~= "table" then
+		return nil
+	end
+	local parts: { string } = {}
+	for _, field in { "reasoning_content", "reasoning" } do
+		if type(delta[field]) == "string" then
+			table.insert(parts, delta[field])
+		end
+	end
+	local content = delta.content
+	if type(content) == "table" then
+		for _, part in content do
+			local thought = type(part) == "table" and part.type == "thinking" and part.thinking
+			if type(thought) == "string" then
+				table.insert(parts, thought)
+			elseif type(thought) == "table" then
+				for _, piece in thought do
+					if type(piece) == "table" and type(piece.text) == "string" then
+						table.insert(parts, piece.text)
+					end
+				end
+			end
+		end
+	end
+	local thinking = table.concat(parts)
+	return if thinking ~= "" then thinking else nil
 end
 
 --- Reads a streamed answer from a provider of `kind`, as events arrive.
@@ -312,15 +419,19 @@ function M.reader(kind: string): Reader
 		end
 		return call
 	end
+	-- What it thought, and Anthropic's thinking blocks by their index.
+	local thought: { string } = {}
+	local signed: { any } = {}
+	local signed_at: { [any]: any } = {}
 	local reader: Reader
 	reader = {
-		feed = function(event: sse.Event): (string?, boolean, string?)
+		feed = function(event: sse.Event): (string?, boolean, string?, string?)
 			if event.data == "[DONE]" then
-				return nil, true, nil
+				return nil, true, nil, nil
 			end
 			local decoded = greed.json.decode(event.data)
 			if type(decoded) ~= "table" then
-				return nil, false, nil
+				return nil, false, nil, nil
 			end
 			if decoded.error then
 				local err = decoded.error
@@ -328,7 +439,8 @@ function M.reader(kind: string): Reader
 					true,
 					if type(err) == "table"
 						then err.message or greed.json.encode(err)
-						else tostring(err)
+						else tostring(err),
+					nil
 			end
 			if kind == "anthropic" then
 				local t = decoded.type
@@ -346,21 +458,40 @@ function M.reader(kind: string): Reader
 					local block = decoded.content_block
 					if block.type == "tool_use" then
 						call_at(decoded.index, block.id, block.name)
+					elseif block.type == "thinking" or block.type == "redacted_thinking" then
+						local kept = table.clone(block)
+						table.insert(signed, kept)
+						signed_at[decoded.index] = kept
 					end
 				elseif t == "content_block_delta" and decoded.delta then
 					local delta = decoded.delta
+					local block = signed_at[decoded.index]
 					if delta.type == "input_json_delta" then
 						table.insert(call_at(decoded.index).json, delta.partial_json or "")
+					elseif
+						delta.type == "thinking_delta"
+						and type(delta.thinking) == "string"
+						and delta.thinking ~= ""
+					then
+						if block then
+							block.thinking = (block.thinking or "") .. delta.thinking
+						end
+						table.insert(thought, delta.thinking)
+						return nil, false, nil, delta.thinking
+					elseif delta.type == "signature_delta" then
+						if block then
+							block.signature = (block.signature or "") .. (delta.signature or "")
+						end
 					elseif type(delta.text) == "string" then
 						table.insert(text, delta.text)
-						return delta.text, false, nil
+						return delta.text, false, nil, nil
 					end
 				elseif t == "message_delta" and decoded.delta and decoded.delta.stop_reason then
 					stop = STOPS[decoded.delta.stop_reason] or decoded.delta.stop_reason
 				elseif t == "message_stop" then
-					return nil, true, nil
+					return nil, true, nil, nil
 				end
-				return nil, false, nil
+				return nil, false, nil, nil
 			end
 			-- Servers asked for it, or that send it anyway, say it at the end.
 			local usage = decoded.usage
@@ -373,7 +504,7 @@ function M.reader(kind: string): Reader
 			end
 			local choice = decoded.choices and decoded.choices[1]
 			if choice == nil then
-				return nil, false, nil
+				return nil, false, nil, nil
 			end
 			local delta = choice.delta or {}
 			local pieces: { any } = delta.tool_calls or {}
@@ -388,12 +519,16 @@ function M.reader(kind: string): Reader
 			if choice.finish_reason then
 				stop = STOPS[choice.finish_reason] or choice.finish_reason
 			end
+			local thinking = M.content_thinking(delta)
+			if thinking then
+				table.insert(thought, thinking)
+			end
 			local said = M.content_text(delta.content)
 			if said and said ~= "" then
 				table.insert(text, said)
-				return said, false, nil
+				return said, false, nil, thinking
 			end
-			return nil, false, nil
+			return nil, false, nil, thinking
 		end,
 		turn = function()
 			local calls: { Call } = {}
@@ -410,6 +545,8 @@ function M.reader(kind: string): Reader
 			local ended = if #calls > 0 and stop == "done" then "tools" else stop
 			local tokens = if read then read + (written or 0) else nil
 			return {
+				thinking = if #thought > 0 then table.concat(thought) else nil,
+				signed = if #signed > 0 then signed else nil,
 				text = table.concat(text),
 				calls = calls,
 				stop = ended,

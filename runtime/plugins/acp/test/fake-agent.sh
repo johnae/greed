@@ -21,6 +21,8 @@
 #   widen        writes a plugin.toml asking for "proc", and says if it could
 #   script       asks to run a tool whose title has two lines
 #   stars        runs a tool whose output has Markdown-looking stars and backticks
+#   /review      its own slash command, which it offers once a session starts
+#   /compact     says it compacted, as Claude Code's own /compact would
 #   quit         exits
 
 cwd=""
@@ -66,6 +68,7 @@ while IFS= read -r line; do
 		cwd=$(field "$line" cwd)
 		servers=$(printf "%s" "$line" | sed -n "s/.*\"mcpServers\":\(\[[^]]*\]\).*/\1/p")
 		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"sessionId\":\"s1\",\"modes\":{\"currentModeId\":\"default\",\"availableModes\":[{\"id\":\"default\",\"name\":\"Manual\"},{\"id\":\"plan\",\"name\":\"Plan\",\"description\":\"Plan before doing\"}]},$models}}"
+		update '{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review the changes","input":{"hint":"what to look at"}},{"name":"compact","description":"Compact the conversation"}]}'
 		;;
 	*'"method":"session/load"'*)
 		cwd=$(field "$line" cwd)
@@ -229,6 +232,14 @@ while IFS= read -r line; do
 		servers*)
 			count=$(printf '%s' "$servers" | grep -o '"command"' | wc -l | tr -d ' ')
 			say "servers: $count"
+			turn_done "$id" end_turn
+			;;
+		/review*)
+			say "reviewing"
+			turn_done "$id" end_turn
+			;;
+		/compact*)
+			say "compacted by the agent"
 			turn_done "$id" end_turn
 			;;
 		quit*)

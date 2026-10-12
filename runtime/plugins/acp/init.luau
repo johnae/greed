@@ -10,6 +10,9 @@
 -- while the agent works) and ctrl-c stops the agent's turn. A question the
 -- agent asks shows as a row of choices in the box, answered with enter or
 -- a choice's letter in any mode, or rejected with esc (question.luau).
+-- A message like /model or /effort high runs one of Greed's chat commands
+-- instead of going to the agent, and tab after / completes them
+-- (slash.luau).
 --
 -- Agents are registered by name with the commands that run them; the first
 -- one installed is used. Add your own in init.luau:
@@ -33,7 +36,9 @@ local saved = require("@self/saved")
 local list = require("@self/list")
 local panes = require("@panes")
 local statusline = require("@statusline")
+local models = require("@models")
 local agent_context = require("@agent").context
+local slash = require("@self/slash")
 
 type Session = session.Session
 
@@ -88,6 +93,12 @@ greed.option.define({
 	name = "agent-compact-at",
 	doc = "Compact conversations with Greed's own agent once they reach this many tokens; 0 waits until they near the model's limit",
 	default = 0,
+})
+
+greed.option.define({
+	name = "agent-thoughts",
+	doc = "Show what agents think in their transcripts, each thought folded to its first line (tab unfolds it); /thoughts switches it",
+	default = true,
 })
 
 greed.option.define({
@@ -984,6 +995,13 @@ greed.command({
 			greed.echo("write a message in the box first")
 			return
 		end
+		-- One of Greed's chat commands runs here; any other /word goes on.
+		local command, arg = slash.find(s, text)
+		if command then
+			transcript.clear_prompt(ctx.buffer)
+			slash.run(command, arg)
+			return
+		end
 		-- Sent while it asks something, it rejects that, saying what to do
 		-- instead.
 		if text ~= "" and question.reject(ctx.buffer, s, text) then
@@ -1020,7 +1038,7 @@ greed.command({
 
 greed.command({
 	name = "agent-fold",
-	doc = "Show all of the output of the tool call under the cursor, or fold it again",
+	doc = "Show all of the output of the tool call or the thought under the cursor, or fold it again",
 	run = function(ctx)
 		local s = by_buffer[ctx.buffer:id()]
 		if s == nil then
@@ -1028,14 +1046,15 @@ greed.command({
 		end
 		local cursor = ctx.buffer:line_of(ctx.view:cursor())
 		local id = transcript.tool_at(ctx.buffer, cursor)
-		local tool = id and s.tools[id]
-		if tool == nil then
+		local thought = id and transcript.thought_of(id)
+		local folded: any = if thought then s.entries[thought] elseif id then s.tools[id] else nil
+		if id == nil or folded == nil then
 			return
 		end
-		tool.open = not tool.open
+		folded.open = not folded.open
 		transcript.render(ctx.buffer, s)
-		-- Redrawing moved what followed the tool's line; the cursor stays on it.
-		local line = transcript.line_of_tool(ctx.buffer, tool.id)
+		-- Redrawing moved what followed the line; the cursor stays on it.
+		local line = transcript.line_of_tool(ctx.buffer, id)
 		if line then
 			local pos = ctx.buffer:line_start(line)
 			ctx.view:set_cursor(pos)
@@ -1049,9 +1068,35 @@ local NO_SESSION = "no agent session here; use it in a transcript, or space i l 
 -- provider lists, after the roles.
 local ANOTHER_MODEL = "Another model…"
 
+-- The mode or model among `list` that `named` names, by its id or name,
+-- whatever the case; or says there's none.
+local function named_in(list: { session.Mode }, named: string, what: string): session.Mode?
+	local wanted = string.lower(named)
+	for _, item in list do
+		if string.lower(item.id) == wanted or string.lower(item.name) == wanted then
+			return item
+		end
+	end
+	local names = {}
+	for _, item in list do
+		table.insert(names, item.name)
+	end
+	greed.echo(`there's no {what} called {named}; there's {table.concat(names, ", ")}`)
+	return nil
+end
+
+-- Switches `s` to the mode or model `id` with `set`, saying so if it can't.
+local function switch(s: Session, set: (Session, string) -> (boolean, string?), id: string)
+	local ok, err = set(s, id)
+	if not ok then
+		greed.echo(`can't: {err}`)
+	end
+end
+
 greed.command({
 	name = "agent-mode",
-	doc = "Pick the mode the agent works in, like plan or accept edits",
+	doc = "Pick the mode the agent works in, like plan or accept edits, or switch to the one named",
+	args = { { name = "mode", doc = "its name or id; without one, pick it" } },
 	run = function(ctx)
 		local s = current(ctx)
 		if s == nil then
@@ -1059,6 +1104,13 @@ greed.command({
 			return
 		elseif #s.modes == 0 then
 			greed.echo(`{s.name} has no modes to pick from`)
+			return
+		end
+		if ctx.args[1] then
+			local mode = named_in(s.modes, ctx.args[1], "mode")
+			if mode then
+				switch(s, session.set_mode, mode.id)
+			end
 			return
 		end
 		local items = {}
@@ -1069,17 +1121,20 @@ greed.command({
 		end
 		local chosen = picker.choose("Mode", items)
 		if chosen then
-			local ok, err = session.set_mode(s, chosen.value)
-			if not ok then
-				greed.echo(`can't: {err}`)
-			end
+			switch(s, session.set_mode, chosen.value)
 		end
 	end,
 })
 
 greed.command({
 	name = "agent-model",
-	doc = "Pick the model the agent uses, from those it offers; Greed's own agent can also use any model a provider lists",
+	doc = "Pick the model the agent uses, from those it offers, or switch to the one named; Greed's own agent can also use any model a provider lists",
+	args = {
+		{
+			name = "model",
+			doc = "its name or id (a role, for Greed's own agent); without one, pick it",
+		},
+	},
 	run = function(ctx)
 		local s = current(ctx)
 		if s == nil then
@@ -1089,6 +1144,13 @@ greed.command({
 		local own = native.drives(s)
 		if #s.models == 0 and not own then
 			greed.echo(`{s.name} has no models to pick from`)
+			return
+		end
+		if ctx.args[1] then
+			local model = named_in(s.models, ctx.args[1], "model")
+			if model then
+				switch(s, session.set_model, model.id)
+			end
 			return
 		end
 		local items = {}
@@ -1107,11 +1169,62 @@ greed.command({
 				greed.echo(said)
 			end
 		elseif chosen then
-			local ok, err = session.set_model(s, chosen.value)
-			if not ok then
-				greed.echo(`can't: {err}`)
-			end
+			switch(s, session.set_model, chosen.value)
 		end
+	end,
+})
+
+greed.command({
+	name = "agent-effort",
+	doc = "How hard the model of Greed's own agent thinks in this session: none, low, medium or high; without one, pick it",
+	args = { { name = "effort", doc = "none, low, medium or high, or unset for the role's" } },
+	run = function(ctx)
+		local s = current(ctx)
+		if s == nil then
+			greed.echo(NO_SESSION)
+			return
+		elseif not native.drives(s) then
+			greed.echo(`{s.name} sets its own effort; only Greed's own agent's is set here`)
+			return
+		end
+		local wanted = ctx.args[1]
+		-- Another plugin's tables are read through, not as lists.
+		local efforts: { string } = {}
+		for _, known in models.EFFORTS do
+			table.insert(efforts, known)
+		end
+		local effort: string?
+		if wanted == nil then
+			local now = native.effort(s)
+			local picked, chosen =
+				models.pick_effort("Effort for this session", now, "as the model's role says")
+			if not picked then
+				return
+			end
+			effort = chosen
+		elseif wanted == "unset" then
+			effort = nil
+		elseif table.find(efforts, wanted) then
+			effort = wanted
+		else
+			greed.echo(`{wanted} isn't an effort: {table.concat(efforts, ", ")} or unset`)
+			return
+		end
+		s.effort = effort
+		local set, sent = native.effort(s)
+		local as = if sent and sent ~= set then ` (sent as {sent})` else ""
+		greed.echo(`effort {set or "unset"}{as} for this session; :models e sets the role's`)
+		changed(s)
+	end,
+})
+
+greed.command({
+	name = "agent-toggle-thoughts",
+	doc = "Show or hide what agents think in their transcripts (the agent-thoughts option)",
+	run = function()
+		local shown = greed.option.get("agent-thoughts") ~= false
+		greed.option.set("agent-thoughts", not shown)
+		greed.echo(if shown then "thoughts hidden" else "thoughts shown, folded: tab unfolds one")
 	end,
 })
 
@@ -1405,6 +1518,27 @@ greed.keymap.bind({ kind = "agent-transcript" }, {
 	["alt-v"] = "paste-image",
 	["alt-x"] = "agent-drop-images",
 })
+greed.keymap.bind({ role = "typing", kind = "agent-transcript" }, { tab = "agent-complete" })
+
+greed.command({
+	name = "agent-complete",
+	doc = "In a transcript's box, complete the slash command being typed; elsewhere, type a tab",
+	run = function(ctx)
+		greed.run(if slash.completing(ctx.view) then "completion-ask" else "insert-tab")
+	end,
+})
+
+slash.complete(M.of)
+
+-- Thoughts show or hide in every transcript as the option says.
+greed.on("option.changed", function(event: greed.OptionChanged)
+	if event.name == "agent-thoughts" then
+		for _, s in sessions do
+			changed(s)
+		end
+	end
+end)
+
 -- In the vscode style ctrl-c copies a selection.
 greed.keymap.bind({ style = "vscode", role = "typing", kind = "agent-transcript" }, {
 	["ctrl-c"] = "agent-copy-or-stop",

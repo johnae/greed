@@ -19,7 +19,7 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 	models.check = function(): string?
 		return nil
 	end
-	models.turn = function(_role, request, on_text): (any, string?)
+	models.turn = function(_role, request, on_text, _on_open, on_thinking): (any, string?)
 		local copy = table.clone(request)
 		copy.said = table.move(request.said, 1, #request.said, 1, {})
 		if string.find(request.system or "", "You summarise", 1, true) then
@@ -38,6 +38,9 @@ local function script(turns: { any }, summary: (string | false)?): ({ any }, { a
 		end
 		if turn.fail then
 			return nil, turn.fail
+		end
+		if on_thinking and turn.thinking then
+			on_thinking(turn.thinking)
 		end
 		if on_text and turn.text ~= "" then
 			on_text(turn.text)
@@ -2539,4 +2542,127 @@ test("ctrl-c stops the helpers too", function(t)
 	assert(string.find(said(helper), "note: stopped: cancelled", 1, true), said(helper))
 	assert(s.tools.c1.status == "failed", tostring(s.tools.c1.status))
 	assert(s.helpers == nil or #s.helpers == 0, "none left working")
+end)
+
+-- Greed's agent's transcript, shown, with the box ready to type in.
+local function shown_agent(t: test.TestContext): any
+	local s = assert(acp.start(GREED, t:tempdir({ ["a.txt"] = "one\n" })))
+	acp.show(s)
+	t:wait(30)
+	return s
+end
+
+local function transcript_text(): string
+	return greed.view():buffer():text()
+end
+
+test("what the model thought shows as a folded thought before its answer", function(t)
+	script({
+		{
+			text = "It's one line.",
+			thinking = "The user asks about a.txt.\nIt has one line.",
+			calls = {},
+			stop = "done",
+		},
+	})
+	local s = shown_agent(t)
+	send(t, "how long is a.txt?")
+	assert(
+		said(s)
+			== "user: how long is a.txt? | thought: The user asks about a.txt.\nIt has one line. | agent: It's one line.",
+		said(s)
+	)
+	local text = transcript_text()
+	assert(
+		string.find(text, "  … The user asks about a.txt. ▸\n  It's one line.", 1, true),
+		text
+	)
+	assert(not string.find(text, "It has one line.", 1, true), "folded: " .. text)
+	-- tab on it shows all of it.
+	local view = greed.view()
+	local at = (string.find(text, "… The user", 1, true) :: number) - 1
+	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	t:keys("tab")
+	assert(
+		string.find(transcript_text(), "▾\n    It has one line.\n", 1, true),
+		transcript_text()
+	)
+	-- /thoughts hides them, and shows them again.
+	send(t, "/thoughts")
+	assert(greed.option.get("agent-thoughts") == false, "switched off")
+	t:wait(30)
+	assert(not string.find(transcript_text(), "The user asks", 1, true), transcript_text())
+	assert(
+		not string.find(transcript_text(), "/thoughts", 1, true),
+		"not sent: " .. transcript_text()
+	)
+	send(t, "/thoughts")
+	t:wait(30)
+	assert(string.find(transcript_text(), "The user asks", 1, true), transcript_text())
+end)
+
+test(
+	"/effort sets how hard the model thinks for this session, sent with the next request",
+	function(t)
+		local asked = script({
+			{ text = "ok", calls = {}, stop = "done" },
+			{ text = "ok", calls = {}, stop = "done" },
+		})
+		local s = shown_agent(t)
+		send(t, "/effort high")
+		assert(s.effort == "high", table.concat(t:messages(), " / "))
+		assert(#asked == 0, "nothing sent")
+		assert(string.find(transcript_text(), "· effort high", 1, true), transcript_text())
+		send(t, "hi")
+		assert(asked[1].effort == "high", tostring(asked[1].effort))
+		local body = models.tools.body("openai", "m", asked[1], 100)
+		assert(body.reasoning_effort == "high", tostring(body.reasoning_effort))
+		assert((models.roles.reasoning :: any).effort == nil, "the role is left as it was")
+		send(t, "/effort unset")
+		send(t, "again")
+		assert(asked[2].effort == nil, tostring(asked[2].effort))
+		send(t, "/effort lots")
+		assert(s.effort == nil, "not an effort")
+	end
+)
+
+test("/model opens the model picker, and /compact compacts", function(t)
+	script({})
+	shown_agent(t)
+	send(t, "/model")
+	local picker = t:floats()[1] or ""
+	assert(string.find(picker, "Another model…", 1, true), picker)
+	t:keys("esc")
+	send(t, "/compact")
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "compact", 1, true), messages[#messages])
+end)
+
+test("a /word that isn't one of Greed's goes to the model as typed", function(t)
+	local asked = script({ { text = "ok", calls = {}, stop = "done" } })
+	shown_agent(t)
+	send(t, "/review the pager")
+	assert(#asked == 1, `{#asked} requests`)
+	assert(untimed(asked[1].said[1].text) == "/review the pager", untimed(asked[1].said[1].text))
+end)
+
+test("tab after / lists Greed's chat commands, with what each does", function(t)
+	script({})
+	shown_agent(t)
+	local view = greed.view()
+	local pos = view:buffer():len()
+	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	t:keys("i / e tab")
+	t:wait(30)
+	local listed = ""
+	for _, float in greed.floats() do
+		if float:buffer():kind() == "completion" then
+			listed = float:buffer():text()
+		end
+	end
+	assert(string.find(listed, "/effort", 1, true), listed)
+	assert(string.find(listed, "How hard the model thinks", 1, true), listed)
+	t:keys("enter")
+	local typed = require("../transcript").prompt(view:buffer())
+	assert(typed == "/effort ", typed)
 end)

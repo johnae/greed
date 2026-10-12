@@ -604,3 +604,57 @@ test("when the list can't be had, it says why and the model is typed", function(
 	assert(said() == "poetry uses gpt-5 at openai", said())
 	models.roles.poetry = nil
 end)
+
+test(
+	"a role's effort is its own, else its provider's, fitted to what the provider takes",
+	function()
+		models.roles.poetry = { provider = "openai", model = "gpt-5" }
+		assert(models.effort("poetry") == nil, "nothing set, nothing sent")
+		models.roles.poetry = { provider = "openai", model = "gpt-5", effort = "low" }
+		assert(models.effort("poetry") == "low", "the role's")
+		assert(models.effort("poetry", "high") == "high", "what's asked comes first")
+		models.providers.small = { kind = "openai", url = "http://localhost:1", effort = "medium" }
+		models.roles.poetry = { provider = "small", model = "m" }
+		assert(models.effort("poetry") == "medium", "the provider's")
+		-- Mistral takes none and high.
+		models.roles.poetry = { provider = "mistral", model = "mistral-large-4" }
+		assert(models.effort("poetry", "low") == "none", tostring(models.effort("poetry", "low")))
+		assert(models.effort("poetry", "medium") == "high", "the higher of two as near")
+		assert(
+			models.effort("poetry", "high") == "high" and models.effort("poetry", "none") == "none"
+		)
+		assert(models.effort("poetry", "nonsense") == nil, "one it doesn't know isn't sent")
+		models.roles.poetry = nil
+		models.providers.small = nil
+	end
+)
+
+test("an effort set in :models is kept with the role, and shown on its line", function(t)
+	assert(models.choose("fast", "openai", "gpt-test") == nil)
+	assert(models.set_effort("fast", "high") == nil)
+	local kept = greed.json.decode(greed.fs.read(`{greed.fs.dirs().data}/models.json`) :: string)
+	assert(kept.roles.fast.effort == "high", "kept")
+	assert(models.choose("fast", "openai", "gpt-other") == nil)
+	assert((models.roles.fast :: models.Role).effort == "high", "a new model keeps the effort")
+	assert(models.set_effort("fast", "huge") ~= nil, "not an effort")
+	t:buffer("|x")
+	t:run("models")
+	local page = greed.view():buffer()
+	local line = 0
+	for n = 0, page:line_count() - 1 do
+		if string.find(page:line_text(n), "^fast:") then
+			line = n
+		end
+	end
+	assert(string.find(page:line_text(line), ", effort high,", 1, true), page:line_text(line))
+	greed.view():set_cursor(page:line_start(line))
+	t:keys("e")
+	t:type("low")
+	t:keys("enter")
+	t:wait(30)
+	assert((models.roles.fast :: models.Role).effort == "low", "picked on the page")
+	assert(string.find(page:line_text(line), ", effort low,", 1, true), page:line_text(line))
+	t:keys("q")
+	assert(models.set_effort("fast", nil) == nil)
+	assert((models.roles.fast :: models.Role).effort == nil, "unset")
+end)

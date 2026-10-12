@@ -436,3 +436,197 @@ test("content_text takes a string, or the text parts of a list, leaving thinking
 	}
 	assert(turn.content_text(parts) == "Let", tostring(turn.content_text(parts)))
 end)
+
+test("an effort goes to OpenAI-like servers as reasoning_effort, and only when set", function()
+	local said: { any } = { { role = "user", text = "hi" } }
+	local high = turn.body("openai", "m", { said = said, effort = "high" }, 100)
+	assert(high.reasoning_effort == "high", tostring(high.reasoning_effort))
+	local plain = turn.body("openai", "m", { said = said }, 100)
+	assert(plain.reasoning_effort == nil, "nothing when unset")
+end)
+
+test("Anthropic's current models take an effort and summarised thinking", function()
+	local said: { any } = { { role = "user", text = "hi" } }
+	local high = turn.body("anthropic", "claude-opus-5-5", { said = said, effort = "high" }, 100)
+	assert(high.output_config.effort == "high", "the effort")
+	assert(high.thinking.type == "adaptive" and high.thinking.display == "summarized", "thinking")
+	assert(high.max_tokens == 100 and high.temperature == nil, "the length as asked")
+	local none = turn.body("anthropic", "claude-sonnet-5", { said = said, effort = "none" }, 100)
+	assert(none.output_config.effort == "low" and none.thinking == nil, "none is the least")
+	local plain = turn.body("anthropic", "claude-opus-5-5", { said = said }, 100)
+	assert(plain.output_config == nil and plain.thinking == nil, "nothing when unset")
+end)
+
+test("older Claude models think within a budget, above which the answer has room", function()
+	local said: { any } = { { role = "user", text = "hi" } }
+	local model = "claude-haiku-4-5-20251001"
+	local low = turn.body("anthropic", model, { said = said, effort = "low" }, 4000)
+	local medium = turn.body("anthropic", model, { said = said, effort = "medium" }, 4000)
+	local high = turn.body("anthropic", model, { said = said, effort = "high" }, 4000)
+	assert(low.thinking.type == "enabled" and low.thinking.budget_tokens == 2048, "low")
+	assert(medium.thinking.budget_tokens == 8192 and high.thinking.budget_tokens == 24576)
+	assert(high.max_tokens == 4000 + 24576, tostring(high.max_tokens))
+	assert(high.output_config == nil, "no effort for them")
+	local none = turn.body("anthropic", model, { said = said, effort = "none" }, 4000)
+	assert(none.thinking == nil and none.max_tokens == 4000, "none doesn't think")
+	-- The plain path's temperature doesn't go with thinking.
+	local body: { [string]: any } = { model = model, max_tokens = 100, temperature = 0.2 }
+	turn.reasoning("anthropic", model, "low", body)
+	assert(body.temperature == nil and body.max_tokens == 2148, "without a temperature")
+end)
+
+-- A tool loop where the model thought, signed, before its call.
+local SIGNED: { any } = {
+	{ role = "user", text = "earlier" },
+	{
+		role = "assistant",
+		text = "Old.",
+		signed = { { type = "thinking", thinking = "before", signature = "s0" } },
+	},
+	{ role = "user", text = "read a.txt" },
+	{
+		role = "assistant",
+		text = "",
+		calls = { { id = "c1", name = "read", input = { path = "a.txt" } } },
+		signed = {
+			{ type = "thinking", thinking = "I'll read it", signature = "s1" },
+			{ type = "redacted_thinking", data = "xyz" },
+		} :: { any },
+	},
+	{ role = "tool", call = "c1", text = "hello" },
+}
+
+test("older Claude models get their signed thinking back within the tool loop", function()
+	local body = turn.body(
+		"anthropic",
+		"claude-haiku-4-5-20251001",
+		{ said = SIGNED, effort = "low", tools = TOOLS },
+		4000
+	)
+	local old = body.messages[2].content
+	assert(#old == 1 and old[1].type == "text", "an earlier prompt's thinking isn't sent")
+	local now = body.messages[4].content
+	assert(now[1].type == "thinking" and now[1].signature == "s1", "thinking first, signed")
+	assert(now[2].type == "redacted_thinking" and now[2].data == "xyz", "redacted kept")
+	assert(now[3].type == "tool_use", "then the call")
+	local current =
+		turn.body("anthropic", "claude-opus-5-5", { said = SIGNED, effort = "low" }, 100)
+	for _, message in current.messages do
+		for _, block in message.content do
+			assert(block.type ~= "thinking" and block.type ~= "redacted_thinking", block.type)
+		end
+	end
+	local openai = turn.body("openai", "m", { said = SIGNED, effort = "low" }, 100)
+	for _, message in openai.messages do
+		assert(message.signed == nil and message.thinking == nil, "never to OpenAI-like servers")
+	end
+end)
+
+-- Feeds `list` to a reader of `kind`, keeping the thinking it gives as it
+-- comes.
+local function thought(kind: string, list: { any }): (models.Turn, string)
+	local reader = turn.reader(kind)
+	local pieces = {}
+	for _, event in list do
+		local data = if type(event) == "string" then event else greed.json.encode(event)
+		local _, _, _, thinking = reader.feed({ data = data })
+		if thinking then
+			table.insert(pieces, thinking)
+		end
+	end
+	return reader.turn(), table.concat(pieces)
+end
+
+test("Mistral's thinking parts are kept as the turn's thinking, as they come", function()
+	local result, streamed = thought("openai", {
+		{
+			choices = {
+				{
+					delta = {
+						content = {
+							{
+								type = "thinking",
+								thinking = { { type = "text", text = "The user" } },
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			choices = {
+				{
+					delta = {
+						content = {
+							{
+								type = "thinking",
+								thinking = { { type = "text", text = " says hi." } },
+							},
+							{ type = "text", text = "Hi" },
+						} :: { any },
+					},
+				},
+			},
+		},
+		{ choices = { { delta = { content = "!" }, finish_reason = "stop" } } },
+	})
+	assert(result.text == "Hi!", result.text)
+	assert(result.thinking == "The user says hi.", tostring(result.thinking))
+	assert(streamed == "The user says hi.", streamed)
+	assert(result.signed == nil, "nothing signed")
+end)
+
+test("reasoning_content from other OpenAI-like servers is thinking too", function()
+	local result = thought("openai", {
+		{ choices = { { delta = { reasoning_content = "Hmm." } } } },
+		{ choices = { { delta = { reasoning = " Yes." } } } },
+		{ choices = { { delta = { content = "Yes" }, finish_reason = "stop" } } },
+	})
+	assert(result.thinking == "Hmm. Yes." and result.text == "Yes", tostring(result.thinking))
+	local plain = thought("openai", { { choices = { { delta = { content = "x" } } } } })
+	assert(plain.thinking == nil, "none when it didn't think")
+end)
+
+test("Anthropic's thinking blocks are kept, signed, and their text as thinking", function()
+	local result, streamed = thought("anthropic", {
+		{
+			type = "content_block_start",
+			index = 0,
+			content_block = { type = "thinking", thinking = "" },
+		},
+		{
+			type = "content_block_delta",
+			index = 0,
+			delta = { type = "thinking_delta", thinking = "Let me" },
+		},
+		{
+			type = "content_block_delta",
+			index = 0,
+			delta = { type = "thinking_delta", thinking = " see." },
+		},
+		{
+			type = "content_block_delta",
+			index = 0,
+			delta = { type = "signature_delta", signature = "sig" },
+		},
+		{ type = "content_block_stop", index = 0 },
+		{
+			type = "content_block_start",
+			index = 1,
+			content_block = { type = "redacted_thinking", data = "xyz" },
+		},
+		{ type = "content_block_start", index = 2, content_block = { type = "text", text = "" } },
+		{ type = "content_block_delta", index = 2, delta = { type = "text_delta", text = "Done" } },
+		{ type = "message_stop" },
+	})
+	assert(result.text == "Done", result.text)
+	assert(
+		result.thinking == "Let me see." and streamed == "Let me see.",
+		tostring(result.thinking)
+	)
+	local signed = result.signed or {}
+	assert(#signed == 2, `{#signed} blocks`)
+	assert(signed[1].type == "thinking" and signed[1].thinking == "Let me see.")
+	assert(signed[1].signature == "sig", tostring(signed[1].signature))
+	assert(signed[2].type == "redacted_thinking" and signed[2].data == "xyz")
+end)

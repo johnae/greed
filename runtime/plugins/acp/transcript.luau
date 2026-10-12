@@ -92,7 +92,8 @@ local width = core.text.width
 export type History = {
 	text: string,
 	styles: { Style },
-	--- The tool call on each line, by 0-based line number.
+	--- The tool call on each line, by 0-based line number, or the thought
+	--- (`thought_id`).
 	tools: { [number]: string },
 	--- Where each running tool's mark is, to animate it.
 	running: { { from: number, to: number } },
@@ -101,6 +102,18 @@ export type History = {
 	--- show as they are; only what was said shows as Markdown.
 	plain: { [number]: boolean },
 }
+
+--- What stands for the thought at `index` of a session's entries among
+--- the tool calls drawn on each line (`tool_at`), to fold it.
+function M.thought_id(index: number): string
+	return `thought:{index}`
+end
+
+--- The index among a session's entries of the thought `id` stands for
+--- (`thought_id`), if it's one.
+function M.thought_of(id: string): number?
+	return tonumber(string.match(id, "^thought:(%d+)$"))
+end
 
 --- The history's text and decorations, for `s` as it is now.
 function M.history(s: Session): History
@@ -161,9 +174,12 @@ function M.history(s: Session): History
 		end
 	end
 	local tools: { [number]: string } = {}
-	for _, entry in s.entries do
+	local thoughts = greed.option.get("agent-thoughts") ~= false
+	for index, entry in s.entries do
 		local e = entry :: any
-		if e.kind == "user" or e.kind == "agent" then
+		if e.kind == "thought" and (not thoughts or not string.find(e.text or "", "%S")) then
+			continue
+		elseif e.kind == "user" or e.kind == "agent" then
 			heading(e.kind)
 			body(string.match(e.text, "^(.-)%s*$") or e.text)
 		elseif e.kind == "note" then
@@ -172,8 +188,18 @@ function M.history(s: Session): History
 		else
 			heading("agent")
 			if e.kind == "thought" then
-				local first = string.match(e.text, "^%s*([^\n]*)") or ""
-				add(`  … {first}`, "comment")
+				-- Folded to its first line, tab shows the rest.
+				local thought = string.split(core.text.trim(e.text), "\n")
+				local more = if #thought > 1 then (if e.open then " ▾" else " ▸") else ""
+				local id = M.thought_id(index)
+				tools[#lines] = id
+				add(`  … {thought[1]}{more}`, "comment")
+				if e.open then
+					for i = 2, #thought do
+						tools[#lines] = id
+						add(`    {thought[i]}`, "comment")
+					end
+				end
 			elseif e.kind == "tool" then
 				local tool = e.tool
 				local status = tool.status or "pending"
@@ -285,6 +311,9 @@ function M.top(s: Session, cells: number): (string, { Style })
 	end
 	if model then
 		named ..= ` · {model}`
+	end
+	if s.effort then
+		named ..= ` · effort {s.effort}`
 	end
 	local hints = HINTS
 	-- The rule between them: "╭─ " and " " around the name, " " and " ─╮"
@@ -467,17 +496,21 @@ local function prompt_end(buffer: greed.Buffer): number?
 	return stop
 end
 
---- What's written in the box.
-function M.prompt(buffer: greed.Buffer): string
+--- Where what you write in the box starts, if the box is there and has a
+--- line to write in.
+function M.prompt_start(buffer: greed.Buffer): number?
 	local stop = prompt_end(buffer)
 	if stop == nil then
-		return ""
+		return nil
 	end
 	local start = buffer:line_start(buffer:line_of(stop) + 1)
-	if start <= stop then
-		return ""
-	end
-	return buffer:slice(start, buffer:len())
+	return if start > stop then start else nil
+end
+
+--- What's written in the box.
+function M.prompt(buffer: greed.Buffer): string
+	local start = M.prompt_start(buffer)
+	return if start then buffer:slice(start, buffer:len()) else ""
 end
 
 -- Per transcript buffer: its session, the tool call on each line, the
