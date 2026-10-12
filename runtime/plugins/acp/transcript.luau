@@ -1,7 +1,8 @@
 -- A session's transcript: a buffer of what you and the agent said and what
 -- it did, with a box at the bottom to write the next message in. The
--- history above the box is redrawn as the agent goes, so edits there don't
--- last; text in the box is yours.
+-- history above the box is read-only (`buffer:set_readonly_before`): you
+-- can move, search and copy there, and typing or pasting there goes in the
+-- box (`core.writable`). Text in the box is yours.
 --
 --   Claude in ~/src/greed (workspace greed-claude-1)
 --
@@ -479,6 +480,9 @@ local rows: { [number]: { [number]: string } } = {}
 local plains: { [number]: { [number]: boolean } } = {}
 local spinning: { [number]: { { from: number, to: number } } } = {}
 local ticking: { [number]: boolean } = {}
+-- The plugin's own handle on each transcript buffer, for drawing above the
+-- box, which is read-only to you.
+local owned: { [number]: greed.Buffer } = {}
 
 --- The shell code block `pos` in `buffer` is on, if you or the agent wrote
 --- it above the box.
@@ -596,6 +600,9 @@ end
 --- reply streaming in only adds to the end.
 function M.render(buffer: greed.Buffer, s: Session)
 	local id = buffer:id()
+	-- Drawn as the plugin, which may change the history, though a command's
+	-- handle (yours) may not.
+	buffer = owned[id] or buffer
 	shown[id] = s
 	local history = M.history(s)
 	rows[id] = history.tools
@@ -653,6 +660,7 @@ function M.render(buffer: greed.Buffer, s: Session)
 	end
 	local at = #history.text
 	buffer:decorate("acp-prompt", { { from = at, to = at + #head, style = "agent.box" } })
+	buffer:set_readonly_before(at + #head + 1)
 	local styles = history.styles
 	for _, style in top_styles do
 		local moved = table.clone(style)
@@ -679,6 +687,7 @@ function M.create(s: Session): greed.Buffer
 	local buffer = greed.create_buffer("agent-transcript", "", { language = "markdown" })
 	buffer:set_line_numbers(false)
 	buffer:set_kept(true)
+	owned[buffer:id()] = buffer
 	M.render(buffer, s)
 	return buffer
 end
@@ -775,6 +784,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	rows[event.id] = nil
 	plains[event.id] = nil
 	spinning[event.id] = nil
+	owned[event.id] = nil
 end)
 
 return M

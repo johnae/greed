@@ -137,6 +137,8 @@ return {
 	modeless = modeless,
 	--- Pasted text going in at the cursors (paste.luau).
 	paste = paste,
+	--- Typing in a buffer with a read-only start goes after it (writable.luau).
+	writable = require("@self/writable"),
 	floats = floats,
 	registers = registers,
 	--- Where the thing under the cursor is defined, and what it is (lookup.luau).

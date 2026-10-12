@@ -16,6 +16,7 @@ local registers = require("./registers")
 local registry = require("./registry")
 local style = require("./style")
 local text = require("./text")
+local writable = require("./writable")
 local span = text.span
 
 local M = {}
@@ -42,6 +43,7 @@ local function replace_selections(ctx: greed.Context, text: (i: number) -> strin
 end
 
 local function type_text(ctx: greed.Context, text: string)
+	writable.cursor(ctx.view)
 	greed.history.start_group()
 	replace_selections(ctx, function()
 		return text
@@ -82,6 +84,7 @@ greed.command({
 	name = "type-newline",
 	doc = "Type a line break, replacing any selection, and start the new line at its indent",
 	run = function(ctx)
+		writable.cursor(ctx.view)
 		greed.history.start_group()
 		for _, range in ctx.view:selection().ranges do
 			if range.anchor ~= range.head then
@@ -227,6 +230,7 @@ greed.command({
 		if register == nil then
 			return
 		end
+		writable.cursor(ctx.view)
 		local pieces = register.pieces
 		local selection = ctx.view:selection()
 		local joined = registers.join(register)

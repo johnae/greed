@@ -86,6 +86,10 @@ export type Buffer = {
 	--- are refused.
 	readonly: (self: Buffer) -> boolean,
 	set_readonly: (self: Buffer, readonly: boolean) -> (),
+	--- Where the read-only start of the text ends, when only its start is (`set_readonly_before`).
+	readonly_before: (self: Buffer) -> number?,
+	--- Makes the text before `pos` read-only, like `set_readonly`, and the rest writable, as a transcript above the box you write in; nil makes it all writable. The place moves with edits: what plugins insert there joins the read-only part, what you type there doesn't. Typing and pasting with a cursor in the read-only part go to the end (`core.writable`).
+	set_readonly_before: (self: Buffer, pos: number?) -> (),
 	--- The name it was given, for a buffer without a file, like a terminal's "nu ~/src".
 	name: (self: Buffer) -> string?,
 	--- Names it where it shows (the tab line, float titles, the status line); nil or "" leaves it unnamed.
@@ -492,7 +496,7 @@ export type Keymap = {
 
 export type Mode = {
 	get: () -> string,
-	--- Switches mode, emitting "mode.changed" if it changed.
+	--- Switches mode, emitting "mode.changed" if it changed. A mode exists once keys are bound in it or it has a fallback, a parent, counts or a cursor shape; switching to one that doesn't is an error listing those that do.
 	set: (name: string) -> (),
 	--- Sets how the cursor looks in `mode`; modes without a shape get a block.
 	set_cursor: (mode: string, shape: "block" | "bar" | "underline") -> (),

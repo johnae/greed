@@ -858,6 +858,14 @@ impl Editor {
         }
     }
 
+    /// Makes the text of `buffer` before `pos` read-only, so only plugins
+    /// can change it, and the rest editable; `None` makes all of it editable.
+    pub fn set_readonly_before(&mut self, buffer: BufferId, pos: Option<usize>) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_readonly_before(pos);
+        }
+    }
+
     /// Shows or hides line numbers beside `buffer` in the main view.
     pub fn set_line_numbers(&mut self, buffer: BufferId, on: bool) {
         if let Some(b) = self.buffers.get_mut(&buffer) {
@@ -1773,6 +1781,14 @@ impl Editor {
 
     pub fn theme_mut(&mut self) -> &mut Theme {
         Arc::make_mut(&mut self.theme)
+    }
+
+    /// The modes there are: those the keymap knows and those with a cursor
+    /// shape.
+    pub fn modes(&self) -> std::collections::BTreeSet<&str> {
+        let mut modes = self.keymap().modes();
+        modes.extend(self.cursor_shapes.keys().map(|mode| &**mode));
+        modes
     }
 
     pub fn set_cursor_shape(&mut self, mode: &str, shape: CursorShape) {

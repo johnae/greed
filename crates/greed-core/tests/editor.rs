@@ -439,6 +439,47 @@ fn read_only_buffers_refuse_the_users_edits_but_not_plugins() {
 }
 
 #[test]
+fn a_read_only_start_refuses_the_users_edits_there_and_moves_with_edits() {
+    let mut ed = editor("");
+    let log = ed.create_buffer("log", "out\n> ");
+    let view = ed.float(log, float_options());
+    ed.set_readonly_before(log, Some(4));
+    let user = Author::User(ClientId(1));
+    let plugin = Author::Plugin("log".into());
+    let change = |len, from, to, text| ChangeSet::from_changes(len, [(from, to, text)]).unwrap();
+
+    // Before the line, or deleting back over its start, is refused.
+    let err = ed
+        .apply(view, change(6, 0, 0, Some("x")), user.clone(), None, None)
+        .unwrap_err();
+    assert!(err.to_string().contains("read-only"), "{err}");
+    let err = ed
+        .apply(view, change(6, 3, 4, None), user.clone(), None, None)
+        .unwrap_err();
+    assert!(err.to_string().contains("read-only"), "{err}");
+
+    // From it on, typing goes in, and stays writable.
+    ed.apply(view, change(6, 4, 4, Some("ls")), user.clone(), None, None)
+        .unwrap();
+    assert_eq!(ed.buffer(log).text().to_string(), "out\nls> ");
+    assert_eq!(ed.buffer(log).readonly_before(), Some(4));
+
+    // What a plugin puts there joins the read-only part.
+    ed.apply_unrecorded(view, change(8, 4, 4, Some("more\n")), plugin, None)
+        .unwrap();
+    assert_eq!(ed.buffer(log).readonly_before(), Some(9));
+
+    // Undo is the user's: it can take back typing, which is after the line.
+    ed.undo(view).unwrap();
+    assert_eq!(ed.buffer(log).text().to_string(), "out\nmore\n> ");
+
+    ed.set_readonly_before(log, None);
+    ed.apply(view, change(11, 0, 0, Some("!")), user, None, None)
+        .unwrap();
+    assert_eq!(ed.buffer(log).text().to_string(), "!out\nmore\n> ");
+}
+
+#[test]
 fn undoing_an_edit_made_without_a_view_keeps_the_cursor() {
     let mut ed = editor("hello world");
     let v = ed.focus();

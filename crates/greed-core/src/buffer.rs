@@ -31,6 +31,11 @@ pub struct Buffer {
     /// counts as unmodified.
     saved_place: Option<u64>,
     readonly: bool,
+    /// Where the part of the text only plugins can change ends, when that's
+    /// only its start, like a transcript above the box you write in. It
+    /// moves with edits: what plugins insert there joins the read-only part,
+    /// what you type there stays writable.
+    readonly_before: Option<usize>,
     /// Whether the file wasn't UTF-8 and what couldn't be read was replaced,
     /// so saving over it would lose that.
     lossy: bool,
@@ -223,6 +228,7 @@ impl Buffer {
             saved: SmallVec::new(),
             saved_place: Some(0),
             readonly: false,
+            readonly_before: None,
             lossy: false,
             line_numbers: true,
             tab_width: crate::render::TAB_WIDTH,
@@ -381,6 +387,23 @@ impl Buffer {
 
     pub(crate) fn set_readonly(&mut self, readonly: bool) {
         self.readonly = readonly;
+    }
+
+    /// Where the read-only start of the text ends, if only its start is.
+    pub fn readonly_before(&self) -> Option<usize> {
+        self.readonly_before
+    }
+
+    /// Makes the text before `pos` (clamped to the text) read-only and the
+    /// rest writable, or with `None`, all of it writable again.
+    pub(crate) fn set_readonly_before(&mut self, pos: Option<usize>) {
+        self.readonly_before = pos.map(|pos| pos.min(self.text.len_bytes()));
+    }
+
+    /// Whether `changes` reach into the read-only start of the text.
+    pub(crate) fn touches_readonly_start(&self, changes: &ChangeSet) -> bool {
+        let first = changes.changed_range().map(|range| range.start);
+        matches!((self.readonly_before, first), (Some(before), Some(first)) if first < before)
     }
 
     /// Whether the file wasn't UTF-8 when opened, so the text has
@@ -568,12 +591,13 @@ impl Buffer {
         current: Option<&Selection>,
         record: bool,
     ) -> Result<Option<Selection>, Error> {
-        self.check_author(&tx.meta.author)?;
+        self.check_author(&tx.meta.author, &tx.changes)?;
         self.check_version(&tx.meta)?;
         let before = self.text.clone();
         let mapped = tx.apply(&mut self.text, current.unwrap_or(&Selection::point(0)))?;
         let after = (current.is_some() || tx.selection.is_some()).then_some(mapped);
         let inverse = tx.changes.invert(&before)?;
+        self.map_readonly(&tx.changes, &tx.meta.author);
         self.map_marks(&tx.changes);
         self.note_changed(&tx.changes);
         self.version = SmallVec::from_buf([tx.meta.id]);
@@ -627,7 +651,7 @@ impl Buffer {
         cause: &str,
         current: &Selection,
     ) -> Result<Selection, Error> {
-        self.check_author(&author)?;
+        self.check_author(&author, &step.changes)?;
         let tx = Transaction {
             changes: step.changes,
             selection: step.selection,
@@ -635,6 +659,7 @@ impl Buffer {
         };
         let inverse = tx.changes.invert(&self.text)?;
         let selection = tx.apply(&mut self.text, current)?;
+        self.map_readonly(&tx.changes, &tx.meta.author);
         self.map_marks(&tx.changes);
         self.note_changed(&tx.changes);
         self.version = SmallVec::from_buf([id]);
@@ -642,11 +667,27 @@ impl Buffer {
         Ok(selection)
     }
 
-    fn check_author(&self, author: &Author) -> Result<(), Error> {
-        if self.readonly && !matches!(author, Author::Plugin(_)) {
+    /// Refuses `changes` by anyone but a plugin where the text is read-only.
+    fn check_author(&self, author: &Author, changes: &ChangeSet) -> Result<(), Error> {
+        if matches!(author, Author::Plugin(_)) {
+            return Ok(());
+        }
+        if self.readonly {
             return Err(Error::ReadOnly);
         }
+        if self.touches_readonly_start(changes) {
+            return Err(Error::ReadOnlyPart);
+        }
         Ok(())
+    }
+
+    fn map_readonly(&mut self, changes: &ChangeSet, author: &Author) {
+        let assoc = if matches!(author, Author::Plugin(_)) {
+            Assoc::After
+        } else {
+            Assoc::Before
+        };
+        self.readonly_before = self.readonly_before.map(|pos| changes.map_pos(pos, assoc));
     }
 
     fn check_version(&self, meta: &TxMeta) -> Result<(), Error> {

@@ -75,6 +75,8 @@ pub enum Error {
     },
     /// Only plugins can change a read-only buffer.
     ReadOnly,
+    /// Only plugins can change the read-only start of a buffer.
+    ReadOnlyPart,
     /// A buffer can't close while a view shows it.
     Shown,
     /// A group can't be undone: something was done on top of it since.
@@ -90,6 +92,7 @@ impl fmt::Display for Error {
                 "edit was made against version {actual:?}, but the buffer is at {expected:?}"
             ),
             Error::ReadOnly => f.write_str("this buffer is read-only"),
+            Error::ReadOnlyPart => f.write_str("this part of the buffer is read-only"),
             Error::Shown => f.write_str("a view still shows this buffer"),
             Error::GroupChanged => {
                 f.write_str("it was changed since; undo what came after it first")
@@ -102,9 +105,11 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Text(err) => Some(err),
-            Error::StaleVersion { .. } | Error::ReadOnly | Error::Shown | Error::GroupChanged => {
-                None
-            }
+            Error::StaleVersion { .. }
+            | Error::ReadOnly
+            | Error::ReadOnlyPart
+            | Error::Shown
+            | Error::GroupChanged => None,
         }
     }
 }

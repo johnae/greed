@@ -337,6 +337,9 @@ impl BufferRef {
         changes.sort_by_key(|(from, to, _)| (*from, *to));
         let len = self.with_text(lua, |t| Ok(t.len_bytes()))?;
         let changes = ChangeSet::from_changes(len, changes).map_err(mlua::Error::external)?;
+        if self.with_buffer(lua, |b| Ok(b.touches_readonly_start(&changes)))? {
+            super::capabilities::unless_sandboxed(lua, "change a read-only buffer")?;
+        }
         let mut state = state_mut(lua);
         let view = self.view.filter(|v| {
             state
@@ -958,7 +961,29 @@ fn mark_scene_from_lua(t: &Table) -> LuaResult<MarkScene> {
     })
 }
 
-/// Whether the buffer is read-only, its name, and its language.
+/// Whether the buffer, or its start, is read-only.
+fn add_readonly_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method("readonly", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.is_readonly()))
+    });
+    methods.add_method("set_readonly", |lua, this, readonly: bool| {
+        super::capabilities::unless_sandboxed(lua, "make a buffer read-only or writable")?;
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua).editor.set_readonly(this.buffer, readonly);
+        Ok(())
+    });
+    methods.add_method("readonly_before", |lua, this, ()| {
+        this.with_buffer(lua, |b| Ok(b.readonly_before()))
+    });
+    methods.add_method("set_readonly_before", |lua, this, pos: Option<usize>| {
+        super::capabilities::unless_sandboxed(lua, "make a buffer read-only or writable")?;
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua).editor.set_readonly_before(this.buffer, pos);
+        Ok(())
+    });
+}
+
+/// The buffer's name, its settings, its history kept or not, and its language.
 fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method("name", |lua, this, ()| {
         this.with_buffer(lua, |b| Ok(b.name().map(str::to_owned)))
@@ -972,15 +997,6 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     });
     methods.add_method("title", |lua, this, ()| {
         this.with_buffer(lua, |b| Ok(b.title()))
-    });
-    methods.add_method("readonly", |lua, this, ()| {
-        this.with_buffer(lua, |b| Ok(b.is_readonly()))
-    });
-    methods.add_method("set_readonly", |lua, this, readonly: bool| {
-        super::capabilities::unless_sandboxed(lua, "make a buffer read-only or writable")?;
-        this.with_buffer(lua, |_| Ok(()))?;
-        state_mut(lua).editor.set_readonly(this.buffer, readonly);
-        Ok(())
     });
     methods.add_method("line_numbers", |lua, this, ()| {
         this.with_buffer(lua, |b| Ok(b.line_numbers()))
@@ -1120,6 +1136,7 @@ impl UserData for BufferRef {
                 Ok(b.path().map(|p| p.to_string_lossy().into_owned()))
             })
         });
+        add_readonly_methods(methods);
         add_setting_methods(methods);
         add_decoration_methods(methods);
         add_search_methods(methods);

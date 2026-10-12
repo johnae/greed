@@ -8,6 +8,7 @@ local motions = require("./motions")
 local registers = require("./registers")
 local style = require("./style")
 local text = require("./text")
+local writable = require("./writable")
 
 local each_range, point = motions.each_range, motions.point
 local span = text.span
@@ -79,6 +80,7 @@ greed.command({
 
 -- Inserts `text` at every cursor; cursors end up after it.
 local function insert_at_heads(ctx: greed.Context, text: string)
+	writable.cursor(ctx.view)
 	ctx.buffer:edit(function(e)
 		for _, range in ctx.view:selection().ranges do
 			e:insert(range.head, text)
@@ -104,6 +106,7 @@ greed.command({
 	name = "insert-newline",
 	doc = "Insert a line break at each cursor, starting the new line at its indent",
 	run = function(ctx)
+		writable.cursor(ctx.view)
 		indent.break_lines(ctx.view)
 	end,
 })
@@ -307,6 +310,7 @@ end
 -- was pasted. With as many pieces as selections, each selection gets its
 -- own piece.
 local function paste(ctx: greed.Context, after: boolean)
+	writable.cursor(ctx.view)
 	local register = registers.paste(ctx)
 	if register == nil then
 		return

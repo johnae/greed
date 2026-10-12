@@ -8,6 +8,7 @@ local greed = require("@greed")
 local modeless = require("./modeless")
 local motions = require("./motions")
 local span = require("./text").span
+local writable = require("./writable")
 
 local M = {}
 
@@ -17,6 +18,7 @@ function M.paste(view: greed.View, text: string)
 	if buffer:readonly() then
 		return
 	end
+	writable.cursor(view)
 	text = string.gsub(text, "\r\n?", "\n")
 	local replace = modeless.is(greed.mode.get())
 	-- Each cursor ends up after its text.
