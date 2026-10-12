@@ -205,13 +205,17 @@ M.add("left", "file", function(ctx)
 		return pill(ctx.message, "ui.statusline.message")
 	end
 	local buffer = ctx.buffer
-	local path, given = buffer:path(), buffer:name()
+	local path, given, kind = buffer:path(), buffer:name(), buffer:kind()
 	-- Files in the project show from its root; other buffers by the name
 	-- they were given, with their kind ("terminal: nu ~/src"), or as the
-	-- tab line has them ("untitled").
+	-- tab line has them ("untitled"). A name that starts with its kind,
+	-- for the tab line ("board ops"), says it once ("board: ops").
+	if given and string.sub(given, 1, #kind + 1) == kind .. " " then
+		given = string.sub(given, #kind + 2)
+	end
 	local name = if path
 		then core.project.short(path)
-		elseif given and buffer:kind() ~= "file" then `{buffer:kind()}: {given}`
+		elseif given and kind ~= "file" then `{kind}: {given}`
 		else buffer:title()
 	-- Only a file's changes are something to save; a shell's or a
 	-- terminal's aren't.
