@@ -25,7 +25,7 @@ fn file_digest(path: &Path) -> std::io::Result<String> {
 }
 
 /// `count` bytes from the system's random source, as lowercase hex.
-fn random_hex(count: usize) -> std::io::Result<String> {
+pub(crate) fn random_hex(count: usize) -> std::io::Result<String> {
     let mut bytes = vec![0u8; count];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
     Ok(hex(&bytes))

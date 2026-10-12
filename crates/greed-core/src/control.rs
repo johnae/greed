@@ -607,9 +607,7 @@ fn prune(dir: &Path) {
 
 /// 32 random hex digits from the system's random source.
 pub(crate) fn new_token() -> io::Result<String> {
-    let mut bytes = [0u8; 16];
-    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
-    Ok(crate::luau::hash::hex(&bytes))
+    crate::luau::hash::random_hex(16)
 }
 
 /// A connection that asked to attach, for the server to send frames to and
