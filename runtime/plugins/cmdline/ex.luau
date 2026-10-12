@@ -122,6 +122,52 @@ function M.substitutions(
 	return edits, last_changed
 end
 
+-- Where the match :s/…/c asks about shows.
+local ASKING = "substitute-confirm"
+
+-- Asks about each of `edits` in turn, the match marked and the cursor on
+-- it, as :s with the c flag does: y replaces it, n leaves it, a replaces
+-- it and the rest, l replaces it and stops, and q, esc or any other key
+-- stops. The replacements are one undo step. Returns how many were made.
+local function confirm(view: greed.View, buffer: greed.Buffer, edits: { Substitution }): number
+	-- How far the edits made so far moved the text after them.
+	local shift, made, all = 0, 0, false
+	greed.history.start_group()
+	local ok, err = pcall(function()
+		for _, edit in edits do
+			local from, to = edit.from + shift, edit.to + shift
+			local answer = "y"
+			if not all then
+				view:set_cursor(from)
+				buffer:decorate(ASKING, { { from = from, to = to, style = "ui.search.match" } })
+				local shown = string.gsub(edit.text, "\n", "\\n")
+				greed.echo(`replace with "{shown}"? y yes, n no, a all, l last, q quit`)
+				answer = greed.next_key()
+			end
+			if answer == "a" then
+				all = true
+				answer = "y"
+			end
+			if answer == "y" or answer == "l" then
+				buffer:edit(function(e)
+					e:replace(from, to, edit.text)
+				end)
+				shift += #edit.text - (to - from)
+				made += 1
+			end
+			if answer ~= "y" and answer ~= "n" then
+				break
+			end
+		end
+	end)
+	buffer:decorate(ASKING, {})
+	greed.history.end_group()
+	if not ok then
+		error(err, 0)
+	end
+	return made
+end
+
 greed.command({
 	name = "substitute",
 	doc = "Replace a regex with text on the selected lines (:s/regex/text/flags)",
@@ -148,6 +194,10 @@ greed.command({
 		end
 		if string.find(flags, "n", 1, true) then
 			greed.echo(`{#edits} matches on {changed_lines} lines`)
+			return
+		elseif string.find(flags, "c", 1, true) then
+			local made = confirm(ctx.view, buffer, edits)
+			greed.echo(`{made} of {#edits} replaced`)
 			return
 		end
 		-- Undo puts the cursor back on the first line changed, as in Vim.
