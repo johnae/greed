@@ -103,8 +103,8 @@ end
 
 -- What each tab has: its layout, its floats in the order they opened, the
 -- one in front, whether alt-f hid them all, the dock (shown or hidden by
--- hand, nil to follow the layout, its view and where each float's name is
--- in its text) and the float being picked in it.
+-- hand, nil to follow the layout, and its view) and the float being picked
+-- in it.
 type TabState = {
 	layout: string,
 	order: { greed.View },
@@ -112,7 +112,6 @@ type TabState = {
 	away: boolean,
 	dock: boolean?,
 	dock_view: greed.View?,
-	dock_items: { { from: number, to: number } },
 	picking: number?,
 	-- Where each float was in `free`, by view id, to go back to there.
 	own: { [number]: Area? },
@@ -129,7 +128,6 @@ local function state(): TabState
 			layout = if layout_named(default) then ALIASES[default] or default else "free",
 			order = {},
 			away = false,
-			dock_items = {},
 			own = {},
 		}
 		states[id] = fresh
@@ -363,6 +361,30 @@ local function apply(view: greed.View, place: Place?, label: { Piece }, footer: 
 	end
 end
 
+-- The dock's line: each float's number and title, with the float as its
+-- value, the one in front and the one being picked marked, and a dot on
+-- those that need you.
+local function dock_line(state: { [string]: any }): core.UiNode
+	local st: TabState = state.st
+	local spans: { core.UiSpan } = {}
+	local current = index_of(st.order, st.current)
+	for i, float in st.order do
+		local style = if i == st.picking
+			then "ui.menu.selected"
+			elseif i == current then "ui.tabline.active"
+			else "ui.tabline"
+		table.insert(spans, { text = ` {i} {title_of(float)} `, style = style, value = float })
+		if core.attention.of(float:buffer()) ~= nil then
+			table.insert(spans, { text = "●", style = "ui.float.attention", value = float })
+			table.insert(spans, { text = " ", value = float })
+		end
+		table.insert(spans, { text = " " })
+	end
+	spans[1] = spans[1] or { text = "" }
+	spans[1].line = "ui.tabline"
+	return core.ui.line(spans)
+end
+
 -- Shows the dock along the bottom of the tab's room, listing its floats,
 -- or closes it.
 local function draw_dock(st: TabState, shown: boolean)
@@ -374,38 +396,18 @@ local function draw_dock(st: TabState, shown: boolean)
 		st.dock_view = nil
 		return
 	end
-	local text, items, marks = "", {}, {}
-	local current = index_of(st.order, st.current)
-	for i, float in st.order do
-		local from = #text
-		text ..= ` {i} {title_of(float)} `
-		local style = if i == st.picking
-			then "ui.menu.selected"
-			elseif i == current then "ui.tabline.active"
-			else "ui.tabline"
-		table.insert(marks, { from = from, to = #text, style = style })
-		if core.attention.of(float:buffer()) ~= nil then
-			table.insert(marks, { from = #text, to = #text + #"●", style = "ui.float.attention" })
-			text ..= "● "
-		end
-		table.insert(items, { from = from, to = #text })
-		text ..= " "
-	end
-	table.insert(marks, 1, { from = 0, to = #text, style = "ui.tabline", line = true })
 	local buffer: greed.Buffer
 	if view and view:valid() then
 		buffer = view:buffer()
+		local drawn = core.ui.of(buffer)
+		if drawn then
+			drawn:set({ st = st })
+		end
 	else
 		buffer = greed.create_buffer(DOCK, "", { readonly = true })
-		buffer:forget_history()
 		buffer:set_line_numbers(false)
+		core.ui.mount(buffer, dock_line, { st = st }, { ns = "float-dock", keys = false })
 	end
-	if buffer:text() ~= text then
-		buffer:edit(function(e)
-			e:replace(0, buffer:len(), text)
-		end)
-	end
-	buffer:decorate("float-dock", marks)
 	-- Along the bottom, as wide as the room on every client's screen.
 	local area = core.floats.in_shares(room())
 	local spec: greed.FloatSpec = { x = area.x, width = area.width, height = 1, anchor = "bottom" }
@@ -415,7 +417,6 @@ local function draw_dock(st: TabState, shown: boolean)
 		spec.border, spec.tab, spec.focus = false, true, false
 		st.dock_view = greed.float(buffer, spec)
 	end
-	st.dock_items = items
 end
 
 -- Lays the tab's floats out by its layout, marks the one in front when the
@@ -827,12 +828,11 @@ greed.on("mouse", function(event: greed.MouseEvent)
 		return
 	end
 	local st = state()
-	local pos = event.pos or -1
-	for i, item in st.dock_items do
-		if pos >= item.from and pos < item.to and st.order[i] then
-			M.focus(st.order[i])
-			return
-		end
+	local drawn = core.ui.of(view:buffer())
+	local float: greed.View? = if drawn and event.pos then drawn:value_at(event.pos) else nil
+	if float and table.find(st.order, float) then
+		M.focus(float)
+		return
 	end
 	local back = st.current or greed.tab.current().active
 	back:focus()
