@@ -2,9 +2,11 @@
 
 ## Starting and sessions
 
-`greed FILE` opens a file. The editor runs as a session in the background and
-your terminal attaches to it, so closing the terminal (or typing `:detach`)
-leaves everything as it was: open files, undo history, language servers.
+`greed FILE` opens a file. The editor runs as a session in the background,
+and what you see is a client attached to it: the editor in your terminal,
+or a window with `greed --gui`, several at once if you like, on this
+machine or over `greed ssh`. Closing a client (or typing `:detach`) leaves
+the session as it was: open files, undo history, language servers.
 
 Each project gets its own session, named after its folder. Running `greed`
 anywhere in a project attaches to that project's session if it's running
