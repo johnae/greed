@@ -37,15 +37,16 @@
   </section>
 
   <section class="intro">
-    <p class="lead">Greed is a text environment for the work you do: shells whose
-    output is data, notes whose code runs, live boards, terminals and agents,
-    in one session you can leave and come back to. Everything in it is text,
+    <p class="lead">Your editor, your shells, your terminals and your agents, in
+    one session that keeps running. Leave it and come back, from this machine
+    or another over ssh, in a terminal or a window. Everything in it is text,
     so one editor runs through all of it, the Helix way, the Vim way or
-    without modes. In a terminal or its own window, here or on the machine
-    where the work runs.</p>
-    <p class="sub">A small Rust core does what needs speed. Keys, modes, commands,
-    pickers, themes and the agents are Luau plugins you can read, change or
-    replace.</p>
+    without modes.</p>
+    <p class="sub">In spirit it's closest to Emacs: an environment you shape while
+    you use it. Underneath is a small Rust core with tree-sitter and language
+    servers built in. On top, everything you see is a plugin in
+    <a href="https://luau.org">Luau</a>, Lua with gradual types, that you can
+    read, change or replace, and each one can only do what you allowed it.</p>
     <p class="actions">
       <a class="button primary" href="docs/using.html">Get started</a>
       <a class="button" href="docs/plugins.html">Write a plugin</a>
@@ -143,7 +144,7 @@
       shell, a terminal pane runs whatever you like.</p>
       <p><a href="docs/shell.html">The shell</a></p>
     </div>
-    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/kubectl.mp4" poster="https://github.com/johnae/greed/releases/download/media/kubectl.png" autoplay muted loop playsinline preload="metadata" aria-label="kubectl get pods in the Greed shell, then only the pods not running, then a chart of their restarts"></video>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/kubectl.mp4" poster="https://github.com/johnae/greed/releases/download/media/kubectl.png" autoplay muted loop playsinline preload="metadata" aria-label="kubectl get pods in the Greed shell, then only the pods not running, the failing pod's logs opened from its row, then a chart of their restarts"></video>
   </section>
 
   <section class="showcase">
@@ -254,7 +255,8 @@ greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span 
     <code>~/.local</code>:</p>
     <pre class="term"><code><span class="prompt">$</span> tar -xzf greed-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1
 <span class="prompt">$</span> greed --gui README.md</code></pre>
-    <p>On NixOS, <code>nix run github:johnae/greed</code>. For servers there's a
+    <p>On NixOS, <code>nix run github:johnae/greed</code>, downloaded from
+    <code>greed.cachix.org</code>. For servers there's a
     static build of the terminal side that runs on any Linux. The default
     plugins are built into the binary, and the first start asks how you like
     to edit and which theme you want, and writes a config with settings to
