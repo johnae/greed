@@ -71,6 +71,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
                 session: spec.get("name")?,
                 path: spec.get("path")?,
                 host: spec.get("host")?,
+                window: spec.get::<Option<bool>>("window")?.unwrap_or(false),
             };
             if to.session.is_none() && to.path.is_none() && to.host.is_none() {
                 return Err(mlua::Error::runtime(

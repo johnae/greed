@@ -760,8 +760,13 @@ impl Server<'_> {
                 if local {
                     return false;
                 }
+                // For another window the client stays; a terminal client
+                // goes, and its connection closing lets it go.
+                let stays = to.window;
                 self.send_to(id, Output::Switch(to));
-                self.let_go(id);
+                if !stays {
+                    self.let_go(id);
+                }
             } else if self.as_client(id, Editor::take_detach_request) {
                 // A client in this process has nowhere to detach to: the
                 // editor ends with it.
@@ -1130,8 +1135,11 @@ impl Server<'_> {
         let writing = reading.and_then(|_| {
             thread::Builder::new().spawn(move || {
                 for message in outgoing {
-                    let last =
-                        matches!(message, Output::Exit | Output::Detached | Output::Switch(_));
+                    // A switch to another window leaves the client here.
+                    let last = match &message {
+                        Output::Switch(to) => !to.window,
+                        other => matches!(other, Output::Exit | Output::Detached),
+                    };
                     // Left out, a frame or delta the client goes without
                     // makes the next delta not fit, and it asks again.
                     let line = match serde_json::to_string(&message) {

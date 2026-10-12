@@ -26,4 +26,4 @@ mod watchdog;
 mod window;
 
 pub use color::Palette;
-pub use window::run;
+pub use window::{on_new_window, run};

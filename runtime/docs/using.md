@@ -167,7 +167,9 @@ fresh one.
 drawn on the GPU. It's the same session either way: attach from a terminal
 later and you see the same files, and `greed ssh HOST --gui` shows a session
 on another machine in a window here. Closing the window lets the session
-go, as `:detach` does.
+go, as `:detach` does. Going to another session (`space P`, `:session`)
+shows it in the same window, as a terminal would; `alt-w` in `space P`
+opens one in another window instead.
 
 The window draws with your system's monospaced font, ligatures included
 when the font has them (Fira Code, JetBrains Mono, Cascadia Code), and
@@ -244,6 +246,7 @@ picker, project search and tree work within the shown one.
 | `:project PATH` | Open the project `PATH` is in, or switch to it |
 | `space P` | Go to a project: one open here, another running session, a recent one, or one your sources find; type a folder path (`~/src/`) to list the folders in it, `tab` to go into one |
 | `alt-enter` in `space P` | Open the project in a new session, even if one is running for it |
+| `alt-w` in `space P` | In a window, open the project in another window and keep this one; in a terminal, go to it as `enter` does |
 | `space C` or `:connect HOST` | Show a session on another machine here, as `greed ssh` does: pick from the hosts you connected to lately and those in `~/.ssh/config`, or type one |
 | `:session NAME` or `:session PATH` | Go to a running session, or to the session for a project (starting it) |
 | `:project-close` | Close the shown project |

@@ -37,6 +37,8 @@ static RECORD: OnceLock<(greed_gui::record::Script, PathBuf)> = OnceLock::new();
 pub fn use_gui() -> Result<(), &'static str> {
     if cfg!(feature = "gui") {
         GUI.store(true, Ordering::Relaxed);
+        #[cfg(feature = "gui")]
+        greed_gui::on_new_window(crate::session::open_window);
         Ok(())
     } else {
         Err("this greed was built without the GUI (the gui feature)")

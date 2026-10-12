@@ -320,9 +320,13 @@ impl<'a> CurrentProject<'a> {
 
 /// Another session for a client to go to: a session by name, or the session
 /// of the project a path is in (opening the path), started if it isn't
-/// running; on another machine, over `greed ssh`, with `host`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// running; on another machine, over `greed ssh`, with `host`. With
+/// `window`, a window client opens it in another window and stays; a
+/// terminal goes to it as it would anyway.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SwitchTo {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub window: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -2,8 +2,8 @@
 -- sessions running on this machine, recent projects, and the projects your
 -- sources find. enter goes to one: it switches to it if it's open or has a
 -- session, and opens it in a session of its own if not. alt-enter opens it
--- in a new session even when one is running for it. A typed folder opens
--- too.
+-- in a new session even when one is running for it, and alt-w in another
+-- window, this one staying where it is. A typed folder opens too.
 --
 -- Sources are folders to look in and commands that print paths:
 --
@@ -220,41 +220,58 @@ greed.command({
 	doc = "Go to a project: one open here, a running session, a recent one or one "
 		.. "your sources find; or type a folder to open",
 	run = function()
-		picker.pick("Projects (alt-enter: in a new session)", items(), function(item)
-			if item.value.project then
-				greed.project.switch(item.value.project)
-			elseif item.value.session then
-				greed.session.switch({ name = item.value.session })
-			else
-				greed.session.switch({ path = item.value.path })
-			end
-		end, {
-			-- A typed folder lists the folders in it, to go on with tab.
-			paths = {
-				dirs = true,
-				choose = function(path)
-					greed.session.switch({ path = path })
-				end,
-			},
-			fallback = function(query)
-				local path = expand(query)
-				if not is_dir(path) then
-					greed.echo(`no folder at {path}`)
-					return
+		picker.pick(
+			"Projects (alt-enter: in a new session, alt-w: in a new window)",
+			items(),
+			function(item)
+				if item.value.project then
+					greed.project.switch(item.value.project)
+				elseif item.value.session then
+					greed.session.switch({ name = item.value.session })
+				else
+					greed.session.switch({ path = item.value.path })
 				end
-				greed.session.switch({ path = path })
 			end,
-			keys = {
-				["alt-enter"] = function(_, current)
-					local root = current and current.value.root
-					if root == nil then
-						greed.echo("that session doesn't say which project it's for")
+			{
+				-- A typed folder lists the folders in it, to go on with tab.
+				paths = {
+					dirs = true,
+					choose = function(path)
+						greed.session.switch({ path = path })
+					end,
+				},
+				fallback = function(query)
+					local path = expand(query)
+					if not is_dir(path) then
+						greed.echo(`no folder at {path}`)
 						return
 					end
-					greed.session.switch({ path = root, new = true })
+					greed.session.switch({ path = path })
 				end,
-			},
-		})
+				keys = {
+					["alt-enter"] = function(_, current)
+						local root = current and current.value.root
+						if root == nil then
+							greed.echo("that session doesn't say which project it's for")
+							return
+						end
+						greed.session.switch({ path = root, new = true })
+					end,
+					-- This window stays on this project, and another shows that
+					-- one: in a terminal, it goes there as enter does.
+					["alt-w"] = function(_, current)
+						local value = current and current.value
+						if value == nil then
+							return
+						elseif value.session then
+							greed.session.switch({ name = value.session, window = true })
+						elseif value.root then
+							greed.session.switch({ path = value.root, window = true })
+						end
+					end,
+				},
+			}
+		)
 		-- For next time; the picker is already open with what was found
 		-- before.
 		M.refresh()

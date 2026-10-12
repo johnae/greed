@@ -188,6 +188,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> 
                 host: Some(host),
                 session,
                 path,
+                ..
             }) => {
                 return ssh(
                     &host,
@@ -277,6 +278,47 @@ fn resolve(to: &SwitchTo) -> Result<(String, Option<PathBuf>), Error> {
         spawn_server(&name, Some(&target), false)?;
         Ok((name, None))
     }
+}
+
+/// Opens `to` in a window of its own, for a window that stays on its
+/// session: another `greed --gui`, attached to the session `to` names or
+/// to the project's (started if need be), or over `greed ssh`.
+pub fn open_window(to: SwitchTo) {
+    std::thread::spawn(move || {
+        let mut args = vec!["--gui".to_owned()];
+        if let Some(host) = to.host {
+            args.extend(["ssh".to_owned(), host]);
+            if let Some(name) = to.session {
+                args.extend(["--session".to_owned(), name]);
+            }
+            args.extend(to.path);
+        } else {
+            match resolve(&to) {
+                Ok((name, _)) => args.extend(["attach".to_owned(), name]),
+                Err(err) => {
+                    eprintln!("greed: can't open another window: {err}");
+                    return;
+                }
+            }
+        }
+        let Ok(program) = std::env::current_exe() else {
+            return;
+        };
+        // Started from a terminal in a session, it would open in that one.
+        let started = Command::new(program)
+            .args(&args)
+            .env_remove("GREED_SESSION")
+            .env_remove("GREED_TERMINAL")
+            .stdin(Stdio::null())
+            .spawn();
+        match started {
+            // Waited for, so it doesn't linger once it ends.
+            Ok(mut child) => {
+                let _ = child.wait();
+            }
+            Err(err) => eprintln!("greed: can't open another window: {err}"),
+        }
+    });
 }
 
 /// Shows an attached session in this terminal: input goes to `writer` and
@@ -467,6 +509,7 @@ pub fn ssh(
         session: name.map(str::to_owned),
         path: file.map(str::to_owned),
         host: None,
+        window: false,
     };
     // A terminal or shell is asked for once, not again after a switch.
     loop {
@@ -864,6 +907,7 @@ mod tests {
             session: Some("greed".to_owned()),
             path: Some("it's here.rs".to_owned()),
             host: None,
+            window: false,
         };
         assert_eq!(
             bridge_command(
@@ -878,6 +922,7 @@ mod tests {
             session: None,
             path: None,
             host: None,
+            window: false,
         };
         assert_eq!(
             bridge_command("/opt/greed", &plain, None, false),

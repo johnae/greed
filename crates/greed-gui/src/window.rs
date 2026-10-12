@@ -4,10 +4,11 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender};
+use greed_core::SwitchTo;
 use greed_core::keymap::{Key, KeyCode, Mods};
 use greed_core::mouse::{Button, Mouse, MouseKind};
 use greed_core::server::{Input, Output};
@@ -32,10 +33,27 @@ pub(crate) enum Event {
     Menu(String),
 }
 
+/// What opens another session in a window of its own, for a switch that
+/// asks for one; without it, the window goes to that session instead.
+static NEW_WINDOW: OnceLock<fn(SwitchTo)> = OnceLock::new();
+
+/// Sets what opens a session in another window: the program knows how to
+/// find and start sessions, and this crate only draws them.
+pub fn on_new_window(open: fn(SwitchTo)) {
+    let _ = NEW_WINDOW.set(open);
+}
+
+fn opens_in_new_window(to: &SwitchTo) -> bool {
+    to.window && NEW_WINDOW.get().is_some()
+}
+
 thread_local! {
     /// winit allows one event loop per process, so switching sessions runs
     /// the same one again.
     static LOOP: RefCell<Option<EventLoop<Event>>> = const { RefCell::new(None) };
+    /// The window a run that switched sessions left, for the next run to
+    /// show the other session in, as a terminal does.
+    static KEPT: RefCell<Option<App>> = const { RefCell::new(None) };
 }
 
 /// Runs the window until the session exits or lets it go, or the window is
@@ -63,7 +81,8 @@ pub fn run(
                 crossbeam_channel::select! {
                     recv(outputs) -> message => {
                         let message = message.unwrap_or(Output::Exit);
-                        let last = !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::SshAgentRequest(..) | Output::Notify(_));
+                        let elsewhere = matches!(&message, Output::Switch(to) if opens_in_new_window(to));
+                        let last = !elsewhere && !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::SshAgentRequest(..) | Output::Notify(_));
                         if proxy.send_event(Event::Output(Box::new(message))).is_err() || last {
                             return;
                         }
@@ -72,19 +91,30 @@ pub fn run(
                 }
             }
         });
-        let mut app = App::new(input.clone());
-        #[cfg(target_os = "macos")]
-        {
-            app.menubar = Some(crate::menubar::MenuBar::new(event_loop.create_proxy()));
-        }
-        app.size = size_file.and_then(|path| parse_size(&std::fs::read_to_string(path).ok()?));
+        let kept = KEPT.with(|kept| kept.borrow_mut().take());
+        let mut app = if let Some(kept) = kept {
+            kept.attach(input.clone())
+        } else {
+            let mut app = App::new(input.clone());
+            #[cfg(target_os = "macos")]
+            {
+                app.menubar = Some(crate::menubar::MenuBar::new(event_loop.create_proxy()));
+            }
+            app.size = size_file.and_then(|path| parse_size(&std::fs::read_to_string(path).ok()?));
+            app
+        };
         event_loop.run_app_on_demand(&mut app)?;
         let _ = stop.send(());
         let _ = forward.join();
         if let (Some(path), Some(size)) = (size_file, app.size) {
             let _ = std::fs::write(path, format!("{} {}\n", size.width, size.height));
         }
-        Ok(app.ended.unwrap_or(Output::Detached))
+        let ended = app.ended.take().unwrap_or(Output::Detached);
+        // Going to another session keeps the window; anything else closes it.
+        if matches!(ended, Output::Switch(_)) {
+            KEPT.with(|kept| *kept.borrow_mut() = Some(app));
+        }
+        Ok(ended)
     })
 }
 
@@ -156,6 +186,20 @@ impl App {
             #[cfg(target_os = "macos")]
             menubar: None,
         }
+    }
+
+    /// The window a session switch left, now for the session `input` goes
+    /// to: told the window's size, and drawn again once its first frame
+    /// comes.
+    fn attach(mut self, input: Sender<Input>) -> Self {
+        self.input = input;
+        self.watchdog = Watchdog::default();
+        self.held = None;
+        if let Some(shown) = &self.shown {
+            self.send_size(shown.window.inner_size());
+        }
+        self.want_redraw();
+        self
     }
 
     /// Takes up the font the frame's options choose, if it's another one,
@@ -384,6 +428,12 @@ impl App {
                         .map(|png| base64::engine::general_purpose::STANDARD.encode(png));
                     let _ = input.send(Input::ClipboardImage(ask, png));
                 });
+                return;
+            }
+            Err(Output::Switch(to)) if opens_in_new_window(&to) => {
+                if let Some(open) = NEW_WINDOW.get() {
+                    open(to);
+                }
                 return;
             }
             Err(other) => {

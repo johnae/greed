@@ -43,6 +43,7 @@ fn start(
                 "user/keys",
                 "local greed = require('@greed')
                  greed.command({ name = 'go', run = function() greed.session.switch({ name = 'elsewhere' }) end })
+                 greed.command({ name = 'window', run = function() greed.session.switch({ name = 'elsewhere', window = true }) end })
                  greed.command({ name = 'ping', run = function() greed.client.notify('Reminder', 'call the bank') end })
                  greed.command({ name = 'slow', run = function() greed.sleep(10000) end })
                  greed.command({ name = 'tab', run = function() greed.tab.new() end })
@@ -50,7 +51,7 @@ fn start(
                      local png = greed.clipboard.image()
                      ctx.buffer:edit(function(e) e:replace(0, ctx.buffer:len(), if png then 'got ' .. #png else 'none') end)
                  end })
-                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping', ['ctrl-s'] = 'slow', ['ctrl-t'] = 'tab', ['ctrl-b'] = 'clip' })",
+                 greed.keymap.bind('helix', { ['ctrl-d'] = 'detach', ['ctrl-o'] = 'go', ['ctrl-n'] = 'ping', ['ctrl-s'] = 'slow', ['ctrl-t'] = 'tab', ['ctrl-b'] = 'clip', ['ctrl-y'] = 'window' })",
             )?;
             // ctrl-p shows a 2 by 1 pixel image over the first two cells.
             host.load_str(
@@ -584,6 +585,23 @@ fn a_session_can_send_its_client_to_another_session() {
     let mut again = attach();
     again.send(&Input::Resize(SIZE));
     again.first_row();
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_switch_to_another_window_keeps_the_client() {
+    let (conn, attach, _) = start("switch-window");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    client.first_row();
+    client.keys("ctrl-y");
+    let Output::Switch(to) = client.until(|o| matches!(o, Output::Switch(_))) else {
+        unreachable!()
+    };
+    assert!(to.window, "{to:?}");
+    // It's still this session's: what it types still shows.
+    client.keys("i W esc");
+    client.until_row("1 Whello");
     conn.input.send(Input::Quit).unwrap();
 }
 
