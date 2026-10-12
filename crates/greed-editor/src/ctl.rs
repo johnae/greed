@@ -15,6 +15,9 @@ usage: greed ctl tools                 list the tools the editor offers
                                       run a tool, e.g. greed ctl read path=src/main.rs
        greed ctl TOOL --help           what a tool does and the arguments it takes
        greed ctl sessions              list running editors
+       greed ctl agent-socket [SESSION]
+                                      the socket a session from greed ssh reaches your
+                                      ssh agent on, for SSH_AUTH_SOCK
        greed ctl state SESSION         what's unsaved and running in a session, of any
                                       greed version, as JSON
        greed ctl quit [--force] [SESSION]
@@ -55,6 +58,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             );
             Ok(())
         }
+        [cmd] if cmd == "agent-socket" => agent_socket(None),
+        [cmd, name] if cmd == "agent-socket" => agent_socket(Some(name)),
         [cmd] if cmd == "sessions" => {
             for session in control::sessions()? {
                 let root = session
@@ -337,28 +342,48 @@ pub fn connect_to(name: Option<&str>) -> Result<Client, Box<dyn std::error::Erro
 /// A connection to the session called `name`, or `$GREED_SESSION` or the
 /// only running editor, as a shell's if `shell`.
 fn session_client(name: Option<&str>, shell: bool) -> Result<Client, Box<dyn std::error::Error>> {
-    let name = match name
-        .map(str::to_owned)
-        .or_else(|| std::env::var("GREED_SESSION").ok())
-    {
-        Some(name) => name,
-        None => match live_sessions()?.as_slice() {
-            [only] => only.clone(),
-            [] => return Err("no editor is running".into()),
-            several => {
-                return Err(format!(
-                    "several editors are running ({}); set GREED_SESSION to pick one",
-                    several.join(", ")
-                )
-                .into());
-            }
-        },
-    };
+    let name = session_name(name)?;
     let (socket, token_file) = control::session_files(&name);
     control::check_sessions_dir(&control::sessions_dir())?;
     let token = read_token(&socket, &token_file)
         .map_err(|err| format!("can't read the token for session {name}: {err}"))?;
     Ok(Client::connect_as(&socket, token.trim(), shell)?)
+}
+
+/// `name`, or without one `$GREED_SESSION` or the only running editor.
+fn session_name(name: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
+    if let Some(name) = name
+        .map(str::to_owned)
+        .or_else(|| std::env::var("GREED_SESSION").ok())
+    {
+        return Ok(name);
+    }
+    match live_sessions()?.as_slice() {
+        [only] => Ok(only.clone()),
+        [] => Err("no editor is running".into()),
+        several => Err(format!(
+            "several editors are running ({}); set GREED_SESSION to pick one",
+            several.join(", ")
+        )
+        .into()),
+    }
+}
+
+/// `greed ctl agent-socket`: the socket the session `name` (or
+/// `$GREED_SESSION`, or the only one) reaches your ssh agent on, for
+/// shells outside it to use as `SSH_AUTH_SOCK`. Only a session `greed ssh`
+/// started has one.
+fn agent_socket(name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let name = session_name(name)?;
+    let socket = greed_core::ssh_agent::socket_of(&name);
+    if UnixStream::connect(&socket).is_err() {
+        return Err(format!(
+            "the session {name} has no ssh agent socket; sessions greed ssh starts have one"
+        )
+        .into());
+    }
+    println!("{}", socket.display());
+    Ok(())
 }
 
 /// The token in `token_file`. A session that has just started listens on

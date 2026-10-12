@@ -54,6 +54,10 @@ pub const KNOWN: &[(&str, &str)] = &[
         "control",
         "answer agents and editors connected to the session, as Greed",
     ),
+    (
+        "ssh-agent",
+        "let programs in the session sign with your ssh keys",
+    ),
 ];
 
 /// The parts of `@greed` each capability opens, as paths into the table.
@@ -97,6 +101,7 @@ const GATED: &[(&str, &str)] = &[
     ("control.notify", "control"),
     ("control.serve_ide", "control"),
     ("control.serve_ide", "net"),
+    ("ssh_agent.answer", "ssh-agent"),
 ];
 
 /// What a plugin was granted.
@@ -637,6 +642,7 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
         ],
     ),
     ("control", "use the session's connections", &[]),
+    ("ssh_agent", "let programs use your ssh keys", &[]),
     (
         "session",
         "use other sessions",

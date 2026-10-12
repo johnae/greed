@@ -60,7 +60,9 @@ impl World {
             .env_remove("GREED_SESSION")
             .env_remove("GREED_TERMINAL")
             .env_remove("GREED_CONFIG_DIR")
-            .env_remove("GREED_NO_SESSION");
+            .env_remove("GREED_NO_SESSION")
+            // Your ssh agent stays out of tests.
+            .env_remove("SSH_AUTH_SOCK");
     }
 
     /// `greed ARGS` without a terminal, e.g. `ls` or `ctl`.

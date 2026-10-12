@@ -48,6 +48,7 @@ capabilities = ["proc", "fs.read"]
 | `plugins` | Loading, approving, unloading and checking other plugins. A plugin it loads can have any capability, so this is full access. Approving still needs you, or a plugin with `plugins`, to have started it |
 | `commands` | Running any command or keys for you with what the command's own plugin may do, as the command line and the command picker do (see below) |
 | `control` | `greed.control`: answering agents and editors connected to the session, as the agent plugin does |
+| `ssh-agent` | `greed.ssh_agent.answer`: letting a program in a session from `greed ssh` sign with your ssh key, and setting `ssh-agent-confirm` |
 
 Using something the plugin didn't declare raises an error that says what
 to add, e.g. `greet can't run programs: add "proc" to capabilities in its
@@ -1114,6 +1115,7 @@ end)
 | `client.paste` | Text was pasted from the system clipboard | `text` |
 | `control.request` | A request came on the session socket (`greed ctl`, agents) | `id`, `method`, `params`, `client`, `connection`; answer with `greed.control.reply` |
 | `control.closed` | A session socket connection closed, after its last request came; requests from it still waiting have nobody to answer | `connection` |
+| `ssh_agent.use` | A program in a session from `greed ssh` asks to sign with your ssh key, through the client relaying your agent; handlers run as that client. The core plugin asks you, as `ssh-agent-confirm` says. With no answer, or no handler, it's refused | `id`, `client`, `host` (the client's machine); answer with `greed.ssh_agent.answer(id, allowed)` |
 | `plugin.loaded` | A plugin was loaded or reloaded | `name`, `dir` |
 | `plugin.unloaded` | A plugin was unloaded | `name` |
 | `editor.started` | Once, when the editor is up with every plugin and your config loaded | nothing |
@@ -2028,7 +2030,10 @@ how it looks: its `rows`, the `images` and `scenes` (charts) placed and
 the cells they cover, and `cell(col, row)` for a cell's text, size and
 colors. `t:status()` the status line, `t:floats()` the floats' text and
 `t:notices()` the desktop notifications sent; `t:clipboard_image(png)`
-sets what `greed.clipboard.image()` gives. `t:wait(ms)` moves the clock
+sets what `greed.clipboard.image()` gives. `t:ssh_agent_use(host)` acts
+as a program asking to sign with your ssh key (it emits `ssh_agent.use`
+and returns the request's id) and `t:ssh_agent_answer(id)` gives what
+plugins answered. `t:wait(ms)` moves the clock
 forward for code that sleeps, `t:wait_for(check)` waits for real until
 `check()` is true (for a program's output; 15 seconds at most unless told
 otherwise), and `t:tempdir(files)` makes a

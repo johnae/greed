@@ -359,14 +359,6 @@ and `tar` there. Where commands over ssh come without `XDG_RUNTIME_DIR`,
 a session it starts uses `/run/user/<uid>` like a login would, and so do
 the programs in its terminals.
 
-Your ssh agent reaches the other machine the way your `~/.ssh/config`
-says: with `ForwardAgent yes` for the host, the session and its shells
-can use your keys. A session outlives the connection that started it,
-though, and it and every shell in it keep the agent socket of that first
-connection: after reconnecting, `git push` there can't reach your keys
-until the session starts again. Forwarding that follows you across
-reconnects is planned.
-
 Greed doesn't have to be installed on the other machine. The first time
 you connect with a version, `greed ssh` puts the same version there, in
 `~/.local/share/greed/server`, and uses it from then on. It copies the
@@ -381,6 +373,42 @@ they don't); `GREED_REMOTE_BINARY` names a greed built for it to copy (like
 `nix build .#static`'s, between releases). `GREED_SSH` sets the ssh
 program to use. It's run as one program, so for options like a port use
 `~/.ssh/config` or a small wrapper script.
+
+### Your ssh agent
+
+For a host your `~/.ssh/config` forwards the agent to (`ForwardAgent
+yes`, as `ssh -G HOST` shows it), Greed brings your ssh agent along
+itself. The session there has an agent socket of its own, which its
+shells and terminals get as `SSH_AUTH_SOCK`, and each request on it goes
+to the agent on the machine you're attached from. The socket stays the
+same across reconnects, so `git push` in a shell that has been open for a
+week reaches your keys after you come back, from this machine or another.
+With nobody attached, a request fails at once. Greed turns ssh's own
+forwarding off for its connection, so the session has one way to your
+keys.
+
+Before a program there signs with one of your keys, Greed asks on your
+screen, and `y` allows it. Listing your keys doesn't ask. The
+`ssh-agent-confirm` option says when to ask: `first` (the default) once
+each time you attach, `always` every time, `never` not at all.
+
+```luau
+greed.option.set("ssh-agent-confirm", "always")
+```
+
+A zellij or tmux on that machine runs outside the session, with the agent
+socket of whichever connection started it. Its shells can use the
+session's socket instead, from their rc file:
+
+```sh
+export SSH_AUTH_SOCK=$(greed ctl agent-socket)
+```
+
+With several sessions there, `greed ctl agent-socket SESSION` names one.
+
+While you're attached, anyone with root on that machine can use your keys
+through the socket, as with `ssh -A`. Asking before each use (`always`)
+means nothing signs without you pressing `y`.
 
 ## Editing
 

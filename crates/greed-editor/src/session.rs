@@ -19,6 +19,10 @@ use crate::{client, ctl, host, read};
 
 type Error = Box<dyn std::error::Error>;
 
+/// Where a session `greed ssh` started listens for its programs' ssh agent
+/// requests, set by `spawn_server` for `greed serve`.
+const AGENT_ENV: &str = "GREED_AGENT_SOCK";
+
 /// How long `greed` waits for the server it started to listen. It listens
 /// before it loads anything, so this is only long for a loaded machine.
 const STARTUP: Duration = Duration::from_secs(30);
@@ -31,7 +35,13 @@ pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
     std::env::set_current_dir(&root)?;
     let file = target.is_file().then_some(target);
     let text = read(file.as_deref())?;
-    let session = control::listen(name, Some(&root))?;
+    let mut session = control::listen(name, Some(&root))?;
+    // A session `greed ssh` started reaches your ssh agent through you.
+    if let Some(agent) = std::env::var_os(AGENT_ENV).filter(|path| !path.is_empty())
+        && let Err(err) = session.serve_ssh_agent(Path::new(&agent))
+    {
+        eprintln!("greed: programs in this session won't reach your ssh agent: {err}");
+    }
     let requests = session.sender().clone();
     let conn = server::spawn_with_session(move || host(&text, file, Some(requests)), Some(session));
     // Nothing is drawn until a client attaches and says how big it is.
@@ -199,6 +209,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> 
             | Output::Scene(_)
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
+            | Output::SshAgentRequest(..)
             | Output::Notify(_) => return Ok(()),
         }
     }
@@ -292,12 +303,24 @@ fn show(
             }
         }
     });
+    // The ssh agent on this machine, for a session this client relays it to.
+    let agent = local_agent();
+    let replies = input.clone();
     std::thread::spawn(move || {
         for line in reader.lines() {
             let Ok(line) = line else { break };
             let Ok(message) = serde_json::from_str::<Output>(&line) else {
                 continue;
             };
+            // Asked off this thread: a key touch can take a while.
+            if let Output::SshAgentRequest(id, body) = message {
+                let (agent, replies) = (agent.clone(), replies.clone());
+                std::thread::spawn(move || {
+                    let answer = greed_core::ssh_agent::ask_base64(agent.as_deref(), &body);
+                    let _ = replies.send(Input::SshAgentReply(id, answer));
+                });
+                continue;
+            }
             if outputs.send(message).is_err() {
                 return;
             }
@@ -327,6 +350,13 @@ fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, 
     }
     if remote {
         command.env(control::REMOTE_ENV, "1");
+        // Its programs reach your ssh agent through the session, at a
+        // path that stays the same however often you come back.
+        let agent = greed_core::ssh_agent::socket_of(name);
+        command.env(AGENT_ENV, &agent).env("SSH_AUTH_SOCK", &agent);
+    } else {
+        // Started from a terminal of a session that has one: that's its.
+        command.env_remove(AGENT_ENV);
     }
     std::os::unix::process::CommandExt::process_group(&mut command, 0);
     let mut child = command
@@ -424,6 +454,7 @@ pub fn ssh(
     let mut host = host.to_owned();
     let mut config = bring_config(&host);
     let mut greed = remote_greed(&host)?;
+    let mut agent = relays_agent(&host);
     let mut to = SwitchTo {
         session: name.map(str::to_owned),
         path: file.map(str::to_owned),
@@ -431,7 +462,7 @@ pub fn ssh(
     };
     // A terminal or shell is asked for once, not again after a switch.
     loop {
-        let ended = match ssh_once(&host, &greed, &to, config.as_deref(), opening, new) {
+        let ended = match ssh_once(&host, &greed, &to, config.as_deref(), opening, new, agent) {
             Ok(ended) => ended,
             Err(err) => {
                 let Some(refused) = versions::other_version(&err) else {
@@ -461,6 +492,7 @@ pub fn ssh(
                     host.clone_from(other);
                     config = bring_config(&host);
                     greed = remote_greed(&host)?;
+                    agent = relays_agent(&host);
                 }
                 to = next;
             }
@@ -475,6 +507,7 @@ pub fn ssh(
             | Output::Scene(_)
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
+            | Output::SshAgentRequest(..)
             | Output::Notify(_) => return Ok(()),
         }
     }
@@ -560,8 +593,36 @@ fn bring_config(host: &str) -> Option<String> {
     })
 }
 
+/// The ssh agent on this machine, from `SSH_AUTH_SOCK`.
+fn local_agent() -> Option<PathBuf> {
+    std::env::var_os("SSH_AUTH_SOCK")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Whether `greed ssh` relays your ssh agent to the session on `host`: when
+/// you have one here (`SSH_AUTH_SOCK`) and your ssh config forwards it to
+/// that host (`ForwardAgent yes`, as `ssh -G` reads it).
+fn relays_agent(host: &str) -> bool {
+    if local_agent().is_none() {
+        return false;
+    }
+    ssh_command()
+        .args(["-G", host])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .is_ok_and(|out| {
+            out.status.success()
+                && String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .any(|line| line.trim().eq_ignore_ascii_case("forwardagent yes"))
+        })
+}
+
 /// Shows the session `to` points at on `host` until it ends, lets go or
-/// switches; returns which.
+/// switches; returns which. With `agent`, it relays your ssh agent to the
+/// session, which then has one way to it: ssh's own forwarding is off.
 fn ssh_once(
     host: &str,
     remote_greed: &str,
@@ -569,6 +630,7 @@ fn ssh_once(
     config: Option<&str>,
     opening: Opening,
     new: bool,
+    agent: bool,
 ) -> Result<Output, Error> {
     let line = bridge_command(remote_greed, to, config, new);
     let attach_failed = |err: Error| -> Error {
@@ -578,8 +640,21 @@ fn ssh_once(
         }
         format!("couldn't attach on {host}: {err}").into()
     };
-    let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
-    handshake(&mut reader, &mut writer, to.session.as_deref(), opening).map_err(attach_failed)?;
+    let options: &[&str] = if agent {
+        &["-o", "ForwardAgent=no"]
+    } else {
+        &[]
+    };
+    let (mut child, mut writer, mut reader) =
+        remote_with(host, options, &line).map_err(attach_failed)?;
+    handshake(
+        &mut reader,
+        &mut writer,
+        to.session.as_deref(),
+        opening,
+        agent,
+    )
+    .map_err(attach_failed)?;
     let ended = show(reader, writer, true)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
@@ -591,15 +666,20 @@ fn ssh_once(
 /// Asks to attach over `reader` and `writer`, already connected to the
 /// session `session` (or whichever the other end picks). Fails with the
 /// session's reason if it refuses, e.g. because the two ends run greed
-/// versions that don't speak the same protocol.
+/// versions that don't speak the same protocol. With `agent`, it says it
+/// relays your ssh agent.
 fn handshake(
     reader: &mut impl BufRead,
     writer: &mut impl Write,
     session: Option<&str>,
     opening: Opening,
+    agent: bool,
 ) -> Result<(), Error> {
     let mut params = control::attach_params(client::kind());
     opening.ask(&mut params);
+    if agent {
+        params["ssh_agent"] = Value::Bool(true);
+    }
     let request = json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -640,7 +720,17 @@ pub(crate) fn remote(
     host: &str,
     line: &str,
 ) -> Result<(Child, ChildStdin, BufReader<ChildStdout>), Error> {
+    remote_with(host, &[], line)
+}
+
+/// [`remote`], giving ssh `options` too.
+fn remote_with(
+    host: &str,
+    options: &[&str],
+    line: &str,
+) -> Result<(Child, ChildStdin, BufReader<ChildStdout>), Error> {
     let mut child = ssh_command()
+        .args(options)
         .args(["-T", host, "sh", "-s"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

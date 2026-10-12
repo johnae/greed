@@ -1130,6 +1130,22 @@ export type Control = {
 	notify: (method: string, params: any) -> (),
 }
 
+--- A program in a session `greed ssh` started asks to sign with one of your ssh keys, through the client relaying your agent. Answer with `greed.ssh_agent.answer`; with no answer, or no handler, it may not.
+export type SshAgentUse = {
+	--- The request, for `greed.ssh_agent.answer`.
+	id: number,
+	--- The client relaying your agent, which handlers run as.
+	client: number,
+	--- The machine that client is on, if known.
+	host: string?,
+}
+
+--- Needs the "ssh-agent" capability.
+export type SshAgent = {
+	--- Answers "ssh_agent.use" request `id`: whether the program may sign with your key. False if it no longer waits (answered already, or it gave up).
+	answer: (id: number, allowed: boolean) -> boolean,
+}
+
 --- One row of `greed.profile.stop()`: what a plugin (nil for the editor itself) spent doing one thing, in all and at most once, in milliseconds.
 export type ProfileRow = { plugin: string?, what: string, ms: number, longest: number, runs: number }
 
@@ -1755,6 +1771,7 @@ export type EventName =
 	| "terminal.exited"
 	| "selection.changed"
 	| "view.focused"
+	| "ssh_agent.use"
 
 export type Greed = {
 	command: (spec: CommandSpec) -> (),
@@ -1795,6 +1812,7 @@ export type Greed = {
 		& ((event: "view.scrolled", handler: (event: ViewScrolled) -> ()) -> ())
 		& ((event: "selection.changed", handler: (event: SelectionChanged) -> ()) -> ())
 		& ((event: "view.focused", handler: (event: ViewFocused) -> ()) -> ())
+		& ((event: "ssh_agent.use", handler: (event: SshAgentUse) -> ()) -> ())
 		& ((event: "mouse", handler: (event: MouseEvent) -> ()) -> ())
 		& ((event: "option.changed", handler: (event: OptionChanged) -> ()) -> ())
 		& ((event: "plugin.loaded", handler: (event: PluginLoaded) -> ()) -> ())
@@ -1932,6 +1950,7 @@ export type Greed = {
 	project: Projects,
 	tab: Tabs,
 	session: Sessions,
+	ssh_agent: SshAgent,
 	plugin: Plugins,
 	syntax: Syntax,
 	theme: Theme,

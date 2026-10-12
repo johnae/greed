@@ -52,6 +52,10 @@ pub enum Input {
     /// as base64 when it's small enough to send (see [`crate::dropped`]). It's
     /// pasted as a path the session can read.
     Dropped(String, Option<String>),
+    /// The answer to `Output::SshAgentRequest`: what the ssh agent on the
+    /// client's machine answered, the message's body in base64, or none
+    /// when it couldn't be asked.
+    SshAgentReply(u64, Option<String>),
     /// A debug line from the client's side, sent while the frames it gets
     /// say the `client` topic is on (see [`crate::debug`]).
     Log(String),
@@ -77,6 +81,11 @@ pub enum Output {
     /// Asks for the image on the system clipboard, read on the client's own
     /// machine; the client answers with `Input::ClipboardImage` and this id.
     ReadClipboardImage(u64),
+    /// A request from a program in the session for your ssh agent, the
+    /// message's body in base64, for a client that relays it to ask the
+    /// agent on its machine; it answers with `Input::SshAgentReply` and
+    /// this id.
+    SshAgentRequest(u64, String),
     /// An image frames will place, sent once before the first frame that
     /// does.
     Image(ImageData),
@@ -176,6 +185,8 @@ where
             owed: false,
             key_at: None,
             reuse_status: false,
+            agent_asks: HashMap::new(),
+            agent_asked: 0,
         };
         if let Some(session) = &session {
             host.set_session_name(&session.name);
@@ -231,6 +242,8 @@ struct Client {
     held: VecDeque<Input>,
     /// Since when `held` has waited for the command at work now.
     held_since: Option<Instant>,
+    /// Whether it relays your ssh agent.
+    ssh_agent: bool,
 }
 
 impl Client {
@@ -239,6 +252,7 @@ impl Client {
             output,
             local,
             connection,
+            ssh_agent: false,
             last: None,
             images: HashSet::new(),
             scenes: HashMap::new(),
@@ -285,6 +299,19 @@ struct Server<'a> {
     /// Whether all that happened since the last frame was a parse, so each
     /// client's status line can be drawn again as it was.
     reuse_status: bool,
+    /// Programs' ssh agent requests on their way, by id, and the last id.
+    agent_asks: HashMap<u64, AgentAsk>,
+    agent_asked: u64,
+}
+
+/// A program's ssh agent request on its way to the agent: the client
+/// relaying it, whether it waits for plugins to allow it first, and
+/// since when it waits.
+struct AgentAsk {
+    request: crate::ssh_agent::Request,
+    client: ClientId,
+    allowing: bool,
+    since: Instant,
 }
 
 /// How often watched files are looked at.
@@ -337,6 +364,7 @@ fn turn_of(input: &Input) -> Turn {
         | Input::CellSize(..)
         | Input::Clipboard(_)
         | Input::ClipboardImage(..)
+        | Input::SshAgentReply(..)
         | Input::Log(_)
         | Input::Quit => Turn::Never,
     }
@@ -537,6 +565,8 @@ impl Server<'_> {
         let attachments =
             session.map_or_else(crossbeam_channel::never, |s| s.attachments().clone());
         let closed = session.map_or_else(crossbeam_channel::never, |s| s.closed().clone());
+        let agent_requests =
+            session.map_or_else(crossbeam_channel::never, Session::ssh_agent_requests);
         // Where selections and focus start, for the first frame to compare.
         let started = self.host.report_selections();
         self.report(started);
@@ -618,6 +648,11 @@ impl Server<'_> {
                         self.attach(attachment);
                     }
                 }
+                recv(agent_requests) -> request => {
+                    if let Ok(request) = request {
+                        self.agent_request(request);
+                    }
+                }
                 recv(timer) -> _ => {}
                 recv(look) -> _ => {}
                 recv(self.frame_timer()) -> _ => {}
@@ -644,6 +679,7 @@ impl Server<'_> {
         if !self.follow_requests() {
             return false;
         }
+        self.follow_agent_answers();
         if self.frame_due(typed) {
             let reported = self.host.report_selections();
             self.report(reported);
@@ -806,6 +842,7 @@ impl Server<'_> {
                     Err(why) => self.say(why),
                 }
             }
+            Input::SshAgentReply(ask, ref answer) => self.agent_reply(id, ask, answer.as_deref()),
             Input::Log(ref text) => crate::debug!(Client, "client {}: {text}", id.0),
             // The client in this process ends the editor; another leaves it.
             Input::Quit if id == FIRST_CLIENT => return false,
@@ -864,11 +901,131 @@ impl Server<'_> {
         if self.clients.remove(&id).is_none() {
             return;
         }
+        self.fail_agent_asks(|ask| ask.client == id);
         let others = !self.clients.is_empty();
         let detached = self.host.client_detached(id, others);
         self.report(detached);
         self.host.with_editor_mut(|ed| ed.park_client(id));
         self.host.forget_client(id);
+    }
+
+    /// The client that relays your ssh agent and was used most recently.
+    fn agent_client(&self) -> Option<ClientId> {
+        self.host.with_editor(|ed| {
+            self.clients
+                .iter()
+                .filter(|(_, c)| c.ssh_agent)
+                .max_by_key(|(id, _)| ed.client_state(**id).map(crate::ClientState::active_at))
+                .map(|(id, _)| *id)
+        })
+    }
+
+    /// Passes a program's ssh agent `request` on to the client relaying
+    /// your agent. One to sign with a key waits for plugins to allow it
+    /// first, with `ssh_agent.use`. With no such client, or no plugin to
+    /// ask, it fails at once.
+    fn agent_request(&mut self, request: crate::ssh_agent::Request) {
+        let Some(client) = self.agent_client() else {
+            crate::debug!(
+                Client,
+                "an ssh agent request, and no client relays an agent"
+            );
+            request.respond(None);
+            return;
+        };
+        self.agent_asked += 1;
+        let id = self.agent_asked;
+        let allowing = request.is_sign();
+        if allowing {
+            // The machine the client is on, from its name ("tui@laptop").
+            let host = self.host.with_editor(|ed| {
+                ed.client_state(client)
+                    .and_then(|c| c.name().split_once('@'))
+                    .map(|(_, host)| host.split('#').next().unwrap_or(host).to_owned())
+            });
+            let asked = self.host.ask_ssh_agent_use(id, client, host.as_deref());
+            let asked = match asked {
+                Ok(asked) => asked,
+                Err(err) => {
+                    self.report(Err(err));
+                    false
+                }
+            };
+            if !asked {
+                request.respond(None);
+                return;
+            }
+        } else {
+            self.relay_agent_request(id, client, &request);
+        }
+        let ask = AgentAsk {
+            request,
+            client,
+            allowing,
+            since: Instant::now(),
+        };
+        self.agent_asks.insert(id, ask);
+    }
+
+    fn relay_agent_request(&self, id: u64, client: ClientId, request: &crate::ssh_agent::Request) {
+        use base64::Engine;
+        let body = base64::engine::general_purpose::STANDARD.encode(&request.body);
+        self.send_to(client, Output::SshAgentRequest(id, body));
+    }
+
+    /// Sends on the requests plugins allowed, and fails those they refused
+    /// and those that waited longer than a program waits.
+    fn follow_agent_answers(&mut self) {
+        for (id, allowed) in self.host.take_ssh_agent_answers() {
+            let Some(ask) = self.agent_asks.get_mut(&id).filter(|ask| ask.allowing) else {
+                continue;
+            };
+            if allowed && self.clients.contains_key(&ask.client) {
+                ask.allowing = false;
+                let ask = &self.agent_asks[&id];
+                self.relay_agent_request(id, ask.client, &ask.request);
+            } else if let Some(ask) = self.agent_asks.remove(&id) {
+                ask.request.respond(None);
+            }
+        }
+        if !self.agent_asks.is_empty() {
+            self.fail_agent_asks(|ask| ask.since.elapsed() >= crate::ssh_agent::WAIT);
+        }
+    }
+
+    /// Client `by`'s answer to ssh agent request `id`, in base64, or none.
+    /// Only the client that was asked answers.
+    fn agent_reply(&mut self, by: ClientId, id: u64, answer: Option<&str>) {
+        use base64::Engine;
+        if self
+            .agent_asks
+            .get(&id)
+            .is_some_and(|ask| ask.client == by && !ask.allowing)
+            && let Some(ask) = self.agent_asks.remove(&id)
+        {
+            let answer =
+                answer.and_then(|a| base64::engine::general_purpose::STANDARD.decode(a).ok());
+            ask.request.respond(answer);
+        }
+    }
+
+    /// Fails the ssh agent requests on their way that `which` picks, and
+    /// tells plugins to stop asking about them.
+    fn fail_agent_asks(&mut self, which: impl Fn(&AgentAsk) -> bool) {
+        let failed: Vec<u64> = self
+            .agent_asks
+            .iter()
+            .filter(|(_, ask)| which(ask))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in failed {
+            if let Some(ask) = self.agent_asks.remove(&id) {
+                if ask.allowing {
+                    self.host.forget_ssh_agent_ask(id);
+                }
+                ask.request.respond(None);
+            }
+        }
     }
 
     /// Adds `attachment` as a client: the one that left by its name, back
@@ -888,6 +1045,7 @@ impl Server<'_> {
             layout,
             takeover,
             build,
+            ssh_agent,
         } = attachment;
         let others: Vec<ClientId> = self
             .clients
@@ -950,6 +1108,7 @@ impl Server<'_> {
             return;
         }
         let mut client = Client::new(output, false, connection);
+        client.ssh_agent = ssh_agent;
         client.message = unseen.or_else(|| other_build(build.as_deref()));
         self.clients.insert(id, client);
         if let Some(layout) = layout {

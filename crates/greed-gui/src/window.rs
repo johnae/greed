@@ -60,7 +60,7 @@ pub fn run(
                 crossbeam_channel::select! {
                     recv(outputs) -> message => {
                         let message = message.unwrap_or(Output::Exit);
-                        let last = !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::Notify(_));
+                        let last = !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::SshAgentRequest(..) | Output::Notify(_));
                         if proxy.send_event(Event::Output(message)).is_err() || last {
                             return;
                         }
@@ -258,7 +258,8 @@ impl App {
     fn handle(&mut self, event_loop: &ActiveEventLoop, output: Output) {
         match self.painter.take(output) {
             Ok(Taken::Frame) => {}
-            Ok(Taken::Kept) | Err(Output::Notify(_)) => return,
+            // `session::show` answers ssh agent requests before output gets here.
+            Ok(Taken::Kept) | Err(Output::Notify(_) | Output::SshAgentRequest(..)) => return,
             Err(Output::Clipboard(text)) => {
                 if let Some(clipboard) = &mut self.clipboard {
                     let _ = clipboard.set_text(text);

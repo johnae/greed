@@ -41,6 +41,7 @@ export type TestClient = {
 	marked: (self: TestClient) -> string,
 	expect: (self: TestClient, marked: string) -> (),
 	expect_mode: (self: TestClient, mode: string) -> (),
+	ssh_agent_use: (self: TestClient, host: string?) -> number?,
 }
 
 export type TestContext = {
@@ -109,6 +110,10 @@ export type TestContext = {
 	notices: (self: TestContext) -> { { title: string, body: string } },
 	--- Makes `greed.clipboard.image()` give `png` from now on, as if a client read it from its clipboard; nil says there's none.
 	clipboard_image: (self: TestContext, png: string?) -> (),
+	--- As if a program in the session asked to sign with your ssh key through this client, from a client on `host`: emits "ssh_agent.use" and returns the request's id, or nil when no plugin handles it (then it's refused).
+	ssh_agent_use: (self: TestContext, host: string?) -> number?,
+	--- What plugins answered ssh agent request `id` with `greed.ssh_agent.answer`, or nil before they did.
+	ssh_agent_answer: (self: TestContext, id: number) -> boolean?,
 	--- Fails unless the buffer, with markers, is `marked`.
 	expect: (self: TestContext, marked: string) -> (),
 	expect_mode: (self: TestContext, mode: string) -> (),

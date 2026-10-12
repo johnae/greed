@@ -34,6 +34,7 @@ mod rpc;
 mod scenes;
 mod secrets;
 mod sessions;
+mod ssh_agent;
 mod stalls;
 mod syntax;
 mod tabs;
@@ -178,6 +179,9 @@ pub(crate) struct State {
     pub jobs: jobs::Jobs,
     /// Requests from the session socket and where they came from.
     pub control: Control,
+    /// Programs' requests to sign with your ssh keys that plugins were asked
+    /// about, and their answers.
+    pub ssh_agent: ssh_agent::Asks,
     /// Claude Code's IDE connection, once a plugin starts it, and that
     /// plugin.
     pub ide: Option<(PluginId, crate::ide::Ide)>,
@@ -490,6 +494,7 @@ impl Host {
             theme_base: None,
             jobs: jobs::Jobs::default(),
             control: Control::default(),
+            ssh_agent: ssh_agent::Asks::default(),
             ide: None,
             menus_owner: None,
             session_name: None,
@@ -885,23 +890,31 @@ impl Host {
     /// was shown close, like a picker it left open.
     pub fn client_detached(&self, client: ClientId, others: bool) -> Result<(), HostError> {
         state_mut(&self.lua).attached = others;
+        self.acting_as(client, || {
+            budgeted(&self.lua, || {
+                let payload = self.lua.create_table()?;
+                api::emit_for_client(&self.lua, "client.detached", &payload)?;
+                let closed = self.with_editor_mut(|ed| ed.close_floats_of(client));
+                for view in closed {
+                    handles::view_closed(&self.lua, view)?;
+                }
+                Ok::<_, mlua::Error>(())
+            })
+            .map_err(HostError::from)
+        })
+    }
+
+    /// Runs `f` acting for `client` without that counting as its doing
+    /// anything, then acts for the client acting before again.
+    fn acting_as<R>(&self, client: ClientId, f: impl FnOnce() -> R) -> R {
         let outer = self.with_editor_mut(|ed| {
             let outer = ed.client();
             ed.act_as(client);
             outer
         });
-        let told = budgeted(&self.lua, || {
-            let payload = self.lua.create_table()?;
-            api::emit_for_client(&self.lua, "client.detached", &payload)?;
-            let closed = self.with_editor_mut(|ed| ed.close_floats_of(client));
-            for view in closed {
-                handles::view_closed(&self.lua, view)?;
-            }
-            Ok::<_, mlua::Error>(())
-        })
-        .map_err(HostError::from);
+        let result = f();
         self.with_editor_mut(|ed| ed.act_as(outer));
-        told
+        result
     }
 
     /// Tells plugins text was pasted into `client`, with "client.paste";
@@ -986,6 +999,35 @@ impl Host {
             payload.set("connection", id)?;
             api::emit(&self.lua, "control.closed", &payload).map_err(HostError::from)
         })
+    }
+
+    /// Asks plugins, with `ssh_agent.use` and its handlers running as
+    /// `client`, whether a program's request `id` to sign with your ssh key
+    /// may go on to `client`, which is on `host` if known. Their answers
+    /// come from [`Host::take_ssh_agent_answers`]. False, asking nothing,
+    /// when no plugin handles the event: then it may not.
+    pub fn ask_ssh_agent_use(
+        &self,
+        id: u64,
+        client: ClientId,
+        host: Option<&str>,
+    ) -> Result<bool, HostError> {
+        self.acting_as(client, || {
+            budgeted(&self.lua, || {
+                ssh_agent::ask(&self.lua, id, host).map_err(HostError::from)
+            })
+        })
+    }
+
+    /// The answers plugins gave since last asked, with
+    /// `greed.ssh_agent.answer`: each request's id and whether it may sign.
+    pub fn take_ssh_agent_answers(&self) -> Vec<(u64, bool)> {
+        std::mem::take(&mut state_mut(&self.lua).ssh_agent.answers)
+    }
+
+    /// Stops waiting for plugins' answer to request `id`, which gave up.
+    pub fn forget_ssh_agent_ask(&self, id: u64) {
+        state_mut(&self.lua).ssh_agent.pending.remove(&id);
     }
 
     /// Passes a request from the session socket to the plugins that answer

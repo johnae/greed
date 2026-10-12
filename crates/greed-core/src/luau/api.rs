@@ -307,6 +307,7 @@ pub const EVENTS: &[&str] = &[
     "plugin.loaded",
     "plugin.unloaded",
     "selection.changed",
+    "ssh_agent.use",
     "terminal.exited",
     "terminal.output",
     "view.closed",
@@ -654,6 +655,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("project", super::projects::module(lua)?)?;
     greed.set("tab", super::tabs::module(lua, owner)?)?;
     greed.set("session", super::sessions::module(lua)?)?;
+    greed.set("ssh_agent", super::ssh_agent::module(lua)?)?;
     greed.set("keys", keys_module(lua, owner)?)?;
     greed.set("process", super::process::module(lua, owner, greed)?)?;
     greed.set("rpc", super::rpc::module(lua, owner)?)?;

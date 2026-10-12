@@ -45,6 +45,7 @@ pub mod scene;
 pub mod scene_image;
 pub mod search;
 pub mod server;
+pub mod ssh_agent;
 pub mod syntax;
 pub mod terminal;
 pub mod theme;

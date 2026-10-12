@@ -83,6 +83,8 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
                         let _ = input.send(Input::ClipboardImage(ask, png));
                     });
                 }
+                // `session::show` answers these before output gets here.
+                Output::SshAgentRequest(..) => {}
                 Output::Notify(notice) => {
                     if !focused.load(Ordering::Relaxed) {
                         let term = std::env::var("TERM").unwrap_or_default();

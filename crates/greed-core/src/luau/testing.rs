@@ -570,6 +570,16 @@ trait TestClient {
 /// `keys`, `run`, `mouse`, `draw`, `screen`, `marked`, `expect` and
 /// `expect_mode`, each as that client.
 fn add_client_view_methods<T: TestClient + UserData, M: UserDataMethods<T>>(methods: &mut M) {
+    // A program asking to sign through the agent this client relays.
+    methods.add_method("ssh_agent_use", |lua, this, host: Option<String>| {
+        static ASKED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let id = ASKED.fetch_add(1, Ordering::Relaxed) + 1;
+        let asked = seen_by(lua, this.id(), || {
+            super::ssh_agent::ask(lua, id, host.as_deref())
+        })?;
+        jobs::settle(lua)?;
+        Ok(asked.then_some(id))
+    });
     methods.add_method("keys", |lua, this, keys: String| {
         as_client(lua, this.id(), || {
             for key in Key::parse_sequence(&keys).map_err(mlua::Error::external)? {
@@ -723,6 +733,13 @@ fn add_client_methods<M: UserDataMethods<TestContext>>(methods: &mut M) {
         let png = png.map_or_else(Vec::new, |png| png.as_bytes().to_vec());
         state_mut(lua).editor.fake_clipboard_image(Some(png));
         Ok(())
+    });
+    methods.add_method("ssh_agent_answer", |lua, _, id: u64| {
+        let answers = &state(lua).ssh_agent.answers;
+        Ok(answers
+            .iter()
+            .find(|(asked, _)| *asked == id)
+            .map(|(_, allowed)| *allowed))
     });
     methods.add_method("notices", |lua, _, ()| {
         let notices = state_mut(lua).editor.take_notices();

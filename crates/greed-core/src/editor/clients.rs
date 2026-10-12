@@ -150,6 +150,11 @@ impl ClientState {
         self.remote
     }
 
+    /// When it last did something, as a count that only goes up.
+    pub fn active_at(&self) -> u64 {
+        self.active_at
+    }
+
     pub fn size(&self) -> Option<(u16, u16)> {
         self.size
     }

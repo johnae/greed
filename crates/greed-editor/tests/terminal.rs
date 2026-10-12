@@ -253,6 +253,105 @@ fn the_terminal_follows_when_its_session_switches_to_another_machine() {
     world.eval("remote", "require('@greed').quit()");
 }
 
+/// A fake ssh agent at `path`, answering every request with no keys and
+/// leaving `agent-asked` in the world's folder once asked.
+fn fake_agent(world: &World, path: &std::path::Path) {
+    use std::io::{Read, Write};
+    let listener = std::os::unix::net::UnixListener::bind(path).unwrap();
+    let asked = world.root.join("agent-asked");
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut length = [0; 4];
+            let mut body = [0; 1];
+            if stream.read_exact(&mut length).is_ok() && stream.read_exact(&mut body).is_ok() {
+                std::fs::write(&asked, "").unwrap();
+                let _ = stream.write_all(&[0, 0, 0, 5, 12, 0, 0, 0, 0]);
+            }
+        }
+    });
+}
+
+#[test]
+fn greed_ssh_brings_your_ssh_agent_to_the_session_on_the_other_machine() {
+    let Some(world) = World::new("ssh-agent") else {
+        return;
+    };
+    let project = world.project("remote", &[("main.rs", "fn main() {}")]);
+    // An ssh whose config forwards the agent to every host, which notes
+    // how it's run.
+    let fake_ssh = world.root.join("fake-ssh");
+    std::fs::write(
+        &fake_ssh,
+        format!(
+            "#!/bin/sh\necho \"$*\" >> {root}/ssh-args\n\
+             [ \"$1\" = -G ] && {{ echo 'forwardagent yes'; exit 0; }}\n\
+             [ \"$1\" = -o ] && shift 2\nshift 2\n\
+             [ \"$*\" = 'sh -s' ] || {{ echo \"not plain words: $*\" >&2; exit 9; }}\n\
+             HOME={root}/remote-home exec sh -s\n",
+            root = world.root.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &fake_ssh,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let agent = world.root.join("agent.sock");
+    fake_agent(&world, &agent);
+    let world_ref = &world;
+    let socket = std::thread::scope(|scope| {
+        let terminal = scope.spawn(|| {
+            world_ref.terminal(
+                &project,
+                &format!("ssh somehost {}", project.join("main.rs").display()),
+                &[
+                    ("GREED_SSH", fake_ssh.to_str().unwrap()),
+                    ("GREED_REMOTE", GREED),
+                    ("SSH_AUTH_SOCK", agent.to_str().unwrap()),
+                ],
+                &[
+                    Step::Until("the remote session", running),
+                    Step::Shows("main"),
+                    Step::Until("the agent to be asked", |w| {
+                        w.root.join("agent-asked").exists()
+                    }),
+                    Step::Keys(":detach\r"),
+                ],
+            )
+        });
+        world_ref.wait_for("the remote session", running);
+        // A shell on that machine outside the session finds its socket.
+        let mut socket = String::new();
+        common::wait_until("the agent socket", || {
+            let out = world_ref.greed(&["ctl", "agent-socket", "remote"]);
+            socket = String::from_utf8(out.stdout).unwrap().trim().to_owned();
+            out.status.success()
+        });
+        // A program there reaches the agent here through the client.
+        common::wait_until("the agent's answer", || {
+            greed_core::ssh_agent::ask(std::path::Path::new(&socket), &[11])
+                .is_ok_and(|answer| answer == [12, 0, 0, 0, 0])
+        });
+        let out = terminal.join().unwrap();
+        assert!(
+            out.contains("detached; greed ssh somehost comes back"),
+            "{out}"
+        );
+        socket
+    });
+    assert_eq!(
+        std::path::PathBuf::from(socket),
+        world.root.join("run/greed/remote/agent.sock")
+    );
+    let args = std::fs::read_to_string(world.root.join("ssh-args")).unwrap();
+    assert!(
+        args.contains("-o ForwardAgent=no -T somehost sh -s"),
+        "ssh's own forwarding is off: {args}"
+    );
+    world.eval("remote", "require('@greed').quit()");
+}
+
 #[test]
 fn greed_ssh_brings_the_config_and_shows_the_remote_session() {
     let Some(world) = World::new("ssh") else {

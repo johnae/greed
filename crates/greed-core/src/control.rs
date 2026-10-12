@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 /// client or session; new optional fields don't need it, since fields a
 /// side doesn't know are ignored. Clients say which protocol they speak
 /// when they attach, and a session refuses one that doesn't match.
-pub const PROTOCOL: u32 = 11;
+pub const PROTOCOL: u32 = 12;
 
 /// The longest line a session reads from a connection, in bytes: room for a
 /// big paste, short of letting anything that can reach the socket fill the
@@ -379,6 +379,8 @@ pub struct Session {
     sender: Sender<Request>,
     attachments: Receiver<Attachment>,
     closed: Receiver<u64>,
+    /// The socket its programs reach your ssh agent on, once it has one.
+    ssh_agent: Option<crate::ssh_agent::Listener>,
 }
 
 impl Session {
@@ -402,6 +404,22 @@ impl Session {
     /// that came on it. A connection handed over to attach doesn't close.
     pub fn closed(&self) -> &Receiver<u64> {
         &self.closed
+    }
+
+    /// Listens on `path` for programs' ssh agent requests, which the
+    /// session passes on to a client that relays your agent (see
+    /// [`crate::ssh_agent`]).
+    pub fn serve_ssh_agent(&mut self, path: &Path) -> io::Result<()> {
+        self.ssh_agent = Some(crate::ssh_agent::listen(path)?);
+        Ok(())
+    }
+
+    /// The ssh agent requests from the session's programs; none come when
+    /// it doesn't listen for them.
+    pub fn ssh_agent_requests(&self) -> Receiver<crate::ssh_agent::Request> {
+        self.ssh_agent
+            .as_ref()
+            .map_or_else(crossbeam_channel::never, |agent| agent.requests().clone())
     }
 }
 
@@ -567,6 +585,7 @@ pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
         sender,
         attachments,
         closed,
+        ssh_agent: None,
     })
 }
 
@@ -618,6 +637,9 @@ pub struct Attachment {
     pub takeover: bool,
     /// The build of greed it is, when it said.
     pub build: Option<String>,
+    /// Whether it relays your ssh agent, answering the session's
+    /// `Output::SshAgentRequest`.
+    pub ssh_agent: bool,
 }
 
 impl Attachment {
@@ -643,6 +665,7 @@ impl Attachment {
                 .and_then(crate::ClientLayout::parse),
             takeover: params["takeover"].as_bool() == Some(true),
             build: params["build"].as_str().map(str::to_owned),
+            ssh_agent: params["ssh_agent"].as_bool() == Some(true),
         }
     }
 }
