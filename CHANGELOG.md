@@ -96,6 +96,7 @@ the repository's history.
 - core: an untrusted project runs none of its own code until you trust it, asked once
 - cmdline: :s///c asks about each match, vim's y/n/a/l/q
 - core: greed.fs takes relative paths from the shown project's root
+- site: recordings get the room on wide screens and open larger on a click
 
 ### Fixed
 
@@ -123,6 +124,8 @@ the repository's history.
 - acp: the decision model sees your newest message apart, and a new one asks it again
 - acp: auto mode asks the decision model one plain question, whether a command is safe to run
 - core: servers that only read files start untrusted, and tests trust every project
+- core: a key other than y or n at the trust question does what it would have
+- markdown: a search into a table, or typing that changed nothing, leaves it as written
 
 ### Faster
 
@@ -137,6 +140,9 @@ the repository's history.
 - agents and models beyond Claude: any MCP client, ACP agents and Greed's own with any provider; setup adds Greed to every agent installed
 - site: a text environment for you and your agents
 - decision models are a judgment call; test yours before relying on auto mode
+- a changelog from the commits with highlights, shown on the release page
+- a guide to building interfaces with core.ui, auto mode setup, Homebrew, and what 0.2.0 left out
+- site: live Markdown on the front page, Homebrew, demos that trust their projects
 
 ## 0.1.8 - 2026-10-14
 
