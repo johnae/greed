@@ -16,6 +16,7 @@
 -- `show` waits for the keys, so call it from a command.
 
 local greed = require("@greed")
+local ui = require("./ui")
 
 local M = {}
 
@@ -37,38 +38,29 @@ export type Menu = {
 	switches: { [string]: boolean }?,
 }
 
--- The menu's lines and the styles over them: group titles, keys, and the
--- switches that are on.
-local function draw(menu: Menu, switches: { [string]: boolean }): (string, { greed.Mark })
-	local lines: { string } = {}
-	local marks: { greed.Mark } = {}
-	local at = 0
-	local function add(line: string, styles: { { from: number, to: number, style: string } }?)
-		table.insert(lines, line)
-		local list: { { from: number, to: number, style: string } } = styles or {}
-		for _, style in list do
-			table.insert(marks, { from = at + style.from, to = at + style.to, style = style.style })
-		end
-		at += #line + 1
-	end
+-- The menu: each group's title over its keys, the switches that are on
+-- saying so.
+local function draw(menu: Menu, switches: { [string]: boolean }): ui.Node
+	local parts: { ui.Node } = {}
 	for i, group in menu.groups do
 		if i > 1 then
-			add("")
+			table.insert(parts, ui.gap())
 		end
-		add(group.title, { { from = 0, to = #group.title, style = "markup.heading" } })
+		table.insert(parts, ui.line({ ui.span(group.title, "markup.heading") }))
 		for _, item in group.items do
 			local key = if item.switch then `-{item.key}` else item.key
-			local line = ` {key}{string.rep(" ", math.max(1, 6 - #key))}{item.doc}`
-			local styles = { { from = 1, to = 1 + #key, style = "keyword" } }
+			local spans = {
+				ui.span(" "),
+				ui.span(key, "keyword"),
+				ui.span(`{string.rep(" ", math.max(1, 6 - #key))}{item.doc}`),
+			}
 			if item.switch and switches[item.switch] then
-				local on = "  (on)"
-				table.insert(styles, { from = #line, to = #line + #on, style = "diff.plus" })
-				line ..= on
+				table.insert(spans, ui.span("  (on)", "diff.plus"))
 			end
-			add(line, styles)
+			table.insert(parts, ui.line(spans))
 		end
 	end
-	return table.concat(lines, "\n"), marks
+	return ui.column(parts)
 end
 
 --- Shows `menu` and waits: a switch's key flips it and the menu stays, an
@@ -78,17 +70,13 @@ function M.show(menu: Menu)
 	local switches = table.clone(menu.switches or {})
 	local buffer = greed.create_buffer("transient", "", { readonly = true })
 	buffer:set_line_numbers(false)
+	local drawn = ui.mount(buffer, function()
+		return draw(menu, switches)
+	end, nil, { ns = "transient", keys = false })
 	local view: greed.View? = nil
 	local function render()
-		local text, marks = draw(menu, switches)
-		buffer:set_readonly(false)
-		buffer:edit(function(e)
-			e:replace(0, buffer:len(), text)
-		end)
-		buffer:set_readonly(true)
-		buffer:decorate("transient", marks)
-		local _, lines = string.gsub(text, "\n", "")
-		local height = lines + 3
+		drawn:redraw()
+		local height = buffer:line_count() + 2
 		if view then
 			view:configure({ height = height })
 		else
