@@ -388,3 +388,42 @@ test("each gives the lines with values, in order", function(t)
 	end)
 	assert(table.concat(seen, " ") == "0=x 2=y", table.concat(seen, " "))
 end)
+
+test("matched picks out the characters a fuzzy search matched", function()
+	local spans = ui.matched("héllo world", greed.fuzzy_positions("hlw", "héllo world"))
+	local parts: { string } = {}
+	for _, span in spans do
+		table.insert(parts, `{span.text}:{span.style or ""}`)
+	end
+	assert(
+		table.concat(parts, "|") == "h:ui.menu.match|é:|l:ui.menu.match|lo :|w:ui.menu.match|orld:",
+		table.concat(parts, "|")
+	)
+	local all = ui.matched("abc", {})
+	assert(#all == 1 and all[1].text == "abc" and all[1].style == nil)
+end)
+
+test(
+	"line_of and value_on find lines by value, and draw = false waits for the first redraw",
+	function(t)
+		local buffer = shown(t)
+		local items: { string } = {}
+		local view = ui.mount(buffer, function()
+			return ui.list(items, function(item: string)
+				return { ui.span(item) }
+			end)
+		end, nil, { draw = false })
+		assert(text_of(buffer) == "", "nothing drawn yet")
+		items = { "a", "b", "c" }
+		view:redraw()
+		assert(text_of(buffer) == "a\nb\nc", text_of(buffer))
+		assert(greed.view():cursor() == 0, "the first drawing leaves the cursor at the top")
+		assert(view:line_of(function(item: string): boolean
+			return item == "c"
+		end) == 2)
+		assert(view:line_of(function(): boolean
+			return false
+		end) == nil)
+		assert(view:value_on(1) == "b" and view:value_on(9) == nil)
+	end
+)

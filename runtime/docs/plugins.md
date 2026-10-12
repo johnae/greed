@@ -1071,7 +1071,11 @@ greed.tab.set_layout({
   `view:input()` reads it, and the view is read-only above it. A span's
   `marks` are drawn with it, counted from its start; `view:each(f)` goes
   through the lines with values; `ns` and `width` choose the namespace of
-  its marks and how wide it's laid out.
+  its marks and how wide it's laid out. `view:line_of(f)` finds the first
+  line whose value `f` takes, `view:value_on(line)` gives a line's value,
+  and `ui.matched(text, positions)` picks out what a fuzzy search matched,
+  as menus show it. With `draw = false` a view is drawn first at its first
+  `redraw`, so it can be mounted while what it draws from is being made.
 
   `ui.pieces(node.lay(width))` gives a node as a mark's `lines`, as the
   data plugin draws its tables under a block.

@@ -77,6 +77,10 @@ export type View = {
 	--- Calls `f` with each line that has a value (0-based) and its value,
 	--- top to bottom.
 	each: (self: View, f: (line: number, value: any) -> ()) -> (),
+	--- The first line (0-based) whose value `wanted` says yes to.
+	line_of: (self: View, wanted: (value: any) -> boolean) -> number?,
+	--- The value of 0-based `line`, if it has one.
+	value_on: (self: View, line: number) -> any,
 	--- Where what's written after it starts, for a view with an input.
 	input_start: (self: View) -> number,
 	--- What's written after it, for a view with an input.
@@ -478,6 +482,34 @@ function M.grid(rows: { GridRow }, opts: { gap: number? }?): Node
 			return out
 		end,
 	}
+end
+
+--- `text` as spans, the characters at `matched` (byte offsets, as
+--- `greed.fuzzy_positions` gives them) in `style` ("ui.menu.match"), the
+--- rest in `rest`: how a menu shows what a search matched.
+function M.matched(text: string, matched: { number }, style: string?, rest: string?): { Span }
+	local hit: { [number]: boolean } = {}
+	for _, at in matched do
+		hit[at] = true
+	end
+	local out: { Span } = {}
+	local run: string, on = "", false
+	for at, code in utf8.codes(text) do
+		local now = hit[at - 1] == true
+		if now ~= on and run ~= "" then
+			table.insert(out, { text = run, style = if on then style or "ui.menu.match" else rest })
+			run = ""
+		end
+		run ..= utf8.char(code)
+		on = now
+	end
+	if run ~= "" or #out == 0 then
+		table.insert(
+			out,
+			{ text = run :: string, style = if on then style or "ui.menu.match" else rest }
+		)
+	end
+	return out
 end
 
 --- `items` one a line, each drawn as `spans(item)`; pressing a line calls
@@ -938,7 +970,9 @@ local SOON_MS = 16
 --- as it is, the view read-only before it. With `keys` false it leaves the
 --- buffer's keys (tab and shift-tab to go between widgets) to its plugin.
 --- `after` is called after each drawing before a frame shows it, to draw
---- what goes with it; it can't wait.
+--- what goes with it; it can't wait. With `draw` false it's first drawn at
+--- the first `redraw` or `set`, so it can be mounted while what `render`
+--- reads is still being made.
 function M.mount(
 	buffer: greed.Buffer,
 	render: (state: { [string]: any }) -> Node,
@@ -950,6 +984,7 @@ function M.mount(
 		input: boolean?,
 		keys: boolean?,
 		after: ((view: View) -> ())?,
+		draw: boolean?,
 	}?
 ): View
 	local key = opts and opts.key
@@ -1024,11 +1059,18 @@ function M.mount(
 				-- An empty line, for the input to come after.
 				pieces = { piece_of({ {} }) }
 			end
+			local first = #entry.placed == 0
 			-- No frame shows the new text with the old marks.
 			atomic(function()
 				place(buffer, entry, pieces)
 				if input then
 					buffer:set_readonly_before(self:input_start())
+				elseif first then
+					-- The first drawing went in at the cursor, which it
+					-- pushed to the end.
+					for _, shown in buffer:views() do
+						shown:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
+					end
 				end
 				if after then
 					after(self)
@@ -1088,6 +1130,20 @@ function M.mount(
 				end
 			end
 		end,
+		line_of = function(_self: View, wanted: (value: any) -> boolean): number?
+			for _, p in entry.placed do
+				for line = 0, #p.piece.lines - 1 do
+					local value = p.piece.values[line]
+					if value ~= nil and wanted(value) then
+						return p.line + line
+					end
+				end
+			end
+			return nil
+		end,
+		value_on = function(_self: View, line: number): any
+			return value_of(entry, line)
+		end,
 		input_start = function(_self: View): number
 			return math.min(end_of(entry.placed) + 1, buffer:len())
 		end,
@@ -1111,12 +1167,8 @@ function M.mount(
 	greed.plugin.tie(function()
 		view:unmount()
 	end)
-	view:redraw()
-	-- The first drawing went in at the cursor, which it pushed to the end.
-	if not input then
-		for _, shown in buffer:views() do
-			shown:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
-		end
+	if not (opts and opts.draw == false) then
+		view:redraw()
 	end
 	return view
 end
