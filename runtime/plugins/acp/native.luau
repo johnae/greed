@@ -30,7 +30,7 @@ models.fallback(compact.ROLE, M.ROLE, "compacting long conversations with Greed'
 
 -- How many steps go by between notes saying a prompt is still going; the
 -- `agent-max-turns` option stops it, if set.
-local CHECK_IN = 200
+M.CHECK_IN = 200
 
 -- Answers in a row that may be cut off at their length before it stops,
 -- and what the model hears after one.
@@ -1298,8 +1298,11 @@ local function like_rejected(
 	if found == nil or kind_of(found) ~= "execute" then
 		return nil
 	end
+	-- Only one that ran code or commands itself: rejecting an edit doesn't
+	-- stop the tests that follow.
 	for _, one in refused do
-		if one.note == nil then
+		local was = by_name[one.tool]
+		if one.note == nil and was and kind_of(was) == "execute" then
 			return one.title
 		end
 	end
@@ -1483,10 +1486,20 @@ local function doing(s: Session, what: string)
 end
 
 -- Writes `s` down to take up again, once it has been asked something.
-local function keep(s: Session, state: State)
+-- When each session was last written down, so a long tool loop writes its
+-- whole conversation every couple of seconds rather than at every step.
+local kept_at: { [number]: number } = {}
+local KEEP_EVERY = 2000
+
+local function keep(s: Session, state: State, soon: boolean?)
 	if saved.first_asked(s) == nil then
 		return
 	end
+	local now = greed.now()
+	if soon and now - (kept_at[s.id] or 0) < KEEP_EVERY then
+		return
+	end
+	kept_at[s.id] = now
 	local groups = {}
 	for group, on in state.caller.groups do
 		if on then
@@ -1608,7 +1621,7 @@ local function prompt(
 	local turns = 0
 	while most <= 0 or turns < most do
 		turns += 1
-		if turns % CHECK_IN == 0 then
+		if turns % M.CHECK_IN == 0 then
 			table.insert(
 				s.entries,
 				{ kind = "note", text = `this has taken {turns} steps; carrying on` }
@@ -1926,7 +1939,7 @@ local function prompt(
 			table.insert(s.entries, { kind = "user", text = queued })
 			s.changed()
 		end
-		keep(s, state)
+		keep(s, state, true)
 	end
 	if state.cancelled then
 		table.insert(s.entries, { kind = "note", text = "stopped: cancelled" })

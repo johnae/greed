@@ -369,7 +369,13 @@ end)
 test("without thinking_back, assistant messages stay plain strings", function()
 	local messages = turn.body("openai", "m", { said = THOUGHT }, 100).messages
 	assert(messages[2].content == "Let me look.", tostring(messages[2].content))
-	assert(messages[4].content == "", tostring(messages[4].content))
+	-- The answer that was only thinking has nothing left to send.
+	for _, message in messages do
+		assert(
+			message.role ~= "assistant" or message.content ~= "" or message.tool_calls,
+			"none empty"
+		)
+	end
 	local mistral = models.providers.mistral
 	assert(mistral and mistral.thinking_back == true, "on for Mistral")
 	local openai = models.providers.openai

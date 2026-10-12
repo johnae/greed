@@ -594,7 +594,8 @@ of choices at the top of the box, like
 you answer it from there in any mode and editing style: `enter` picks the
 highlighted choice, `tab` moves, a choice's letter picks it and `esc`
 rejects it, taking what you wrote in the box along as what to do instead
-(`alt-enter` with a message does the same). [Answering an agent](permissions.md#answering-an-agent) has
+(`alt-enter` with a message does the same). Typing in insert mode, the
+first `esc` only leaves insert mode, as always, and the next one rejects. [Answering an agent](permissions.md#answering-an-agent) has
 the keys and what "Allow always" covers for each agent.
 The agent reads open files as you have them, unsaved changes included,
 and its edits to an open file are made in the buffer and saved, so undo

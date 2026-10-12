@@ -1,6 +1,7 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local acp = require("@acp")
+local core = require("@core")
 local models: any = require("@models")
 
 local FAKE: acp.Agent = {
@@ -375,6 +376,9 @@ test("esc with a message in the box rejects and sends the message next", functio
 	local s = start(t)
 	ask(t, s)
 	t:keys("i h e l l o")
+	-- The first esc leaves insert mode, as always; the second rejects.
+	t:keys("esc")
+	assert(not core.style.is_typing(), "out of insert mode")
 	t:keys("esc")
 	t:wait_for(function()
 		return string.find(greed.view():buffer():text(), "Hello there", 1, true) ~= nil

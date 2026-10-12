@@ -38,7 +38,7 @@ You answer it from there in any mode and editing style:
 | `enter` | The highlighted choice (the first, until you move) |
 | `tab`, `shift-tab`, `left`, `right` | Highlight the next or previous choice |
 | `y`, `a`, `n`, `N` | Allow once, allow always, reject, and reject always when the agent offers it; a choice of some other kind goes by its number |
-| `esc` | Reject; what's in the box goes along as what to do instead |
+| `esc` | Reject; what's in the box goes along as what to do instead (in insert mode, the first `esc` leaves it) |
 
 Clicking a choice picks it too. Letters type as usual once the box has
 something in it, so a message you're writing doesn't answer by accident;
@@ -55,10 +55,11 @@ Allow once`.
 
 A rejected call tells the agent not to get there another way (another
 tool, a command or `eval`) and to ask you what you want. Greed's own agent
-is also held to it: the same call again, or after a plain rejection any
-command or `eval`, doesn't run, and neither does anything after a second
-rejection in one prompt. The turn stops there with a note like `stopped:
-you rejected Write b.txt; asking what you want`, and the agent's last word
+is also held to it: the same call again doesn't run, nor, after you
+plainly reject a command or `eval`, any other command or `eval` (a
+rejected edit doesn't stop the tests that follow), nor anything after a
+second rejection in one prompt. The turn stops there with a note like
+`stopped: you rejected Run make deploy; asking what you want`, and the agent's last word
 is its question to you.
 
 What "Allow always" covers depends on the agent:

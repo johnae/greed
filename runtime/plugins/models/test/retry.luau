@@ -171,3 +171,12 @@ test(
 		assert(idle == 600, tostring(idle))
 	end
 )
+
+test("Ollama and Berget, which send tool calls whole too, wait ten minutes for quiet", function()
+	for _, provider in { "ollama", "berget" } do
+		models.roles.test_quiet = { provider = provider, model = "m" }
+		local idle = models.idle("test_quiet")
+		models.roles.test_quiet = nil
+		assert(idle == 600, `{provider}: {idle}`)
+	end
+end)

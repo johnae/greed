@@ -108,7 +108,8 @@ local M = {}
 M.providers = {
 	anthropic = { kind = "anthropic", url = "https://api.anthropic.com", secret = "anthropic" },
 	openai = { kind = "openai", url = "https://api.openai.com/v1", secret = "openai" },
-	ollama = { kind = "openai", url = "http://localhost:11434/v1" },
+	-- A local model sends a tool call whole once it's written, slowly.
+	ollama = { kind = "openai", url = "http://localhost:11434/v1", idle = 600 },
 	mistral = {
 		kind = "openai",
 		url = "https://api.mistral.ai/v1",
@@ -125,6 +126,7 @@ M.providers = {
 		url = "https://api.berget.ai/v1",
 		secret = "berget",
 		login = "berget",
+		idle = 600,
 	},
 } :: { [string]: Provider? }
 

@@ -238,7 +238,11 @@ local function openai_messages(system: string?, said: { Said }, thinking_back: b
 				end
 				message.tool_calls = calls
 			end
-			table.insert(messages, message)
+			-- An answer with nothing in it (no text, calls or thinking, as
+			-- one cut short can be) is left out: servers turn it down.
+			if message.content ~= "" or message.tool_calls then
+				table.insert(messages, message)
+			end
 		else
 			-- A turn stopped at tool results, by you or the turn limit, ends
 			-- with a word from the model: some providers, like Mistral, turn

@@ -305,7 +305,12 @@ greed.command({
 	doc = "Reject the agent's question; what's in the box goes with it, as what to do instead",
 	run = function(ctx)
 		local s = shown_in(ctx.buffer)
-		if s then
+		-- Typing in a style with modes, esc leaves insert mode as always;
+		-- the next esc rejects.
+		local style = core.style
+		if s and style.is_typing() and style.typing_mode() ~= style.home() then
+			greed.mode.set(style.home())
+		elseif s then
 			M.reject(ctx.buffer, s, box.text(ctx.buffer))
 			box.clear(ctx.buffer)
 		end

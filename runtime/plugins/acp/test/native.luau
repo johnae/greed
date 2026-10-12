@@ -594,42 +594,68 @@ test("the system prompt says a rejected call isn't tried again or another way", 
 	assert(string.find(system, "When the user rejects a call", 1, true), system)
 end)
 
-test("after a rejection, a call that could do the same isn't run and the model asks", function(t)
+test("after a rejected edit, running the tests still goes ahead", function(t)
 	local asked = script({
 		calling("write_file", { path = "b.txt", text = "x" }),
-		calling("run_command", { command = "touch b.txt" }),
-		{
-			text = "What would you like instead?",
-			calls = { { id = "c5", name = "write_file", input = { path = "c.txt", text = "y" } } },
-			stop = "tools",
-		},
-		calling("write_file", { path = "d.txt", text = "z" }),
+		calling("run", { command = "true" }),
+		{ text = "Done.", calls = {}, stop = "done" },
 	})
-	local s, dir = ask(t, "make b")
+	local s = ask(t, "make b")
 	waiting(s).answer:send("no")
+	-- The command is asked about rather than stopped.
+	t:wait_for(function()
+		local ok, question = pcall(waiting, s)
+		return ok and question.title == "Run true"
+	end)
+	waiting(s).answer:send("once")
 	t:wait_for(function()
 		return s.status == "idle"
 	end)
-	assert(greed.fs.read(`{dir}/b.txt`) == nil, "not written")
-	assert(greed.fs.read(`{dir}/c.txt`) == nil, "its last calls are dropped")
-	assert(#asked == 3, `it's asked once more, to ask you: {#asked}`)
-	local result = asked[3].said[5]
-	assert(result.role == "tool" and result.call == "c3", result.call)
-	assert(string.find(result.text, "not run", 1, true), result.text)
-	assert(string.find(result.text, "Ask the user what they want", 1, true), result.text)
-	assert(s.tools.c3 == nil, "the command never ran or asked")
-	assert(
-		string.find(
-			said(s),
-			"note: stopped: you rejected Write b.txt; asking what you want",
-			1,
-			true
-		),
-		said(s)
-	)
-	local last = s.entries[#s.entries]
-	assert(last.kind == "agent" and last.text == "What would you like instead?", said(s))
+	assert(#asked == 3, `{#asked} requests`)
+	assert(not string.find(said(s), "stopped: you rejected", 1, true), said(s))
 end)
+
+test(
+	"after a rejected command, another that could do the same isn't run and the model asks",
+	function(t)
+		local asked = script({
+			calling("run", { command = "touch b.txt" }),
+			calling("run_command", { command = "touch b.txt" }),
+			{
+				text = "What would you like instead?",
+				calls = {
+					{ id = "c5", name = "write_file", input = { path = "c.txt", text = "y" } },
+				},
+				stop = "tools",
+			},
+			calling("write_file", { path = "d.txt", text = "z" }),
+		})
+		local s, dir = ask(t, "make b")
+		waiting(s).answer:send("no")
+		t:wait_for(function()
+			return s.status == "idle"
+		end)
+		assert(greed.fs.read(`{dir}/b.txt`) == nil, "not written")
+		assert(greed.fs.read(`{dir}/c.txt`) == nil, "its last calls are dropped")
+		assert(#asked == 3, `it's asked once more, to ask you: {#asked}`)
+		local result = asked[3].said[5]
+		assert(result.role == "tool" and result.call == "c3", result.call)
+		assert(string.find(result.text, "not run", 1, true), result.text)
+		assert(string.find(result.text, "Ask the user what they want", 1, true), result.text)
+		assert(s.tools.c3 == nil, "the command never ran or asked")
+		assert(
+			string.find(
+				said(s),
+				"note: stopped: you rejected Run touch b.txt; asking what you want",
+				1,
+				true
+			),
+			said(s)
+		)
+		local last = s.entries[#s.entries]
+		assert(last.kind == "agent" and last.text == "What would you like instead?", said(s))
+	end
+)
 
 test("a rejected call made again isn't run, even after a message, and the model asks", function(t)
 	local asked = script({
@@ -1770,9 +1796,12 @@ test("a call made again with the same result says so, and running out of turns t
 	assert(string.find(said(s), "stopped: it took 100 turns without finishing", 1, true), said(s))
 end)
 
-test("without agent-max-turns it works on until done, saying so every 200 steps", function(t)
+test("without agent-max-turns it works on until done, saying so every so many steps", function(t)
+	-- Every 5 steps here rather than 200, to keep the test quick.
+	local native = require("../native")
+	native.CHECK_IN = 5
 	local turns: { any } = {}
-	for i = 1, 210 do
+	for i = 1, 12 do
 		table.insert(turns, {
 			text = "",
 			calls = { { id = `c{i}`, name = "project", input = {} } },
@@ -1785,8 +1814,10 @@ test("without agent-max-turns it works on until done, saying so every 200 steps"
 	t:wait_for(function()
 		return s.status == "idle"
 	end)
+	native.CHECK_IN = 200
 	local all = said(s)
-	assert(string.find(all, "this has taken 200 steps; carrying on", 1, true), "a note at 200")
+	assert(string.find(all, "this has taken 5 steps; carrying on", 1, true), "a note at 5")
+	assert(string.find(all, "this has taken 10 steps; carrying on", 1, true), "and at 10")
 	assert(not string.find(all, "stopped: it took", 1, true), "not stopped")
 	assert(string.find(all, "done", 1, true), "it finished")
 end)
@@ -2348,7 +2379,8 @@ test("esc with a message rejects, and the model gets the message with the result
 	local s = beside(dir, "a.txt", 0, 0)
 	send(t, "write")
 	t:keys("i u s e space c")
-	t:keys("esc")
+	-- The first esc leaves insert mode, the second rejects.
+	t:keys("esc esc")
 	t:wait_for(function()
 		return status_of(s) == "idle"
 	end)
