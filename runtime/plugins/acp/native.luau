@@ -18,6 +18,7 @@ local saved = require("./saved")
 local compact = require("./compact")
 local transcript = require("./transcript")
 local workspaces = require("./workspaces")
+local auto = require("./auto")
 
 type Session = session.Session
 
@@ -1297,15 +1298,15 @@ local function allowed(
 	kind: string,
 	locations: { string }?,
 	command: string?
-): (boolean, string?)
+): (boolean, string?, string?)
 	if state.allowed[kind] then
-		return true, nil
+		return true, nil, nil
 	end
-	local chosen, note = session.ask(s, title, kind, ALLOW, locations, nil, command)
+	local chosen, note, by = session.ask(s, title, kind, ALLOW, locations, nil, command)
 	if chosen == "always" then
 		state.allowed[kind] = true
 	end
-	return chosen == "once" or chosen == "always", note
+	return chosen == "once" or chosen == "always", note, by
 end
 
 -- A call by its tool and arguments, to tell when it's made again.
@@ -1432,17 +1433,29 @@ local function call(
 			then `{tool.title}, which {widens}`
 			elseif danger then `{tool.title}: {danger}`
 			else nil
-		local ok, note = true, nil
+		local command = if kind == "execute" and type(c.input.command) == "string"
+			then c.input.command
+			else nil
+		local ok, note, by = true, nil, nil
 		if title then
-			local chosen, said = session.ask(s, title, kind, session.ONCE, locations, true)
-			ok, note = chosen == "once", said
+			-- Only you answer, unless it's a risky command auto mode may
+			-- leave to the decision model.
+			local firm = widens ~= nil
+				or command == nil
+				or not auto.on(s)
+				or auto.hard(command) ~= nil
+			local chosen, said, policy =
+				session.ask(s, title, kind, session.ONCE, locations, firm, command)
+			ok, note, by = chosen == "once", said, policy
 		elseif asks and not outside then
-			local command = if kind == "execute" and type(c.input.command) == "string"
-				then c.input.command
-				else nil
-			ok, note = allowed(s, state, tool.title, kind, locations, command)
+			ok, note, by = allowed(s, state, tool.title, kind, locations, command)
 		end
-		if not ok then
+		if not ok and auto.said(by) then
+			-- Auto mode blocked it: the agent hears why, to find another
+			-- way, and it isn't counted as you saying no.
+			refused = `auto mode didn't let this run ({by}). Do it another way that doesn't need `
+				.. "it, or ask the user if it's needed"
+		elseif not ok then
 			local why = if widens then session.NOT_WIDENED else "the user didn't allow it"
 			refused = session.refused(why, note)
 			rejected, told = true, note

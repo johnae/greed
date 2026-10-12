@@ -194,10 +194,13 @@ local function decide(s: Session, permission: session.Permission): (string?, str
 			return chosen, nil
 		end
 	end
-	local why = auto.allows(s, permission)
-	local once = option_of(permission, "allow_once")
-	if why and once then
-		return once, why
+	local verdict, why = auto.decide(s, permission)
+	local option = if verdict == "allow"
+		then option_of(permission, "allow_once")
+		elseif verdict == "block" then option_of(permission, "reject_once")
+		else nil
+	if option then
+		return option, why
 	end
 	return workspace_edits(s, permission), nil
 end

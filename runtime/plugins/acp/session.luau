@@ -96,7 +96,10 @@ export type Session = {
 	mode: string?,
 	--- Whether Greed answers its questions for you where it safely can
 	--- (auto), or leaves them all to you; nil goes by `agent-auto`.
+	--- `auto_blocks` counts the commands auto mode blocked in a row, until
+	--- you answer a question.
 	auto: boolean?,
+	auto_blocks: number?,
 	--- The models the agent offers, and the one it uses. `model_option` is
 	--- the id of the config option that picks it, for agents that offer
 	--- models that way rather than with `session/set_model`.
@@ -742,6 +745,7 @@ M.NOT_WIDENED = "the user didn't allow letting a plugin do more; tell them what 
 --- chosen, or nil if the question was cancelled, and what you wrote with a
 --- rejection. That shows as your message: an agent in the editor tells its
 --- model with the rejection, and an ACP agent gets it as the next prompt.
+--- When a policy answered, the third value says why.
 function M.ask(
 	session: Session,
 	title: string,
@@ -750,7 +754,7 @@ function M.ask(
 	locations: { string }?,
 	firm: boolean?,
 	command: string?
-): (string?, string?)
+): (string?, string?, string?)
 	local permission: Permission = {
 		title = title,
 		kind = kind,
@@ -776,7 +780,7 @@ function M.ask(
 	if decided then
 		chose(decided, ` ({why or "by policy"})`)
 		session.changed()
-		return decided, nil
+		return decided, nil, why or "by policy"
 	end
 	local before: Status = session.status
 	session.status = "waiting"
@@ -804,6 +808,8 @@ function M.ask(
 		entry.chosen = "cancelled"
 	else
 		chose(chosen, "")
+		-- You've had your say: auto mode may block again before asking.
+		session.auto_blocks = 0
 	end
 	local note = permission.note
 	if note and session.driver then
@@ -812,7 +818,7 @@ function M.ask(
 		M.queue(session, note)
 	end
 	session.changed()
-	return chosen, note
+	return chosen, note, nil
 end
 
 --- Why the agent may not do something, `why`, with what you wrote with

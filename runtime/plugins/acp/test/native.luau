@@ -3557,3 +3557,40 @@ test("the system prompt says which model answers, so it doesn't guess", function
 		system
 	)
 end)
+
+test(
+	"in auto mode the decision model lets a risky command run, or tells the agent why not",
+	function(t)
+		local dir = t:tempdir({ ["junk/x"] = "" })
+		local asked = script({
+			calling("run", { command = `rm -rf {dir}/junk` }),
+			calling("run", { command = "python3 deploy.py" }),
+			{ text = "Done another way.", calls = {}, stop = "done" },
+		})
+		local before = models.ask
+		models.ask = function(_role: string, request: any): (string?, string?)
+			local content = request.messages[1].content
+			return if string.find(content, "deploy", 1, true)
+				then "BLOCK - it deploys"
+				else "ALLOW - the user asked for it",
+				nil
+		end
+		greed.option.set("agent-auto", true)
+		local s = assert(acp.start(GREED, dir))
+		greed.spawn(function()
+			acp.prompt(s, "delete junk/")
+		end)
+		t:wait_for(function()
+			return s.status == "idle"
+		end)
+		greed.option.set("agent-auto", false)
+		models.ask = before
+		assert(greed.fs.read(`{dir}/junk/x`) == nil, "deleted, without asking")
+		assert(#asked == 3, `{#asked} requests`)
+		local result = asked[3].said[#asked[3].said]
+		assert(string.find(result.text, "auto mode didn't let this run", 1, true), result.text)
+		assert(string.find(result.text, "it deploys", 1, true), result.text)
+		assert(not string.find(said(s), "stopped: you rejected", 1, true), said(s))
+		assert(string.find(said(s), "Done another way.", 1, true), said(s))
+	end
+)

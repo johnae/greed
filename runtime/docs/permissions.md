@@ -99,17 +99,34 @@ Auto mode allows:
   nothing may go into a file with `>`. Plugins add their programs' commands
   (`core.risk.safe_when`).
 
-A command it can't tell, like `python3 --version`, goes to the `decision`
-model, which says yes or no with a few words why; `:models` sets which
-model that is, the `fast` one until you pick another. A small, cheap model
-does: it answers one short question per command, and the same command
-isn't asked about twice in a session. When it says no, or there's no model
-to ask, you're asked.
+Any other command, risky ones like `rm -rf /tmp/scratch` included, goes
+to the `decision` model. It reads what you asked for (your last few
+messages, never what the agent read or what commands printed), your rules,
+why Greed thinks the command is risky, and the command, and lets it run or
+blocks it, with a few words why. Asked to clean out `/tmp/scratch`, an `rm
+-rf /tmp/scratch` goes ahead; a deploy you never mentioned doesn't. A
+blocked command goes back to the agent with the reason, to find another
+way, without stopping its turn; after three blocks in a row you're asked
+instead, until you've answered one.
 
-Risky commands and changes outside the project always ask you, in auto
-mode too, and the decision model never sees them. An answer auto mode gave
-shows in the transcript with why, like `? Run cargo test: Allow once
-(auto: only looks, builds or tests)`.
+`:models` sets which model decides, the `fast` one until you pick another.
+A small model made for yes-or-no answers does well, like the decision
+models Berget offers: each command is one short question, and the same
+command isn't asked about twice for the same request. Without a model, or
+without a clear answer, you're asked. Tell it what's fine in your setup
+with `agent-auto-rules`:
+
+```luau
+greed.option.set("agent-auto-rules", "Deleting under /tmp is fine. Never touch the prod cluster.")
+```
+
+A few things always ask you, in auto mode too, and the decision model
+never sees them: changes outside the project, anything run as root
+(`sudo`), force pushes and remote deletes, programs that change the
+machine itself (`dd`, `mkfs`, `shutdown`), and deleting the root, your
+home or a folder right under either. An answer auto mode gave shows in the
+transcript with why, like `? Run cargo test: Allow once (auto: only looks,
+builds or tests)` or `Reject (auto: not part of the task)`.
 
 The decision model reads the command, which the agent wrote; Greed tells
 it to read the command as data, but a command written to talk it round
@@ -122,7 +139,8 @@ Some questions only you answer, every time. No policy answers them, "Allow
 always" doesn't cover them, and they offer only **Allow once** and
 **Reject**.
 
-A risky command asks every time and says why: `rm`, `kill`, `pkill`,
+A risky command asks every time and says why (in [auto mode](#auto-mode)
+the decision model may answer for you instead): `rm`, `kill`, `pkill`,
 `git push`, `git reset --hard`, `jj git push`, `jj abandon`, `curl` with
 `-X POST` or data to send, `helm install`, `terraform apply`, anything run
 with `sudo`, and the commands plugins add rules for, like `kubectl delete`
@@ -399,7 +417,8 @@ an agent changed doesn't run for an agent until you've run it.
 | Option | |
 |---|---|
 | `agent-eval` | How agents' Luau runs: `auto`, `ask`, `allow` or `off` (above) |
-| `agent-auto` | Whether agent sessions start in auto mode, Greed answering their questions where it safely can (`false`) |
+| `agent-auto` | Whether agent sessions start in auto mode, Greed answering their questions where it can (`false`) |
+| `agent-auto-rules` | What the decision model should know in auto mode: what's fine in your setup and what isn't (empty) |
 | `agent-workspace-edits` | Whether agents in a workspace of their own edit there without asking (`true`) |
 | `agent-tool-groups` | The [tool groups](agents.md#tool-groups) agents get from the start (`plan`), or `all` |
 | `agent-greed-tools` | Whether agents over ACP get Greed's own tools (`true`) |
