@@ -19,7 +19,9 @@
 --     y  Y             copy what it printed, or its command
 --     o                open what it printed in a buffer
 --     s                stop it
---     tab              fold or unfold it
+--     tab shift-tab    fold or unfold it, or all of them
+--     :                the command line
+--     ?                these keys
 --     g  G             the first or last command
 --     esc  i  a        back to the prompt
 
@@ -153,7 +155,7 @@ end
 -- What can be done with what's selected, for the line under it.
 local function hint(on_row: boolean, block: Block): string
 	if on_row then
-		return "enter what it does · . actions · y copy · J K commands · esc prompt"
+		return "enter what it does · . actions · y copy · J K commands · esc prompt · ? keys"
 	end
 	local parts = { "enter change", "r run again", "/ filter", ". actions" }
 	if block.before then
@@ -163,6 +165,7 @@ local function hint(on_row: boolean, block: Block): string
 	table.insert(parts, "↓ rows")
 	table.insert(parts, "J K commands")
 	table.insert(parts, "esc prompt")
+	table.insert(parts, "? keys")
 	return table.concat(parts, " · ")
 end
 
@@ -209,8 +212,9 @@ function M.draw(view: greed.View)
 end
 
 --- Goes to blocks mode in `view`, on the block at the cursor, or the last
---- one from the prompt. Says so when there's nothing to go to.
-function M.enter(view: greed.View): boolean
+--- one from the prompt. Says so when there's nothing to go to, unless
+--- `quiet`.
+function M.enter(view: greed.View, quiet: boolean?): boolean
 	local shell = shell_in(view)
 	if shell == nil then
 		return false
@@ -220,7 +224,9 @@ function M.enter(view: greed.View): boolean
 		local all = in_order(shell)
 		block = all[#all]
 		if block == nil then
-			greed.echo("nothing has run here yet")
+			if not quiet then
+				greed.echo("nothing has run here yet")
+			end
 			return false
 		end
 		select_block(view, shell, block)
@@ -241,8 +247,8 @@ function M.leave(view: greed.View)
 		greed.mode.set(core.style.home())
 		return
 	end
-	greed.mode.set(core.style.typing_mode())
 	view:set_cursor(shell.buffer:len())
+	greed.mode.set(core.style.typing_mode())
 	M.draw(view)
 end
 
@@ -418,22 +424,80 @@ command("shell-blocks-filter", "Filter the rows the command printed", function(v
 	greed.run("shell-filter")
 end)
 
+-- What `?` shows: the keys, as the top of this file lists them.
+local KEYS = [[
+up down (k j)    a step through everything: a command, its rows, the next command
+J K              the next or previous command, past its rows
+right left       into the command's rows, or back up to it
+enter            change the command at the prompt, to run in its place;
+                 on a row, what the row does (open a file, describe a pod)
+r                run it again in its place
+b d              what it showed the run before, or what changed since
+/                filter its rows
+.                what can be done with it
+y Y              copy what it printed, or its command
+o                open what it printed in a buffer
+s                stop it
+tab shift-tab    fold or unfold it, or all of them
+g G              the first or last command
+:                the command line; space and its keys work as anywhere
+esc i a          back to the prompt; typing anything goes there too
+]]
+
+greed.command({
+	name = "shell-blocks-keys",
+	doc = "List the keys of blocks mode",
+	run = function()
+		core.floats.show_text("Blocks mode", KEYS, { kind = "shell-blocks-keys", height = 20 })
+	end,
+})
+
 -- Typing in blocks mode goes to the prompt, with what was typed.
 greed.command({
 	name = "shell-blocks-type",
-	doc = "Go back to the prompt and type there",
+	doc = "Go back to the prompt and type there what the key types; a key that types nothing does nothing",
 	run = function(ctx)
-		M.leave(ctx.view)
-		if ctx.char then
-			local buffer = ctx.view:buffer()
-			local at = buffer:len()
-			buffer:edit(function(e)
-				e:insert(at, ctx.char :: string)
-			end)
-			ctx.view:set_cursor(buffer:len())
+		local char = ctx.char
+		if char == nil then
+			greed.echo("nothing is on that key here: ? lists the keys")
+			return
 		end
+		M.leave(ctx.view)
+		local buffer = ctx.view:buffer()
+		local at = buffer:len()
+		buffer:edit(function(e)
+			e:insert(at, char)
+		end)
+		ctx.view:set_cursor(buffer:len())
 	end,
 })
+
+-- Puts `view`, showing `shell`, in the mode its place there calls for:
+-- blocks mode in place of the style's normal mode (the prompt when nothing
+-- has run), and typing goes in the prompt alone, so the cursor put
+-- elsewhere while typing, as by a click, selects what it's on instead.
+-- That last is for the cursor having `moved`: the shell's own moves, like
+-- going back to the prompt, set the mode first.
+local function settle(view: greed.View, shell: Shell, moved: boolean)
+	if not M.on() then
+		return
+	end
+	local range = view:selection().ranges[1]
+	local mode, home = greed.mode.get(), core.style.home()
+	if mode == home and home ~= core.style.typing_mode() then
+		if not M.enter(view, true) then
+			M.leave(view)
+		end
+	elseif
+		moved
+		and range.anchor == range.head
+		and core.style.is_typing()
+		and not log.in_prompt(shell, range.head)
+		and log.block_at(shell, range.head)
+	then
+		M.enter(view, true)
+	end
+end
 
 -- Blocks mode is the shell's alone: a view showing something else, or
 -- another view focused, goes back to the style's own mode.
@@ -451,7 +515,13 @@ greed.on("mouse", function(event: greed.MouseEvent)
 end)
 
 greed.on("view.focused", function(event: greed.ViewFocused)
-	if not shell_in(event.view) then
+	local shell = shell_in(event.view)
+	if shell then
+		greed.sleep(0)
+		if event.view:valid() and event.view == greed.view() then
+			settle(event.view, shell, false)
+		end
+	else
 		leave_elsewhere(event.view)
 	end
 end)
@@ -465,19 +535,7 @@ greed.on("selection.changed", function(event: greed.SelectionChanged)
 		leave_elsewhere(view)
 		return
 	end
-	-- Typing goes in the prompt alone: the cursor put elsewhere, as by a
-	-- click, selects what it's on instead.
-	local range = view:selection().ranges[1]
-	if
-		M.on()
-		and core.style.is_typing()
-		and range.anchor == range.head
-		and not log.in_prompt(shell, range.head)
-		and log.block_at(shell, range.head)
-	then
-		M.enter(view)
-		return
-	end
+	settle(view, shell, true)
 	M.draw(view)
 end)
 
@@ -511,9 +569,14 @@ log.on_update(function()
 	M.draw(view)
 end)
 
+-- Looked at once what changed the mode is done, as closing a float moves
+-- the focus too.
 greed.on("mode.changed", function()
+	greed.sleep(0)
 	local view = greed.view()
-	if view:valid() and shell_in(view) then
+	local shell = if view:valid() then shell_in(view) else nil
+	if shell then
+		settle(view, shell, false)
 		M.draw(view)
 	end
 end)
@@ -549,6 +612,9 @@ greed.keymap.bind(M.MODE, {
 	o = "shell-output-open",
 	s = "shell-interrupt",
 	tab = "fold-toggle",
+	["shift-tab"] = "fold-toggle-all",
+	[":"] = "command-line",
+	["?"] = "shell-blocks-keys",
 	["ctrl-c"] = "shell-interrupt",
 	["ctrl-t"] = "shell-handoff",
 	["ctrl-r"] = "shell-history",

@@ -117,9 +117,11 @@ command that ran.
 
 You type at the prompt. `esc` there goes to blocks mode (`BLOCKS` on the
 status line), where the commands you ran, and the rows they printed, are
-things to move between and act on, a key each. Clicking in what a command
-printed comes here too. The selected command or row is marked, with what
-you can do with it on a line under it:
+things to move between and act on, a key each. It's what the shell has in
+place of your style's normal mode, so coming back to a shell from a file
+you opened lands here too, and so does clicking in what a command
+printed. The selected command or row is marked, with what you can do with
+it on a line under it:
 
 ```text
 ❯ 2 df -kP ✓ 0.04s · table · 13 rows
@@ -140,12 +142,14 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 | `y` `Y` | Copy what it printed, or the command |
 | `o` | Open what it printed in a buffer of its own, to edit or search |
 | `s` | Stop it |
-| `tab` | Fold it under its command, or unfold it |
+| `tab` `shift-tab` | Fold it under its command or unfold it, or all of them |
+| `:` | The command line |
+| `?` | These keys |
 | `g` `G` | The first or last command |
 | `esc` `i` `a` | Back to the prompt |
 
-Typing anything else goes back to the prompt with what you typed, so you
-never type into a command's output: in blocks mode the shell's text can't
+Typing a character goes back to the prompt with it, and other keys with
+nothing on them do nothing, so you never type into a command's output: in blocks mode the shell's text can't
 be changed, only acted on. `space` and its keys work as elsewhere.
 A float showing a block, like the one `enter` on a running block opens,
 keeps its own keys: `esc` closes it.

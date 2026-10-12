@@ -268,3 +268,28 @@ test(
 		end
 	end
 )
+
+test("in a shell, the style's normal mode is blocks mode", function(t)
+	local sh = open(t)
+	type_line(t, sh, "echo one")
+	-- As coming back to the shell from a file leaves it.
+	greed.mode.set(require("@core").style.home())
+	t:wait(50)
+	assert(greed.mode.get() == "blocks", greed.mode.get())
+	assert(current() == "echo one", current())
+end)
+
+test("in blocks mode : opens the command line, and keys that type nothing stay", function(t)
+	local sh = open(t)
+	type_line(t, sh, "echo one")
+	t:keys("esc :")
+	assert(greed.view():buffer():kind() == "cmdline", greed.view():buffer():kind())
+	t:run("command-line-close")
+	t:wait(50)
+	assert(greed.mode.get() == "blocks", "back: " .. greed.mode.get())
+	t:keys("shift-tab")
+	assert(greed.mode.get() == "blocks", "shift-tab folds, it doesn't type: " .. greed.mode.get())
+	t:keys("f5")
+	assert(greed.mode.get() == "blocks", greed.mode.get())
+	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
+end)
