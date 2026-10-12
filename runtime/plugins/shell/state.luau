@@ -341,7 +341,12 @@ local program: string | false | nil = nil
 function M.program(): string?
 	if program == nil and coroutine.isyieldable() then
 		local path = greed.session.program()
-		local result = if path then greed.process.run({ path, "--env0" }) else nil
+		-- The shell's own, whichever plugin's run asked first (greed.vouch).
+		local result = if path
+			then greed.vouch(function()
+				return greed.process.run({ path, "--env0" })
+			end)
+			else nil
 		local works = result ~= nil
 			and result.code == 0
 			and string.find(result.stdout, "=", 1, true)
@@ -360,7 +365,10 @@ function M.editor_environment(): { [string]: string }
 	end
 	local vars: { [string]: string } = {}
 	local path = M.program()
-	local result = greed.process.run(if path then { path, "--env0" } else { "env", "-0" })
+	local argv = if path then { path, "--env0" } else { "env", "-0" }
+	local result = greed.vouch(function()
+		return greed.process.run(argv)
+	end)
 	if result then
 		for _, entry in string.split(result.stdout, "\0") do
 			local name, value = string.match(entry, "^([^=]+)=(.*)$")

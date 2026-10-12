@@ -279,14 +279,12 @@ local function from_jc(shell: Shell, block: Block)
 	end)
 end
 
--- Ends `block`, whose output is all drawn: as `status` says, or as how it
--- exited says.
-local function complete(shell: Shell, block: Block, code: number?, signal: string?, status: string?)
-	local p = pending[block.uid]
+-- What `block`, done printing, gives besides its text: the file its whole
+-- output went to when the record couldn't hold it, its value, its table
+-- and the references in it.
+local function read_output(shell: Shell, block: Block, p: Pending?)
 	if p then
-		M.fill(block)
 		spill(block, p)
-		pending[block.uid] = nil
 	end
 	if not block.truncated then
 		block.value = tables.json(block.stdout) or block.data
@@ -302,6 +300,21 @@ local function complete(shell: Shell, block: Block, code: number?, signal: strin
 		end
 	end
 	block.refs = log.draw_refs(shell, block)
+end
+
+-- Ends `block`, whose output is all drawn: as `status` says, or as how it
+-- exited says.
+local function complete(shell: Shell, block: Block, code: number?, signal: string?, status: string?)
+	local p = pending[block.uid]
+	if p then
+		M.fill(block)
+		pending[block.uid] = nil
+	end
+	-- Reading what it printed is the shell's own work, whichever plugin's
+	-- line it was, and its failing still ends the block.
+	xpcall(greed.vouch, function(err)
+		greed.echo(`shell: {err}`)
+	end, read_output, shell, block, p)
 	block.finished = greed.now()
 	block.code = code
 	block.signal = signal

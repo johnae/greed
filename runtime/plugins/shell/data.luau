@@ -39,7 +39,7 @@ end
 -- A file holding what `block` printed, for a command to read: its whole
 -- output's file when it had to keep one, else one written for it in the
 -- cache folder, ending .json when it printed JSON. Nil and why when there's
--- no cache folder.
+-- no cache folder. The file is the shell's, whichever plugin's line it is.
 local function file_of(block: state.Block): (string?, string?)
 	run.fill(block)
 	if block.spill then
@@ -51,7 +51,9 @@ local function file_of(block: state.Block): (string?, string?)
 	end
 	local extension = if block.value ~= nil then "json" else "txt"
 	local path = `{cache}/shell/files/{block.uid}.{extension}`
-	local ok, err = greed.fs.write(path, block.stdout)
+	local ok, err = greed.vouch(function()
+		return greed.fs.write(path, block.stdout)
+	end)
 	if not ok then
 		return nil, err or `can't write {path}`
 	end

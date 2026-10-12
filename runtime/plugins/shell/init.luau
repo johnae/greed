@@ -446,70 +446,30 @@ local function by_id(shell: Shell, source: string): (Shell?, string)
 	return nil, source
 end
 
---- Runs `line` in `shell` as a new block after the others and returns it;
---- nil for an empty line, `clear`, which takes the blocks away, or a
---- question for a model (ask.luau), whose answer comes to the prompt. A
---- line of yours starting with one of your shell's aliases runs it, and
---- the block shows what you typed.
-function M.run(shell: Shell, line: string, options: RunOptions?): Block?
-	local opts: RunOptions = options or {}
-	local command = opts.typed or string.match(line, "^%s*(.-)%s*$") or line
-	if opts.by ~= "agent" and not opts.expanded then
-		local by
-		line, by = aliases.expand(line)
-		if by then
-			-- A plugin's alias runs as that plugin may.
-			local again = table.clone(opts)
-			again.expanded = true
-			again.typed = command
-			return greed.plugin.within(by, M.run, shell, line, again)
-		end
+-- Runs `start`, which starts `block`. Its failing (a capability refused, a
+-- program that can't start, anything) ends the block as failed with the
+-- error as its output, so a block never stays running with nothing said.
+local function starting(shell: Shell, block: Block, start: () -> ())
+	local why: string? = nil
+	xpcall(start, function(err)
+		why = tostring(err)
+	end)
+	if why and block.status == "running" then
+		state.stop(block, "kill")
+		local message = string.match(why, "^[^\n]*") or why
+		run.fail(shell, block, (string.gsub(message, "^runtime error: ", "")))
 	end
-	-- `$3` after the first word is a file holding what block 3 printed.
-	local with_files, file_error = data.files(shell, line, opts.by == "agent")
-	line = with_files or line
-	local parsed = parse.parse(line, greed.fs.dirs().home)
-	if parsed.kind == "empty" then
-		return nil
-	end
-	if parsed.kind == "builtin" and parsed.name == "clear" and opts.by ~= "agent" then
-		log.set_prompt(shell, "")
-		clear(shell)
-		return nil
-	end
-	if opts.by ~= "agent" then
-		history.add(command, opts.cwd or shell.cwd)
-		local draft, question = ask.question(line)
-		if draft and question then
-			greed.spawn(function()
-				ask.ask(shell, line, draft, question, function(why: string)
-					run.unanswered(shell, add_block(shell, command, opts), why)
-				end)
-			end)
-			return nil
-		end
-	end
-	-- A command printing rows again as they change, `kubectl get pods -w`,
-	-- shows them in place, as its kind says.
-	if opts.by ~= "agent" and not parsed.raw and kinds.streams(line) then
-		local following = add_block(shell, command, opts)
-		live.follow(shell, following, line, pipeline.open_stream)
-		return following
-	end
-	-- `watch COMMAND` runs the command again and again in its block.
-	local watched, every, unwatchable = live.read(line)
-	if watched or unwatchable then
-		local watching = add_block(shell, command, opts)
-		if opts.by == "agent" then
-			run.fail(shell, watching, "watch runs until it's stopped; run the command once", 2)
-		elseif watched then
-			live.start(shell, watching, watched, every, pipeline.capture_all)
-		else
-			run.fail(shell, watching, unwatchable or "", 2)
-		end
-		return watching
-	end
-	local block = add_block(shell, command, opts)
+end
+
+-- Starts `block`, made for the line `parsed`: its builtin, or its programs
+-- and table stages, with what goes in.
+local function begin(
+	shell: Shell,
+	block: Block,
+	parsed: parse.Parsed,
+	opts: RunOptions,
+	file_error: string?
+)
 	local why = file_error or parsed.error
 	-- What goes in (`$3 | ...`): its text, its JSON and its table.
 	local input: string?, value: any, source: tables.Table? = nil, nil, nil
@@ -554,6 +514,85 @@ function M.run(shell: Shell, line: string, options: RunOptions?): Block?
 			{ raw = parsed.raw, handoff = parsed.terminal }
 		)
 	end
+end
+
+--- Runs `line` in `shell` as a new block after the others and returns it;
+--- nil for an empty line, `clear`, which takes the blocks away, or a
+--- question for a model (ask.luau), whose answer comes to the prompt. A
+--- line of yours starting with one of your shell's aliases runs it, and
+--- the block shows what you typed.
+---
+--- Called by a plugin, the programs the line runs are that plugin's: it
+--- needs `proc`, and the builtins `cd` and `open` need `fs.read`. The
+--- shell's own work around them, its wrapper files, history, environments
+--- and prompt, is the shell's. A block that can't start ends as failed,
+--- saying why.
+function M.run(shell: Shell, line: string, options: RunOptions?): Block?
+	local opts: RunOptions = options or {}
+	local command = opts.typed or string.match(line, "^%s*(.-)%s*$") or line
+	if opts.by ~= "agent" and not opts.expanded then
+		local by
+		line, by = aliases.expand(line)
+		if by then
+			-- A plugin's alias runs as that plugin may.
+			local again = table.clone(opts)
+			again.expanded = true
+			again.typed = command
+			return greed.plugin.within(by, M.run, shell, line, again)
+		end
+	end
+	-- `$3` after the first word is a file holding what block 3 printed.
+	local with_files, file_error = data.files(shell, line, opts.by == "agent")
+	line = with_files or line
+	local parsed = parse.parse(line, greed.fs.dirs().home)
+	if parsed.kind == "empty" then
+		return nil
+	end
+	if parsed.kind == "builtin" and parsed.name == "clear" and opts.by ~= "agent" then
+		log.set_prompt(shell, "")
+		clear(shell)
+		return nil
+	end
+	if opts.by ~= "agent" then
+		history.add(command, opts.cwd or shell.cwd)
+		local draft, question = ask.question(line)
+		if draft and question then
+			greed.spawn(function()
+				ask.ask(shell, line, draft, question, function(why: string)
+					run.unanswered(shell, add_block(shell, command, opts), why)
+				end)
+			end)
+			return nil
+		end
+	end
+	-- A command printing rows again as they change, `kubectl get pods -w`,
+	-- shows them in place, as its kind says.
+	if opts.by ~= "agent" and not parsed.raw and kinds.streams(line) then
+		local following = add_block(shell, command, opts)
+		starting(shell, following, function()
+			live.follow(shell, following, line, pipeline.open_stream)
+		end)
+		return following
+	end
+	-- `watch COMMAND` runs the command again and again in its block.
+	local watched, every, unwatchable = live.read(line)
+	if watched or unwatchable then
+		local watching = add_block(shell, command, opts)
+		if opts.by == "agent" then
+			run.fail(shell, watching, "watch runs until it's stopped; run the command once", 2)
+		elseif watched then
+			starting(shell, watching, function()
+				live.start(shell, watching, watched, every, pipeline.capture_all)
+			end)
+		else
+			run.fail(shell, watching, unwatchable or "", 2)
+		end
+		return watching
+	end
+	local block = add_block(shell, command, opts)
+	starting(shell, block, function()
+		begin(shell, block, parsed, opts, file_error)
+	end)
 	return block
 end
 

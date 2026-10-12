@@ -7,7 +7,9 @@
 -- (`root`) and loads it (`load`). They're asked in the order
 -- `shell-environments` names them; the first with an answer wins. Loaded
 -- environments are kept by provider and folder, so every shell in a
--- project shares one load.
+-- project shares one load. Finding and loading one is the shell's own work
+-- (greed.vouch), whichever plugin's line set it off; a provider another
+-- plugin adds still runs only as that plugin may.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -66,7 +68,7 @@ local function find(dir: string, env: { [string]: string }): (string?, string?, 
 	for name in string.gmatch(names, "[%w_%-]+") do
 		local provider = providers[name]
 		if provider then
-			local ok, root, why = pcall(provider.root, dir, env)
+			local ok, root, why = pcall(greed.vouch, provider.root, dir, env)
 			if ok and root then
 				return name, root, nil
 			elseif ok and why then
@@ -82,7 +84,7 @@ local function load(entry: Environment, env: { [string]: string | false })
 	local provider = providers[entry.provider]
 	local started = greed.now()
 	greed.spawn(function()
-		local ok, result = pcall(provider.load, entry.root, env)
+		local ok, result = pcall(greed.vouch, provider.load, entry.root, env)
 		entry.seconds = (greed.now() - started) / 1000
 		if ok then
 			local got = result :: Loaded
@@ -95,7 +97,7 @@ local function load(entry: Environment, env: { [string]: string | false })
 				local set = watching[path] or {}
 				watching[path] = set
 				if next(set) == nil then
-					greed.fs.watch(path)
+					greed.vouch(greed.fs.watch, path)
 				end
 				set[entry] = true
 			end

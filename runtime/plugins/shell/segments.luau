@@ -113,7 +113,9 @@ function M.refresh(shell: Shell)
 		return
 	end
 	busy[shell] = false
-	greed.spawn(function()
+	-- The prompt is the shell's own, whichever plugin opened it or ran a
+	-- line in it; providers other plugins add run only as those may.
+	greed.spawn(greed.vouch, function()
 		repeat
 			busy[shell] = false
 			local ctx: Context = { shell = shell, cwd = shell.cwd, env = state.variables(shell) }

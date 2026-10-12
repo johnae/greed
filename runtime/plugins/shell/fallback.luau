@@ -205,8 +205,11 @@ function M.prepare(block: Block, line: string, opts: { program: string?, rc: boo
 		return { argv = { "sh", "-c", line } }
 	end
 	local dir = `{cache}/shell/run/{INSTANCE}-{block.uid}`
-	greed.fs.remove(dir, { recursive = true })
-	greed.fs.mkdir(dir)
+	-- The run folder is the shell's own, whichever plugin's line it is.
+	greed.vouch(function()
+		greed.fs.remove(dir, { recursive = true })
+		greed.fs.mkdir(dir)
+	end)
 	local nu = string.gsub(NU, "DIR", function()
 		return dir
 	end)
@@ -236,10 +239,7 @@ local function variables(text: string?): { [string]: string }?
 	return vars
 end
 
---- What `run` left behind once it's done: the shell it ran in, the folder
---- it ended in (`block.cwd_after`, when it moved) and the variables it set
---- or took away (`block.env_changed`). Returns those, then clears up.
-function M.collect(block: Block, run: Run): (string?, { [string]: string | false }?)
+local function collect(block: Block, run: Run): (string?, { [string]: string | false }?)
 	local dir = run.dir
 	if dir == nil then
 		return nil, nil
@@ -269,6 +269,14 @@ function M.collect(block: Block, run: Run): (string?, { [string]: string | false
 	end
 	block.env_changed = changed
 	return block.cwd_after, changed
+end
+
+--- What `run` left behind once it's done: the shell it ran in, the folder
+--- it ended in (`block.cwd_after`, when it moved) and the variables it set
+--- or took away (`block.env_changed`). Returns those, then clears up. The
+--- run folder is the shell's own, whichever plugin's line it was.
+function M.collect(block: Block, run: Run): (string?, { [string]: string | false }?)
+	return greed.vouch(collect, block, run)
 end
 
 --- The variables set (a string) or taken away (false) between the files

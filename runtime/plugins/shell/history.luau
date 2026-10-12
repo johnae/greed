@@ -48,7 +48,14 @@ end
 -- The file's entries now, which other sessions may have added to.
 local function read(): { Entry }
 	local path = M.path()
-	local text = if path then greed.fs.read(path) else nil
+	if path == nil then
+		return {}
+	end
+	local file: string = path
+	-- The file is the shell's own, whichever plugin ran the line (greed.vouch).
+	local text = greed.vouch(function()
+		return greed.fs.read(file)
+	end)
 	return if text then parse(text) else {}
 end
 
@@ -76,11 +83,14 @@ function M.add(command: string, cwd: string)
 	if path == nil then
 		return
 	end
+	local file: string = path
 	local lines = table.create(#list)
 	for i, e in list do
 		lines[i] = greed.json.encode(e)
 	end
-	greed.fs.write(path, table.concat(lines, "\n") .. "\n", { private = true })
+	greed.vouch(function()
+		greed.fs.write(file, table.concat(lines, "\n") .. "\n", { private = true })
+	end)
 end
 
 --- The commands kept, newest first, each once.

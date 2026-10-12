@@ -91,7 +91,8 @@ local function lister(family: string): { string }?
 end
 
 -- Reads the aliases from the shell that runs your lines. Only in your own
--- home: a test's never reads your startup files.
+-- home: a test's never reads your startup files. It's the shell's own
+-- reading (greed.vouch), whichever plugin's line asked first.
 local function load(): { [string]: string }
 	local family = fallback.which()
 	local argv = lister(family)
@@ -117,7 +118,7 @@ function M.known(): { [string]: string }
 	end
 	local waiting: { greed.Signal } = {}
 	waiters = waiting
-	local ok, found = pcall(load)
+	local ok, found = pcall(greed.vouch, load)
 	known = if ok then found else {}
 	waiters = nil
 	for _, signal in waiting do

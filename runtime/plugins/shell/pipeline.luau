@@ -19,8 +19,10 @@ type Block = state.Block
 local M = {}
 
 export type RunOptions = {
-	--- "user" (the default) or "agent". An agent's cd and export show in
-	--- its block but don't change the shell.
+	--- "user" (the default) or "agent", for an agent's tools: its block is
+	--- marked as an agent's and runs in `sh`, its cd and export show in it
+	--- but don't change the shell, and it skips history and aliases. A
+	--- plugin's lines leave it out.
 	by: string?,
 	--- The folder and variables to run with, instead of the shell's.
 	cwd: string?,
