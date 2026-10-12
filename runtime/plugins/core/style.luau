@@ -324,19 +324,34 @@ function M.each_typing(call: (mode: string) -> ())
 	end
 end
 
+greed.option.define({
+	name = "markup-reveal",
+	default = "cursor",
+	choices = { "cursor", "never" },
+	doc = "Where hidden markup (a field's brackets, a link's target) shows as written outside typing: cursor, once the cursor steps inside it; never",
+})
+
 --- When markup a plugin hides (a link's brackets, a heading's hashes)
 --- shows as written in `mode` (the current one if nil), as a mark's
 --- `reveal` wants it: "line" while typing, on the cursor's line; "cursor"
 --- in a style without modes, once the cursor is inside it rather than at
---- its start, where a click puts it; otherwise "never", so moving around
---- and clicking keep the looks.
+--- its start, where a click puts it; in a style's other modes as
+--- `markup-reveal` says, "cursor" or "never"; elsewhere "never".
 function M.reveal(mode: string?): "line" | "cursor" | "never"
 	local name = shown(mode or greed.mode.get())
 	local style = typing_style(name)
 	if style == nil then
-		return "never"
+		local stepping = M.role(name) and greed.option.get("markup-reveal") == "cursor"
+		return if stepping then "cursor" else "never"
 	end
 	return if style.mode == name then "cursor" else "line"
+end
+
+--- As `reveal`, for markup that shows only while typing (a table's
+--- borders): "never" outside typing.
+function M.typing_reveal(mode: string?): "line" | "cursor" | "never"
+	local name = shown(mode or greed.mode.get())
+	return if typing_style(name) then M.reveal(name) else "never"
 end
 
 --- Switches to style `name`.

@@ -1256,13 +1256,12 @@ impl<M: Measure> Renderer<M> {
         let content: Cow<str> = line_content(text, line).into();
         let end = start + content.len();
 
-        let auto = editor.reveal();
-        let concealed = concealed(buffer, view, line, start..end, auto);
+        let concealed = concealed(buffer, view, line, start..end, editor);
         // Text from marks, shown before the character at its position.
         let mut inserted: Vec<(&Mark, &str)> = buffer
             .all_marks()
             .filter(|m| !m.eol && !m.overlay && (start..=end).contains(&m.range.start))
-            .filter(|m| !m.conceal || !reveals(text, view, m, line, auto))
+            .filter(|m| !m.conceal || !reveals(text, view, m, line, editor))
             .filter_map(|m| Some((m, m.text.as_deref()?)))
             .collect();
         inserted.sort_by_key(|(m, _)| m.range.start);
@@ -1904,11 +1903,17 @@ fn cell_tags(
     capture: Option<Arc<str>>,
     marks: &[&Mark],
 ) -> SmallVec<[Tag; 2]> {
+    // A mark that shows text in place of what it hides styles that text,
+    // so text it shows as written (the cursor inside) looks as it is.
     let on_cell = |above: bool| {
         marks
             .iter()
             .filter(move |m| {
-                !cell.end_of_line && !m.line && m.above == above && m.range.contains(&cell.byte)
+                !cell.end_of_line
+                    && !m.line
+                    && m.above == above
+                    && (!m.conceal || m.text.is_none())
+                    && m.range.contains(&cell.byte)
             })
             .map(|m| Tag::from(m.style.clone()))
     };
@@ -2301,21 +2306,16 @@ fn virtual_lines<'a>(
 }
 
 /// Whether concealing mark `mark` on `line` shows its text now, as its
-/// `reveal` says, with `auto` (the editor's) for `Reveal::Auto`.
-fn reveals(text: &Rope, view: &View, mark: &Mark, line: usize, auto: Reveal) -> bool {
-    let reveal = if mark.reveal == Reveal::Auto {
-        auto
-    } else {
-        mark.reveal
-    };
-    match reveal {
+/// `reveal` says, `Auto` and `Typing` as `editor` has them.
+fn reveals(text: &Rope, view: &View, mark: &Mark, line: usize, editor: &Editor) -> bool {
+    match editor.resolve_reveal(mark.reveal) {
         Reveal::Line => cursor_lines(text, view).any(|l| l == line),
         Reveal::Cursor => view
             .selection
             .ranges()
             .iter()
             .any(|r| mark.range.start < r.head && r.head < mark.range.end),
-        Reveal::Never | Reveal::Auto => false,
+        Reveal::Never | Reveal::Auto | Reveal::Typing => false,
     }
 }
 
@@ -2325,12 +2325,12 @@ fn concealed<'a>(
     view: &View,
     line: usize,
     bytes: Range<usize>,
-    auto: Reveal,
+    editor: &Editor,
 ) -> Vec<&'a Mark> {
     buffer
         .all_marks()
         .filter(|m| m.conceal && m.range.start < bytes.end && m.range.end > bytes.start)
-        .filter(|m| !reveals(buffer.text(), view, m, line, auto))
+        .filter(|m| !reveals(buffer.text(), view, m, line, editor))
         .collect()
 }
 

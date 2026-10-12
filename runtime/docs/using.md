@@ -1300,8 +1300,12 @@ fenced code on a background of its own, quotes with a bar, `---` as a
 line, list bullets (`-`, `*` or `+`) as dots and tables in aligned columns
 with borders. Code blocks keep their markup: a `# comment` there is code,
 not a heading. The file stays plain Markdown: while you type on a line
-(insert mode) it shows as written, and in the vscode style markup shows
-once the cursor is inside it. The window draws big headings big and sets the text in a proportional font
+(insert mode) it shows as written, and otherwise markup shows as written
+once the cursor steps inside it. On its first character a field, a box or
+a button stays as it's drawn, so `enter` presses it; one step further in,
+`l` say, and it opens up to edit with the usual keys. Table borders open
+only while typing. `:set markup-reveal never` keeps markup drawn outside
+insert mode. The window draws big headings big and sets the text in a proportional font
 (code and tables stay monospaced); terminals other than kitty show
 headings at the normal size.
 
@@ -1465,7 +1469,9 @@ Tip: {{ fixed(tip) }} kr. Each pays {{ fixed((bill + tip) / people) }} kr.
   its line you see the formula, to edit it.
 - `[840](field:bill)` is a field: its value is the text between the
   brackets, shown as a box. `enter` on it, or a click, asks for a new one
-  and writes it in the file, and every value from it follows.
+  and writes it in the file, and every value from it follows. `space m f`
+  makes the number or word at the cursor (or what's selected) a field,
+  asking for its name, and on a field renames it.
 - `<!-- let name = formula -->` names a value for formulas anywhere in
   the file.
 - A table with `<!-- id=name -->` right above it is a value too: `items[1]`

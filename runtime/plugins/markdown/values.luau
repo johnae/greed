@@ -486,4 +486,57 @@ greed.command({
 	end,
 })
 
+-- The value a new field starts from: what's selected, or else the number
+-- or word at `pos`, as a start and end.
+local function value_at(buffer: greed.Buffer, view: greed.View, pos: number): (number, number)
+	local selection = view:selection()
+	if core.text.anything_selected(selection) then
+		return core.text.span(selection.ranges[1])
+	end
+	local from, to = pos, pos
+	local function part(at: number): boolean
+		local ch = buffer:char_at(at)
+		return ch ~= nil and string.match(ch, "^[%w_%.%-]$") ~= nil
+	end
+	while from > 0 and part(buffer:prev_char(from)) do
+		from = buffer:prev_char(from)
+	end
+	while to < buffer:len() and part(to) do
+		to = buffer:next_char(to)
+	end
+	return from, to
+end
+
+greed.command({
+	name = "markdown-field-make",
+	doc = "Make what's selected, or the number or word at the cursor, a field named as you type; on a field, rename it",
+	run = function(ctx)
+		local buffer, view = ctx.buffer, ctx.view
+		local field = M.field_at(buffer, view:cursor())
+		local typed = core.prompt.ask("field name", if field then field.name else "")
+		if typed == nil then
+			return
+		end
+		local name = M.key((string.match(typed, "^%s*(.-)%s*$") or ""))
+		if not string.match(name, "^[%a_][%w_]*$") then
+			greed.echo("a field's name starts with a letter, like bill or rent_2")
+			return
+		end
+		if field then
+			-- The name follows the value: `[value](field:name)`.
+			local at = field.to + #"](field:"
+			buffer:edit(function(e)
+				e:replace(at, at + #field.name, name)
+			end)
+			return
+		end
+		local from, to = value_at(buffer, view, view:cursor())
+		local value = string.gsub(buffer:slice(from, to), "[%]\n]", "")
+		buffer:edit(function(e)
+			e:replace(from, to, `[{value}](field:{name})`)
+		end)
+		view:set_selection({ ranges = { { anchor = from, head = from } }, primary = 1 })
+	end,
+})
+
 return M

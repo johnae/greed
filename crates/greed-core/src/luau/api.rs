@@ -2222,21 +2222,25 @@ fn line_numbers_function(lua: &Lua) -> LuaResult<Function> {
     })
 }
 
-/// `greed.reveal(how)`: when marks with `reveal = "auto"` show what they
-/// hide.
+/// `greed.reveal(how, typing)`: when marks with `reveal = "auto"` show what
+/// they hide, and those with `reveal = "typing"` (as `how` without it).
 fn reveal_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|lua, how: String| {
-        let reveal = match how.as_str() {
-            "line" => crate::Reveal::Line,
-            "cursor" => crate::Reveal::Cursor,
-            "never" => crate::Reveal::Never,
-            other => {
-                return Err(mlua::Error::runtime(format!(
-                    "reveal is \"line\", \"cursor\" or \"never\", not {other:?}"
-                )));
-            }
-        };
-        state_mut(lua).editor.set_reveal(reveal);
+    fn parse(how: &str) -> LuaResult<crate::Reveal> {
+        match how {
+            "line" => Ok(crate::Reveal::Line),
+            "cursor" => Ok(crate::Reveal::Cursor),
+            "never" => Ok(crate::Reveal::Never),
+            other => Err(mlua::Error::runtime(format!(
+                "reveal is \"line\", \"cursor\" or \"never\", not {other:?}"
+            ))),
+        }
+    }
+    lua.create_function(|lua, (how, typing): (String, Option<String>)| {
+        let reveal = parse(&how)?;
+        let typing = typing.as_deref().map_or(Ok(reveal), parse)?;
+        let editor = &mut state_mut(lua).editor;
+        editor.set_reveal(reveal);
+        editor.set_typing_reveal(typing);
         Ok(())
     })
 }

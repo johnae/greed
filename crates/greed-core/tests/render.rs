@@ -1404,6 +1404,34 @@ fn concealed_text_shows_as_its_mark_says_on_the_cursors_line() {
 }
 
 #[test]
+fn markup_shown_only_while_typing_follows_the_editors_typing_reveal() {
+    use greed_core::{Mark, Reveal};
+    // "a [] b": the brackets drawn as a border, as a table's are.
+    let mut ed = editor("a []| b");
+    let buffer = ed.view(ed.main()).buffer;
+    ed.decorate(
+        buffer,
+        "md",
+        vec![Mark {
+            range: 2..4,
+            style: "table".into(),
+            conceal: true,
+            text: Some("│".into()),
+            reveal: Reveal::Typing,
+            ..Mark::default()
+        }],
+    );
+    // Moving around, other markup opens with the cursor inside; this doesn't.
+    ed.set_reveal(Reveal::Cursor);
+    ed.set_typing_reveal(Reveal::Never);
+    assert_eq!(body(&frame(&mut ed, 20, 2))[0], "a │ b");
+    // Typing, it shows on the cursor's line as written.
+    ed.set_reveal(Reveal::Line);
+    ed.set_typing_reveal(Reveal::Line);
+    assert_eq!(body(&frame(&mut ed, 20, 2))[0], "a [] b");
+}
+
+#[test]
 fn a_cursor_on_hidden_text_shows_where_the_text_drawn_there_starts() {
     use greed_core::{Mark, Reveal};
     // "a [  ] b": the brackets and spaces are bytes 2-5, drawn as a border.

@@ -111,3 +111,60 @@ test("a command button's values are its command's, left for it", function(t)
 		assert(mark.text ~= "Ada", "no value drawn in the command")
 	end
 end)
+
+-- `text` open with the cursor at `pos`, drawn: its first row.
+local function at(t: test.TestContext, text: string, pos: number): string
+	local dir = t:tempdir({ ["doc.md"] = text .. "\n" })
+	greed.open(`{dir}/doc.md`)
+	local view = greed.view()
+	view:buffer():set_line_numbers(false)
+	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	return t:draw(60, 10)[1]
+end
+
+test("in normal mode a field opens up as written once the cursor steps inside", function(t)
+	local row = at(t, "Pay: [40](field:bill) kr", 5)
+	assert(row == "Pay: [ 40 ] kr", "on its start it's a field: " .. row)
+	t:keys("l")
+	local view = greed.view()
+	assert(view:cursor() == 6, `into it: {view:cursor()}`)
+	local opened = t:draw(60, 10)[1]
+	assert(opened == "Pay: [40](field:bill) kr", "as written: " .. opened)
+	-- Normal keys work on the text: to the name, and out again.
+	t:keys("f : l")
+	assert(view:buffer():slice(view:cursor(), view:cursor() + 4) == "bill")
+	t:keys("e l l")
+	assert(t:draw(60, 10)[1] == "Pay: [ 40 ] kr", "out of it, a field again")
+	-- Back in from the right.
+	t:keys("h h")
+	assert(t:draw(60, 10)[1] == "Pay: [40](field:bill) kr")
+	greed.option.set("markup-reveal", "never")
+	t:keys("b")
+	assert(t:draw(60, 10)[1] == "Pay: [ 40 ] kr", "markup-reveal never keeps it a field")
+end)
+
+test("enter on a field's start still sets it", function(t)
+	at(t, "Pay: [40](field:bill)", 5)
+	t:keys("enter backspace backspace 5 0 enter")
+	assert(string.find(greed.view():buffer():text(), "[50](field:bill)", 1, true) ~= nil)
+end)
+
+test("space m f makes the number at the cursor a field, and renames one", function(t)
+	at(t, "Income: 32000.50 kr", 10)
+	t:keys("space m f M o n t h l y space p a y enter")
+	local buffer = greed.view():buffer()
+	assert(buffer:text() == "Income: [32000.50](field:monthly_pay) kr\n", buffer:text())
+	assert(greed.view():cursor() == 8, "on the new field")
+	t:keys("space m f")
+	for _ = 1, #"monthly_pay" do
+		t:keys("backspace")
+	end
+	t:keys("i n c o m e enter")
+	assert(buffer:text() == "Income: [32000.50](field:income) kr\n", buffer:text())
+	t:keys("space m f")
+	for _ = 1, #"income" do
+		t:keys("backspace")
+	end
+	t:keys("2 x enter")
+	assert(string.find(table.concat(t:messages(), "\n"), "starts with a letter", 1, true) ~= nil)
+end)

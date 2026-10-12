@@ -63,9 +63,9 @@ M.structure = structure.of
 --- few lines at a time; see conceal.luau.
 M.conceal = conceal.add
 
--- When hidden markup shows: as the mode says (see `core.reveal`), or never
--- in the reading view.
-type Reveal = "auto" | "never"
+-- When hidden markup shows: as the mode says (see `core.reveal`), only while
+-- typing (a table's borders), or never in the reading view.
+type Reveal = "auto" | "never" | "typing"
 
 greed.option.define({
 	name = "markdown-look",
@@ -342,12 +342,14 @@ local function draw_table(
 	local function line_end(line: number): number
 		return s.starts[line + 1] + #s.lines[line + 1]
 	end
-	local function line_of(number: number, text: string): Line
+	-- The borders show as written only while typing; the cells as the mode says.
+	local borders: Reveal = if shows == "never" then "never" else "typing"
+	local function line_of(number: number, text: string, how: Reveal?): Line
 		local at = line_start(number)
-		return { text = text, at = at, out = out, shows = shows, taken = {}, reading = read }
+		return { text = text, at = at, out = out, shows = how or shows, taken = {}, reading = read }
 	end
 	for r, row in rows do
-		local line = line_of(lines[r], texts[r])
+		local line = line_of(lines[r], texts[r], borders)
 		-- What a formula worked out for an empty cell goes in where the cell
 		-- is, ahead of what's drawn for the gap after it, at the same place.
 		for c, cell in row.cells do
@@ -401,7 +403,7 @@ local function draw_table(
 			inline(inside)
 		end
 	end
-	local delimiter = line_of(n + 1, text_of(n + 1))
+	local delimiter = line_of(n + 1, text_of(n + 1), borders)
 	hide(
 		delimiter,
 		1,
@@ -889,7 +891,7 @@ greed.keymap.bind("read", {
 
 greed.keymap.bind(
 	{ layer = "leader" },
-	{ ["m l"] = "markdown-look-toggle", ["m v"] = "markdown-read" }
+	{ ["m l"] = "markdown-look-toggle", ["m v"] = "markdown-read", ["m f"] = "markdown-field-make" }
 )
 greed.keymap.bind(
 	{ style = "vscode", role = "typing" },

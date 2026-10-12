@@ -467,6 +467,8 @@ pub struct Editor {
     line_numbers: LineNumbers,
     /// When marks whose `reveal` is `Auto` show the text they hide.
     reveal: Reveal,
+    /// When marks whose `reveal` is `Typing` show the text they hide.
+    typing_reveal: Reveal,
     file_types: FileTypes,
     theme: Arc<Theme>,
     /// The menus for a window's menu bar, as plugins set them.
@@ -507,6 +509,7 @@ impl Editor {
             cursor_shapes: HashMap::new(),
             line_numbers: LineNumbers::default(),
             reveal: Reveal::Line,
+            typing_reveal: Reveal::Line,
             file_types: FileTypes::bundled(),
             theme: Arc::default(),
             menus: Vec::new(),
@@ -1840,11 +1843,29 @@ impl Editor {
     /// their text, e.g. on their line while typing and never otherwise.
     /// `Auto` is taken as `Line`.
     pub fn set_reveal(&mut self, reveal: Reveal) {
-        self.reveal = if reveal == Reveal::Auto {
-            Reveal::Line
-        } else {
-            reveal
-        };
+        self.reveal = settled(reveal);
+    }
+
+    /// When concealing marks whose `reveal` is [`Reveal::Typing`] show
+    /// their text; never `Auto` or `Typing` itself.
+    pub fn typing_reveal(&self) -> Reveal {
+        self.typing_reveal
+    }
+
+    /// Sets when concealing marks whose `reveal` is [`Reveal::Typing`]
+    /// show their text: as `Auto` ones while typing, and never otherwise.
+    /// `Auto` and `Typing` are taken as `Line`.
+    pub fn set_typing_reveal(&mut self, reveal: Reveal) {
+        self.typing_reveal = settled(reveal);
+    }
+
+    /// What a mark's `reveal` comes to now: `Auto` and `Typing` as set.
+    pub fn resolve_reveal(&self, reveal: Reveal) -> Reveal {
+        match reveal {
+            Reveal::Auto => self.reveal,
+            Reveal::Typing => self.typing_reveal,
+            Reveal::Line | Reveal::Cursor | Reveal::Never => reveal,
+        }
     }
 
     /// The cursor shape for the current mode.
@@ -2253,6 +2274,14 @@ impl Editor {
                 }
             }
         }
+    }
+}
+
+/// `reveal` as the editor keeps it: `Auto` and `Typing` as `Line`.
+fn settled(reveal: Reveal) -> Reveal {
+    match reveal {
+        Reveal::Auto | Reveal::Typing => Reveal::Line,
+        Reveal::Line | Reveal::Cursor | Reveal::Never => reveal,
     }
 }
 

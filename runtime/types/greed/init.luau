@@ -272,8 +272,8 @@ export type Mark = {
 	--- Hide the text, showing `text` (if any) in its place, e.g. the
 	--- brackets of a `[[link]]`, except where `reveal` says.
 	conceal: boolean?,
-	--- When concealed text shows: "line" (the default) when a cursor is on its line, "cursor" when a cursor is inside it past its start (a click leaves it hidden), "never", or "auto" as `greed.reveal` last said, so the marks needn't be drawn again when that changes.
-	reveal: ("line" | "cursor" | "never" | "auto")?,
+	--- When concealed text shows: "line" (the default) when a cursor is on its line, "cursor" when a cursor is inside it past its start (a click leaves it hidden), "never", "auto" as `greed.reveal` last said, so the marks needn't be drawn again when that changes, or "typing" as it said for markup that shows only while typing, like a table's borders.
+	reveal: ("line" | "cursor" | "never" | "auto" | "typing")?,
 	--- Hide the lines after the first one, up to the last, unless a cursor is
 	--- in them, like a section folded under its heading.
 	fold: boolean?,
@@ -1875,8 +1875,8 @@ export type Greed = {
 	--- number, "relative" to the cursor's line (0 on it), or "hybrid", relative
 	--- with the cursor's line showing its own.
 	line_numbers: (style: "absolute" | "relative" | "hybrid") -> (),
-	--- When text hidden by marks whose `reveal` is "auto" shows: "line" (on a cursor's line, the default), "cursor" or "never", as for a mark's own `reveal`. Core sets it as the mode changes (see `core.reveal`).
-	reveal: (how: "line" | "cursor" | "never") -> (),
+	--- When text hidden by marks whose `reveal` is "auto" shows: "line" (on a cursor's line, the default), "cursor" or "never", as for a mark's own `reveal`; `typing`, the same for those whose `reveal` is "typing" (as `how` without it). Core sets them as the mode changes (see `core.reveal`).
+	reveal: (how: "line" | "cursor" | "never", typing: ("line" | "cursor" | "never")?) -> (),
 	--- Lets the attached terminal go and keeps the editor running in the
 	--- background, for `greed attach` to come back to.
 	detach: () -> (),

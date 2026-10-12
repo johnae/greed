@@ -838,15 +838,17 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     });
 }
 
-/// A mark's `reveal`: "line" when not given, "cursor", "never" or "auto".
+/// A mark's `reveal`: "line" when not given, "cursor", "never", "auto" or
+/// "typing".
 fn reveal_from_lua(value: LuaResult<Option<String>>) -> LuaResult<Reveal> {
     match value?.as_deref() {
         None | Some("line") => Ok(Reveal::Line),
         Some("cursor") => Ok(Reveal::Cursor),
         Some("never") => Ok(Reveal::Never),
         Some("auto") => Ok(Reveal::Auto),
+        Some("typing") => Ok(Reveal::Typing),
         Some(_) => Err(mlua::Error::runtime(
-            "a mark's reveal is \"line\", \"cursor\", \"never\" or \"auto\"",
+            "a mark's reveal is \"line\", \"cursor\", \"never\", \"auto\" or \"typing\"",
         )),
     }
 }
@@ -883,6 +885,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
             Reveal::Cursor => "cursor",
             Reveal::Never => "never",
             Reveal::Auto => "auto",
+            Reveal::Typing => "typing",
         },
     )?;
     t.set("fold", mark.fold)?;

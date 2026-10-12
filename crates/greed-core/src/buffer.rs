@@ -169,6 +169,9 @@ pub enum Reveal {
     /// As the editor says for all such marks at once, e.g. on its line
     /// only while typing (see [`crate::Editor::set_reveal`]).
     Auto,
+    /// As the editor says for markup that shows only while typing, like a
+    /// table's borders (see [`crate::Editor::set_typing_reveal`]).
+    Typing,
 }
 
 /// A line a mark shows under the text: drawn in the mark's style, with
