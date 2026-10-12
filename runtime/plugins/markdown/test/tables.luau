@@ -169,3 +169,27 @@ test("the header row and a table's last column stay", function(t)
 	assert(markdown.table_edit.at(view:buffer(), 0) ~= nil)
 	assert(markdown.table_edit.at(view:buffer(), view:buffer():len()) == nil, "past the table")
 end)
+
+test("a row typed short of cells is filled out when typing ends, and lined up", function(t)
+	local view = opened(t, "| Item | Amount | Per year |\n|---|--:|--:|\n| Rent | 10 | |\n")
+	local buffer = view:buffer()
+	at(view, buffer:line_end(2))
+	t:keys("o")
+	t:keys("| space T h i n g space | space 8 space |")
+	t:keys("esc")
+	assert(
+		text_of(view)
+			== "| Item  | Amount | Per year |\n| ----- | -----: | -------: |\n| Rent  |     10 |          |\n| Thing |      8 |          |\n",
+		text_of(view)
+	)
+end)
+
+test("alt-l into a cell the row doesn't have yet fills the row out", function(t)
+	-- Typed in another editor, never lined up.
+	local view = opened(t, "| Item | Amount | Per year |\n|---|---|---|\n| Thing | 8 |\n")
+	local buffer = view:buffer()
+	at(view, buffer:line_start(2) + 2)
+	t:keys("alt-l alt-l")
+	assert(string.find(text_of(view), "| Thing | 8      |          |", 1, true), text_of(view))
+	assert(assert(markdown.table_edit.at(buffer, view:cursor())).column == 3, "in the new cell")
+end)

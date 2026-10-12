@@ -907,6 +907,17 @@ greed.on("mode.changed", function(event: greed.ModeChanged)
 	if event.to ~= "read" and core.style.is_home(event.to) then
 		stop_reading()
 	end
+	-- Done typing in a table as it's drawn: its pipes line up again and a
+	-- row typed short of cells gets the rest.
+	local view = greed.view()
+	if
+		core.style.is_typing(event.from)
+		and not core.style.is_typing(event.to)
+		and not view:buffer():readonly()
+		and M.drawn(view:buffer())
+	then
+		M.table_edit.tidy(view)
+	end
 end)
 greed.on("option.changed", function(event)
 	if event.name == "markdown-look" then

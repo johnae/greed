@@ -1357,7 +1357,9 @@ rest is on the leader:
 | `space m t e` | Edit the cell, as `enter` does |
 
 Each change writes the table back with its pipes lined up, so the file
-reads well as plain text too, and is one step to undo. The keys are in
+reads well as plain text too, and is one step to undo. Typing in a table
+yourself works too: leaving insert mode lines it up again and fills out a
+row you typed short of cells, so its formula columns show. The keys are in
 `require("@markdown").table_edit.keys`, to rebind like any others.
 
 ### Choices

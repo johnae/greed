@@ -375,7 +375,16 @@ local function jump(name: string, doc: string, by: number)
 				return
 			end
 			local row, column = step(spot, by)
-			if row and column then
+			if row == nil or column == nil then
+				return
+			end
+			-- A row written short of cells is filled out to reach the cell.
+			local line =
+				core.text.lines(ctx.buffer, line_of(spot.first, row), line_of(spot.first, row))
+			local cells: { tables.Cell } = tables.cells(line) or {}
+			if #cells < column then
+				M.write(ctx.view, spot, spot.grid, row, column)
+			else
 				go(ctx.view, cell_start(ctx.buffer, spot.first, row, column))
 			end
 		end,
@@ -392,6 +401,15 @@ jump(
 	"Go to the cell before in a Markdown table; elsewhere, what the key does otherwise",
 	-1
 )
+
+--- Lines up the table at `view`'s cursor, rows short of cells filled out,
+--- as typing into it leaves it; nothing outside a table.
+function M.tidy(view: greed.View)
+	local spot = M.at(view:buffer(), view:cursor())
+	if spot then
+		M.write(view, spot, spot.grid, spot.row, spot.column)
+	end
+end
 
 --- The keys, by layer. Change them before this plugin loads, or rebind
 --- and unbind from your config afterwards.
