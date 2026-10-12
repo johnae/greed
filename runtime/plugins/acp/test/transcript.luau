@@ -233,6 +233,10 @@ test("tool rows say what came back in a few words, never as JSON", function(t)
 	greed.spawn(function()
 		acp.prompt(s, "look")
 	end)
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	-- Its transcript is drawn again a moment after it changes.
 	t:wait(30)
 	local rows: { string } = {}
 	for _, entry in s.entries do
