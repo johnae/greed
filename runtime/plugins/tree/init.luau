@@ -17,14 +17,18 @@ type Node = {
 	depth: number,
 }
 
+local ui = core.ui
+
 type Tree = {
 	view: greed.View,
 	buffer: greed.Buffer,
 	root: string,
 	-- Folders shown open.
 	expanded: { [string]: boolean },
-	-- One node per line.
+	-- One node per line, as read from the disk last, and what draws them,
+	-- each line's value its node.
 	nodes: { Node },
+	drawn: core.UiView,
 	-- The file shown when the tree was last outside focus, as an absolute path.
 	open: string?,
 }
@@ -49,7 +53,7 @@ end
 
 -- The node on the cursor's line.
 local function current(t: Tree): Node?
-	return t.nodes[t.buffer:line_of(t.view:cursor()) + 1]
+	return t.drawn:value_at(t.view:cursor())
 end
 
 local M = {}
@@ -79,58 +83,48 @@ local function icon_of(node: Node, expanded: boolean): string
 	return extension and M.icons.extensions[extension] or M.icons.file
 end
 
--- Rewrites the tree from the disk, keeping the cursor on `keep` (a path) or
--- on the node it was on.
-local function render(t: Tree, keep: string?)
-	local on = current(t)
-	local at = keep or (on and on.path)
-	t.nodes = {}
-	collect(t, t.root, 0)
-
-	local lines, marks = {}, {}
-	local pos, cursor = 0, 0
-	-- Outside the tree, the file shown is the one to mark.
-	if greed.view() ~= t.view then
-		t.open = greed.view():buffer():path()
-	end
+-- The tree's nodes, a line each: a guide down the side for each folder a
+-- node is in, its icon, its name, the file shown outside it marked.
+local function draw(t: Tree): core.UiNode
 	local nerd = greed.option.get("tree-icons") == "nerd"
-	for _, node in t.nodes do
-		-- A guide down the side of each folder a node is in.
-		local guides = string.rep("│ ", node.depth)
+	return ui.list(t.nodes, function(node: Node): { core.UiSpan }
 		local expanded = t.expanded[node.path] == true
 		local icon = if nerd
 			then icon_of(node, expanded) .. " "
 			elseif not node.dir then "  "
 			elseif expanded then "▾ "
 			else "▸ "
-		local prefix = guides .. icon
-		local line = prefix .. node.name .. (if node.dir then "/" else "")
-		if node.depth > 0 then
-			table.insert(marks, { from = pos, to = pos + #guides, style = "ui.tree.guide" })
-		end
-		if node.dir then
-			table.insert(
-				marks,
-				{ from = pos + #prefix, to = pos + #line, style = "ui.tree.directory" }
-			)
-		end
-		if node.path == t.open then
-			table.insert(
-				marks,
-				{ from = pos, to = pos + #line, style = "ui.tree.open", line = true }
-			)
-		end
-		if node.path == at then
-			cursor = pos
-		end
-		table.insert(lines, line)
-		pos += #line + 1
-	end
-	t.buffer:edit(function(e)
-		e:replace(0, t.buffer:len(), table.concat(lines, "\n"))
-		e:select({ ranges = { { anchor = cursor, head = cursor } }, primary = 1 })
+		local name = node.name .. (if node.dir then "/" else "")
+		local guides: core.UiSpan = {
+			text = string.rep("│ ", node.depth),
+			style = if node.depth > 0 then "ui.tree.guide" else nil,
+			line = if node.path == t.open then "ui.tree.open" else nil,
+		}
+		return {
+			guides,
+			ui.span(icon),
+			ui.span(name, if node.dir then "ui.tree.directory" else nil),
+		}
 	end)
-	t.buffer:decorate("tree", marks)
+end
+
+-- Reads the tree from the disk again and draws it, keeping the cursor on
+-- `keep` (a path) or on the node it was on.
+local function render(t: Tree, keep: string?)
+	t.nodes = {}
+	collect(t, t.root, 0)
+	-- Outside the tree, the file shown is the one to mark.
+	if greed.view() ~= t.view then
+		t.open = greed.view():buffer():path()
+	end
+	t.drawn:redraw()
+	if keep then
+		t.drawn:each(function(line: number, node: Node)
+			if node.path == keep then
+				t.view:set_cursor(t.buffer:line_start(line))
+			end
+		end)
+	end
 	t.buffer:decorate("tree-hover", {})
 end
 
@@ -164,8 +158,30 @@ function M.open(root: string?)
 	local buffer = greed.create_buffer("tree", "", { readonly = true })
 	local title = if root then core.project.tilde(dir) else "Files"
 	local view = greed.panel(buffer, { title = title, width = 32 })
-	local t: Tree =
-		{ view = view, buffer = buffer, root = dir, expanded = {}, nodes = {}, open = open }
+	local t: Tree = {
+		view = view,
+		buffer = buffer,
+		root = dir,
+		expanded = {},
+		nodes = {},
+		open = open,
+		-- Mounted once it's made, since mounting draws it.
+		drawn = nil :: any,
+	}
+	t.drawn = ui.mount(
+		buffer,
+		function()
+			return draw(t)
+		end,
+		nil,
+		{
+			ns = "tree",
+			keys = false,
+			key = function(node: Node): string
+				return node.path
+			end,
+		}
+	)
 	trees[greed.project.current().id] = t
 	render(t)
 end
