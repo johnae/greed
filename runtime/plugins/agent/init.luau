@@ -89,9 +89,10 @@ return table.freeze({
 	--- callers that are (registry.luau).
 	done = registry.done,
 	on_done = registry.on_done,
-	--- Text someone else wrote, wrapped so a model reads it as information
-	--- (untrusted.luau).
-	untrusted = untrusted,
+	--- Text someone else wrote, between tags that mark it as data, and
+	--- what a model is told once about those tags (untrusted.luau).
+	untrusted = untrusted.wrap,
+	untrusted_note = untrusted.NOTE,
 	--- `text` with the secrets it holds hidden, and how many (redact.luau).
 	redact = require("@self/redact").redact,
 	propose = proposals.propose,

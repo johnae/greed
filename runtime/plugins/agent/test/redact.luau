@@ -30,6 +30,6 @@ test("secrets in what a command printed are hidden before a model reads it", fun
 	assert(string.find(hidden, "PATH=/usr/bin  name=web  sk-ok", 1, true), hidden)
 	assert(string.find(hidden, '"name": "web"', 1, true), hidden)
 	local wrapped = agent.untrusted("a test", "DB_PASSWORD=hunter2hunter2")
-	assert(string.find(wrapped, "1 secret was hidden", 1, true), wrapped)
+	assert(string.find(wrapped, ' hidden="1 secret">', 1, true), wrapped)
 	assert(not string.find(wrapped, "hunter2", 1, true), wrapped)
 end)

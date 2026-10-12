@@ -4,7 +4,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
-local untrusted = require("./untrusted")
+local untrusted = require("./untrusted").wrap
 
 local M = {}
 

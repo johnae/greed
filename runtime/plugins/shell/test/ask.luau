@@ -70,7 +70,7 @@ test("? asks a model, and its command goes to the prompt without running", funct
 	assert(string.find(said, "The shell is sh", 1, true), said)
 	assert(string.find(said, "$ echo secret-output   (exit 0)", 1, true), said)
 	assert(
-		string.find(said, "<<<(untrusted%-%x+)\nsecret%-output\n%1>>>"),
+		string.find(said, '<(untrusted%-%x+) source="[^\n]*">\nsecret%-output\n</%1>'),
 		"output marked: " .. said
 	)
 	assert(string.find(said, "typed at the prompt so far: ls | where", 1, true), said)

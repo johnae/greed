@@ -124,8 +124,12 @@ greed.option.set("web-search-url", "https://searx.example.org")
 ```
 
 Pages and results are written by strangers and can say anything, including
-"ignore your instructions and…". They reach the agent marked as someone
-else's text to use as information, and what an agent does with them goes
+"ignore your instructions and…". They reach the agent between
+`<untrusted-…>` tags naming where they came from, as do what commands
+print and text from your files; Greed's agent is told once, in its
+instructions, to read what's inside as data and not to follow it, and so
+are agents connecting over MCP. Secrets in it (private keys, API tokens,
+values named like passwords) are hidden first. What an agent does with them goes
 through the same checks as anything else: edits come as proposals or ask
 first, risky commands always ask, and `eval` runs in its sandbox (see
 [Permissions and sandboxing](permissions.md)). The group is off until an
@@ -547,8 +551,9 @@ where the agent got it. Messages still queued when you stop the agent stay
 queued and go ahead of your next message (`alt-enter` on an empty box sends
 them alone).
 
-The box's bottom line says what the agent is doing (the
-tool it runs, or thinking) and for how long this turn has taken, `waiting
+The box's bottom line says what the agent is doing (the tool it runs,
+`waiting for mistral` until its model's answer starts, then `thinking` or
+`writing`) and for how long this turn has taken, `waiting
 for you` when it asks something, and how many tokens of the model's
 context the conversation takes when the agent says (out of how many it
 has room for, when it says that too; Greed's own agent always does). With the effects option on
@@ -597,13 +602,25 @@ a panel: move and copy in it as in any other, and `:q` or
 `ctrl-w q` closes the panel while the agent goes on (`space i l` brings it
 back).
 
-What the agent thinks before it answers shows as a dimmed row folded to
-its first line (`… The user wants the pager fixed ▸`), for agents that share
-their thinking (Claude Code does, and so does Greed's own agent when its
-model's provider sends it, like Claude with an effort set or Mistral's
-reasoning models). `tab` on the row shows all of it. `/thoughts` hides them
-in every transcript, and shows them again; `:set agent-thoughts false` does
-the same from your config.
+What the agent thinks before it answers shows as dimmed rows, for agents
+that share their thinking (Claude Code does, and so does Greed's own agent
+when its model's provider sends it, like Claude with an effort set or
+Mistral's reasoning models). While a thought comes in you see its first
+line, its newest few lines and how far along it is, so a long one doesn't
+look stuck:
+
+```text
+▍ … The user wants the pager fixed.
+▍   The last page is one short, so the count starts at 1 where the
+▍   offset starts at 0. Check how pager.rs uses it before changing
+▍   thinking · 8.2k tokens · 4m 10s
+```
+
+Once it's done it folds to its first line and its size
+(`▸ The user wants the pager fixed. · thought, 8.2k tokens`; tokens are
+counted roughly, four characters each). `tab` on the row shows all of it,
+however long. `/thoughts` hides them in every transcript, and shows them
+again; `:set agent-thoughts false` does the same from your config.
 
 #### Slash commands
 

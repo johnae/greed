@@ -469,6 +469,8 @@ export type Reader = {
 	feed: (event: sse.Event) -> (string?, boolean, string?, string?),
 	--- The turn as read so far.
 	turn: () -> Turn,
+	--- Whether it has started on a tool call.
+	calling: () -> boolean,
 }
 
 --- The answer's text in a streamed `delta.content` of OpenAI's API: a
@@ -668,6 +670,9 @@ function M.reader(kind: string): Reader
 				return said, false, nil, thinking
 			end
 			return nil, false, nil, thinking
+		end,
+		calling = function()
+			return #building > 0
 		end,
 		turn = function()
 			local calls: { Call } = {}

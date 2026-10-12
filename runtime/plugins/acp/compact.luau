@@ -110,7 +110,12 @@ end
 --- About how many tokens `said` from `from` on (1 by default) and `extra`
 --- characters take.
 function M.tokens(said: { models.Said }, from: number?, extra: number?): number
-	return math.ceil((size(said, from or 1) + (extra or 0)) / 4)
+	return M.estimate(size(said, from or 1) + (extra or 0))
+end
+
+--- About how many tokens `chars` characters of text take.
+function M.estimate(chars: number): number
+	return math.ceil(chars / 4)
 end
 
 --- Where `said` is cut to keep as many whole turns of its end as fit in

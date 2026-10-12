@@ -51,11 +51,13 @@ export type Mode = { id: string, name: string, description: string? }
 --- "user", "agent", "thought" and "note" have `text`, "tool" a `tool`,
 --- "plan" its `items`, and "permission" a `permission` and, once
 --- answered, what was `chosen`. A thought shows all of its text while
---- `open`, else only its first line.
+--- `open`, else only its first line. What was said started `since`, on
+--- `greed.now()`'s clock.
 export type Entry = {
 	kind: string,
 	text: string?,
 	open: boolean?,
+	since: number?,
 	tool: Tool?,
 	items: { { text: string, status: string } }?,
 	permission: Permission?,
@@ -78,6 +80,9 @@ export type Session = {
 	status: Status,
 	--- The tool call running now, if any.
 	tool: string?,
+	--- What it's doing while it works and no tool runs: waiting for its
+	--- model ("waiting for mistral"), "thinking" or "writing".
+	doing: string?,
 	--- The file it works in now, and the line (from 1) when it says.
 	where: { path: string, line: number? }?,
 	entries: { Entry },
@@ -193,7 +198,7 @@ function M.append(session: Session, kind: string, text: string)
 	if entry and entry.kind == kind then
 		entry.text = (entry.text or "") .. text
 	else
-		table.insert(session.entries, { kind = kind, text = text })
+		table.insert(session.entries, { kind = kind, text = text, since = greed.now() })
 	end
 end
 
@@ -415,8 +420,10 @@ local function update(session: Session, u: any)
 	end
 	if kind == "agent_message_chunk" then
 		M.append(session, "agent", text_of(u.content))
+		session.doing = "writing"
 	elseif kind == "agent_thought_chunk" then
 		M.append(session, "thought", text_of(u.content))
+		session.doing = "thinking"
 	elseif kind == "user_message_chunk" then
 		M.append(session, "user", text_of(u.content))
 	elseif kind == "available_commands_update" then
@@ -465,6 +472,7 @@ local function update(session: Session, u: any)
 			if session.tool == tool.title then
 				session.tool = nil
 			end
+			session.doing = `waiting for {session.name}`
 		else
 			session.tool = tool.title
 		end
@@ -1131,6 +1139,7 @@ local function prompt_once(session: Session, text: string, context: string?): (b
 	table.insert(session.entries, { kind = "user", text = shown })
 	session.status = "working"
 	session.since = greed.now()
+	session.doing = `waiting for {session.name}`
 	session.changed()
 	local blocks: { any } = { { type = "text", text = said } }
 	if attached and seen then

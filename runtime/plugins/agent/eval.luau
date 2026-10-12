@@ -91,7 +91,7 @@ local function rejected(refused: { registry.Refusal }?): string
 		local said = if one.note then ` (they said: {one.note})` else ""
 		table.insert(lines, `- {one.title}{said}`)
 	end
-	local list = untrusted("the agent and the user", table.concat(lines, "\n"))
+	local list = untrusted.wrap("the agent and the user", table.concat(lines, "\n"))
 	return `The user just rejected these calls of the agent's.\n{list}\n\n`
 end
 
@@ -112,14 +112,15 @@ local function review(
 	if role == nil then
 		return nil, nil
 	end
+	local wrapped = untrusted.wrap("the agent", code)
 	local answer, err = models.ask(role, {
-		system = REVIEW,
+		system = REVIEW .. "\n\n" .. untrusted.NOTE,
 		max_tokens = 200,
 		temperature = 0,
 		messages = {
 			{
 				role = "user",
-				content = `{rejected(refused)}It would {needs}.\n\n{untrusted("the agent", code)}`,
+				content = `{rejected(refused)}It would {needs}.\n\n{wrapped}`,
 			},
 		},
 	})

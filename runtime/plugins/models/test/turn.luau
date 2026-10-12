@@ -102,6 +102,38 @@ test("Anthropic's stream gives text and tool calls put together from their piece
 	assert(result.calls[1].id == "t1" and result.calls[1].input.path == "a.txt", "the call")
 end)
 
+test("a reader says once a tool call has started, for either kind of stream", function()
+	for kind, call in
+		{
+			anthropic = {
+				type = "content_block_start",
+				index = 1,
+				content_block = { type = "tool_use", id = "t1", name = "read" },
+			},
+			openai = {
+				choices = {
+					{
+						delta = { tool_calls = { { index = 0, ["function"] = { name = "read" } } } },
+					},
+				},
+			},
+		} :: { [string]: any }
+	do
+		local reader = turn.reader(kind)
+		local text = if kind == "anthropic"
+			then {
+				type = "content_block_delta",
+				index = 0,
+				delta = { type = "text_delta", text = "Hi" },
+			}
+			else { choices = { { delta = { content = "Hi" } } } }
+		reader.feed({ data = greed.json.encode(text) })
+		assert(not reader.calling(), `{kind}: only text so far`)
+		reader.feed({ data = greed.json.encode(call) })
+		assert(reader.calling(), `{kind}: a call started`)
+	end
+end)
+
 test("OpenAI's stream gives tool calls from their pieces, and a stop says so", function(t)
 	local result = events("openai", {
 		{ choices = { { delta = { content = "Sure" } } } },

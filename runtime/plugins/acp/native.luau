@@ -1159,6 +1159,7 @@ local function system(s: Session, env: string?, edits: string?, helpers: boolean
 		"When the user rejects a call, don't make it again or get the same effect another way "
 			.. "(another tool, a command or eval): ask them what they want, and don't say it was "
 			.. "done.",
+		agent.untrusted_note,
 		"Be brief: say what you did and what's left, not every step.",
 		agent.memory.prompt(s.root),
 	}
@@ -1455,7 +1456,16 @@ end
 -- thought, by `kind`), or starts them.
 local function say(s: Session, text: string, kind: string?)
 	session.append(s, kind or "agent", text)
+	s.doing = if kind == "thought" then "thinking" else "writing"
 	s.changed()
+end
+
+-- What `s` does now, for its status, redrawn when it changes.
+local function doing(s: Session, what: string)
+	if s.doing ~= what then
+		s.doing = what
+		s.changed()
+	end
 end
 
 -- Writes `s` down to take up again, once it has been asked something.
@@ -1595,6 +1605,8 @@ local function prompt(
 			may_compact = compact_now(s, state, tail)
 		end
 		local run = state.run
+		local chosen = models.resolve(state.role)
+		doing(s, `waiting for {if chosen then chosen.provider else "the model"}`)
 		local answered, answer, err = unless_stopped(state, function()
 			return models.turn(state.role, {
 				system = said_system,
@@ -1615,6 +1627,10 @@ local function prompt(
 			end, function(thought)
 				if state.run == run then
 					say(s, thought, "thought")
+				end
+			end, function()
+				if state.run == run then
+					doing(s, "writing")
 				end
 			end)
 		end)

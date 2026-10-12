@@ -33,6 +33,7 @@ local markdown = require("@markdown")
 local session = require("./session")
 local question = require("./question")
 local code = require("./code")
+local compact = require("./compact")
 
 type Session = session.Session
 
@@ -115,8 +116,48 @@ function M.thought_of(id: string): number?
 	return tonumber(string.match(id, "^thought:(%d+)$"))
 end
 
---- The history's text and decorations, for `s` as it is now.
-function M.history(s: Session): History
+-- How many of a thought's newest lines show while it comes in.
+local THOUGHT_TAIL = 3
+
+-- The newest lines of `text`, a thought, wrapped to `room` cells less
+-- their indent: up to `THOUGHT_TAIL`, leaving out the start of its first
+-- line, which shows above them.
+local function thought_tail(text: string, room: number): { string }
+	local cells = math.max(room - 4, 10)
+	-- Enough of the end for the rows shown, in whole characters.
+	local from = math.max(#text - THOUGHT_TAIL * cells * 4, 1)
+	while from <= #text and bit32.band(string.byte(text, from), 0xC0) == 0x80 do
+		from += 1
+	end
+	local rows: { string } = {}
+	for _, line in string.split(string.sub(text, from), "\n") do
+		for _, wrapped in string.split(core.text.reflow(line, cells), "\n") do
+			if string.find(wrapped, "%S") then
+				table.insert(rows, core.text.clip(wrapped, cells))
+			end
+		end
+	end
+	if from == 1 then
+		table.remove(rows, 1)
+	end
+	return table.move(rows, math.max(#rows - THOUGHT_TAIL + 1, 1), #rows, 1, {})
+end
+
+-- Whether `s` is working on a thought, the newest of its entries.
+local function thinking(s: Session): boolean
+	local last = s.entries[#s.entries]
+	return s.status == "working" and last ~= nil and last.kind == "thought"
+end
+
+-- How long since `since` (on greed.now()'s clock): 9s, 2m 05s.
+local function elapsed(since: number): string
+	return core.time.duration(greed.now() - since, true)
+end
+
+--- The history's text and decorations, for `s` as it is now, for a view
+--- `cells` wide (the box's width).
+function M.history(s: Session, cells: number?): History
+	local room = cells or DEFAULT_WIDTH
 	local lines: { string } = {}
 	local styles: { Style } = {}
 	local running: { { from: number, to: number } } = {}
@@ -188,16 +229,39 @@ function M.history(s: Session): History
 		else
 			heading("agent")
 			if e.kind == "thought" then
-				-- Folded to its first line, tab shows the rest.
-				local thought = string.split(core.text.trim(e.text), "\n")
-				local more = if #thought > 1 then (if e.open then " ▾" else " ▸") else ""
 				local id = M.thought_id(index)
-				tools[#lines] = id
-				add(`  … {thought[1]}{more}`, "comment")
-				if e.open then
-					for i = 2, #thought do
-						tools[#lines] = id
-						add(`    {thought[i]}`, "comment")
+				local function row(line: string, style: string)
+					tools[#lines] = id
+					add(line, style)
+				end
+				local text = core.text.trim(e.text)
+				local thought = string.split(text, "\n")
+				local first = thought[1]
+				local tokens = M.tokens(compact.estimate(#e.text))
+				if index == #s.entries and thinking(s) and not e.open then
+					-- Still coming in: its first line, its newest lines and a
+					-- count that goes up, so a long one doesn't look stuck.
+					row(`  … {core.text.clip(first, room - 4)}`, "comment")
+					for _, line in thought_tail(text, room) do
+						row(`    {line}`, "comment")
+					end
+					local took = elapsed(e.since or s.since or greed.now())
+					row(`    thinking · {tokens} tokens · {took}`, "agent.hint")
+				else
+					-- Folded to its first line, tab shows the rest.
+					local about = ` · thought, {tokens} tokens`
+					local shown = if e.open
+						then first
+						else core.text.clip(first, room - 4 - width(about))
+					local mark = if #thought == 1 and shown == first
+						then "…"
+						elseif e.open then "▾"
+						else "▸"
+					row(`  {mark} {shown}{about}`, "comment")
+					if e.open then
+						for i = 2, #thought do
+							row(`    {thought[i]}`, "comment")
+						end
 					end
 				end
 			elseif e.kind == "tool" then
@@ -356,11 +420,6 @@ function M.tokens(count: number): string
 	return string.format("%.1fM", count / 1e6)
 end
 
--- How long since `since` (on greed.now()'s clock): 9s, 2m 05s.
-local function elapsed(since: number): string
-	return core.time.duration(greed.now() - since, true)
-end
-
 -- A theme entry's color, when it's a "#rrggbb" one.
 local function color(name: string, key: "fg" | "bg"): { number }?
 	local entry = greed.theme.get(name)
@@ -422,7 +481,7 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 		local doing = if helpers > 0
 			then `waiting for {helpers} {if helpers == 1 then "helper" else "helpers"}`
 			elseif s.tool then session.first_line(s.tool)
-			else "thinking"
+			else s.doing or "working"
 		local lit = if now then shimmer(doing, (now % 1600) / 1600) else nil
 		if lit then
 			table.move(lit, 1, #lit, #left + 1, left)
@@ -625,9 +684,16 @@ local function tick(buffer: greed.Buffer, s: Session)
 	end
 	ticking[id] = true
 	greed.spawn(function()
+		local second = nil
 		while busy(s) and shown[id] == s do
 			local animate = core.effects.enabled()
-			pcall(live, buffer, s, if animate then greed.now() else nil)
+			local now = greed.now()
+			-- A thought coming in counts its time in the history.
+			if thinking(s) and now // SECOND_MS ~= second then
+				second = now // SECOND_MS
+				pcall(M.render, buffer, s)
+			end
+			pcall(live, buffer, s, if animate then now else nil)
 			greed.sleep(if animate then FRAME_MS else SECOND_MS)
 		end
 		ticking[id] = nil
@@ -645,11 +711,11 @@ function M.render(buffer: greed.Buffer, s: Session)
 	-- handle (yours) may not.
 	buffer = owned[id] or buffer
 	shown[id] = s
-	local history = M.history(s)
+	local cells = box_width(buffer)
+	local history = M.history(s, cells)
 	rows[id] = history.tools
 	plains[id] = history.plain
 	spinning[id] = history.running
-	local cells = box_width(buffer)
 	local top, top_styles = M.top(s, cells)
 	local row, row_marks = question.row(buffer, s, cells)
 	local head = if row then `{top}\n{row}` else top

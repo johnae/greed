@@ -9,7 +9,7 @@
 
 local greed = require("@greed")
 local registry = require("./registry")
-local untrusted = require("./untrusted")
+local untrusted = require("./untrusted").wrap
 
 greed.option.define({
 	name = "web-search",

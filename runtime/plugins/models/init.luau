@@ -1113,15 +1113,17 @@ local fingerprints: { [string]: turn.Fingerprint } = {}
 --- the tool calls it asked for and why it stopped. `on_open` gets what
 --- closes the answer's stream once it starts, to stop it early: the turn
 --- then ends with what came so far. `on_thinking` gets what the model
---- thinks as it arrives, when the provider shows it. The request's
---- `effort` is the role's unless it says (see `effort`). Waits like
---- greed.sleep.
+--- thinks as it arrives, when the provider shows it, and `on_calling`
+--- hears each piece of a tool call's arguments as it arrives. The
+--- request's `effort` is the role's unless it says (see `effort`). Waits
+--- like greed.sleep.
 function M.turn(
 	role: string,
 	request: turn.Request,
 	on_text: ((text: string) -> ())?,
 	on_open: ((close: () -> ()) -> ())?,
-	on_thinking: ((text: string) -> ())?
+	on_thinking: ((text: string) -> ())?,
+	on_calling: (() -> ())?
 ): (turn.Turn?, string?)
 	local chosen, provider, key, why = greed.vouch(connect, role)
 	if chosen == nil or provider == nil then
@@ -1211,6 +1213,8 @@ function M.turn(
 			end
 			if text and on_text then
 				on_text(text)
+			elseif not thinking and on_calling and reader.calling() then
+				on_calling()
 			end
 			if finished then
 				response:close()

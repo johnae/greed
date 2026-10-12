@@ -8,6 +8,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
+local untrusted = require("./untrusted")
 local registry = core.registry
 
 --- Who's calling a tool. `kind` says how they reach Greed: "shell" for
@@ -423,6 +424,7 @@ function M.instructions(): string
 		"To add something to Greed itself (a command, keys, a panel), switch on the plugins tool group "
 			.. "and use plugin_guide, then plugin_try until it passes, then plugin_install, which the "
 			.. "user reviews. Don't write plugins into the project unless they ask.",
+		untrusted.NOTE,
 	}
 	local config = greed.fs.dirs().config
 	if config then

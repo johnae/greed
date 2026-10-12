@@ -121,8 +121,11 @@ function M.ask(
 	end
 	local models = require("@models")
 	local untrusted = nil
+	local note = ""
 	if table.find(plugins, "agent") then
-		untrusted = require("@agent").untrusted
+		local agent = require("@agent")
+		untrusted = agent.untrusted
+		note = " " .. agent.untrusted_note
 	end
 	local program = fallback.which()
 	local role = greed.option.get("shell-ask-role") :: string
@@ -130,7 +133,8 @@ function M.ask(
 	local answer, err = models.ask(role, {
 		system = `You write a command line for the user's shell, {program}, that does what they ask. `
 			.. "Reply with only the command, on one line when it can be: no explanation, no code "
-			.. "fences. It goes to their prompt, where they read, change and run it.",
+			.. "fences. It goes to their prompt, where they read, change and run it."
+			.. note,
 		messages = { { role = "user", content = M.message(shell, draft, question, untrusted) } },
 	})
 	-- Asked, whatever came of it.

@@ -252,6 +252,49 @@ test("tool rows say what came back in a few words, never as JSON", function(t)
 	assert(string.find(bottom(), " 1.5k / 200k tokens ─╯", 1, true), bottom())
 end)
 
+test("the status says whether Greed's agent waits for the model, thinks or writes", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	models.roles.agent = { provider = "mistral", model = "test-model" }
+	local seen: { string } = {}
+	local function look()
+		greed.sleep(50)
+		table.insert(seen, (string.match(bottom(), "^╰─ %S+ (.-) · %d+s") or bottom()))
+	end
+	local at = 0
+	models.turn = function(_role, _request, on_text, _on_open, on_thinking, on_calling)
+		at += 1
+		look()
+		if at == 1 then
+			on_thinking("Which file?")
+			look()
+			on_calling()
+			look()
+			return {
+				text = "",
+				calls = { { id = "c1", name = "project", input = {} } },
+				stop = "tools",
+			},
+				nil
+		end
+		on_text("Done.")
+		look()
+		return { text = "Done.", calls = {}, stop = "done" }, nil
+	end
+	local s =
+		assert(acp.start({ name = "greed", title = "Greed", commands = {}, native = true }, dir))
+	acp.show(s)
+	t:wait(30)
+	greed.spawn(function()
+		acp.prompt(s, "look")
+	end)
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local said = table.concat(seen, " | ")
+	assert(said == "waiting for mistral | thinking | writing | waiting for mistral | writing", said)
+	models.roles.agent = nil
+end)
+
 -- What's typed in the box once no question shows in it.
 local function draft(): string
 	return string.match(greed.view():buffer():text(), "ctrl%-c stops ─╮\n(.*)$") or "?"
@@ -469,6 +512,66 @@ test("the agent's Markdown shows as Markdown, its markup hidden", function(t)
 	assert(string.find(screen(t, 70), "**x**", 1, true), screen(t, 70))
 	t:keys("esc")
 	acp.stop(s)
+end)
+
+test("a thought still coming in shows its first line, its last lines and a count", function(t)
+	local s = start(t)
+	local lines = { "Planning the fix." }
+	for i = 1, 6 do
+		table.insert(lines, `step {i} of the plan`)
+	end
+	-- One long line at the end, as a model thinking in one paragraph writes.
+	table.insert(lines, string.rep("word ", 40) .. "newest")
+	local text = table.concat(lines, "\n")
+	s.status = "working"
+	s.since = greed.now()
+	table.insert(s.entries, { kind = "thought", text = text, since = greed.now() - 250000 })
+	s.changed()
+	t:wait(30)
+	local drawn = screen(t, 70)
+	local tokens = math.ceil(#text / 4)
+	assert(string.find(drawn, "▍ … Planning the fix.\n", 1, true), drawn)
+	assert(not string.find(drawn, "step 4", 1, true), "only the last lines: " .. drawn)
+	assert(string.find(drawn, "newest\n", 1, true), "the newest words show: " .. drawn)
+	assert(string.find(drawn, `▍   thinking · {tokens} tokens · 4m 1`, 1, true), drawn)
+	-- Each line fits the view.
+	for row in string.gmatch(drawn, "[^\n]+") do
+		assert((utf8.len(row) or 0) <= 70, row)
+	end
+	-- More comes in, and the time goes on.
+	s.entries[#s.entries].text ..= "\nthen the test"
+	s.changed()
+	t:wait(1100)
+	drawn = screen(t, 70)
+	assert(string.find(drawn, "then the test\n", 1, true), drawn)
+	assert(string.find(drawn, "· 4m 11s", 1, true), "a second later: " .. drawn)
+	-- The turn ends: folded to its first line with how long it was.
+	s.status = "idle"
+	s.changed()
+	t:wait(30)
+	drawn = screen(t, 70)
+	tokens = math.ceil(#s.entries[#s.entries].text / 4)
+	assert(
+		string.find(drawn, `▍ ▸ Planning the fix. · thought, {tokens} tokens\n`, 1, true),
+		drawn
+	)
+	assert(not string.find(drawn, "▍   thinking", 1, true), drawn)
+	assert(not string.find(drawn, "then the test", 1, true), drawn)
+end)
+
+test("a thought is done once something comes after it", function(t)
+	local s = start(t)
+	s.status = "working"
+	s.since = greed.now()
+	table.insert(s.entries, { kind = "thought", text = "Look at a.txt.\nIt's short." })
+	table.insert(s.entries, { kind = "agent", text = "Reading it." })
+	s.changed()
+	t:wait(30)
+	local drawn = screen(t, 70)
+	assert(string.find(drawn, "▸ Look at a.txt. · thought, 7 tokens\n", 1, true), drawn)
+	assert(not string.find(drawn, "▍   thinking", 1, true), drawn)
+	s.status = "idle"
+	s.changed()
 end)
 
 test("a tool's output shows exactly as it is, its stars and backticks too", function(t)

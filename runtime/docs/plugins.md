@@ -2048,11 +2048,20 @@ goes back as an error, so `error("there's no file " .. path, 0)` tells the
 agent what went wrong.
 
 Hand text someone else wrote, like a web page or another agent's report,
-back through `agent.untrusted(source, text)`: it's wrapped in markers the
-text can't close, after a line telling the model to use it as information
-and not to follow instructions in it. Secrets in it (private keys, API
-tokens, values named like passwords) are hidden first, and the line says
-how many; `agent.redact(text)` does that alone.
+back through `agent.untrusted(source, text)`: it goes between
+`<untrusted-…>` tags the text can't close, with `source` saying where it
+came from. Greed's agent and MCP clients are told once what the tags mean;
+a model you ask yourself with `models.ask` needs `agent.untrusted_note` in
+its system prompt. Secrets in the text (private keys, API tokens, values
+named like passwords) are hidden first, and the tag says how many;
+`agent.redact(text)` does that alone.
+
+```text
+<untrusted-3fa2c1b0e9d4 source="what `cat .env` printed" hidden="1 secret">
+DB_HOST=db.internal
+DB_PASSWORD=[secret hidden]
+</untrusted-3fa2c1b0e9d4>
+```
 
 A tool can wait: for a process, a request, or the user. Changes to files
 are best proposed, so the user reviews them first and the tool hears what

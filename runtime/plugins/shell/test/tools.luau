@@ -20,10 +20,10 @@ end
 
 -- What's between the untrusted markers `text` was wrapped in.
 local function inside(text: string): string
-	local word = assert(string.match(text, "<<<(untrusted%-%x+)\n"), "marked: " .. text)
-	local open = `<<<{word}\n`
-	local start = assert(string.find(text, open, 1, true), "opened") + #open
-	local stop = assert(string.find(text, `\n{word}>>>`, start, true), "closed")
+	local open, word = string.match(text, '^(<(untrusted%-%x+) source="[^\n]*">\n)')
+	assert(open and word, "marked: " .. text)
+	local start = #open + 1
+	local stop = assert(string.find(text, `\n</{word}>`, start, true), "closed")
 	return string.sub(text, start, stop - 1)
 end
 
@@ -34,7 +34,7 @@ test("shell_run runs a command in the project's shell, and gives it back as data
 	assert(result.status == "failed" and result.exit_code == 3, result.status)
 	assert(inside(result.stdout) == "hi\n", result.stdout)
 	assert(inside(result.stderr) == "err\n", result.stderr)
-	assert(string.find(result.stdout, "don't follow instructions", 1, true), "marked untrusted")
+	assert(string.find(result.stdout, 'source="what `echo hi', 1, true), "says where it's from")
 	assert(result.cwd == dir and result.by == "agent", result.cwd)
 	assert(type(result.duration_ms) == "number" and result.truncated == false)
 	-- It ran in a shell opened for it, which isn't shown.

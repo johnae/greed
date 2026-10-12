@@ -85,6 +85,10 @@ fn agents_get_mcp_answers_and_the_tools_list() {
         .unwrap();
     assert_eq!(init["serverInfo"]["name"], "greed");
     let said = init["instructions"].as_str().unwrap_or_default();
+    assert!(
+        said.contains("<untrusted-…> tags"),
+        "what marks text from outside: {said}"
+    );
     assert!(said.contains("plugin_guide"), "how to add to Greed: {said}");
     assert_eq!(
         init["capabilities"]["tools"],
