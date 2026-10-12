@@ -2715,6 +2715,113 @@ test("a helper's row shows what it does while it works, and enter shows its tran
 	})
 end)
 
+-- Starts a turn whose helper waits on a tool until the signal returned is
+-- sent, with the transcript shown, and waits for the helper's row to say
+-- so. Gives back the session, the signal and what puts things back.
+local function helper_running(t: test.TestContext): (any, greed.Signal, () -> ())
+	local go = greed.signal()
+	agent.tool({
+		name = "test_wait",
+		description = "waits",
+		run = function()
+			go:wait()
+			return "seen"
+		end,
+	})
+	local helped = 0
+	model(function(request, n)
+		if from_helper(request) then
+			helped += 1
+			return if helped == 1
+				then {
+					text = "",
+					calls = { { id = "h1", name = "test_wait", input = {} } },
+					stop = "tools",
+				}
+				else { text = "Found it.", calls = {}, stop = "done" }
+		end
+		return if n == 1
+			then { text = "", calls = { hands("c1", "look around") }, stop = "tools" }
+			else DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "go")
+	t:wait_for(function()
+		return string.find(table.concat(s.tools.c1.detail, " · "), "test_wait", 1, true) ~= nil
+	end)
+	t:wait(30)
+	return s,
+		go,
+		function()
+			go:send(true)
+			t:wait_for(function()
+				return s.status == "idle"
+			end)
+			agent.tool({
+				name = "test_wait",
+				description = "gone",
+				run = function()
+					return nil
+				end,
+			})
+		end
+end
+
+test("enter on a helper's row opens it while the row ticks, and esc or q close it", function(t)
+	local s, _, done = helper_running(t)
+	local transcript = require("../transcript")
+	local main = greed.view()
+	local buffer = main:buffer()
+	local line = assert(transcript.line_of_tool(buffer, "c1"))
+	main:set_cursor(buffer:line_start(line))
+	t:keys("esc")
+	-- The row ticks each second; the cursor stays on it.
+	t:wait(2100)
+	assert(buffer:line_of(main:cursor()) == line, `the cursor went to {main:cursor()}`)
+	t:keys("enter")
+	t:wait(30)
+	local helper = helper_of(s)
+	local float = greed.view()
+	assert(float:float_spec() ~= nil, "a float")
+	assert(acp.of(float:buffer()) == helper, "the helper's transcript")
+	t:keys("esc")
+	assert(not float:valid(), "esc closed it")
+	assert(greed.view() == main, "back where it was opened from")
+	assert(main:buffer():line_of(main:cursor()) == line, "on its row")
+	t:keys("enter")
+	t:wait(30)
+	float = greed.view()
+	assert(acp.of(float:buffer()) == helper, "open again")
+	t:keys("q")
+	assert(not float:valid(), "q closed it")
+	assert(greed.view() == main, "back again")
+	-- In the main chat esc does what it always does.
+	t:keys("esc q")
+	assert(main:valid() and greed.view() == main, "the chat stays")
+	done()
+end)
+
+test("alt-up from the box highlights a helper's row and enter opens it", function(t)
+	local s, _, done = helper_running(t)
+	local transcript = require("../transcript")
+	local main = greed.view()
+	local buffer = main:buffer()
+	local line = assert(transcript.line_of_tool(buffer, "c1"))
+	main:set_cursor(buffer:len())
+	t:keys("i alt-up")
+	local picked = assert(transcript.picked(buffer), "a row is highlighted")
+	assert(picked.line == line, `{picked.line} is not {line}`)
+	t:wait(1100)
+	assert(transcript.picked(buffer) ~= nil, "it stays highlighted while the row ticks")
+	t:keys("enter")
+	t:wait(30)
+	assert(acp.of(greed.view():buffer()) == helper_of(s), "the helper's transcript")
+	t:keys("esc esc")
+	assert(greed.view() == main, "back")
+	done()
+end)
+
 test("helpers called together work at once, each on its own row", function(t)
 	-- One for each helper: a signal wakes one waiter.
 	local gos: { greed.Signal } = {}

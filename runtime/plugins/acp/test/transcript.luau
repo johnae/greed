@@ -3,6 +3,7 @@ local greed = require("@greed")
 local acp = require("@acp")
 local core = require("@core")
 local models: any = require("@models")
+local transcript = require("../transcript")
 
 local FAKE: acp.Agent = {
 	name = "fake",
@@ -676,15 +677,176 @@ local function prompt(t: test.TestContext, s: any, text: string)
 	t:wait(60)
 end
 
-test("with the box on screen, what the agent adds scrolls into view", function(t)
+test("with the cursor in the box, what the agent adds scrolls into view", function(t)
 	local s = start(t)
-	send(t, s, "hello")
-	greed.view():set_cursor(0)
+	for _ = 1, 3 do
+		send(t, s, "markdown")
+	end
+	local view = greed.view()
+	view:set_cursor(view:buffer():len())
 	screen(t)
 	prompt(t, s, "markdown")
-	local view = greed.view()
-	assert(view:cursor() == view:buffer():len(), "the cursor went to the box")
+	assert(view:cursor() == view:buffer():len(), "the cursor stayed in the box")
 	assert(string.find(screen(t), "ready", 1, true), "the box shows: " .. screen(t))
+end)
+
+-- Adds a row for tool call `id` to `s`, with `output` lines, and draws it.
+local function tool_row(s: any, id: string, output: { string }?): any
+	local tool = {
+		id = id,
+		title = `look at {id}`,
+		status = "completed",
+		detail = { "done" },
+		output = output or {},
+		open = false,
+	}
+	s.tools[id] = tool
+	table.insert(s.entries, { kind = "tool", tool = tool })
+	return tool
+end
+
+-- The line the row highlighted in the transcript shown is on, if one is.
+local function highlighted_line(): number?
+	local buffer = greed.view():buffer()
+	local mark = buffer:decorations("acp-pick")[1]
+	return if mark then buffer:line_of(mark.from) else nil
+end
+
+-- The line tool call `id`'s row is on in the transcript shown.
+local function row_of(id: string): number
+	return assert(transcript.line_of_tool(greed.view():buffer(), id), id)
+end
+
+test("moved up into the history, the cursor stays while a row ticks below it", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	-- A helper's row ticks each second, with the agent's words after it.
+	local ticking = tool_row(s, "h1")
+	ticking.status = "in_progress"
+	table.insert(s.entries, { kind = "agent", text = "and after it\nmore words" })
+	s.status = "working"
+	s.since = greed.now()
+	s.changed()
+	t:wait(60)
+	local view = greed.view()
+	local buffer = view:buffer()
+	assert(string.find(screen(t), "╰─", 1, true), "the box is on screen: " .. screen(t))
+	local below = (string.find(buffer:text(), "more words", 1, true) or 1) - 1
+	assert(below > 0, "words below the row")
+	for _, at in { 0, below } do
+		view:set_cursor(at)
+		screen(t)
+		for second = 1, 3 do
+			ticking.detail = { `{second}s` }
+			s.changed()
+			t:wait(400)
+			screen(t)
+			assert(view:cursor() == at, `{at}: the cursor went to {view:cursor()}`)
+		end
+	end
+	-- Back in the box, it follows the end again.
+	view:set_cursor(buffer:len())
+	table.insert(s.entries, { kind = "agent", text = "the end" })
+	s.status = "idle"
+	s.changed()
+	t:wait(60)
+	assert(view:cursor() == buffer:len(), "following")
+	assert(string.find(screen(t), "the end", 1, true), screen(t))
+end)
+
+test("alt-up highlights the newest row to act on, enter opens it, typing", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	local older = tool_row(s, "t1", { "one", "two" })
+	local newer = tool_row(s, "t2", { "three", "four" })
+	s.changed()
+	t:wait(60)
+	type_in(t, "h i")
+	t:keys("i alt-up")
+	assert(highlighted_line() == row_of("t2"), tostring(highlighted_line()))
+	t:keys("alt-up")
+	assert(highlighted_line() == row_of("t1"), tostring(highlighted_line()))
+	t:keys("alt-down")
+	assert(highlighted_line() == row_of("t2"), tostring(highlighted_line()))
+	t:keys("enter")
+	assert(newer.open and not older.open, "enter unfolded the newer one")
+	assert(core.style.is_typing(), "still typing")
+	assert(draft() == "hi", draft())
+	assert(highlighted_line() == row_of("t2"), "it stays highlighted")
+	t:keys("tab")
+	assert(not newer.open, "tab folds it")
+	-- Typing drops the highlight and goes in the box.
+	t:keys("!")
+	assert(highlighted_line() == nil, "typing drops it")
+	assert(draft() == "hi!", draft())
+	-- Down past the newest goes back to the box.
+	t:keys("alt-up alt-down")
+	assert(highlighted_line() == nil, "back in the box")
+	assert(greed.view():cursor() == greed.view():buffer():len(), "at the end")
+end)
+
+test("esc drops the highlight, and then rejects a question as always", function(t)
+	local s = start(t)
+	ask(t, s)
+	tool_row(s, "t1", { "one", "two" })
+	s.changed()
+	t:wait(60)
+	type_in(t, "")
+	t:keys("i alt-up")
+	local line = highlighted_line()
+	assert(line ~= nil, "a row is highlighted")
+	t:keys("esc")
+	assert(highlighted_line() == nil, "esc drops it")
+	assert(core.style.is_typing(), "still typing")
+	assert(greed.view():cursor() == greed.view():buffer():len(), "back in the box")
+	assert(s.status == "waiting", "the question still waits")
+	t:keys("esc esc")
+	assert(answered(t, s) == "Reject", "esc rejects as before")
+end)
+
+test("moving off the highlighted row drops the highlight", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	tool_row(s, "t1", { "one", "two" })
+	s.changed()
+	t:wait(60)
+	t:keys("alt-up")
+	assert(highlighted_line() == row_of("t1"), tostring(highlighted_line()))
+	greed.view():set_cursor(0)
+	t:wait(30)
+	assert(highlighted_line() == nil, "moving away drops it")
+end)
+
+test("a click on a row opens it, and a click in the box puts the cursor there", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	local tool = tool_row(s, "t1", { "one", "two" })
+	s.changed()
+	t:wait(60)
+	local function click(text: string)
+		local rows = t:draw(70, 16)
+		for row, drawn in rows do
+			local at = string.find(drawn, text, 1, true)
+			if at then
+				local col = utf8.len(string.sub(drawn, 1, at - 1)) :: number
+				t:mouse("press", col + 1, row - 1)
+				t:mouse("release", col + 1, row - 1)
+				return
+			end
+		end
+		error(`{text} isn't on screen`)
+	end
+	click("look at t1")
+	assert(tool.open, "the click unfolded it")
+	assert(greed.view():buffer():line_of(greed.view():cursor()) == row_of("t1"), "on its row")
+	click("look at t1")
+	assert(not tool.open, "a click folds it again")
+	type_in(t, "h i")
+	t:keys("esc")
+	greed.view():set_cursor(0)
+	click("hi")
+	local view = greed.view()
+	assert(view:cursor() >= assert(transcript.prompt_start(view:buffer())), "in the box")
 end)
 
 test("scrolled up away from the box, the view stays where you are", function(t)

@@ -102,7 +102,14 @@ export type History = {
 	--- number: headings, tools and their output, plans, questions. They
 	--- show as they are; only what was said shows as Markdown.
 	plain: { [number]: boolean },
+	--- The rows you can act on, top to bottom.
+	rows: { Row },
 }
+
+--- A row you can act on with enter, tab or a click, by 0-based line, and
+--- what it stands for: a tool call's id, a thought's (`thought_id`), a
+--- question waiting (`question:N`) or a shell block's fence (`code:N`).
+export type Row = { line: number, key: string }
 
 --- What stands for the thought at `index` of a session's entries among
 --- the tool calls drawn on each line (`tool_at`), to fold it.
@@ -215,6 +222,7 @@ function M.history(s: Session, cells: number?): History
 		end
 	end
 	local tools: { [number]: string } = {}
+	local actionable: { Row } = {}
 	local thoughts = greed.option.get("agent-thoughts") ~= false
 	for index, entry in s.entries do
 		local e = entry :: any
@@ -230,6 +238,7 @@ function M.history(s: Session, cells: number?): History
 			heading("agent")
 			if e.kind == "thought" then
 				local id = M.thought_id(index)
+				table.insert(actionable, { line = #lines, key = id })
 				local function row(line: string, style: string)
 					tools[#lines] = id
 					add(line, style)
@@ -293,6 +302,9 @@ function M.history(s: Session, cells: number?): History
 					style = GLYPH_STYLE[status] or "agent.hint",
 				})
 				local first = #lines
+				if tool.helper or #tool.output > 1 then
+					table.insert(actionable, { line = first, key = tool.id })
+				end
 				add(line, "agent.hint", named)
 				for i = 2, #title_lines do
 					add(`    {title_lines[i]}`)
@@ -325,6 +337,7 @@ function M.history(s: Session, cells: number?): History
 				if e.chosen then
 					add(`  ? {asked}: {e.chosen}`, "comment")
 				else
+					table.insert(actionable, { line = #lines, key = `question:{index}` })
 					add(`  ? Allow {asked}?`, "agent.working")
 				end
 			end
@@ -351,6 +364,7 @@ function M.history(s: Session, cells: number?): History
 		tools = tools,
 		running = running,
 		plain = plain,
+		rows = actionable,
 	}
 end
 
@@ -583,6 +597,14 @@ local ticking: { [number]: boolean } = {}
 -- The plugin's own handle on each transcript buffer, for drawing above the
 -- box, which is read-only to you.
 local owned: { [number]: greed.Buffer } = {}
+-- Per transcript buffer: the rows you can act on as last drawn, the one
+-- highlighted (`M.pick`) by its key, where in the box the cursor was
+-- before, counted from the end, and what was in the box when last drawn,
+-- so typing drops the highlight.
+local actionable: { [number]: { Row } } = {}
+local picked: { [number]: string } = {}
+local picked_from: { [number]: number } = {}
+local drafts: { [number]: string } = {}
 
 --- The shell code block `pos` in `buffer` is on, if you or the agent wrote
 --- it above the box.
@@ -619,6 +641,52 @@ local function box_width(buffer: greed.Buffer): number
 	return if widest > 0 then math.max(widest - 1, 20) else DEFAULT_WIDTH
 end
 
+-- The rows of `buffer` you can act on, as last drawn.
+local function rows_of(buffer: greed.Buffer): { Row }
+	return actionable[buffer:id()] or {}
+end
+
+-- The highlighted row of `buffer`, if one is.
+local function picked_row(buffer: greed.Buffer): Row?
+	local key = picked[buffer:id()]
+	for _, row in rows_of(buffer) do
+		if row.key == key then
+			return row
+		end
+	end
+	return nil
+end
+
+-- Binds the keys of `buffer`, whose box holds `draft`, for the question
+-- it shows (question.luau) and, over them, for the highlighted row.
+local function bind(buffer: greed.Buffer, draft: string)
+	local keys = question.keys(buffer, draft)
+	if picked[buffer:id()] then
+		local over: { [string]: string } = keys or {}
+		over.enter = "agent-answer"
+		over.tab = "agent-fold"
+		over.esc = "agent-row-drop"
+		keys = over
+	end
+	buffer:set_keys(keys)
+end
+
+-- Draws the highlight over the row picked in `buffer`, dropping it when the
+-- row went.
+local function draw_pick(buffer: greed.Buffer)
+	local row = picked_row(buffer)
+	if row == nil then
+		picked[buffer:id()] = nil
+		buffer:decorate("acp-pick", {})
+		return
+	end
+	local from = buffer:line_start(row.line)
+	buffer:decorate(
+		"acp-pick",
+		{ { from = from, to = buffer:line_end(row.line), style = "agent.picked", line = true } }
+	)
+end
+
 -- Draws what changes without the text changing: the box's sides around
 -- what you write, its bottom line with the status, and the running tools'
 -- marks. With `now`, animations are drawn at that time.
@@ -630,7 +698,14 @@ local function live(buffer: greed.Buffer, s: Session, now: number?)
 		return
 	end
 	local draft = M.prompt(buffer)
-	question.bind(buffer, draft)
+	local id = buffer:id()
+	-- Typing in the box drops the highlight.
+	if drafts[id] ~= nil and drafts[id] ~= draft and picked[id] then
+		picked[id] = nil
+		draw_pick(buffer)
+	end
+	drafts[id] = draft
+	bind(buffer, draft)
 	local cells = box_width(buffer)
 	local marks: { greed.Mark } = {}
 	local count = buffer:line_count()
@@ -743,21 +818,33 @@ local function show(buffer: greed.Buffer, s: Session, cells: number, history: Hi
 	else
 		local old = buffer:slice(0, stop)
 		if old ~= wanted then
+			-- Only what changed is replaced, so a cursor before or after it,
+			-- like yours up in the history while a helper's row ticks, stays
+			-- where it is.
+			local function inside(text: string, at: number): boolean
+				local byte = string.byte(text, at + 1) or 0
+				return byte >= 0x80 and byte < 0xC0
+			end
 			local same = 0
 			local shortest = math.min(#old, #wanted)
 			while same < shortest and string.byte(old, same + 1) == string.byte(wanted, same + 1) do
 				same += 1
 			end
-			-- Not inside a character.
-			while
-				same > 0
-				and (string.byte(wanted, same + 1) or 0) >= 0x80
-				and (string.byte(wanted, same + 1) or 0) < 0xC0
-			do
+			while same > 0 and inside(wanted, same) do
 				same -= 1
 			end
+			local tail = 0
+			while
+				tail < shortest - same
+				and string.byte(old, #old - tail) == string.byte(wanted, #wanted - tail)
+			do
+				tail += 1
+			end
+			while tail > 0 and inside(wanted, #wanted - tail) do
+				tail -= 1
+			end
 			buffer:edit(function(e)
-				e:replace(same, stop, string.sub(wanted, same + 1))
+				e:replace(same, stop - tail, string.sub(wanted, same + 1, #wanted - tail))
 			end, OUT_OF_UNDO)
 		end
 	end
@@ -778,7 +865,15 @@ local function show(buffer: greed.Buffer, s: Session, cells: number, history: Hi
 		mark.to += row_at
 	end
 	buffer:decorate("acp-choices", row_marks)
-	code.draw(buffer, at, history.plain)
+	local rows = table.clone(history.rows)
+	for n, block in code.draw(buffer, at, history.plain) do
+		table.insert(rows, { line = block.open, key = `code:{n}` })
+	end
+	table.sort(rows, function(a: Row, b: Row)
+		return a.line < b.line
+	end)
+	actionable[id] = rows
+	draw_pick(buffer)
 	live(buffer, s, if busy(s) and core.effects.enabled() then greed.now() else nil)
 end
 
@@ -855,47 +950,93 @@ function M.clear_prompt(buffer: greed.Buffer)
 	end
 end
 
---- The views of `buffer` showing the box's top line, the end of the
---- history, to keep following it as the agent adds more (`follow`).
-function M.following(buffer: greed.Buffer): { greed.View }
-	local start = prompt_head(buffer)
-	local out: { greed.View } = {}
-	if start == nil then
-		return out
-	end
-	for _, view in buffer:views() do
-		local _, last = view:visible()
-		if last >= start then
-			table.insert(out, view)
-		end
-	end
-	return out
-end
-
---- Puts the cursor of each of `views` that's up in the history, and not
---- selecting anything, at the end of the box, so drawing scrolls down to
---- what the agent added.
-function M.follow(buffer: greed.Buffer, views: { greed.View })
-	local start = prompt_head(buffer)
-	if start == nil then
-		return
-	end
-	for _, view in views do
-		if view:valid() then
-			local ranges = view:selection().ranges
-			local only = ranges[1]
-			if #ranges == 1 and only.anchor == only.head and only.head < start then
-				view:set_cursor(buffer:len())
-			end
-		end
-	end
-end
+-- A view follows what the agent adds while its cursor is in the box:
+-- drawing keeps the cursor where it is, and the view on it, so a cursor
+-- moved up into the history stays there and the view with it.
 
 --- Puts the cursor in `view` at the end of what's in the box.
 function M.focus_prompt(view: greed.View)
 	local pos = view:buffer():len()
 	view:set_cursor(pos)
 end
+
+--- The row you can act on that `line` of `buffer` is, if it's one.
+function M.row_at(buffer: greed.Buffer, line: number): Row?
+	for _, row in rows_of(buffer) do
+		if row.line == line then
+			return row
+		end
+	end
+	return nil
+end
+
+--- The row highlighted in `buffer` (`M.pick`), if one is.
+M.picked = picked_row
+
+--- Moves the highlight in the transcript `view` shows over the rows you
+--- can act on: `by` -1 to the one above (from the box, the newest), 1 to
+--- the one below, and from the newest back to the box. The cursor goes
+--- to the row, so the view shows it, and back to where it was in the box
+--- after. Returns whether a row is highlighted.
+function M.pick(view: greed.View, by: number): boolean
+	local buffer = view:buffer()
+	local id = buffer:id()
+	local rows = rows_of(buffer)
+	local current = picked_row(buffer)
+	local found = if current then table.find(rows, current) else nil
+	local index: number
+	if found == nil then
+		if by > 0 or #rows == 0 then
+			return false
+		end
+		local head = prompt_head(buffer)
+		local cursor = view:cursor()
+		picked_from[id] = if head and cursor >= head then buffer:len() - cursor else 0
+		index = #rows
+	else
+		index = found + by
+		if index > #rows then
+			M.unpick(view, true)
+			return false
+		end
+		index = math.max(index, 1)
+	end
+	local row = rows[index]
+	picked[id] = row.key
+	draw_pick(buffer)
+	view:set_cursor(buffer:line_start(row.line))
+	bind(buffer, M.prompt(buffer))
+	return true
+end
+
+--- Drops the highlight in the transcript `view` shows; with `back`, the
+--- cursor goes back to where it was in the box.
+function M.unpick(view: greed.View, back: boolean?)
+	local buffer = view:buffer()
+	local id = buffer:id()
+	if picked[id] == nil then
+		return
+	end
+	picked[id] = nil
+	draw_pick(buffer)
+	bind(buffer, M.prompt(buffer))
+	if back then
+		view:set_cursor(math.max(buffer:len() - (picked_from[id] or 0), 0))
+	end
+end
+
+-- Moving the cursor off the highlighted row drops the highlight.
+greed.on("selection.changed", function(event: greed.SelectionChanged)
+	local view = event.view
+	if not view:valid() or view ~= greed.view() then
+		return
+	end
+	local buffer = view:buffer()
+	local row = picked_row(buffer)
+	if row and buffer:line_of(view:cursor()) ~= row.line then
+		M.unpick(view)
+	end
+end)
 
 -- The box's sides follow what you write.
 greed.on("buffer.changed", function(event: greed.BufferChanged)
@@ -934,6 +1075,10 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	spinning[event.id] = nil
 	owned[event.id] = nil
 	drawing[event.id] = nil
+	actionable[event.id] = nil
+	picked[event.id] = nil
+	picked_from[event.id] = nil
+	drafts[event.id] = nil
 end)
 
 return M

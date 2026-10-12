@@ -156,6 +156,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["agent.box"] = { fg = p.gutter },
 		["agent.box.title"] = { fg = p.fg, bold = true },
 		["agent.hint"] = { fg = p.comment },
+		["agent.picked"] = { bg = tint(accent, 0.28) },
 		["agent.working"] = { fg = p.yellow },
 		["agent.waiting"] = { bg = p.yellow, fg = p.bg, bold = true },
 		["agent.done"] = { fg = p.green },

@@ -10,6 +10,9 @@
 -- while the agent works) and ctrl-c stops the agent's turn. A question the
 -- agent asks shows as a row of choices in the box, answered with enter or
 -- a choice's letter in any mode, or rejected with esc (question.luau).
+-- Enter or a click on a row opens it (a helper's transcript, a tool's
+-- output, a thought), and alt-up and alt-down highlight rows to open from
+-- the box (transcript.luau's `pick`).
 -- A message like /model or /effort high runs one of Greed's chat commands
 -- instead of going to the agent, and tab after / completes them
 -- (slash.luau).
@@ -205,9 +208,7 @@ local function changed(s: Session)
 		queued[s.id] = nil
 		local buffer = buffers[s.id]
 		if buffer and buffer:valid() then
-			local following = transcript.following(buffer)
 			pcall(transcript.render, buffer, s)
-			transcript.follow(buffer, following)
 			-- Its float, if it has one, says it's waiting for you.
 			core.floats.attention(buffer, s.status == "waiting")
 		end
@@ -1300,22 +1301,47 @@ local function helper_at(ctx: greed.Context, s: Session): (Session?, boolean)
 	return nil, true
 end
 
+-- The floats showing a transcript opened from a row of another, by view
+-- id: the view it was opened from and the row's key, to go back to when
+-- it closes.
+local opened_from: { [number]: { view: greed.View, key: string } } = {}
+
+greed.on("view.closed", function(event: greed.ViewClosed)
+	opened_from[event.view] = nil
+end)
+
+-- Opens or folds the row the cursor is on in the transcript of `s`: a
+-- helper's transcript in a float, a tool's output or a thought. Returns
+-- whether the cursor was on such a row.
+local function open_row(ctx: greed.Context, s: Session): boolean
+	local helper, named = helper_at(ctx, s)
+	if helper then
+		local from = ctx.view
+		local key = transcript.tool_at(ctx.buffer, ctx.buffer:line_of(from:cursor())) :: string
+		local float = place(helper, "float")
+		if float ~= from then
+			opened_from[float:id()] = { view = from, key = key }
+		end
+		return true
+	elseif named then
+		greed.echo("that helper's session isn't running any more; space i l lists the kept ones")
+		return true
+	end
+	local row = transcript.row_at(ctx.buffer, ctx.buffer:line_of(ctx.view:cursor()))
+	if row and (s.tools[row.key] or transcript.thought_of(row.key)) then
+		greed.run("agent-fold")
+		return true
+	end
+	return false
+end
+
 greed.command({
 	name = "agent-answer",
-	doc = "Draw the question the agent waits on in the box again, to answer it there; on a helper's row, show its transcript; on a button, like a code block's run, press it",
+	doc = "On a row of a transcript, open it: a helper's transcript in a float, a tool's output or a thought; on a button, like a code block's run, press it; else draw the question the agent waits on in the box again, to answer it there",
 	run = function(ctx)
 		local s = current(ctx)
-		if s then
-			local helper, named = helper_at(ctx, s)
-			if helper then
-				M.show(helper, "float")
-				return
-			elseif named then
-				greed.echo(
-					"that helper's session isn't running any more; space i l lists the kept ones"
-				)
-				return
-			end
+		if s and by_buffer[ctx.buffer:id()] == s and open_row(ctx, s) then
+			return
 		end
 		local buffer = s and buffers[s.id]
 		if s == nil or buffer == nil or not question.waits(s) then
@@ -1326,9 +1352,104 @@ greed.command({
 			end
 			return
 		end
+		-- From the question's row, to the box, where enter answers.
+		local row = transcript.row_at(ctx.buffer, ctx.buffer:line_of(ctx.view:cursor()))
+		if row and string.find(row.key, "^question:") then
+			if transcript.picked(ctx.buffer) then
+				transcript.unpick(ctx.view, true)
+			else
+				transcript.focus_prompt(ctx.view)
+			end
+		end
 		transcript.render(buffer, s)
 	end,
 })
+
+greed.command({
+	name = "agent-row-up",
+	doc = "In a transcript, highlight the row above to open with enter or fold with tab: from the box, the newest",
+	run = function(ctx)
+		if by_buffer[ctx.buffer:id()] and not transcript.pick(ctx.view, -1) then
+			greed.echo("no row here to open")
+		end
+	end,
+})
+
+greed.command({
+	name = "agent-row-down",
+	doc = "In a transcript, highlight the row below; from the newest, back to the box",
+	run = function(ctx)
+		if by_buffer[ctx.buffer:id()] then
+			transcript.pick(ctx.view, 1)
+		end
+	end,
+})
+
+greed.command({
+	name = "agent-row-drop",
+	doc = "Drop the highlight from a transcript's row, back to the box",
+	run = function(ctx)
+		transcript.unpick(ctx.view, true)
+	end,
+})
+
+greed.command({
+	name = "agent-float-close",
+	doc = "Close a transcript's float opened from a row of another, back to that row; elsewhere, what the key does otherwise",
+	run = function(ctx)
+		local from = opened_from[ctx.view:id()]
+		if from == nil then
+			-- What the key runs in the layers under this one.
+			local ours: string? = nil
+			for _, bound in greed.keymap.describe(ctx.keys or "") do
+				if bound.command == "agent-float-close" then
+					ours = ours or bound.layer
+				elseif ours and bound.layer ~= ours then
+					greed.run(bound.command)
+					return
+				end
+			end
+			return
+		end
+		opened_from[ctx.view:id()] = nil
+		ctx.view:close()
+		local view = from.view
+		if view:valid() then
+			view:focus()
+			local buffer = view:buffer()
+			local line = transcript.line_of_tool(buffer, from.key)
+			if line then
+				view:set_cursor(buffer:line_start(line))
+			end
+		end
+	end,
+})
+
+-- A click on a row opens or folds it, as enter does. A shell block's fence
+-- isn't one: its buttons are.
+core.mouse.claim("agent-transcript", function(event: greed.MouseEvent): boolean
+	local view, pos = event.view, event.pos
+	if
+		view == nil
+		or pos == nil
+		or event.kind ~= "press"
+		or event.button ~= "left"
+		or event.shift
+		or event.alt
+		or event.ctrl
+	then
+		return false
+	end
+	local buffer = view:buffer()
+	local row = transcript.row_at(buffer, buffer:line_of(pos))
+	if row == nil or string.find(row.key, "^code:") then
+		return false
+	end
+	view:focus()
+	view:set_cursor(buffer:line_start(row.line))
+	greed.run("agent-answer")
+	return true
+end)
 
 -- The shell code block at the cursor in a transcript, or nil having said
 -- there's none.
@@ -1487,6 +1608,8 @@ end, "position")
 greed.keymap.bind({ role = "command", kind = "agent-transcript" }, {
 	enter = "agent-answer",
 	tab = "agent-fold",
+	esc = "agent-float-close",
+	q = "agent-float-close",
 })
 greed.keymap.bind({ kind = "agents" }, {
 	enter = "agents-show",
@@ -1517,6 +1640,9 @@ greed.keymap.bind({ kind = "agent-transcript" }, {
 	["alt-M"] = "agent-model",
 	["alt-v"] = "paste-image",
 	["alt-x"] = "agent-drop-images",
+	-- Over moving between panes, which alt-h/j/k/l still do here.
+	["alt-up"] = "agent-row-up",
+	["alt-down"] = "agent-row-down",
 })
 greed.keymap.bind({ role = "typing", kind = "agent-transcript" }, { tab = "agent-complete" })
 

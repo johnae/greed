@@ -147,13 +147,12 @@ local function letters_answer(draft: string): boolean
 	return not core.style.is_typing() or string.match(draft, "^%s*$") ~= nil
 end
 
---- Binds the row's keys for `buffer`, whose box holds `draft`, while it
---- shows, and drops them when it doesn't.
-function M.bind(buffer: greed.Buffer, draft: string)
+--- The row's keys for `buffer`, whose box holds `draft`, while it shows,
+--- for the transcript to bind (`buffer:set_keys`); nil when it doesn't.
+function M.keys(buffer: greed.Buffer, draft: string): { [string]: string }?
 	local _, state = shown_in(buffer)
 	if state == nil then
-		buffer:set_keys(nil)
-		return
+		return nil
 	end
 	local keys: { [string]: string } = {
 		enter = "agent-choice-pick",
@@ -168,7 +167,7 @@ function M.bind(buffer: greed.Buffer, draft: string)
 			keys[key] = "agent-choice-key"
 		end
 	end
-	buffer:set_keys(keys)
+	return keys
 end
 
 --- What the box's bottom line says works for the question `s` waits on.

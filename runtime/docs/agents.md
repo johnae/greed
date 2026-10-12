@@ -560,9 +560,34 @@ editing a file, like your config, the edit's row already holds the change
 (`-1 +1 · tab shows the change`): `tab` shows the lines going and the ones
 coming, in the theme's diff colours, before you answer.
 
-While the box is on screen, the transcript scrolls down as the agent
-adds to it, taking your cursor back to the box (unless you're selecting
-text). Scroll up away from the box and it stays where you are.
+While your cursor is in the box, the transcript scrolls down as the agent
+adds to it. Move the cursor up into the history (with any motion, the
+mouse wheel or a click) and the view stays where you are, while the agent
+streams too, until you go back to the box.
+
+Rows you can act on are tool calls with more to show, helpers' calls,
+thoughts, questions and shell code fences. `enter` on one opens it: a
+helper's transcript in a float, a tool's output or a thought unfolded (or
+folded again), the question drawn in the box to answer, or a fence's
+buttons to pick from. `tab` folds it, and a click does what `enter` does
+(a fence's buttons take their own clicks). From the box, without leaving
+insert mode:
+
+| Key | Does |
+| --- | --- |
+| `alt-up` | Highlight the row above, from the box the newest |
+| `alt-down` | Highlight the row below; past the newest, back to the box |
+| `enter` | Open the highlighted row |
+| `tab` | Fold or unfold the highlighted row |
+| `esc` | Drop the highlight, back to where you were in the box |
+
+Typing drops the highlight too and goes in the box. In a transcript
+`alt-up` and `alt-down` do this instead of moving between panes, which
+`alt-k` and `alt-j` still do there.
+
+A helper's transcript opened from its row closes with `esc` (in normal
+mode) or `q`, back to the row it was opened from. Elsewhere those keys do
+what they always do.
 
 Write in the box at the bottom; it grows as you write, and its top shows
 the agent, its mode and model. `alt-enter` sends and `ctrl-c` stops the
@@ -596,8 +621,8 @@ has room for, when it says that too; Greed's own agent always does). With the ef
 agent thinks and the waiting chip pulses; nothing moves while the agent
 is idle. Themes style it with `agent.you` (your messages' background),
 `agent.you.bar`, `agent.bar`, `agent.box`, `agent.box.title`,
-`agent.hint`, `agent.working`, `agent.waiting`, `agent.done` and
-`agent.failed`.
+`agent.hint`, `agent.picked` (the highlighted row), `agent.working`,
+`agent.waiting`, `agent.done` and `agent.failed`.
 
 When the agent asks before doing something, the question shows as a row
 of choices at the top of the box, like
@@ -807,8 +832,9 @@ says so. Several `subagent` calls in one answer run at once.
 While a helper works, its call's row in the transcript shows the task,
 what the helper is doing (its tool call, "thinking" or "waiting for you"),
 how long it has worked and the tokens it has used, and the box's bottom
-line says `waiting for 2 helpers`. `enter` on the row shows the helper's
-own transcript in a float, during and after its work, and `ctrl-c` stops
+line says `waiting for 2 helpers`. `enter` on the row (or `alt-up` to it
+from the box, then `enter`) shows the helper's own transcript in a float,
+during and after its work; `esc` or `q` closes it again. `ctrl-c` stops
 the helpers along with the turn. When it's done, `tab` on the row unfolds
 what it reported.
 

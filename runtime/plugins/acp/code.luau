@@ -89,10 +89,11 @@ local BUTTONS = {
 }
 
 --- Draws the buttons on the opening fence of each shell block in `buffer`
---- that `M.blocks` finds.
-function M.draw(buffer: greed.Buffer, stop: number?, plain: { [number]: boolean }?)
+--- that `M.blocks` finds, and gives back those blocks.
+function M.draw(buffer: greed.Buffer, stop: number?, plain: { [number]: boolean }?): { Code }
 	local marks: { greed.Mark } = {}
-	for _, code in M.blocks(buffer, stop, plain) do
+	local blocks = M.blocks(buffer, stop, plain)
+	for _, code in blocks do
 		local from, to = buffer:line_start(code.open), buffer:line_end(code.open)
 		for _, button in BUTTONS do
 			table.insert(marks, {
@@ -106,6 +107,7 @@ function M.draw(buffer: greed.Buffer, stop: number?, plain: { [number]: boolean 
 		end
 	end
 	buffer:decorate("acp-code", marks)
+	return blocks
 end
 
 --- Why `text` is risky to run, as `core.risk` says: a command in it

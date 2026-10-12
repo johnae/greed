@@ -165,13 +165,15 @@ return {
 	["ui.multibuffer.note"] = { fg = "bright-black", italic = true },
 
 	-- An agent's transcript: your messages' background and bar, the agent's
-	-- bar, the box you write in, and tool calls and the status.
+	-- bar, the box you write in, tool calls and the status, and the row
+	-- highlighted to open.
 	["agent.you"] = { bg = "black" },
 	["agent.you.bar"] = { fg = "blue" },
 	["agent.bar"] = { fg = "magenta" },
 	["agent.box"] = { fg = "bright-black" },
 	["agent.box.title"] = { bold = true },
 	["agent.hint"] = { fg = "bright-black" },
+	["agent.picked"] = { bg = "blue", fg = "bright-white" },
 	["agent.working"] = { fg = "yellow" },
 	["agent.waiting"] = { bg = "yellow", fg = "black", bold = true },
 	["agent.done"] = { fg = "green" },
