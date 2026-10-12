@@ -271,12 +271,35 @@ local function document_width(buffer: greed.Buffer): number
 	return 60
 end
 
--- The lines of `data` charted as `ask` asks, for `buffer`; or why it can't be.
-local function chart_lines(
-	buffer: greed.Buffer,
-	data: markdown.Data,
-	ask: string
-): { greed.MarkLine }
+-- `spec`'s items `by` rows lower down: a chart under a comment line it
+-- starts on draws from the line after.
+local function lower(items: { any }, by: number)
+	for _, item in items do
+		for _, point in item.points or {} :: { { number } } do
+			point[2] += by
+		end
+		if item.at then
+			item.at[2] += by
+		end
+		if item.base then
+			item.base += by
+		end
+		if item.clip then
+			item.clip[2] += by
+			item.clip[4] += by
+		end
+		if item.items then
+			lower(item.items, by)
+		end
+	end
+end
+
+-- A chart drawn: its lines, and its scene a row lower (nil when there's
+-- none) and how many cells wide.
+type Charted = { lines: { greed.MarkLine }, spec: scene.Spec?, cols: number }
+
+-- `data` charted as `ask` asks, for `buffer`; or why it can't be.
+local function charted(buffer: greed.Buffer, data: markdown.Data, ask: string): Charted
 	local rows: { { [string]: string } } = {}
 	for _, row in data.rows do
 		local cells: { [string]: string } = {}
@@ -286,16 +309,46 @@ local function chart_lines(
 		table.insert(rows, cells)
 	end
 	local tbl: shell.Table = { columns = data.keys, rows = rows }
-	local lines, why = M.lines(tbl, ask, document_width(buffer), nil)
-	if lines == nil then
-		return { { { text = `⚠ {why}`, style = "markdown.value.error" } } }
+	local made, why = make(tbl, ask, document_width(buffer), nil, nil)
+	if made == nil then
+		return { lines = { { { text = `⚠ {why}`, style = "markdown.value.error" } } }, cols = 0 }
 	end
-	local shown: { greed.MarkLine } = {}
-	for _, line in lines do
-		table.insert(shown, pieces(line))
+	local lines: { greed.MarkLine } = {}
+	for _, line in made.lines do
+		table.insert(lines, pieces(line))
 	end
-	return shown
+	local spec = made.spec
+	if spec then
+		lower(spec.items, 1)
+	end
+	return { lines = lines, spec = spec, cols = made.cols }
 end
+
+-- The scenes charts in each document drew, by its buffer's id and the line
+-- of the chart, to draw again as the chart changes and forget with it.
+local document_scenes: { [number]: { [number]: number } } = {}
+
+-- The scene for the chart on line `n` of `buffer`, showing `spec`.
+local function scene_for(buffer: greed.Buffer, n: number, spec: scene.Spec): number
+	local id = buffer:id()
+	local known = document_scenes[id] or {}
+	document_scenes[id] = known
+	local before = known[n]
+	if before and greed.scene.set(before, spec) then
+		return before
+	end
+	local made = greed.scene.new(spec)
+	known[n] = made
+	return made
+end
+
+greed.on("buffer.closed", function(event)
+	local known: { [number]: number } = document_scenes[event.id] or {}
+	for _, id in known do
+		greed.scene.forget(id)
+	end
+	document_scenes[event.id] = nil
+end)
 
 markdown.conceal({
 	ns = "chart-tables",
@@ -311,12 +364,26 @@ markdown.conceal({
 				if ask and n >= first and n <= last then
 					local d = data or markdown.values.data(buffer, s, found)
 					data = d
-					table.insert(out, {
-						from = s.starts[n + 1],
-						to = s.starts[n + 1] + #s.lines[n + 1],
-						style = "",
-						lines = chart_lines(buffer, d, ask),
-					})
+					local chart = charted(buffer, d, ask)
+					local from, to = s.starts[n + 1], s.starts[n + 1] + #s.lines[n + 1]
+					table.insert(out, { from = from, to = to, style = "", lines = chart.lines })
+					-- For the clients that draw one, the chart's scene over its
+					-- lines, from the comment line it's under. Empty, as those
+					-- lines are only drawn, not the file's: the scene is placed
+					-- from where it starts, over what's drawn below.
+					local spec = chart.spec
+					if spec and scene.drawn() then
+						table.insert(out, {
+							from = from,
+							to = from,
+							style = "",
+							scene = {
+								id = scene_for(buffer, n, spec),
+								cols = chart.cols,
+								rows = #chart.lines + 1,
+							},
+						})
+					end
 				end
 				n += 1
 			end
