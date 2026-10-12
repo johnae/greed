@@ -399,6 +399,13 @@ With nobody attached, a request fails at once. Greed turns ssh's own
 forwarding off for its connection, so the session has one way to your
 keys.
 
+The agent brought along is the one `SSH_AUTH_SOCK` names where you run
+`greed ssh`, if it answers. A shell can keep one that's gone, like a
+terminal's whose window closed; then Greed uses the `IdentityAgent` your
+ssh config names for the host, if that answers. When the agent can't be
+reached, the status line says so and why, rather than leaving only
+"agent refused operation" in the program that asked.
+
 Before a program there signs with one of your keys, Greed asks on your
 screen, and `y` allows it. Listing your keys doesn't ask. The
 `ssh-agent-confirm` option says when to ask: `first` (the default) once

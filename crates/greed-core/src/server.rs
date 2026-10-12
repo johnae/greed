@@ -63,6 +63,9 @@ pub enum Input {
     /// didn't fit it (see [`crate::delta::FrameDelta::apply`]): the next
     /// frame comes whole.
     Refresh,
+    /// Something went wrong on the client's side that you should know,
+    /// like the ssh agent it relays not answering: said on its status line.
+    Problem(String),
     Quit,
 }
 
@@ -383,6 +386,7 @@ fn turn_of(input: &Input) -> Turn {
         | Input::SshAgentReply(..)
         | Input::Log(_)
         | Input::Refresh
+        | Input::Problem(_)
         | Input::Quit => Turn::Never,
     }
 }
@@ -873,6 +877,12 @@ impl Server<'_> {
                         "client {}: its frame didn't match what it was sent; sending it whole",
                         id.0
                     ));
+                }
+            }
+            Input::Problem(ref text) => {
+                self.log(&format!("client {}: {text}", id.0));
+                if let Some(client) = self.clients.get_mut(&id) {
+                    client.message = Some(text.clone());
                 }
             }
             // The client in this process ends the editor; another leaves it.

@@ -814,3 +814,18 @@ fn a_client_of_another_build_is_told_which_build_the_session_runs() {
     assert!(!said.contains("attached with build"), "{said}");
     conn.input.send(Input::Quit).unwrap();
 }
+
+#[test]
+fn a_problem_a_client_reports_shows_on_its_status_line() {
+    let (conn, attach, _) = start("problem");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    client.first_row();
+    // A key would clear it, as it does any message; nothing else is sent.
+    client.send(&Input::Problem("agent gone".into()));
+    client.first_row();
+    let rows = greed_core::render::grid::text_rows(client.1.as_ref().unwrap());
+    let last = rows.last().cloned().unwrap_or_default();
+    assert!(last.contains("agent gone"), "{rows:?}");
+    conn.input.send(Input::Quit).unwrap();
+}

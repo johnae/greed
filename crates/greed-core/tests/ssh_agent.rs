@@ -99,7 +99,7 @@ impl Session {
                     continue;
                 };
                 count.fetch_add(1, Ordering::SeqCst);
-                let answer = ssh_agent::ask_base64(relays.as_deref(), &body);
+                let answer = ssh_agent::ask_base64(relays.as_deref(), &body).ok();
                 let reply = serde_json::to_string(&Input::SshAgentReply(id, answer)).unwrap();
                 if writeln!(writer, "{reply}").is_err() {
                     return;
@@ -232,5 +232,20 @@ fn signing_a_plugin_refuses_is_refused() {
     session.attach(Some(agent.clone()));
     assert_eq!(session.ask(&SIGN), FAILURE);
     assert_eq!(asked.load(Ordering::SeqCst), 0);
+    remove(&agent);
+}
+
+#[test]
+fn an_agent_that_answers_is_told_from_one_whose_socket_is_gone() {
+    let (agent, _) = fake_agent("answers");
+    assert!(ssh_agent::answers(&agent));
+    let gone = agent.with_file_name("gone.sock");
+    assert!(!ssh_agent::answers(&gone));
+    // Asked through it, it says why, naming the socket.
+    let why = ssh_agent::ask_base64(Some(&gone), "Cw==").unwrap_err();
+    assert!(
+        why.contains("doesn't answer") && why.contains("gone.sock"),
+        "{why}"
+    );
     remove(&agent);
 }

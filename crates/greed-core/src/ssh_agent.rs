@@ -157,21 +157,42 @@ fn write_message(writer: &mut impl Write, body: &[u8]) -> io::Result<()> {
 /// whose body is `body`, and gives back its answer's body. A client calls
 /// this for the session's `Output::SshAgentRequest`.
 pub fn ask(socket: &Path, body: &[u8]) -> io::Result<Vec<u8>> {
+    ask_within(socket, body, WAIT)
+}
+
+/// [`ask`], waiting for the answer at most `wait`.
+fn ask_within(socket: &Path, body: &[u8], wait: Duration) -> io::Result<Vec<u8>> {
     let mut stream = UnixStream::connect(socket)?;
-    stream.set_read_timeout(Some(WAIT))?;
+    stream.set_read_timeout(Some(wait))?;
     write_message(&mut stream, body)?;
     read_message(&mut stream)
 }
 
 /// [`ask`] with the request and its answer in base64, as they go between
-/// a session and its client: `None` without an agent (`socket`) or when it
-/// couldn't be asked.
-pub fn ask_base64(socket: Option<&Path>, body: &str) -> Option<String> {
+/// a session and its client; an error says why it couldn't be asked, as
+/// without an agent (`socket`) or with one that doesn't answer.
+pub fn ask_base64(socket: Option<&Path>, body: &str) -> Result<String, String> {
     use base64::Engine;
     let engine = &base64::engine::general_purpose::STANDARD;
-    let body = engine.decode(body).ok()?;
-    let answer = ask(socket?, &body).ok()?;
-    Some(engine.encode(answer))
+    let body = engine.decode(body).map_err(|err| err.to_string())?;
+    let socket = socket.ok_or("there's no ssh agent here (SSH_AUTH_SOCK isn't set)")?;
+    let answer = ask(socket, &body).map_err(|err| {
+        format!(
+            "your ssh agent at {} doesn't answer: {err}",
+            socket.display()
+        )
+    })?;
+    Ok(engine.encode(answer))
+}
+
+/// Whether the agent at `socket` answers, asked for its keys within a
+/// couple of seconds.
+pub fn answers(socket: &Path) -> bool {
+    /// `SSH2_AGENTC_REQUEST_IDENTITIES`, and the answer it gets.
+    const LIST: u8 = 11;
+    const KEYS: u8 = 12;
+    ask_within(socket, &[LIST], Duration::from_secs(2))
+        .is_ok_and(|answer| answer.first() == Some(&KEYS))
 }
 
 #[cfg(test)]

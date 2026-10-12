@@ -183,7 +183,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> 
             }
         };
         opening = Opening::Nothing;
-        match show(reader, writer, false)? {
+        match show(reader, writer, false, None)? {
             Output::Switch(SwitchTo {
                 host: Some(host),
                 session,
@@ -323,11 +323,13 @@ pub fn open_window(to: SwitchTo) {
 
 /// Shows an attached session in this terminal: input goes to `writer` and
 /// frames come from `reader`, one JSON message per line, from a session on
-/// another machine with `remote`. Returns how it ended.
+/// another machine with `remote`. The session's requests for your ssh agent
+/// go to `agent`, the one this client relays. Returns how it ended.
 fn show(
     reader: impl BufRead + Send + 'static,
     mut writer: impl Write + Send + 'static,
     remote: bool,
+    agent: Option<PathBuf>,
 ) -> Result<Output, Error> {
     client::set_remote(remote);
     let (input, inputs) = crossbeam_channel::unbounded::<Input>();
@@ -345,9 +347,10 @@ fn show(
             }
         }
     });
-    // The ssh agent on this machine, for a session this client relays it to.
-    let agent = local_agent();
     let replies = input.clone();
+    // Whether the agent's last failure was said, so a burst of requests
+    // says it once, and again only after it answered in between.
+    let said = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     std::thread::spawn(move || {
         for line in reader.lines() {
             let Ok(line) = line else { break };
@@ -364,10 +367,20 @@ fn show(
             };
             // Asked off this thread: a key touch can take a while.
             if let Output::SshAgentRequest(id, body) = message {
-                let (agent, replies) = (agent.clone(), replies.clone());
+                let (agent, replies, said) = (agent.clone(), replies.clone(), said.clone());
                 std::thread::spawn(move || {
+                    use std::sync::atomic::Ordering;
                     let answer = greed_core::ssh_agent::ask_base64(agent.as_deref(), &body);
-                    let _ = replies.send(Input::SshAgentReply(id, answer));
+                    // Why it failed goes on the status line, rather than
+                    // only "agent refused operation" in the program.
+                    match &answer {
+                        Ok(_) => said.store(false, Ordering::Relaxed),
+                        Err(why) if !said.swap(true, Ordering::Relaxed) => {
+                            let _ = replies.send(Input::Problem(why.clone()));
+                        }
+                        Err(_) => {}
+                    }
+                    let _ = replies.send(Input::SshAgentReply(id, answer.ok()));
                 });
                 continue;
             }
@@ -513,7 +526,15 @@ pub fn ssh(
     };
     // A terminal or shell is asked for once, not again after a switch.
     loop {
-        let ended = match ssh_once(&host, &greed, &to, config.as_deref(), opening, new, agent) {
+        let ended = match ssh_once(
+            &host,
+            &greed,
+            &to,
+            config.as_deref(),
+            opening,
+            new,
+            agent.as_deref(),
+        ) {
             Ok(ended) => ended,
             Err(err) => {
                 let Some(refused) = versions::other_version(&err) else {
@@ -651,29 +672,50 @@ fn local_agent() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Whether `greed ssh` relays your ssh agent to the session on `host`: when
-/// you have one here (`SSH_AUTH_SOCK`) and your ssh config forwards it to
-/// that host (`ForwardAgent yes`, as `ssh -G` reads it).
-fn relays_agent(host: &str) -> bool {
-    if local_agent().is_none() {
-        return false;
-    }
-    ssh_command()
+/// The ssh agent `greed ssh` relays to the session on `host`, when your ssh
+/// config forwards one there (`ForwardAgent yes`, as `ssh -G` reads it):
+/// `SSH_AUTH_SOCK` if it answers, else the `IdentityAgent` your config
+/// names for the host if that does. A shell can keep a socket that's gone,
+/// like a terminal's whose window closed. With neither answering it's still
+/// `SSH_AUTH_SOCK`, so the session can say why requests fail.
+fn relays_agent(host: &str) -> Option<PathBuf> {
+    let out = ssh_command()
         .args(["-G", host])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
-        .is_ok_and(|out| {
-            out.status.success()
-                && String::from_utf8_lossy(&out.stdout)
-                    .lines()
-                    .any(|line| line.trim().eq_ignore_ascii_case("forwardagent yes"))
+        .ok()
+        .filter(|out| out.status.success())?;
+    let config = String::from_utf8_lossy(&out.stdout);
+    let setting = |name: &str| {
+        config.lines().find_map(|line| {
+            let (key, value) = line.trim().split_once(' ')?;
+            key.eq_ignore_ascii_case(name)
+                .then(|| value.trim().to_owned())
         })
+    };
+    if !setting("forwardagent").is_some_and(|v| v.eq_ignore_ascii_case("yes")) {
+        return None;
+    }
+    let local = local_agent();
+    if local.as_deref().is_some_and(greed_core::ssh_agent::answers) {
+        return local;
+    }
+    let named = setting("identityagent")
+        .filter(|v| !v.eq_ignore_ascii_case("none") && !v.eq_ignore_ascii_case("SSH_AUTH_SOCK"))
+        .map(|v| match (v.strip_prefix("~/"), std::env::var_os("HOME")) {
+            (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
+            _ => PathBuf::from(v),
+        });
+    named
+        .filter(|path| greed_core::ssh_agent::answers(path))
+        .or(local)
 }
 
 /// Shows the session `to` points at on `host` until it ends, lets go or
-/// switches; returns which. With `agent`, it relays your ssh agent to the
-/// session, which then has one way to it: ssh's own forwarding is off.
+/// switches; returns which. With `agent`, an ssh agent's socket here, it
+/// relays that agent to the session, which then has one way to it: ssh's
+/// own forwarding is off.
 fn ssh_once(
     host: &str,
     remote_greed: &str,
@@ -681,7 +723,7 @@ fn ssh_once(
     config: Option<&str>,
     opening: Opening,
     new: bool,
-    agent: bool,
+    agent: Option<&Path>,
 ) -> Result<Output, Error> {
     let line = bridge_command(remote_greed, to, config, new);
     let attach_failed = |err: Error| -> Error {
@@ -691,7 +733,7 @@ fn ssh_once(
         }
         format!("couldn't attach on {host}: {err}").into()
     };
-    let options: &[&str] = if agent {
+    let options: &[&str] = if agent.is_some() {
         &["-o", "ForwardAgent=no"]
     } else {
         &[]
@@ -703,10 +745,10 @@ fn ssh_once(
         &mut writer,
         to.session.as_deref(),
         opening,
-        agent,
+        agent.is_some(),
     )
     .map_err(attach_failed)?;
-    let ended = show(reader, writer, true)?;
+    let ended = show(reader, writer, true, agent.map(Path::to_path_buf))?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
     let _ = child.kill();
