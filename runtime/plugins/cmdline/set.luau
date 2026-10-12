@@ -192,8 +192,11 @@ function M.set(args: { string })
 	end
 end
 
-local option_arg: greed.ArgSpec = { name = "option", doc = "The option", complete = "option" }
+local option_arg: greed.ArgSpec =
+	{ name = "option", doc = "The option", complete = "option", type = "string" }
 
+-- :set stays untyped: its words take Vim's forms (noNAME, NAME!, NAME=VALUE,
+-- several at once), which it reads itself.
 greed.command({
 	name = "set",
 	doc = "Set an option: NAME VALUE; for a yes-or-no one, NAME, noNAME or NAME! as in Vim; NAME? shows it",
@@ -211,11 +214,7 @@ greed.command({
 	doc = "Turn a yes-or-no option on or off",
 	args = { option_arg },
 	run = function(ctx)
-		local name = ctx.args[1]
-		if name == nil then
-			error("toggle-option needs an option, e.g. :toggle auto-save", 0)
-		end
-		set_word(name .. "!")
+		set_word(ctx.values.option .. "!")
 	end,
 })
 
@@ -224,11 +223,7 @@ greed.command({
 	doc = "Show an option's value",
 	args = { option_arg },
 	run = function(ctx)
-		local name = ctx.args[1]
-		if name == nil then
-			error("get-option needs an option, e.g. :get text-width", 0)
-		end
-		set_word(name .. "?")
+		set_word(ctx.values.option .. "?")
 	end,
 })
 

@@ -68,10 +68,27 @@ local function commands(): { Entry }
 			line = command.line,
 			lines = function()
 				local lines = { doc_or_none(command.doc), "" }
+				if #command.args > 0 then
+					table.insert(lines, `Usage: :{command.usage}`)
+				end
 				for _, arg in command.args do
+					local about = {}
+					if arg.type then
+						table.insert(
+							about,
+							if arg.kind then `{arg.type} ({arg.kind})` else arg.type
+						)
+					end
+					if arg.optional then
+						table.insert(about, "optional")
+					end
+					if arg.choices then
+						table.insert(about, `one of {table.concat(arg.choices, ", ")}`)
+					end
+					local said = if #about > 0 then ` [{table.concat(about, ", ")}]` else ""
 					table.insert(
 						lines,
-						`Argument: {arg.name}{if arg.doc then "  " .. arg.doc else ""}`
+						`Argument: {arg.name}{said}{if arg.doc then "  " .. arg.doc else ""}`
 					)
 				end
 				local keys = keys_of(command.name)

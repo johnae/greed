@@ -215,6 +215,56 @@ keys for that buffer, in every mode and ahead of every other binding,
 while it has focus; `buffer:set_keys(nil)` drops them. The agent pane uses
 it to answer a question with `enter` or a letter whatever mode you're in.
 
+### Typed arguments
+
+An argument can say what it is with `type`, and Greed then checks what the
+command is given before it runs, however it runs: from keys, the command
+line, `greed.run` or an agent. The command gets the parsed values in
+`ctx.values`, by name, next to the words in `ctx.args`:
+
+```luau
+greed.command({
+	name = "repeat-line",
+	doc = "Copy the line a number of times, below or above",
+	args = {
+		{ name = "times", type = "number" },
+		{ name = "where", type = "choice", choices = { "below", "above" }, optional = true },
+	},
+	run = function(ctx)
+		local times: number = ctx.values.times
+		local where: string = ctx.values.where or "below"
+		greed.echo(`{times} copies {where}`)
+	end,
+})
+```
+
+`:repeat-line abc` doesn't run; it says `:repeat-line TIMES [WHERE]: "abc"
+isn't a number`. The types:
+
+| `type` | Takes | `ctx.values` gets |
+| --- | --- | --- |
+| `"string"` (the default) | any word | the word |
+| `"number"` | a number | the number |
+| `"boolean"` | true/false, yes/no or on/off | true or false |
+| `"file"` | a file that exists, from the project's root when relative | its full path |
+| `"folder"` | a folder that exists, likewise | its full path |
+| `"choice"` | one of `choices` | the word |
+| `"object"` | an object of `kind`, by its key or label (see [Objects](#objects)) | the object |
+| `"rest"` | the rest of the words, last only | them, joined by spaces |
+
+`optional = true` lets an argument be left out, and it is then nil in
+`ctx.values`; arguments after an optional one must be optional too. Too
+few or too many words fail with the command's usage, as do words that
+don't parse. A spec that can't work, like a `"choice"` without `choices`,
+fails when the command is added. Commands whose arguments have no `type`
+work as they always have: nothing is checked, and `ctx.values` has the
+words by name.
+
+The command line completes a typed argument from its type when it has no
+`complete`: files, folders, true and false, the choices, or the objects of
+its kind. `greed.commands()` lists each argument's `type`, `optional`,
+`choices` and `kind`, and each command's `usage`.
+
 ### Actions on things
 
 `space .` lists what you can do with what's under the cursor, and `alt-.`
@@ -347,8 +397,10 @@ object has, uses it to look again every `watch-interval` seconds; a kind
 without it is found again by id and inspected.
 
 `objects.list(kind)`, `objects.get(id)`, `objects.inspect(object)`,
-`objects.related(object)` and `objects.at(view)` read them. A plugin's kinds
-go when it's unloaded.
+`objects.related(object)` and `objects.at(view)` read them.
+`objects.find(kind, text)` is the object of a kind someone typed: by the key
+in its id, else by its label; it's how a command's `"object"` argument is
+found. A plugin's kinds go when it's unloaded.
 
 ### Going to definitions and hover
 

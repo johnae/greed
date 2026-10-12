@@ -8,9 +8,9 @@ local prompt = require("./prompt")
 greed.command({
 	name = "secret-set",
 	doc = "Keep a secret, like an API key, in the system keyring (or Greed's secrets file)",
-	args = { { name = "name", doc = "e.g. anthropic" } },
+	args = { { name = "name", doc = "e.g. anthropic", type = "string", optional = true } },
 	run = function(ctx)
-		local name = ctx.args[1] or prompt.ask("Name of the secret, e.g. anthropic")
+		local name = ctx.values.name or prompt.ask("Name of the secret, e.g. anthropic")
 		if name == nil or name == "" then
 			return
 		end

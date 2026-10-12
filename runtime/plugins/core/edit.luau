@@ -401,9 +401,16 @@ greed.option.define({
 greed.command({
 	name = "reflow",
 	doc = "Rewrap the lines of each selection to the text width, or the width given",
-	args = { { name = "width", doc = "Columns; the text-width option without" } },
+	args = {
+		{
+			name = "width",
+			doc = "Columns; the text-width option without",
+			type = "number",
+			optional = true,
+		},
+	},
 	run = function(ctx)
-		local width = tonumber(ctx.args[1]) or greed.option.get("text-width") :: number
+		local width: number = ctx.values.width or greed.option.get("text-width") :: number
 		local buffer = ctx.buffer
 		buffer:edit(function(e)
 			for _, range in ctx.view:selection().ranges do

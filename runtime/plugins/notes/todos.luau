@@ -212,25 +212,40 @@ local function todo(text: string, name: string?)
 	M.add(text, name)
 end
 
--- Asks for a `what` (a todo, a thought) and adds it to note `inbox` with
--- `add`.
-local function capture(inbox: string, what: string, add: (text: string, name: string?) -> ())
-	prompt.open({
-		title = `{what} for {inbox}`,
-		on_submit = function(text)
-			if string.match(text, "%S") then
-				add(text, inbox)
-				greed.echo(`added to {inbox}`)
-			end
-		end,
-	})
+-- Adds `text` to note `inbox` with `add`, or asks for a `what` (a todo, a
+-- thought) to add when there's no text.
+local function capture(
+	inbox: string,
+	what: string,
+	add: (text: string, name: string?) -> (),
+	text: string?
+)
+	local function take(typed: string)
+		if string.match(typed, "%S") then
+			add(typed, inbox)
+			greed.echo(`added to {inbox}`)
+		end
+	end
+	if text then
+		take(text)
+		return
+	end
+	prompt.open({ title = `{what} for {inbox}`, on_submit = take })
 end
 
 greed.command({
 	name = "notes-capture",
 	doc = "Add a todo to the inbox note, from wherever you are: the project's when it keeps notes",
-	run = function()
-		capture(M.inbox(), "todo", todo)
+	args = {
+		{
+			name = "text",
+			doc = "The todo; asked for when left out",
+			type = "rest",
+			optional = true,
+		},
+	},
+	run = function(ctx)
+		capture(M.inbox(), "todo", todo, ctx.values.text)
 	end,
 })
 
@@ -265,8 +280,14 @@ greed.command({
 
 greed.command({
 	name = "notes-find",
-	doc = "Open a note by name",
-	run = function()
+	doc = "Open a note by name, or pick one",
+	args = { { name = "note", doc = "The note", type = "object", kind = "note", optional = true } },
+	run = function(ctx)
+		local note: core.Object? = ctx.values.note
+		if note then
+			core.file.open(notes.path(note.value))
+			return
+		end
 		local items = {}
 		for _, name in notes.all() do
 			table.insert(items, { label = name, value = name })

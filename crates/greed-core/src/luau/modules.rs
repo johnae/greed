@@ -323,7 +323,7 @@ fn bind(lua: &Lua, f: Function, first: &Table) -> LuaResult<Function> {
 }
 
 /// Resolves `.` and `..` without touching the file system.
-fn normalize(path: &Path) -> PathBuf {
+pub(super) fn normalize(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {

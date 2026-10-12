@@ -99,10 +99,18 @@ end
 greed.command({
 	name = "buffer",
 	doc = "Show an open file by its name or part of it, as Vim's :b does; # is the one you were in before",
-	args = { { name = "name", doc = "The file's name, or part of its path", complete = "buffer" } },
+	args = {
+		{
+			name = "name",
+			doc = "The file's name, or part of its path",
+			complete = "buffer",
+			type = "rest",
+			optional = true,
+		},
+	},
 	run = function(ctx)
-		local name = table.concat(ctx.args, " ")
-		if name == "" then
+		local name: string? = ctx.values.name
+		if name == nil then
 			greed.run("pick-buffer")
 		elseif name == "#" then
 			greed.run("goto-last-accessed-file")

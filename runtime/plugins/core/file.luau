@@ -321,10 +321,12 @@ greed.command({
 			name = "path",
 			doc = "Where to write it; it becomes the buffer's file",
 			complete = "file",
+			type = "string",
+			optional = true,
 		},
 	},
 	run = function(ctx)
-		local path = ctx.args[1]
+		local path: string? = ctx.values.path
 		if path and string.sub(path, 1, 1) == "!" then
 			error(
 				"Greed doesn't write to a program: :%!cmd puts the lines through it, :!cmd runs it in the shell",
@@ -615,10 +617,12 @@ greed.command({
 			name = "path",
 			doc = "The file to open; a new one is created when saved",
 			complete = "file",
+			type = "string",
+			optional = true,
 		},
 	},
 	run = function(ctx)
-		local path = ctx.args[1]
+		local path: string? = ctx.values.path
 		if path == nil and ctx.force then
 			-- :e! loads the file again, as in Vim.
 			greed.run("reload")
@@ -892,14 +896,12 @@ end
 greed.command({
 	name = "file-rename",
 	doc = "Rename or move this file: a name alone keeps it in its folder, a path is from the project",
-	args = { { name = "to", doc = "The new name, or a path", complete = "file" } },
+	args = { { name = "to", doc = "The new name, or a path", complete = "file", type = "string" } },
 	run = function(ctx)
 		local from = ctx.buffer:path()
-		local to = ctx.args[1]
+		local to: string = ctx.values.to
 		if from == nil then
 			error("this buffer has no file to rename; :w saves it as one", 0)
-		elseif to == nil then
-			error("file-rename needs the new name, e.g. :file-rename main.rs", 0)
 		end
 		local full = if string.find(to, "/", 1, true)
 			then project.resolve(to)

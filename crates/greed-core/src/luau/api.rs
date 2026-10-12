@@ -16,7 +16,7 @@ use super::handles::{self, BufferRef, ViewRef};
 use super::tasks;
 use super::{HostError, state, state_mut};
 use crate::keymap::{Bound, Found, Key, KeyCode, Layer, Mods, Next, Resolution};
-use crate::registry::{Arg, Command, OptionDef, PluginId, Source, Value as OptionValue};
+use crate::registry::{Command, OptionDef, PluginId, Source, Value as OptionValue};
 use crate::render::{Menu, MenuItem, Span, StatusLine, Tag};
 use crate::{
     Anchor, ClientLayout, CursorShape, Extent, FloatOptions, KeyOutcome, LineNumbers, Notice,
@@ -85,7 +85,7 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
         limit,
     } = how;
     let limit = limit.unwrap_or_else(|| state(lua).floor.clone());
-    let (handler, owner, client, view, buffer) = {
+    let (handler, owner, specs, client, view, buffer) = {
         let state = state(lua);
         let command = state
             .registry
@@ -96,11 +96,14 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
         (
             command.handler.clone(),
             command.owner.clone(),
+            command.args.clone(),
             client,
             view,
             state.editor.view(view).buffer,
         )
     };
+    let checked = super::args::check(lua, name, &specs, &args)?
+        .map_err(|why| HostError::Lua(mlua::Error::runtime(why)))?;
     let author = Author::User(client);
     let ctx = lua.create_table()?;
     ctx.set("client", client.0)?;
@@ -123,6 +126,7 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
         ctx.set("keys", keys_text(keys))?;
     }
     ctx.set("args", args)?;
+    ctx.set("values", checked.values)?;
     ctx.set("force", force)?;
     ctx.set("count", count)?;
     if let [
@@ -143,10 +147,15 @@ fn invoke_running(lua: &Lua, name: &str, how: Invocation) -> Result<Option<usize
     }
     event.set("count", count)?;
     emit_for_client(lua, "command.run", &event)?;
+    let (run, call) = if checked.objects.is_empty() {
+        (handler, mlua::IntoLuaMulti::into_lua_multi(ctx, lua)?)
+    } else {
+        super::args::with_objects(lua, name, &specs, handler, &ctx, checked.objects)?
+    };
     Ok(tasks::spawn_running(
         lua,
-        handler,
-        ctx,
+        run,
+        call,
         owner,
         Some(name.into()),
         limit,
@@ -479,13 +488,14 @@ fn command_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     lua.create_function(move |lua, spec: Table| {
         let name: String = spec.get("name")?;
         check_command_name(&name)?;
+        let args = super::args::read(&name, spec.get("args")?)?;
         let command = Command {
             name: name.into(),
             doc: spec
                 .get::<Option<String>>("doc")?
                 .unwrap_or_default()
                 .into(),
-            args: command_args(spec.get("args")?)?,
+            args,
             owner: o.clone(),
             source: caller(lua),
             handler: spec.get::<Function>("run")?,
@@ -591,6 +601,14 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         "statusline",
         lua.create_function(move |lua, build: Function| {
             state_mut(lua).statusline = Some((o.clone(), build));
+            Ok(())
+        })?,
+    )?;
+    let o = owner.clone();
+    greed.set(
+        "object_finder",
+        lua.create_function(move |lua, find: Function| {
+            state_mut(lua).object_finder = Some((o.clone(), find));
             Ok(())
         })?,
     )?;
@@ -1498,23 +1516,6 @@ fn option_to_lua(lua: &Lua, value: OptionValue) -> LuaResult<Value> {
     })
 }
 
-/// Reads a command's `args = { { name, doc, complete } }`.
-fn command_args(spec: Option<Table>) -> LuaResult<Vec<Arg>> {
-    let Some(spec) = spec else {
-        return Ok(Vec::new());
-    };
-    spec.sequence_values::<Table>()
-        .map(|arg| {
-            let arg = arg?;
-            Ok(Arg {
-                name: arg.get::<String>("name")?.into(),
-                doc: arg.get::<Option<String>>("doc")?.unwrap_or_default().into(),
-                complete: arg.get::<Option<String>>("complete")?.map(Into::into),
-            })
-        })
-        .collect()
-}
-
 /// Where the Luau code calling into Rust was written: the outermost call in
 /// the calling file, so a command defined through a helper points at the
 /// helper's call rather than inside the helper.
@@ -1637,13 +1638,13 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
                 entry.set("owner", &*command.owner)?;
                 let args = lua.create_table()?;
                 for arg in &command.args {
-                    let spec = lua.create_table()?;
-                    spec.set("name", &*arg.name)?;
-                    spec.set("doc", &*arg.doc)?;
-                    spec.set("complete", arg.complete.as_deref())?;
-                    args.push(spec)?;
+                    args.push(super::args::to_lua(lua, arg)?)?;
                 }
                 entry.set("args", args)?;
+                entry.set(
+                    "usage",
+                    crate::registry::usage(&command.name, &command.args),
+                )?;
                 set_source(&entry, &state.sources, command.source.as_ref())?;
                 list.push(entry)?;
             }

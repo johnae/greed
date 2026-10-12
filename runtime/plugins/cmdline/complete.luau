@@ -119,8 +119,9 @@ M.register("plugin", function()
 end)
 
 -- Paths one directory at a time: "src/" lists what's in src, "~/" the home
--- folder, and hidden ones show once what's typed starts with ".".
-M.register("file", function(word)
+-- folder, and hidden ones show once what's typed starts with ".". With
+-- `folders`, only folders.
+local function paths(word: string, folders: boolean): { Candidate }
 	local dir = string.match(word, "^(.*/)") or ""
 	local typed = string.sub(word, #dir + 1)
 	local entries: { greed.DirEntry } = greed.fs.list(
@@ -132,10 +133,58 @@ M.register("file", function(word)
 	) or {}
 	local items = {}
 	for _, entry in entries do
-		table.insert(items, { text = dir .. entry.name .. (if entry.dir then "/" else "") })
+		if entry.dir or not folders then
+			table.insert(items, { text = dir .. entry.name .. (if entry.dir then "/" else "") })
+		end
 	end
 	return items
+end
+
+M.register("file", function(word)
+	return paths(word, false)
 end)
+
+M.register("folder", function(word)
+	return paths(word, true)
+end)
+
+M.register("boolean", function()
+	return { { text = "true" }, { text = "false" } }
+end)
+
+-- What completes an argument that says its type but no `complete`: its
+-- choices, or the objects of its kind, by label when that's one word and
+-- else by the key in their id.
+local function from_type(spec: greed.ArgSpec): Completer?
+	local kind = spec.type
+	if kind == "file" or kind == "folder" or kind == "boolean" then
+		return completers[kind]
+	elseif kind == "choice" then
+		local choices: { string } = spec.choices or {}
+		return function()
+			local items = {}
+			for _, choice in choices do
+				table.insert(items, { text = choice })
+			end
+			return items
+		end
+	elseif kind == "object" and spec.kind then
+		local of = spec.kind
+		return function()
+			local items = {}
+			for _, object in core.objects.list(of) do
+				local key = string.sub(object.id, #of + 2)
+				local text = if string.find(object.label, "%s") then key else object.label
+				table.insert(
+					items,
+					{ text = text, doc = if text ~= object.label then object.label else nil }
+				)
+			end
+			return items
+		end
+	end
+	return nil
+end
 
 -- Candidates for the last word of `line`, that word, and the completer's
 -- preview if it has one. `first` lists what the first word can be;
@@ -160,9 +209,19 @@ function M.candidates(
 	end
 	for _, command in greed.commands() do
 		if command.name == name then
-			local spec = command.args[index]
+			local spec: greed.ArgSpec? = command.args[index]
+			-- A "rest" argument goes on for the words after it.
+			if spec == nil then
+				local last = command.args[#command.args]
+				spec = if last and last.type == "rest" then last else nil
+			end
 			local key = spec and spec.complete
-			local completer = key and completers[key]
+			local completer: Completer? = nil
+			if key then
+				completer = completers[key]
+			elseif spec then
+				completer = from_type(spec)
+			end
 			local before = table.move(parsed.args, 1, index - 1, 1, {})
 			return (if completer then rank(word, completer(word, before)) else {}),
 				word,

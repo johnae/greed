@@ -1249,6 +1249,279 @@ fn commands_get_arguments_and_force() {
     assert_eq!(args, "who Who to greet buffer");
 }
 
+const TYPED: &str = r#"
+local greed = require("@greed")
+local function show(v)
+  return if v == nil then "nil" else tostring(v)
+end
+greed.command {
+  name = "typed",
+  args = {
+    { name = "n", type = "number" },
+    { name = "flag", type = "boolean" },
+    { name = "pick", type = "choice", choices = { "a", "b" } },
+    { name = "more", type = "rest", optional = true },
+  },
+  run = function(ctx)
+    local v = ctx.values
+    greed.echo(`{show(v.n)} {show(v.flag)} {show(v.pick)} {show(v.more)} {#ctx.args}`)
+  end,
+}
+greed.command {
+  name = "two",
+  args = { { name = "first", type = "string" }, { name = "second", type = "string", optional = true } },
+  run = function(ctx)
+    greed.echo(`{ctx.values.first} {show(ctx.values.second)}`)
+  end,
+}
+greed.command {
+  name = "paths",
+  args = { { name = "file", type = "file", optional = true }, { name = "dir", type = "folder", optional = true } },
+  run = function(ctx)
+    greed.echo(`{show(ctx.values.file)} {show(ctx.values.dir)}`)
+  end,
+}
+greed.command {
+  name = "loose",
+  args = { { name = "a" }, { name = "b" } },
+  run = function(ctx)
+    greed.echo(`{show(ctx.values.a)} {show(ctx.values.b)} {#ctx.args}`)
+  end,
+}
+"#;
+
+/// Runs `name` with `args` as `greed.run` does, giving back what it echoed
+/// or the error it failed with.
+fn run_with(h: &Host, name: &str, args: &[&str]) -> Result<String, String> {
+    let list: Vec<String> = args.iter().map(|a| format!("{a:?}")).collect();
+    h.eval(&format!(
+        "require('@greed').run({name:?}, {{ args = {{ {} }} }})",
+        list.join(", ")
+    ))
+    .map_err(|err| err.to_string())?;
+    Ok(h.with_editor_mut(Editor::take_messages).join("\n"))
+}
+
+#[test]
+fn typed_commands_get_their_arguments_parsed() {
+    let h = host("");
+    h.load_str("typed", TYPED).unwrap();
+    assert_eq!(
+        run_with(&h, "typed", &["3.5", "yes", "b", "x", "y"]).unwrap(),
+        "3.5 true b x y 5"
+    );
+    assert_eq!(
+        run_with(&h, "typed", &["-2", "OFF", "a"]).unwrap(),
+        "-2 false a nil 3"
+    );
+    assert_eq!(run_with(&h, "two", &["one"]).unwrap(), "one nil");
+    assert_eq!(run_with(&h, "two", &["one", "2"]).unwrap(), "one 2");
+}
+
+#[test]
+fn typed_commands_refuse_wrong_arguments_with_their_usage() {
+    let h = host("");
+    h.load_str("typed", TYPED).unwrap();
+    let usage = ":typed N FLAG PICK [MORE...]";
+    for (args, why) in [
+        (&[][..], "needs N and FLAG and PICK"),
+        (&["1", "on"][..], "needs PICK"),
+        (&["abc", "on", "a"][..], "\"abc\" isn't a number"),
+        (&["inf", "on", "a"][..], "\"inf\" isn't a number"),
+        (&["1", "maybe", "a"][..], "\"maybe\" isn't true or false"),
+        (&["1", "on", "c"][..], "\"c\" isn't one of a, b"),
+    ] {
+        let err = run_with(&h, "typed", args).unwrap_err();
+        assert!(err.contains(&format!("{usage}: {why}")), "{args:?}: {err}");
+    }
+    let err = run_with(&h, "two", &["a", "b", "c", "d"]).unwrap_err();
+    assert!(
+        err.contains(":two FIRST [SECOND]: too many arguments: \"c\" \"d\" left over"),
+        "{err}"
+    );
+    assert!(h.with_editor_mut(Editor::take_messages).is_empty());
+}
+
+#[test]
+fn file_and_folder_arguments_exist_and_resolve_from_the_project() {
+    let dir = std::env::temp_dir().join(format!("greed-typed-args-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/main.rs"), "").unwrap();
+    let h = host("");
+    h.load_str("typed", TYPED).unwrap();
+    h.with_editor_mut(|ed| {
+        let id = ed.open_project(dir.clone());
+        assert!(ed.switch_project(id));
+    });
+    let root = dir.to_string_lossy();
+    assert_eq!(
+        run_with(&h, "paths", &["src/../src/main.rs", "src"]).unwrap(),
+        format!("{root}/src/main.rs {root}/src")
+    );
+    assert_eq!(
+        run_with(&h, "paths", &[&format!("{root}/src/main.rs")]).unwrap(),
+        format!("{root}/src/main.rs nil")
+    );
+    for (args, why) in [
+        (&["nope.rs"][..], "there's no file \"nope.rs\""),
+        (&["src"][..], "\"src\" is a folder; it needs a file"),
+        (
+            &["src/main.rs", "src/main.rs"][..],
+            "\"src/main.rs\" is a file; it needs a folder",
+        ),
+        (&["src/main.rs", "gone"][..], "there's no folder \"gone\""),
+    ] {
+        let err = run_with(&h, "paths", args).unwrap_err();
+        assert!(
+            err.contains(&format!(":paths [FILE] [DIR]: {why}")),
+            "{args:?}: {err}"
+        );
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn untyped_commands_get_their_words_unchecked() {
+    let h = host("");
+    h.load_str("typed", TYPED).unwrap();
+    assert_eq!(run_with(&h, "loose", &[]).unwrap(), "nil nil 0");
+    assert_eq!(run_with(&h, "loose", &["x"]).unwrap(), "x nil 1");
+    assert_eq!(run_with(&h, "loose", &["x", "y", "z"]).unwrap(), "x y 3");
+}
+
+#[test]
+fn argument_specs_that_cant_work_fail_when_the_command_is_added() {
+    let h = host("");
+    for (args, why) in [
+        (
+            "{ name = 'a', type = 'rest' }, { name = 'b' }",
+            "argument a: a \"rest\" argument takes the rest of the words, so it has to be last",
+        ),
+        (
+            "{ name = 'a', type = 'string', optional = true }, { name = 'b', type = 'string' }",
+            "argument b: it comes after an optional one, so it has to be optional too",
+        ),
+        (
+            "{ name = 'a', type = 'choice' }",
+            "argument a: type \"choice\" needs choices",
+        ),
+        (
+            "{ name = 'a', type = 'object' }",
+            "argument a: type \"object\" needs kind",
+        ),
+        (
+            "{ name = 'a', type = 'int' }",
+            "argument a: there's no type \"int\"",
+        ),
+        (
+            "{ name = 'a', choices = { 'x' } }",
+            "argument a: choices go with type = \"choice\"",
+        ),
+        (
+            "{ name = 'a', type = 'string', kind = 'pod' }",
+            "argument a: kind goes with type = \"object\"",
+        ),
+    ] {
+        let err = h
+            .load_str(
+                "bad",
+                &format!(
+                    "require('@greed').command {{ name = 'bad', args = {{ {args} }}, run = function() end }}"
+                ),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(&format!("command bad: {why}")),
+            "{args}: {err}"
+        );
+    }
+}
+
+#[test]
+fn object_arguments_are_found_by_the_object_finder() {
+    let h = host("");
+    h.load_str(
+        "objs",
+        r#"
+        local greed = require("@greed")
+        greed.command {
+          name = "poke",
+          args = { { name = "pod", type = "object", kind = "pod" } },
+          run = function(ctx)
+            greed.echo("poked " .. ctx.values.pod.id)
+          end,
+        }
+        "#,
+    )
+    .unwrap();
+    let err = run_with(&h, "poke", &["api"]).unwrap_err();
+    assert!(
+        err.contains(
+            ":poke POD: nothing finds objects: the core plugin does that, and it isn't loaded"
+        ),
+        "{err}"
+    );
+    h.load_str(
+        "finder",
+        r#"
+        local greed = require("@greed")
+        greed.object_finder(function(kind, text)
+          -- It runs in the command, so it can wait.
+          greed.sleep(0)
+          if text == "api" then
+            return { kind = kind, id = kind .. ":" .. text, label = text, value = text }
+          elseif text == "two" then
+            return nil, "more than one pod is called \"two\""
+          end
+          return nil
+        end)
+        "#,
+    )
+    .unwrap();
+    run_with(&h, "poke", &["api"]).unwrap();
+    h.fire_timers(std::time::Instant::now()).unwrap();
+    assert_eq!(h.with_editor_mut(Editor::take_messages), ["poked pod:api"]);
+    // The finder waited, so the command fails as one that waited does.
+    run_with(&h, "poke", &["two"]).unwrap();
+    let err = h
+        .fire_timers(std::time::Instant::now())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains(":poke POD: more than one pod is called \"two\""),
+        "{err}"
+    );
+    h.unload("finder").unwrap();
+    assert!(
+        run_with(&h, "poke", &["api"])
+            .unwrap_err()
+            .contains("nothing finds objects")
+    );
+}
+
+#[test]
+fn commands_show_their_argument_types() {
+    let h = host("");
+    h.load_str("typed", TYPED).unwrap();
+    let shown = h
+        .eval(
+            "for _, c in require('@greed').commands() do
+               if c.name == 'typed' then
+                 local a = c.args
+                 return table.concat({ c.usage, a[1].type, a[3].type, table.concat(a[3].choices, '/'),
+                   tostring(a[4].optional), tostring(a[1].optional) }, ' ')
+               end
+             end",
+        )
+        .unwrap();
+    assert_eq!(
+        shown,
+        "typed N FLAG PICK [MORE...] number choice a/b true false"
+    );
+}
+
 #[test]
 fn plugins_evaluate_code_in_a_shared_scratch_environment() {
     let h = host("");

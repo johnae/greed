@@ -658,3 +658,22 @@ test("space . on a todo in a note offers to tick it", function(t)
 	end
 	assert(found and found.id == "todo:plan#0", found and found.id)
 end)
+
+test(":notes-capture TEXT adds it at once, and :notes-find NOTE opens that note", function(t)
+	local dir = folder(t, { ["groceries.md"] = "# Groceries\n" })
+	t:buffer("|x")
+	t:run("notes-capture", { "buy", "milk" })
+	assert(
+		greed.fs.read(dir .. "/inbox.md") == "- [ ] buy milk\n",
+		(greed.fs.read(dir .. "/inbox.md"))
+	)
+	t:run("notes-find", { "groceries" })
+	assert(greed.view():buffer():path() == `{dir}/groceries.md`, greed.view():buffer():path())
+	local ok, err = pcall(function()
+		t:run("notes-find", { "nothing-here" })
+	end)
+	assert(
+		not ok and string.find(tostring(err), ':notes-find [NOTE]: no note "nothing-here"', 1, true),
+		tostring(err)
+	)
+end)

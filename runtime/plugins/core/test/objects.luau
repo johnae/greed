@@ -233,3 +233,45 @@ test("a source adds objects of a kind another plugin owns, and says more of its 
 	assert(objects.related(found).shelf ~= nil)
 	assert(objects.get("gadget:y") == nil)
 end)
+
+test("typed commands find an object argument by its key or its label", function(t)
+	objects.kind({
+		name = "test-pet",
+		list = function()
+			return {
+				{ kind = "test-pet", id = "test-pet:1", label = "rex", value = 1 },
+				{ kind = "test-pet", id = "test-pet:2", label = "tom", value = 2 },
+				{ kind = "test-pet", id = "test-pet:3", label = "tom", value = 3 },
+			}
+		end,
+	})
+	local got: core.Object? = nil
+	greed.command({
+		name = "test-pet-feed",
+		args = { { name = "pet", type = "object", kind = "test-pet" } },
+		run = function(ctx)
+			got = ctx.values.pet
+			assert(ctx.args[1] ~= nil, "the word is kept in args")
+		end,
+	})
+	t:run("test-pet-feed", { "rex" })
+	assert(got and got.id == "test-pet:1", tostring(got and got.id))
+	t:run("test-pet-feed", { "3" })
+	assert(got and got.value == 3, tostring(got and got.value))
+	local function fails(word: string): string
+		local ok, err = pcall(function()
+			t:run("test-pet-feed", { word })
+		end)
+		assert(not ok, `{word} should fail`)
+		return tostring(err)
+	end
+	local err = fails("tom")
+	assert(
+		string.find(err, ':test-pet-feed PET: more than one test-pet is called "tom"', 1, true),
+		err
+	)
+	err = fails("felix")
+	assert(string.find(err, ':test-pet-feed PET: no test-pet "felix"', 1, true), err)
+	local _, why = objects.find("no-such-kind", "x")
+	assert(why == "there's no kind of object called no-such-kind", tostring(why))
+end)

@@ -22,7 +22,7 @@ pub struct Source {
     pub line: u32,
 }
 
-/// An argument a command takes, for completion and help.
+/// An argument a command takes, for completion, help and checking.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Arg {
     pub name: Arc<str>,
@@ -30,6 +30,80 @@ pub struct Arg {
     /// What completes it, e.g. "file"; the command line decides what each
     /// name means.
     pub complete: Option<Arc<str>>,
+    /// What it is, when the command says; a command with a type on any of
+    /// its arguments has them checked before it runs.
+    pub kind: Option<ArgType>,
+    /// Whether it can be left out; those after it can be too.
+    pub optional: bool,
+}
+
+impl Arg {
+    /// How it shows in a command's usage: `NAME`, `[NAME]`, `TEXT...`.
+    pub fn usage(&self) -> String {
+        let mut word = self.name.to_uppercase();
+        if self.kind == Some(ArgType::Rest) {
+            word.push_str("...");
+        }
+        if self.optional {
+            format!("[{word}]")
+        } else {
+            word
+        }
+    }
+}
+
+/// What a typed argument is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArgType {
+    String,
+    Number,
+    /// true/false, yes/no or on/off.
+    Boolean,
+    /// A file that exists, from the project's root when relative.
+    File,
+    /// A folder that exists, from the project's root when relative.
+    Folder,
+    /// One of these words.
+    Choice(Vec<Arc<str>>),
+    /// An object of this kind, as the core plugin's objects find it.
+    Object(Arc<str>),
+    /// The rest of the words, joined by spaces; last only.
+    Rest,
+}
+
+impl ArgType {
+    /// Its name in an argument's spec, `type = "number"`.
+    pub fn name(&self) -> &'static str {
+        match self {
+            ArgType::String => "string",
+            ArgType::Number => "number",
+            ArgType::Boolean => "boolean",
+            ArgType::File => "file",
+            ArgType::Folder => "folder",
+            ArgType::Choice(_) => "choice",
+            ArgType::Object(_) => "object",
+            ArgType::Rest => "rest",
+        }
+    }
+}
+
+/// How `name` is typed with `args`: `kube-namespace [NAME]`.
+pub fn usage(name: &str, args: &[Arg]) -> String {
+    let mut out = name.to_owned();
+    for arg in args {
+        out.push(' ');
+        out.push_str(&arg.usage());
+    }
+    out
+}
+
+/// Whether an argument's word means yes or no: true/false, yes/no, on/off.
+pub fn parse_bool(word: &str) -> Option<bool> {
+    match word.to_ascii_lowercase().as_str() {
+        "true" | "yes" | "on" => Some(true),
+        "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone)]

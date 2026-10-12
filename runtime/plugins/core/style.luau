@@ -383,9 +383,17 @@ end
 greed.command({
 	name = "style",
 	doc = "Switch editing style, or pick one",
-	args = { { name = "style", doc = "The style", complete = "editing-style" } },
+	args = {
+		{
+			name = "style",
+			doc = "The style",
+			complete = "editing-style",
+			type = "string",
+			optional = true,
+		},
+	},
 	run = function(ctx)
-		local name = ctx.args[1]
+		local name: string? = ctx.values.style
 		if name then
 			M.set(name)
 			greed.echo(`editing style: {name}`)

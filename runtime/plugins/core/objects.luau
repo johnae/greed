@@ -225,6 +225,33 @@ function M.get(id: string): Object?
 	return nil
 end
 
+--- The object of `kind` someone typed `text` for: the one whose key it is
+--- (`kind:text`), else the one labelled that. Nil and why when there's none,
+--- or more than one with that label. Typed commands find their "object"
+--- arguments with this.
+function M.find(kind: string, text: string): (Object?, string?)
+	local found = M.get(`{kind}:{text}`)
+	if found then
+		return found, nil
+	end
+	local labelled: { Object } = {}
+	for _, object in M.list(kind) do
+		if object.label == text then
+			table.insert(labelled, object)
+		end
+	end
+	if #labelled == 1 then
+		return labelled[1], nil
+	elseif #labelled > 1 then
+		return nil, `more than one {kind} is called "{text}"`
+	elseif kind_named(kind) == nil then
+		return nil, `there's no kind of object called {kind}`
+	end
+	return nil, `no {kind} "{text}"`
+end
+
+greed.object_finder(M.find)
+
 --- `object`'s state: its kind's say, or else its value, with what the
 --- source it came from adds.
 function M.inspect(object: Object): { [string]: any }

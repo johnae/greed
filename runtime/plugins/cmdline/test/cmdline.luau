@@ -491,3 +491,96 @@ test("matches keep one row each, their docs cut to fit, so the best ones show", 
 	assert(string.find(text, "…", 1, true), "cut, with an ellipsis")
 	t:keys("esc")
 end)
+
+-- Types the keys for `text` on the command line, a character at a time.
+local function type_line(t: test.TestContext, text: string)
+	for _, key in string.split(text, "") do
+		t:keys(if key == " " then "space" else key)
+	end
+end
+
+test("typed arguments complete from their type", function(t)
+	local core = require("@core")
+	core.objects.kind({
+		name = "test-fruit",
+		list = function()
+			return {
+				{ kind = "test-fruit", id = "test-fruit:apple", label = "apple", value = "apple" },
+				{
+					kind = "test-fruit",
+					id = "test-fruit:7",
+					label = "blood orange",
+					value = "orange",
+				},
+			}
+		end,
+	})
+	local got: { [string]: any } = {}
+	local args: { greed.ArgSpec } = {
+		{ name = "size", type = "choice", choices = { "small", "large" } },
+		{ name = "ripe", type = "boolean" },
+		{ name = "fruit", type = "object", kind = "test-fruit" },
+		{ name = "dir", type = "folder", optional = true },
+	}
+	greed.command({
+		name = "test-typed",
+		args = args,
+		run = function(ctx)
+			got = ctx.values
+		end,
+	})
+	local dir = t:tempdir({ ["src/main.rs"] = "", ["notes.md"] = "" })
+	t:buffer("|abc")
+	greed.run("command-line")
+	type_line(t, "test-typed l")
+	t:keys("tab")
+	assert(prompt(t) == ":test-typed large", prompt(t))
+	type_line(t, " f")
+	t:keys("tab")
+	assert(prompt(t) == ":test-typed large false", prompt(t))
+	type_line(t, " ap")
+	t:keys("tab")
+	assert(prompt(t) == ":test-typed large false apple", prompt(t))
+	type_line(t, ` {dir}/`)
+	t:keys("tab")
+	-- Folders only: notes.md isn't offered.
+	assert(prompt(t) == `:test-typed large false apple {dir}/src/`, prompt(t))
+	t:keys("enter")
+	assert(got.size == "large" and got.ripe == false, tostring(got.size))
+	assert(got.fruit.id == "test-fruit:apple", tostring(got.fruit and got.fruit.id))
+	assert(got.dir == `{dir}/src`, tostring(got.dir))
+
+	-- A label with spaces completes as its key, which finds it too.
+	greed.run("command-line")
+	type_line(t, "test-typed small on 7")
+	t:keys("tab")
+	assert(prompt(t) == ":test-typed small on 7", prompt(t))
+	t:keys("enter")
+	assert(got.fruit.label == "blood orange", tostring(got.fruit and got.fruit.label))
+end)
+
+test("a typed command's wrong arguments say its usage", function(t)
+	greed.command({
+		name = "test-count",
+		args = { { name = "n", type = "number" } },
+		run = function() end,
+	})
+	t:buffer("|abc")
+	local err = fails(function()
+		greed.run("command-line")
+		type_line(t, "test-count abc")
+		t:keys("enter")
+	end)
+	assert(string.find(err, ':test-count N: "abc" isn\'t a number', 1, true), err)
+end)
+
+test(":get and :toggle need an option", function(t)
+	t:buffer("|abc")
+	local err = fails(function()
+		t:run("get-option")
+	end)
+	assert(string.find(err, ":get-option OPTION: needs OPTION", 1, true), err)
+	greed.option.define({ name = "test-switch", default = false })
+	t:run("toggle-option", { "test-switch" })
+	assert(greed.option.get("test-switch") == true)
+end)

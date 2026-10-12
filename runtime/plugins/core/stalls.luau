@@ -107,10 +107,12 @@ greed.command({
 		{
 			name = "topics",
 			doc = "keys, runs, frames, rpc, jobs, client, plugins, plugin:NAME or all; -NAME turns one off",
+			type = "rest",
+			optional = true,
 		},
 	},
 	run = function(ctx)
-		greed.debug.switch(table.concat(ctx.args, " "))
+		greed.debug.switch(ctx.values.topics or "")
 		local on = greed.debug.enabled()
 		if #on == 0 then
 			greed.echo(`debug: nothing on; topics are {table.concat(greed.debug.topics(), ", ")}`)

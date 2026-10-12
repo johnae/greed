@@ -384,6 +384,8 @@ export type Context = {
 	char: string?,
 	--- Arguments, e.g. from the command line; empty when a key ran it.
 	args: { string },
+	--- The arguments by name: for a typed command, parsed (a number, a boolean, a full path, the `core.Object`), nil for an optional one left out; otherwise the words as given.
+	values: { [string]: any },
 	--- Go ahead even if the command would normally refuse, like `:q!`
 	--- quitting with unsaved changes.
 	force: boolean,
@@ -393,12 +395,20 @@ export type Context = {
 	client: number,
 }
 
---- An argument a command takes, for completion and help.
+--- An argument a command takes, for completion, help and checking. Giving any of a command's arguments a `type` has them all checked before it runs, and parsed into `ctx.values`.
 export type ArgSpec = {
 	name: string,
 	doc: string?,
-	--- What completes it, e.g. "file", "command", "option" or "buffer".
+	--- What completes it, e.g. "file", "command", "option" or "buffer". Without it, the command line completes from `type`.
 	complete: string?,
+	--- What it is: "string" (the default), "number", "boolean" (true/false, yes/no, on/off), "file" or "folder" (one that exists, from the project's root), "choice" (one of `choices`), "object" (an object of `kind`, as `core.objects` has them), or "rest" (the rest of the words, joined by spaces; last only).
+	type: string?,
+	--- It can be left out; every argument after it must be optional too.
+	optional: boolean?,
+	--- The words a "choice" can be.
+	choices: { string }?,
+	--- The kind of object an "object" is, e.g. "note" or "pod".
+	kind: string?,
 }
 
 export type CommandSpec = {
@@ -900,6 +910,8 @@ export type CommandInfo = {
 	name: string,
 	doc: string,
 	args: { ArgSpec },
+	--- How it's typed, e.g. "kube-namespace [NAME]".
+	usage: string,
 	--- The plugin that defined it.
 	owner: string,
 	--- Where it was defined, e.g. "core/motions.luau:120".
@@ -1884,6 +1896,8 @@ export type Greed = {
 	vouch: <A..., R...>(f: (A...) -> R..., A...) -> R...,
 	--- Sets the function that builds the status line. It runs for every frame.
 	statusline: (build: (ctx: StatusContext) -> StatusParts) -> (),
+	--- Sets the function typed commands find an "object" argument with: the object of `kind` the user typed `text` for, or nil and why not. It runs in the command, so it can wait. The core plugin sets it from `core.objects`.
+	object_finder: (find: (kind: string, text: string) -> (any, string?)) -> (),
 	--- Sets the menus a window shows as its menu bar (on macOS, the system's), replacing those before; each item runs its command. The core plugin keeps them, so add to `require("@core").menus` rather than calling this.
 	set_menus: (menus: { { title: string, items: { { label: string, command: string } } } }) -> (),
 	--- A new buffer that isn't shown anywhere yet. It goes away when the last

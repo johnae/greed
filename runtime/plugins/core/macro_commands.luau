@@ -84,16 +84,17 @@ greed.command({
 	name = "macro-save",
 	doc = "Save the last macro (or the one in a register) as a command you can run and edit",
 	args = {
-		{ name = "name", doc = "What to call the command" },
-		{ name = "register", doc = "The register the macro is in; @ if left out" },
+		{ name = "name", doc = "What to call the command", type = "string" },
+		{
+			name = "register",
+			doc = "The register the macro is in; @ if left out",
+			type = "string",
+			optional = true,
+		},
 	},
 	run = function(ctx)
-		local name = ctx.args[1]
-		if name == nil then
-			greed.echo("give the command a name: :macro-save NAME")
-			return
-		end
-		local file, err = M.save(name, ctx.args[2] or "@")
+		local name: string = ctx.values.name
+		local file, err = M.save(name, ctx.values.register or "@")
 		if file == nil then
 			greed.echo(`can't save it: {err}`)
 			return

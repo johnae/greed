@@ -205,11 +205,12 @@ local KEYS = "enter switches everywhere · ctrl-s in this shell only"
 greed.command({
 	name = "kube-context",
 	doc = "Switch kubectl's context, everywhere or in this shell only; with a name, to that one",
-	args = { { name = "name", doc = "The context to switch to" } },
+	args = { { name = "name", doc = "The context to switch to", type = "string", optional = true } },
 	run = function(ctx)
 		local sh = here()
-		if ctx.args[1] then
-			M.use(ctx.args[1], sh, ctx.force)
+		local name: string? = ctx.values.name
+		if name then
+			M.use(name, sh, ctx.force)
 			return
 		end
 		if sh == nil then
@@ -254,11 +255,14 @@ greed.command({
 greed.command({
 	name = "kube-namespace",
 	doc = "Switch the namespace of kubectl's context, everywhere or in this shell only; with a name, to that one",
-	args = { { name = "name", doc = "The namespace to switch to" } },
+	args = {
+		{ name = "name", doc = "The namespace to switch to", type = "string", optional = true },
+	},
 	run = function(ctx)
 		local sh = here()
-		if ctx.args[1] then
-			M.use_namespace(ctx.args[1], sh, ctx.force)
+		local wanted: string? = ctx.values.name
+		if wanted then
+			M.use_namespace(wanted, sh, ctx.force)
 			return
 		end
 		local listed, err = M.kubectl(sh, { "get", "namespaces", "-o", "name" })

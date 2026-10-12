@@ -315,13 +315,16 @@ end
 greed.command({
 	name = "project",
 	doc = "Open a project, or switch to it if it's open",
-	args = { { name = "path", doc = "A folder or file in the project", complete = "file" } },
+	args = {
+		{
+			name = "path",
+			doc = "A folder or file in the project",
+			complete = "file",
+			type = "string",
+		},
+	},
 	run = function(ctx)
-		local path = ctx.args[1]
-		if path == nil then
-			error("project needs a path, e.g. :project ~/src/greed; space P picks an open one", 0)
-		end
-		M.open(path)
+		M.open(ctx.values.path)
 	end,
 })
 
@@ -342,12 +345,16 @@ greed.command({
 greed.command({
 	name = "session",
 	doc = "Go to another session: a running one by name, or a project's (started if needed)",
-	args = { { name = "to", doc = "A session's name, or a folder or file", complete = "file" } },
+	args = {
+		{
+			name = "to",
+			doc = "A session's name, or a folder or file",
+			complete = "file",
+			type = "string",
+		},
+	},
 	run = function(ctx)
-		local to = ctx.args[1]
-		if to == nil then
-			error("session needs a name or a path; space P picks one", 0)
-		end
+		local to: string = ctx.values.to
 		for _, session in greed.session.list() do
 			if session.name == to then
 				greed.session.switch({ name = to })

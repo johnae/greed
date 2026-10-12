@@ -836,14 +836,9 @@ end
 greed.command({
 	name = "float-go",
 	doc = "Bring this tab's floating view number N to the front, as the dots on its border count",
-	args = { { name = "n", doc = "Which one, from 1" } },
+	args = { { name = "n", doc = "Which one, from 1", type = "number" } },
 	run = function(ctx)
-		local n = tonumber(ctx.args[1])
-		if n == nil then
-			greed.echo("float-go: which one? a number from 1")
-			return
-		end
-		M.floats.go(n)
+		M.floats.go(ctx.values.n)
 	end,
 })
 
@@ -872,9 +867,11 @@ greed.command({
 greed.command({
 	name = "tab-go",
 	doc = "Show tab N",
-	args = { { name = "n", doc = "The tab's number, from 1" } },
+	args = { { name = "n", doc = "The tab's number, from 1", type = "number", optional = true } },
 	run = function(ctx)
-		M.go_to_tab(tonumber(ctx.args[1] or ctx.keys and string.match(ctx.keys, "%d+$") or "") or 1)
+		M.go_to_tab(
+			ctx.values.n or tonumber(ctx.keys and string.match(ctx.keys, "%d+$") or "") or 1
+		)
 	end,
 })
 
@@ -928,14 +925,14 @@ for _, where in { { "beside", "right" }, { "below", "down" } } do
 	})
 end
 
--- Saves the tab as the layout named in `args`, or asks for a name.
-local function save_layout(args: { string }, mine: boolean)
-	local function save(name: string)
-		local file, err = M.saved.save(name, mine)
-		greed.echo(if file then `saved layout {name} in {file}` else `can't save it: {err}`)
+-- Saves the tab as the layout `name`, or asks for a name.
+local function save_layout(name: string?, mine: boolean)
+	local function save(chosen: string)
+		local file, err = M.saved.save(chosen, mine)
+		greed.echo(if file then `saved layout {chosen} in {file}` else `can't save it: {err}`)
 	end
-	if args[1] then
-		save(args[1])
+	if name then
+		save(name)
 	else
 		core.prompt.open({ title = "Save layout as", on_submit = save })
 	end
@@ -944,28 +941,29 @@ end
 greed.command({
 	name = "layout-save",
 	doc = "Save this tab's panes, and what they show, as a layout of the project",
-	args = { { name = "name", doc = "What to call it" } },
+	args = { { name = "name", doc = "What to call it", type = "string", optional = true } },
 	run = function(ctx)
-		save_layout(ctx.args, false)
+		save_layout(ctx.values.name, false)
 	end,
 })
 
 greed.command({
 	name = "layout-save-mine",
 	doc = "Save this tab's panes, and what they show, as a layout for any project",
-	args = { { name = "name", doc = "What to call it" } },
+	args = { { name = "name", doc = "What to call it", type = "string", optional = true } },
 	run = function(ctx)
-		save_layout(ctx.args, true)
+		save_layout(ctx.values.name, true)
 	end,
 })
 
 greed.command({
 	name = "layout-open",
 	doc = "Open a saved layout as a new tab",
-	args = { { name = "name", doc = "The layout" } },
+	args = { { name = "name", doc = "The layout", type = "string", optional = true } },
 	run = function(ctx)
-		if ctx.args[1] then
-			M.saved.open(ctx.args[1])
+		local wanted: string? = ctx.values.name
+		if wanted then
+			M.saved.open(wanted)
 			return
 		end
 		local items = {}

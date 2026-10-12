@@ -590,6 +590,7 @@ const SANDBOXED: &[(&str, &str, &[&str])] = &[
     ("quit", "quit the editor", &[]),
     ("detach", "let the client go", &[]),
     ("statusline", "replace the status line", &[]),
+    ("object_finder", "change how commands find objects", &[]),
     ("set_menus", "replace the menus", &[]),
     ("keys", "type keys or record them", &[]),
     (
@@ -927,6 +928,7 @@ mod tests {
         "messages",
         "next_key",
         "now",
+        "object_finder",
         "off",
         "on",
         "panel",

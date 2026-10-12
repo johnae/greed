@@ -7,6 +7,7 @@
 
 mod api;
 mod approvals;
+mod args;
 mod capabilities;
 mod cli;
 mod compare;
@@ -150,6 +151,9 @@ pub(crate) struct State {
     repl: Option<Modules>,
     /// The function that builds the status line, and the plugin that set it.
     pub statusline: Option<(PluginId, Function)>,
+    /// The function typed commands find an "object" argument with, and the
+    /// plugin that set it.
+    pub object_finder: Option<(PluginId, Function)>,
     /// The file behind each chunk name, so definitions can point at their
     /// source.
     pub sources: HashMap<String, PathBuf>,
@@ -482,6 +486,7 @@ impl Host {
             plugins: HashMap::new(),
             repl: None,
             statusline: None,
+            object_finder: None,
             sources: HashMap::new(),
             exports: HashMap::new(),
             loaded: HashMap::new(),
@@ -1658,6 +1663,13 @@ fn remove_owned_by(state: &mut State, name: &str) -> Vec<crate::ViewId> {
         .is_some_and(|(owner, _)| &**owner == name)
     {
         state.statusline = None;
+    }
+    if state
+        .object_finder
+        .as_ref()
+        .is_some_and(|(owner, _)| &**owner == name)
+    {
+        state.object_finder = None;
     }
     for ((language, kind), owners) in &mut state.query_owners {
         let before = owners.len();
