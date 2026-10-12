@@ -28,8 +28,9 @@ M.ROLE = "agent"
 models.fallback(M.ROLE, "reasoning", "Greed's own agent")
 models.fallback(compact.ROLE, M.ROLE, "compacting long conversations with Greed's agent")
 
--- Turns one prompt may take, so a model that keeps calling tools stops.
-local MAX_TURNS = 100
+-- How many steps go by between notes saying a prompt is still going; the
+-- `agent-max-turns` option stops it, if set.
+local CHECK_IN = 200
 
 -- Answers in a row that may be cut off at their length before it stops,
 -- and what the model hears after one.
@@ -1603,7 +1604,16 @@ local function prompt(
 	state.caller.refused = refused
 	local rejected_calls: { [string]: string } = {}
 	local asking = false
-	for _ = 1, MAX_TURNS do
+	local most = tonumber(greed.option.get("agent-max-turns")) or 0
+	local turns = 0
+	while most <= 0 or turns < most do
+		turns += 1
+		if turns % CHECK_IN == 0 then
+			table.insert(
+				s.entries,
+				{ kind = "note", text = `this has taken {turns} steps; carrying on` }
+			)
+		end
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
 		local window = models.window(state.role)
@@ -1927,7 +1937,7 @@ local function prompt(
 	if last and last.role == "tool" and not state.cancelled and not s.failed then
 		table.insert(s.entries, {
 			kind = "note",
-			text = `stopped: it took {MAX_TURNS} turns without finishing; say go on to let it carry on`,
+			text = `stopped: it took {most} turns without finishing (agent-max-turns); say go on to let it carry on`,
 		})
 	end
 	s.status = "idle"

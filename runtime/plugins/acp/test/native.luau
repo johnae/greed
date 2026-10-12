@@ -1757,15 +1757,38 @@ test("a call made again with the same result says so, and running out of turns t
 		table.insert(turns, again)
 	end
 	local asked = script(turns)
+	greed.option.set("agent-max-turns", 100)
 	local s = ask(t, "look")
 	t:wait_for(function()
 		return s.status == "idle"
 	end)
+	greed.option.set("agent-max-turns", 0)
 	local first = asked[#asked].said[3].text :: string
 	local second = asked[3].said[5].text
 	assert(not string.find(first, "same call", 1, true), first)
 	assert(string.find(second, "You made this same call already", 1, true), second)
 	assert(string.find(said(s), "stopped: it took 100 turns without finishing", 1, true), said(s))
+end)
+
+test("without agent-max-turns it works on until done, saying so every 200 steps", function(t)
+	local turns: { any } = {}
+	for i = 1, 210 do
+		table.insert(turns, {
+			text = "",
+			calls = { { id = `c{i}`, name = "project", input = {} } },
+			stop = "tools",
+		})
+	end
+	table.insert(turns, { text = "done", calls = {}, stop = "done" })
+	script(turns)
+	local s = ask(t, "look")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local all = said(s)
+	assert(string.find(all, "this has taken 200 steps; carrying on", 1, true), "a note at 200")
+	assert(not string.find(all, "stopped: it took", 1, true), "not stopped")
+	assert(string.find(all, "done", 1, true), "it finished")
 end)
 
 test("a call that changes something, made again, isn't told it was the same", function(t)

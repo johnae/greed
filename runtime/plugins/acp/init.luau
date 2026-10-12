@@ -96,6 +96,12 @@ greed.option.define({
 })
 
 greed.option.define({
+	name = "agent-max-turns",
+	doc = "Stop Greed's own agent after this many steps in one prompt, for runs nobody watches; 0 lets it work until it's done",
+	default = 0,
+})
+
+greed.option.define({
 	name = "agent-max-thought",
 	doc = "Stop a thought of Greed's own agent once it passes this many tokens, before it acts, and ask for smaller steps; 0 lets thoughts run on",
 	default = 8000,

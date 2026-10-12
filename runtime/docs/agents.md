@@ -510,6 +510,12 @@ count with the answers that ran out of room, so three in a row stop the
 turn. `:set agent-max-thought 20000` moves the limit, and `0` lets
 thoughts run on.
 
+Greed's agent works on a prompt until it's done, however many steps that
+takes; every 200 steps the transcript notes `this has taken 200 steps;
+carrying on`, and `ctrl-c` stops it. For runs nobody watches, `:set
+agent-max-turns 300` stops it after that many steps, with a note saying
+so; `go on` lets it carry on.
+
 | Keys | |
 |---|---|
 | `space i n` (`:agent-new`) | Start an agent, Greed's own or one over ACP: pick which, and where it works; one that isn't installed says the command that installs it |
