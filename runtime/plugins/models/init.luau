@@ -39,7 +39,9 @@ export type TurnRequest = turn.Request
 --- instead of the key. `context` is how many tokens its models have room
 --- for, when you'd rather say than have it guessed from the model's name,
 --- `output` how long one of their answers may be, and `edits` how Greed's
---- agent has them edit files (see `M.edits`).
+--- agent has them edit files (see `M.edits`). `cache_key` sends each
+--- conversation's name as `prompt_cache_key`, for providers that only
+--- cache what's sent again with one, like Mistral.
 export type Provider = {
 	kind: string,
 	url: string,
@@ -48,6 +50,7 @@ export type Provider = {
 	context: number?,
 	output: number?,
 	edits: string?,
+	cache_key: boolean?,
 }
 
 --- Which provider and model play a role, and optionally how many tokens
@@ -89,7 +92,12 @@ M.providers = {
 	anthropic = { kind = "anthropic", url = "https://api.anthropic.com", secret = "anthropic" },
 	openai = { kind = "openai", url = "https://api.openai.com/v1", secret = "openai" },
 	ollama = { kind = "openai", url = "http://localhost:11434/v1" },
-	mistral = { kind = "openai", url = "https://api.mistral.ai/v1", secret = "mistral" },
+	mistral = {
+		kind = "openai",
+		url = "https://api.mistral.ai/v1",
+		secret = "mistral",
+		cache_key = true,
+	},
 	berget = {
 		kind = "openai",
 		url = "https://api.berget.ai/v1",
@@ -1024,6 +1032,10 @@ function M.turn(
 	end
 	if not M.sees_images(role) then
 		request = unseen(request)
+	end
+	if request.cache_key and not provider.cache_key then
+		request = table.clone(request)
+		request.cache_key = nil
 	end
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
 	sent.body = greed.json.encode(turn.body(provider.kind, chosen.model, request, M.output(role)))

@@ -1408,6 +1408,7 @@ local function prompt(
 			system = said_system,
 			said = state.said,
 			tools = specs,
+			cache_key = s.session_id,
 		}, function(piece)
 			say(s, piece)
 		end)

@@ -1083,6 +1083,12 @@ as `context = 128000`. Greed knows that for well-known models by name and
 assumes 32k for others; Greed's own agent uses it to compact long
 conversations (see [Agents](agents.md#greeds-own-agent)).
 
+Greed's agent sends the whole conversation each turn, and providers charge
+far less for the part they've seen before and cached. Some, like Mistral,
+only cache a request that names its conversation: `cache_key = true` on a
+provider has Greed's agent send its session's id as `prompt_cache_key`.
+The `mistral` provider has it on. `:usage` shows how much was cached.
+
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
 `GREED_SECRET_NAME`. The built-in providers send their keys only to their
 own servers. The first time any other key would go to an address, Greed

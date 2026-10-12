@@ -287,3 +287,18 @@ test("a message after a turn that stopped at tool results follows a word from th
 	assert(messages[4].content ~= "", "it says something")
 	assert(messages[5].role == "user" and messages[5].content == "go on")
 end)
+
+test("a cache key goes with the request as prompt_cache_key, and only when given", function()
+	local said: { any } = { { role = "user", text = "hi" } }
+	local keyed = turn.body("openai", "m", { said = said, cache_key = "session-1" }, 100)
+	assert(keyed.prompt_cache_key == "session-1", tostring(keyed.prompt_cache_key))
+	local plain = turn.body("openai", "m", { said = said }, 100)
+	assert(plain.prompt_cache_key == nil, "none without one")
+end)
+
+test("Mistral is sent a cache key by default, since it only caches with one", function()
+	local mistral = models.providers.mistral
+	assert(mistral and mistral.cache_key == true, "on for Mistral")
+	local openai = models.providers.openai
+	assert(openai and not openai.cache_key, "off where it isn't asked for")
+end)

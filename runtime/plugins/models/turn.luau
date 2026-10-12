@@ -177,6 +177,9 @@ export type Request = {
 	said: { Said },
 	tools: { ToolSpec }?,
 	max_tokens: number?,
+	--- Names the conversation for the provider's cache, as
+	--- `prompt_cache_key`; set only for providers with `cache_key`.
+	cache_key: string?,
 }
 
 --- The body to send to a provider of `kind` for `model`, as a table.
@@ -231,6 +234,7 @@ function M.body(
 		body.messages = messages
 	else
 		body.messages = openai_messages(request.system, request.said)
+		body.prompt_cache_key = request.cache_key
 	end
 	return body
 end
