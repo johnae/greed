@@ -387,6 +387,11 @@ function M.editor_environment(): { [string]: string }
 	return vars
 end
 
+--- The editor's environment if it's been read, without waiting to read it.
+function M.known_environment(): { [string]: string }?
+	return editor_env
+end
+
 --- The variables programs started in `shell` get, all of them: the
 --- editor's, then its folder's environment's, then the shell's own.
 function M.variables(shell: Shell): { [string]: string }

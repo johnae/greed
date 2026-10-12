@@ -166,11 +166,9 @@ local FAMILY: { [string]: string } = {
 	nu = "nu",
 }
 
---- The shell your lines run in, as DISPATCH picks it, and whether cd
---- and export in it carry over: `shell-fallback` when set, else `$SHELL`
---- when it's of a family the wrappers know, else `sh`. Asks the editor's
---- environment, so only where that can wait.
-function M.which(): (string, boolean)
+-- Your shell as `which` says, `env` being the editor's environment (or
+-- not read yet), and whether cd and export in it carry over.
+local function pick(env: { [string]: string }?): (string, boolean)
 	local function basename(path: string): string
 		return string.match(path, "([^/]+)$") or path
 	end
@@ -179,11 +177,26 @@ function M.which(): (string, boolean)
 		local name = basename(chosen)
 		return name, FAMILY[name] ~= nil
 	end
-	local name = basename(state.editor_environment().SHELL or "")
+	local name = basename(env and env.SHELL or "")
 	if FAMILY[name] then
 		return name, true
 	end
 	return "sh", true
+end
+
+--- The shell your lines run in, as DISPATCH picks it, and whether cd
+--- and export in it carry over: `shell-fallback` when set, else `$SHELL`
+--- when it's of a family the wrappers know, else `sh`. Asks the editor's
+--- environment, so only where that can wait.
+function M.which(): (string, boolean)
+	return pick(state.editor_environment())
+end
+
+--- `text` quoted as one word for the shell a line runs in: `program`, or
+--- yours as `which` says. Never waits: until Greed has read its
+--- environment, yours counts as sh.
+function M.quote(text: string, program: string?): string
+	return parse.quote(text, program or (pick(state.known_environment())))
 end
 
 -- Variables every shell sets for itself, which don't count as changes.

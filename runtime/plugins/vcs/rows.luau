@@ -8,8 +8,6 @@ local greed = require("@greed")
 local core = require("@core")
 local shell = require("@shell")
 
-local parse = shell.parse
-
 type Block = shell.Block
 type Shell = shell.Shell
 type Table = shell.Table
@@ -321,46 +319,46 @@ core.objects.kind({ name = "revision", doc = "A jj revision, by its change id" }
 
 -- `git` with `args`, in the repository at `value.root`.
 local function git(args: string, value: any): string
-	return `git -C {parse.quote(value.root)} {args}`
+	return `git -C {shell.quote(value.root)} {args}`
 end
 
 -- `jj` with `args`, in the repository at `value.root`.
 local function jj(args: string, value: any): string
-	return `jj -R {parse.quote(value.root)} {args}`
+	return `jj -R {shell.quote(value.root)} {args}`
 end
 
 -- A changed file as jj names it: by its path from the repository's root.
 local function fileset(value: any): string
 	local relative = string.sub(value.path, #value.root + 2)
 	local escaped = string.gsub(string.gsub(relative, "\\", "\\\\"), '"', '\\"')
-	return parse.quote(`root:"{escaped}"`)
+	return shell.quote(`root:"{escaped}"`)
 end
 
 shell.action_command("changed-file", "diff", function(value: any): string
 	if value.vcs == "jj" then
 		return jj(`diff {fileset(value)}`, value)
 	end
-	return git(`diff HEAD -- {parse.quote(value.path)}`, value)
+	return git(`diff HEAD -- {shell.quote(value.path)}`, value)
 end, { doc = "What changed in it", default = true })
 shell.action_command("changed-file", "stage", function(value: any): string?
 	if value.vcs == "jj" then
 		greed.echo("jj has no staging: jj split or jj squash -i pick what goes where")
 		return nil
 	end
-	return git(`add -- {parse.quote(value.path)}`, value)
+	return git(`add -- {shell.quote(value.path)}`, value)
 end, { doc = "Stage it for the next commit (git)" })
 shell.action_command("changed-file", "unstage", function(value: any): string?
 	if value.vcs == "jj" then
 		greed.echo("jj has no staging")
 		return nil
 	end
-	return git(`restore --staged -- {parse.quote(value.path)}`, value)
+	return git(`restore --staged -- {shell.quote(value.path)}`, value)
 end, { doc = "Take it out of what's staged (git)" })
 shell.action_command("changed-file", "restore", function(value: any): string
 	if value.vcs == "jj" then
 		return jj(`restore {fileset(value)}`, value)
 	end
-	return git(`restore -- {parse.quote(value.path)}`, value)
+	return git(`restore -- {shell.quote(value.path)}`, value)
 end, { doc = "Throw away its changes", danger = true })
 core.actions.action({
 	kind = "changed-file",

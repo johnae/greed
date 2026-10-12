@@ -18,6 +18,7 @@ local tables = require("./tables")
 local parse = require("./parse")
 local segments = require("./segments")
 local aliases = require("./aliases")
+local fallback = require("./fallback")
 local drill = require("./drill")
 
 type Shell = state.Shell
@@ -796,13 +797,13 @@ local function production(value: any): string?
 	return if segments.production(context) then context else nil
 end
 
--- `template` with each `{field}` the field of `value`, quoted for a shell;
+-- `template` with each `{field}` the field of `value`, quoted for your shell;
 -- fields it doesn't have stay as they are.
 local function fill(template: string, value: any): string
 	return (
 		string.gsub(template, "{([%w_]+)}", function(field: string): string
 			local found = if type(value) == "table" then value[field] else nil
-			return if found == nil then `\{{field}\}` else parse.quote(tostring(found))
+			return if found == nil then `\{{field}\}` else fallback.quote(tostring(found))
 		end)
 	)
 end

@@ -162,7 +162,7 @@ end
 
 -- `docker` with `args`, in the context `value` came from.
 local function docker(args: string, value: any): string
-	local context = if value.context then " --context " .. parse.quote(value.context) else ""
+	local context = if value.context then " --context " .. shell.quote(value.context) else ""
 	return `docker{context} {args}`
 end
 
@@ -216,7 +216,7 @@ shell.kind({
 		end
 		local quoted: { string } = {}
 		for _, word in words do
-			table.insert(quoted, parse.quote(word))
+			table.insert(quoted, shell.quote(word))
 		end
 		return table.concat(quoted, " ") .. " --format json"
 	end,
@@ -244,39 +244,39 @@ core.objects.kind({
 	name = "container",
 	doc = "A docker container, by its name and docker context",
 	fresh = shell.fresh(function(value: any): string
-		return docker(`ps -a --filter {parse.quote(`name=^{value.name}$`)}`, value)
+		return docker(`ps -a --filter {shell.quote(`name=^{value.name}$`)}`, value)
 	end),
 })
 
 shell.action_command("container", "logs", function(value: any): string
-	return docker(`logs --tail 200 {parse.quote(value.name)}`, value)
+	return docker(`logs --tail 200 {shell.quote(value.name)}`, value)
 end, { doc = "The end of what it logged", default = true })
 shell.action_command("container", "follow logs", function(value: any): string
-	return docker(`logs -f --tail 50 {parse.quote(value.name)}`, value)
+	return docker(`logs -f --tail 50 {shell.quote(value.name)}`, value)
 end, { doc = "What it logs, as it logs it", follow = true })
 shell.action_command("container", "shell", function(value: any): string
-	return "!" .. docker(`exec -it {parse.quote(value.name)} sh`, value)
+	return "!" .. docker(`exec -it {shell.quote(value.name)} sh`, value)
 end, { doc = "A shell in it, in a terminal" })
 shell.action_command("container", "inspect", function(value: any): string
-	return docker(`inspect {parse.quote(value.name)}`, value)
+	return docker(`inspect {shell.quote(value.name)}`, value)
 end, { doc = "Everything docker knows about it, as JSON" })
 shell.action_command("container", "restart", function(value: any): string
-	return docker(`restart {parse.quote(value.name)}`, value)
+	return docker(`restart {shell.quote(value.name)}`, value)
 end, { doc = "Stop it and start it again", danger = true })
 shell.action_command("container", "stop", function(value: any): string
-	return docker(`stop {parse.quote(value.name)}`, value)
+	return docker(`stop {shell.quote(value.name)}`, value)
 end, { doc = "Stop it", danger = true })
 
 core.objects.kind({ name = "image", doc = "A docker image, by its name and docker context" })
 
 shell.action_command("image", "inspect", function(value: any): string
-	return docker(`image inspect {parse.quote(value.name)}`, value)
+	return docker(`image inspect {shell.quote(value.name)}`, value)
 end, { doc = "Everything docker knows about it, as JSON", default = true })
 shell.action_command("image", "history", function(value: any): string
-	return docker(`image history {parse.quote(value.name)}`, value)
+	return docker(`image history {shell.quote(value.name)}`, value)
 end, { doc = "The layers it's made of" })
 shell.action_command("image", "pull", function(value: any): string
-	return docker(`pull {parse.quote(value.name)}`, value)
+	return docker(`pull {shell.quote(value.name)}`, value)
 end, { doc = "Fetch it again, for what's newest under its name" })
 
 -- The docker commands that only look, and those of `docker OBJECT ...`

@@ -301,10 +301,28 @@ function M.valid_name(name: string): boolean
 	return string.match(name, "^[%a_][%w_]*$") ~= nil
 end
 
---- `text` quoted for a POSIX shell, so it's one word.
-function M.quote(text: string): string
+--- `text` quoted so it's one word for the shell `shell` names: "fish",
+--- "nu", or else (and by default) a POSIX one. The Greed shell reads each
+--- as one word too.
+function M.quote(text: string, shell: string?): string
 	if text ~= "" and string.match(text, "^[%w_./:=@%%+,-]+$") then
 		return text
+	end
+	local plain = not string.find(text, "'", 1, true)
+	if shell == "fish" then
+		-- In fish's single quotes a backslash escapes; in its double quotes
+		-- $ expands, so it's escaped there.
+		if plain and not string.find(text, "\\", 1, true) then
+			return "'" .. text .. "'"
+		end
+		return '"' .. string.gsub(text, '[\\"$]', "\\%0") .. '"'
+	elseif shell == "nu" then
+		-- nu's single quotes can't hold one; its double quotes, unlike $"",
+		-- leave $ and ( alone.
+		if plain then
+			return "'" .. text .. "'"
+		end
+		return '"' .. string.gsub(text, '[\\"]', "\\%0") .. '"'
 	end
 	return "'" .. string.gsub(text, "'", "'\\''") .. "'"
 end

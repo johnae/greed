@@ -11,8 +11,6 @@ local shell = require("@shell")
 local objects = require("./objects")
 local context = require("./context")
 
-local parse = shell.parse
-
 type Shell = shell.Shell
 type Block = shell.Block
 
@@ -109,7 +107,7 @@ function M.retarget(line: string, change: Retarget): string?
 		for _, token in spaces do
 			table.insert(edits, { from = with_space(line, token), to = token.to, text = "" })
 		end
-		local flag = if change.all then " -A" else ` -n {parse.quote(change.namespace :: string)}`
+		local flag = if change.all then " -A" else ` -n {shell.quote(change.namespace :: string)}`
 		table.insert(edits, { from = resource.to, to = resource.to, text = flag })
 	end
 	-- From the end, so places before stay where they are; what's taken

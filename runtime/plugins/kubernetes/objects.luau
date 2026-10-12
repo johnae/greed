@@ -252,7 +252,7 @@ end
 local function where(value: any): string
 	local quoted: { string } = {}
 	for _, word in where_words(value) do
-		table.insert(quoted, parse.quote(word))
+		table.insert(quoted, shell.quote(word))
 	end
 	return table.concat(quoted, " ")
 end
@@ -265,7 +265,7 @@ end
 
 -- `value` as kubectl names an object: its resource, then its name.
 local function object(value: any): string
-	return `{value.resource} {parse.quote(value.name)}`
+	return `{value.resource} {shell.quote(value.name)}`
 end
 
 shell.kind({
@@ -331,7 +331,7 @@ shell.kind({
 		end
 		local quoted: { string } = {}
 		for _, word in words do
-			table.insert(quoted, parse.quote(word))
+			table.insert(quoted, shell.quote(word))
 		end
 		return table.concat(quoted, " ") .. " -o json"
 	end,
@@ -569,7 +569,7 @@ for _, kind in { "pod", "deployment", "kubernetes" } do
 	shell.action_command(kind, "events", function(value: any): string
 		local named = `involvedObject.name={value.name}`
 		local known = KIND[value.resource]
-		local selector = parse.quote(if known then `{named},involvedObject.kind={known}` else named)
+		local selector = shell.quote(if known then `{named},involvedObject.kind={known}` else named)
 		return kubectl(`get events --field-selector {selector}`, value)
 	end, { doc = "The events about it" })
 	shell.action_command(kind, "delete", function(value: any): string
@@ -578,10 +578,10 @@ for _, kind in { "pod", "deployment", "kubernetes" } do
 end
 
 shell.action_command("pod", "logs", function(value: any): string
-	return kubectl(`logs {parse.quote(value.name)} --tail 200`, value)
+	return kubectl(`logs {shell.quote(value.name)} --tail 200`, value)
 end, { doc = "The end of what it logged" })
 shell.action_command("pod", "follow logs", function(value: any): string
-	return kubectl(`logs -f {parse.quote(value.name)} --tail 50`, value)
+	return kubectl(`logs -f {shell.quote(value.name)} --tail 50`, value)
 end, { doc = "What it logs, as it logs it", follow = true })
 -- What a pod's shell runs in it: bash where the image has it, else sh.
 local POD_SHELL = { "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh" }
@@ -641,10 +641,10 @@ core.actions.action({
 })
 
 shell.action_command("deployment", "restart", function(value: any): string
-	return kubectl(`rollout restart deployment {parse.quote(value.name)}`, value)
+	return kubectl(`rollout restart deployment {shell.quote(value.name)}`, value)
 end, { doc = "Start its pods again, one by one", danger = true })
 shell.action_command("deployment", "rollout status", function(value: any): string
-	return kubectl(`rollout status deployment {parse.quote(value.name)}`, value)
+	return kubectl(`rollout status deployment {shell.quote(value.name)}`, value)
 end, { doc = "How its rollout is going" })
 
 -- `kubectl logs` of every pod of deployment `value`, each line saying its
@@ -653,8 +653,8 @@ end, { doc = "How its rollout is going" })
 local function pods_logs(value: any, follow: boolean): string
 	local selector = selector_of(value, shell.env_of(value))
 	local which = if selector
-		then `-l {parse.quote(selector)} --max-log-requests 20`
-		else `deployment/{parse.quote(value.name)}`
+		then `-l {shell.quote(selector)} --max-log-requests 20`
+		else `deployment/{shell.quote(value.name)}`
 	local tail = if follow then "-f --tail 20" else "--tail 50"
 	return kubectl(`logs {which} --all-containers --prefix {tail}`, value)
 end

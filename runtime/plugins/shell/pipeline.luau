@@ -10,7 +10,6 @@ local fallback = require("./fallback")
 local envs = require("./envs")
 local kinds = require("./kinds")
 local tables = require("./tables")
-local parse = require("./parse")
 local builtins = require("./builtins")
 
 type Shell = state.Shell
@@ -141,9 +140,14 @@ local function capture(
 end
 
 -- `template` once for each row of `tbl`, a line each, its `{COL}`s the
--- row's cells quoted for a shell; braces naming no column stay as they
--- are. Nil and why when `tbl` isn't a table or `template` names no column.
-local function each_lines(tbl: tables.Table?, template: string): (string?, string?)
+-- row's cells quoted for the shell `program` (yours unless given); braces
+-- naming no column stay as they are. Nil and why when `tbl` isn't a table
+-- or `template` names no column.
+local function each_lines(
+	tbl: tables.Table?,
+	template: string,
+	program: string?
+): (string?, string?)
 	if tbl == nil then
 		return nil,
 			"each works on a table, and this isn't one; columns, from csv/tsv/json, split or lines make one"
@@ -164,7 +168,7 @@ local function each_lines(tbl: tables.Table?, template: string): (string?, strin
 	for _, row in tbl.rows do
 		local line = string.gsub(template, "{([^{}]+)}", function(name: string): string
 			local column = tables.column(tbl, name)
-			return if column then parse.quote(row[column] or "") else "{" .. name .. "}"
+			return if column then fallback.quote(row[column] or "", program) else "{" .. name .. "}"
 		end)
 		table.insert(lines, line)
 	end
@@ -286,7 +290,7 @@ local function evaluate(
 		block.via = "shell"
 		local template = string.match(line, "^%s*each%s+(.-)%s*$")
 		if template and text ~= nil and not flags.raw then
-			local script, why = each_lines(tbl or tables.from_value(value), template)
+			local script, why = each_lines(tbl or tables.from_value(value), template, block.runs_in)
 			if script == nil then
 				return { kind = "failed", why = why or "" }
 			elseif script == "" then

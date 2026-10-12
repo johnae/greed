@@ -42,7 +42,7 @@ local run = require("@self/run")
 local folding = require("@self/folding")
 -- Loaded here, before navigate, for the order their event handlers run in.
 require("@self/pty")
-require("@self/fallback")
+local fallback = require("@self/fallback")
 local history = require("@self/history")
 local data = require("@self/data")
 local ask = require("@self/ask")
@@ -83,6 +83,10 @@ local LANGUAGE = "greed-shell"
 --- plugins building on the shell.
 M.parse = parse
 M.tables = tables
+
+--- `text` quoted as one word for the shell your lines run in (nu's and
+--- fish's quotes differ from sh's), or for `program`, as "sh".
+M.quote = fallback.quote
 
 --- Where `block` is in its shell's buffer, from its command to the next
 --- block; and where what it printed is. Nil once its text was deleted.
