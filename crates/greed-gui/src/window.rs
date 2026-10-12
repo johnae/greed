@@ -26,7 +26,7 @@ use crate::watchdog::{Alarm, Watchdog};
 
 /// What reaches the event loop from the session's thread.
 pub(crate) enum Event {
-    Output(Output),
+    Output(Box<Output>),
     /// A menu bar item was chosen: the command to run.
     #[cfg(target_os = "macos")]
     Menu(String),
@@ -64,7 +64,7 @@ pub fn run(
                     recv(outputs) -> message => {
                         let message = message.unwrap_or(Output::Exit);
                         let last = !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::SshAgentRequest(..) | Output::Notify(_));
-                        if proxy.send_event(Event::Output(message)).is_err() || last {
+                        if proxy.send_event(Event::Output(Box::new(message))).is_err() || last {
                             return;
                         }
                     }
@@ -462,7 +462,7 @@ impl ApplicationHandler<Event> for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
         match event {
-            Event::Output(output) => self.handle(event_loop, output),
+            Event::Output(output) => self.handle(event_loop, *output),
             #[cfg(target_os = "macos")]
             Event::Menu(command) => {
                 let _ = self.input.send(Input::Run(command));
