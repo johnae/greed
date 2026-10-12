@@ -389,14 +389,23 @@ markdown.conceal({
 	wants = markdown.drawn,
 	draw = function(buffer, s, first, last): { greed.Mark }
 		local out: { greed.Mark } = {}
+		-- Whether a block ending on line `n` may have chart lines among
+		-- `first` to `last`: they're comments right under it.
+		local function may(n: number): boolean
+			return n < last
+				and n + 1 < #s.lines
+				and string.find(s.lines[n + 2], "^%s*<!%-%-") ~= nil
+		end
 		for _, found in s.tables do
-			charts_from(buffer, s, found.last + 1, first, last, function(): markdown.Data?
-				return markdown.values.data(buffer, s, found)
-			end, out)
+			if may(found.last) then
+				charts_from(buffer, s, found.last + 1, first, last, function(): markdown.Data?
+					return markdown.values.data(buffer, s, found)
+				end, out)
+			end
 		end
 		-- Under a data block, the table it read.
 		for _, code in s.code do
-			if code.closed and core.data.get(code.lang) then
+			if may(code.close) and code.closed and core.data.get(code.lang) then
 				charts_from(buffer, s, code.close + 1, first, last, function(): markdown.Data?
 					local t = data_blocks.table(buffer, code)
 					return if t then from_data(t) else nil

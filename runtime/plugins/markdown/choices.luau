@@ -62,33 +62,42 @@ function M.value_of(rest: string): string
 	return string.match(text, "^%s*(.-)%s*:") or text
 end
 
+-- The groups of each structure, worked out once for each version of a
+-- buffer.
+local listed: { [structure.Structure]: { Group } } = setmetatable({}, { __mode = "k" }) :: any
+
 --- Every group of choices in `buffer`: runs of choice lines at the same
---- indent, in order.
+--- indent, in order. Shared: read it, don't change it.
 function M.list(buffer: greed.Buffer): { Group }
+	local s = structure.of(buffer)
+	local known = listed[s]
+	if known then
+		return known
+	end
 	local groups: { Group } = {}
 	local current: Group? = nil
 	local indent: string? = nil
-	local s = structure.of(buffer)
-	-- Code between a question and its choices, like a block that makes
-	-- them, is passed over looking for the question.
-	local code: { [number]: boolean } = {}
-	for _, block in s.code do
-		for n = block.open, block.close do
-			code[n] = true
+	-- Choices are list items: only their lines are read.
+	local last = -1
+	for _, found in s.items do
+		local n = found.line
+		if n == last then
+			continue
 		end
-	end
-	for i, text in s.lines do
-		local n = i - 1
-		local spaces, mark, rest = nil :: string?, nil :: string?, nil :: string?
-		if s.item_at[n] then
-			spaces, mark, rest = choice_of(text)
+		local spaces, mark, rest = choice_of(s.lines[n + 1])
+		if n ~= last + 1 then
+			-- A line between ends the run.
+			current, indent = nil, nil
 		end
+		last = n
 		if spaces and mark and rest then
 			if current == nil or spaces ~= indent then
 				local question: string?, id: string? = nil, nil
 				for above = n - 1, 0, -1 do
 					local line = s.lines[above + 1]
-					if not code[above] and not string.match(line, "^%s*$") then
+					-- Code between a question and its choices, like a block
+					-- that makes them, is passed over looking for the question.
+					if not s.code_at[above] and not string.match(line, "^%s*$") then
 						local words = M.without_comments(string.match(line, "^#*%s*(.-)%s*$") or "")
 						question = if words ~= "" then words else nil
 						id = M.comment_value(line, "id")
@@ -109,6 +118,7 @@ function M.list(buffer: greed.Buffer): { Group }
 			current, indent = nil, nil
 		end
 	end
+	listed[s] = groups
 	return groups
 end
 

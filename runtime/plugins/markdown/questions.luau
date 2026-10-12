@@ -32,44 +32,45 @@ local M = {}
 --- and the question, value and whether it's `!=` it compares.
 export type Section = { open: number, close: number, id: string, value: string, negated: boolean }
 
--- The lines inside code blocks, which hold no questions or conditions.
-local function in_code(s: Structure): { [number]: boolean }
-	local lines: { [number]: boolean } = {}
-	for _, code in s.code do
-		for n = code.open, code.close do
-			lines[n] = true
-		end
-	end
-	return lines
-end
+-- What each structure says of its parts and answers, worked out once for
+-- each version of a buffer.
+type Known = {
+	sections: { Section },
+	hidden: { [number]: boolean }?,
+	answers: { [string]: string }?,
+}
+local known: { [Structure]: Known } = setmetatable({}, { __mode = "k" }) :: any
 
 --- Every conditional part of `buffer`, in order of their `if` lines. An
---- `if` without its `end` runs to the end of the file.
+--- `if` without its `end` runs to the end of the file. Shared: read it,
+--- don't change it.
 function M.sections(buffer: greed.Buffer): { Section }
 	local s = structure.of(buffer)
-	local code = in_code(s)
+	local seen = known[s]
+	if seen then
+		return seen.sections
+	end
 	local found: { Section } = {}
 	local open: { Section } = {}
-	for i, line in s.lines do
-		local n = i - 1
-		if not code[n] then
-			local id, negated, value =
-				string.match(line, "^%s*<!%-%-%s*if%s+([%w_-]+)%s*(!?)=%s*([^%s]+)%s*%-%->%s*$")
-			if id and value then
-				local section: Section = {
-					open = n,
-					close = #s.lines - 1,
-					id = id,
-					value = value,
-					negated = negated == "!",
-				}
-				table.insert(found, section)
-				table.insert(open, section)
-			elseif string.match(line, "^%s*<!%-%-%s*end%s*%-%->%s*$") and #open > 0 then
-				(table.remove(open) :: Section).close = n
-			end
+	for _, n in s.comments do
+		local line = s.lines[n + 1]
+		local id, negated, value =
+			string.match(line, "^%s*<!%-%-%s*if%s+([%w_-]+)%s*(!?)=%s*([^%s]+)%s*%-%->%s*$")
+		if id and value then
+			local section: Section = {
+				open = n,
+				close = #s.lines - 1,
+				id = id,
+				value = value,
+				negated = negated == "!",
+			}
+			table.insert(found, section)
+			table.insert(open, section)
+		elseif string.match(line, "^%s*<!%-%-%s*end%s*%-%->%s*$") and #open > 0 then
+			(table.remove(open) :: Section).close = n
 		end
 	end
+	known[s] = { sections = found }
 	return found
 end
 
@@ -90,8 +91,12 @@ end
 --- out questions in those parts. A part inside one that's hidden is hidden
 --- too, whatever its own condition says.
 function M.state(buffer: greed.Buffer): ({ [number]: boolean }, { [string]: string })
-	local groups = choices.list(buffer)
 	local sections = M.sections(buffer)
+	local seen = known[structure.of(buffer)]
+	if seen.hidden and seen.answers then
+		return seen.hidden, seen.answers
+	end
+	local groups = choices.list(buffer)
 	local hidden: { [number]: boolean } = {}
 	local answers: { [string]: string } = {}
 	-- An answer can show or hide a part with another question in it, whose
@@ -127,6 +132,7 @@ function M.state(buffer: greed.Buffer): ({ [number]: boolean }, { [string]: stri
 			break
 		end
 	end
+	seen.hidden, seen.answers = hidden, answers
 	return hidden, answers
 end
 
@@ -142,7 +148,6 @@ end
 --- under its `if` line, which says when it shows. With the cursor on that
 --- line the part opens, dimmed, to read and edit.
 function M.marks(buffer: greed.Buffer, s: Structure, first: number, last: number): { greed.Mark }
-	local code = in_code(s)
 	local hidden = M.state(buffer)
 	local sections = M.sections(buffer)
 	-- The `if` line of each hidden part, and the part.
@@ -155,7 +160,7 @@ function M.marks(buffer: greed.Buffer, s: Structure, first: number, last: number
 	local out: { greed.Mark } = {}
 	for n = first, math.min(last, #s.lines - 1) do
 		local line = s.lines[n + 1]
-		if not code[n] then
+		if not s.code_at[n] then
 			local section = folded[n]
 			local hint: string? = nil
 			if section then

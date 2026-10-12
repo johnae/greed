@@ -82,6 +82,8 @@ export type Structure = {
 	items: { Item },
 	tables: { Table },
 	links: { Link },
+	--- The lines with an HTML comment (`<!--`) outside code, in order.
+	comments: { number },
 	--- What's on each line: the heading, the code block, the list item
 	--- that starts there, the table.
 	heading_at: { [number]: Heading },
@@ -92,16 +94,17 @@ export type Structure = {
 	inside: { [number]: boolean },
 }
 
+local function without_cr(line: string): string
+	return if string.sub(line, -1) == "\r" then string.sub(line, 1, -2) else line
+end
+
 -- `text`'s lines, without their line breaks, and where each starts.
 local function split(text: string): ({ string }, { number })
 	local lines, starts = {}, {}
 	local at = 1
 	while true do
 		local nl = string.find(text, "\n", at, true)
-		local line = string.sub(text, at, (nl or #text + 1) - 1)
-		if string.sub(line, -1) == "\r" then
-			line = string.sub(line, 1, -2)
-		end
+		local line = without_cr(string.sub(text, at, (nl or #text + 1) - 1))
 		table.insert(lines, line)
 		table.insert(starts, at - 1)
 		if nl == nil then
@@ -488,6 +491,15 @@ local function find_links(s: Structure, first: number, last: number)
 	end
 end
 
+-- The lines from `first` to `last` with an HTML comment outside code.
+local function find_comments(s: Structure, first: number, last: number)
+	for n = first, last do
+		if not s.code_at[n] and string.find(s.lines[n + 1], "<!--", 1, true) then
+			table.insert(s.comments, n)
+		end
+	end
+end
+
 -- The last line of the front matter, `---` lines around YAML at the top,
 -- if there is some.
 local function front_matter(lines: { string }): number?
@@ -514,6 +526,7 @@ local function empty(lines: { string }, starts: { number }, version: number): St
 		items = {},
 		tables = {},
 		links = {},
+		comments = {},
 		heading_at = {},
 		code_at = {},
 		item_at = {},
@@ -575,12 +588,27 @@ local function build(text: string, buffer: greed.Buffer?, version: number): Stru
 	end
 	index(s)
 	find_links(s, 0, #lines - 1)
+	find_comments(s, 0, #lines - 1)
 	return s
 end
 
--- `old`'s entries in `list` that start at or before line `before`, then
--- `window`'s, then `old`'s that start at or after line `after`, moved by
--- `moved`.
+-- How many of `list`'s entries, in order by `line`, start before `limit`.
+local function count_before<T>(list: { T }, line: (T) -> number, limit: number): number
+	local low, high = 0, #list
+	while low < high do
+		local mid = (low + high + 1) // 2
+		if line(list[mid]) < limit then
+			low = mid
+		else
+			high = mid - 1
+		end
+	end
+	return low
+end
+
+-- `old`'s entries in `list` (in order by `line`) that start at or before
+-- line `before`, then `window`'s, then `old`'s that start at or after line
+-- `after`, moved by `moved`.
 local function join<T>(
 	list: { T },
 	window: { T },
@@ -589,35 +617,69 @@ local function join<T>(
 	after: number?,
 	moved: (T) -> T
 ): { T }
-	local out: { T } = {}
-	for _, entry in list do
-		if line(entry) <= before then
-			table.insert(out, entry)
-		end
-	end
+	local kept = count_before(list, line, before + 1)
+	local out: { T } = table.move(list, 1, kept, 1, {})
 	table.move(window, 1, #window, #out + 1, out)
 	if after then
-		for _, entry in list do
-			if line(entry) >= after then
-				table.insert(out, moved(entry))
-			end
+		for i = count_before(list, line, after) + 1, #list do
+			table.insert(out, moved(list[i]))
 		end
 	end
 	return out
 end
 
--- The structure of `text`, which was `old` until lines `from` to `to` (as
--- they are now) changed: lines are read again from a blank line before them
--- that no block spans to one after them where old and new agree again, and
--- the rest is moved. Nil when that can't be told, near front matter say.
+-- `buffer`'s lines and where each starts, which were `old`'s until lines
+-- `from` to `to` (as they are now) changed: those read from it, the rest
+-- taken from `old`. Nil when the lines after them don't line up with the
+-- buffer's, as when the change was wider than said.
+local function relines(
+	buffer: greed.Buffer,
+	old: Structure,
+	from: number,
+	to: number
+): ({ string }?, { number }?)
+	local count = buffer:line_count()
+	local delta = count - #old.lines
+	if from < 0 or to < from or to >= count or to - delta < from - 1 then
+		return nil, nil
+	end
+	local lines: { string } = table.move(old.lines, 1, from, 1, table.create(count) :: { string })
+	local starts: { number } = table.move(old.starts, 1, from, 1, table.create(count) :: { number })
+	for n = from, to do
+		local at = buffer:line_start(n)
+		lines[n + 1], starts[n + 1] = without_cr(buffer:slice(at, buffer:line_end(n))), at
+	end
+	if to + 1 < count then
+		local bytes = buffer:line_start(to + 1) - old.starts[to - delta + 2]
+		table.move(old.lines, to - delta + 2, #old.lines, to + 2, lines)
+		for n = to + 2, count do
+			starts[n] = old.starts[n - delta] + bytes
+		end
+		-- The line after the change is where it was, moved.
+		local check = without_cr(buffer:slice(buffer:line_start(to + 1), buffer:line_end(to + 1)))
+		if check ~= lines[to + 2] then
+			return nil, nil
+		end
+	end
+	return lines, starts
+end
+
+-- The structure of `buffer`, which was `old` until lines `from` to `to`
+-- (as they are now) changed: lines are read again from a blank line before
+-- them that no block spans to one after them where old and new agree
+-- again, and the rest is moved. Nil when that can't be told, near front
+-- matter say.
 local function splice(
-	text: string,
+	buffer: greed.Buffer,
 	old: Structure,
 	from: number,
 	to: number,
 	version: number
 ): Structure?
-	local lines, starts = split(text)
+	local lines, starts = relines(buffer, old, from, to)
+	if lines == nil or starts == nil then
+		return nil
+	end
 	local s = empty(lines, starts, version)
 	if s.front ~= old.front then
 		return nil
@@ -640,7 +702,7 @@ local function splice(
 			and not old.inside[was]
 	end)
 	local after = if stop < count then stop - delta else nil
-	local bytes = #text - (old.starts[#old.starts] + #old.lines[#old.lines])
+	local bytes = buffer:len() - (old.starts[#old.starts] + #old.lines[#old.lines])
 	s.headings = join(
 		old.headings,
 		s.headings,
@@ -723,6 +785,19 @@ local function splice(
 			return moved
 		end
 	)
+	find_comments(s, start + 1, stop - 1)
+	s.comments = join(
+		old.comments,
+		s.comments,
+		function(n: number)
+			return n
+		end,
+		start,
+		after,
+		function(n: number): number
+			return n + delta
+		end
+	)
 	return s
 end
 
@@ -754,7 +829,7 @@ function M.update(buffer: greed.Buffer, old: Structure, from: number, to: number
 	if cached and cached.version == version then
 		return cached
 	end
-	local s = splice(buffer:text(), old, from, to, version) or build(buffer:text(), buffer, version)
+	local s = splice(buffer, old, from, to, version) or build(buffer:text(), buffer, version)
 	cache[buffer:id()] = s
 	return s
 end

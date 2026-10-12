@@ -600,6 +600,54 @@ test("after an edit only what changed is read and drawn again, as if all of it w
 	end
 end)
 
+test("after many edits anywhere the lines read again in part are the whole text's", function(t)
+	local parts: { string } = {}
+	for i = 1, 12 do
+		table.insert(
+			parts,
+			`## Part {i}\n\nSome *text* and a [link](x{i}.md).\n\n- one\n  - two\n\n\`\`\`sh\necho {i}\n\`\`\`\n\n| a | b |\n|---|---|\n| 1 | 2 |\n`
+		)
+	end
+	shown(t, table.concat(parts, "\n"))
+	local buffer = greed.view():buffer()
+	local pieces = { "x", "\n", "\n\n", "- item\n", "```\n", "# h\n", "| c |\n", "", "[a](b)" }
+	-- The same edits each run.
+	local seed = 7
+	local function random(n: number): number
+		seed = (seed * 1103515245 + 12345) % 2147483648
+		return seed % n
+	end
+	for i = 1, 120 do
+		local from = random(buffer:len() + 1)
+		local to = math.min(from + random(4) * random(6), buffer:len())
+		buffer:edit(function(e)
+			e:replace(from, to, pieces[random(#pieces) + 1])
+		end)
+		t:wait(0)
+		local read = markdown.structure(buffer)
+		local whole = markdown.structure(buffer:text())
+		-- Each list is in order, as reading again in part needs.
+		local function ordered(list: { any }, key: string)
+			for k = 2, #list do
+				assert(list[k - 1][key] <= list[k][key], `edit {i}: {key} out of order`)
+			end
+		end
+		ordered(read.headings, "line")
+		ordered(read.code, "open")
+		ordered(read.items, "line")
+		ordered(read.tables, "first")
+		ordered(read.links, "line")
+		assert(#read.lines == #whole.lines, `edit {i}: {#read.lines} lines, not {#whole.lines}`)
+		for n, line in whole.lines do
+			assert(read.lines[n] == line, `edit {i}, line {n}: {read.lines[n]} not {line}`)
+			assert(
+				read.starts[n] == whole.starts[n],
+				`edit {i}, line {n} starts at {read.starts[n]}`
+			)
+		end
+	end
+end)
+
 test("buffer.changed says which lines changed", function(t)
 	t:buffer("a\nb\nc\nd|")
 	local seen: { { number? } } = {}
