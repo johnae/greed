@@ -1,0 +1,29 @@
+# The front page's recording: a Rust file with the file tree, a terminal
+# beside it, and the file picker.
+size 1280 800
+hide
+keys :
+type open src/worker.rs
+keys enter
+wait-for ATTEMPTS
+show
+wait 1
+keys space e
+wait 1.2
+keys alt-l
+wait 0.6
+keys alt-p d
+wait 1.5
+type bin/kubectl get pods
+keys enter
+wait 1.5
+keys ctrl-\
+keys alt-k
+wait 1
+shot hero
+keys space f
+wait 0.8
+type serv
+wait 1.2
+keys enter
+wait 2

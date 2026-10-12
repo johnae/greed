@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Greed: a text environment for you and your agents</title>
-<meta name="description" content="Greed is a text environment for you and your agents that you shape as you run it: an editor, shells whose output is data, terminals, notes whose code runs, charts and live boards, and whatever you add with a plugin. One editor through all of it, in the Helix, Vim or VS Code style. In your terminal, in a window, or on a remote machine. A small Rust core, with everything else in Luau plugins.">
-<meta property="og:title" content="Greed: a text environment for you and your agents">
-<meta property="og:description" content="An editor, shells, terminals, notes, charts and live boards in one session you and your agents share, and you shape as you run it: a small Rust core with everything else in Luau plugins. Terminal or window, local or remote.">
+<title>Greed: a modal editor with Luau plugins</title>
+<meta name="description" content="Greed is a modal text editor with Helix, Vim and VS Code keys, a shell, terminals and agent support. A small Rust core; the rest is Luau plugins. It runs in a terminal or a window, locally or over ssh.">
+<meta property="og:title" content="Greed: a modal editor with Luau plugins">
+<meta property="og:description" content="A modal text editor with Helix, Vim and VS Code keys, a shell, terminals and agent support. A small Rust core; the rest is Luau plugins.">
 <meta property="og:image" content="https://greed.rs/assets/social.jpg">
 <meta property="og:url" content="https://greed.rs/">
 <meta name="twitter:card" content="summary_large_image">
@@ -28,183 +28,100 @@
 </header>
 
 <main>
-  <section class="hero">
-    <h1 class="visually-hidden">Greed is good. Get, Reflect, Eval, Edit, Delegate.</h1>
-    <picture>
-      <source media="(max-width: 900px)" srcset="assets/hero-900.jpg">
-      <img src="assets/hero.jpg" width="1672" height="941" alt="The Greed logo, the line “Greed is good.” and the words “Get, Reflect, Eval, Edit, Delegate” beside a laptop showing a Greed config file, at a window over a fjord at sunrise.">
-    </picture>
-  </section>
-
   <section class="intro">
-    <p class="lead">Your editor, your shells, your terminals and your agents, in
-    one session that keeps running. Leave it and come back, from this machine
-    or another over ssh, in a terminal or a window. Everything in it is text,
-    so one editor runs through all of it, the Helix way, the Vim way or
-    without modes.</p>
-    <p class="sub">In spirit it's closest to Emacs: an environment you shape as
-    you run it. Underneath is a small Rust core with tree-sitter and language
-    servers built in. On top, everything you see is a plugin in
-    <a href="https://luau.org">Luau</a>, Lua with gradual types, that you can
-    read, change or replace, and each one can only do what you allowed it.</p>
+    <h1>Greed</h1>
+    <p class="lead">A modal text editor with Helix, Vim and VS Code keys, a
+    shell, terminals and agent support. The core is a small Rust program; the
+    rest is written in <a href="https://luau.org">Luau</a> plugins that you
+    can read and change. It runs in a terminal or in its own window, locally
+    or over ssh.</p>
     <p class="actions">
-      <a class="button primary" href="docs/using.html">Get started</a>
-      <a class="button" href="docs/plugins.html">Write a plugin</a>
+      <a class="button primary" href="#install">Install</a>
+      <a class="button" href="docs/using.html">Docs</a>
     </p>
   </section>
 
-  <section class="demo">
-    <pre class="term"><code><span class="prompt">$</span> greed src/main.rs          <span class="c"># in this terminal</span>
-<span class="prompt">$</span> greed --gui                <span class="c"># the same session in a window drawn on the GPU</span>
-<span class="prompt">:</span>detach                      <span class="c"># leave it running: files, undo, servers, shells</span>
-<span class="prompt">$</span> greed attach               <span class="c"># and come back to it, from either</span></code></pre>
+  <section class="hero">
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/hero.mp4" poster="https://github.com/johnae/greed/releases/download/media/hero.png" autoplay muted loop playsinline preload="metadata" aria-label="A Rust file with the file tree beside it and a terminal below running kubectl get pods, then the file picker opening another file"></video>
   </section>
 
   <section class="showcase wide">
     <div class="text">
-      <h2>Three ways to edit, all first class</h2>
-      <p>Pick the one your hands know. Each style has its own modes and keys,
-      and they share the rest: commands, the leader menu, pickers and every
-      plugin. <code>:style</code> switches while it runs.</p>
+      <h2>Helix, Vim or VS Code keys</h2>
+      <p>Pick a style on first start; <code>:style</code> switches later.
+      Each style has its own modes. Commands, pickers and plugins are shared.</p>
       <p><a href="docs/editing-styles.html">Editing styles</a></p>
     </div>
     <div class="styles">
       <div class="style">
         <h3>Helix</h3>
-        <p>Select, then act.</p>
         <p class="keys"><kbd>%</kbd> <kbd>s</kbd> <span>todo</span> <kbd>enter</kbd> <kbd>c</kbd> <span>done</span></p>
-        <p class="what">Every <code>todo</code> in the file, changed at once.</p>
+        <p class="what">Select every <code>todo</code>, change them all.</p>
       </div>
       <div class="style">
         <h3>Vim</h3>
-        <p>Say what, then where.</p>
         <p class="keys"><kbd>:</kbd><span>%s/todo/done/g</span></p>
-        <p class="what">The changes show as you type, before it runs.</p>
+        <p class="what">Substitute, with a preview as you type.</p>
       </div>
       <div class="style">
         <h3>VS Code</h3>
-        <p>No modes, the keys you know.</p>
         <p class="keys"><kbd>ctrl-d</kbd> <kbd>ctrl-d</kbd> <span>done</span></p>
-        <p class="what">The next matches, one more each time.</p>
+        <p class="what">Add the next match as a cursor.</p>
       </div>
     </div>
   </section>
 
   <section class="showcase flip">
     <div class="text">
-      <h2>Here, or where the work runs</h2>
-      <p>The editor is a session you attach to, from a terminal or from its
-      own window. Run it on the machine with the code and the builds, and
-      look at it from your laptop: files, shells, terminals,
-      language servers and agents all run over there, while your keys, your
-      theme and your config come with you. Close the lid, and attach again
-      later to everything as you left it.</p>
+      <h2>Sessions and ssh</h2>
+      <p>The editor runs as a session. <code>:detach</code> leaves it running
+      with its files, undo history, shells and language servers;
+      <code>greed attach</code> comes back to it. <code>greed ssh HOST</code>
+      runs the session on the remote machine and shows it here, with your
+      local keys, theme and config.</p>
       <p><a href="docs/using.html#editing-on-another-machine">Editing on another machine</a></p>
     </div>
-    <div class="remote">
-      <div class="machine here">
-        <span class="label">your laptop</span>
-        <p class="what">terminal or window</p>
-        <p class="what">keys, theme, config</p>
-      </div>
-      <div class="link"><span>ssh</span></div>
-      <div class="machine there">
-        <span class="label">build-box</span>
-        <p class="what">files and undo</p>
-        <p class="what">shells, terminals</p>
-        <p class="what">language servers</p>
-        <p class="what">agents</p>
-      </div>
-      <pre class="term"><code><span class="prompt">$</span> greed ssh build-box        <span class="c"># a terminal</span>
-<span class="prompt">$</span> greed ssh build-box --gui  <span class="c"># a window</span></code></pre>
-    </div>
+    <pre class="term"><code><span class="prompt">$</span> greed src/main.rs
+<span class="prompt">$</span> greed --gui         <span class="c"># same session, in a window</span>
+<span class="prompt">:</span>detach
+<span class="prompt">$</span> greed attach
+<span class="prompt">$</span> greed ssh build-box</code></pre>
   </section>
 
   <section class="showcase">
     <div class="text">
-      <h2>Panes, tabs and floats</h2>
-      <p>Split the screen yourself, or let a layout do it:
-      <code>main-stack</code>, <code>columns</code>, <code>spiral</code> or
-      your own in Luau. Float any pane above the rest, and lay the floats out
-      freely, tiled, cascaded or one at a time. The keys follow zellij and
-      work everywhere, even while you type into a terminal.</p>
-      <p><a href="docs/keys.html#panes-tabs-and-terminals">Panes and their keys</a></p>
-    </div>
-    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/panes.mp4" poster="https://github.com/johnae/greed/releases/download/media/panes.png" autoplay muted loop playsinline preload="metadata" aria-label="The file tree, a file and a terminal side by side, then a floating terminal over them"></video>
-  </section>
-
-  <section class="showcase flip">
-    <div class="text">
-      <h2>A shell that keeps its output</h2>
-      <p>Each command becomes a block you can search, fold, filter and run
-      again. Tables from <code>kubectl</code>, <code>docker</code> or
-      <code>ps</code> go straight into a stage, as in <code>kubectl get pods |
-      where STATUS != Running</code>, and <code>$1 | chart RESTARTS</code>
-      takes block 1's output again without running it. A <code>watch</code>
-      marks what changed, and the rows are things to act on: a pod's logs, a
-      file, a process. When you want your own shell, a terminal pane runs
-      whatever you like.</p>
+      <h2>Shell</h2>
+      <p><code>:shell</code> keeps each command's output as a block you can
+      search, filter and run again. Tables from <code>kubectl</code>,
+      <code>docker</code> or <code>ps</code> can be filtered
+      (<code>where STATUS != Running</code>) and charted. A terminal pane runs
+      your own shell when you need one.</p>
       <p><a href="docs/shell.html">The shell</a></p>
     </div>
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/kubectl.mp4" poster="https://github.com/johnae/greed/releases/download/media/kubectl.png" autoplay muted loop playsinline preload="metadata" aria-label="kubectl get pods in the Greed shell, then only the pods not running, the failing pod's logs opened from its row, then a chart of block 1's restarts"></video>
   </section>
 
-  <section class="showcase">
+  <section class="showcase flip">
     <div class="text">
-      <h2>Charts and live boards</h2>
-      <p>Add <code>| chart</code> to a command and its numbers become bars or
-      lines; in a <code>watch</code> the lines move. Keep the commands you
-      look at every day on a board, a Markdown file of live cards laid out in
-      a grid: load, memory, the pods that keep restarting, a Prometheus
-      query.</p>
-      <p><a href="docs/shell.html#charts">Charts</a> ·
+      <h2>Live Markdown</h2>
+      <p>Fields, formulas and computed table columns, updated as you edit,
+      with charts under tables. Data blocks read CSV, SQLite or PostgreSQL.
+      Code blocks run on request and save their output below them. The file
+      stays plain Markdown.</p>
+      <p><a href="docs/using.html#live-values">Live values</a> ·
+      <a href="docs/using.html#runnable-code-blocks">Runnable blocks</a> ·
       <a href="docs/boards.html">Boards</a></p>
     </div>
-    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/board.mp4" poster="https://github.com/johnae/greed/releases/download/media/board.png" autoplay muted loop playsinline preload="metadata" aria-label="A board of live charts: load average, memory used and restarts by pod"></video>
-  </section>
-
-  <section class="showcase flip">
-    <div class="text">
-      <h2>Notes whose code runs</h2>
-      <p>A fenced block in Markdown runs when you ask: <code>shell</code> in
-      the Greed shell, with its tables and charts, <code>python</code>,
-      <code>luau</code> in the editor itself, <code>http</code> requests and
-      more. Its output is saved under it, so the file reads well anywhere and
-      a diff shows what changed; with <code>every=5</code> it keeps up as it
-      goes. Name a block and feed its result to the next one, and a page
-      becomes a small pipeline. Notes have links, todos and an agenda, all in
-      plain files.</p>
-      <p><a href="docs/using.html#runnable-code-blocks">Runnable blocks</a> ·
-      <a href="docs/using.html#notes">Notes</a></p>
-    </div>
-    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/notes.mp4" poster="https://github.com/johnae/greed/releases/download/media/notes.png" autoplay muted loop playsinline preload="metadata" aria-label="A note with a live load chart under a shell block, and a block that filters another block's table of pods"></video>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/markdown.mp4" poster="https://github.com/johnae/greed/releases/download/media/markdown.png" autoplay muted loop playsinline preload="metadata" aria-label="A Markdown budget: the rent field changes and the per-person share follows, then an amount in the table changes and its computed columns, the yearly total and the bar chart follow"></video>
   </section>
 
   <section class="showcase">
     <div class="text">
-      <h2>Documents that work things out</h2>
-      <p>A Markdown file can hold fields, formulas and tables whose columns
-      are worked out row by row, with a chart under the table. Change a
-      number and everything that depends on it follows as you type. Data
-      blocks read tables live from CSV, SQLite or PostgreSQL. The file stays
-      plain Markdown that reads well on GitHub.</p>
-      <p><a href="docs/using.html#live-values">Live values</a> ·
-      <a href="docs/using.html#data-blocks">Data blocks</a></p>
-    </div>
-    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/markdown.mp4" poster="https://github.com/johnae/greed/releases/download/media/markdown.png" autoplay muted loop playsinline preload="metadata" aria-label="A Markdown budget: the rent field changes and the per-person share follows, then an amount in the table changes and its worked-out columns, the yearly total and the bar chart follow"></video>
-  </section>
-
-  <section class="showcase flip">
-    <div class="text">
-      <h2>Agents, as clients and inside</h2>
-      <p>Claude Code, Gemini, Codex or Greed's own agent with the model of your
-      choice run in a pane next to your work. Outside agents connect over
-      MCP, <code>greed ctl</code> and Claude Code's <code>/ide</code>. They see
-      your unsaved changes and selections, and propose edits you review in the
-      buffer. Several can work at once, each in a workspace of its own whose
-      changes you review and bring in when it's done. Ask one for a command
-      or a setting and it can write you a plugin, which Greed type checks and
-      tests before you approve it.</p>
+      <h2>Agents</h2>
+      <p>Claude Code, Codex, Gemini CLI, opencode or Greed's own agent run in
+      a pane. Outside agents connect over MCP. Proposed edits show in the
+      buffer for you to accept or reject. An agent can work in its own
+      workspace, and you review its changes when it's done.</p>
       <p><a href="docs/agents.html">Agents</a></p>
     </div>
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/agent.mp4" poster="https://github.com/johnae/greed/releases/download/media/agent.png" autoplay muted loop playsinline preload="metadata" aria-label="Greed's own agent, asked why the worker pod keeps crashing, searches and reads the project, proposes a change that is allowed, and says what it checked"></video>
@@ -212,30 +129,31 @@
 
   <section class="features">
     <article>
-      <h2>Plugins all the way down</h2>
-      <p>What you see comes from Luau plugins written against the same typed
-      API yours use. Each declares what it may touch (files, programs, the
-      network), runs within a time budget, and takes everything it added
-      with it when unloaded.</p>
+      <h2>Plugins</h2>
+      <p>Keys, modes, pickers, themes and the agent support are Luau plugins
+      on the same typed API yours use. A plugin declares what it may access
+      (files, programs, network) and is removed cleanly when unloaded.</p>
     </article>
     <article>
       <h2>Terminal or window</h2>
-      <p>The window draws on the GPU, with ligatures, images, PDFs, prose in a
-      proportional font and Markdown shown as a document. The terminal gets
-      the same session and the same theme.</p>
+      <p>The window is drawn on the GPU, with ligatures, images and PDFs.
+      Both show the same session.</p>
+    </article>
+    <article>
+      <h2>Panes and floats</h2>
+      <p>Splits, tabs, layouts and floating panes, with zellij's
+      <code>alt</code> keys. They work inside terminals too.</p>
     </article>
   </section>
 
   <section class="example">
     <div class="text">
-      <h2>A plugin is a folder</h2>
-      <p>This one adds a command and binds it to the leader's <kbd>U</kbd> (<kbd>space U</kbd>, or
-      <kbd>ctrl-space U</kbd> in the VS Code style). Put it in
-      <code>~/.config/greed/plugins/upper/</code>, or run <code>greed new
-      upper</code> there to get one with a test. <code>greed test upper</code>
-      runs its tests in a headless editor.</p>
+      <h2>A plugin</h2>
+      <p>A folder with an <code>init.luau</code>. This one adds a command and
+      binds it to <kbd>space U</kbd>. <code>greed new NAME</code> makes one
+      with a test, and <code>greed test NAME</code> runs it.</p>
       <p><a href="docs/plugins.html">Writing plugins</a> ·
-      <a href="docs/reference/api.html">The Luau API</a></p>
+      <a href="docs/reference/api.html">Luau API</a></p>
     </div>
     <pre class="code"><code><span class="k">local</span> greed <span class="o">=</span> <span class="f">require</span>(<span class="s">"@greed"</span>)
 
@@ -255,31 +173,22 @@ greed.<span class="f">command</span>({
 greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span class="s">"leader"</span> }, { U <span class="o">=</span> <span class="s">"upper"</span> })</code></pre>
   </section>
 
-  <section class="install">
-    <h2>Try it</h2>
-    <p>Download the latest Greed: one binary with the terminal and the
-    window, or Greed.app on a Mac, signed and notarized by Apple.</p>
+
+  <section class="install" id="install">
+    <h2>Install</h2>
     <p class="actions downloads">
       <a class="button primary" href="https://github.com/johnae/greed/releases/latest/download/greed-macos.zip">macOS app</a>
       <a class="button" href="https://github.com/johnae/greed/releases/latest/download/greed-linux-x86_64.tar.gz">Linux x86_64</a>
       <a class="button" href="https://github.com/johnae/greed/releases/latest/download/greed-linux-aarch64.tar.gz">Linux arm64</a>
     </p>
+    <pre class="term"><code><span class="prompt">$</span> brew install johnae/greed/greed             <span class="c"># macOS or Linux</span>
+<span class="prompt">$</span> brew install --cask johnae/greed/greed-app  <span class="c"># Greed.app</span>
+<span class="prompt">$</span> nix run github:johnae/greed                 <span class="c"># Nix</span>
+<span class="prompt">$</span> tar -xzf greed-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1</code></pre>
     <p>The <a href="https://github.com/johnae/greed/releases/latest">releases page</a>
-    has the rest: the macOS binary for the terminal, and a static build of
-    the terminal side for servers and any Linux. On Linux, unpack it into
-    <code>~/.local</code>:</p>
-    <pre class="term"><code><span class="prompt">$</span> tar -xzf greed-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1
-<span class="prompt">$</span> greed --gui README.md</code></pre>
-    <p>With Homebrew, on macOS or Linux:</p>
-    <pre class="term"><code><span class="prompt">$</span> brew install johnae/greed/greed             <span class="c"># the greed command</span>
-<span class="prompt">$</span> brew install --cask johnae/greed/greed-app  <span class="c"># Greed.app, on macOS</span></code></pre>
-    <p>On NixOS, <code>nix run github:johnae/greed</code>, downloaded from
-    <code>greed.cachix.org</code>. For servers there's a
-    static build of the terminal side that runs on any Linux. The default
-    plugins are built into the binary, and the first start asks how you like
-    to edit and which theme you want, and writes a config with settings to
-    try. Then <code>:tutor</code> teaches your style's keys, with lines to
-    practise on, and shows you around.</p>
+    also has a static terminal-only build for any Linux. The first start
+    asks for an editing style and a theme; <code>:tutor</code> teaches the
+    keys.</p>
   </section>
 </main>
 

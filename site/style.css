@@ -1,5 +1,5 @@
-/* greed.rs: the landing page. Colors come from the hero image: its morning
-   sky, the logo's purple and the ink of the wordmark. */
+/* greed.rs: the landing page. Code and terminals are in Catppuccin Frappé,
+   the theme the recordings use, with the logo's purple as the accent. */
 
 :root {
   --bg: #f4f2f7;
@@ -67,15 +67,6 @@ kbd {
   white-space: nowrap;
 }
 
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 /* The bar across the top. */
 .bar {
   display: flex;
@@ -104,18 +95,14 @@ kbd {
 
 section { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
 
-/* The picture, wide but not wall to wall. */
-.hero { max-width: 1400px; }
+/* The recording at the top, wide but not wall to wall. */
+.hero { max-width: 1400px; padding-top: 36px; }
 
-.hero img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 14px;
-  box-shadow: 0 18px 50px -24px rgba(30, 33, 48, 0.45);
-}
+.hero .shot { box-shadow: 0 18px 50px -24px rgba(30, 33, 48, 0.45); }
 
-.intro { text-align: center; padding-top: 48px; }
+.intro { text-align: center; padding-top: 56px; }
+
+h1 { font: 600 44px/1.1 var(--serif); margin: 0 0 18px; }
 
 .lead {
   max-width: 720px;
@@ -160,8 +147,6 @@ pre code { background: none; padding: 0; font-size: 15px; }
 .s { color: var(--code-str); }
 .f { color: var(--code-fn); }
 .o { color: var(--code-op); }
-
-.demo { padding-top: 48px; max-width: 860px; }
 
 .features {
   display: grid;
@@ -216,13 +201,6 @@ footer p { margin: 6px 0; }
   .lead { font-size: 20px; }
   .example { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   pre code { font-size: 13px; }
-}
-
-/* The second, smaller paragraph under the lead. */
-.sub {
-  max-width: 640px;
-  margin: 18px auto 0;
-  color: var(--muted);
 }
 
 .n { color: var(--code-op); }
@@ -327,61 +305,4 @@ h3 { font: 600 19px/1.3 var(--serif); margin: 0; }
   aspect-ratio: 1280 / 800;
   border-radius: 12px;
   background: var(--code-bg);
-}
-
-/* Two machines: the one you look from, and the one the work runs on. */
-.remote {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-}
-
-.remote .term { grid-column: 1 / 4; margin-top: 8px; }
-
-.machine {
-  position: relative;
-  padding: 30px 14px 14px;
-  border-radius: 12px;
-  background: var(--code-bg);
-  border: 1px solid rgba(198, 208, 245, 0.16);
-}
-
-.machine.there { border-color: var(--code-key); }
-
-.machine .label {
-  position: absolute;
-  top: 9px;
-  left: 14px;
-  color: var(--code-dim);
-  font: 12px/1 var(--mono);
-}
-
-.machine .what {
-  margin: 4px 0 0;
-  color: var(--code-ink);
-  font: 13px/1.4 var(--mono);
-}
-
-.link {
-  position: relative;
-  width: 56px;
-  height: 2px;
-  background: var(--code-key);
-}
-
-.link span {
-  position: absolute;
-  top: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: var(--muted);
-  font: 12px/1 var(--mono);
-}
-
-@media (max-width: 900px) {
-  .remote { grid-template-columns: minmax(0, 1fr); }
-  .remote .term { grid-column: auto; }
-  .link { width: 2px; height: 28px; justify-self: center; }
-  .link span { top: 50%; left: 12px; transform: translateY(-50%); }
 }
