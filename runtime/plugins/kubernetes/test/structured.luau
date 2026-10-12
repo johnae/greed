@@ -100,6 +100,12 @@ test("kubectl get with stages after it asks for JSON and reads that", function(t
 	assert(string.find(chart.output, "worker", 1, true), chart.output)
 end)
 
+test("the rows kubectl get's stages keep are pods to act on", function(t)
+	local sh = fake(t)
+	local block = ran(t, sh, "kubectl get pods -n shop | where RESTARTS > 5")
+	assert(block.called and block.called.one == "pod", "rows of pods")
+end)
+
 test("kubectl with its own output, a watch or no stages runs as typed", function(t)
 	local sh = fake(t)
 	ran(t, sh, "kubectl get pods -o wide | where NAME == web")

@@ -140,9 +140,12 @@ function M.kind(kind: Kind)
 end
 
 --- The command whose output `block` shows: what it ran, or for a live
---- block (`watch`) what it runs each time.
+--- block (`watch`) what it runs each time, without the shell's stages
+--- after it (`| where ...`), which keep its rows: they're still what the
+--- program listed, pods after a filter as before it.
 function M.command_line(block: Block): string
-	return block.watching or block.command
+	local line = block.watching or block.command
+	return tables.after_programs(line) or line
 end
 
 -- What each block's rows are: the kind and what it kept, once the block

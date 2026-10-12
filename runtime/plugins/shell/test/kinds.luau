@@ -93,6 +93,17 @@ test("ls -l's rows are files and folders; enter opens one and goes into the othe
 	assert(greed.view():buffer():path() == `{sh.cwd}/notes.txt`, "forward to the file")
 end)
 
+test("rows a stage kept are still files", function(t)
+	local sh = fake(t)
+	greed.fs.write(`{sh.cwd}/notes.txt`, "hello\n")
+	greed.fs.write(`{sh.cwd}/other.md`, "x\n")
+	local kept = ran(t, sh, "ls -l | where NAME ~ notes")
+	assert(kept.called and kept.called.many == "files", "files after where")
+	on(sh, kept, "notes.txt")
+	local file = assert(thing_here("file"))
+	assert(file.value == `{sh.cwd}/notes.txt`, tostring(file.value))
+end)
+
 test("ps's rows are processes", function(t)
 	local sh = fake(t)
 	local listed = ran(t, sh, "ps aux")
