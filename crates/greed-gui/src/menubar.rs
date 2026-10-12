@@ -13,6 +13,9 @@ use crate::window::Event;
 /// The command of the menus' Quit item.
 const QUIT: &str = "quit";
 
+/// The command of the menus' New Window item, which cmd-n chooses.
+const NEW_WINDOW: &str = "window-new";
+
 /// The menu bar as last shown, kept so it's only built again when the
 /// menus change.
 pub struct MenuBar {
@@ -67,7 +70,10 @@ impl MenuBar {
             let submenu = Submenu::new(&m.title, true);
             for item in m.items.iter().filter(|item| item.command != QUIT) {
                 // The item's id is its command, which choosing it runs.
-                let entry = MenuItem::with_id(item.command.as_str(), &item.label, true, None);
+                let accelerator = (item.command == NEW_WINDOW)
+                    .then(|| Accelerator::new(Some(Modifiers::SUPER), Code::KeyN));
+                let entry =
+                    MenuItem::with_id(item.command.as_str(), &item.label, true, accelerator);
                 let _ = submenu.append(&entry);
             }
             let _ = menu.append(&submenu);

@@ -171,6 +171,11 @@ go, as `:detach` does. Going to another session (`space P`, `:session`)
 shows it in the same window, as a terminal would; `alt-w` in `space P`
 opens one in another window instead.
 
+`ctrl-shift-n` (`cmd-n` on macOS, or File, New Window) opens another
+window on the same session, laid out on its own from what this one shows,
+the way a terminal's new window starts where you are. `space P` in it
+takes it to another project.
+
 The window draws with your system's monospaced font, ligatures included
 when the font has them (Fira Code, JetBrains Mono, Cascadia Code), and
 draws box lines itself so borders join cleanly. Images show as they do in

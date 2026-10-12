@@ -393,6 +393,34 @@ greed.command({
 	end,
 })
 
+-- When `window-new` last asked for a window: the window that attaches soon
+-- after is that one, and gets a layout of its own.
+local window_asked = -math.huge
+local WINDOW_WAIT = 30000
+
+greed.command({
+	name = "window-new",
+	doc = "Open another window on this session, laid out on its own, as a terminal's new window does; space P in it goes to another project",
+	run = function()
+		local name = greed.session.current()
+		if name == nil or greed.client.current().kind ~= "gui" then
+			greed.echo("another window opens from a window (greed --gui)")
+			return
+		end
+		window_asked = greed.now()
+		greed.session.switch({ name = name, window = true })
+	end,
+})
+
+greed.on("client.attached", function(event: greed.ClientAttached)
+	if greed.now() - window_asked <= WINDOW_WAIT then
+		window_asked = -math.huge
+		greed.client.set_layout("independent", event.client)
+	end
+end)
+
+greed.keymap.bind({}, { ["ctrl-N"] = "window-new" })
+
 greed.command({
 	name = "trust",
 	doc = "Trust the shown project's own config in .greed/, and run it now and whenever it opens",

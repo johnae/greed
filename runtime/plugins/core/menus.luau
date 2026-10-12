@@ -26,6 +26,7 @@ local defaults: { Menu } = {
 		items = {
 			{ label = "Open File…", command = "pick-file" },
 			{ label = "Open Project…", command = "pick-project" },
+			{ label = "New Window", command = "window-new" },
 			{ label = "Switch to File…", command = "pick-buffer" },
 			{ label = "Save", command = "save" },
 			{ label = "Close File", command = "buffer-close" },
