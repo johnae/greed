@@ -1,2 +1,3 @@
 name = "git-plugins"
+requires = ["core"]
 capabilities = ["proc", "fs.read", "fs.write"]

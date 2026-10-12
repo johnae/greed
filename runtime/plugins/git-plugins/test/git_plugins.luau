@@ -97,3 +97,34 @@ test("another machine's sync fetches the pinned commit, not the latest", functio
 	assert(git(`{plugins.folder()}/pinned`, { "rev-parse", "HEAD" }) == first)
 	greed.option.set("plugins-lock", "")
 end)
+
+test("a plugin the config no longer uses is removed by a sync, and its pin with it", function(t)
+	local keep_repo = repository(t, "keep")
+	local drop_repo = repository(t, "drop")
+	local lock = `{t:tempdir()}/plugins.lock`
+	greed.option.set("plugins-lock", lock)
+	local forget_keep = plugins.use(keep_repo, { name = "keep" })
+	local forget_drop = plugins.use(drop_repo, { name = "drop" })
+	-- Something else in the plugins folder, not fetched from git, stays.
+	local other = `{plugins.folder()}/mine`
+	greed.fs.mkdir(other)
+	waiting(t, function()
+		plugins.sync()
+	end)
+	assert(greed.fs.stat(`{plugins.folder()}/drop/plugin.toml`), "fetched")
+	forget_drop()
+	-- The sync at startup doesn't remove: a config that failed partway
+	-- would lose them all.
+	waiting(t, function()
+		plugins.sync()
+	end)
+	assert(greed.fs.stat(`{plugins.folder()}/drop`), "still there")
+	t:run("plugins-sync")
+	assert(greed.fs.stat(`{plugins.folder()}/drop`) == nil, "removed")
+	assert(greed.fs.stat(`{plugins.folder()}/keep`), "the one still used stays")
+	assert(greed.fs.stat(other), "a folder git didn't fetch stays")
+	local pins = plugins.parse_lock(greed.fs.read(lock) or "")
+	assert(pins.keep and pins.drop == nil, "its pin went too")
+	forget_keep()
+	greed.option.set("plugins-lock", "")
+end)

@@ -2450,6 +2450,9 @@ your approval if it wants capabilities. Each is pinned to a commit in
 config and lock file gets the same ones; commit it with your config.
 `:plugins-update` (or `:plugins-update NAME`) moves them to the latest of
 the branch or tag they follow, asking again if an update wants more.
+To stop using one, take its line out of your config and run
+`:plugins-sync`: the plugin goes to the trash and its pin goes from the
+lock file. Starting Greed never removes plugins on its own.
 
 ### Where Greed keeps things, and profiles
 

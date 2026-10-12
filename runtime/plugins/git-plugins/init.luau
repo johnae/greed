@@ -12,11 +12,14 @@
 -- background once the editor is up, or with `:plugins-sync`, at the commit
 -- the lock file says, or the latest of `ref` for one that's new there.
 -- `:plugins-update [NAME]` fetches the latest of each `ref` and writes the
--- lock file again. A plugin fetched loads like any of yours: one asking
+-- lock file again. Taking a line out of your config and running
+-- `:plugins-sync` removes that plugin (to the trash where there is one) and
+-- its pin. A plugin fetched loads like any of yours: one asking
 -- for capabilities waits for your approval (`:plugins-approve`), and so
 -- does an update asking for more.
 
 local greed = require("@greed")
+local core = require("@core")
 
 greed.option.define({
 	name = "plugins-lock",
@@ -43,8 +46,9 @@ function M.name_of(url: string): string
 end
 
 --- Says to use the plugin at `url` (anything `git clone` takes), following
---- `opts.ref` and named `opts.name`.
-function M.use(url: string, opts: { ref: string?, name: string? }?)
+--- `opts.ref` and named `opts.name`. What it returns takes that back, as a
+--- config running again without the line does.
+function M.use(url: string, opts: { ref: string?, name: string? }?): () -> ()
 	local name = (opts and opts.name) or M.name_of(url)
 	for i, known in uses do
 		if known.name == name then
@@ -52,7 +56,17 @@ function M.use(url: string, opts: { ref: string?, name: string? }?)
 			break
 		end
 	end
-	table.insert(uses, { url = url, ref = opts and opts.ref, name = name })
+	local entry = { url = url, ref = opts and opts.ref, name = name }
+	table.insert(uses, entry)
+	local function forget()
+		local at = table.find(uses, entry)
+		if at then
+			table.remove(uses, at)
+		end
+	end
+	-- Taken out again when the config that said so runs again without it.
+	greed.plugin.tie(forget)
+	return forget
 end
 
 --- The plugins said to use, in order.
@@ -206,23 +220,84 @@ function M.sync(update: boolean?, only: string?): (number, { string })
 	return done, failed
 end
 
+--- Removes the plugins the lock file pins that your config no longer says
+--- to use, to the trash where there is one, and takes them out of the lock
+--- file. Only folders that are still a checkout of where they were fetched
+--- from go. Returns the names removed, and what failed.
+function M.prune(): ({ string }, { string })
+	local folder = M.folder()
+	if folder == nil then
+		return {}, {}
+	end
+	local wanted: { [string]: boolean } = {}
+	for _, use in uses do
+		wanted[use.name] = true
+	end
+	local locked = read_lock()
+	local removed, failed = {}, {}
+	for name, pin in locked do
+		if wanted[name] then
+			continue
+		end
+		local dir = `{folder}/{name}`
+		if greed.fs.stat(dir) then
+			local ok, origin = pcall(git, { "config", "--get", "remote.origin.url" }, dir)
+			if not ok or string.gsub(origin, "%s+$", "") ~= pin.url then
+				table.insert(failed, `{name}: not the checkout of {pin.url}, left as it is`)
+				continue
+			end
+			local gone, err = pcall(core.file.remove, dir)
+			if not gone then
+				table.insert(failed, `{name}: {err}`)
+				continue
+			end
+		end
+		locked[name] = nil
+		table.insert(removed, name)
+	end
+	if #removed > 0 then
+		write_lock(locked)
+	end
+	table.sort(removed)
+	return removed, failed
+end
+
 -- Says how a sync went, or `nothing` when it changed nothing.
-local function report(done: number, failed: { string }, nothing: string?)
-	if #failed > 0 then
-		greed.echo(`plugins: {table.concat(failed, "; ")}`)
-	elseif done > 0 then
-		greed.echo(`plugins: {done} fetched`)
+local function report(done: number, failed: { string }, nothing: string?, removed: { string }?)
+	local said = {}
+	if done > 0 then
+		table.insert(said, `{done} fetched`)
+	end
+	if removed and #removed > 0 then
+		table.insert(said, `removed {table.concat(removed, ", ")}`)
+	end
+	table.move(failed, 1, #failed, #said + 1, said)
+	if #said > 0 then
+		greed.echo(`plugins: {table.concat(said, "; ")}`)
 	elseif nothing then
 		greed.echo(`plugins: {nothing}`)
 	end
 end
 
+-- Syncs as `M.sync` does, removes what the config no longer uses (asked
+-- for by hand only: a config that failed partway would otherwise lose
+-- them all) and says how it went.
+local function sync_and_prune(update: boolean, only: string?, nothing: string)
+	local done, failed = M.sync(update, only)
+	local removed: { string } = {}
+	if only == nil then
+		local prune_failed: { string }
+		removed, prune_failed = M.prune()
+		table.move(prune_failed, 1, #prune_failed, #failed + 1, failed)
+	end
+	report(done, failed, nothing, removed)
+end
+
 greed.command({
 	name = "plugins-sync",
-	doc = "Fetch the plugins your config says to use from git that aren't here yet, at the lock file's commits",
+	doc = "Fetch the plugins your config says to use from git that aren't here yet, at the lock file's commits, and remove those it no longer uses",
 	run = function()
-		local done, failed = M.sync(false)
-		report(done, failed, "all here")
+		sync_and_prune(false, nil, "all here")
 	end,
 })
 
@@ -231,8 +306,7 @@ greed.command({
 	doc = "Take the plugins from git (or the one named) to the latest of what each follows, and pin that",
 	args = { { name = "plugin", doc = "Its name", type = "string", optional = true } },
 	run = function(ctx)
-		local done, failed = M.sync(true, ctx.values.plugin)
-		report(done, failed, "up to date")
+		sync_and_prune(true, ctx.values.plugin, "up to date")
 	end,
 })
 
