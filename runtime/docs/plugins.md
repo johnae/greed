@@ -1419,6 +1419,31 @@ stopping it first if it runs, as `space C` does. A block's
 record has what ran and how it ended, its output, and `block.value` when
 the output was JSON.
 
+`shell.run(sh, line, opts)` takes, all optional: `cwd` and `env` to run
+with in place of the shell's, and `runner = "pipe"` to keep what the
+program prints (`block.stdout`) apart from its errors (`block.stderr`);
+the default runs it in a terminal, as a line you type. Leave out `by`:
+`by = "agent"` is for agents' tools, and marks the block as an agent's.
+
+```luau
+local greed = require("@greed")
+local shell = require("@shell")
+
+local sh = shell.list(greed.project.current().id)[1] or shell.open({ show = false })
+local block = shell.run(sh, "go test -json ./...", { runner = "pipe" })
+if block then
+	shell.wait(block)
+	greed.echo(`{block.status}: {#block.stdout} bytes`)
+end
+```
+
+The programs a line runs are your plugin's, so it needs `proc`; the
+builtins `cd` and `open` also need `fs.read`. What the shell does around
+them, like its wrapper's files in the cache folder, its history, the
+folder's environment and the prompt, is the shell's own, so they need
+nothing more. A block that can't start, say for a missing capability,
+ends as failed with the reason in `block.stderr`.
+
 `block.table` is the output read as a table, when it was one: `columns`
 (the header's names, in order) and `rows`, each a map from a column's name
 to its cell's text. `shell.tables` reads and works on them:
@@ -2103,6 +2128,34 @@ folder you set up yourself. `t:marked()` is the buffer with its markers,
 and `t:quitting()`, `t:detached()` and `t:switched()` say whether
 something asked the editor to exit, to let the client go, or to send it
 to another session.
+
+`t:run` waits for background work the command starts, but not for the
+programs it reads from, like a shell block's: wait for those with
+`t:wait_for`, checking what you're waiting for (`block.status ~=
+"running"`, a picker's float). A message your command shows while it
+waits is there before the program finishes, so it's not something to wait
+for.
+
+Each `t:tempdir(files)` call makes a new folder, so put every file a test
+needs in one call. Files written from Luau aren't executable: to fake a
+program, write it and make it runnable with `chmod`, then put its folder
+first on a shell's `PATH`, as the docker plugin's tests fake `docker`:
+
+```luau
+local shell = require("@shell")
+
+-- A shell whose `docker` prints a table for `ps`.
+local function fake(t: test.TestContext): shell.Shell
+	local dir = t:tempdir({
+		["bin/docker"] = '#!/bin/sh\nprintf "CONTAINER ID   IMAGE   NAMES\\n3f2a1b4c5d6e   nginx   web\\n"\n',
+	})
+	assert(greed.process.run({ "chmod", "+x", `{dir}/bin/docker` }))
+	local sh = shell.open({ cwd = dir, show = false })
+	local path = assert(greed.process.run({ "printenv", "PATH" })).stdout
+	sh.env.PATH = `{dir}/bin:{string.gsub(path, "\n$", "")}`
+	return sh
+end
+```
 
 Tests don't show the message about code that held the editor up, so a
 busy machine doesn't change what `t:messages()` returns. Each key a test
