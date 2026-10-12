@@ -163,7 +163,7 @@
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/board.mp4" poster="https://github.com/johnae/greed/releases/download/media/board.png" autoplay muted loop playsinline preload="metadata" aria-label="A board of live charts: load average, memory used and restarts by pod"></video>
   </section>
 
-  <section class="showcase">
+  <section class="showcase flip">
     <div class="text">
       <h2>Notes whose code runs</h2>
       <p>A fenced block in Markdown runs when you ask: <code>shell</code> in
@@ -178,6 +178,20 @@
       <a href="docs/using.html#notes">Notes</a></p>
     </div>
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/notes.mp4" poster="https://github.com/johnae/greed/releases/download/media/notes.png" autoplay muted loop playsinline preload="metadata" aria-label="A note with a live load chart under a shell block, and a block that filters another block's table of pods"></video>
+  </section>
+
+  <section class="showcase">
+    <div class="text">
+      <h2>Documents that work things out</h2>
+      <p>A Markdown file can hold fields, formulas and tables whose columns
+      are worked out row by row, with a chart under the table. Change a
+      number and everything that depends on it follows as you type. Data
+      blocks read tables live from CSV, SQLite or PostgreSQL. The file stays
+      plain Markdown that reads well on GitHub.</p>
+      <p><a href="docs/using.html#live-values">Live values</a> ·
+      <a href="docs/using.html#data-blocks">Data blocks</a></p>
+    </div>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/markdown.mp4" poster="https://github.com/johnae/greed/releases/download/media/markdown.png" autoplay muted loop playsinline preload="metadata" aria-label="A Markdown budget: the rent field changes and the per-person share follows, then an amount in the table changes and its worked-out columns, the yearly total and the bar chart follow"></video>
   </section>
 
   <section class="showcase flip">
@@ -256,6 +270,9 @@ greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span 
     <code>~/.local</code>:</p>
     <pre class="term"><code><span class="prompt">$</span> tar -xzf greed-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1
 <span class="prompt">$</span> greed --gui README.md</code></pre>
+    <p>With Homebrew, on macOS or Linux:</p>
+    <pre class="term"><code><span class="prompt">$</span> brew install johnae/greed/greed             <span class="c"># the greed command</span>
+<span class="prompt">$</span> brew install --cask johnae/greed/greed-app  <span class="c"># Greed.app, on macOS</span></code></pre>
     <p>On NixOS, <code>nix run github:johnae/greed</code>, downloaded from
     <code>greed.cachix.org</code>. For servers there's a
     static build of the terminal side that runs on any Linux. The default

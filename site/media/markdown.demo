@@ -1,0 +1,33 @@
+# A live Markdown page: change a field and a table's amount, and the
+# formulas, the worked-out columns and the chart follow.
+size 1280 800
+hide
+keys :
+type open budget.md
+keys enter
+wait-for Shop
+wait 1.5
+show
+wait 1.5
+keys /
+type 900
+keys enter
+wait 0.8
+keys enter
+wait 0.8
+keys ctrl-u
+type 1200
+wait 0.5
+keys enter
+wait 1.5
+keys /
+type 85
+keys enter
+wait 0.8
+keys c
+type 640
+wait 0.4
+keys esc
+wait 1.5
+shot markdown
+wait 2

@@ -86,3 +86,6 @@ end
 -- No spelling or grammar notes from a Markdown language server on the
 -- recording machine.
 greed.lsp.remove("markdown")
+
+-- The sample projects are the demo's own; nothing to ask about.
+greed.option.set("project-trust", "off")
