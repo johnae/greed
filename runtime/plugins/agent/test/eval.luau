@@ -1,6 +1,7 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local agent = require("@agent")
+local core = require("@core")
 local models: any = require("@models")
 
 local function last_run(): agent.EvalEntry
@@ -260,5 +261,28 @@ test("a caller that can't be told apart between calls isn't offered the session"
 	assert(result() == nil, "and the next run asks again")
 	t:run("eval-deny")
 	settle(t, result)
+	restore()
+end)
+
+test("the page reads as a page: out of typing, read-only, its fences hidden", function(t)
+	reset("ask")
+	t:buffer("|")
+	greed.mode.set(core.style.typing_mode())
+	local result = try(t, "local x = 1\nreturn x", agent.caller())
+	local view = greed.view()
+	local page = view:buffer()
+	assert(greed.mode.get() == core.style.home(), greed.mode.get())
+	assert(page:readonly(), "typing at it can't change it")
+	local hidden: { [string]: boolean } = {}
+	for _, mark in page:decorations("eval") do
+		if mark.conceal then
+			hidden[page:line_text(page:line_of(mark.from))] = true
+		end
+	end
+	assert(hidden["```luau"] and hidden["```"], "both fences are hidden")
+	t:keys("j j")
+	assert(page:line_of(view:cursor()) == 2, "the cursor moves")
+	t:keys("r")
+	assert(settle(t, result) == "1", tostring(result()))
 	restore()
 end)

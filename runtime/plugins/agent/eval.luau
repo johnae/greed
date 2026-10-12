@@ -17,6 +17,7 @@
 -- is kept with who let it: `:eval-log`.
 
 local greed = require("@greed")
+local core = require("@core")
 local models = require("@models")
 local operations = require("@operations")
 local registry = require("./registry")
@@ -135,29 +136,36 @@ type Asking = {
 }
 local asking: { Asking } = {}
 
-local function page(code: string, needs: string, why: string?, lasting: boolean): string
+-- The page's text, and the lines (0-based) of the code's two fences, which
+-- show as blank lines around it.
+local function page(
+	code: string,
+	needs: string,
+	why: string?,
+	lasting: boolean
+): (string, number, number)
 	local longest = 2
 	for ticks in string.gmatch(code, "`+") do
 		longest = math.max(longest, #ticks)
 	end
 	local fence = string.rep("`", longest + 1)
-	return table.concat({
+	local _, breaks = string.gsub(code, "\n", "")
+	local text = table.concat({
 		"# An agent wants to run code",
 		"",
 		`It would {needs}.`,
 		"",
 		`Reviewer: {why or "none set up (see :models)"}`,
-		"",
 		`{fence}luau`,
 		code,
 		fence,
-		"",
 		if lasting
 			then "r runs it · s runs it and every run of this agent's session · d denies it"
 			else "r runs it · d denies it",
 		"",
 		"Run it?",
 	}, "\n")
+	return text, 5, 5 + breaks + 2
 end
 
 local answer: (buffer: greed.Buffer, choice: string) -> ()
@@ -165,33 +173,44 @@ local answer: (buffer: greed.Buffer, choice: string) -> ()
 -- Shows `code` and waits for you: "run", "session" (offered when `lasting`)
 -- or "deny".
 local function ask_you(code: string, needs: string, why: string?, lasting: boolean): string
-	local buffer =
-		greed.create_buffer("file", page(code, needs, why, lasting), { language = "markdown" })
+	local text, open, close = page(code, needs, why, lasting)
+	-- Read-only, so keys typed at it never land in it as text.
+	local buffer = greed.create_buffer("file", text, { language = "markdown", readonly = true })
 	local a: Asking = { buffer = buffer, done = greed.signal(), lasting = lasting }
 	table.insert(asking, a)
+	local function fence(line: number): greed.Mark
+		return {
+			from = buffer:line_start(line),
+			to = buffer:line_end(line),
+			style = "text",
+			conceal = true,
+			reveal = "never",
+		}
+	end
 	local last = buffer:line_start(buffer:line_count() - 1)
-	local function button(text: string, action: string): greed.Mark
+	local function button(label: string, action: string): greed.Mark
 		return {
 			from = last,
 			to = last,
 			style = "ui.button",
-			text = text,
+			text = label,
 			eol = true,
 			action = action,
 		}
 	end
+	local marks = { fence(open), fence(close), button("Run", "eval-run") }
+	local keys = { r = "eval-run", d = "eval-deny" }
 	if lasting then
-		buffer:decorate("eval", {
-			button("Run", "eval-run"),
-			button("Allow for this session", "eval-allow-session"),
-			button("Deny", "eval-deny"),
-		})
-		buffer:set_keys({ r = "eval-run", s = "eval-allow-session", d = "eval-deny" })
-	else
-		buffer:decorate("eval", { button("Run", "eval-run"), button("Deny", "eval-deny") })
-		buffer:set_keys({ r = "eval-run", d = "eval-deny" })
+		table.insert(marks, button("Allow for this session", "eval-allow-session"))
+		keys.s = "eval-allow-session"
 	end
+	table.insert(marks, button("Deny", "eval-deny"))
+	buffer:decorate("eval", marks)
+	buffer:set_keys(keys)
 	a.view = greed.float(buffer, { title = "Run this?", width = "80%", height = "70%" })
+	-- Out of typing, as you may have been in the agent's chat, so the
+	-- cursor moves and r, s and d answer.
+	greed.mode.set(core.style.home())
 	-- Nobody answering, like a session no one is looking at, is denying.
 	greed.spawn(function()
 		greed.sleep(UNANSWERED)

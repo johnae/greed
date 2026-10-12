@@ -92,7 +92,6 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
                 // A pane other than the active one is dimmed to its edges.
                 let base = if *active { text } else { inactive };
                 put_rows(&mut grid, surface, cropped, base, !active, paint);
-                spread_scaled(&mut grid, y..y + h, x..x + w);
             }
             Role::Tabline | Role::Status => {
                 put_rows(&mut grid, surface, cropped, text, false, paint);
@@ -132,6 +131,10 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
                 }
                 put_rows(&mut grid, surface, cropped, body, false, paint);
             }
+        }
+        // A heading in a float or a panel takes its rows as one in a pane does.
+        if !matches!(surface.role, Role::Tabline | Role::Status) {
+            spread_scaled(&mut grid, y..y + h, x..x + w);
         }
     }
     grid
@@ -593,8 +596,8 @@ fn append(row: &mut Row, piece: Row, width: usize) {
     }
 }
 
-/// Marks the cells under scaled text in `rows` and `cols`, a pane: in the
-/// rows a scaled line takes, every cell of the pane is under it (its
+/// Marks the cells under scaled text in `rows` and `cols`, a pane, panel or
+/// float: in the rows a scaled line takes, every cell of it is under it (its
 /// `scale` is 0), and those under the text itself take its style, so its
 /// background (a selection, a highlight) fills all of it. Other panes'
 /// rows beside it are their own.
@@ -745,6 +748,26 @@ mod tests {
             "the whole row under it is the scaled line's, in its pane"
         );
         assert!(grid[2].iter().all(|c| c.scale == 1));
+    }
+
+    #[test]
+    fn a_scaled_line_in_a_float_takes_its_rows_there() {
+        // A heading on a float's first line sits on that line and the one
+        // under it, so it isn't drawn up over the float's title.
+        let mut f = frame(Vec::new());
+        let role = Role::Float {
+            border: true,
+            title: Some("t".into()),
+            label: Vec::new(),
+            footer: Vec::new(),
+        };
+        let rows = vec![scaled_row(), Row::default()];
+        let float = Surface::new(SurfaceId::View(ViewId(2)), role, rect(1, 1, 6, 2), rows);
+        f.surfaces.push(float);
+        let grid = compose(&f, Medium::Gui);
+        assert_eq!((grid[1][1].scale, grid[1][3].scale), (2, 2));
+        assert!(grid[2][1..7].iter().all(|c| c.scale == 0));
+        assert_eq!((grid[2][0].scale, grid[2][7].scale), (1, 1), "its border");
     }
 
     #[test]
