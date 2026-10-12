@@ -232,3 +232,22 @@ test("a group that's all gone isn't signalled", function(t)
 	assert(child:wait() == 0)
 	assert(not child:signal("KILL"), "nothing of it is left to reach")
 end)
+
+test("a run whose caller fails while it waits doesn't keep the editor busy", function(t)
+	local failed: string? = nil
+	greed.spawn(function()
+		local ok, err = pcall(function()
+			greed.process.run({ "sleep", "5" }, {
+				on_start = function(child)
+					child:kill()
+					error("gave up", 0)
+				end,
+			})
+		end)
+		failed = if ok then nil else tostring(err)
+	end)
+	t:wait_for(function()
+		return failed ~= nil
+	end)
+	assert(failed == "gave up", tostring(failed))
+end)

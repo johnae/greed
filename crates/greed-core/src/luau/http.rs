@@ -383,7 +383,7 @@ pub(super) fn chunk_arrived(lua: &Lua, id: u64, chunk: Chunk) -> LuaResult<()> {
         token
     };
     let values = chunk_values(lua, id, chunk)?;
-    tasks::wake(lua, waiter, values)
+    tasks::deliver(lua, waiter, values)
 }
 
 /// `greed.http` for `owner`.

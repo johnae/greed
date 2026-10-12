@@ -95,6 +95,19 @@ impl Jobs {
     pub(super) fn begun_by(&self, id: usize) -> bool {
         self.begun.values().any(|by| *by == id)
     }
+
+    /// Ends the jobs coroutine `id` began, which is done: one that failed
+    /// or was stopped while it waited won't end them itself.
+    pub(super) fn end_begun_by(&mut self, id: usize) {
+        let running = &mut self.running;
+        self.begun.retain(|token, by| {
+            let mine = *by == id;
+            if mine {
+                running.remove(token);
+            }
+            !mine
+        });
+    }
 }
 
 /// Counts work the running coroutine does elsewhere, like a program run to

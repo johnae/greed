@@ -524,7 +524,7 @@ pub(super) fn piece_arrived(lua: &Lua, id: u64, piece: Piece) -> LuaResult<()> {
         }
     };
     for (token, values) in wake {
-        tasks::wake(lua, token, values)?;
+        tasks::deliver(lua, token, values)?;
     }
     Ok(())
 }

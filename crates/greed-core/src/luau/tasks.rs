@@ -440,7 +440,9 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
 /// and lets whatever waits for it carry on, whether it finished or failed.
 fn finish(lua: &Lua, id: usize) -> LuaResult<()> {
     let waiters = {
-        let tasks = &mut state_mut(lua).tasks;
+        let mut state = state_mut(lua);
+        state.jobs.end_begun_by(id);
+        let tasks = &mut state.tasks;
         tasks.forget(id);
         tasks.finished.remove(&id).unwrap_or_default()
     };
@@ -463,9 +465,9 @@ pub(super) fn wake(lua: &Lua, token: u64, value: impl IntoLuaMulti) -> LuaResult
     }
 }
 
-/// Wakes the coroutine waiting on job `token` with its result. If it isn't
-/// waiting yet, its slice having run out between starting the job and
-/// waiting for it, the result is kept until it does.
+/// Wakes the coroutine waiting on `token` (a job's, a program's next piece)
+/// with `value`. If it isn't waiting yet, its slice having run out between
+/// asking and waiting, the value is kept until it does.
 pub(super) fn deliver(lua: &Lua, token: u64, value: impl IntoLuaMulti) -> LuaResult<()> {
     if state(lua).tasks.waiting.contains_key(&token) {
         return wake(lua, token, value);

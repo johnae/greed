@@ -44,7 +44,7 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
                 Ok(value) => (to_lua(lua, value)?, Value::Nil),
                 Err(error) => (Value::Nil, to_lua(lua, error)?),
             };
-            tasks::wake(lua, token, (result, error))
+            tasks::deliver(lua, token, (result, error))
         }
         Handled::Diagnostics(buffer) => diagnostics_changed(lua, buffer),
         Handled::Request {
@@ -78,7 +78,7 @@ fn stopped(lua: &Lua, server: lsp::ServerId) -> LuaResult<()> {
         let error = lua.create_table()?;
         error.set("code", STOPPED)?;
         error.set("message", "the language server stopped")?;
-        tasks::wake(lua, token, (Value::Nil, error))?;
+        tasks::deliver(lua, token, (Value::Nil, error))?;
     }
     Ok(())
 }
