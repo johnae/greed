@@ -14,7 +14,7 @@ require("@self/tools")
 require("@self/objects")
 require("@self/commands")
 require("@self/ide")
-require("@self/claude")
+local claude = require("@self/claude")
 require("@self/compare")
 require("@self/refactor")
 local web = require("@self/web")
@@ -128,4 +128,6 @@ return table.freeze({
 	--- What a write to a plugin.toml lets the plugin do that it couldn't,
 	--- to say in the question before it (manifest.luau).
 	widens = manifest.widens,
+	--- Claude Code in a pane, connected to Greed (claude.luau).
+	claude = claude,
 })

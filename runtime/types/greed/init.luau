@@ -1147,6 +1147,8 @@ export type Control = {
 	--- (default ~/.claude/ide). Its requests come with client "ide". Returns
 	--- the port; calling it again replaces the connection.
 	serve_ide: (folders: { string }, lock_dir: string?) -> number,
+	--- Names `folders` as open in the lock file `serve_ide` wrote, as when an agent's workspace is added; Claude Code started from now on sees them, and those connected stay connected.
+	ide_folders: (folders: { string }) -> (),
 	--- Sends a notification, e.g. "selection_changed", to Claude Code.
 	notify: (method: string, params: any) -> (),
 }

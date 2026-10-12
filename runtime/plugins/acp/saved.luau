@@ -182,10 +182,13 @@ function M.first_asked(s: Session): string?
 	return nil
 end
 
+--- The title of a session asked nothing yet.
+M.UNTITLED = "(nothing asked yet)"
+
 --- The first line of what `s` was asked first, to tell it by.
 function M.title(s: Session): string
 	local first = M.first_asked(s)
-	return first and string.match(first, "^%s*([^\n]*)") or "(nothing asked yet)"
+	return first and string.match(first, "^%s*([^\n]*)") or M.UNTITLED
 end
 
 --- Stops keeping Greed's own session `id`, of the project at `root`.
@@ -228,7 +231,7 @@ end
 
 --- Keeps `s` to take up again, or with `forget`, stops keeping it.
 function M.remember(s: Session, forget: boolean?)
-	if s.driver then
+	if s.driver and s.driver.keeps then
 		-- Greed's own agent keeps its sessions as it goes (`store`).
 		if forget and s.session_id then
 			M.discard(s.root, s.session_id)
@@ -268,7 +271,7 @@ local kept_as: { [number]: string } = {}
 --- it was first asked changes.
 function M.keep(s: Session)
 	local key = `{s.session_id}\0{M.first_asked(s) or ""}`
-	if s.session_id and s.driver == nil and kept_as[s.id] ~= key then
+	if s.session_id and not (s.driver and s.driver.keeps) and kept_as[s.id] ~= key then
 		kept_as[s.id] = key
 		M.remember(s)
 	end

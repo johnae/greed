@@ -177,6 +177,9 @@ export type Driver = {
 	check: ((session: Session) -> string?)?,
 	--- Its session is over: it's stopped or closed.
 	stop: ((session: Session) -> ())?,
+	--- Whether it keeps its sessions itself, as Greed's own agent does;
+	--- otherwise they're kept with the ACP agents' (saved.luau).
+	keeps: boolean?,
 }
 
 -- A terminal the agent asked for: a program and what it printed.

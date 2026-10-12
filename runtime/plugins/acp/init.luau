@@ -40,7 +40,9 @@ local list = require("@self/list")
 local panes = require("@panes")
 local statusline = require("@statusline")
 local models = require("@models")
-local agent_context = require("@agent").context
+local agent_api = require("@agent")
+local agent_context = agent_api.context
+local terminal = require("@terminal")
 local slash = require("@self/slash")
 
 type Session = session.Session
@@ -194,6 +196,10 @@ local buffers: { [number]: greed.Buffer } = {}
 -- When each session last did something, in seconds since 1970.
 local active: { [number]: number } = {}
 
+-- The terminal of each session of Claude Code in a terminal, by session id
+-- (see `in_terminal`): its buffer shows it instead of a transcript.
+local terms: { [number]: terminal.Term } = {}
+
 -- Redraws everything that shows `s`, soon: changes come in bursts while an
 -- agent streams.
 local queued: { [number]: boolean } = {}
@@ -207,7 +213,7 @@ local function changed(s: Session)
 		greed.sleep(20)
 		queued[s.id] = nil
 		local buffer = buffers[s.id]
-		if buffer and buffer:valid() then
+		if buffer and buffer:valid() and terms[s.id] == nil then
 			pcall(transcript.render, buffer, s)
 			-- Its float, if it has one, says it's waiting for you.
 			core.floats.attention(buffer, s.status == "waiting")
@@ -216,6 +222,24 @@ local function changed(s: Session)
 		participants.draw(sessions)
 		saved.keep(s)
 	end)
+end
+
+-- `named`, numbered from 2 while sessions have it, to name a new one.
+local function fresh_name(named: string): string
+	local name, count = named, 1
+	local function taken(): boolean
+		for _, other in sessions do
+			if other.name == name then
+				return true
+			end
+		end
+		return false
+	end
+	while taken() do
+		count += 1
+		name = `{named} {count}`
+	end
+	return name
 end
 
 -- Starts a session of `agent` in `workspace` (or the project at `root`),
@@ -232,21 +256,7 @@ local function launch(
 	elseif agent.native and extra and extra.fork then
 		return nil, `{agent.title or agent.name} can't be forked yet`
 	end
-	-- The agent's name, numbered from 2 while sessions have it.
-	local named = agent.title or agent.name
-	local name, count = named, 1
-	local function taken(): boolean
-		for _, other in sessions do
-			if other.name == name then
-				return true
-			end
-		end
-		return false
-	end
-	while taken() do
-		count += 1
-		name = `{named} {count}`
-	end
+	local name = fresh_name(agent.title or agent.name)
 	local s: Session
 	local function decides(permission: session.Permission): string?
 		return decide(s, permission)
@@ -325,6 +335,103 @@ function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 	return launch(agent, root, workspace)
 end
 
+-- Claude Code run in a terminal, in a workspace of its own (`space i W`):
+-- listed with the other sessions so its work comes back the same way (d,
+-- R, b, x). You talk to it in its terminal; taken up again, it runs
+-- `claude --continue` there.
+local IN_TERMINAL = "claude-terminal"
+
+local TERMINAL: session.Driver = {
+	prompt = function()
+		return false, "it runs in its terminal; type there"
+	end,
+	cancel = function() end,
+	set_model = function()
+		return false, "pick its model in Claude Code"
+	end,
+	stop = function(s)
+		local term = terms[s.id]
+		terms[s.id] = nil
+		if term and terminal.is_open(term) then
+			terminal.close(term)
+		end
+		agent_api.claude.forget_folder(s.cwd)
+	end,
+}
+
+-- Starts Claude Code in a terminal in `ws`, a workspace of the project at
+-- `root`, with `extra` arguments, as a session titled `title`.
+local function in_terminal(
+	root: string,
+	ws: session.Workspace,
+	extra: { string }?,
+	title: string?
+): (Session?, string?)
+	local ok, term = pcall(agent_api.claude.open, ws.path, extra)
+	if not ok then
+		return nil, `can't start Claude Code: {term}`
+	end
+	local s: Session
+	s = session.start_driven({
+		name = fresh_name("Claude Code"),
+		agent = IN_TERMINAL,
+		root = root,
+		cwd = ws.path,
+		workspace = ws,
+		changed = function()
+			changed(s)
+		end,
+		driver = TERMINAL,
+	})
+	-- What it's kept by: Claude Code keeps its own by folder.
+	s.session_id = ws.name
+	if title then
+		table.insert(s.entries, { kind = "user", text = title })
+	end
+	terms[s.id] = term
+	table.insert(sessions, s)
+	active[s.id] = os.time()
+	buffers[s.id] = term.buffer
+	by_buffer[term.buffer:id()] = s
+	changed(s)
+	return s, nil
+end
+
+-- A session's terminal ended: it's exited, to take up again from the list.
+greed.on("terminal.exited", function(event)
+	for id, term in terms do
+		if term.terminal == event.terminal then
+			terms[id] = nil
+			for _, s in sessions do
+				if s.id == id then
+					s.status = "exited"
+					changed(s)
+				end
+			end
+		end
+	end
+end)
+
+--- Starts Claude Code in a terminal, in a workspace of its own for the
+--- project at `root`, on `prompt` if given. It's listed with the other
+--- sessions, and its work comes back the same way.
+function M.claude_in_workspace(root: string, prompt: string?): (Session?, string?)
+	local ws, err = workspaces.make(root, "claude")
+	if ws == nil then
+		return nil, err
+	end
+	-- Told where it works and how its work gets back, as Greed's own agent is.
+	local args = { "--append-system-prompt", workspaces.note(ws, root) }
+	if prompt then
+		table.insert(args, prompt)
+	end
+	local s, start_err = in_terminal(root, ws, args, prompt)
+	if s == nil then
+		workspaces.remove({ root = root, workspace = ws })
+	end
+	return s, start_err
+end
+
 --- The sessions you can take up again for the repository of `root`, in any
 --- of its workspaces, newest first, leaving out the ones running now.
 function M.saved(root: string): { Saved }
@@ -337,6 +444,14 @@ end
 --- only Greed's own sessions can move, since other agents keep theirs by
 --- folder.
 function M.resume(entry: Saved, here: string?): (Session?, string?)
+	if entry.agent == IN_TERMINAL then
+		local ws = entry.workspace
+		if ws == nil or not greed.fs.stat(ws.path) then
+			return nil, `its workspace is gone{if ws then ": " .. ws.path else ""}`
+		end
+		local title = if entry.title ~= saved.UNTITLED then entry.title else nil
+		return in_terminal(entry.root, ws, { "--continue" }, title)
+	end
 	local agent = agents.named(entry.agent)
 	if agent == nil then
 		return nil, `no agent called {entry.agent} is registered`
@@ -365,6 +480,8 @@ function M.fork(s: Session): (Session?, string?)
 	local agent = agent_of[s.id]
 	if agent and agent.native then
 		return nil, "Greed's own sessions can't be forked yet"
+	elseif s.agent == IN_TERMINAL then
+		return nil, "Claude Code in a terminal can't be forked here"
 	elseif agent == nil or s.session_id == nil then
 		return nil, "it hasn't started yet"
 	end
@@ -398,6 +515,8 @@ local function buffer_of(s: Session): greed.Buffer
 	local buffer = buffers[s.id]
 	if buffer and buffer:valid() then
 		return buffer
+	elseif s.agent == IN_TERMINAL then
+		error("its terminal has ended; take it up again from the list (space i l)", 0)
 	elseif buffer then
 		by_buffer[buffer:id()] = nil
 	end
@@ -475,7 +594,9 @@ local function place(s: Session, where: Placement?, sizes: Sizes?): greed.View
 			break
 		end
 	end
-	local view = found or open_in(buffer, s, where or "panel", sizes or {})
+	-- A terminal goes in a pane, as it started.
+	local fallback: Placement = if terms[s.id] then "pane" else "panel"
+	local view = found or open_in(buffer, s, where or fallback, sizes or {})
 	if found == nil then
 		-- Closing a view leaves the session running; the project's last
 		-- pane can't close, and goes on showing it.
@@ -484,7 +605,11 @@ local function place(s: Session, where: Placement?, sizes: Sizes?): greed.View
 		end
 	end
 	view:focus()
-	transcript.focus_prompt(view)
+	if terms[s.id] then
+		terminal.enter(view)
+	else
+		transcript.focus_prompt(view)
+	end
 	return view
 end
 
@@ -552,7 +677,10 @@ local function drop(s: Session)
 	buffers[s.id] = nil
 	if buffer then
 		by_buffer[buffer:id()] = nil
-		buffer:set_kept(false)
+		-- A terminal's closes with it.
+		if buffer:valid() then
+			buffer:set_kept(false)
+		end
 	end
 end
 
@@ -620,7 +748,10 @@ local function rows(root: string): { list.Row }
 			table.insert(out, {
 				key = `k{entry.session_id}`,
 				saved = entry,
-				agent = if agent then agent.title or agent.name else entry.agent,
+				agent = if agent
+					then agent.title or agent.name
+					elseif entry.agent == IN_TERMINAL then "Claude Code"
+					else entry.agent,
 				title = entry.title,
 				status = "saved",
 				time = entry.time,
@@ -817,6 +948,21 @@ greed.command({
 		else
 			-- Ready for the first message, so the first key types it.
 			greed.mode.set(core.style.typing_mode())
+		end
+	end,
+})
+
+greed.command({
+	name = "claude-workspace",
+	doc = "Start Claude Code in a terminal, in a workspace of its own; it's in the session list, where its work is reviewed and brought in",
+	args = {
+		{ name = "prompt", doc = "What to ask it first", type = "rest", optional = true },
+	},
+	run = function(ctx)
+		leave_list(ctx)
+		local s, err = M.claude_in_workspace(core.project.root(), ctx.values.prompt)
+		if s == nil then
+			greed.echo(err :: string)
 		end
 	end,
 })
@@ -1662,6 +1808,7 @@ greed.keymap.bind({ layer = "leader" }, {
 	["i n"] = "agent-new",
 	["i l"] = "agent-list",
 	["i m"] = "agent-move",
+	["i W"] = "claude-workspace",
 })
 
 --- Shell code in transcripts and its buttons (code.luau).

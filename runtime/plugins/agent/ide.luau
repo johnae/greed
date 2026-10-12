@@ -275,9 +275,33 @@ greed.keymap.bind({ layer = "leader" }, { ["o m"] = "ide-mention" })
 
 -- Without a session (in tests, say) there is nothing for Claude Code to
 -- connect to.
-local serving, port = pcall(greed.control.serve_ide, { core.project.root() }, nil)
+local folders = { core.project.root() }
+local serving, port = pcall(greed.control.serve_ide, folders, nil)
+
+-- Names `folders` in the lock file again, when Greed is serving Claude Code.
+local function name_folders()
+	if serving then
+		greed.control.ide_folders(folders)
+	end
+end
 
 return {
 	--- The port Claude Code connects to, when Greed is serving it.
 	port = if serving then port else nil,
+	--- Has Claude Code started in `path`, like an agent's workspace, find
+	--- this editor too.
+	add_folder = function(path: string)
+		if not table.find(folders, path) then
+			table.insert(folders, path)
+			name_folders()
+		end
+	end,
+	--- Stops naming `path`, added with `add_folder`, as open.
+	remove_folder = function(path: string)
+		local index = table.find(folders, path)
+		if index and index > 1 then
+			table.remove(folders, index)
+			name_folders()
+		end
+	end,
 }

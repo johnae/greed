@@ -2024,6 +2024,7 @@ local function use(s: Session, state: State, role: string)
 end
 
 local DRIVER: session.Driver = {
+	keeps = true,
 	prompt = prompt,
 	-- At once: the answer streaming in or the tool call running is left
 	-- behind, and the stream closed.

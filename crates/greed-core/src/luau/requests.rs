@@ -107,6 +107,13 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         )?,
     )?;
     control.set(
+        "ide_folders",
+        lua.create_function(|lua, folders: Vec<String>| match &state(lua).ide {
+            Some((_, ide)) => ide.set_folders(&folders).map_err(mlua::Error::external),
+            None => Err(mlua::Error::runtime("Greed isn't serving Claude Code")),
+        })?,
+    )?;
+    control.set(
         "notify",
         lua.create_function(|lua, (method, params): (String, Value)| {
             let params: serde_json::Value = lua.from_value(params)?;

@@ -304,6 +304,14 @@ next to any other editors. Once connected:
 Greed writes a lock file to `~/.claude/ide` so Claude Code can find it, and
 removes it when the session ends.
 
+`space i W` (`:claude-workspace`, with what to ask it first if you like)
+starts Claude Code the same way, in a terminal pane, but in a workspace of
+its own (see [the session list](#the-session-list)). It's told where it
+works and how its work gets back to you, and it shows in `space i l` with
+the other sessions, so `d`, `R`, `b` and `x` work on it there. You talk to
+it in its terminal. Stopped or after a restart, `enter` in the list starts
+it again there with `claude --continue`.
+
 ## Agents inside Greed
 
 Greed can also run agents itself, over the Agent Client Protocol (ACP): Claude

@@ -22,6 +22,8 @@ greed.control.serve_ide({ "/project" }, LOCK_DIR)
 greed.on("control.request", function(req)
   if req.method == "poke" then
     greed.control.notify("selection_changed", { text = "hi" })
+  elseif req.method == "folders" then
+    greed.control.ide_folders({ "/project", "/workspace" })
   end
   greed.control.reply(req.id, { client = req.client, method = req.method })
 end)
@@ -88,12 +90,12 @@ fn next(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>) -> Value {
 #[test]
 fn claude_code_finds_the_editor_and_talks_mcp_over_a_websocket() {
     let (conn, dir) = start("talk");
-    let (port, lock) = lock(&dir);
-    assert_eq!(lock["ideName"], "Greed");
-    assert_eq!(lock["transport"], "ws");
-    assert_eq!(lock["workspaceFolders"], json!(["/project"]));
-    assert_eq!(lock["pid"], std::process::id());
-    let token = lock["authToken"].as_str().unwrap().to_owned();
+    let (port, written) = lock(&dir);
+    assert_eq!(written["ideName"], "Greed");
+    assert_eq!(written["transport"], "ws");
+    assert_eq!(written["workspaceFolders"], json!(["/project"]));
+    assert_eq!(written["pid"], std::process::id());
+    let token = written["authToken"].as_str().unwrap().to_owned();
     assert!(connect(port, "wrong").is_err(), "the token is checked");
 
     // Claude Code asks for the "mcp" subprotocol, and gives up on a server
@@ -124,6 +126,19 @@ fn claude_code_finds_the_editor_and_talks_mcp_over_a_websocket() {
     };
     assert_eq!(notification["method"], "selection_changed");
     assert_eq!(notification["params"]["text"], "hi");
+
+    // Another folder, like an agent's workspace: the same lock file names
+    // it, and the connection goes on.
+    let folders = json!({ "jsonrpc": "2.0", "id": 9, "method": "folders" });
+    socket.send(Message::text(folders.to_string())).unwrap();
+    assert_eq!(next(&mut socket)["id"], 9);
+    let (same_port, rewritten) = lock(&dir);
+    assert_eq!(same_port, port);
+    assert_eq!(
+        rewritten["workspaceFolders"],
+        json!(["/project", "/workspace"])
+    );
+    assert_eq!(rewritten["authToken"], token.as_str());
 
     conn.input.send(Input::Quit).unwrap();
     conn.server.join().unwrap().unwrap();

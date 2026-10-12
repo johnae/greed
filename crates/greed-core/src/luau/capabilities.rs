@@ -102,6 +102,7 @@ const GATED: &[(&str, &str)] = &[
     ("control.notify", "control"),
     ("control.serve_ide", "control"),
     ("control.serve_ide", "net"),
+    ("control.ide_folders", "control"),
     ("ssh_agent.answer", "ssh-agent"),
 ];
 

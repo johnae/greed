@@ -34,7 +34,7 @@ end
 
 local MODE = "terminal"
 
-type Term = {
+export type Term = {
 	terminal: greed.Terminal,
 	buffer: greed.Buffer,
 	-- How many lines above the screen the buffer holds.

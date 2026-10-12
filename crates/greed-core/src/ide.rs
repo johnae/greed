@@ -46,10 +46,17 @@ pub fn lock_dir() -> Option<PathBuf> {
 pub struct Ide {
     pub port: u16,
     lock_file: PathBuf,
+    token: String,
     clients: Arc<Mutex<Vec<Sender<String>>>>,
 }
 
 impl Ide {
+    /// Names `workspace` as the folders this editor has open, for Claude
+    /// Codes started from now on; those connected stay connected.
+    pub fn set_folders(&self, workspace: &[String]) -> io::Result<()> {
+        write_lock(&self.lock_file, workspace, &self.token)
+    }
+
     /// Sends a JSON-RPC notification to every connected Claude Code.
     pub fn notify(&self, method: &str, params: &Value) {
         let message = json!({ "jsonrpc": "2.0", "method": method, "params": params }).to_string();
@@ -74,18 +81,11 @@ pub fn listen(dir: &Path, workspace: &[String], requests: Sender<Request>) -> io
     let port = listener.local_addr()?.port();
     let token = new_token()?;
     let lock_file = dir.join(format!("{port}.lock"));
-    let lock = json!({
-        "pid": std::process::id(),
-        "workspaceFolders": workspace,
-        "ideName": "Greed",
-        "transport": "ws",
-        "authToken": token,
-    });
-    // Written whole and moved into place, so Claude Code never reads half.
-    crate::files::write_private(&lock_file, |out| out.write_all(lock.to_string().as_bytes()))?;
+    write_lock(&lock_file, workspace, &token)?;
 
     let clients: Arc<Mutex<Vec<Sender<String>>>> = Arc::default();
     let registry = clients.clone();
+    let checked = token.clone();
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let (outgoing, queued) = crossbeam_channel::unbounded();
@@ -93,7 +93,7 @@ pub fn listen(dir: &Path, workspace: &[String], requests: Sender<Request>) -> io
                 .lock()
                 .expect("no panics while held")
                 .push(outgoing.clone());
-            let token = token.clone();
+            let token = checked.clone();
             let requests = requests.clone();
             // With no thread to spare, the connection is dropped.
             let _ = std::thread::Builder::new().spawn(move || {
@@ -104,8 +104,23 @@ pub fn listen(dir: &Path, workspace: &[String], requests: Sender<Request>) -> io
     Ok(Ide {
         port,
         lock_file,
+        token,
         clients,
     })
+}
+
+/// Writes the lock file Claude Code finds this editor by, naming
+/// `workspace` as its open folders.
+fn write_lock(lock_file: &Path, workspace: &[String], token: &str) -> io::Result<()> {
+    let lock = json!({
+        "pid": std::process::id(),
+        "workspaceFolders": workspace,
+        "ideName": "Greed",
+        "transport": "ws",
+        "authToken": token,
+    });
+    // Written whole and moved into place, so Claude Code never reads half.
+    crate::files::write_private(lock_file, |out| out.write_all(lock.to_string().as_bytes()))
 }
 
 /// Handles one Claude Code connection until it closes. Requests are
