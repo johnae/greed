@@ -249,6 +249,40 @@ test("an edit without a path tells the model so, and the turn goes on", function
 	assert(got[2].error and string.find(got[2].text, "needs path", 1, true), got[2].text)
 end)
 
+test("an answer the question doesn't offer is no answer: it still waits", function(t)
+	script({
+		{
+			text = "",
+			calls = {
+				{
+					id = "c1",
+					name = "edit_file",
+					input = { path = "a.txt", old_text = "one", new_text = "ONE" },
+				},
+			},
+			stop = "tools",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "go", { ["a.txt"] = "one\n" })
+	t:wait_for(function()
+		return s.status == "waiting"
+	end)
+	local question = waiting(s)
+	question.answer:send("never-offered")
+	t:wait(20)
+	assert(s.status == "waiting", "still asking, not rejected: " .. tostring(s.status))
+	assert(waiting(s) == question, "the same question is open")
+	question.answer:send("once")
+	t:wait_for(function()
+		return (s.status :: string) == "idle"
+	end)
+	assert(greed.fs.read(`{dir}/a.txt`) == "ONE\n", (greed.fs.read(`{dir}/a.txt`)))
+	for _, entry in s.entries do
+		assert(entry.kind ~= "permission" or entry.chosen ~= nil, "no question left open")
+	end
+end)
+
 test("an error in Greed during a turn ends it, saying so, and the agent is idle", function(t)
 	local s = assert(acp.start(GREED, t:tempdir({ ["a.txt"] = "one\n" })))
 	local driver: any = setmetatable({

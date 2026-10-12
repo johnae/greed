@@ -742,7 +742,22 @@ function M.ask(
 	local before: Status = session.status
 	session.status = "waiting"
 	session.changed()
+	-- An answer that isn't one of the options, like "always" where only
+	-- "once" is offered, is no answer: it still waits for one.
+	local function offered(id: string?): boolean
+		for _, option in options do
+			if option.id == id then
+				return true
+			end
+		end
+		return id == nil
+	end
 	local chosen = permission.answer:wait()
+	while not offered(chosen) do
+		-- A signal takes one value: the next answer goes to a new one.
+		permission.answer = greed.signal()
+		chosen = permission.answer:wait()
+	end
 	if session.status == "waiting" then
 		session.status = before
 	end
