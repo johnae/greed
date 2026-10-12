@@ -3114,3 +3114,15 @@ test("each request is the last one with more after it, byte for byte, as caches 
 		assert(string.sub(is, 1, #was + 1) == was .. ",", `request {n} starts otherwise`)
 	end
 end)
+
+test("the system prompt says which model answers, so it doesn't guess", function(t)
+	models.roles.agent = { provider = "mistral", model = "zai-glm-5-3" }
+	local asked = script({ { text = "Hi", calls = {}, stop = "done" } })
+	ask(t, "hi")
+	models.roles.agent = nil
+	local system = asked[1].system :: string
+	assert(
+		string.find(system, "The model answering is zai-glm-5-3, served by mistral.", 1, true),
+		system
+	)
+end)

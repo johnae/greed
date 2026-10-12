@@ -1140,13 +1140,23 @@ local function config_note(): string
 		.. "keeping what's there; don't look for it anywhere else."
 end
 
-local function system(s: Session, env: string?, edits: string?, helpers: boolean): string
+local function system(
+	s: Session,
+	env: string?,
+	edits: string?,
+	helpers: boolean,
+	model: string?
+): string
 	local how = if edits == "hashline"
 		then "Read gives each line a name (12#a3f): edit with edit_file by those names."
 		else "Edit with edit_file, giving enough of the old text to match once."
+	-- Models know little of themselves, and a conversation that went on
+	-- from another model would have them say they're that one.
+	local running = if model then ` The model answering is {model}.` else ""
 	local lines = {
 		"You are Greed's coding agent, working in the Greed editor with the user. You can read and "
-			.. "search the project, edit files and run commands with the tools you have.",
+			.. "search the project, edit files and run commands with the tools you have."
+			.. running,
 		`The project is at {s.root}; paths are relative to it.`
 			.. (if env and env ~= "" then " " .. env else ""),
 		"A user's message starts with a <time> tag, when they sent it, and may have an "
@@ -1598,7 +1608,9 @@ local function prompt(
 	-- The same from turn to turn, so providers can cache it: the time goes
 	-- in each of your messages instead.
 	state.edits = models.edits(state.role)
-	local said_system = system(s, state.env, state.edits, not state.reads_only)
+	local playing = models.resolve(models.playing(state.role))
+	local model = if playing then `{playing.model}, served by {playing.provider}` else nil
+	local said_system = system(s, state.env, state.edits, not state.reads_only, model)
 	-- Once a summary fails, it isn't asked for again until the next prompt.
 	local may_compact = true
 	-- Answers cut off at their length in a row.
