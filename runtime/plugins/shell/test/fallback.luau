@@ -170,6 +170,30 @@ test("an error names the line of what you typed, and the shell it ran in", funct
 	greed.option.set("shell-fallback", "")
 end)
 
+test("ctrl-c while the shell reads its variables, just after enter, stops the line", function(t)
+	greed.option.set("shell-fallback", "sh")
+	-- Stands in for `greed --env0`, and goes on past ctrl-c as one that was
+	-- just ending when it came would.
+	local dir = t:tempdir({
+		["env0"] = 'trap "" INT\ntouch "$(dirname "$0")/started"\nsleep 1\nexec env -0\n',
+	})
+	local sh = open(t, dir)
+	run(t, sh, "chmod +x env0")
+	shell.run(sh, `export GREED_BIN={dir}/env0`)
+	log.set_prompt(sh, "sleep 30", { greed.view() })
+	t:keys("enter")
+	local block = sh.blocks[#sh.blocks]
+	t:wait_for(function()
+		return greed.fs.stat(`{dir}/started`) ~= nil
+	end)
+	shell.interrupt(block)
+	t:wait_for(function()
+		return block.status ~= "running"
+	end, 5000)
+	assert(block.signal == "INT", `{block.status} {block.signal}`)
+	greed.option.set("shell-fallback", "")
+end)
+
 test("a table a nu line gives back is data: its rows things, on their lines", function(t)
 	if greed.which("nu") == nil then
 		return

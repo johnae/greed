@@ -38,8 +38,15 @@ greed.option.define({
 -- sets), the same on every system; without it, from `env -0`. The line
 -- runs on the wrapper's first line, so the line numbers in its errors are
 -- its own: "bash: line 1: nope: command not found", as in a terminal.
+--
+-- `before` is written in the background and waited for: a shell that gets
+-- ctrl-c while a program runs in the foreground goes on if that program
+-- didn't die of it, so ctrl-c just after enter, as that one ends, would be
+-- lost and the line run anyway. `wait` ends at ctrl-c, and the shell with
+-- it; a trap around it would leave a handler that loses ctrl-c later. The
+-- braces keep an interactive shell from announcing the job.
 local POSIX = [[
-__greed_line=$1; __greed_dir=$2; shift 2; __greed_env() { if [ -n "${GREED_BIN:-}" ]; then "$GREED_BIN" --env0; else env -0; fi; }; __greed_env > "$__greed_dir/before"; eval "$__greed_line"
+__greed_line=$1; __greed_dir=$2; shift 2; __greed_env() { if [ -n "${GREED_BIN:-}" ]; then "$GREED_BIN" --env0; else env -0; fi; }; { __greed_env > "$__greed_dir/before" & } 2>/dev/null; wait $!; eval "$__greed_line"
 __greed_status=$?
 pwd > "$__greed_dir/cwd"
 __greed_env > "$__greed_dir/after"
