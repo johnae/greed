@@ -162,6 +162,7 @@ test(":project needs a path, and the only project can't be closed", function(t)
 end)
 
 test("a project's own config runs once you trust it, and from then on", function(t)
+	greed.option.set("project-trust", "ask")
 	local core = require("@core")
 	local dir = t:tempdir({
 		[".git/HEAD"] = "",
@@ -185,6 +186,7 @@ test("a project's own config runs once you trust it, and from then on", function
 end)
 
 test("a project without its own config can be trusted to run its code", function(t)
+	greed.option.set("project-trust", "ask")
 	local dir = t:tempdir({ [".git/HEAD"] = "", ["a.txt"] = "" })
 	t:buffer("|x")
 	greed.run("project", { args = { dir } })
@@ -194,7 +196,6 @@ test("a project without its own config can be trusted to run its code", function
 	assert(not project.trusts(`{dir}-other/a.txt`), "a folder named like it isn't")
 	greed.option.set("project-trust", "off")
 	assert(project.trusts("/anywhere/else"), "off trusts every project")
-	greed.option.set("project-trust", "ask")
 end)
 
 test("a path is inside a folder only once its .. and . are worked out", function()
@@ -226,6 +227,7 @@ end)
 test(
 	"a file opening in a project you haven't trusted asks before its language server runs",
 	function(t)
+		greed.option.set("project-trust", "ask")
 		greed.lsp.server({ language = "trustlang", command = { "sh" } })
 		require("@languages").set("trustlang", { extensions = { "tl" } })
 		local dir = t:tempdir({ [".git/HEAD"] = "", ["a.tl"] = "x\n" })
@@ -240,14 +242,18 @@ test(
 		t:wait_for(function()
 			return project.trusts(`{dir}/a.tl`)
 		end)
-		-- A server that isn't installed asks nothing.
-		greed.lsp.server({ language = "trustlang", command = { "no-such-server-greed" } })
-		local other = t:tempdir({ [".git/HEAD"] = "", ["b.tl"] = "x\n" })
-		greed.open(`{other}/b.tl`)
-		t:wait(100)
-		local said = t:messages()
-		assert(not string.find(said[#said] or "", "b.tl", 1, true), said[#said])
-		assert(not string.find(said[#said] or "", other, 1, true), said[#said])
+		-- A server that isn't installed, or only reads files, asks nothing.
+		for _, server in { { "no-such-server-greed" }, { "sh" } } do
+			local reads_only = server[1] == "sh"
+			greed.lsp.server({ language = "trustlang", command = server, reads_only = reads_only })
+			local other = t:tempdir({ [".git/HEAD"] = "", ["b.tl"] = "x\n" })
+			greed.open(`{other}/b.tl`)
+			assert(not greed.lsp.waits(greed.view():buffer()), "nothing waits")
+			t:wait(100)
+			local said = t:messages()
+			assert(not string.find(said[#said] or "", "isn't trusted", 1, true), said[#said])
+		end
 		greed.lsp.remove("trustlang")
+		greed.option.set("project-trust", "off")
 	end
 )

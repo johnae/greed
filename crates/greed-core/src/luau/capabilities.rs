@@ -1018,6 +1018,7 @@ mod tests {
         "lsp.running",
         "lsp.servers",
         "lsp.uri",
+        "lsp.waits",
         // About plugins, and tying a plugin's own things to it.
         "plugin.caller",
         "plugin.describe",

@@ -473,6 +473,7 @@ pub fn rust_server() -> greed_core::lsp::ServerConfig {
         language: "rust".into(),
         commands: vec![vec!["sh".into()]],
         root_markers: vec!["Cargo.toml".into()],
+        reads_only: false,
     }
 }
 

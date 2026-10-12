@@ -582,6 +582,7 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
             command(&["sh", "-c", "true"]),
         ],
         root_markers: Vec::new(),
+        reads_only: false,
     };
     assert_eq!(
         config.installed_command(),
@@ -595,6 +596,7 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
         language: "rust".into(),
         commands: vec![command(&["no-such-server-greed"])],
         root_markers: Vec::new(),
+        reads_only: false,
     });
     assert!(
         lsp.sync(&editor).is_empty(),

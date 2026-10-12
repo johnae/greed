@@ -11,6 +11,11 @@ export type Language = {
 	roots: { string }?,
 	--- Commands to start a language server, tried in order.
 	servers: { { string } }?,
+	--- Whether its servers only read the project's files, never running its
+	--- code, so they start in a project you haven't trusted. Servers that
+	--- build the project or load its plugins (rust-analyzer, typescript)
+	--- don't: they wait until you trust it.
+	reads_only: boolean?,
 	--- What starts a line comment.
 	comment: string?,
 	--- Spaces per indent level; leave out to indent with tabs.
@@ -39,6 +44,7 @@ local languages: { [string]: Language } = {
 		extensions = { "sh", "bash" },
 		names = { ".bashrc", ".bash_profile" },
 		servers = { { "bash-language-server", "start" } },
+		reads_only = true,
 		comment = "#",
 		indent = 2,
 	},
@@ -47,6 +53,7 @@ local languages: { [string]: Language } = {
 		extensions = { "c", "h" },
 		roots = { "compile_commands.json", "CMakeLists.txt", "Makefile" },
 		servers = { { "clangd" } },
+		reads_only = true,
 		comment = "//",
 		indent = 4,
 	},
@@ -61,6 +68,7 @@ local languages: { [string]: Language } = {
 		extensions = { "cpp", "cc", "cxx", "hpp", "hh", "hxx" },
 		roots = { "compile_commands.json", "CMakeLists.txt", "Makefile" },
 		servers = { { "clangd" } },
+		reads_only = true,
 		comment = "//",
 		indent = 4,
 	},
@@ -68,6 +76,7 @@ local languages: { [string]: Language } = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "css", "scss" },
 		servers = { { "vscode-css-language-server", "--stdio" } },
+		reads_only = true,
 		indent = 2,
 	},
 	go = {
@@ -93,6 +102,7 @@ local languages: { [string]: Language } = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "html", "htm" },
 		servers = { { "vscode-html-language-server", "--stdio" } },
+		reads_only = true,
 		indent = 2,
 	},
 	java = {
@@ -120,6 +130,7 @@ local languages: { [string]: Language } = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "json" },
 		servers = { { "vscode-json-language-server", "--stdio" } },
+		reads_only = true,
 		indent = 2,
 	},
 	luau = {
@@ -127,6 +138,7 @@ local languages: { [string]: Language } = {
 		extensions = { "luau", "lua" },
 		roots = { ".luaurc" },
 		servers = { { "luau-lsp", "lsp" } },
+		reads_only = true,
 		comment = "--",
 	},
 	make = {
@@ -137,6 +149,7 @@ local languages: { [string]: Language } = {
 	markdown = {
 		extensions = { "md", "markdown" },
 		servers = { { "harper-ls", "--stdio" }, { "marksman", "server" } },
+		reads_only = true,
 		indent = 2,
 	},
 	nix = {
@@ -164,6 +177,7 @@ local languages: { [string]: Language } = {
 			{ "pyright-langserver", "--stdio" },
 			{ "pylsp" },
 		},
+		reads_only = true,
 		comment = "#",
 		indent = 4,
 	},
@@ -241,6 +255,7 @@ local languages: { [string]: Language } = {
 		extensions = { "toml" },
 		names = { "Cargo.lock" },
 		servers = { { "taplo", "lsp", "stdio" } },
+		reads_only = true,
 		comment = "#",
 		indent = 2,
 	},
@@ -265,6 +280,7 @@ local languages: { [string]: Language } = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "yaml", "yml" },
 		servers = { { "yaml-language-server", "--stdio" } },
+		reads_only = true,
 		comment = "#",
 		indent = 2,
 	},

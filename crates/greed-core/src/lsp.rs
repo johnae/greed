@@ -31,6 +31,10 @@ pub struct ServerConfig {
     /// Files that mark a project's root, e.g. `Cargo.toml`, for where the
     /// server runs (see [`server_root`]).
     pub root_markers: Vec<String>,
+    /// Whether the server only reads the project's files, never running
+    /// its code (a build script, a config file), so it may start in a
+    /// project nobody trusted (see [`Lsp::trust`]).
+    pub reads_only: bool,
 }
 
 impl ServerConfig {
@@ -592,7 +596,7 @@ impl Lsp {
         else {
             return Ok(None);
         };
-        if !self.may_start(root) {
+        if !config.reads_only && !self.may_start(root) {
             // Only one that would run: there's nothing to trust for one
             // that isn't installed.
             if config.installed_command().is_some() {
@@ -706,6 +710,23 @@ impl Lsp {
             &config.root_markers,
             &project_roots(editor),
         ))
+    }
+
+    /// Whether `buffer`'s server is held back until its folder is trusted:
+    /// one is set up for its language and installed, runs the project's
+    /// code, and may not start where it would run.
+    pub fn waits(&self, buffer: &Buffer, editor: &Editor) -> bool {
+        let Some(language) = buffer.language() else {
+            return false;
+        };
+        let Some(config) = self.configs.iter().find(|c| c.language == language) else {
+            return false;
+        };
+        !config.reads_only
+            && config.installed_command().is_some()
+            && self
+                .root(buffer, editor)
+                .is_some_and(|root| !self.may_start(&root))
     }
 
     /// The servers running now, by language and then root.

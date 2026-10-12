@@ -1463,14 +1463,17 @@ export type Lsp = {
 	--- With `commands`, the first one whose program is installed runs, when
 	--- a file of the language first opens; with none installed, nothing does.
 	--- A server runs in the topmost folder with one of `root_markers` inside
-	--- the file's project, or the project's root without one.
-	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }? }) -> (),
+	--- the file's project, or the project's root without one. With
+	--- `reads_only`, the server only reads the project's files, never running its code, so it starts in a project nobody trusted (see `trust`).
+	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean? }) -> (),
 	--- Stops starting a server for a language; one running keeps running.
 	remove: (language: string) -> (),
 	--- Stops the servers running for `language` (every language without one) and starts them again, as after they got stuck. Returns how many were running. Needs "proc".
 	restart: (language: string?) -> number,
-	--- Lets servers start only in `folders` and the folders inside them, as a server runs a project's code (a build script, a config file); nil lets them start anywhere. One held back starts once its folder is trusted. Needs "proc".
+	--- Lets servers start only in `folders` and the folders inside them, as a server runs a project's code (a build script, a config file); nil lets them start anywhere. A server set up with `reads_only` starts anywhere. One held back starts once its folder is trusted. Needs "proc".
 	trust: (folders: { string }?) -> (),
+	--- Whether the buffer's server is held back until its folder is trusted (`trust`): one is set up for its language and installed, runs the project's code, and may not start where it would run.
+	waits: (buffer: Buffer) -> boolean,
 	--- The commands set for each language's server, by language.
 	servers: () -> { [string]: { { string } } },
 	--- The servers running now, by language and then root.

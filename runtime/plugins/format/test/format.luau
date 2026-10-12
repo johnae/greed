@@ -22,6 +22,7 @@ local function squeezing(t: test.TestContext, text: string): string
 end
 
 test("saving in a project you haven't trusted doesn't run its formatter", function(t)
+	greed.option.set("project-trust", "ask")
 	languages.set("squeezed", { extensions = { "sq" }, formatter = { "tr", "-s", " " } })
 	local dir = t:tempdir({ ["a.sq"] = "one    two" })
 	greed.open(dir .. "/a.sq")

@@ -36,7 +36,12 @@ end
 local function apply_servers(name: string, language: Language)
 	local servers = language.servers
 	if servers and #servers > 0 then
-		greed.lsp.server({ language = name, commands = servers, root_markers = language.roots })
+		greed.lsp.server({
+			language = name,
+			commands = servers,
+			root_markers = language.roots,
+			reads_only = language.reads_only,
+		})
 	else
 		greed.lsp.remove(name)
 	end

@@ -333,6 +333,7 @@ fn fresh_host(plugins: &[PathBuf], approved: Option<&BTreeSet<String>>) -> Resul
     host.quiet_stalls();
     let (Some(approved), Some((checked, others))) = (approved, plugins.split_last()) else {
         host.load_dirs(plugins)?;
+        trust_projects(&host)?;
         return Ok(host);
     };
     host.load_dirs(others)?;
@@ -347,7 +348,17 @@ fn fresh_host(plugins: &[PathBuf], approved: Option<&BTreeSet<String>>) -> Resul
         state.floor = floor;
     }
     host.load_dir(checked)?;
+    trust_projects(&host)?;
     Ok(host)
+}
+
+/// Trusts every project, so a file a test opens never stops to ask whether
+/// its project may run its code, which would depend on the language servers
+/// installed on the machine; a test of trust sets `project-trust` back to
+/// "ask".
+fn trust_projects(host: &Host) -> Result<(), HostError> {
+    host.eval("pcall(require('@greed').option.set, 'project-trust', 'off')")?;
+    Ok(())
 }
 
 impl Drop for Host {

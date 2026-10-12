@@ -257,6 +257,9 @@ fn load_assist(host: &Host, address: &str) {
         plugin("assist"),
     ])
     .unwrap();
+    // The test projects are the tests' own; their servers start untrusted.
+    host.eval("require('@greed').option.set('project-trust', 'off')")
+        .unwrap();
     host.load_str(
         "config",
         &format!(

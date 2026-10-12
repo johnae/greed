@@ -260,6 +260,7 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 language: spec.get("language")?,
                 commands,
                 root_markers: strings("root_markers")?,
+                reads_only: spec.get::<Option<bool>>("reads_only")?.unwrap_or(false),
             };
             let state = &mut *state_mut(lua);
             state.owned.server(owner.clone(), config.clone());
@@ -289,6 +290,14 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
             let folders = folders.map(|list| list.into_iter().map(PathBuf::from).collect());
             state_mut(lua).lsp.trust(folders);
             Ok(())
+        })?,
+    )?;
+    lsp.set(
+        "waits",
+        lua.create_function(|lua, buffer: UserDataRef<BufferRef>| {
+            let state = state(lua);
+            let b = buffer_ref(&state.editor, &buffer)?;
+            Ok(state.lsp.waits(b, &state.editor))
         })?,
     )
 }

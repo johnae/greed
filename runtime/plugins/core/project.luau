@@ -524,31 +524,13 @@ greed.command({
 -- The projects asked about this session, not to ask again.
 local asked: { [string]: boolean } = {}
 
--- Whether a language server would run for `buffer`: one is set up for its
--- language, and installed. Without one, there's nothing to ask about.
-local function server_would_run(buffer: greed.Buffer): boolean
-	local language = buffer:language()
-	if language == nil or greed.lsp.root(buffer) == nil then
-		return false
-	end
-	local commands = greed.lsp.servers()[language]
-	if commands == nil then
-		return false
-	end
-	for _, command in commands do
-		if command[1] and greed.which(command[1]) then
-			return true
-		end
-	end
-	return false
-end
-
 -- A file opening in a project you haven't trusted, whose language server
--- would run, asks once whether to trust the project.
+-- waits for that, as it would run the project's code, asks once whether
+-- to trust the project. One that only reads files starts anyway.
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	local buffer = event.buffer
 	local path = buffer:path()
-	if path == nil or M.trusts(path) or not server_would_run(buffer) then
+	if path == nil or M.trusts(path) or not greed.lsp.waits(buffer) then
 		return
 	end
 	local root = M.root(path)
