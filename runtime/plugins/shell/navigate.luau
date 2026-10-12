@@ -236,8 +236,11 @@ function M.draw(view: greed.View)
 	end
 	local at, text = line :: number, says :: string
 	local start, stop = buffer:line_start(at), buffer:line_end(at)
+	-- A command's own text, so how it went, after it, reads on its usual
+	-- ground; a row the whole line.
+	local whole = block == nil or row ~= nil or on ~= nil
 	decorate(buffer, `{start}:{stop}:{text}`, {
-		{ from = start, to = stop, style = "shell.selected", line = true },
+		{ from = start, to = stop, style = "shell.selected", line = whole },
 		{ from = stop, to = stop, style = "shell.hint", lines = { text } },
 	})
 end
