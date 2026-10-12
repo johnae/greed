@@ -30,6 +30,7 @@ local syntax = require("@self/syntax")
 local formula = require("@self/formula")
 local data = require("@self/data")
 local ui = require("@self/ui")
+local recall = require("@self/recall")
 require("@self/selections")
 local comment = require("@self/comment")
 local jumps = require("@self/jumps")
@@ -109,6 +110,8 @@ export type UiNode = ui.Node
 export type UiSpan = ui.Span
 export type UiLine = ui.Line
 export type UiGridRow = ui.GridRow
+--- A walk back through what was typed before (recall.luau).
+export type RecallWalk = recall.Walk
 --- A float being typed in, from `floats.typing`.
 export type TypingFloat = floats.Typing
 
@@ -177,6 +180,9 @@ return {
 	watch = require("@self/watch"),
 	--- Which command lines are risky for an agent to run, and why (risk.luau).
 	risk = require("@self/risk"),
+	--- Going back through what was typed before with up and down, as a
+	--- shell's prompt and an agent's box do (recall.luau).
+	recall = recall,
 	--- Running what a key does under a command bound to it (keys.luau).
 	keys = require("@self/keys"),
 }

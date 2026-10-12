@@ -179,6 +179,13 @@ return {
 	["agent.bar"] = { fg = "magenta" },
 	["agent.box"] = { fg = "bright-black" },
 	["agent.box.title"] = { bold = true },
+	["agent.auto"] = { bg = "green", fg = "black", bold = true, gui = { badge = true } },
+	["agent.manual"] = {
+		bg = "bright-black",
+		fg = "bright-white",
+		bold = true,
+		gui = { badge = true },
+	},
 	["agent.hint"] = { fg = "bright-black" },
 	["agent.picked"] = { bg = "blue", fg = "bright-white" },
 	["agent.working"] = { fg = "yellow" },

@@ -43,12 +43,40 @@ greed.option.define({
 --- How many blocks in a row before auto mode asks you instead.
 M.BLOCKS = 3
 
---- Whether `s` is in auto mode.
+-- Where your last switch (alt-a) is kept: new sessions start that way,
+-- after a restart too, unless your config sets `agent-auto` itself.
+local function kept_at(): string?
+	local data = greed.fs.dirs().data
+	return data and `{data}/agent-auto`
+end
+do
+	local path = kept_at()
+	local kept = if path then greed.fs.read(path) else nil
+	if kept then
+		greed.option.set("agent-auto", string.match(kept, "^%s*(%a+)") == "auto")
+	end
+end
+
+--- Whether `s` is in auto mode: as you switched it, else as `agent-auto`
+--- says.
 function M.on(s: Session): boolean
 	if s.auto ~= nil then
 		return s.auto
 	end
 	return greed.option.get("agent-auto") == true
+end
+
+--- Switches `s` between auto and manual, and new sessions with it, now
+--- and after a restart. Returns whether it's in auto mode now.
+function M.switch(s: Session): boolean
+	local on = not M.on(s)
+	s.auto = on
+	greed.option.set("agent-auto", on)
+	local path = kept_at()
+	if path then
+		greed.fs.write(path, if on then "auto\n" else "manual\n")
+	end
+	return on
 end
 
 -- The kinds of call that only look.

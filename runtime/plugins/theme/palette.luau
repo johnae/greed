@@ -158,6 +158,8 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["agent.bar"] = { fg = p.purple },
 		["agent.box"] = { fg = p.gutter },
 		["agent.box.title"] = { fg = p.fg, bold = true },
+		["agent.auto"] = { bg = p.green, fg = p.bg, bold = true, gui = { badge = true } },
+		["agent.manual"] = { bg = p.bg_high, fg = p.fg, bold = true, gui = { badge = true } },
 		["agent.hint"] = { fg = p.comment },
 		["agent.picked"] = { bg = tint(accent, 0.28) },
 		["agent.working"] = { fg = p.yellow },

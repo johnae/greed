@@ -52,7 +52,7 @@ test("a message goes to the agent and its reply streams into the transcript", fu
 	local text = shown()
 	assert(string.find(text, "  You\n  hello\n", 1, true), text)
 	assert(string.find(text, "  Fake\n  Hello there\n", 1, true), text)
-	local prompt = string.match(text, "alt%-enter sends · ctrl%-c stops ─╮\n(.*)$")
+	local prompt = string.match(text, ".*─╮\n(.*)$")
 	assert(prompt == "", "the box is empty again: " .. tostring(prompt))
 end)
 
@@ -249,28 +249,28 @@ end)
 
 test("alt-m picks the agent's mode, and the transcript says which it's in", function(t)
 	local s = start(t, t:tempdir({}))
-	assert(string.find(shown(), "╭─ Fake · Manual · Small ─"), shown())
+	assert(string.find(shown(), "╭─ Fake · manual · Manual · Small ─"), shown())
 	t:keys("alt-m")
 	t:keys("P l a n enter")
 	t:wait_for(function()
 		return s.mode == "plan"
 	end)
 	t:wait(30)
-	assert(string.find(shown(), "╭─ Fake · Plan · Small ─"), shown())
+	assert(string.find(shown(), "╭─ Fake · manual · Plan · Small ─"), shown())
 end)
 
 test("alt-M picks the agent's model, and the transcript says which", function(t)
 	local s = start(t, t:tempdir({}))
 	local model = s.model
 	assert(model == "small" and #s.models == 2, tostring(model))
-	assert(string.find(shown(), "╭─ Fake · Manual · Small ─"), shown())
+	assert(string.find(shown(), "╭─ Fake · manual · Manual · Small ─"), shown())
 	t:keys("alt-M")
 	t:keys("B i g enter")
 	t:wait_for(function()
 		return s.model == "berget/big"
 	end)
 	t:wait(30)
-	assert(string.find(shown(), "╭─ Fake · Manual · Big ─"), shown())
+	assert(string.find(shown(), "╭─ Fake · manual · Manual · Big ─"), shown())
 end)
 
 test("an agent registered with a model starts with it", function(t)

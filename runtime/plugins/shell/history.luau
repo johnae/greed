@@ -170,37 +170,4 @@ function M.expand(line: string, previous: string?): (string?, string?)
 	return table.concat(out), nil
 end
 
---- Where a shell is in going through the history: the text typed before
---- it started, which commands it goes through, the one shown and the text
---- it put at the prompt.
-export type Walk = {
-	typed: string,
-	matches: { string },
-	index: number,
-	shown: string,
-}
-
---- A walk through the commands starting with `typed`, newest first.
-function M.walk(typed: string): Walk
-	local matches: { string } = {}
-	for _, command in M.commands() do
-		if command ~= typed and string.sub(command, 1, #typed) == typed then
-			table.insert(matches, command)
-		end
-	end
-	return { typed = typed, matches = matches, index = 0, shown = typed }
-end
-
---- The command `step` (1 older, -1 newer) from where `walk` is, or what
---- was typed past the newest; nil past the oldest.
-function M.step(walk: Walk, step: number): string?
-	local index = walk.index + step
-	if index > #walk.matches then
-		return nil
-	end
-	walk.index = math.max(index, 0)
-	walk.shown = if walk.index == 0 then walk.typed else walk.matches[walk.index]
-	return walk.shown
-end
-
 return M

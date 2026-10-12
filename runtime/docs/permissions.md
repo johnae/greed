@@ -83,9 +83,11 @@ transcript already holds the change (`-1 +1 · tab shows the change`), so
 
 In auto mode Greed answers an agent's questions for you where it safely
 can, and asks you the rest. `alt-a` in a transcript (or `/auto`) switches
-a session between auto and asking you every time, and the box's top line
-says `auto` while it's on. `:set agent-auto true` starts every session in
-it. It works the same for Greed's own agent and for ACP agents.
+a session between auto and manual, where you're asked every time, and the
+box's top line says which, `auto` in green. New sessions start the way you
+switched the last one, after a restart too; `agent-auto` in your
+`init.luau` decides instead, if you set it there. It works the same for
+Greed's own agent and for ACP agents.
 
 Auto mode allows:
 

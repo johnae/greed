@@ -2,6 +2,7 @@
 -- before, and right or end take the rest of what the prompt suggests.
 
 local greed = require("@greed")
+local core = require("@core")
 local state = require("./state")
 local log = require("./log")
 local history = require("./history")
@@ -9,7 +10,7 @@ local suggest = require("./suggest")
 
 -- Each shell's walk through the history, while what's at its prompt is
 -- what the walk put there.
-local walks: { [number]: history.Walk } = {}
+local walks: { [number]: core.RecallWalk } = {}
 
 -- Puts the command `step` (1 older, -1 newer) from the one at the prompt
 -- there, among those starting with what was typed. Away from the prompt,
@@ -29,10 +30,10 @@ local function walk(ctx: greed.Context, step: number)
 	local typed = log.prompt_text(shell)
 	local current = walks[shell.id]
 	if current == nil or current.shown ~= typed then
-		current = history.walk(typed)
+		current = core.recall.walk(typed, history.commands())
 		walks[shell.id] = current
 	end
-	local found = history.step(current, step)
+	local found = core.recall.step(current, step)
 	if found == nil then
 		greed.echo(if typed == "" then "no older command" else `no older command starting {typed}`)
 		return

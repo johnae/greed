@@ -160,7 +160,7 @@ test("in auto mode an agent's question is answered for you, saying why", functio
 	assert(s.auto == true, "alt-a switched it on")
 	t:wait(50)
 	local text = greed.view():buffer():text()
-	assert(string.find(text, " · auto ", 1, true), "the box says so: " .. text)
+	assert(string.find(text, "Fake · auto · ", 1, true), "the box says so: " .. text)
 	local chosen, _, why = session.ask(s, "Edit a.txt", "edit", ONCE, { `{s.cwd}/a.txt` })
 	assert(chosen == "once" and why == "auto: in the project", tostring(chosen))
 	local last = s.entries[#s.entries]
@@ -173,4 +173,14 @@ test("in auto mode an agent's question is answered for you, saying why", functio
 	local blocked = s.entries[#s.entries].chosen
 	assert(blocked == "Reject (auto: may do harm you didn't ask for (90%))", blocked)
 	assert(s.auto_blocks == 1)
+	-- New sessions start as you switched the last one, after a restart too.
+	assert(greed.option.get("agent-auto") == true, "new sessions start in auto")
+	local kept = `{greed.fs.dirs().data}/agent-auto`
+	assert(greed.fs.read(kept) == "auto\n", tostring((greed.fs.read(kept))))
+	t:keys("alt-a")
+	assert(not s.auto and greed.option.get("agent-auto") == false, "and back to manual")
+	assert(greed.fs.read(kept) == "manual\n")
+	t:wait(50)
+	text = greed.view():buffer():text()
+	assert(string.find(text, "Fake · manual · ", 1, true), "the box says so: " .. text)
 end)

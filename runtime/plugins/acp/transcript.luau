@@ -460,16 +460,17 @@ local function name_in(list: { session.Mode }, id: string?): string?
 end
 
 --- The box's top line for `s`, `cells` wide, and its decorations from
---- where it starts: the agent, its mode and model on the left, and the
---- keys to send and stop on the right, as far as they fit.
+--- where it starts: the agent, whether Greed answers its questions (auto)
+--- or you do (manual), its mode and model on the left, and the keys to send
+--- and stop on the right, as far as they fit.
 function M.top(s: Session, cells: number): (string, { greed.Mark })
-	local named = s.name
+	local on = auto.on(s)
+	local answers = if on then "auto" else "manual"
+	local short = `{s.name} · {answers}`
+	local named = short
 	local mode, model = name_in(s.modes, s.mode), name_in(s.models, s.model)
 	if mode then
 		named ..= ` · {mode}`
-	end
-	if auto.on(s) then
-		named ..= " · auto"
 	end
 	if model then
 		named ..= ` · {model}`
@@ -487,12 +488,18 @@ function M.top(s: Session, cells: number): (string, { greed.Mark })
 		hints = ""
 	end
 	if room() < 1 then
-		named = s.name
+		named = short
 	end
 	local line = `╭─ {named} ` .. string.rep("─", math.max(room(), 1))
+	local word = #"╭─ " + #s.name + #" · "
 	local styles: { greed.Mark } = {
 		{ from = 0, to = #line, style = "agent.box" },
 		{ from = #"╭─ ", to = #"╭─ " + #named, style = "agent.box.title" },
+		{
+			from = word,
+			to = word + #answers,
+			style = if on then "agent.auto" else "agent.manual",
+		},
 	}
 	if hints ~= "" then
 		local start = #line + 1
@@ -1063,8 +1070,9 @@ function M.create(s: Session): greed.Buffer
 	return buffer
 end
 
---- Empties the box.
-function M.clear_prompt(buffer: greed.Buffer)
+--- Puts `text` in the box in place of what's there, and `view`'s cursor at
+--- its end if given.
+function M.set_prompt(buffer: greed.Buffer, text: string, view: greed.View?)
 	local stop = prompt_end(buffer)
 	if stop == nil then
 		return
@@ -1074,9 +1082,17 @@ function M.clear_prompt(buffer: greed.Buffer)
 		local start = buffer:line_start(line + 1)
 		-- Kept out of undo, so undo in the box takes back only typing.
 		buffer:edit(function(e)
-			e:replace(start, buffer:len(), "")
+			e:replace(start, buffer:len(), text)
 		end, { undo = false })
 	end
+	if view then
+		view:set_cursor(buffer:len())
+	end
+end
+
+--- Empties the box.
+function M.clear_prompt(buffer: greed.Buffer)
+	M.set_prompt(buffer, "")
 end
 
 -- A view follows what the agent adds while its cursor is in the box:

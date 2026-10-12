@@ -91,7 +91,7 @@ test("you write in a box that shows the agent, its mode and model, and the keys"
 	start(t)
 	local drawn = screen(t)
 	local box =
-		"╭─ Fake · Manual · Small ─ alt-enter sends · ctrl-c stops ─╮\n│ │\n╰─ ready ─╯"
+		"╭─ Fake · manual · Manual · Small ─ alt-enter sends · ctrl-c stops ─╮\n│ │\n╰─ ready ─╯"
 	assert(string.find(squeeze(drawn), box, 1, true), drawn)
 end)
 
@@ -112,7 +112,10 @@ end)
 test("in a narrow view the keys give way to the agent's name", function(t)
 	start(t)
 	local drawn = screen(t, 40)
-	assert(string.find(squeeze(drawn), "╭─ Fake · Manual · Small ─╮", 1, true), drawn)
+	assert(
+		string.find(squeeze(drawn), "╭─ Fake · manual · Manual · Small ─╮", 1, true),
+		drawn
+	)
 	assert(not string.find(drawn, "alt-enter sends", 1, true), drawn)
 end)
 
@@ -300,7 +303,7 @@ end)
 
 -- What's typed in the box once no question shows in it.
 local function draft(): string
-	return string.match(greed.view():buffer():text(), "ctrl%-c stops ─╮\n(.*)$") or "?"
+	return string.match(greed.view():buffer():text(), ".*─╮\n(.*)$") or "?"
 end
 
 -- Asks to edit a.txt and waits for the question.
@@ -1402,3 +1405,24 @@ test(
 		greed.option.set("effects", false)
 	end
 )
+
+test("up in the box brings back what you sent, down goes forward again", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	send(t, s, "usage")
+	local view = greed.view()
+	view:set_cursor(view:buffer():len())
+	t:keys("i up")
+	assert(draft() == "usage", draft())
+	t:keys("up")
+	assert(draft() == "hello", draft())
+	t:keys("up")
+	assert(draft() == "hello", "nothing older: " .. draft())
+	t:keys("down")
+	assert(draft() == "usage", draft())
+	t:keys("down")
+	assert(draft() == "", "back to what was typed: " .. draft())
+	-- What's typed narrows it to the messages starting with it.
+	t:keys("h up")
+	assert(draft() == "hello", draft())
+end)

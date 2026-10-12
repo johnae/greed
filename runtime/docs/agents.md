@@ -624,9 +624,9 @@ the reading first, for faster answers.
 ▍ ✓ Edit pager.rs · +1 -1
 ▍ ✗ Run cargo test · 12 lines ▸
 
-╭─ Claude · Plan · Sonnet ────── alt-enter sends · ctrl-c stops ─╮
-│ now add a test                                                 │
-╰─ ● thinking · 12s ─────────────────────── 14.2k / 200k tokens ─╯
+╭─ Claude · auto · Plan · Sonnet ─ alt-enter sends · ctrl-c stops ─╮
+│ now add a test                                                   │
+╰─ ● thinking · 12s ───────────────────────── 14.2k / 200k tokens ─╯
 ```
 
 The transcript shows what you and the agent said, each with a coloured
@@ -638,6 +638,11 @@ output, and `tab` again folds it. When Greed's own agent asks before
 editing a file, like your config, the edit's row already holds the change
 (`-1 +1 · tab shows the change`): `tab` shows the lines going and the ones
 coming, in the theme's diff colours, before you answer.
+
+`up` on the box's first line puts the message you sent before there, and
+again the one before that; `down` on its last line comes forward, back to
+what you'd typed. With something typed, they go through the messages that
+start with it, as `up` does at a shell's prompt.
 
 While your cursor is in the box, the transcript scrolls down as the agent
 adds to it. Move the cursor up into the history (with any motion, the

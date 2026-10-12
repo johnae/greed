@@ -1409,11 +1409,10 @@ greed.command({
 			greed.echo(NO_SESSION)
 			return
 		end
-		s.auto = not auto.on(s)
 		greed.echo(
-			if s.auto
-				then `{s.name}: auto, asking you only what Greed can't tell is safe`
-				else `{s.name}: asking you every time`
+			if auto.switch(s)
+				then `{s.name}: auto, asking you only what Greed can't tell is safe; new sessions too`
+				else `{s.name}: manual, asking you every time; new sessions too`
 		)
 		s.changed()
 	end,
@@ -1933,7 +1932,75 @@ greed.keymap.bind({ kind = "agent-transcript" }, {
 	["alt-up"] = "agent-row-up",
 	["alt-down"] = "agent-row-down",
 })
-greed.keymap.bind({ role = "typing", kind = "agent-transcript" }, { tab = "agent-complete" })
+greed.keymap.bind({ role = "typing", kind = "agent-transcript" }, {
+	tab = "agent-complete",
+	up = "agent-history-back",
+	down = "agent-history-forward",
+})
+
+-- Each transcript's walk back through what you sent, by buffer id, while
+-- what's in its box is what the walk put there.
+local recalls: { [number]: core.RecallWalk } = {}
+
+-- What you sent `s`, newest first.
+local function sent(s: Session): { string }
+	local out: { string } = {}
+	for i = #s.entries, 1, -1 do
+		local e = s.entries[i]
+		if e.kind == "user" and e.text and e.text ~= "" then
+			table.insert(out, e.text)
+		end
+	end
+	return out
+end
+
+-- Puts in the box the message you sent `step` (1 older, -1 newer) from the
+-- one there, among those starting with what was typed. Away from the box,
+-- or on a line of it other than the first (going back) or the last, the
+-- arrow moves the cursor as usual.
+local function recall(ctx: greed.Context, step: number)
+	local buffer, view = ctx.buffer, ctx.view
+	local s = by_buffer[buffer:id()]
+	local start = transcript.prompt_start(buffer)
+	local pos = view:cursor()
+	local edge = if step > 0 then start and buffer:line_of(start) else buffer:line_count() - 1
+	if s == nil or start == nil or pos < start or buffer:line_of(pos) ~= edge then
+		greed.run(if step > 0 then "move-up" else "move-down")
+		return
+	end
+	local typed = transcript.prompt(buffer)
+	local walk = recalls[buffer:id()]
+	if walk == nil or walk.shown ~= typed then
+		walk = core.recall.walk(typed, sent(s))
+		recalls[buffer:id()] = walk
+	end
+	local found = core.recall.step(walk, step)
+	if found == nil then
+		greed.echo(
+			if typed == "" then "no earlier message" else `no earlier message starting {typed}`
+		)
+		return
+	end
+	transcript.set_prompt(buffer, found, view)
+end
+
+greed.command({
+	name = "agent-history-back",
+	doc = "In a transcript's box, put the message you sent before it there, one starting with "
+		.. "what's typed; elsewhere move up",
+	run = function(ctx)
+		recall(ctx, 1)
+	end,
+})
+
+greed.command({
+	name = "agent-history-forward",
+	doc = "In a transcript's box, put the message you sent after it there, or back to what was "
+		.. "typed; elsewhere move down",
+	run = function(ctx)
+		recall(ctx, -1)
+	end,
+})
 
 greed.command({
 	name = "agent-complete",
