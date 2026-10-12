@@ -8,6 +8,7 @@
 
 local greed = require("@greed")
 local tables = require("./tables")
+local core_text = require("@core").text
 
 local M = {}
 
@@ -93,27 +94,6 @@ export type Structure = {
 	--- The lines a code block, a table or a list item spans.
 	inside: { [number]: boolean },
 }
-
-local function without_cr(line: string): string
-	return if string.sub(line, -1) == "\r" then string.sub(line, 1, -2) else line
-end
-
--- `text`'s lines, without their line breaks, and where each starts.
-local function split(text: string): ({ string }, { number })
-	local lines, starts = {}, {}
-	local at = 1
-	while true do
-		local nl = string.find(text, "\n", at, true)
-		local line = without_cr(string.sub(text, at, (nl or #text + 1) - 1))
-		table.insert(lines, line)
-		table.insert(starts, at - 1)
-		if nl == nil then
-			break
-		end
-		at = nl + 1
-	end
-	return lines, starts
-end
 
 local function blank(text: string): boolean
 	return string.find(text, "^%s*$") ~= nil
@@ -564,7 +544,7 @@ end
 
 -- The structure of `text`, from `buffer`'s tree if it's given and has one.
 local function build(text: string, buffer: greed.Buffer?, version: number): Structure
-	local lines, starts = split(text)
+	local lines, starts = core_text.buffer_lines(text)
 	local s = empty(lines, starts, version)
 	if not (buffer and from_tree(s, buffer)) then
 		scan(s)
@@ -628,42 +608,6 @@ local function join<T>(
 	return out
 end
 
--- `buffer`'s lines and where each starts, which were `old`'s until lines
--- `from` to `to` (as they are now) changed: those read from it, the rest
--- taken from `old`. Nil when the lines after them don't line up with the
--- buffer's, as when the change was wider than said.
-local function relines(
-	buffer: greed.Buffer,
-	old: Structure,
-	from: number,
-	to: number
-): ({ string }?, { number }?)
-	local count = buffer:line_count()
-	local delta = count - #old.lines
-	if from < 0 or to < from or to >= count or to - delta < from - 1 then
-		return nil, nil
-	end
-	local lines: { string } = table.move(old.lines, 1, from, 1, table.create(count) :: { string })
-	local starts: { number } = table.move(old.starts, 1, from, 1, table.create(count) :: { number })
-	for n = from, to do
-		local at = buffer:line_start(n)
-		lines[n + 1], starts[n + 1] = without_cr(buffer:slice(at, buffer:line_end(n))), at
-	end
-	if to + 1 < count then
-		local bytes = buffer:line_start(to + 1) - old.starts[to - delta + 2]
-		table.move(old.lines, to - delta + 2, #old.lines, to + 2, lines)
-		for n = to + 2, count do
-			starts[n] = old.starts[n - delta] + bytes
-		end
-		-- The line after the change is where it was, moved.
-		local check = without_cr(buffer:slice(buffer:line_start(to + 1), buffer:line_end(to + 1)))
-		if check ~= lines[to + 2] then
-			return nil, nil
-		end
-	end
-	return lines, starts
-end
-
 -- The structure of `buffer`, which was `old` until lines `from` to `to`
 -- (as they are now) changed: lines are read again from a blank line before
 -- them that no block spans to one after them where old and new agree
@@ -676,7 +620,7 @@ local function splice(
 	to: number,
 	version: number
 ): Structure?
-	local lines, starts = relines(buffer, old, from, to)
+	local lines, starts = core_text.relines(buffer, old.lines, old.starts, from, to)
 	if lines == nil or starts == nil then
 		return nil
 	end

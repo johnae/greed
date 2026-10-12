@@ -35,3 +35,45 @@ test("text splits into lines, trims and loses its quotes the same everywhere", f
 	assert(text.unquote('"a b"') == "a b" and text.unquote("'x'") == "x")
 	assert(text.unquote('"half') == '"half', "only quotes around it")
 end)
+
+test(
+	"relines reads only the lines a change touched, the rest moved, as a fresh split has them",
+	function(t)
+		local greed = require("@greed")
+		t:buffer("|one\ntwo\r\nthree\n\nfive")
+		local buffer = greed.view():buffer()
+		local lines, starts = text.buffer_lines(buffer:text())
+		local edits: { { from: number, to: number, put: string } } = {
+			{ from = 0, to = 0, put = "x" },
+			{ from = 4, to = 4, put = "new\nlines\n" },
+			{ from = 0, to = 9, put = "" },
+			{ from = 999, to = 999, put = "\nend" },
+		}
+		for i, edit in edits do
+			local from = math.min(edit.from, buffer:len())
+			local to = math.min(edit.to, buffer:len())
+			local changed: { number }? = nil
+			local function hear(event: greed.BufferChanged)
+				changed = { event.from_line or 0, event.to_line or 0 }
+			end
+			greed.on("buffer.changed", hear)
+			buffer:edit(function(e)
+				e:replace(from, to, edit.put)
+			end)
+			greed.off("buffer.changed", hear)
+			local span = assert(changed, "it said what changed")
+			local now, at = text.relines(buffer, lines, starts, span[1], span[2])
+			local want, want_at = text.buffer_lines(buffer:text())
+			assert(now and at, `edit {i}: read again`)
+			assert(
+				table.concat(now, "|") == table.concat(want, "|"),
+				`edit {i}: {table.concat(now, "|")}`
+			)
+			assert(
+				table.concat(at, ",") == table.concat(want_at, ","),
+				`edit {i}: {table.concat(at, ",")}`
+			)
+			lines, starts = now, at
+		end
+	end
+)

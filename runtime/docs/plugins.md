@@ -1600,6 +1600,12 @@ writes an age), `time.ago(seconds)` ("4 min ago"), `time.duration(ms)`
 ("0.31s", "2m 05s"), `time.iso(text)` (ISO 8601 to seconds) and
 `time.iso_text(seconds)`.
 
+A plugin that keeps a buffer's lines (to read them often without asking
+the buffer) gets them with `text.buffer_lines(text)`, and after each
+`buffer.changed` brings them up to date with `text.relines(buffer, lines,
+starts, event.from_line, event.to_line)`, which reads only the lines that
+changed: an edit costs what it changed, however long the buffer.
+
 `shell.parser(match, parse)` reads the output of the commands `match`
 names as tables, ahead of the shell's own look for one: a program's name,
 or a pattern for the command line. `parse(text, block)` returns a table,

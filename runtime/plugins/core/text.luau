@@ -448,4 +448,66 @@ function M.bytes(n: number): string
 	return string.format("%.1f %s", value, units[unit])
 end
 
+-- `line` without a `\r` its break left at its end.
+local function without_cr(line: string): string
+	return if string.sub(line, -1) == "\r" then string.sub(line, 1, -2) else line
+end
+
+--- `text`'s lines as a buffer has them, without their breaks (an empty
+--- last one after a last break too), and the byte (0-based) each starts at.
+function M.buffer_lines(text: string): ({ string }, { number })
+	local lines, starts = {}, {}
+	local at = 1
+	while true do
+		local nl = string.find(text, "\n", at, true)
+		table.insert(lines, without_cr(string.sub(text, at, (nl or #text + 1) - 1)))
+		table.insert(starts, at - 1)
+		if nl == nil then
+			break
+		end
+		at = nl + 1
+	end
+	return lines, starts
+end
+
+--- `buffer`'s lines and where each starts (as `buffer_lines` has them),
+--- which were `lines` and `starts` until lines `from` to `to` (0-based, as
+--- they are now; as "buffer.changed" says) changed: those read from the
+--- buffer, the rest taken from before and moved. What a change costs is
+--- what it changed, for anything that keeps a buffer's lines. Nil when the
+--- lines after them don't line up with the buffer's, as when the change
+--- was wider than said.
+function M.relines(
+	buffer: Buffer,
+	lines: { string },
+	starts: { number },
+	from: number,
+	to: number
+): ({ string }?, { number }?)
+	local count = buffer:line_count()
+	local delta = count - #lines
+	if from < 0 or to < from or to >= count or to - delta < from - 1 then
+		return nil, nil
+	end
+	local now: { string } = table.move(lines, 1, from, 1, table.create(count) :: { string })
+	local at: { number } = table.move(starts, 1, from, 1, table.create(count) :: { number })
+	for n = from, to do
+		local start = buffer:line_start(n)
+		now[n + 1], at[n + 1] = without_cr(buffer:slice(start, buffer:line_end(n))), start
+	end
+	if to + 1 < count then
+		local bytes = buffer:line_start(to + 1) - starts[to - delta + 2]
+		table.move(lines, to - delta + 2, #lines, to + 2, now)
+		for n = to + 2, count do
+			at[n] = starts[n - delta] + bytes
+		end
+		-- The line after the change is where it was, moved.
+		local check = without_cr(buffer:slice(buffer:line_start(to + 1), buffer:line_end(to + 1)))
+		if check ~= now[to + 2] then
+			return nil, nil
+		end
+	end
+	return now, at
+end
+
 return M
