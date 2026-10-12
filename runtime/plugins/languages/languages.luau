@@ -84,6 +84,11 @@ local languages: { [string]: Language } = {
 		comment = "--",
 		indent = 2,
 	},
+	hcl = {
+		extensions = { "hcl", "nomad" },
+		comment = "#",
+		indent = 2,
+	},
 	html = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "html", "htm" },
@@ -213,6 +218,22 @@ local languages: { [string]: Language } = {
 		roots = { "build.sbt", "build.sc" },
 		servers = { { "metals" } },
 		comment = "//",
+		indent = 2,
+	},
+	-- Terraform and OpenTofu. Their language servers format, with the
+	-- terraform or tofu program.
+	terraform = {
+		extensions = { "tf", "tofu" },
+		names = { ".terraform.lock.hcl" },
+		roots = { ".terraform", ".terraform.lock.hcl" },
+		servers = { { "terraform-ls", "serve" }, { "tofu-ls", "serve" } },
+		comment = "#",
+		indent = 2,
+	},
+	["terraform-vars"] = {
+		extensions = { "tfvars" },
+		servers = { { "terraform-ls", "serve" }, { "tofu-ls", "serve" } },
+		comment = "#",
 		indent = 2,
 	},
 	toml = {

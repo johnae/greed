@@ -104,6 +104,18 @@ M.sources = {
 } :: { [string]: Source }
 M.sources.cpp.inherits = { "c" }
 
+-- HCL, which Terraform and OpenTofu files are written in. The grammar has
+-- no queries of its own; Helix's (same license as Greed) fit it.
+M.sources.hcl = {
+	repo = "tree-sitter-grammars/tree-sitter-hcl",
+	version = "v1.2.0",
+	sha256 = "2f9acf63e7c263215f283e2cf0f4ebbb9bfa77f58e18fa42b91094be201372a7",
+	symbol = "hcl",
+	queries = "https://raw.githubusercontent.com/helix-editor/helix/ba40e547426b0f9896c8bdc699a4ab11f2b37dbc/runtime/queries/hcl/{kind}.scm",
+}
+M.sources.terraform = M.sources.hcl
+M.sources["terraform-vars"] = M.sources.hcl
+
 -- Capture names other editors use, as Greed's (see the highlighting docs).
 local NAMES: { [string]: string? } = {
 	number = "constant.numeric",

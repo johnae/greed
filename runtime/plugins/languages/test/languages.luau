@@ -7,6 +7,14 @@ test("files get their language from the table", function()
 	assert(greed.language_of("flake.nix") == "nix", "nix")
 	assert(greed.language_of("Makefile") == "make", "by name")
 	assert(greed.language_of("notes.zz") == nil, "unknown")
+	-- Terraform and OpenTofu share HCL's grammar, under their own names for
+	-- their language servers.
+	assert(greed.language_of("main.tf") == "terraform", "terraform")
+	assert(greed.language_of("main.tofu") == "terraform", "opentofu")
+	assert(greed.language_of("prod.tfvars") == "terraform-vars", "variables")
+	assert(greed.language_of("job.nomad") == "hcl", "plain HCL")
+	local grammars = languages.grammars.sources
+	assert(grammars.terraform == grammars.hcl and grammars.hcl.symbol == "hcl", "one grammar")
 end)
 
 test("set changes the fields it's given and keeps the rest", function()
