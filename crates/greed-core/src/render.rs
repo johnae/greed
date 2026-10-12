@@ -757,7 +757,11 @@ impl<M: Measure> Renderer<M> {
                 cursors.push((float.view, cursor));
             }
             let options = &float.options;
-            covered.push(if options.border { bordered(rect) } else { rect });
+            covered.push(if options.border {
+                rect.bordered()
+            } else {
+                rect
+            });
             let role = Role::Float {
                 border: options.border,
                 // Without a title, a float of a named buffer, like a
@@ -772,9 +776,9 @@ impl<M: Measure> Renderer<M> {
             };
             surfaces.push(laid.surface(float.view, role, rect));
         }
-        images.retain(|image| !covered.iter().any(|&c| overlaps(image.rect, c)));
+        images.retain(|image| !covered.iter().any(|&c| image.rect.overlaps(c)));
         images.extend(self.images.take());
-        scenes.retain(|scene| !covered.iter().any(|&c| overlaps(scene.rect, c)));
+        scenes.retain(|scene| !covered.iter().any(|&c| scene.rect.overlaps(c)));
         scenes.extend(self.scenes.take());
         // Deltas tell surfaces apart by id. A view is on screen once, but
         // should one show up twice, only the first is drawn.
@@ -2097,17 +2101,24 @@ fn text_area(area: Rect, gutter: usize, width: usize) -> Rect {
     }
 }
 
-fn overlaps(a: Rect, b: Rect) -> bool {
-    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
-}
+impl Rect {
+    /// Whether it and `other` share a cell.
+    pub fn overlaps(self, other: Rect) -> bool {
+        self.x < other.x + other.width
+            && other.x < self.x + self.width
+            && self.y < other.y + other.height
+            && other.y < self.y + self.height
+    }
 
-/// `rect` with the one-cell border a client draws around a floating view.
-fn bordered(rect: Rect) -> Rect {
-    Rect {
-        x: rect.x.saturating_sub(1),
-        y: rect.y.saturating_sub(1),
-        width: rect.width + 2,
-        height: rect.height + 2,
+    /// It with the one-cell border a client draws around a floating view.
+    #[must_use]
+    pub fn bordered(self) -> Rect {
+        Rect {
+            x: self.x.saturating_sub(1),
+            y: self.y.saturating_sub(1),
+            width: self.width + 2,
+            height: self.height + 2,
+        }
     }
 }
 

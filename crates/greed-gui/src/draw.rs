@@ -28,7 +28,13 @@ pub struct Instance {
     pub color: [f32; 4],
     /// `RECT`, `MASK`, `COLOR`, `ROUND` or `SHADOW`.
     pub kind: u32,
+    /// The box it's drawn within, as left, top, right, bottom; what's
+    /// outside isn't drawn, like the rows of a pane gliding past its edge.
+    pub clip: [f32; 4],
 }
+
+/// A clip that cuts nothing.
+pub const NO_CLIP: [f32; 4] = [-1.0e9, -1.0e9, 1.0e9, 1.0e9];
 
 /// A rectangle of one color.
 pub const RECT: u32 = 0;
@@ -79,6 +85,7 @@ fn images(placements: &[ImagePlacement], cell_w: f32, cell_h: f32) -> Vec<(Image
                 ],
                 color: [1.0; 4],
                 kind: COLOR,
+                clip: NO_CLIP,
             };
             (p.id, instance)
         })
@@ -92,6 +99,7 @@ fn rect(x: f32, y: f32, w: f32, h: f32, color: Rgba) -> Instance {
         uv: [0.0; 4],
         color,
         kind: RECT,
+        clip: NO_CLIP,
     }
 }
 
@@ -460,6 +468,7 @@ fn glyph_quad(physical: &PhysicalGlyph, slot: &Slot, size: f32, color: Rgba) -> 
         ],
         color,
         kind: if slot.color { COLOR } else { MASK },
+        clip: NO_CLIP,
     }
 }
 
@@ -593,6 +602,7 @@ fn rounded(x: f32, y: f32, w: f32, h: f32, radius: f32, outline: f32, color: Rgb
         uv: [radius, outline, radius, outline],
         color,
         kind: ROUND,
+        clip: NO_CLIP,
     }
 }
 
@@ -642,6 +652,7 @@ impl FloatBox {
             uv: [self.radius, blur, self.radius, blur],
             color: [0.0, 0.0, 0.0, depth],
             kind: SHADOW,
+            clip: NO_CLIP,
         }
     }
 

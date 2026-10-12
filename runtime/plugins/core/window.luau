@@ -30,6 +30,12 @@ greed.option.define({
 	default = SIZE,
 })
 
+greed.option.define({
+	name = "gui-smooth-scroll",
+	doc = "Whether the window glides a view's text to where it scrolled, rather than jumping there",
+	default = true,
+})
+
 local function current(): number
 	return greed.option.get("gui-font-size") :: number
 end

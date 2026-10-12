@@ -24,6 +24,7 @@ struct Quad {
     @location(2) uv: vec4<f32>,
     @location(3) color: vec4<f32>,
     @location(4) kind: u32,
+    @location(5) clip: vec4<f32>,
 };
 
 struct Out {
@@ -33,6 +34,7 @@ struct Out {
     @location(2) @interpolate(flat) kind: u32,
     @location(3) local: vec2<f32>,
     @location(4) @interpolate(flat) size: vec2<f32>,
+    @location(5) @interpolate(flat) clip: vec4<f32>,
 };
 
 @vertex
@@ -46,6 +48,7 @@ fn vs(@builtin(vertex_index) v: u32, q: Quad) -> Out {
     o.kind = q.kind;
     o.local = corner * q.size;
     o.size = q.size;
+    o.clip = q.clip;
     return o;
 }
 
@@ -58,6 +61,10 @@ fn rounded(p: vec2<f32>, half: vec2<f32>, r: f32) -> f32 {
 
 @fragment
 fn fs(o: Out) -> @location(0) vec4<f32> {
+    // In the fragment stage `pos` is in pixels, as the clip is.
+    if o.pos.x < o.clip.x || o.pos.y < o.clip.y || o.pos.x >= o.clip.z || o.pos.y >= o.clip.w {
+        discard;
+    }
     if o.kind == 3u {
         // A rounded box: `uv.x` its corners' radius, `uv.y` the width of its
         // outline, or 0 to fill it. Edges blend over a pixel.
@@ -164,7 +171,8 @@ impl Gpu {
             immediate_size: 0,
         });
         let attributes = wgpu::vertex_attr_array![
-            0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Uint32
+            0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Uint32,
+            5 => Float32x4
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("greed"),

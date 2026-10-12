@@ -230,6 +230,13 @@ proportional font, the system's sans-serif unless `gui-font-prose` names
 one, at its own width; code stays in the grid's font. The cursor,
 selections and clicks follow the text where it's drawn.
 
+A view that scrolls glides to its new place, whether you scroll it or a
+reply streaming in keeps it following the end. To have it jump there:
+
+```luau
+greed.option.set("gui-smooth-scroll", false)
+```
+
 Floats (pickers, prompts, hover info) show as boxes with rounded corners
 and a soft shadow, as the theme says for the window; terminals draw box
 lines. Floats cast a shadow unless the theme turns it off, a lighter one on

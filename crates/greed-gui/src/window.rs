@@ -173,7 +173,7 @@ impl App {
         Self {
             input,
             shown: None,
-            painter: Painter::new(),
+            painter: Painter::new().gliding(),
             columns: Columns::default(),
             mods: ModifiersState::empty(),
             mouse: (0, 0),
@@ -256,6 +256,12 @@ impl App {
     fn redraw(&mut self) {
         let started = self.logging().then(Instant::now);
         let drawn = self.draw();
+        // A view gliding to where it scrolled is drawn again each frame.
+        if self.painter.animating()
+            && let Some(shown) = &self.shown
+        {
+            shown.window.request_redraw();
+        }
         match &drawn {
             Ok(()) => self.watchdog.presented(),
             // Before the first frame there's nothing to present.
