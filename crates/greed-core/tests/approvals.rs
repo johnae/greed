@@ -524,3 +524,146 @@ fn a_plugin_appearing_or_asking_for_more_waits_for_you_and_the_review_opens() {
     let waiting = host.eval("#require('@greed').plugin.pending()").unwrap();
     assert_eq!(waiting, "1", "and waits for fs.read");
 }
+
+#[test]
+fn checking_a_plugin_leaves_what_the_plugins_it_requires_vouch_for_theirs() {
+    let temp = Temp::new("check-vouch");
+    let store = temp.0.join("approved.json");
+    let shipped = temp.0.join("shipped");
+    std::fs::create_dir_all(&shipped).unwrap();
+    let notes = temp.0.join("notes");
+    std::fs::create_dir_all(&notes).unwrap();
+    // A service keeping its own files whichever plugin asks: at once, in a
+    // task it starts, and after waiting; and running code handed to it.
+    let tools = temp.plugin("tools", "\"fs.write\"", "");
+    std::fs::write(
+        tools.join("init.luau"),
+        format!(
+            "local greed = require('@greed')
+            local dir = {:?}
+            local function keep(name)
+                assert(greed.fs.write(dir .. '/' .. name, name))
+            end
+            return {{
+                now = function() greed.vouch(keep, 'now') end,
+                task = function() greed.spawn(greed.vouch, keep, 'task') end,
+                later = function()
+                    greed.vouch(function() greed.sleep(1) keep('later') end)
+                end,
+                theirs = function(f) greed.vouch(f) end,
+                dir = dir,
+            }}\n",
+            notes.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let dir = temp.plugin("user", "", "\"tools\"");
+    std::fs::write(
+        dir.join("init.luau"),
+        "local greed = require('@greed')
+        local tools = require('@tools')
+        return {
+            sneak = function()
+                tools.theirs(function() greed.fs.write(tools.dir .. '/sneak', 'x') end)
+            end,
+        }\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    std::fs::write(
+        dir.join("test/keep.luau"),
+        "local test = require('@greed/test')
+        local tools = require('@tools')
+        test('now', function() tools.now() end)
+        test('in a task', function() tools.task() end)
+        test('after waiting', function() tools.later() end)
+        test('its own code still counts', function() require('@user').sneak() end)\n",
+    )
+    .unwrap();
+    let host = host(&store, &shipped);
+    host.eval(&format!(
+        "require('@greed').plugin.approve({:?})",
+        tools.to_str().unwrap()
+    ))
+    .unwrap();
+    let said = check(&host, &dir);
+    assert_eq!(said.len(), 2, "{said:?}");
+    assert_eq!(said[0], "passed 3", "{said:?}");
+    assert!(
+        said[1].contains("you haven't approved \"fs.write\" for user"),
+        "{said:?}"
+    );
+    for name in ["now", "task", "later"] {
+        assert!(notes.join(name).is_file(), "{name} wasn't kept: {said:?}");
+    }
+    assert!(!notes.join("sneak").exists(), "{said:?}");
+}
+
+fn shipped_plugin(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../runtime/plugins")
+        .join(name)
+}
+
+#[test]
+fn checking_a_plugin_that_runs_lines_in_the_shell_charges_it_only_its_programs() {
+    let temp = Temp::new("check-shell");
+    let store = temp.0.join("approved.json");
+    let work = temp.0.join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    // Declares only proc: the shell's history, wrapper files, environment
+    // and prompt are the shell's own.
+    let dir = temp.plugin("runner", "\"proc\"", "\"shell\"");
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    std::fs::write(
+        dir.join("test/run.luau"),
+        format!(
+            "local test = require('@greed/test')
+            local shell = require('@shell')
+            local function run(t, line, options)
+                t:buffer('|')
+                local sh = shell.open({{ cwd = {:?}, show = false }})
+                local block = shell.wait(assert(shell.run(sh, line, options)))
+                assert(block.status == 'done', `{{block.status}}: {{block.stderr}}`)
+                assert(#t:messages() == 0, table.concat(t:messages(), '\\n'))
+                return block
+            end
+            test('a line of yours', function(t) run(t, 'echo hi', nil) end)
+            test('a pipe', function(t)
+                local block = run(t, 'echo hi | tr h H', {{ by = 'agent', runner = 'pipe' }})
+                assert(block.stdout == 'Hi\\n', block.stdout)
+            end)\n",
+            work.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let host = host(&store, &shipped_plugin(""));
+    host.load_dirs(&["core", "picker", "terminal", "shell"].map(shipped_plugin))
+        .unwrap();
+    let failures = |said: &[String]| -> Vec<String> {
+        said[1..]
+            .iter()
+            .filter(|m| !m.starts_with("warning: "))
+            .cloned()
+            .collect()
+    };
+    // Before it's approved, only running its programs waits for that.
+    let said = check(&host, &dir);
+    assert_eq!(said[0], "passed 0", "{said:?}");
+    let failed = failures(&said);
+    assert_eq!(failed.len(), 2, "{said:?}");
+    for message in &failed {
+        assert!(
+            message.contains("you haven't approved \"proc\" for runner"),
+            "{said:?}"
+        );
+    }
+    host.eval(&format!(
+        "require('@greed').plugin.approve({:?})",
+        dir.to_str().unwrap()
+    ))
+    .unwrap();
+    let said = check(&host, &dir);
+    assert_eq!(said[0], "passed 2", "{said:?}");
+    assert!(failures(&said).is_empty(), "{said:?}");
+}
