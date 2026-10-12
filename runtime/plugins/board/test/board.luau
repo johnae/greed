@@ -333,7 +333,7 @@ test("a card's chart is as big as the card, coloured, with its scene over it", f
 		return string.find(b.buffer:text(), "█", 1, true) ~= nil
 	end)
 	local styled, placed = false, nil
-	for _, mark in b.buffer:decorations("board") do
+	for _, mark in b.buffer:decorations("board-charts") do
 		styled = styled or mark.style == "chart.series.1"
 		placed = mark.scene or placed
 	end

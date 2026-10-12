@@ -68,8 +68,11 @@ export type Board = {
 	--- How wide it's laid out, in columns: as the view showing it last
 	--- said.
 	width: number,
-	--- The cards on each line of the buffer (0-based), by their index.
+	--- The cards on each line of the buffer (0-based), by their index, as
+	--- laid out last, and what draws them.
 	at: { [number]: { layout.Spot } },
+	laid: layout.Laid?,
+	drawn: core.UiView,
 	--- The cards that didn't run, by their index: changed since you let
 	--- them run (a pull, an agent's edit), they wait for you to.
 	waiting: { [number]: boolean },
@@ -201,8 +204,46 @@ local function chart_marks(board: Board, at: { [number]: { layout.Spot } }): { g
 	return out
 end
 
--- Draws `board` as its cards are now, keeping each view's cursor and
--- scroll where they were.
+-- `laid`'s lines, each with its marks, for the board's view.
+local function lines_of(laid: layout.Laid): core.UiNode
+	local texts = string.split(laid.text, "\n")
+	local starts: { number } = {}
+	local at = 0
+	for i, text in texts do
+		starts[i] = at
+		at += #text + 1
+	end
+	-- The line (1-based) byte `pos` is on.
+	local function line_of(pos: number): number
+		local low, high = 1, #starts
+		while low < high do
+			local mid = (low + high + 1) // 2
+			if starts[mid] <= pos then
+				low = mid
+			else
+				high = mid - 1
+			end
+		end
+		return low
+	end
+	local marks: { { greed.Mark } } = {}
+	for _, mark in laid.marks do
+		local line = line_of(mark.from)
+		local own = table.clone(mark)
+		own.from -= starts[line]
+		own.to -= starts[line]
+		marks[line] = marks[line] or {}
+		table.insert(marks[line], own)
+	end
+	local lines: { core.UiNode } = {}
+	for i, text in texts do
+		table.insert(lines, core.ui.line({ { text = text, marks = marks[i] } }))
+	end
+	return core.ui.column(lines)
+end
+
+-- Draws `board` as its cards are now: only the lines that changed are
+-- written again, so each view's cursor and scroll stay where they were.
 local function draw(board: Board)
 	local buffer = board.buffer
 	if not buffer:valid() then
@@ -234,37 +275,26 @@ local function draw(board: Board)
 	end
 	local least = greed.option.get("board-card-width") :: number
 	local laid = layout.lay(board.title, pieces, board.width, least, board.columns)
-	local text = laid.text
 	if #board.cards == 0 then
-		text ..= "\nNo cards yet: space a adds a command, space e edits the file."
+		laid.text ..= "\nNo cards yet: space a adds a command, space e edits the file."
 	end
 	if board.problem then
-		text ..= `\ncouldn't show the file as it says: {board.problem}`
+		laid.text ..= `\ncouldn't show the file as it says: {board.problem}`
 	end
-	local marks = laid.marks
+	board.laid = laid
+	board.at = laid.at
+	board.drawn:redraw()
+end
+
+-- Draws over the board just drawn what depends on where its cards are:
+-- the charts, and that its lines don't wrap.
+local function draw_charts(board: Board)
+	local buffer = board.buffer
+	local marks = chart_marks(board, board.at)
 	-- Lines past the view's edge stay out of sight rather than wrap, as the
 	-- cards are lined up.
-	table.insert(marks, { from = 0, to = #text, style = "", nowrap = true })
-	local kept: { { view: greed.View, line: number, scroll: number } } = {}
-	for _, view in buffer:views() do
-		table.insert(
-			kept,
-			{ view = view, line = buffer:line_of(view:cursor()), scroll = view:scroll() }
-		)
-	end
-	buffer:edit(function(e)
-		e:replace(0, buffer:len(), text)
-	end, { undo = false })
-	for _, mark in chart_marks(board, laid.at) do
-		table.insert(marks, mark)
-	end
-	buffer:decorate("board", marks)
-	board.at = laid.at
-	local last = buffer:line_count() - 1
-	for _, k in kept do
-		k.view:set_cursor(buffer:line_start(math.min(k.line, last)))
-		k.view:set_scroll(math.min(k.scroll, last))
-	end
+	table.insert(marks, { from = 0, to = buffer:len(), style = "", nowrap = true })
+	buffer:decorate("board-charts", marks)
 end
 
 -- The line `card` runs: its command, drawn as a chart as big as its card
@@ -436,7 +466,8 @@ function M.open(path: string, options: OpenOptions?): Board?
 	-- It stays while another buffer shows in its place, as its file does
 	-- when you edit it.
 	buffer:set_kept(true)
-	local board: Board = {
+	local board: Board
+	board = {
 		name = name,
 		path = path,
 		root = root,
@@ -455,7 +486,26 @@ function M.open(path: string, options: OpenOptions?): Board?
 		-- A board opened before cards were let run one by one keeps running
 		-- what it holds now.
 		approve_all = asked or not blocks.known(key_of(path)),
-	}
+		drawn = core.ui.mount(
+			buffer,
+			function()
+				local laid = board.laid
+				return if laid then lines_of(laid) else core.ui.column({})
+			end,
+			nil,
+			{
+				ns = "board",
+				keys = false,
+				draw = false,
+				width = function()
+					return board.width
+				end,
+				after = function()
+					draw_charts(board)
+				end,
+			}
+		),
+	} :: Board
 	boards[buffer:id()] = board
 	view:show(buffer)
 	load(board)
