@@ -108,6 +108,14 @@ greed.option.define({
 })
 
 greed.option.define({
+	name = "agent-care",
+	doc = 'How Greed\'s own agent gathers context: "thorough" maps what exists with helpers before '
+		.. 'design questions and says what it checked; "quick" only reads what an answer depends on',
+	default = "thorough",
+	choices = { "thorough", "quick" },
+})
+
+greed.option.define({
 	name = "agent-thoughts",
 	doc = "Show what agents think in their transcripts, each thought folded to its first line (tab unfolds it); /thoughts switches it",
 	default = true,

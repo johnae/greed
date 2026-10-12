@@ -1163,6 +1163,10 @@ local function system(
 			.. "<editor-context> block: what they had on screen as they wrote it, and a "
 			.. "<pinned-context> block: what they pinned for you, as it is now. They're left out "
 			.. "when nothing changed since their last message.",
+		"Before answering how something works, why it behaves as it does, or how to build or "
+			.. "change something, read the code and docs the answer depends on; don't reason from "
+			.. "names or memory. Say plainly when you haven't checked something. A plain request "
+			.. "(add a todo, open a file, run a command) you just do.",
 		"Find your way with focus (what the user is looking at), symbols, grep and files before "
 			.. "reading whole files. Files are read as the user has them, unsaved changes included. "
 			.. how,
@@ -1193,6 +1197,19 @@ local function system(
 			"Hand a wide search or survey whose details would fill your context, a side task or "
 				.. "a second opinion to a helper with subagent; calls of it in one answer run at "
 				.. "once. Not for one quick lookup."
+		)
+	end
+	if greed.option.get("agent-care") ~= "quick" then
+		table.insert(
+			lines,
+			"For design, architecture and explain-the-system questions, or a task touching several "
+				.. "areas, first map what exists"
+				.. (if helpers
+					then ": hand a survey of each relevant area to a helper, several at once, and "
+						.. "answer from their findings."
+					else ".")
+				.. ' End such answers with a short "Checked:" line (files or areas read) and '
+				.. '"Not checked:" where it applies. Prefer a correct answer to a fast one.'
 		)
 	end
 	local found = instructions(s.root)

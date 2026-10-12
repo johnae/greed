@@ -210,7 +210,8 @@ function M.offer(sessions: Sessions)
 		reviews = true,
 		parallel = true,
 		description = "Hand a task to a helper agent with an empty context; it works on it in a "
-			.. "session of its own and returns its report, without filling your context",
+			.. "session of its own and returns its report, without filling your context. A main "
+			.. "use: surveying one area of the code (what exists, how it fits) for a design question",
 		input = agent.schema.object({
 			task = {
 				type = "string",

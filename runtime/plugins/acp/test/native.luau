@@ -1744,6 +1744,37 @@ test("the system prompt asks for short thoughts and small steps", function(t)
 	assert(string.find(system, "Keep your thoughts short", 1, true), system)
 end)
 
+test("the system prompt says to read what an answer depends on first", function(t)
+	local asked = script({ { text = "Hi", calls = {}, stop = "done" } })
+	ask(t, "hi")
+	local system = asked[1].system :: string
+	assert(string.find(system, "read the code and docs the answer depends on", 1, true), system)
+	assert(string.find(system, "haven't checked", 1, true), system)
+end)
+
+test("a thorough agent maps what exists with helpers and says what it checked", function(t)
+	assert(greed.option.get("agent-care") == "thorough", "thorough by default")
+	local asked = script({ { text = "Hi", calls = {}, stop = "done" } })
+	ask(t, "hi")
+	local system = asked[1].system :: string
+	assert(string.find(system, "first map what exists", 1, true), system)
+	assert(string.find(system, "survey of each relevant area", 1, true), system)
+	assert(string.find(system, '"Checked:"', 1, true), system)
+	assert(string.find(system, "correct answer to a fast one", 1, true), system)
+end)
+
+test("a quick agent is only told to read first", function(t)
+	greed.option.set("agent-care", "quick")
+	local asked = script({ { text = "Hi", calls = {}, stop = "done" } })
+	ask(t, "hi")
+	greed.option.set("agent-care", "thorough")
+	local system = asked[1].system :: string
+	assert(string.find(system, "read the code and docs the answer depends on", 1, true), system)
+	assert(not string.find(system, "first map what exists", 1, true), system)
+	assert(not string.find(system, '"Checked:"', 1, true), system)
+	assert(not string.find(system, "correct answer to a fast one", 1, true), system)
+end)
+
 test("an empty answer after a tool's result is sent back to go on, twice at most", function(t)
 	local empty = { text = "", calls = {}, stop = "done" }
 	local read = {

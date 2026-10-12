@@ -516,6 +516,17 @@ carrying on`, and `ctrl-c` stops it. For runs nobody watches, `:set
 agent-max-turns 300` stops it after that many steps, with a note saying
 so; `go on` lets it carry on.
 
+Before it answers how something works, why it behaves as it does, or how to
+build or change something, Greed's agent is told to read the code and docs
+the answer depends on and to say when it hasn't checked something. With the
+`agent-care` option at `thorough` (the default) it goes further for design
+and architecture questions, questions about how the system works, and tasks
+touching several areas: it first maps what exists, handing a survey of each
+area to a helper with `subagent` (several run at once), answers from what they
+found, and ends with a `Checked:` line saying what it read and a `Not
+checked:` line where something wasn't. `:set agent-care quick` keeps only
+the reading first, for faster answers.
+
 | Keys | |
 |---|---|
 | `space i n` (`:agent-new`) | Start an agent, Greed's own or one over ACP: pick which, and where it works; one that isn't installed says the command that installs it |
