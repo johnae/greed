@@ -653,11 +653,81 @@ local function capture_programs(
 	return out, errors, code, json, made
 end
 
+-- How a line worked out: printed `out` (a table, `tbl`, when it was one),
+-- failed with `why`, was stopped after printing `out` or exited with
+-- `code` having printed nothing, or leaves `line` to a real shell, given
+-- `text`.
+type Outcome =
+	{ kind: "done", out: string, tbl: tables.Table? }
+	| { kind: "failed", why: string }
+	| { kind: "stopped", out: string }
+	| { kind: "exited", code: number }
+	| { kind: "shell", line: string, text: string?, handoff: boolean }
+
+-- Works `line` out for `block` on `text`, what goes into it (with `value`
+-- when that was JSON and `tbl` when it was a table): the table stages at
+-- its start, `each`, then the programs after them, whose output goes on to
+-- the table stages after them, as in `kubectl get pods | where STATUS !=
+-- Running`, read as a table as a block's output is. What's left for a real
+-- shell, it says. The programs' errors go to `errors` as they come. With
+-- `raw` the line starts with a program, `^sort`; with `handoff` it runs in
+-- a terminal.
+local function evaluate(
+	shell: Shell,
+	block: Block,
+	line: string,
+	text: string?,
+	value: any,
+	tbl: tables.Table?,
+	flags: { raw: boolean?, handoff: boolean? },
+	errors: (string) -> ()
+): Outcome
+	while true do
+		if text ~= nil and not flags.raw then
+			local staged, rest, why, json =
+				tables.pipeline(tbl, text, line, value, { block = block, shell = shell })
+			if why then
+				return { kind = "failed", why = why }
+			end
+			if staged or json ~= nil then
+				local out = if staged then tables.text(staged) else tables.value_text(json) .. "\n"
+				if rest == nil then
+					return { kind = "done", out = out, tbl = staged }
+				end
+				line, text, value, tbl = rest, out, if staged then nil else json, staged
+			end
+		end
+		block.via = "shell"
+		local template = string.match(line, "^%s*each%s+(.-)%s*$")
+		if template and text ~= nil and not flags.raw then
+			local script, why = each_lines(tbl or tables.from_value(value), template)
+			if script == nil then
+				return { kind = "failed", why = why or "" }
+			elseif script == "" then
+				return { kind = "done", out = "" }
+			end
+			return { kind = "shell", line = script, handoff = false }
+		end
+		local programs, stages = tables.after_programs(line)
+		if programs == nil or stages == nil or flags.handoff then
+			return { kind = "shell", line = line, text = text, handoff = flags.handoff == true }
+		end
+		local out, said, code, json, made = capture_programs(shell, block, programs, text)
+		if said ~= "" then
+			errors(said)
+		end
+		if code == nil then
+			return { kind = "stopped", out = out }
+		elseif out == "" and code ~= 0 then
+			return { kind = "exited", code = code }
+		end
+		line, text, value, tbl, flags = stages, out, json, made, {}
+	end
+end
+
 -- Runs `line` once as `flow` would, but gives back what it printed in the
--- end rather than showing it: table stages after its programs included, as
--- `kubectl get pods | where RESTARTS > 0`, and `each`. Also its errors and
--- how it exited (nil when stopped). `text` is what goes into it (with
--- `value` when that was JSON and `tbl` when it was a table).
+-- end rather than showing it, its errors and how it exited (nil when
+-- stopped).
 local function capture_all(
 	shell: Shell,
 	block: Block,
@@ -666,50 +736,26 @@ local function capture_all(
 	value: any,
 	tbl: tables.Table?
 ): (string, string, number?)
-	if text ~= nil then
-		local staged, rest, why, json =
-			tables.pipeline(tbl, text, line, value, { block = block, shell = shell })
-		if why then
-			return "", why .. "\n", 2
-		end
-		if staged or json ~= nil then
-			local out = if staged then tables.text(staged) else tables.value_text(json) .. "\n"
-			if rest == nil then
-				return out, "", 0
-			end
-			line, text, value, tbl = rest, out, if staged then nil else json, staged
-		end
-		local template = string.match(line, "^%s*each%s+(.-)%s*$")
-		if template then
-			local script, problem = each_lines(tbl or tables.from_value(value), template)
-			if script == nil then
-				return "", (problem or "") .. "\n", 2
-			end
-			if script == "" then
-				return "", "", 0
-			end
-			return capture(shell, block, script, nil)
-		end
+	local said: { string } = {}
+	local outcome = evaluate(shell, block, line, text, value, tbl, {}, function(piece: string)
+		table.insert(said, piece)
+	end)
+	local errors = table.concat(said)
+	if outcome.kind == "done" then
+		return outcome.out, errors, 0
+	elseif outcome.kind == "failed" then
+		return "", errors .. outcome.why .. "\n", 2
+	elseif outcome.kind == "stopped" then
+		return outcome.out, errors, nil
+	elseif outcome.kind == "exited" then
+		return "", errors, outcome.code
 	end
-	local programs, stages = tables.after_programs(line)
-	if programs == nil or stages == nil then
-		return capture(shell, block, line, text)
-	end
-	local out, errors, code, json, made = capture_programs(shell, block, programs, text)
-	if code == nil or (out == "" and code ~= 0) then
-		return out, errors, code
-	end
-	local more, more_errors, more_code = capture_all(shell, block, stages, out, json, made)
-	return more, errors .. more_errors, more_code
+	local out, more, code = capture(shell, block, outcome.line, outcome.text)
+	return out, errors .. more, code
 end
 
--- Runs `line` for `block` on `text`, what goes into it (with `value` when
--- that was JSON and `tbl` when it was a table): the table stages at its
--- start, then the programs after them in a real shell. Table stages after
--- programs, as in `kubectl get pods | where STATUS != Running`, run on what
--- the programs print, read as a table as a block's output is. With
--- `raw` the line starts with a program, `^sort`; with `handoff` it runs in
--- a terminal.
+-- Runs `line` for `block` as `evaluate` works it out, showing what it
+-- prints.
 local function flow(
 	shell: Shell,
 	block: Block,
@@ -720,54 +766,24 @@ local function flow(
 	tbl: tables.Table?,
 	flags: { raw: boolean?, handoff: boolean? }
 )
-	if text ~= nil and not flags.raw then
-		local staged, rest, why, json =
-			tables.pipeline(tbl, text, line, value, { block = block, shell = shell })
-		if why then
-			run.fail(shell, block, why, 2)
-			return
-		end
-		if staged or json ~= nil then
-			local out = if staged then tables.text(staged) else tables.value_text(json) .. "\n"
-			if rest == nil then
-				block.table = staged
-				run.write(shell, block, out, "stdout")
-				run.finish(shell, block, 0, nil)
-				return
-			end
-			line, text, value, tbl = rest, out, if staged then nil else json, staged
-		end
-	end
-	block.via = "shell"
-	local template = string.match(line, "^%s*each%s+(.-)%s*$")
-	if template and text ~= nil and not flags.raw then
-		local script, why = each_lines(tbl or tables.from_value(value), template)
-		if script == nil then
-			run.fail(shell, block, why or "", 2)
-		elseif script == "" then
-			run.finish(shell, block, 0, nil)
-		else
-			fall_back(shell, block, script, opts, false, nil)
-		end
-		return
-	end
-	local programs, stages = tables.after_programs(line)
-	if programs == nil or stages == nil or flags.handoff then
-		fall_back(shell, block, line, opts, flags.handoff == true, text)
-		return
-	end
-	local out, errors, code, json, made = capture_programs(shell, block, programs, text)
-	if errors ~= "" then
+	local outcome = evaluate(shell, block, line, text, value, tbl, flags, function(errors: string)
 		run.write(shell, block, errors, "stderr")
-	end
-	if code == nil then
+	end)
+	if outcome.kind == "done" then
+		block.table = outcome.tbl
+		if outcome.out ~= "" then
+			run.write(shell, block, outcome.out, "stdout")
+		end
+		run.finish(shell, block, 0, nil)
+	elseif outcome.kind == "failed" then
+		run.fail(shell, block, outcome.why, 2)
+	elseif outcome.kind == "stopped" then
 		run.finish(shell, block, nil, "INT")
-		return
-	elseif out == "" and code ~= 0 then
-		run.finish(shell, block, code, nil)
-		return
+	elseif outcome.kind == "exited" then
+		run.finish(shell, block, outcome.code, nil)
+	else
+		fall_back(shell, block, outcome.line, opts, outcome.handoff, outcome.text)
 	end
-	flow(shell, block, stages, opts, out, json, made, {})
 end
 
 -- Makes `block`, finished, a new block for `command`, running, in its
