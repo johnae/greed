@@ -55,6 +55,7 @@ local suggest = require("@self/suggest")
 local kinds = require("@self/kinds")
 local live = require("@self/live")
 local peek = require("@self/peek")
+local pretty = require("@self/pretty")
 local navigate = require("@self/navigate")
 require("@self/processes")
 
@@ -1635,6 +1636,17 @@ block_command(
 )
 
 block_command(
+	"shell-pretty",
+	"Show the block's JSON lines readably (time, level and message first) or as they came",
+	function(shell, block)
+		local on = not block.pretty
+		if not pretty.set(shell, block, on) then
+			greed.echo("its lines aren't JSON objects with a time, level or message")
+		end
+	end
+)
+
+block_command(
 	"shell-rerun-in-place",
 	"Run the block's command again in its place, keeping what it showed before (b in blocks mode shows it)",
 	function(shell, block, ctx)
@@ -2237,6 +2249,22 @@ core.folds.provider(LANGUAGE, function(buffer: greed.Buffer, line: number): (num
 	if shell == nil then
 		return nil, line
 	end
+	-- In what a command printed, the section indented under a line, as of
+	-- YAML or what `kubectl describe` prints; else the whole block.
+	local block = log.block_at(shell, buffer:line_start(line))
+	local from, to = nil, nil
+	if block then
+		from, to = log.output_range(shell, block)
+	end
+	if from and to then
+		local top, bottom = buffer:line_of(from), buffer:line_of(to)
+		if line >= top then
+			local first, last = core.folds.indented(buffer, line, top, bottom)
+			if first then
+				return first, last
+			end
+		end
+	end
 	return log.fold(shell, line)
 end)
 
@@ -2329,6 +2357,11 @@ for _, action in
 			"open beside",
 			"shell-beside",
 			"Show it in a pane beside, following it, with a filter of its own",
+		},
+		{
+			"readable or as it came",
+			"shell-pretty",
+			"Its JSON lines, as many logs are, readably or as they came",
 		},
 		{
 			"filter",

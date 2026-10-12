@@ -374,6 +374,26 @@ test("a JSON array's table filters as aligned columns, and comes back as JSON", 
 	assert(shown(sh, block) == json, shown(sh, block))
 end)
 
+test("/ with key=value keeps JSON lines by a field, and .a.b a section of YAML", function(t)
+	local log = table.concat({
+		'{"level":"info","msg":"in sync","release":{"name":"vikunja"}}',
+		'{"level":"error","msg":"db down","release":{"name":"linstor"}}',
+		'{"level":"info","msg":"error count 0","release":{"name":"linstor"}}',
+	}, "\n") .. "\n"
+	local pod =
+		"metadata:\n  name: api\nstatus:\n  phase: Running\n  conditions:\n  - type: Ready\nspec:\n  nodeName: n1\n"
+	local sh = open(t, t:tempdir({ ["log.json"] = log, ["pod.yaml"] = pod }))
+	local logs = run(t, sh, "cat log.json")
+	shell.rows.set(sh, logs, "level=error")
+	assert(string.find(shown(sh, logs), "db down", 1, true), shown(sh, logs))
+	assert(not string.find(shown(sh, logs), "error count", 1, true), shown(sh, logs))
+	shell.rows.set(sh, logs, "release.name=linstor count")
+	assert(string.find(shown(sh, logs), "^[^\n]*error count 0[^\n]*\n$"), shown(sh, logs))
+	local yaml = run(t, sh, "cat pod.yaml")
+	shell.rows.set(sh, yaml, ".conditions")
+	assert(shown(sh, yaml) == "status:\n  conditions:\n  - type: Ready\n", shown(sh, yaml))
+end)
+
 test("/ filters any block's lines as they're typed, esc shows them all again", function(t)
 	local sh = open(t, t:tempdir())
 	local block = run(t, sh, "printf 'apple pie\\nbanana\\nerror: one\\nwarning\\nerror: two\\n'")

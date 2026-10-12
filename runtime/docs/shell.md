@@ -142,6 +142,7 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 | `y` `Y` | Copy what it printed, or the command |
 | `o` | Open what it printed in a buffer of its own, to edit or search |
 | `v` | Show it in a pane beside, following it while it runs, to filter there on its own |
+| `p` | Its JSON lines readably, or as they came (see [JSON lines](#json-lines)) |
 | `s` | Stop it |
 | `tab` `shift-tab` | Fold it under its command or unfold it, or all of them |
 | `:` | The command line |
@@ -232,8 +233,9 @@ can do with it.
 A folded block shows only its command line, with how it ended and how many
 lines it hides (`⋯ 240 lines`), so a long session stays easy to look
 through. `tab` on a block folds or unfolds it, and `shift-tab` folds or
-unfolds them all. A block that's still printing stays folded as its output
-grows.
+unfolds them all. In what a command printed, `tab` folds the lines indented
+under the line instead, a section of YAML or of `kubectl describe`. A block
+that's still printing stays folded as its output grows.
 
 Resting the mouse on a folded block shows it in a float without moving the
 cursor: scroll it there, or click into it to filter it with `/` and act on
@@ -414,11 +416,36 @@ while its record keeps them all, so `$3`, `space y` and `space v` give the
 whole output. On a block's command or at the prompt, `/` searches as
 usual.
 
+Two kinds of words look at the structure of what's printed:
+
+| | |
+|---|---|
+| `key=value` | In a line of JSON, as many logs are, `value` in its field `key`: `level=error`, `HelmRelease.name=vikunja` (a dotted path, looking through arrays). In other lines the word itself, so `level=error` works on logfmt too |
+| `.key.key` | The section of indented text under those keys, with the keys above it: `.status.conditions` of `kubectl get pod -o yaml`, `.conditions` of `kubectl describe`. The keys can be anywhere in the path |
+
+`/.conditions ready` keeps the lines of that section with "ready" in them,
+and the keys they're under.
+
 In a float or a pane showing one block, `/` filters that view alone, the
 same way (words, or `/` and a regex), while the shell and other views of
 the block show every line. Lines that come in later are filtered too, and
 since nothing is thrown away, changing the filter shows earlier lines it
 hid. `esc` on the filter prompt shows them all again.
+
+### JSON lines
+
+Output whose lines are JSON objects, as many programs log, shows each
+line with its time, level and message first and the other fields after
+it, dimmed, nested ones as `HelmRelease.name=vikunja`:
+
+```text
+11:58:12 error release failed: timed out waiting  HelmRelease.name=vikunja controller=helmrelease
+```
+
+The line the cursor is on shows as it came, and so does the record, so
+`/level=error`, copying and `$3` see the JSON. `p` in blocks mode, or
+"readable or as it came" among a block's actions, switches between the two;
+`:set shell-json-lines raw` shows them as they came from the start.
 
 ### Tables
 

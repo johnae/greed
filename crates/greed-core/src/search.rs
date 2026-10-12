@@ -31,7 +31,7 @@ impl std::fmt::Display for BadPattern {
 
 impl std::error::Error for BadPattern {}
 
-fn compile(pattern: &str) -> Result<Regex, BadPattern> {
+pub(crate) fn compile(pattern: &str) -> Result<Regex, BadPattern> {
     // The syntax error says what's wrong and where; the build error only
     // says that something is.
     Regex::new(pattern).map_err(|err| {
@@ -40,39 +40,6 @@ fn compile(pattern: &str) -> Result<Regex, BadPattern> {
                 .map_or_else(|| err.to_string(), ToString::to_string),
         )
     })
-}
-
-/// What a view keeps of the lines it shows: those with every word of `text`
-/// in them, without minding case, or those a regex matches. Its first
-/// `skip` lines always show, as a block's command does in a float.
-#[derive(Debug, Clone)]
-pub struct LineFilter {
-    pub text: String,
-    regex: Option<Regex>,
-    words: Vec<String>,
-    pub skip: usize,
-}
-
-impl LineFilter {
-    /// A filter of `text`, a regex with `regex`; fails on a regex that isn't
-    /// one.
-    pub fn new(text: &str, regex: bool, skip: usize) -> Result<Self, BadPattern> {
-        Ok(Self {
-            text: text.to_owned(),
-            regex: if regex { Some(compile(text)?) } else { None },
-            words: text.split_whitespace().map(str::to_lowercase).collect(),
-            skip,
-        })
-    }
-
-    /// Whether `line` shows.
-    pub fn keeps(&self, line: &str) -> bool {
-        if let Some(regex) = &self.regex {
-            return regex.find_iter(Input::new(line)).next().is_some();
-        }
-        let line = line.to_lowercase();
-        self.words.iter().all(|word| line.contains(word.as_str()))
-    }
 }
 
 /// Every match of `pattern` within `range` of `text`, as byte ranges.

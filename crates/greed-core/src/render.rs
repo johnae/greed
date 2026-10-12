@@ -2172,37 +2172,10 @@ pub(crate) fn hidden_lines(editor: &Editor, view: &View) -> Vec<Range<usize>> {
         );
     }
     if let Some(filter) = &view.filter {
-        hidden.extend(filtered_out(text, view, filter, &cursors));
+        let shown = view.lines.clone().unwrap_or(0..text.len_lines());
+        hidden.extend(filter.hidden(text, shown, &cursors));
     }
     hidden
-}
-
-/// The lines of `view` its `filter` leaves out, as runs: among those it
-/// shows, past the first `skip`, the lines it doesn't keep, unless a
-/// cursor is on one.
-fn filtered_out(
-    text: &Rope,
-    view: &View,
-    filter: &crate::search::LineFilter,
-    cursors: &[usize],
-) -> Vec<Range<usize>> {
-    let all = text.len_lines();
-    let shown = view.lines.clone().unwrap_or(0..all);
-    let mut runs: Vec<Range<usize>> = Vec::new();
-    for line in (shown.start + filter.skip).min(all)..shown.end.min(all) {
-        let kept = cursors.contains(&line) || {
-            let content = text.line(line).to_string();
-            filter.keeps(content.trim_end_matches(['\n', '\r']))
-        };
-        if kept {
-            continue;
-        }
-        match runs.last_mut() {
-            Some(run) if run.end == line => run.end = line + 1,
-            _ => runs.push(line..line + 1),
-        }
-    }
-    runs
 }
 
 /// The virtual lines shown under `line`, with the mark each comes from.

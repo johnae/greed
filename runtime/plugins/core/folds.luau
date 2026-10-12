@@ -58,12 +58,13 @@ local function indent(buffer: Buffer, line: number): number?
 	return if (rest :: number) > #text then nil else #(spaces :: string)
 end
 
--- The lines indented under the nearest line around `line` indented less:
--- `line` itself when the next line is indented more.
-local function from_indent(buffer: Buffer, line: number): (number?, number)
-	local count = buffer:line_count()
+--- The lines indented under the nearest line around `line` indented less:
+--- `line` itself when the next line is indented more; among lines `top` to
+--- `bottom` (default: the whole buffer).
+function M.indented(buffer: Buffer, line: number, top: number?, bottom: number?): (number?, number)
+	local first, final = top or 0, bottom or buffer:line_count() - 1
 	local function next_indent(from: number): number?
-		for i = from + 1, count - 1 do
+		for i = from + 1, final do
 			local found = indent(buffer, i)
 			if found then
 				return found
@@ -78,7 +79,7 @@ local function from_indent(buffer: Buffer, line: number): (number?, number)
 		header = line
 	else
 		local depth = own or below or 0
-		for i = line - 1, 0, -1 do
+		for i = line - 1, first, -1 do
 			local found = indent(buffer, i)
 			if found and found < depth then
 				header = i
@@ -91,7 +92,7 @@ local function from_indent(buffer: Buffer, line: number): (number?, number)
 	end
 	local base = indent(buffer, header) :: number
 	local last = header
-	for i = header + 1, count - 1 do
+	for i = header + 1, final do
 		local found = indent(buffer, i)
 		if found and found <= base then
 			break
@@ -116,7 +117,7 @@ function M.block(buffer: Buffer, line: number): (number?, number)
 	if source then
 		return from_query(buffer, line, source)
 	end
-	return from_indent(buffer, line)
+	return M.indented(buffer, line)
 end
 
 -- Each fold is two marks in "folds" starting at its first line: the fold,

@@ -652,6 +652,22 @@ local function joined(lines: { Line }): string
 	return table.concat(parts, "\n") .. "\n"
 end
 
+-- Who's told of each run of output lines put in the buffer.
+local placing: { (shell: Shell, block: Block, from: number, lines: { Line }) -> () } = {}
+
+--- Calls `listener` with each run of `block`'s output lines as they're put
+--- in the buffer, from `from` on, to the end of the block: new ones, or
+--- what a filter or a watch shows in place of what was there.
+function M.on_placed(listener: (shell: Shell, block: Block, from: number, lines: { Line }) -> ())
+	table.insert(placing, listener)
+end
+
+local function tell_placed(shell: Shell, block: Block, from: number, lines: { Line })
+	for _, listener in placing do
+		listener(shell, block, from, lines)
+	end
+end
+
 -- Adds `lines`' marks to `into`, placed as if the lines start at `pos`.
 local function placed(lines: { Line }, pos: number, into: { greed.Mark })
 	local at = pos
@@ -753,6 +769,11 @@ local function update(
 		from = start,
 		to = if volatile then nil else start + #stable_text,
 	})
+	local lines = kept
+	if volatile then
+		lines = table.move(volatile, 1, #volatile, #kept + 1, table.clone(kept))
+	end
+	tell_placed(shell, block, start, lines)
 	M.draw_block(shell, block)
 	if last_block then
 		M.draw_prompt(shell)
@@ -815,6 +836,7 @@ local function replace_output(shell: Shell, block: Block, lines: { Line })
 	local marks: { greed.Mark } = {}
 	placed(lines, start, marks)
 	buffer:decorate(ns_out(block), marks)
+	tell_placed(shell, block, start, lines)
 	M.draw_refs(shell, block)
 	M.draw_block(shell, block)
 	if last_block then

@@ -57,7 +57,7 @@ pub struct View {
     pub columns: usize,
     /// The lines it shows of what it would, as a float filtering a log: those
     /// hidden stay in the buffer.
-    pub filter: Option<std::sync::Arc<crate::search::LineFilter>>,
+    pub filter: Option<std::sync::Arc<crate::line_filter::LineFilter>>,
 }
 
 impl View {
@@ -1064,7 +1064,7 @@ impl Editor {
 
     /// Shows only the lines of `view` that `filter` keeps, for every client, or
     /// every line again with `None`.
-    pub fn filter(&mut self, view: ViewId, filter: Option<crate::search::LineFilter>) {
+    pub fn filter(&mut self, view: ViewId, filter: Option<crate::line_filter::LineFilter>) {
         let filter = filter.map(std::sync::Arc::new);
         for client in self.clients.values_mut() {
             if let Some(view) = client.views.get_mut(&view) {

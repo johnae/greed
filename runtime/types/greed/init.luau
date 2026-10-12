@@ -160,6 +160,8 @@ export type Buffer = {
 	--- Every match of the regex `pattern` between `from` and `to` (default:
 	--- the whole buffer), or nil and the error for a bad pattern.
 	find_all: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { from: number, to: number } }?, string?),
+	--- The lines (0-based) a view's filter of `filter` keeps of the buffer, as `View.set_filter` reads it: words, `key=value` fields and `.a.b` sections.
+	kept_lines: (self: Buffer, filter: string) -> { number },
 	--- Like `find_all`, but each match is the whole match's range followed by
 	--- each group's, false for a group that took no part.
 	find_groups: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { { from: number, to: number } | false } }?, string?),
@@ -307,7 +309,7 @@ export type View = {
 	narrow: (self: View, from: number?, to: number?) -> (),
 	--- The first and last line it's narrowed to, or nil when it shows all of its buffer.
 	narrowed: (self: View) -> (number?, number?),
-	--- Shows only the lines with every word of `text` in them, without minding case, or with `regex` those it matches, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.
+	--- Shows only the lines with every word of `text` in them, without minding case, or with `regex` those it matches, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. A word `key=value` looks in a line of JSON for `value` in field `key` (a dotted path, through arrays), and for the word itself in other lines. A word `.a.b` keeps the section of indented text (YAML, indented JSON) under keys a and b, with the keys above what shows. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.
 	set_filter: (self: View, text: string?, opts: { regex: boolean?, skip: number? }?) -> (),
 	--- What `set_filter` was given, while it filters.
 	filter: (self: View) -> string?,

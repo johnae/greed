@@ -27,6 +27,9 @@ export type Block = {
 	--- output and errors apart), "pty" (in a pseudo terminal, as typed
 	--- commands run) or "terminal" (handed to a terminal).
 	runner: string,
+	--- Whether its lines, JSON objects as many logs are, show readably
+	--- (`shell-json-lines`): nil until its first line says whether they are.
+	pretty: boolean?,
 	--- What ran it: "builtin", or "shell" (the line went to a real shell,
 	--- named in `program`).
 	via: string,

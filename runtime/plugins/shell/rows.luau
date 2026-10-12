@@ -76,10 +76,26 @@ local function row_texts(block: Block, before: { Line }): { string }
 	return table.move(drawn_lines, 2, #drawn_lines, 1, texts)
 end
 
+-- Whether `word` is a `.a.b` section of indented text.
+local function is_section(word: string): boolean
+	return string.find(word, "^%.[^.]") ~= nil
+end
+
+-- Whether `filter` has a `.a.b` section word in it.
+local function sectioned(filter: string): boolean
+	for word in string.gmatch(filter, "%S+") do
+		if is_section(word) then
+			return true
+		end
+	end
+	return false
+end
+
 -- The indexes of `texts` that `filter` keeps: every word of it in them,
 -- or with a leading `/` a match of the regex after it, minding case as
--- `shell-filter-search-case` says. Nil for a regex that isn't one (yet,
--- while it's typed).
+-- `shell-filter-search-case` says. With a `key=value` or `.a.b` word, as a
+-- view's filter reads them: fields of JSON lines, sections of YAML. Nil for
+-- a regex that isn't one (yet, while it's typed).
 local function keep(texts: { string }, filter: string): { number }?
 	local kept: { number } = {}
 	if string.sub(filter, 1, 1) == "/" then
@@ -105,8 +121,21 @@ local function keep(texts: { string }, filter: string): { number }?
 		return kept
 	end
 	local words: { string } = {}
+	local structured = false
 	for word in string.gmatch(filter, "%S+") do
 		table.insert(words, word)
+		structured = structured or is_section(word) or string.find(word, "^[^=]+=") ~= nil
+	end
+	if structured then
+		-- Fields of JSON lines and sections of YAML, as a view's filter reads them.
+		local buffer = greed.create_buffer("shell-filter", table.concat(texts, "\n"))
+		for _, line in buffer:kept_lines(filter) do
+			if texts[line + 1] then
+				table.insert(kept, line + 1)
+			end
+		end
+		buffer:close()
+		return kept
 	end
 	for i, text in texts do
 		local all = true
@@ -125,9 +154,10 @@ end
 
 --- Shows what `filter` keeps of `block`'s output: of a table, the rows it
 --- keeps (see `tables.filter`), sorted by `sort` (from the greatest with
---- `desc`); of other output, the lines with every word of it in them. A
---- filter starting with `/` is a regex for the lines. With neither, the
---- output shows as it came.
+--- `desc`); of other output, the lines with every word of it in them, a
+--- `key=value` word a field of JSON lines and a `.a.b` word a section of
+--- YAML (of any output). A filter starting with `/` is a regex for the
+--- lines. With neither, the output shows as it came.
 function M.set(shell: Shell, block: Block, filter: string, sort: string?, desc: boolean?)
 	if block.status == "running" and block.watching == nil then
 		return
@@ -149,7 +179,9 @@ function M.set(shell: Shell, block: Block, filter: string, sort: string?, desc: 
 	-- The rows (or lines) kept, of how many.
 	local kept: { number } = {}
 	local total = #before
-	if tbl then
+	-- A section is of the text, even where it reads as a table too, like one
+	-- JSON object.
+	if tbl and not sectioned(filter) then
 		local found = if string.sub(filter, 1, 1) == "/"
 			then keep(row_texts(block, before), filter)
 			else tables.filter(tbl, filter)

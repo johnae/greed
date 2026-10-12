@@ -28,6 +28,7 @@ pub mod ide;
 pub mod image;
 pub mod keymap;
 pub mod layout;
+pub mod line_filter;
 pub mod lsp;
 pub mod luau;
 pub mod mouse;

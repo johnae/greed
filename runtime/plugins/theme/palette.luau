@@ -173,6 +173,13 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["shell.table.bad"] = { fg = p.red },
 		["shell.table.warn"] = { fg = p.yellow },
 		["shell.table.dim"] = { fg = p.comment },
+		["shell.log.time"] = { fg = p.comment },
+		["shell.log.error"] = { fg = p.red, bold = true },
+		["shell.log.warn"] = { fg = p.yellow },
+		["shell.log.info"] = { fg = p.green },
+		["shell.log.debug"] = { fg = p.comment },
+		["shell.log.field"] = { fg = p.comment },
+		["shell.log.message"] = { fg = p.fg },
 		-- Charts: up to eight series, then the axes and words around them.
 		["chart.series.1"] = { fg = p.blue },
 		["chart.series.2"] = { fg = p.orange },

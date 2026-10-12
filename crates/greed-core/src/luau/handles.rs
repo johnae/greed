@@ -382,7 +382,7 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
                         None => (false, 0),
                     };
                     Some(
-                        crate::search::LineFilter::new(&text, regex, skip)
+                        crate::line_filter::LineFilter::new(&text, regex, skip)
                             .map_err(|err| mlua::Error::runtime(format!("not a regex: {err}")))?,
                     )
                 }
@@ -592,6 +592,21 @@ fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             }
         },
     );
+    methods.add_method("kept_lines", |lua, this, filter: String| {
+        let filter = crate::line_filter::LineFilter::new(&filter, false, 0)
+            .map_err(|err| mlua::Error::runtime(err.to_string()))?;
+        this.with_text(lua, |text| {
+            let all = text.len_lines();
+            let hidden = filter.hidden(text, 0..all, &[]);
+            let mut runs = hidden.iter().peekable();
+            Ok((0..all)
+                .filter(|line| {
+                    while runs.next_if(|run| run.end <= *line).is_some() {}
+                    !runs.peek().is_some_and(|run| run.contains(line))
+                })
+                .collect::<Vec<_>>())
+        })
+    });
     methods.add_method(
         "find_groups",
         |lua, this, (pattern, from, to): (String, Option<usize>, Option<usize>)| {
