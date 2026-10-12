@@ -69,6 +69,17 @@ test(":project opens a project, or switches to it when it's open", function(t)
 	assert(greed.project.current().root == a and #greed.project.list() == count, "switched back")
 end)
 
+test(":project takes ~ and paths from the project, and opens a file it names", function(t)
+	local home = assert(greed.fs.dirs().home)
+	local dir = t:tempdir({ ["infra/.git/HEAD"] = "", ["infra/README.md"] = "# Infra\n" })
+	-- A path under the home folder, written from ~ as you'd type it.
+	local tilde = project.tilde(`{dir}/infra/README.md`)
+	t:run("project", { tilde })
+	assert(greed.project.current().root == `{dir}/infra`, greed.project.current().root)
+	assert(greed.view():buffer():path() == `{dir}/infra/README.md`, "the file opened")
+	assert(string.sub(tilde, 1, 1) == "~" or not string.find(dir, home, 1, true), tilde)
+end)
+
 test("a folder without a marker is its own project", function(t)
 	local dir = t:tempdir({ ["notes.md"] = "" })
 	t:run("project", { dir })

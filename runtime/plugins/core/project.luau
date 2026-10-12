@@ -231,20 +231,31 @@ local function run_config(root: string)
 	end
 end
 
---- Shows the project `path` (a file or folder) is in, opening it if it
---- isn't open yet. Returns its id.
+--- Shows the project `path` (a file or folder; `~/x`, or relative to the
+--- shown project's root) is in, opening it if it isn't open yet, and the
+--- file if it's one. Returns its id.
 function M.open(path: string): number
-	local root = M.root(path)
+	-- "~/infra" and paths from the shown project's root, as typed.
+	local full = M.resolve(path)
+	local root = M.root(full)
 	remember(root)
+	local id: number? = nil
 	for _, project in greed.project.list() do
 		if project.root == root then
 			greed.project.switch(project.id)
-			return project.id
+			id = project.id
 		end
 	end
-	local id = greed.project.open(root)
-	run_config(root)
-	return id
+	if id == nil then
+		id = greed.project.open(root)
+		run_config(root)
+	end
+	-- A file named opens there.
+	local info = greed.fs.stat(full)
+	if info and info.kind == "file" then
+		greed.open(full)
+	end
+	return id :: number
 end
 
 --- The buffers in the shown project that have unsaved changes.
@@ -450,8 +461,9 @@ greed.on("client.attached", function(event: greed.ClientAttached)
 		return
 	end
 	M.open(path)
-	local info = greed.fs.stat(path)
-	if info == nil or info.kind == "file" then
+	-- A file that isn't there yet opens to be written; one that is opened
+	-- with its project.
+	if greed.fs.stat(path) == nil then
 		greed.open(path)
 	end
 end)
