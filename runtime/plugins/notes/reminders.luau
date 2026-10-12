@@ -147,43 +147,49 @@ local function describe(reminder: Reminder): string
 	return `{day}{reminder.time}  {reminder.text}  ({reminder.note})`
 end
 
--- The notice: its view while it's shown, and the reminders in it.
-local notice: { view: greed.View?, shown: { Reminder } } = { view = nil, shown = {} }
+-- The notice: its view while it's shown, what draws it (each reminder's
+-- line's value the reminder), and the reminders in it.
+local notice: { view: greed.View?, drawn: core.UiView?, shown: { Reminder } } =
+	{ view = nil, drawn = nil, shown = {} }
 
 --- The reminders the notice shows, oldest first.
 function M.shown(): { Reminder }
 	return notice.shown
 end
 
+-- What draws the notice: the reminders, then how to dismiss them.
+local function drawing(): core.UiView
+	local drawn = notice.drawn
+	if drawn then
+		return drawn
+	end
+	local buffer = greed.create_buffer("reminders", "", { readonly = true })
+	buffer:set_line_numbers(false)
+	local made = core.ui.mount(buffer, function()
+		return core.ui.column({
+			core.ui.list(notice.shown, function(reminder: Reminder): { core.UiSpan }
+				return { core.ui.span(describe(reminder), "notes.remind") }
+			end),
+			core.ui.line({ core.ui.span("space n r dismisses", "comment") }),
+		})
+	end, nil, { ns = "reminders", keys = false, draw = false })
+	notice.drawn = made
+	return made
+end
+
 -- Shows the notice with what's in it, opening it or changing its size.
 local function draw()
-	local lines: { string } = {}
-	local marks: { greed.Mark } = {}
-	local at = 0
 	local width = 20
 	for _, reminder in notice.shown do
-		local line = describe(reminder)
-		table.insert(lines, line)
-		table.insert(marks, { from = at, to = at + #line, style = "notes.remind" })
-		at += #line + 1
-		width = math.max(width, core.text.width(line) + 2)
+		width = math.max(width, core.text.width(describe(reminder)) + 2)
 	end
-	local hint = "space n r dismisses"
-	table.insert(lines, hint)
-	table.insert(marks, { from = at, to = at + #hint, style = "comment" })
 	local view = notice.view
-	local buffer = if view then view:buffer() else greed.create_buffer("reminders", "")
-	buffer:set_line_numbers(false)
-	buffer:set_readonly(false)
-	buffer:edit(function(e)
-		e:replace(0, buffer:len(), table.concat(lines, "\n"))
-	end)
-	buffer:set_readonly(true)
-	buffer:decorate("reminders", marks)
+	local drawn = drawing()
+	drawn:redraw()
 	local spec: greed.FloatSpec = {
 		title = if #notice.shown == 1 then "Reminder" else "Reminders",
 		width = math.min(width, 70),
-		height = #lines + 2,
+		height = #notice.shown + 3,
 		x = "100%",
 		y = 0,
 		focus = false,
@@ -191,7 +197,7 @@ local function draw()
 	if view then
 		view:configure(spec)
 	else
-		notice.view = greed.float(buffer, spec)
+		notice.view = greed.float(drawn.buffer, spec)
 	end
 end
 
@@ -200,14 +206,14 @@ function M.dismiss()
 	if notice.view then
 		pcall(notice.view.close, notice.view)
 	end
-	notice.view = nil
+	notice.view, notice.drawn = nil, nil
 	notice.shown = {}
 end
 
 -- Closed some other way, it's dismissed too.
 greed.on("view.closed", function(event: greed.ViewClosed)
 	if notice.view and notice.view:id() == event.view then
-		notice.view = nil
+		notice.view, notice.drawn = nil, nil
 		notice.shown = {}
 	end
 end)
@@ -396,7 +402,9 @@ greed.command({
 core.mouse.claim("reminders", function(event: greed.MouseEvent): boolean
 	local view = event.view
 	if event.kind == "press" and event.button == "left" and view and event.pos then
-		local index = view:buffer():line_of(event.pos) + 1
+		local drawn = notice.drawn
+		local reminder: Reminder? = drawn and drawn:value_at(event.pos)
+		local index = reminder and table.find(notice.shown, reminder) or 0
 		-- Once the other handlers are done with the view this closes.
 		greed.spawn(function()
 			greed.sleep(0)
