@@ -29,6 +29,7 @@ local objects = require("@self/objects")
 local syntax = require("@self/syntax")
 local formula = require("@self/formula")
 local data = require("@self/data")
+local ui = require("@self/ui")
 require("@self/selections")
 local comment = require("@self/comment")
 local jumps = require("@self/jumps")
@@ -103,6 +104,11 @@ export type DataTable = data.Table
 export type DataColumn = data.Column
 export type DataSource = data.Source
 export type DataAsk = data.Ask
+--- A view of a plugin's interface and what it's made of (ui.luau).
+export type UiView = ui.View
+export type UiNode = ui.Node
+export type UiSpan = ui.Span
+export type UiLine = ui.Line
 --- A float being typed in, from `floats.typing`.
 export type TypingFloat = floats.Typing
 
@@ -112,6 +118,8 @@ return {
 	formula = formula,
 	--- Tables of data and the sources they come from (data.luau).
 	data = data,
+	--- A toolkit for plugins' interfaces, drawn as text and marks (ui.luau).
+	ui = ui,
 	motions = motions,
 	menu = menu,
 	features = features,

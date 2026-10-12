@@ -7,6 +7,8 @@
 --                              │ a    │   12 │
 --                              └──────┴──────┘
 
+local core = require("@core")
+
 local M = {}
 
 export type Align = "left" | "right" | "center"
@@ -158,13 +160,7 @@ end
 
 --- A border across columns `widths` wide: `left`, `middle` between
 --- columns and `right`, e.g. "├", "┼", "┤".
-function M.border(widths: { number }, left: string, middle: string, right: string): string
-	local parts = {}
-	for _, w in widths do
-		table.insert(parts, string.rep("─", w + 2))
-	end
-	return left .. table.concat(parts, middle) .. right
-end
+M.border = core.ui.border
 
 --- Which cell of row `text` byte `at` (1-based) is in: 1 up to the first
 --- pipe between cells, and so on, a cell's pipe on the right counting as

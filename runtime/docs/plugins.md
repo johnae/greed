@@ -859,15 +859,18 @@ greed.tab.set_layout({
   put a sign in the gutter, or draw text over the buffer's (like jump
   labels). It can also hide text (`conceal`, like a link's brackets), shown
   again as `reveal` says: `"line"` (the default) when a cursor is on its
-  line, `"cursor"` when one is inside it, `"never"`, or `"auto"`, which
-  follows the mode: on the cursor's line while typing, inside it in edit
-  mode, never otherwise. Markdown and notes use `"auto"`, so their marks
-  stay as they are when the mode changes (`greed.reveal(how)` is what core
+  line, `"cursor"` when one is inside it, `"never"`, `"auto"`, which
+  follows the mode: on the cursor's line while typing, otherwise once the
+  cursor is inside it past its start (as the `markup-reveal` option says),
+  or `"typing"`, as `"auto"` while typing and never otherwise, as for a
+  table's borders. Markdown and notes use `"auto"`, so their marks stay as
+  they are when the mode changes (`greed.reveal(how, typing)` is what core
   calls as it does). `buffer:decorate(ns, marks, { from = a, to = b })`
   replaces only the marks starting from `a` up to `b`, for plugins that
   draw again just the lines an edit changed. `plain = true` draws a mark's
   text without syntax highlighting, as for a tool's output in a Markdown
-  buffer. A mark can fold lines away under the first one (`fold`), keep
+  buffer. A mark can fold lines away under the first one (`fold`; with
+  `peek` they show while a cursor is on that first line too), keep
   the lines it touches from wrapping (`nowrap`, cut at the edge with the
   view scrolling sideways to the cursor, `view:side_scroll()`),
   or show lines that aren't in the buffer under its own (`lines`), whole
@@ -1019,7 +1022,41 @@ greed.tab.set_layout({
   or all of them, again in full. `markdown.drawn(buffer)` says whether a
   buffer shows as a document, for `wants`. `markdown.values.scope(buffer)`
   is what its formulas can name (fields, `let`s, tables, answers), to work
-  out a `core.formula` there.
+  out a `core.formula` there. `markdown.values.provide({ names, value })`
+  adds names a buffer's text doesn't hold, like the data plugin's tables.
+- `require("@core").ui` draws an interface as a buffer's text and marks, so
+  search, copy and an agent's `read` work on it as on any text, the same in
+  the terminal and the window. A view is a function from its state to
+  widgets; `ui.mount(buffer, render, state)` draws it for the width of the
+  buffer's views, and `view:set(patch)` merges into the state and draws
+  again, changing only the lines that changed:
+
+  ```lua
+  local ui = require("@core").ui
+  local view
+  view = ui.mount(buffer, function(state)
+      return ui.column({
+          ui.field("search", state.query, function(text) view:set({ query = text }) end),
+          ui.table({ columns = { "name", "total" }, rows = state.rows, on_open = show }),
+          ui.row({ ui.button("Refresh", refresh), ui.toggle("Live", state.live, set_live) }),
+      })
+  end, { query = "", rows = {}, live = false })
+  ```
+
+  `text`, `line` (of `ui.span`s), `column`, `row`, `box`, `gap`, `button`,
+  `field` (asks with a prompt), `toggle`, `list` and `table` are there. A
+  widget is pressed with `enter`, `space` or a click, and `tab` and
+  `shift-tab` go between them; the cursor is the focus, so each client has
+  its own. `ui.pieces(node.lay(width))` gives a node as a mark's `lines`,
+  as the data plugin draws its tables under a block.
+- `require("@core").data` is where tables of data come from: one shape,
+  `{ columns = { { name, kind? } }, rows = { { [name] = value } } }`, and
+  sources by name. `data.source({ name, doc, runs?, read, watch? })` adds
+  one: `read(ask)` gives the table for an ask (`args`, `body`, `values` to
+  bind as parameters, `dir`, `limit`, `offset`), and may wait. A source
+  that `runs` a program or reaches a service is let run per file as code
+  blocks are. `data.read(name, ask)` reads one, and a Markdown block named
+  after a source shows its table (the data plugin).
 
 ## Clients
 
