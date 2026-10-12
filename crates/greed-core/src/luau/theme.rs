@@ -112,7 +112,7 @@ fn entry_from_lua(spec: &Table) -> LuaResult<Entry> {
     })
 }
 
-const KEYS: [&str; 14] = [
+const KEYS: [&str; 15] = [
     "fg",
     "bg",
     "underline",
@@ -125,6 +125,7 @@ const KEYS: [&str; 14] = [
     "rounded",
     "shadow",
     "badge",
+    "hover",
     "checkbox",
     "font",
 ];
@@ -179,6 +180,7 @@ fn style_from_lua(t: &Table, media: bool) -> LuaResult<Style> {
         rounded: t.get("rounded")?,
         shadow: t.get("shadow")?,
         badge: t.get("badge")?,
+        hover: t.get("hover")?,
         checkbox: match t.get::<Option<String>>("checkbox")?.as_deref() {
             None => None,
             Some("empty") => Some(Checkbox::Empty),
@@ -221,6 +223,7 @@ fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
     t.set("rounded", style.rounded)?;
     t.set("shadow", style.shadow)?;
     t.set("badge", style.badge)?;
+    t.set("hover", style.hover)?;
     t.set(
         "checkbox",
         style.checkbox.map(|c| match c {

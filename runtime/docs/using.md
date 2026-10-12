@@ -237,6 +237,10 @@ reply streaming in keeps it following the end. To have it jump there:
 greed.option.set("gui-smooth-scroll", false)
 ```
 
+Buttons, fields and choices light up as the mouse goes over them. With an
+input method (for Japanese, Chinese or Korean, say), what you're composing
+shows underlined at the cursor until it's typed.
+
 Floats (pickers, prompts, hover info) show as boxes with rounded corners
 and a soft shadow, as the theme says for the window; terminals draw box
 lines. Floats cast a shadow unless the theme turns it off, a lighter one on
@@ -2563,10 +2567,11 @@ their palette, with selections underlined.
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
 `["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
-`rounded`, `shadow`, `badge`, `checkbox` and `font` are for the window
-only: the first two make floats boxes with rounded corners and a soft
-shadow, `badge` draws a style's background as a small box with rounded
-corners, like a key cap (motion hints and buttons use it), `checkbox =
+`rounded`, `shadow`, `badge`, `hover`, `checkbox` and `font` are for the
+window only: the first two make floats boxes with rounded corners and a
+soft shadow, `badge` draws a style's background as a small box with
+rounded corners, like a key cap (motion hints and buttons use it), `hover`
+lights up what's under the mouse (buttons, fields, choices, tabs), `checkbox =
 "empty"` or `"checked"` draws a checkbox over the text (todo boxes use it),
 `"choice"` or `"chosen"` a round button (Markdown choices use it),
 and `font = "prose"` sets text in the proportional font.

@@ -471,6 +471,26 @@ impl App {
         )
     }
 
+    /// What an input method is composing shows at the cursor until it's
+    /// typed, as keys one by one, or given up.
+    fn input_method(&mut self, ime: Ime) {
+        match ime {
+            Ime::Preedit(text, at) => self.painter.set_preedit(text, at.map(|(from, _)| from)),
+            Ime::Commit(text) => {
+                self.painter.set_preedit(String::new(), None);
+                for c in text.chars().filter(|c| !c.is_control()) {
+                    let _ = self.input.send(Input::Key(Key {
+                        code: KeyCode::Char(c),
+                        mods: Mods::NONE,
+                    }));
+                }
+            }
+            Ime::Disabled => self.painter.set_preedit(String::new(), None),
+            Ime::Enabled => return,
+        }
+        self.want_redraw();
+    }
+
     fn mouse(&self, kind: MouseKind) {
         let _ = self.input.send(Input::Mouse(Mouse {
             kind,
@@ -562,20 +582,21 @@ impl ApplicationHandler<Event> for App {
                     let _ = self.input.send(Input::Clipboard(text));
                 }
             }
-            // Text an input method made, as keys typed one by one.
-            WindowEvent::Ime(Ime::Commit(text)) => {
-                for c in text.chars().filter(|c| !c.is_control()) {
-                    let _ = self.input.send(Input::Key(Key {
-                        code: KeyCode::Char(c),
-                        mods: Mods::NONE,
-                    }));
-                }
-            }
+            WindowEvent::Ime(ime) => self.input_method(ime),
             WindowEvent::CursorMoved { position, .. } => {
                 let cell = self.cell_at(position);
                 if cell != self.mouse {
                     self.mouse = cell;
                     self.mouse(self.held.map_or(MouseKind::Move, MouseKind::Drag));
+                    let at = (usize::from(cell.0), usize::from(cell.1));
+                    if self.painter.mouse_at(Some(at)) {
+                        self.want_redraw();
+                    }
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                if self.painter.mouse_at(None) {
+                    self.want_redraw();
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {

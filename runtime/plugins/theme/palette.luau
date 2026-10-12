@@ -68,8 +68,8 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 	local mono: greed.Style = { font = "mono" }
 	local empty_box: greed.Style = { checkbox = "empty" }
 	local checked_box: greed.Style = { checkbox = "checked" }
-	local choice: greed.Style = { checkbox = "choice" }
-	local chosen: greed.Style = { checkbox = "chosen" }
+	local choice: greed.Style = { checkbox = "choice", hover = true }
+	local chosen: greed.Style = { checkbox = "chosen", hover = true }
 	local styles: { [string]: greed.ThemeEntry } = {
 		["ui.text"] = { fg = p.fg, bg = p.bg },
 		["ui.gutter"] = { fg = p.gutter },
@@ -102,7 +102,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.menu.match"] = { fg = p.yellow, bold = true },
 		["ui.menu.doc"] = { fg = p.comment },
 		["ui.menu.badge"] = { fg = accent },
-		["ui.button"] = { bg = p.bg_high, fg = p.fg, gui = { badge = true } },
+		["ui.button"] = { bg = p.bg_high, fg = p.fg, gui = { badge = true, hover = true } },
 		["ui.signature.parameter"] = { fg = p.yellow, bold = true },
 		["ui.search.match"] = { bg = p.yellow, fg = p.bg },
 		["ui.grep.location"] = { fg = p.cyan },
@@ -142,7 +142,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["markdown.link"] = { fg = p.blue, underline = true },
 		["markdown.value"] = { fg = p.green },
 		["markdown.value.error"] = { fg = p.red },
-		["markdown.field"] = { bg = p.bg_high, fg = p.fg, gui = { badge = true } },
+		["markdown.field"] = { bg = p.bg_high, fg = p.fg, gui = { badge = true, hover = true } },
 		["markdown.quote"] = { fg = p.comment, italic = true },
 		["markdown.quote.bar"] = { fg = p.purple },
 		["markdown.rule"] = { fg = p.gutter },

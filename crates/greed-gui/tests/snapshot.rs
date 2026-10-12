@@ -22,7 +22,7 @@ use greed_core::render::{
 use greed_core::theme::{Color, Entry, Medium, Style, Theme};
 use greed_core::{CursorShape, ViewId};
 use greed_gui::Palette;
-use greed_gui::draw::{Chrome, build};
+use greed_gui::draw::{Chrome, Hovered, build, hoverable, hovered};
 use greed_gui::gpu::Gpu;
 use greed_gui::text::{Atlas, Fonts};
 
@@ -1134,5 +1134,81 @@ fn checkbox_styles_draw_an_outlined_box_or_a_filled_one_with_a_tick() {
         at(cw, 3.0 * ch + middle)[..3],
         yellow,
         "the chosen one's dot"
+    );
+}
+
+#[test]
+fn a_hover_style_lights_up_the_thing_under_the_mouse_and_nothing_beside_it() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    let mut theme = (*frame.theme).clone();
+    let button = [0x40, 0x40, 0x40];
+    theme.set(
+        "button",
+        Entry {
+            style: Style {
+                fg: Some(Color::Rgb(0xff, 0xff, 0xff)),
+                bg: Some(Color::Rgb(button[0], button[1], button[2])),
+                ..Style::default()
+            },
+            gui: Style {
+                badge: Some(true),
+                hover: Some(true),
+                ..Style::default()
+            },
+            ..Entry::default()
+        },
+    );
+    frame.theme = Arc::new(theme);
+    // Two buttons with a space between them.
+    frame.surfaces[0].rows[4] = row(&[
+        ("go", ""),
+        (" ok ", "button"),
+        (" ", ""),
+        (" no ", "button"),
+    ]);
+    let grid = compose(&frame, Medium::Gui);
+    let runs = hoverable(&grid);
+    let ok = Hovered {
+        row: 4,
+        from: 2,
+        to: 6,
+    };
+    assert_eq!(
+        runs,
+        vec![
+            ok,
+            Hovered {
+                row: 4,
+                from: 7,
+                to: 11
+            }
+        ]
+    );
+    assert_eq!(hovered(&runs, (5, 4)), Some(ok));
+    assert_eq!(hovered(&runs, (6, 4)), None, "the space between");
+    let mut chrome = Chrome::of(&frame);
+    chrome.hover = Some(ok);
+    let scene = build(&grid, None, &chrome, &mut fonts, &mut atlas, &palette).unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    save("hover.png", size, &rgba);
+    // Each button's background just inside its left edge, halfway down.
+    let inside = |col: f32| {
+        let x = col * cw + 0.05 * ch + 2.0;
+        pixel(&rgba, size.0, x as u32, (4.5 * ch) as u32)
+    };
+    assert_eq!(inside(7.0)[..3], button, "the other one as it was");
+    let lit = inside(2.0);
+    assert!(
+        (0..3).all(|i| lit[i] > button[i]),
+        "the one under the mouse lighter: {lit:?}"
     );
 }

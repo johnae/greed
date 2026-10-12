@@ -160,6 +160,11 @@ pub struct Style {
     /// Terminals draw a block.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub badge: Option<bool>,
+    /// For something pressable in the window, like a button: lit up while
+    /// the mouse is over it, which the window draws by itself. Terminals
+    /// don't.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hover: Option<bool>,
     /// For a todo's box in the window: drawn as a checkbox, empty or
     /// checked, over the cells of its text. Terminals show the text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -187,6 +192,7 @@ impl Style {
             rounded: over.rounded.or(self.rounded),
             shadow: over.shadow.or(self.shadow),
             badge: over.badge.or(self.badge),
+            hover: over.hover.or(self.hover),
             checkbox: over.checkbox.or(self.checkbox),
             font: over.font.or(self.font),
         }

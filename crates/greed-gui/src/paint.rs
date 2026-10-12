@@ -13,7 +13,7 @@ use greed_core::server::{Input, Output};
 use greed_core::theme::Medium;
 
 use crate::color::Palette;
-use crate::draw::{self, Instance, Scene};
+use crate::draw::{self, Hovered, Instance, Scene};
 use crate::gpu::Gpu;
 use crate::text::{self, Atlas, Fonts};
 
@@ -96,6 +96,14 @@ pub(crate) struct Painter {
     /// The quads drawn last, while views glide: what scrolls out of sight
     /// is taken from them.
     drawn: Vec<Instance>,
+    /// Where the mouse is (column, row), what it can light up as drawn
+    /// last, and what it lit up.
+    mouse: Option<(usize, usize)>,
+    hoverable: Vec<Hovered>,
+    hover: Option<Hovered>,
+    /// What an input method is composing, drawn at the cursor until it's
+    /// typed, and where its own cursor is in it (bytes).
+    preedit: Option<(String, Option<usize>)>,
 }
 
 impl Painter {
@@ -119,7 +127,27 @@ impl Painter {
             glides: false,
             gliding: Vec::new(),
             drawn: Vec::new(),
+            mouse: None,
+            hoverable: Vec::new(),
+            hover: None,
+            preedit: None,
         }
+    }
+
+    /// What an input method is composing now, `cursor` bytes into it; none
+    /// once it's typed or given up.
+    pub(crate) fn set_preedit(&mut self, text: String, cursor: Option<usize>) {
+        self.preedit = (!text.is_empty()).then_some((text, cursor));
+    }
+
+    /// The mouse moved to `at` (column, row), or off the window: whether
+    /// that changes what it lights up, for a redraw.
+    pub(crate) fn mouse_at(&mut self, at: Option<(usize, usize)>) -> bool {
+        self.mouse = at;
+        let hover = at.and_then(|at| draw::hovered(&self.hoverable, at));
+        let changed = hover != self.hover;
+        self.hover = hover;
+        changed
     }
 
     /// It with scrolled views gliding to their place, as a window has them.
@@ -345,12 +373,18 @@ impl Painter {
         // Views laid out at another size, like a terminal sized for another
         // client's screen, are drawn scaled to fit, the cursor with them.
         let contents = grid::compose_content(frame);
-        let cursor = frame
+        let mut cursor = frame
             .cursor
             .filter(|_| contents.iter().all(|c| c.cursor.is_none()))
             .map(|c| (c, frame.cursor_shape));
+        if let (Some((text, at)), Some((position, _))) = (&self.preedit, cursor.as_mut()) {
+            *position = draw::preedit(&mut grid, *position, text, *at);
+        }
+        self.hoverable = draw::hoverable(&grid);
+        self.hover = self.mouse.and_then(|at| draw::hovered(&self.hoverable, at));
         let mut chrome = draw::Chrome::of(frame);
         chrome.under = &under;
+        chrome.hover = self.hover;
         let palette = &self.palette;
         let build = |fonts: &mut _, atlas: &mut _| {
             let mut scene = draw::build(&grid, cursor, &chrome, fonts, atlas, palette)?;

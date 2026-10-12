@@ -9,8 +9,8 @@ use greed_core::CursorShape;
 use greed_core::image::ImageId;
 use greed_core::render::grid::{self, Cell, Content};
 use greed_core::render::{Frame, ImagePlacement, Position, Rect};
-use greed_core::theme::{Checkbox, Medium, Style};
-use unicode_width::UnicodeWidthStr;
+use greed_core::theme::{Checkbox, Medium, Style, Underline};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::boxdraw;
 use crate::color::{Look, Palette, Rgba, look};
@@ -124,7 +124,100 @@ pub struct Chrome<'a> {
     /// How text looks where nothing says otherwise (`ui.text`): its
     /// background is the window's, behind every cell.
     pub text: Style,
+    /// The cells lit up as the mouse is over them.
+    pub hover: Option<Hovered>,
 }
+
+/// Cells `from` to `to` (not included) of `row`: something the mouse is
+/// over whose style asks to be lit up then (`hover`), like a button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hovered {
+    pub row: usize,
+    pub from: usize,
+    pub to: usize,
+}
+
+impl Hovered {
+    fn holds(&self, (col, row): (usize, usize)) -> bool {
+        row == self.row && (self.from..self.to).contains(&col)
+    }
+}
+
+/// What the mouse can light up in `grid`: each run of cells in one style
+/// that asks for it.
+pub fn hoverable(grid: &[Vec<Cell>]) -> Vec<Hovered> {
+    let mut out = Vec::new();
+    for (row, cells) in grid.iter().enumerate() {
+        let mut col = 0;
+        for same in cells.chunk_by(|a, b| a.style == b.style) {
+            if same[0].style.hover == Some(true) {
+                out.push(Hovered {
+                    row,
+                    from: col,
+                    to: col + same.len(),
+                });
+            }
+            col += same.len();
+        }
+    }
+    out
+}
+
+/// The run of `runs` the mouse at `at` (column, row) is over, if any.
+pub fn hovered(runs: &[Hovered], at: (usize, usize)) -> Option<Hovered> {
+    runs.iter().copied().find(|h| h.holds(at))
+}
+
+/// What an input method is composing, `text`, put into `grid` at `at` as
+/// it would be typed there: underlined, the rest of the row moved along
+/// (and cut at its end). Gives where the cursor goes, `cursor` bytes into
+/// it (its end when not given).
+pub fn preedit(
+    grid: &mut [Vec<Cell>],
+    at: Position,
+    text: &str,
+    cursor: Option<usize>,
+) -> Position {
+    let (col, row) = (usize::from(at.col), usize::from(at.row));
+    let Some(cells) = grid.get_mut(row).filter(|r| col <= r.len()) else {
+        return at;
+    };
+    let style = Style {
+        underline: Some(Underline::Line),
+        ..cells.get(col).map_or_else(Style::default, |c| c.style)
+    };
+    let mut added = Vec::new();
+    let mut before = 0;
+    for (i, c) in text.char_indices() {
+        let wide = c.width().unwrap_or(1).max(1);
+        if cursor.is_none_or(|k| i < k) {
+            before += wide;
+        }
+        added.push(Cell {
+            text: c.to_string(),
+            style,
+            scale: 1,
+        });
+        // A wide character's later cell comes empty.
+        for _ in 1..wide {
+            added.push(Cell {
+                text: String::new(),
+                style,
+                scale: 1,
+            });
+        }
+    }
+    let width = cells.len();
+    cells.splice(col..col, added);
+    cells.truncate(width);
+    Position {
+        col: u16::try_from((col + before).min(width.saturating_sub(1))).unwrap_or(at.col),
+        row: at.row,
+    }
+}
+
+/// How much of a hovered cell's text color goes into its background.
+const HOVER_LIGHT: f32 = 0.18;
 
 impl<'a> Chrome<'a> {
     /// What `frame` has besides its cells, its floats looking as the theme's
@@ -147,6 +240,7 @@ impl<'a> Chrome<'a> {
             rounded: float.rounded == Some(true),
             shadows: float.shadow != Some(false),
             text: frame.theme.style("ui.text", Medium::Gui),
+            hover: None,
         }
     }
 }
@@ -169,6 +263,18 @@ pub fn build(
         .map(|row| row.iter().map(|cell| look(&cell.style, palette)).collect())
         .collect();
     let heights = cell_heights(grid);
+    // What the mouse is over: its background a little toward its text's
+    // color, as a badge so it reads as one thing.
+    if let Some(h) = chrome.hover
+        && let Some(row) = looks.get_mut(h.row)
+    {
+        for l in row.iter_mut().take(h.to).skip(h.from) {
+            for i in 0..3 {
+                l.bg[i] += (l.fg[i] - l.bg[i]) * HOVER_LIGHT;
+            }
+            l.badge = true;
+        }
+    }
     // The cursor takes the cells of what it's on: a scaled character's are
     // wider and taller.
     let cursor = cursor.map(|(at, shape)| {
@@ -978,4 +1084,38 @@ fn row_snaps(row: &[Cell], regions: &[Region]) -> Vec<bool> {
             border || (x > 0 && regions.get(x) != regions.get(x - 1))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cells(text: &str) -> Vec<Cell> {
+        text.chars()
+            .map(|c| Cell {
+                text: c.to_string(),
+                style: Style::default(),
+                scale: 1,
+            })
+            .collect()
+    }
+
+    fn text(row: &[Cell]) -> String {
+        row.iter().map(|c| c.text.as_str()).collect()
+    }
+
+    #[test]
+    fn what_an_input_method_composes_goes_in_at_the_cursor_underlined_pushing_the_rest_along() {
+        let mut grid = vec![cells("ab cd    ")];
+        let at = Position { col: 3, row: 0 };
+        let cursor = preedit(&mut grid, at, "日本", None);
+        assert_eq!(text(&grid[0]), "ab 日本cd", "wide ones take two cells");
+        assert_eq!(grid[0].len(), 9, "cut at the row's end");
+        assert_eq!(grid[0][3].style.underline, Some(Underline::Line));
+        assert_eq!(grid[0][7].style.underline, None, "what it pushed along");
+        assert_eq!(cursor.col, 7, "after it");
+        let mut grid = vec![cells("ab cd    ")];
+        let cursor = preedit(&mut grid, at, "日本", Some("日".len()));
+        assert_eq!(cursor.col, 5, "where the input method says, in bytes");
+    }
 }

@@ -1719,6 +1719,8 @@ export type Style = {
 	shadow: boolean?,
 	--- For text in the window: its background as a badge, a box with rounded corners a little inside its cells, as motion hints have.
 	badge: boolean?,
+	--- For something pressable in the window, like a button: lit up while the mouse is over it, drawn by the window itself. Terminals don't.
+	hover: boolean?,
 	--- In the window, drawn as a control over the cells of its text: a checkbox ("empty" or "checked", for todos) or a choice ("choice" or "chosen"). Terminals show the text.
 	checkbox: ("empty" | "checked" | "choice" | "chosen")?,
 	--- The window's font for the text: "mono", the grid's (`gui-font`), or "prose", a proportional one (`gui-font-prose`) fitted into the same cells. Terminals have only the one.
