@@ -1,10 +1,14 @@
 -- Session restore: a session remembers its projects, the files open in
--- each and where the cursor was, and opens them again when it starts.
+-- each and where the cursor was, and each project's tabs: their panes,
+-- what those show, and the terminals in them (run again, unless what they
+-- ran is risky; then a shell). It opens them again when it starts.
 -- Written down when it quits and when a file is saved, per session name in
 -- the cache, so it only works for editors running as a session (which
 -- `greed` is, unless GREED_NO_SESSION is set).
 
 local greed = require("@greed")
+local core = require("@core")
+local saved_layouts = require("@panes").saved
 
 greed.option.define({
 	name = "restore-session",
@@ -17,6 +21,9 @@ type Project = {
 	files: { string },
 	shown: string?,
 	cursor: number?,
+	--- Its tabs, as `panes.saved` describes one, when it last was the shown
+	--- project.
+	tabs: { any }?,
 }
 
 type Saved = {
@@ -49,6 +56,19 @@ end
 -- root: only the shown project's main view can be asked.
 local shown: { [string]: { path: string, cursor: number } } = {}
 
+-- Each project's tabs when it was last the shown one, by root, as the
+-- shown project's are the only ones that can be asked.
+local tabs: { [string]: { any } } = {}
+
+-- The shown project's tabs, described to open again.
+local function shown_tabs(): { any }
+	local out = {}
+	for _, tab in greed.tab.list() do
+		table.insert(out, saved_layouts.describe(tab.id))
+	end
+	return out
+end
+
 --- Writes down the open projects and files.
 function M.save()
 	local path = file()
@@ -61,6 +81,7 @@ function M.save()
 	if main then
 		shown[current.root] = { path = main, cursor = view:cursor() }
 	end
+	tabs[current.root] = shown_tabs()
 	local projects: { Project } = {}
 	local by_id: { [number]: Project } = {}
 	for _, info in greed.project.list() do
@@ -70,6 +91,7 @@ function M.save()
 			files = greed.json.array({} :: { string }),
 			shown = last and last.path,
 			cursor = last and last.cursor,
+			tabs = tabs[info.root],
 		}
 		table.insert(projects, project)
 		by_id[info.id] = project
@@ -129,6 +151,41 @@ local function reopen(project: Project)
 	end
 end
 
+-- `tree` (a tab, as described) with each terminal that ran something risky
+-- (`core.risk`) made a plain shell, so starting again doesn't run it.
+local function safe(tree: any): any
+	if type(tree.children) == "table" then
+		for _, child in tree.children do
+			safe(child)
+		end
+	elseif type(tree.terminal) == "table" and core.risk.of(table.concat(tree.terminal, " ")) then
+		tree.terminal = true
+	end
+	return tree
+end
+
+-- Opens `project`'s tabs again, the shown project being it: the first in
+-- the tab shown, unless that shows a file the session was started with.
+-- A single tab showing one file is what `reopen` did already.
+local function reopen_tabs(project: Project, keep_shown: boolean)
+	local list = project.tabs
+	if list == nil or #list == 0 then
+		return
+	end
+	local only = list[1]
+	if #list == 1 and only.children == nil and only.terminal == nil then
+		return
+	end
+	local start = greed.tab.current().id
+	for i, tree in list do
+		local problem = saved_layouts.open_saved(safe(tree), { here = i == 1 and not keep_shown })
+		if problem then
+			greed.echo(`restoring a tab: {problem}`)
+		end
+	end
+	greed.tab.switch(start)
+end
+
 --- Opens what `save` wrote down. A file the session was started with stays
 --- shown, and its project stays the shown one.
 function M.restore()
@@ -149,6 +206,10 @@ function M.restore()
 			continue
 		end
 		reopen(project)
+		if project.tabs then
+			tabs[project.root] = project.tabs
+			reopen_tabs(project, started_with_file and id == start)
+		end
 	end
 	local current = saved.current and project_id(saved.current)
 	greed.project.switch(if current and not started_with_file then current else start)

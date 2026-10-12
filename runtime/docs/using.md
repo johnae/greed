@@ -77,9 +77,12 @@ If a session can't start in the background, `GREED_NO_SESSION=1 greed FILE`
 runs the editor directly in the terminal.
 
 A session that quits remembers its projects, their open files and where the
-cursor was, and opens them again the next time it starts. It writes this
-down when it quits and whenever you save a file, in the cache folder
-(`~/.cache/greed/sessions`). Starting with a file keeps that file shown. To
+cursor was, and the tabs of the project you were in: their panes, what
+each showed, and the terminals in them, which run what they ran again (a
+terminal that ran something risky, like `rm -rf` or `kubectl delete`,
+comes back as a plain shell). It opens them again the next time it
+starts. It writes this down when it quits and whenever you save a file, in
+the cache folder (`~/.cache/greed/sessions`). Starting with a file keeps that file shown. To
 start one session fresh, without them, use `greed --fresh` (or `greed ssh
 HOST --fresh`); it only matters when a session starts, so quit a running
 one first or start another with `--new`. On a Mac, holding Shift while

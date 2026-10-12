@@ -161,3 +161,64 @@ test("nothing is opened in a session started fresh", function(t)
 	restore.restore()
 	assert(not open_paths()[dir .. "/a.txt"])
 end)
+
+test("quitting writes down the shown project's tabs, and starting opens them again", function(t)
+	local file = session()
+	local root = greed.project.current().root
+	local dir = t:tempdir({ ["a.txt"] = "one\n", ["b.txt"] = "two\n" })
+	greed.open(dir .. "/a.txt")
+	greed.tab.new(greed.load(dir .. "/b.txt"))
+	greed.view():split("right", greed.load(dir .. "/a.txt"))
+	restore.save()
+	local project = saved(file).projects[1]
+	assert(project.tabs and #project.tabs == 2, "two tabs")
+	assert(
+		project.tabs[2].children and #project.tabs[2].children == 2,
+		greed.json.encode(project.tabs[2])
+	)
+
+	-- Started again: the tabs come back, each showing what it did.
+	for _, tab in greed.tab.list() do
+		if tab.id ~= greed.tab.current().id then
+			greed.tab.close(tab.id)
+		end
+	end
+	greed.view():show(greed.create_buffer("file", ""))
+	remember(file, { current = root, projects = { project } })
+	restore.restore()
+	local list = greed.tab.list()
+	assert(#list == 2, `{#list} tabs`)
+	assert(#list[2].panes == 2, "the second tab's two panes")
+	local shown = {}
+	for _, pane in list[2].panes do
+		table.insert(shown, pane:buffer():path() or "")
+	end
+	table.sort(shown)
+	assert(shown[1] == dir .. "/a.txt" and shown[2] == dir .. "/b.txt", table.concat(shown, " "))
+end)
+
+test("a terminal that ran something risky comes back as a shell", function(t)
+	local file = session()
+	local root = greed.project.current().root
+	remember(file, {
+		current = root,
+		projects = {
+			{
+				root = root,
+				files = {},
+				tabs = {
+					-- Of different shapes, as saved tabs are.
+					{ file = "x.txt" } :: any,
+					{ terminal = { "rm", "-rf", "build" } },
+				},
+			},
+		},
+	})
+	restore.restore()
+	local list = greed.tab.list()
+	assert(#list == 2, `{#list} tabs`)
+	local terminal = require("@terminal")
+	local buffer = list[2].panes[1]:buffer()
+	assert(terminal.terminal(buffer), "a terminal")
+	assert(terminal.asked(buffer) == nil, "a shell, not rm -rf")
+end)

@@ -19,7 +19,7 @@ local layouts = require("./layouts")
 local M = {}
 
 -- What a saved pane shows, or a split of them.
-type Saved = {
+export type Saved = {
 	split: ("row" | "column")?,
 	sizes: { number }?,
 	children: { Saved }?,
@@ -59,7 +59,8 @@ local function describe(node: any): Saved
 		return { terminal = terminal.asked(buffer) or true }
 	end
 	local path = buffer:path()
-	return if path then { file = core.project.relative(path, core.project.root()) } else {}
+	-- From the project's root, which opening it goes from too.
+	return if path then { file = core.project.relative(path, greed.project.current().root) } else {}
 end
 
 --- Saves the shown tab as layout `name`, in the project or with `mine` in
@@ -73,7 +74,7 @@ function M.save(name: string, mine: boolean?): (string?, string?)
 		return nil, "there's no config folder to save it in"
 	end
 	local file = `{dir}/{name}.json`
-	local ok, err = greed.fs.write(file, greed.json.encode(describe(greed.tab.layout())) .. "\n")
+	local ok, err = greed.fs.write(file, greed.json.encode(M.describe()) .. "\n")
 	if not ok then
 		return nil, err
 	end
@@ -142,7 +143,7 @@ local function open_leaf(leaf: Saved, base: greed.View, here: boolean): greed.Vi
 		return greed.view()
 	end
 	local buffer = if leaf.file
-		then greed.load(core.project.resolve(leaf.file, core.project.root()))
+		then greed.load(core.project.resolve(leaf.file, greed.project.current().root))
 		else greed.create_buffer("file", "")
 	if here then
 		base:show(buffer)
@@ -164,14 +165,16 @@ local function with_views(node: Saved, views: { greed.View }, next: { number }):
 	return views[next[1]]
 end
 
---- Opens layout `name` as a new tab, or with `here`, in the shown tab in
---- place of what it has.
-function M.open(name: string, opts: { here: boolean? }?)
-	local saved, err = load(name)
-	if saved == nil then
-		greed.echo(err)
-		return
-	end
+--- Tab `id` (the shown one by default) as a layout is saved: its panes'
+--- arrangement and what each shows, files relative to the project.
+function M.describe(id: number?): Saved
+	return describe(greed.tab.layout(id))
+end
+
+--- Opens `saved` (as `describe` gives it) as a new tab, or with `here` in
+--- the shown tab in place of what it has. Returns why it couldn't, if it
+--- couldn't.
+function M.open_saved(saved: Saved, opts: { here: boolean? }?): string?
 	if opts and opts.here then
 		local tab = greed.tab.current()
 		for _, pane in tab.panes do
@@ -193,13 +196,24 @@ function M.open(name: string, opts: { here: boolean? }?)
 		local ok: boolean, problem: unknown =
 			pcall(greed.tab.set_layout, with_views(saved, views, { 0 }))
 		if not ok then
-			greed.echo(`layout {name}: {problem}`)
-			return
+			return tostring(problem)
 		end
 	end
 	views[1]:focus()
 	terminal.settle(views[1])
-	greed.echo(`opened layout {name}`)
+	return nil
+end
+
+--- Opens layout `name` as a new tab, or with `here`, in the shown tab in
+--- place of what it has.
+function M.open(name: string, opts: { here: boolean? }?)
+	local saved, err = load(name)
+	if saved == nil then
+		greed.echo(err)
+		return
+	end
+	local problem = M.open_saved(saved, opts)
+	greed.echo(if problem then `layout {name}: {problem}` else `opened layout {name}`)
 end
 
 return M
