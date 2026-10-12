@@ -421,9 +421,10 @@ fn greed_ssh_brings_your_ssh_agent_to_the_session_on_the_other_machine() {
                 &[
                     Step::Until("the remote session", running),
                     Step::Shows("main"),
-                    Step::Until("the agent to be asked", |w| {
-                        w.root.join("agent-asked").exists()
-                    }),
+                    // Only once a program there had its answer: the client
+                    // has to stay attached until then. (The agent is asked
+                    // already as greed ssh checks that it answers.)
+                    Step::Until("the agent's answer", |w| w.root.join("answered").exists()),
                     Step::Keys(":detach\r"),
                 ],
             )
@@ -441,6 +442,7 @@ fn greed_ssh_brings_your_ssh_agent_to_the_session_on_the_other_machine() {
             greed_core::ssh_agent::ask(std::path::Path::new(&socket), &[11])
                 .is_ok_and(|answer| answer == [12, 0, 0, 0, 0])
         });
+        std::fs::write(world_ref.root.join("answered"), "").unwrap();
         let out = terminal.join().unwrap();
         assert!(
             out.contains("detached; greed ssh somehost comes back"),
