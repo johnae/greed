@@ -1,5 +1,6 @@
 -- Blocks as objects and things to act on (`space .`), with their actions.
 
+local greed = require("@greed")
 local core = require("@core")
 local state = require("./state")
 local log = require("./log")
@@ -23,6 +24,57 @@ local function block_object(shell: Shell, block: Block): core.Object
 		to = to,
 	}
 end
+
+-- A shell as an object, by its buffer.
+local function shell_object(shell: Shell): core.Object
+	return { kind = "shell", id = `shell:{shell.buffer:id()}`, label = shell.name, value = shell }
+end
+
+core.objects.kind({
+	name = "shell",
+	doc = "A shell: its folder, its variables and the commands it ran",
+	list = function()
+		local out = {}
+		for _, shell in state.list() do
+			table.insert(out, shell_object(shell))
+		end
+		return out
+	end,
+	get = function(key)
+		local shell = state.shells[tonumber(key) or -1]
+		return if shell then shell_object(shell) else nil
+	end,
+	inspect = function(shell: Shell)
+		local environment = shell.environment
+		return {
+			name = shell.name,
+			folder = shell.cwd,
+			blocks = #shell.blocks,
+			running = #state.running(shell),
+			environment = if environment then environment.status else shell.unloaded,
+		}
+	end,
+	relations = function(shell: Shell)
+		local blocks = {}
+		for _, block in shell.blocks do
+			table.insert(blocks, block_object(shell, block))
+		end
+		return {
+			buffer = { assert(core.objects.get(`buffer:{shell.buffer:id()}`)) },
+			blocks = blocks,
+		}
+	end,
+})
+
+core.actions.action({
+	kind = "shell",
+	name = "show",
+	doc = "Show it in the focused view",
+	run = function(target)
+		greed.view():show(target.value.buffer)
+	end,
+})
+core.actions.set_default("shell", "show")
 
 -- Blocks as things to act on, with `space .`, and as objects.
 core.actions.finder({
@@ -76,7 +128,7 @@ core.objects.kind({
 	end,
 	relations = function(value: { shell: Shell, block: Block })
 		return {
-			shell = { assert(core.objects.get(`buffer:{value.shell.buffer:id()}`)) },
+			shell = { shell_object(value.shell) },
 			rows = kinds.row_objects(value.shell, value.block),
 		}
 	end,
