@@ -1616,9 +1616,9 @@ export type Fs = {
 	cwd: () -> string,
 	--- Your home folder, Greed's config folder (where init.luau and plugins/
 	--- were read from), its cache folder, its data folder (where plugins made in
-	--- the editor go when the config can't be written) and, on the far end of
+	--- the editor go when the config can't be written), the system's folder for temporary files and, on the far end of
 	--- greed ssh, the copy of your config it brought.
-	dirs: () -> { home: string?, config: string?, cache: string?, data: string?, brought: string? },
+	dirs: () -> { home: string?, config: string?, cache: string?, data: string?, temp: string?, brought: string? },
 	--- The lines matching the regex `pattern` in the text files under `dir`
 	--- (default: the current directory), sorted by path and line. It searches
 	--- in the background and waits like greed.sleep (commands, handlers, greed.spawn).

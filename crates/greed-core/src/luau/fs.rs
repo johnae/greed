@@ -421,8 +421,8 @@ pub(super) fn expand_home(lua: &Lua, path: String) -> String {
     }
 }
 
-/// `greed.fs.dirs()`: home, config, cache and data folders, and the config
-/// greed ssh brought; for tests, folders of their own.
+/// `greed.fs.dirs()`: home, config, cache, data and temporary folders, and
+/// the config greed ssh brought; for tests, folders of their own.
 fn dirs(lua: &Lua) -> LuaResult<Table> {
     let dirs = lua.create_table()?;
     if let Some(root) = state(lua).dirs.clone() {
@@ -431,6 +431,7 @@ fn dirs(lua: &Lua) -> LuaResult<Table> {
             ("config", "config"),
             ("cache", "cache"),
             ("data", "data"),
+            ("temp", "tmp"),
         ] {
             dirs.set(name, root.join(dir).to_string_lossy().trim_end_matches('/'))?;
         }
@@ -444,6 +445,11 @@ fn dirs(lua: &Lua) -> LuaResult<Table> {
     // Where plugins made in the editor go when the config can't be written,
     // like one Nix manages.
     dirs.set("data", folder(crate::dirs::Kind::Data))?;
+    // Where programs keep files for a while, like /tmp ($TMPDIR).
+    dirs.set(
+        "temp",
+        std::env::temp_dir().to_string_lossy().trim_end_matches('/'),
+    )?;
     // The copy of your config `greed ssh` brought, on its far end.
     dirs.set("brought", std::env::var("GREED_SSH_CONFIG_DIR").ok())?;
     Ok(dirs)
