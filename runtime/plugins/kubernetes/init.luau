@@ -42,8 +42,8 @@ shell.segment("kubernetes", function(ctx: shell.SegmentContext): shell.Segment?
 	if context == nil then
 		return nil
 	end
-	local warn = shell.segments.production(context)
-	local icon = shell.segments.icon("kubernetes")
+	local warn = shell.production(context)
+	local icon = shell.icon("kubernetes")
 	return {
 		text = if namespace then `{icon} {context}:{namespace}` else `{icon} {context}`,
 		style = if warn then "shell.segment.warning" else "shell.segment.kubernetes",

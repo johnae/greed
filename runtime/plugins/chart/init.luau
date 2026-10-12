@@ -161,7 +161,7 @@ local function paint(block: Block)
 		return
 	end
 	local buffer = d.shell.buffer
-	local from = shell.log.output_range(d.shell, block)
+	local from = shell.output(d.shell, block)
 	local marks: { greed.Mark } = {}
 	local matched = 0
 	if from then
@@ -199,7 +199,7 @@ local function paint(block: Block)
 	end
 	buffer:decorate(`chart.{block.uid}`, marks)
 end
-shell.log.on_update(paint)
+shell.on_update(paint)
 
 -- Charts show as `scene-drawing` says now.
 greed.on("option.changed", function(event)

@@ -1366,7 +1366,7 @@ shell.parser("^terraform state list", function(text)
 end)
 ```
 
-`shell.rows.row_at(sh, block, pos)` is the row under a position in the
+`shell.row_at(sh, block, pos)` is the row under a position in the
 buffer, filtered and sorted as the block shows it, for actions on a row:
 
 ```luau
@@ -1377,8 +1377,8 @@ greed.command({
 	run = function(ctx)
 		local sh = shell.of(ctx.buffer)
 		local pos = ctx.view:cursor()
-		local block = sh and shell.log.block_at(sh, pos)
-		local row = block and block.table and shell.rows.row_at(sh, block, pos)
+		local block = sh and shell.block_at(sh, pos)
+		local row = block and block.table and shell.row_at(sh, block, pos)
 		if sh and block and block.table and row then
 			shell.run(sh, `kubectl logs {block.table.rows[row].NAME}`)
 		end
@@ -1392,7 +1392,7 @@ help. `complete(request)` gets the command's `words` (the program first,
 the word being completed last), its `line` so far, the `cwd` and `env` it
 would run with, and `explicit` (you pressed `tab`), and returns candidates
 as text or `{ text, detail }`, or nil to leave it to the other sources. It
-can run programs; `shell.sources.run(name, argv, cwd, env)` runs one the
+can run programs; `shell.run_source(name, argv, cwd, env)` runs one the
 way the shell's sources do, stopped by a newer run of the same name and
 by `shell-completion-timeout`.
 
@@ -1444,9 +1444,9 @@ end)
 ```
 
 `shell.segment_icon(name, { plain = "☁", nerd = "\u{f0c2}" })` gives a
-segment an icon for `shell-icons` to pick, and `shell.segments.icon(name)`
+segment an icon for `shell-icons` to pick, and `shell.icon(name)`
 is the one in use, to start the segment's text with.
-`shell.segments.production(context)` says whether a context matches
+`shell.production(context)` says whether a context matches
 `shell-production-contexts`.
 
 `require("@vcs").branch(dir)` is the branch of the repository a folder is
@@ -1963,7 +1963,9 @@ end)
 default plugins loaded. Give it several folders (`greed test
 runtime/plugins/*/`) to test several plugins at once. Tests run side by
 side, as many at a time as the machine has cores, and the results are
-printed plugin by plugin.
+printed plugin by plugin. A test file requires your plugin's other files
+with `require("../log")` and gets the ones your plugin loaded, state and
+all, so internals can stay out of what your plugin returns.
 
 `t:keys("i")` presses keys and `t:type("hello world")` types text a
 character at a time, newlines as `enter`. `t:draw(cols, rows)` and

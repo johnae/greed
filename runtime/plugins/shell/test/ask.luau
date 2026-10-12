@@ -1,6 +1,8 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local asking = require("../ask")
+local log = require("../log")
 local models: any = require("@models")
 
 type Shell = typeof(shell.open())
@@ -35,12 +37,12 @@ end
 
 -- Types `line` at the prompt and presses enter.
 local function enter(t: test.TestContext, sh: Shell, line: string)
-	shell.log.set_prompt(sh, line, { greed.view() })
+	log.set_prompt(sh, line, { greed.view() })
 	t:keys("enter")
 end
 
 test("a line starting or ending with ? or with ? in it is a question", function()
-	local q = shell.ask.question
+	local q = asking.question
 	assert(select(2, q("? list big files")) == "list big files")
 	assert(select(2, q("how do I undo the last commit?")) == "how do I undo the last commit?")
 	local draft, question = q("ls | where ? only files over 1 MB")
@@ -58,7 +60,7 @@ test("? asks a model, and its command goes to the prompt without running", funct
 	end)
 	enter(t, sh, "ls | where ? only files over 1 MB")
 	t:wait_for(function()
-		return shell.log.prompt_text(sh) == "find . -size +1M"
+		return log.prompt_text(sh) == "find . -size +1M"
 	end)
 	models.ask = ask
 	assert(#sh.blocks == 1, "nothing ran: " .. #sh.blocks)
@@ -87,10 +89,10 @@ test("without a model to ask, a block says so", function(t)
 	local block = sh.blocks[1]
 	assert(block.command == "? list big files" and block.status == "asked", block.status)
 	assert(block.code == nil, "nothing ran, so there's no exit code")
-	local status = shell.log.status_text(block)
+	local status = log.status_text(block)
 	assert(not string.find(status, "exit", 1, true), status)
 	assert(string.find(block.output, "no model plays", 1, true), block.output)
-	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
+	assert(log.prompt_text(sh) == "", log.prompt_text(sh))
 	done_asking(t)
 end)
 

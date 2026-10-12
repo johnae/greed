@@ -1,11 +1,12 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local completion = require("../complete")
+local shell_log = require("../log")
+local sources = require("../sources")
 
 type Shell = typeof(shell.open())
 type Item = { label: string, text: string, detail: string?, badge: string?, from: number? }
-
-local sources = shell.sources
 
 -- How long an ask for completions may take: it starts programs, slow while
 -- every plugin's tests run at once.
@@ -26,10 +27,10 @@ local function items_for(
 	text: string,
 	explicit: boolean?
 ): { [string]: Item }
-	shell.log.set_prompt(sh, text, { greed.view() })
+	shell_log.set_prompt(sh, text, { greed.view() })
 	local found: { Item }? = nil
 	greed.spawn(function()
-		found = shell.completion.items(greed.view(), { explicit = explicit ~= false }) or {}
+		found = completion.items(greed.view(), { explicit = explicit ~= false }) or {}
 	end)
 	t:wait_for(function()
 		return found ~= nil
@@ -235,7 +236,7 @@ Color the output.
 ]]
 
 test("man pages say what flags a program takes, read without running it", function(t)
-	local list = shell.sources.flags.from_man(MAN)
+	local list = sources.flags.from_man(MAN)
 	local by: { [string]: string? } = {}
 	for _, flag in list do
 		by[flag.text] = flag.detail or ""
@@ -247,7 +248,7 @@ test("man pages say what flags a program takes, read without running it", functi
 	assert(by["-w"] == "Set the width." and by["--width"] == "Set the width.", tostring(by["-w"]))
 	assert(by["-q"] == "Be quiet.", tostring(by["-q"]))
 	local mdoc: { [string]: string? } = {}
-	for _, flag in shell.sources.flags.from_man(MDOC) do
+	for _, flag in sources.flags.from_man(MDOC) do
 		mdoc[flag.text] = flag.detail or ""
 	end
 	assert(
@@ -272,7 +273,7 @@ end)
 test("what programs print for --help says what flags they take, in the usual shapes", function()
 	local function flags_of(text: string): { [string]: string }
 		local by: { [string]: string } = {}
-		for _, flag in shell.sources.flags.from_help(text) do
+		for _, flag in sources.flags.from_help(text) do
 			by[flag.text] = flag.detail or ""
 		end
 		return by
@@ -320,7 +321,7 @@ test("what programs print for --help says what flags they take, in the usual sha
 		"                        a long one",
 	}, "\n"))
 	assert(argparse["--foo"] == "foo of the bar" and argparse["--long-option-name"] == "a long one")
-	local commands = shell.sources.flags.commands(
+	local commands = sources.flags.commands(
 		"Available Commands:\n  get         Display\n  logs        Print logs\n\nFlags:\n  -h, --help   help\n"
 	)
 	assert(commands.get == "Display" and commands.logs == "Print logs" and commands["-h"] == nil)

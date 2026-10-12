@@ -257,7 +257,7 @@ shell.kind({
 	name = "kubernetes",
 	match = "kubectl",
 	capture = function(block: Block, sh: Shell): any
-		local words = parse.words(shell.kinds.command_line(block), greed.fs.dirs().home)
+		local words = parse.words(shell.command_line(block), greed.fs.dirs().home)
 		local got = if words then asked(words) else nil
 		if got == nil then
 			return nil

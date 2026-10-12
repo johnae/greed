@@ -299,7 +299,7 @@ test("a watch drawing a chart says so above the prompt, not its first characters
 	t:wait_for(function()
 		return block.output ~= ""
 	end)
-	assert(shell.log.running_status(block) == "a chart", shell.log.running_status(block))
+	assert(shell.running_status(block) == "a chart", shell.running_status(block))
 	shell.interrupt(block)
 end)
 

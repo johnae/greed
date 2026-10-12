@@ -177,7 +177,7 @@ end
 --- `command` as a card runs it: what it runs each time, and how often,
 --- when it's a `watch` (`watch -n 5 kubectl get pods`).
 function M.unwatched(command: string): (string, number?)
-	local line, every = shell.live.read(command)
+	local line, every = shell.watched(command)
 	if line then
 		return line, every
 	end

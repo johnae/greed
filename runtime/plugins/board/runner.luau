@@ -36,13 +36,13 @@ local kept: { Block } = {}
 local function keep(sh: Shell, block: Block)
 	table.insert(kept, block)
 	while #kept > KEEP do
-		shell.log.remove(sh, table.remove(kept, 1) :: Block)
+		shell.remove(sh, table.remove(kept, 1) :: Block)
 	end
 end
 
 -- What `block` shows of its output, as the shell shows it.
 local function shown(sh: Shell, block: Block): string
-	local from, to = shell.log.output_range(sh, block)
+	local from, to = shell.output(sh, block)
 	if from == nil or to == nil then
 		return ""
 	end
@@ -57,7 +57,7 @@ end
 -- The live blocks, and what each tells of new output.
 local live: { [Block]: () -> () } = {}
 
-shell.log.on_update(function(block: Block)
+shell.on_update(function(block: Block)
 	local tell = live[block]
 	if tell then
 		tell()
@@ -98,7 +98,7 @@ local function run_live(run: blocks.Run, sh: Shell, line: string, every: number)
 	local update = run.live(function()
 		live[watched] = nil
 		shell.kill(watched)
-		shell.log.remove(sh, watched)
+		shell.remove(sh, watched)
 	end)
 	local last = shown(sh, watched)
 	live[watched] = function()
@@ -119,7 +119,7 @@ local function with_input(run: blocks.Run, line: string): string
 		return line
 	end
 	local name = `input-{run.opts.input or "block"}`
-	local buffer = shell.data.target({ name = name, append = false }, run.dir)
+	local buffer = shell.into({ name = name, append = false }, run.dir)
 	buffer:edit(function(e)
 		e:insert(0, input)
 	end)

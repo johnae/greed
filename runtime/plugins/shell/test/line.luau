@@ -1,6 +1,10 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local aliases = require("../aliases")
+local history = require("../history")
+local log = require("../log")
+local suggest = require("../suggest")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -22,7 +26,7 @@ end
 -- Types `line` at `sh`'s prompt and runs it, as enter does.
 local function typed(t: test.TestContext, sh: Shell, line: string): Block
 	local count = #sh.blocks
-	shell.log.set_prompt(sh, line, { greed.view() })
+	log.set_prompt(sh, line, { greed.view() })
 	t:keys("enter")
 	assert(#sh.blocks > count, "nothing ran for " .. line)
 	return finished(t, sh.blocks[#sh.blocks])
@@ -42,7 +46,7 @@ test("!! and !$ are the command before and its last word; ^old^new changes it", 
 end)
 
 test("history expansion says why it can't", function()
-	local expand = shell.history.expand
+	local expand = history.expand
 	local line, why = expand("!!", nil)
 	assert(line == nil and string.find(why or "", "no command before", 1, true), why)
 	line, why = expand("^cat^dog", "echo hi")
@@ -64,7 +68,7 @@ test("^NAME runs the program even where the shell has a builtin or stage", funct
 end)
 
 test("aliases read from bash, zsh, fish and nu", function()
-	local read = shell.aliases.read
+	local read = aliases.read
 	local bash = read("alias ll='ls -l'\nalias say='echo '\\''hi'\\'''\n", "bash")
 	assert(bash.ll == "ls -l" and bash.say == "echo 'hi'", bash.say)
 	local zsh = read("g=git\nll='ls -l'\n", "zsh")
@@ -76,26 +80,26 @@ test("aliases read from bash, zsh, fish and nu", function()
 end)
 
 test("a line starting with an alias runs it, showing what was typed", function(t)
-	shell.aliases.use({ hi = "echo hello", hello = "hi there", cd = "echo nope", loop = "loop x" })
+	aliases.use({ hi = "echo hello", hello = "hi there", cd = "echo nope", loop = "loop x" })
 	local sh = open(t)
 	local block = ran(t, sh, "hi world")
 	assert(block.command == "hi world", block.command)
 	assert(block.stdout == "hello world\n", block.stdout)
-	assert(shell.aliases.expand("hello") == "echo hello there", "an alias of an alias")
-	assert(shell.aliases.expand("loop") == "loop x", "one naming itself goes in once")
-	assert(shell.aliases.expand("cd /") == "cd /", "the shell's builtins win")
-	assert(shell.aliases.expand("^hi") == "^hi", "^ skips it")
-	assert(shell.aliases.expand("! hi") == "! echo hello", "after !")
+	assert(aliases.expand("hello") == "echo hello there", "an alias of an alias")
+	assert(aliases.expand("loop") == "loop x", "one naming itself goes in once")
+	assert(aliases.expand("cd /") == "cd /", "the shell's builtins win")
+	assert(aliases.expand("^hi") == "^hi", "^ skips it")
+	assert(aliases.expand("! hi") == "! echo hello", "after !")
 	local agent = finished(t, assert(shell.run(sh, "hi || echo none", { by = "agent" })))
 	assert(
 		not string.find(agent.stdout, "hello", 1, true),
 		"an agent's lines aren't: " .. agent.stdout
 	)
-	shell.aliases.use(nil)
+	aliases.use(nil)
 end)
 
 test("which says what a word runs, first what wins", function(t)
-	shell.aliases.use({ ll = "ls -l", ls = "ls --color" })
+	aliases.use({ ll = "ls -l", ls = "ls --color" })
 	local sh = open(t)
 	local said = ran(t, sh, "which cd where ll ls nowhere-at-all")
 	assert(said.code == 1, "one wasn't found")
@@ -104,25 +108,25 @@ test("which says what a word runs, first what wins", function(t)
 	assert(string.find(said.stdout, "ll: your alias for ls -l", 1, true), said.stdout)
 	assert(string.find(said.stdout, "ls: /[^\n]*/ls %(%^ls runs it%)"), said.stdout)
 	assert(string.find(said.stderr, "nowhere-at-all: not found", 1, true), said.stderr)
-	shell.aliases.use(nil)
+	aliases.use(nil)
 end)
 
 test("the prompt suggests a command typed before, and right takes it", function(t)
 	local sh = open(t)
 	typed(t, sh, "echo suggested here")
 	local view = greed.view()
-	shell.log.set_prompt(sh, "echo sug", { view })
+	log.set_prompt(sh, "echo sug", { view })
 	view:set_cursor(sh.buffer:len())
 	t:wait_for(function()
-		return shell.suggest.suggestion(sh) == "gested here"
+		return suggest.suggestion(sh) == "gested here"
 	end)
 	local marks = sh.buffer:decorations("shell.suggestion")
 	assert(#marks == 1 and marks[1].text == "gested here", "shown after the cursor")
 	t:keys("right")
-	assert(shell.log.prompt_text(sh) == "echo suggested here", shell.log.prompt_text(sh))
-	assert(shell.suggest.suggestion(sh) == nil, "nothing more to suggest")
+	assert(log.prompt_text(sh) == "echo suggested here", log.prompt_text(sh))
+	assert(suggest.suggestion(sh) == nil, "nothing more to suggest")
 	-- Elsewhere, right moves as it always does.
-	shell.log.set_prompt(sh, "echo zzz", { view })
+	log.set_prompt(sh, "echo zzz", { view })
 	view:set_cursor(sh.buffer:len() - 1)
 	t:keys("right")
 	assert(view:cursor() == sh.buffer:len())
@@ -133,7 +137,7 @@ test("an alias a plugin gave runs only as that plugin may", function(t)
 	local marker = `{dir}/ran`
 	local plugin = t:tempdir({
 		["plugin.toml"] = 'name = "aliaser"\nrequires = ["shell"]\n',
-		["init.luau"] = `require("@shell").aliases.use(\{ boom = "touch {marker}" \})\n`,
+		["init.luau"] = `require("@shell").use_aliases(\{ boom = "touch {marker}" \})\n`,
 	})
 	greed.plugin.load(plugin)
 	local sh = open(t)
@@ -141,5 +145,5 @@ test("an alias a plugin gave runs only as that plugin may", function(t)
 	local said = if ok then (err :: Block).stderr else tostring(err)
 	assert(string.find(said, "aliaser", 1, true), said)
 	assert(greed.fs.stat(marker) == nil, "it didn't run")
-	shell.aliases.use(nil)
+	aliases.use(nil)
 end)

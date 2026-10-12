@@ -127,7 +127,7 @@ end
 -- What `block` shows of its output now, as the shell shows it (a filter
 -- and a sort included), a line each.
 local function output_of(board: Board, block: Block): { string }
-	local from, to = shell.log.output_range(board.shell, block)
+	local from, to = shell.output(board.shell, block)
 	if from == nil or to == nil then
 		return {}
 	end
@@ -204,8 +204,8 @@ local function draw(board: Board)
 	local pieces: { layout.Piece } = {}
 	for i, card in board.cards do
 		local block = board.blocks[i]
-		local head = if block then `{shell.log.glyph(block)} {card.title}` else card.title
-		local status = if block then shell.log.status_text(block) else ""
+		local head = if block then `{shell.glyph(block)} {card.title}` else card.title
+		local status = if block then shell.status(block) else ""
 		local out = if block then output_of(board, block) else {}
 		local more = #out - card.height
 		table.insert(pieces, {
@@ -315,7 +315,7 @@ local function start(board: Board, again: boolean?)
 	for _, block in free do
 		shell.kill(block)
 		shell.wait(block)
-		shell.log.remove(board.shell, block)
+		shell.remove(board.shell, block)
 	end
 end
 
@@ -657,7 +657,7 @@ greed.command({
 		if board == nil then
 			here(ctx)
 		elseif block then
-			shell.peek.open(board.shell, block)
+			shell.peek(board.shell, block)
 		end
 	end,
 })
@@ -709,8 +709,8 @@ local function redraw(block: Block)
 		end
 	end
 end
-shell.log.on_update(redraw)
-shell.log.on_status(redraw)
+shell.on_update(redraw)
+shell.on_status(redraw)
 
 -- A board is laid out as wide as the view showing it.
 greed.on("view.resized", function(event: greed.ViewResized)

@@ -191,7 +191,7 @@ function M.to_prompt(code: Code, view: greed.View)
 		return
 	end
 	local api = require("@shell")
-	api.log.set_prompt(shell, code.text)
+	api.set_prompt(shell, code.text)
 	api.show(shell, view)
 end
 

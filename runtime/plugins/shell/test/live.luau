@@ -1,6 +1,9 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local live = require("../live")
+local log = require("../log")
+local shell_rows = require("../rows")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -26,7 +29,7 @@ local function styled(sh: Shell, block: Block, style: string): { string }
 end
 
 test("watch reads its seconds and its command", function()
-	local read = shell.live.read
+	local read = live.read
 	local function check(typed: string, command: string, seconds: number)
 		local line, every = read(typed)
 		assert(line == command and every == seconds, `{typed}: {line} every {every}`)
@@ -117,14 +120,14 @@ test("a filter or a sort on a watch stays as it shows what's new", function(t)
 	t:wait_for(function()
 		return block.table ~= nil
 	end)
-	shell.rows.set(sh, block, "COUNT>1", "COUNT", true)
+	shell_rows.set(sh, block, "COUNT>1", "COUNT", true)
 	assert(block.shown and #block.shown.rows == 0, "nothing over one yet")
 	greed.fs.write(`{sh.cwd}/rows`, "NAME  COUNT\na     2\nb     5\nc     1\n")
 	greed.sleep(1000)
 	t:wait_for(function()
 		return block.shown ~= nil and #block.shown.rows == 2
 	end)
-	local from, to = shell.log.output_range(sh, block)
+	local from, to = log.output_range(sh, block)
 	local shown = sh.buffer:slice(assert(from), assert(to))
 	assert(string.find(shown, "b     5\na     2", 1, true), "kept and sorted: " .. shown)
 	assert(not string.find(shown, "c     1", 1, true), shown)
@@ -194,7 +197,7 @@ test("a watch says which rows changed and how, leaving out what ticks by itself"
 	assert(string.find(block.change or "", "^new db %+1 more"), tostring(block.change))
 	-- A notification each time can be asked for, and stopped again.
 	local view = greed.view()
-	local from = shell.log.range(block)
+	local from = log.range(block)
 	view:set_cursor(assert(from))
 	t:run("shell-notify")
 	local on: boolean? = block.notify
@@ -213,7 +216,7 @@ test("a watch changed to another command shows it in the same block, its filter 
 	t:wait_for(function()
 		return block.table ~= nil
 	end)
-	shell.rows.set(sh, block, "api")
+	shell_rows.set(sh, block, "api")
 	local number, uid, count = block.number, block.uid, #sh.blocks
 	local same = shell.change(sh, block, "watch -n 1 cat deploys")
 	assert(same == block, "the same block")
@@ -223,7 +226,7 @@ test("a watch changed to another command shows it in the same block, its filter 
 	assert(block.number == number and block.uid == uid and #sh.blocks == count, "in its place")
 	assert(block.command == "watch -n 1 cat deploys" and block.watching == "cat deploys")
 	assert(block.status == "running" and block.shown == nil, "running, unfiltered")
-	local from, to = shell.log.output_range(sh, block)
+	local from, to = log.output_range(sh, block)
 	local shown = sh.buffer:slice(assert(from), assert(to))
 	assert(not string.find(shown, "api", 1, true), shown)
 	assert(string.find(sh.buffer:text(), "watch -n 1 cat deploys", 1, true), "its header says so")
@@ -248,7 +251,7 @@ test("a finished block changed runs in its place; space C asks what to", functio
 	)
 	assert(not string.find(sh.buffer:text(), "echo one", 1, true), sh.buffer:text())
 	-- From the block, space C puts its command in a prompt to change.
-	local from = shell.log.range(block)
+	local from = log.range(block)
 	greed.view():set_cursor(assert(from))
 	t:keys("esc space C")
 	t:keys("backspace backspace backspace t h r e e enter")

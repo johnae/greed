@@ -66,7 +66,7 @@ end
 
 -- Puts the cursor on the line of `block`'s output holding `text`.
 local function on(sh: Shell, block: Block, text: string)
-	local from = shell.log.output_range(sh, block)
+	local from = shell.output(sh, block)
 	assert(from, "a block with output")
 	local at = assert(string.find(sh.buffer:text(), text, from + 1, true), text)
 	greed.view():set_cursor(at - 1)
@@ -253,14 +253,14 @@ test("follow logs opens in a float on its last line; again goes to it, not a sec
 	assert(#sh.blocks == count + 1, "it ran")
 	local logs = sh.blocks[#sh.blocks]
 	local float = greed.view()
-	assert(shell.peek.of(float) == logs, "in a float")
+	assert(shell.peeked(float) == logs, "in a float")
 	-- It stays on the last line as lines come.
 	t:wait_for(function()
-		local _, to = shell.log.range(logs)
+		local _, to = shell.range(logs)
 		return string.find(sh.buffer:slice(0, assert(to)), "log 5\n", 1, true) ~= nil
 	end)
 	local function on_last(): boolean
-		local _, to = shell.log.range(logs)
+		local _, to = shell.range(logs)
 		local buffer = sh.buffer
 		return buffer:line_of(float:cursor()) == buffer:line_of(assert(to) - 1)
 	end
@@ -275,7 +275,7 @@ test("follow logs opens in a float on its last line; again goes to it, not a sec
 	-- Again while it runs goes to it.
 	follow()
 	assert(#sh.blocks == count + 1, "not a second one")
-	assert(shell.peek.of(greed.view()) == logs, "its float again")
+	assert(shell.peeked(greed.view()) == logs, "its float again")
 	local said = table.concat(t:messages(), "|")
 	assert(string.find(said, `already running as ${logs.number}`, 1, true), said)
 	t:keys("esc")
@@ -288,10 +288,10 @@ local function offered(
 	sh: Shell,
 	text: string
 ): { { label: string, detail: string? } }
-	shell.log.set_prompt(sh, text, { greed.view() })
+	shell.set_prompt(sh, text, { greed.view() })
 	local found: { any }? = nil
 	greed.spawn(function()
-		found = shell.completion.items(greed.view(), { explicit = true }) or {}
+		found = shell.completions(greed.view(), { explicit = true }) or {}
 	end)
 	t:wait_for(function()
 		return found ~= nil
@@ -330,10 +330,10 @@ test("completion offers the rows of blocks above, where the command goes", funct
 	none("kubectl describe deploy ")
 	none("kubectl logs -")
 	-- A one-word alias or a path to the program counts as it.
-	shell.aliases.use({ k = "kubectl" })
+	shell.use_aliases({ k = "kubectl" })
 	assert(offered(t, sh, "k logs ")[1].label == "api-7d9f8b6c5-2xkqz")
 	assert(offered(t, sh, `{sh.cwd}/bin/kubectl logs `)[1].label == "api-7d9f8b6c5-2xkqz")
-	shell.aliases.use(nil)
+	shell.use_aliases(nil)
 end)
 
 test("kubectl get -w shows each pod in place, the ones that changed marked", function(t)
@@ -412,7 +412,7 @@ test(
 test("in blocks mode down goes onto the pods, each one a pod to act on", function(t)
 	local sh = fake(t, "prod-eu")
 	ran(t, sh, "kubectl get pods -A")
-	shell.log.set_prompt(sh, "", { greed.view() })
+	shell.set_prompt(sh, "", { greed.view() })
 	greed.view():set_cursor(sh.buffer:len())
 	t:keys("esc down")
 	local pod = assert(thing_here("pod"), "a pod under the cursor")

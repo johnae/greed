@@ -1,10 +1,12 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local log = require("../log")
+local starship = require("../starship")
 
 type Shell = typeof(shell.open())
 
-local segments = shell.segments
+local segments = require("../segments")
 
 local function open(t: test.TestContext, dir: string): Shell
 	t:run("shell")
@@ -87,7 +89,7 @@ test("a plugin's segment shows before the folder, after the shell's own", functi
 end)
 
 test("starship's prompt is read as runs of colors, without its character", function()
-	local read = shell.starship.read
+	local read = starship.read
 	local two = read(
 		"\n\27[1;34m☸ ctx\27[0m in \27[1;38;5;208m~/src\27[0m via \27[38;2;1;2;3mx\27[0m \n\27[1;32m❯\27[0m "
 	)
@@ -121,7 +123,7 @@ test("with shell-prompt starship, starship draws the prompt before ❯", functio
 	shows(t, sh, "from starship")
 	local text = prompt_text(sh)
 	assert(
-		not string.find(text, shell.log.short_folder(dir), 1, true),
+		not string.find(text, log.short_folder(dir), 1, true),
 		"starship shows the folder: " .. text
 	)
 	assert(string.find(text, "❯ $"), text)
@@ -131,7 +133,7 @@ test("with shell-prompt starship, starship draws the prompt before ❯", functio
 		args
 	)
 	greed.option.set("shell-prompt", "greed")
-	shows(t, sh, shell.log.short_folder(dir))
+	shows(t, sh, log.short_folder(dir))
 end)
 
 test("shell-icons picks the icons of the shell's own segments", function(t)

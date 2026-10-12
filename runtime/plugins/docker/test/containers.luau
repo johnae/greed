@@ -31,7 +31,7 @@ end
 
 -- Puts the cursor on the line of `block`'s output holding `text`.
 local function on(sh: Shell, block: Block, text: string)
-	local from = shell.log.output_range(sh, block)
+	local from = shell.output(sh, block)
 	assert(from, "a block with output")
 	local at = assert(string.find(sh.buffer:text(), text, from + 1, true), text)
 	greed.view():set_cursor(at - 1)
@@ -64,10 +64,10 @@ end
 
 -- What completion offers with `text` at `sh`'s prompt, in order.
 local function offered(t: test.TestContext, sh: Shell, text: string): { { label: string } }
-	shell.log.set_prompt(sh, text, { greed.view() })
+	shell.set_prompt(sh, text, { greed.view() })
 	local found: { any }? = nil
 	greed.spawn(function()
-		found = shell.completion.items(greed.view(), { explicit = true }) or {}
+		found = shell.completions(greed.view(), { explicit = true }) or {}
 	end)
 	t:wait_for(function()
 		return found ~= nil
@@ -92,10 +92,10 @@ test("completion offers containers for docker, from blocks above", function(t)
 	ran(t, sh, "docker ps")
 	assert(offered(t, sh, "docker logs --tail 50 ")[1].label == "web")
 	-- A one-word alias or a path to the program counts as it.
-	shell.aliases.use({ d = "docker" })
+	shell.use_aliases({ d = "docker" })
 	assert(offered(t, sh, "d logs ")[1].label == "web")
 	assert(offered(t, sh, `{sh.cwd}/bin/docker logs `)[1].label == "web")
-	shell.aliases.use(nil)
+	shell.use_aliases(nil)
 end)
 
 test("container rows are container:NAME", function(t)

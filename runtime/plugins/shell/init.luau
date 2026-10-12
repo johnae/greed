@@ -58,6 +58,7 @@ local peek = require("@self/peek")
 local pretty = require("@self/pretty")
 local filtering = require("@self/filtering")
 local navigate = require("@self/navigate")
+local sources = require("@self/sources")
 require("@self/processes")
 
 export type Shell = state.Shell
@@ -74,30 +75,69 @@ local M = {}
 local KIND = "shell"
 local LANGUAGE = "greed-shell"
 
---- The modules, for plugins building on the shell.
+--- Reading command lines (`parse.words`, `parse.quote`) and tables, for
+--- plugins building on the shell.
 M.parse = parse
-M.log = log
-M.runners = run
-M.pty = pty
-M.data = data
-M.ask = ask
 M.tables = tables
-M.rows = rows
-M.jc = require("@self/jc")
-M.sources = require("@self/sources")
-M.completion = completion
-M.segments = segments
-M.edit = require("@self/edit")
-M.envs = envs
-M.aliases = aliases
-M.suggest = suggest
-M.history = history
-M.kinds = kinds
-M.live = live
-M.peek = peek
-M.drill = require("@self/drill")
-M.filtering = filtering
-M.starship = require("@self/starship")
+
+--- Where `block` is in its shell's buffer, from its command to the next
+--- block; and where what it printed is. Nil once its text was deleted.
+M.range = log.range
+M.output = log.output_range
+
+--- Puts `text` at `shell`'s prompt, and takes `block` away.
+M.set_prompt = log.set_prompt
+M.remove = log.remove
+
+--- The block at `pos` in `shell`'s buffer, and the row of its table there,
+--- filtered and sorted as it shows.
+M.block_at = log.block_at
+M.row_at = rows.row_at
+
+--- How `block` is going: its glyph, its status line, and for a running one
+--- what the strip says.
+M.glyph = log.glyph
+M.status = log.status_text
+M.running_status = log.running_status
+
+--- Calls `listener(block)` when a block's output or status changes, when
+--- its lines are placed in the buffer, and `call(shell, block)` once it
+--- finishes.
+M.on_update = log.on_update
+M.on_status = log.on_status
+M.on_placed = log.on_placed
+M.on_finish = run.on_finish
+
+--- Shows `block` in a peek float; and the block a peek's view shows.
+M.peek = peek.open
+M.peeked = peek.of
+
+--- The command line `block` ran.
+M.command_line = kinds.command_line
+
+--- `line` read as `watch [-n SECONDS] COMMAND`: the command and how many
+--- seconds apart, or nil (with why when it's a watch that can't run).
+M.watched = live.read
+
+--- The buffer `> buf:NAME` writes to, made if there's none.
+M.into = data.target
+
+--- Runs a completion source's program the way the shell's sources do; see
+--- `sources.run`.
+M.run_source = sources.run
+
+--- What could complete the word before the cursor in a view showing a
+--- shell's prompt.
+M.completions = completion.items
+
+--- Uses `aliases` from now on, or with nil reads your shell's again.
+M.use_aliases = aliases.use
+
+--- A prompt segment's icon in use, whether a context is a production one
+--- (`shell-production-contexts`), and drawing a shell's prompt again.
+M.icon = segments.icon
+M.production = segments.production
+M.refresh_prompt = segments.refresh
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)
 --- in every shell's prompt before its folder; see `segments.segment`.
@@ -121,7 +161,7 @@ M.environment = envs.provider
 
 --- Completes the arguments of program `name` with `complete`, ahead of
 --- Cobra, fish, carapace and the program's help; see `sources.completer`.
-M.completer = M.sources.completer
+M.completer = sources.completer
 
 --- Reads the output of the commands `match` names (a program, or a pattern
 --- for the command line) as tables with `parse`, ahead of the shell's own
@@ -1061,7 +1101,7 @@ local function which(shell: Shell, name: string): { string }
 	if alias and builtin == nil then
 		table.insert(found, `{name}: your alias for {alias}`)
 	end
-	local program = M.sources.find(name, state.variables(shell).PATH)
+	local program = sources.find(name, state.variables(shell).PATH)
 	if program then
 		local caret = if builtin or alias then ` (^{name} runs it)` else ""
 		table.insert(found, `{name}: {program}{caret}`)

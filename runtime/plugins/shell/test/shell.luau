@@ -2,6 +2,7 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local core = require("@core")
 local shell = require("@shell")
+local log = require("../log")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -20,7 +21,7 @@ end
 
 -- Types `line` at the prompt and presses enter; returns the block it made.
 local function type_line(t: test.TestContext, sh: Shell, line: string): Block
-	shell.log.set_prompt(sh, line, { greed.view() })
+	log.set_prompt(sh, line, { greed.view() })
 	local before = #sh.blocks
 	t:keys("enter")
 	assert(#sh.blocks == before + 1, `a block for {line}: {#sh.blocks}`)
@@ -69,7 +70,7 @@ test(":shell opens a buffer of blocks with the prompt at the bottom", function(t
 	assert(string.find(status(sh, block), "✓", 1, true), status(sh, block))
 	-- The cursor is back at the empty prompt.
 	assert(greed.view():cursor() == buffer:len())
-	assert(shell.log.prompt_text(sh) == "")
+	assert(log.prompt_text(sh) == "")
 	-- The prompt shows the folder before the glyph, as decorations.
 	local texts = {}
 	for _, mark in buffer:decorations("shell.prompt") do
@@ -77,7 +78,7 @@ test(":shell opens a buffer of blocks with the prompt at the bottom", function(t
 			table.insert(texts, mark.text)
 		end
 	end
-	local short = shell.log.short_folder(dir)
+	local short = log.short_folder(dir)
 	assert(table.concat(texts) == `{short} ❯ `, table.concat(texts, "|"))
 	local drawn = table.concat(t:draw(80, 10), "\n")
 	assert(string.find(drawn, `{short} ❯ \n`, 1, true), drawn)
@@ -86,13 +87,13 @@ end)
 test("a prompt of many lines, like a pasted transcript, runs only once you say so", function(t)
 	local sh = open(t, t:tempdir())
 	local pasted = "kubectl get pods\nNAME   READY\napi    1/1\ndb     1/1\ncache  1/1\nweb    1/1"
-	shell.log.set_prompt(sh, pasted, { greed.view() })
+	log.set_prompt(sh, pasted, { greed.view() })
 	t:keys("enter")
 	local messages = t:messages()
 	assert(messages[#messages] == "run these 6 lines as one command? y/n", messages[#messages])
 	t:keys("n")
 	assert(#sh.blocks == 0, "nothing ran")
-	assert(shell.log.prompt_text(sh) == pasted, "and the prompt is as it was")
+	assert(log.prompt_text(sh) == pasted, "and the prompt is as it was")
 	t:keys("enter y")
 	assert(#sh.blocks == 1, "y runs it")
 	-- A few lines run as they are.
@@ -101,10 +102,10 @@ end)
 
 test("the prompt's folder is short, and a new shell says where help is", function(t)
 	local home = assert(greed.fs.dirs().home)
-	assert(shell.log.short_folder(home .. "/Development/greed") == "~/D/greed")
-	assert(shell.log.short_folder(home .. "/.config/greed") == "~/.c/greed")
-	assert(shell.log.short_folder("/usr/local/bin") == "/u/l/bin")
-	assert(shell.log.short_folder(home) == "~")
+	assert(log.short_folder(home .. "/Development/greed") == "~/D/greed")
+	assert(log.short_folder(home .. "/.config/greed") == "~/.c/greed")
+	assert(log.short_folder("/usr/local/bin") == "/u/l/bin")
+	assert(log.short_folder(home) == "~")
 	local sh = open(t, t:tempdir())
 	local said = table.concat(t:draw(80, 10), "\n")
 	assert(string.find(said, "type help for what works here", 1, true), said)
@@ -254,10 +255,10 @@ test("open, history and clear are the shell's own", function(t)
 	finished(t, type_line(t, sh, "echo one"))
 	local history = finished(t, type_line(t, sh, "history"))
 	assert(string.find(history.output, "1  echo one", 1, true), history.output)
-	shell.log.set_prompt(sh, "clear", { greed.view() })
+	log.set_prompt(sh, "clear", { greed.view() })
 	t:keys("enter")
 	assert(#sh.blocks == 0 and text() == "", text())
-	shell.log.set_prompt(sh, "open notes.txt", { greed.view() })
+	log.set_prompt(sh, "open notes.txt", { greed.view() })
 	t:keys("enter")
 	assert(
 		greed.view():buffer():path() == dir .. "/notes.txt",
@@ -285,7 +286,7 @@ test("blocks fold under their command and [ p ] p go between them", function(t)
 		sh.buffer:slice(range.anchor, range.head + 1)
 	)
 	t:keys("] p ] p")
-	assert(shell.log.in_prompt(sh, greed.view():cursor()))
+	assert(log.in_prompt(sh, greed.view():cursor()))
 	assert(one.number == 1 and two.number == 2)
 end)
 
@@ -310,7 +311,7 @@ test("a block runs again, is edited, copied, and its output opened", function(t)
 	assert(table.concat(greed.clipboard.get() or {}) == "pwd")
 	greed.view():set_cursor(0)
 	t:keys("enter")
-	assert(shell.log.prompt_text(sh) == "pwd", shell.log.prompt_text(sh))
+	assert(log.prompt_text(sh) == "pwd", log.prompt_text(sh))
 	assert(core.style.is_typing(), greed.mode.get())
 	t:keys("esc")
 	greed.view():set_cursor(0)
@@ -336,7 +337,7 @@ test("in the vscode style ctrl-c copies a selection, and interrupts without one"
 	local sh = open(t, t:tempdir())
 	local done = finished(t, type_line(t, sh, "echo copied"))
 	local running = type_line(t, sh, "sleep 30")
-	local from = shell.log.output_range(sh, done)
+	local from = log.output_range(sh, done)
 	greed.view():set_selection({
 		ranges = { { anchor = assert(from), head = assert(from) + 6 } },
 		primary = 1,
@@ -466,26 +467,26 @@ test("undo at the prompt takes back only what was typed, while output streams in
 	t:keys("esc")
 	greed.view():set_cursor(sh.buffer:len())
 	t:keys("i e c h o")
-	assert(shell.log.prompt_text(sh) == "echo", shell.log.prompt_text(sh))
+	assert(log.prompt_text(sh) == "echo", log.prompt_text(sh))
 	-- More output arrives above while the typing is at the prompt.
 	assert(assert(block.job).terminal):key("enter")
 	finished(t, block)
 	assert(string.find(sh.buffer:text(), "more\nlines\n", 1, true), sh.buffer:text())
-	assert(shell.log.prompt_text(sh) == "echo", shell.log.prompt_text(sh))
-	local blocks = sh.buffer:slice(0, shell.log.prompt_start(sh))
+	assert(log.prompt_text(sh) == "echo", log.prompt_text(sh))
+	local blocks = sh.buffer:slice(0, log.prompt_start(sh))
 	t:keys("esc")
 	t:run("undo")
-	assert(shell.log.prompt_text(sh) == "", "the typing went: " .. shell.log.prompt_text(sh))
-	assert(sh.buffer:slice(0, shell.log.prompt_start(sh)) == blocks, sh.buffer:text())
+	assert(log.prompt_text(sh) == "", "the typing went: " .. log.prompt_text(sh))
+	assert(sh.buffer:slice(0, log.prompt_start(sh)) == blocks, sh.buffer:text())
 	t:run("redo")
-	assert(shell.log.prompt_text(sh) == "echo", shell.log.prompt_text(sh))
+	assert(log.prompt_text(sh) == "echo", log.prompt_text(sh))
 	-- Running it takes what's typed into a block, and undo doesn't bring it
 	-- back to the prompt.
 	t:keys("i enter")
 	finished(t, sh.blocks[2])
 	t:keys("esc")
 	t:run("undo")
-	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
+	assert(log.prompt_text(sh) == "", log.prompt_text(sh))
 	assert(sh.blocks[2].command == "echo" and string.find(sh.buffer:text(), "\necho\n\n", 1, true))
 end)
 
@@ -497,7 +498,7 @@ test("undo after a run takes back only what was typed since", function(t)
 	t:keys("p esc")
 	for _ = 1, 3 do
 		t:run("undo")
-		local typed = shell.log.prompt_text(sh)
+		local typed = log.prompt_text(sh)
 		assert(typed == "", "nothing from before the run: " .. typed)
 	end
 	assert(sh.blocks[1].command == "echo one", sh.blocks[1].command)

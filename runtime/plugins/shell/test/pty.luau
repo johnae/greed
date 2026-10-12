@@ -2,6 +2,7 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local core = require("@core")
 local shell = require("@shell")
+local log = require("../log")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -14,7 +15,7 @@ local function open(t: test.TestContext): Shell
 end
 
 local function type_line(t: test.TestContext, sh: Shell, line: string): Block
-	shell.log.set_prompt(sh, line, { greed.view() })
+	log.set_prompt(sh, line, { greed.view() })
 	t:keys("enter")
 	return sh.blocks[#sh.blocks]
 end

@@ -1,6 +1,9 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local filtering = require("../filtering")
+local log = require("../log")
+local rows = require("../rows")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -67,7 +70,7 @@ end)
 test("shell-pretty shows them as they came and back; other output isn't touched", function(t)
 	local sh = open(t)
 	local block = run(t, sh, "cat log.json")
-	greed.view():set_cursor(assert((shell.log.output_range(sh, block))))
+	greed.view():set_cursor(assert((log.output_range(sh, block))))
 	t:run("shell-pretty")
 	assert(block.pretty == false and #readable(sh, block) == 0, "as it came")
 	t:run("shell-pretty")
@@ -86,7 +89,7 @@ end)
 test("tab in what a command printed folds the section indented under the line", function(t)
 	local sh = open(t)
 	local block = run(t, sh, "cat pod.yaml")
-	local first = sh.buffer:line_of(assert((shell.log.output_range(sh, block))))
+	local first = sh.buffer:line_of(assert((log.output_range(sh, block))))
 	local view = greed.view()
 	view:set_cursor(sh.buffer:line_start(first))
 	t:run("fold-toggle")
@@ -102,7 +105,7 @@ test("tab in a filter completes sections and fields from what the block printed"
 	local sh = open(t)
 	local yaml = run(t, sh, "cat pod.yaml")
 	local main = greed.view()
-	main:set_cursor(assert((shell.log.output_range(sh, yaml))))
+	main:set_cursor(assert((log.output_range(sh, yaml))))
 	t:run("shell-filter")
 	t:keys(". c o n tab tab")
 	local typed = greed.view():buffer():text()
@@ -110,7 +113,7 @@ test("tab in a filter completes sections and fields from what the block printed"
 	t:keys("esc")
 	local logs = run(t, sh, "cat log.json")
 	main:focus()
-	main:set_cursor(assert((shell.log.output_range(sh, logs))))
+	main:set_cursor(assert((log.output_range(sh, logs))))
 	t:run("shell-filter")
 	t:keys("l e v tab")
 	local field = greed.view():buffer():text()
@@ -123,14 +126,14 @@ test(
 		local sh = open(t)
 		local logs = run(t, sh, "cat log.json")
 		local level: string? = nil
-		for _, word in shell.filtering.words(logs) do
+		for _, word in filtering.words(logs) do
 			if word.word == "level=" then
 				level = word.what
 			end
 		end
 		assert(level == "info, error", tostring(level))
 		local main = greed.view()
-		main:set_cursor(assert((shell.log.output_range(sh, logs))))
+		main:set_cursor(assert((log.output_range(sh, logs))))
 		t:run("shell-filter")
 		local spec = assert(greed.view():float_spec())
 		assert(string.find(tostring(spec.title), "tab lists fields", 1, true), tostring(spec.title))
@@ -151,7 +154,7 @@ end)
 test("the filter's prompt says how much it keeps as it's typed", function(t)
 	local sh = open(t)
 	local logs = run(t, sh, "cat log.json")
-	greed.view():set_cursor(assert((shell.log.output_range(sh, logs))))
+	greed.view():set_cursor(assert((log.output_range(sh, logs))))
 	t:run("shell-filter")
 	local prompt = greed.view()
 	local function title(): string
@@ -182,10 +185,10 @@ end)
 test("a filter compares levels in their order", function(t)
 	local sh = open(t)
 	local logs = run(t, sh, "cat log.json")
-	shell.rows.set(sh, logs, "level>=warn")
+	rows.set(sh, logs, "level>=warn")
 	local shown = assert(logs.shown)
 	assert(#shown.rows == 1 and shown.total == 3, `{#shown.rows} of {shown.total}`)
-	shell.rows.set(sh, logs, "level!=error")
+	rows.set(sh, logs, "level!=error")
 	assert(#assert(logs.shown).rows == 2, "info, and the line without a level")
 end)
 
@@ -195,7 +198,7 @@ test("up in a filter brings back filters used on this kind of command", function
 	local main = greed.view()
 	local function filter(block: Block, keys: string): string
 		main:focus()
-		main:set_cursor(assert((shell.log.output_range(sh, block))))
+		main:set_cursor(assert((log.output_range(sh, block))))
 		t:run("shell-filter")
 		t:keys(keys)
 		return greed.view():buffer():text()
@@ -227,7 +230,7 @@ test("long JSON or YAML shows its keys folded as it ends, a long one's keys too"
 	sh.cwd = t:tempdir({ ["list.json"] = list })
 	local block = run(t, sh, "cat list.json")
 	local view = greed.view()
-	local first = sh.buffer:line_of(assert((shell.log.output_range(sh, block))))
+	local first = sh.buffer:line_of(assert((log.output_range(sh, block))))
 	local shown: { string } = {}
 	local hidden: { [number]: boolean } = {}
 	for _, run in view:hidden_lines() do

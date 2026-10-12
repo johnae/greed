@@ -6,7 +6,7 @@ local shell = require("@shell")
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
 
-local log = shell.log
+local log = require("../log")
 
 -- A shell in a folder with scripts that print lines, slowly or not, and
 -- one that fails.

@@ -1,11 +1,13 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local peek = require("../peek")
+local rows = require("../rows")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
 
-local log = shell.log
+local log = require("../log")
 
 local function open(t: test.TestContext): Shell
 	-- These go about the shell as text; blocks mode has tests of its own.
@@ -104,7 +106,7 @@ test("enter on a strip line opens its block in a float, and esc closes it", func
 	t:run("shell-enter")
 	local float = greed.view()
 	assert(float ~= main and float:float_spec() ~= nil, "a float opened")
-	assert(shell.peek.of(float) == watch)
+	assert(peek.of(float) == watch)
 	-- It shows the block and none of the shell around it, the prompt below
 	-- included, and the cursor can't leave it.
 	local from, to = log.range(watch)
@@ -116,7 +118,7 @@ test("enter on a strip line opens its block in a float, and esc closes it", func
 	assert(log.block_at(sh, float:cursor()) == watch, "G stays in the block")
 	-- In it, what's at the cursor is the block, so filtering it works.
 	assert(log.block_at(sh, float:cursor()) == watch)
-	shell.rows.set(sh, watch, "COUNT>1")
+	rows.set(sh, watch, "COUNT>1")
 	assert(watch.shown and #watch.shown.rows == 1)
 	t:run("shell-unfilter")
 	assert(not float:valid(), "esc closed it")
@@ -133,8 +135,8 @@ end)
 test("a block's float closes when the block is cleared away", function(t)
 	local sh = open(t)
 	local one = done(t, sh, "echo one")
-	local float = assert(shell.peek.open(sh, one))
-	assert(shell.peek.of(float) == one)
+	local float = assert(peek.open(sh, one))
+	assert(peek.of(float) == one)
 	t:run("shell-clear")
 	assert(not float:valid(), "its float closed with it")
 end)
@@ -200,7 +202,7 @@ test("space o w lists what runs in every shell: enter peeks, ctrl-x stops", func
 	end)
 	t:keys("enter")
 	local float = greed.view()
-	assert(shell.peek.of(float) == second, "enter opened the block in a float")
+	assert(peek.of(float) == second, "enter opened the block in a float")
 	t:keys("esc")
 	t:keys("space o w")
 	t:keys("4 0 ctrl-x")
@@ -216,16 +218,16 @@ test("floats opened on purpose stay, one for each block, while you work elsewher
 	local one = watching(t, sh)
 	local two = watching(t, sh)
 	local main = greed.view()
-	local first = assert(shell.peek.open(sh, one))
+	local first = assert(peek.open(sh, one))
 	main:focus()
-	local second = assert(shell.peek.open(sh, two))
+	local second = assert(peek.open(sh, two))
 	assert(first:valid() and second:valid(), "both stay open")
 	assert(first:float_spec() and assert(first:float_spec()).tab, "a float of the tab")
 	-- Each follows its own block.
-	assert(shell.peek.of(first) == one and shell.peek.of(second) == two)
+	assert(peek.of(first) == one and peek.of(second) == two)
 	-- Opening the first again goes to it rather than making another.
 	main:focus()
-	assert(shell.peek.open(sh, one) == first and greed.view() == first)
+	assert(peek.open(sh, one) == first and greed.view() == first)
 	-- The tab's float layouts take them in.
 	if greed.plugin.dirs().panes then
 		assert(#require("@panes").floats.all() >= 2, "the panes plugin arranges them")
@@ -233,7 +235,7 @@ test("floats opened on purpose stay, one for each block, while you work elsewher
 	-- esc closes the one it's in, and the other stays.
 	t:run("shell-unfilter")
 	assert(not first:valid() and second:valid())
-	shell.peek.close(second)
+	peek.close(second)
 	shell.interrupt(one)
 	shell.interrupt(two)
 end)
@@ -243,14 +245,14 @@ test(
 	function(t)
 		local sh = open(t)
 		local block = done(t, sh, "printf 'one\\n─╯'")
-		local float = assert(shell.peek.open(sh, block))
+		local float = assert(peek.open(sh, block))
 		-- Past the block's end, the float brings the cursor back onto its last
 		-- character as it follows the block, `╯` here.
 		float:set_cursor(sh.buffer:len())
-		shell.peek.follow(block)
+		peek.follow(block)
 		local cursor = float:cursor()
 		assert(sh.buffer:slice(cursor, sh.buffer:next_char(cursor)) ~= "", "on a character")
 		assert(log.block_at(sh, cursor) == block, "in the block")
-		shell.peek.close(float)
+		peek.close(float)
 	end
 )

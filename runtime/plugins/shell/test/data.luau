@@ -1,6 +1,7 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local data = require("../data")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -93,7 +94,7 @@ end)
 test("> buf:NAME sends a command's output to a buffer, and >> adds to it", function(t)
 	local sh = open(t, t:tempdir())
 	local first = run(t, sh, "printf 'a\\n' > buf:out")
-	local out = assert(shell.data.buffer("out"), "a buffer made")
+	local out = assert(data.buffer("out"), "a buffer made")
 	assert(out:text() == "a\n", out:text())
 	assert(first.into == "buf:out" and first.runner == "pipe", tostring(first.into))
 	-- The output went to the buffer, so the block shows only the command.
@@ -126,7 +127,7 @@ test("output that's JSON is kept as a value, and says so", function(t)
 	local number = run(t, sh, "echo 42")
 	assert(number.value == nil, "only objects and arrays")
 	-- $N of a JSON block gives its value in Luau.
-	local text, value = shell.data.read(sh, "$1", sh.cwd)
+	local text, value = data.read(sh, "$1", sh.cwd)
 	assert(text == "[1, 2, 3]\n" and value and value[2] == 2)
 end)
 

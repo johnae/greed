@@ -2,6 +2,8 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local core = require("@core")
 local shell = require("@shell")
+local completion = require("../complete")
+local log = require("../log")
 
 type Shell = typeof(shell.open())
 
@@ -17,17 +19,17 @@ local function open(t: test.TestContext, dir: string): Shell
 end
 
 local function at_prompt(sh: Shell): string
-	return shell.log.prompt_text(sh)
+	return log.prompt_text(sh)
 end
 
 type Item = { label: string, text: string, detail: string?, badge: string?, from: number? }
 
 -- What completes `text` at `sh`'s prompt, by label.
 local function items_for(t: test.TestContext, sh: Shell, text: string): { [string]: Item }
-	shell.log.set_prompt(sh, text, { greed.view() })
+	log.set_prompt(sh, text, { greed.view() })
 	local found: { Item }? = nil
 	greed.spawn(function()
-		found = shell.completion.items(greed.view(), { explicit = true }) or {}
+		found = completion.items(greed.view(), { explicit = true }) or {}
 	end)
 	t:wait_for(function()
 		return found ~= nil
@@ -43,7 +45,7 @@ end
 -- a menu, or the prompt completed in place. What completes a program's
 -- arguments may come from programs.
 local function tab(t: test.TestContext, sh: Shell, text: string): string
-	shell.log.set_prompt(sh, text, { greed.view() })
+	log.set_prompt(sh, text, { greed.view() })
 	greed.mode.set(core.style.typing_mode())
 	t:keys("tab")
 	t:wait_for(function()
@@ -195,7 +197,7 @@ test("a menu that opened by itself leaves enter and the arrows to the prompt", f
 	assert(at_prompt(sh) == "echo older", at_prompt(sh))
 	-- Once tab moved into the menu, enter takes the item and the arrows
 	-- move through it.
-	shell.log.set_prompt(sh, "", { greed.view() })
+	log.set_prompt(sh, "", { greed.view() })
 	pause(t, "c a t space s u")
 	t:keys("tab")
 	local first = at_prompt(sh)
@@ -279,7 +281,7 @@ test("the shell's own builtins are marked as Greed's, with what they do", functi
 	)
 	assert(first.sh and first.sh.badge == nil, "a program on PATH isn't Greed's")
 	-- The menu shows the badge and the doc.
-	shell.log.set_prompt(sh, "", { greed.view() })
+	log.set_prompt(sh, "", { greed.view() })
 	local menu = pause(t, "e x p o")
 	assert(
 		string.find(menu, "greed", 1, true) and string.find(menu, "Set variables", 1, true),

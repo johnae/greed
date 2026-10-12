@@ -11,10 +11,10 @@ local shell = require("@shell")
 local function boom()
 	error("boom", 0)
 end
-shell.log.on_update(boom)
-shell.log.on_status(boom)
-shell.log.on_placed(boom)
-shell.runners.on_finish(boom)
+shell.on_update(boom)
+shell.on_status(boom)
+shell.on_placed(boom)
+shell.on_finish(boom)
 ]]
 
 -- Runs `line` in `sh`, and how it ended once it did.

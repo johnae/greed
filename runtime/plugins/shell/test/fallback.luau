@@ -1,6 +1,7 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local log = require("../log")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -14,7 +15,7 @@ end
 
 -- Runs `line` as typed at the prompt and waits for it to finish.
 local function run(t: test.TestContext, sh: Shell, line: string): Block
-	shell.log.set_prompt(sh, line, { greed.view() })
+	log.set_prompt(sh, line, { greed.view() })
 	t:keys("enter")
 	local block = sh.blocks[#sh.blocks]
 	t:wait_for(function()

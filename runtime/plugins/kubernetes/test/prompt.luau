@@ -5,8 +5,6 @@ local kubernetes = require("@kubernetes")
 
 type Shell = typeof(shell.open())
 
-local segments = shell.segments
-
 local function open(t: test.TestContext, dir: string): Shell
 	t:run("shell")
 	local sh = assert(shell.of(greed.view():buffer()))
@@ -35,7 +33,7 @@ end
 
 -- Works out `sh`'s segments again and waits until its prompt has `text`.
 local function shows(t: test.TestContext, sh: Shell, text: string)
-	segments.refresh(sh)
+	shell.refresh_prompt(sh)
 	t:wait_for(function()
 		return string.find(prompt_text(sh), text, 1, true) ~= nil
 	end, 20000)
@@ -73,7 +71,7 @@ test("a kubeconfig says the context in use and its namespace", function()
 	)
 	assert(dev == "dev" and none == nil, `{dev} {none}`)
 	assert(kubernetes.read_kubeconfig("apiVersion: v1\nkind: Config\n") == nil, "no context")
-	assert(segments.production("prod-eu") and not segments.production("dev"))
+	assert(shell.production("prod-eu") and not shell.production("dev"))
 end)
 
 test(
@@ -95,7 +93,7 @@ test(
 		)
 		-- Patterns of your own.
 		greed.option.set("shell-production-contexts", "^live")
-		segments.refresh(sh)
+		shell.refresh_prompt(sh)
 		t:wait_for(function()
 			local all = prompt(sh)
 			return all[#all].style == "shell.prompt"

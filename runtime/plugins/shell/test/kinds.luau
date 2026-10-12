@@ -2,6 +2,9 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local core = require("@core")
 local shell = require("@shell")
+local completion = require("../complete")
+local log = require("../log")
+local shell_rows = require("../rows")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -31,7 +34,7 @@ end
 
 -- Puts the cursor on the line of `block`'s output holding `text`.
 local function on(sh: Shell, block: Block, text: string)
-	local from = shell.log.output_range(sh, block)
+	local from = log.output_range(sh, block)
 	assert(from, "a block with output")
 	local at = assert(string.find(sh.buffer:text(), text, from + 1, true), text)
 	greed.view():set_cursor(at - 1)
@@ -106,10 +109,10 @@ local function offered(
 	sh: Shell,
 	text: string
 ): { { label: string, detail: string? } }
-	shell.log.set_prompt(sh, text, { greed.view() })
+	log.set_prompt(sh, text, { greed.view() })
 	local found: { any }? = nil
 	greed.spawn(function()
-		found = shell.completion.items(greed.view(), { explicit = true }) or {}
+		found = completion.items(greed.view(), { explicit = true }) or {}
 	end)
 	t:wait_for(function()
 		return found ~= nil
@@ -165,7 +168,7 @@ test("the rows of a table no kind reads are plain rows of their block", function
 	on(sh, fruit, "pear")
 	assert(string.find(ids(core.objects.at(greed.view())), `{prefix}.2`, 1, true) ~= nil)
 	-- A filter shows fewer rows; the objects stay where they are.
-	shell.rows.set(sh, fruit, "pear")
+	shell_rows.set(sh, fruit, "pear")
 	local still = assert(core.objects.get(`{prefix}.2`))
 	local from = assert(still.from)
 	assert(string.sub(sh.buffer:text(), from + 1, from + 4) == "pear", "on its line")

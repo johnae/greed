@@ -1,6 +1,9 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local drill = require("../drill")
+local log = require("../log")
+local peek = require("../peek")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -22,7 +25,7 @@ end
 
 -- Types `line` at the prompt and runs it; the block it made, finished.
 local function type_line(t: test.TestContext, sh: Shell, line: string): Block
-	shell.log.set_prompt(sh, line, { greed.view() })
+	log.set_prompt(sh, line, { greed.view() })
 	t:keys("enter")
 	return finished(t, sh.blocks[#sh.blocks])
 end
@@ -81,7 +84,7 @@ test("typing in blocks mode goes back to the prompt with what's typed", function
 	type_line(t, sh, "echo one")
 	t:keys("esc x")
 	assert(greed.mode.get() ~= "blocks", greed.mode.get())
-	assert(shell.log.prompt_text(sh) == "x", shell.log.prompt_text(sh))
+	assert(log.prompt_text(sh) == "x", log.prompt_text(sh))
 	assert(hint() == "", "no selection shows: " .. hint())
 	t:keys("esc i")
 	assert(greed.mode.get() ~= "blocks" and greed.view():cursor() == sh.buffer:len())
@@ -92,9 +95,9 @@ test("enter changes a command at the prompt, and running it runs it in its place
 	local one = type_line(t, sh, "echo one")
 	type_line(t, sh, "echo two")
 	t:keys("esc up enter")
-	assert(shell.log.prompt_text(sh) == "echo one", shell.log.prompt_text(sh))
+	assert(log.prompt_text(sh) == "echo one", log.prompt_text(sh))
 	assert(sh.editing == one, "editing it")
-	shell.log.set_prompt(sh, "echo uno", { greed.view() })
+	log.set_prompt(sh, "echo uno", { greed.view() })
 	t:keys("enter")
 	finished(t, one)
 	assert(#sh.blocks == 2, "no new block: " .. #sh.blocks)
@@ -152,7 +155,7 @@ test("emptying the prompt stops changing the command, so what's typed next is ne
 	type_line(t, sh, "echo one")
 	t:keys("esc enter")
 	assert(sh.editing ~= nil, "editing")
-	shell.log.set_prompt(sh, "", { greed.view() })
+	log.set_prompt(sh, "", { greed.view() })
 	t:wait(20)
 	assert(sh.editing == nil, "not editing any more")
 	type_line(t, sh, "echo two")
@@ -182,7 +185,7 @@ test("blocks mode works the same in every style", function(t)
 		assert(greed.mode.get() == "blocks", `{style}: {greed.mode.get()}`)
 		assert(current() == "echo one", `{style}: {current()}`)
 		t:keys("x")
-		assert(shell.log.prompt_text(sh) == "x", `{style}: {shell.log.prompt_text(sh)}`)
+		assert(log.prompt_text(sh) == "x", `{style}: {log.prompt_text(sh)}`)
 	end
 end)
 
@@ -240,7 +243,7 @@ end)
 test("a float showing a block keeps its own keys: esc closes it", function(t)
 	local sh = open(t)
 	local block = type_line(t, sh, "cat pods")
-	local float = assert(shell.peek.open(sh, block, { focus = true }))
+	local float = assert(peek.open(sh, block, { focus = true }))
 	float:set_cursor(float:buffer():line_start(float:buffer():line_count() - 3))
 	t:wait(50)
 	assert(greed.mode.get() ~= "blocks", greed.mode.get())
@@ -291,7 +294,7 @@ test("in blocks mode : opens the command line, and keys that type nothing stay",
 	assert(greed.mode.get() == "blocks", "shift-tab folds, it doesn't type: " .. greed.mode.get())
 	t:keys("f5")
 	assert(greed.mode.get() == "blocks", greed.mode.get())
-	assert(shell.log.prompt_text(sh) == "", shell.log.prompt_text(sh))
+	assert(log.prompt_text(sh) == "", log.prompt_text(sh))
 end)
 
 test("a file opened from a level drilled down to opens in the shell's place", function(t)
@@ -303,7 +306,7 @@ test("a file opened from a level drilled down to opens in the shell's place", fu
 	local block = assert(shell.run(sh, "echo listed", { view = main }))
 	finished(t, block)
 	-- As an action on a row would: the block shown a level down from the shell.
-	shell.drill.open(sh, block, "listed", main)
+	drill.open(sh, block, "listed", main)
 	local float = greed.view()
 	assert(float ~= main and float:float_spec(), "a float")
 	greed.open(`{sh.cwd}/notes.txt`)
@@ -361,7 +364,7 @@ test(
 		local sh = open(t)
 		local main = greed.view()
 		local block = type_line(t, sh, "printf 'INFO a\\nERROR b\\nINFO c\\n'")
-		shell.drill.open(sh, block, "lines", main)
+		drill.open(sh, block, "lines", main)
 		local float = greed.view()
 		t:keys("/ e r r o r")
 		local said = tostring(assert(greed.view():float_spec()).title)
@@ -391,7 +394,7 @@ test("going back from a command started to show there stops it; ctrl-z keeps it"
 	t:wait_for(function()
 		return string.find(sh.buffer:text(), "\nup\n", 1, true) ~= nil
 	end)
-	shell.drill.open(sh, first, "sleeping", main, false, true)
+	drill.open(sh, first, "sleeping", main, false, true)
 	t:keys("esc")
 	t:wait_for(function()
 		return first.status ~= "running"
@@ -399,7 +402,7 @@ test("going back from a command started to show there stops it; ctrl-z keeps it"
 	for _, style in { "helix", "vim", "vscode" } do
 		greed.option.set("editing-style", style)
 		local block = assert(shell.run(sh, "sleep 31", { view = main }))
-		shell.drill.open(sh, block, "sleeping", main, false, true)
+		drill.open(sh, block, "sleeping", main, false, true)
 		t:keys("ctrl-z")
 		t:wait(50)
 		assert(block.status == "running", `{style}: kept running`)
@@ -407,7 +410,7 @@ test("going back from a command started to show there stops it; ctrl-z keeps it"
 		shell.kill(block)
 	end
 	t:keys("a b ctrl-z")
-	assert(shell.log.prompt_text(sh) ~= "ab", "at the prompt it still undoes")
+	assert(log.prompt_text(sh) ~= "ab", "at the prompt it still undoes")
 end)
 
 test("v shows a command in panes beside, each filtered its own way", function(t)
@@ -447,7 +450,7 @@ test("a level's footer stops offering to stop its command once it ends", functio
 	local sh = open(t)
 	local main = greed.view()
 	local block = assert(shell.run(sh, "echo up; sleep 0.5", { view = main }))
-	shell.drill.open(sh, block, "sleeping", main, false, true)
+	drill.open(sh, block, "sleeping", main, false, true)
 	local float = greed.view()
 	local function footer(): string
 		local spec = assert(float:float_spec())
@@ -464,7 +467,7 @@ test("each client drills down its own way: another opening a file leaves its lev
 	local block = assert(shell.run(sh, "echo listed", { view = main }))
 	finished(t, block)
 	local second = t:client()
-	shell.drill.open(sh, block, "listed", main)
+	drill.open(sh, block, "listed", main)
 	local float = greed.view()
 	assert(float ~= main and float:float_spec(), "a float")
 	-- The other client opening a file closes no levels of the first's.
@@ -473,5 +476,5 @@ test("each client drills down its own way: another opening a file leaves its lev
 	second:type(`e {sh.cwd}/notes.txt`)
 	second:keys("enter")
 	t:wait(50)
-	assert(float:valid() and shell.drill.is(float), "still there")
+	assert(float:valid() and drill.is(float), "still there")
 end)

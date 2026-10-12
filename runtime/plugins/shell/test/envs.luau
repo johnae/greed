@@ -5,7 +5,7 @@ local shell = require("@shell")
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
 
-local envs = shell.envs
+local envs = require("../envs")
 
 -- A provider standing in for devenv: a folder with `test.env` brings the
 -- NAME=VALUE lines in it. A load started after `hold()` waits for

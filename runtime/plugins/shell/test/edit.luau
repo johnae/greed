@@ -2,6 +2,7 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local agent = require("@agent")
 local shell = require("@shell")
+local edit = require("../edit")
 
 type Shell = typeof(shell.open())
 
@@ -57,7 +58,7 @@ test("a file opens where the block ran, and the shell comes back after :q", func
 	greed.fs.write(path, "msg\n")
 	local got: { outcome: string? } = {}
 	greed.spawn(function()
-		got.outcome = shell.edit.open({ path }, { block = block.uid, wait = true })
+		got.outcome = edit.open({ path }, { block = block.uid, wait = true })
 	end)
 	t:wait_for(function()
 		return view:buffer():path() == path
@@ -82,7 +83,7 @@ test(":cq stops the program, and a file open before stays open", function(t)
 	local before = greed.load(path)
 	local got: { outcome: string? } = {}
 	greed.spawn(function()
-		got.outcome = shell.edit.open({ path }, { block = block.uid, wait = true })
+		got.outcome = edit.open({ path }, { block = block.uid, wait = true })
 	end)
 	t:wait_for(function()
 		return greed.view():buffer() == before

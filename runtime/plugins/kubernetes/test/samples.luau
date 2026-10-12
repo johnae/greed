@@ -150,7 +150,7 @@ test("a pod's node and namespace are objects, with the actions kubernetes object
 	local described = act(t, sh, found, "describe")
 	assert(described == "kubectl describe nodes node-1 --context prod", described)
 	-- Under the cursor on its cell, the pod comes first, then the node, then the cell.
-	local from = shell.log.output_range(sh, block)
+	local from = shell.output(sh, block)
 	assert(from, "a block with output")
 	local at = assert(string.find(sh.buffer:text(), "node-1", from + 1, true), "node-1")
 	greed.view():set_cursor(at - 1)

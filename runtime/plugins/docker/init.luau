@@ -173,7 +173,7 @@ shell.kind({
 	name = "docker",
 	match = "docker",
 	capture = function(block: Block): any
-		local words = parse.words(shell.kinds.command_line(block), greed.fs.dirs().home)
+		local words = parse.words(shell.command_line(block), greed.fs.dirs().home)
 		if words == nil then
 			return nil
 		end

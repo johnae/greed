@@ -136,7 +136,7 @@ end
 -- Shows the context as it is now on every shell's prompt.
 local function redraw()
 	for _, other in shell.list() do
-		shell.segments.refresh(other)
+		shell.refresh_prompt(other)
 	end
 end
 
@@ -227,7 +227,7 @@ greed.command({
 			if context.name == current then
 				table.insert(marks, "current")
 			end
-			if shell.segments.production(context.name) then
+			if shell.production(context.name) then
 				table.insert(marks, "PRODUCTION")
 			end
 			table.insert(items, {

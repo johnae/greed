@@ -1,6 +1,7 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local shell = require("@shell")
+local log = require("../log")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -15,7 +16,7 @@ local function open(t: test.TestContext, dir: string): Shell
 end
 
 local function run(t: test.TestContext, sh: Shell, line: string): Block
-	shell.log.set_prompt(sh, line, { greed.view() })
+	log.set_prompt(sh, line, { greed.view() })
 	t:keys("enter")
 	local block = sh.blocks[#sh.blocks]
 	t:wait_for(function()
@@ -26,11 +27,11 @@ end
 
 -- Puts `text` at the prompt, typing, with the cursor at its end.
 local function prompt(sh: Shell, text: string)
-	shell.log.set_prompt(sh, text, { greed.view() })
+	log.set_prompt(sh, text, { greed.view() })
 end
 
 local function at_prompt(sh: Shell): string
-	return shell.log.prompt_text(sh)
+	return log.prompt_text(sh)
 end
 
 local function history_file(): string
@@ -93,7 +94,7 @@ test("up and down away from the prompt's edge lines move the cursor as usual", f
 	assert(at_prompt(sh) == "two", at_prompt(sh))
 	-- On the first of two lines at the prompt, down goes to the second.
 	prompt(sh, "first\nsecond")
-	greed.view():set_cursor(shell.log.prompt_start(sh))
+	greed.view():set_cursor(log.prompt_start(sh))
 	t:keys("down")
 	assert(at_prompt(sh) == "first\nsecond", at_prompt(sh))
 	assert(sh.buffer:line_of(greed.view():cursor()) == sh.buffer:line_count() - 1)

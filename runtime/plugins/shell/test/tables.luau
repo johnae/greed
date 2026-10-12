@@ -2,6 +2,10 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local core = require("@core")
 local shell = require("@shell")
+local filtering = require("../filtering")
+local jc = require("../jc")
+local shell_log = require("../log")
+local shell_rows = require("../rows")
 
 type Shell = typeof(shell.open())
 type Block = typeof(assert(shell.run(shell.open(), "true")))
@@ -233,7 +237,7 @@ end
 
 -- What `block` shows of its output.
 local function shown(sh: Shell, block: Block): string
-	local from, to = shell.log.output_range(sh, block)
+	local from, to = shell_log.output_range(sh, block)
 	return if from and to then sh.buffer:slice(from, to + 1) else ""
 end
 
@@ -290,7 +294,7 @@ test("/ filters a table's rows in its block, esc shows them all again", function
 	local original = shown(sh, pods)
 	assert(original == PODS, original)
 	t:keys("esc")
-	local from = assert((shell.log.output_range(sh, pods)))
+	local from = assert((shell_log.output_range(sh, pods)))
 	greed.view():set_cursor(from + 2)
 	t:keys("/ r u n n i n g")
 	assert(shown(sh, pods) == table.concat({
@@ -327,7 +331,7 @@ test("space s sorts a table by the column under the cursor, again reverses it", 
 	local sh = open(t, dir)
 	local pods = run(t, sh, "cat pods.txt")
 	t:keys("esc")
-	local from = assert((shell.log.output_range(sh, pods)))
+	local from = assert((shell_log.output_range(sh, pods)))
 	-- On the AGE column, in a row.
 	greed.view():set_cursor(sh.buffer:line_start(sh.buffer:line_of(from) + 2) + 70)
 	local function ages(): string
@@ -352,8 +356,8 @@ test("space s sorts a table by the column under the cursor, again reverses it", 
 	assert(shown(sh, pods) == PODS, shown(sh, pods))
 	-- The row under the cursor, for plugins acting on rows.
 	local line = sh.buffer:line_start(sh.buffer:line_of(from) + 3)
-	assert(shell.rows.row_at(sh, pods, line) == 3)
-	assert(shell.rows.row_at(sh, pods, from) == nil, "the header")
+	assert(shell_rows.row_at(sh, pods, line) == 3)
+	assert(shell_rows.row_at(sh, pods, from) == nil, "the header")
 end)
 
 test("a JSON array's table filters as aligned columns, and comes back as JSON", function(t)
@@ -362,7 +366,7 @@ test("a JSON array's table filters as aligned columns, and comes back as JSON", 
 	assert(columns(block.table) == "name,size", columns(block.table))
 	local json = shown(sh, block)
 	t:keys("esc")
-	local from = assert((shell.log.output_range(sh, block)))
+	local from = assert((shell_log.output_range(sh, block)))
 	greed.view():set_cursor(from)
 	t:keys("/ a enter")
 	assert(shown(sh, block) == "name   size\na       9 B\n", shown(sh, block))
@@ -384,13 +388,13 @@ test("/ with key=value keeps JSON lines by a field, and .a.b a section of YAML",
 		"metadata:\n  name: api\nstatus:\n  phase: Running\n  conditions:\n  - type: Ready\nspec:\n  nodeName: n1\n"
 	local sh = open(t, t:tempdir({ ["log.json"] = log, ["pod.yaml"] = pod }))
 	local logs = run(t, sh, "cat log.json")
-	shell.rows.set(sh, logs, "level=error")
+	shell_rows.set(sh, logs, "level=error")
 	assert(string.find(shown(sh, logs), "db down", 1, true), shown(sh, logs))
 	assert(not string.find(shown(sh, logs), "error count", 1, true), shown(sh, logs))
-	shell.rows.set(sh, logs, "release.name=linstor count")
+	shell_rows.set(sh, logs, "release.name=linstor count")
 	assert(string.find(shown(sh, logs), "^[^\n]*error count 0[^\n]*\n$"), shown(sh, logs))
 	local yaml = run(t, sh, "cat pod.yaml")
-	shell.rows.set(sh, yaml, ".conditions")
+	shell_rows.set(sh, yaml, ".conditions")
 	assert(shown(sh, yaml) == "status:\n  conditions:\n  - type: Ready\n", shown(sh, yaml))
 end)
 
@@ -400,7 +404,7 @@ test("/ filters any block's lines as they're typed, esc shows them all again", f
 	assert(block.table == nil, "text")
 	local all = shown(sh, block)
 	t:keys("esc")
-	greed.view():set_cursor(assert((shell.log.output_range(sh, block))))
+	greed.view():set_cursor(assert((shell_log.output_range(sh, block))))
 	t:keys("/ e r r")
 	assert(shown(sh, block) == "error: one\nerror: two\n", shown(sh, block))
 	t:keys("enter")
@@ -408,17 +412,17 @@ test("/ filters any block's lines as they're typed, esc shows them all again", f
 	-- The record keeps every line, and copying gives them all.
 	assert(block.output == all, block.output)
 	-- Words all have to be there, in any case.
-	shell.rows.set(sh, block, "ERROR two")
+	shell_rows.set(sh, block, "ERROR two")
 	assert(shown(sh, block) == "error: two\n", shown(sh, block))
 	-- A regex after /; one that isn't one yet leaves it as it was.
-	shell.rows.set(sh, block, "/^(apple|ban)")
+	shell_rows.set(sh, block, "/^(apple|ban)")
 	assert(shown(sh, block) == "apple pie\nbanana\n", shown(sh, block))
-	shell.rows.set(sh, block, "/(")
+	shell_rows.set(sh, block, "/(")
 	assert(shown(sh, block) == "apple pie\nbanana\n", shown(sh, block))
 	-- Nothing left, and the block can still be filtered from its command.
-	shell.rows.set(sh, block, "nothing-like-it")
+	shell_rows.set(sh, block, "nothing-like-it")
 	assert(shown(sh, block) == "" and assert(block.shown).total == 5)
-	greed.view():set_cursor(assert((shell.log.range(block))))
+	greed.view():set_cursor(assert((shell_log.range(block))))
 	t:keys("/ esc")
 	assert(shown(sh, block) == all and block.shown == nil, shown(sh, block))
 end)
@@ -527,11 +531,11 @@ end)
 test("the real jc reads a command's output, when it's installed", function(t)
 	local sh = open(t, t:tempdir())
 	local path = run(t, sh, [[printf %s "$PATH"]]).output
-	if shell.jc.find("jc", path) == nil then
+	if jc.find("jc", path) == nil then
 		-- Skipped: jc isn't installed here.
 		return
 	end
-	local tbl = shell.jc.parse(
+	local tbl = jc.parse(
 		"Filesystem 1K-blocks Used Available Use% Mounted on\n/dev/sda1 100 50 50 50% /\n",
 		"df",
 		path
@@ -677,7 +681,7 @@ test("esc in normal mode shows a filtered block's every line again", function(t)
 	local block = run(t, sh, "printf 'apple\\nbanana\\napricot\\n'")
 	local all = shown(sh, block)
 	t:keys("esc")
-	greed.view():set_cursor(assert((shell.log.output_range(sh, block))))
+	greed.view():set_cursor(assert((shell_log.output_range(sh, block))))
 	t:keys("/ a p enter")
 	assert(shown(sh, block) == "apple\napricot\n", shown(sh, block))
 	t:keys("esc")
@@ -825,7 +829,7 @@ test("a table's rows stay one line each in a narrow pane, and scroll sideways", 
 	assert(found, table.concat(drawn, "\n"))
 	assert(string.find(table.concat(drawn, "\n"), "word word", 1, true), "the echo is there")
 	-- Put on the end of a row, the view scrolls to show it.
-	local _, last = shell.log.output_range(sh, block)
+	local _, last = shell_log.output_range(sh, block)
 	local line = sh.buffer:line_of(assert(last) - 1)
 	greed.view():set_cursor(sh.buffer:line_end(line) - 1)
 	screen()
@@ -913,7 +917,7 @@ test("a table's header and the cells saying how things are doing are colored", f
 	end
 	assert(header, "the header")
 	-- Filtered, it's colored as it shows now.
-	shell.rows.set(sh, block, "STATUS=Running")
+	shell_rows.set(sh, block, "STATUS=Running")
 	local kept = 0
 	for _, mark in sh.buffer:decorations(`shell.cells.{block.uid}`) do
 		if
@@ -987,7 +991,7 @@ end)
 test("a filter's field values are cut whole characters short", function()
 	local block: any = { output = '{"msg":"' .. string.rep("å", 40) .. '"}\n' }
 	local what: string? = nil
-	for _, word in shell.filtering.words(block) do
+	for _, word in filtering.words(block) do
 		if word.word == "msg=" then
 			what = word.what
 		end
