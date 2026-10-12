@@ -293,6 +293,14 @@ function M.open(options: OpenOptions?): Shell
 	return shell
 end
 
+--- The current project's shell: its first, or a new one in its root,
+--- opened without showing it, as tools and plugins that run programs in
+--- the project's environment want.
+function M.project(): Shell
+	local project = greed.project.current()
+	return state.list(project.id)[1] or M.open({ cwd = project.root, show = false })
+end
+
 --- Shows `shell` in `view` (the focused one by default) with the cursor at
 --- the end of its prompt, typing.
 function M.show(shell: Shell, view: greed.View?)

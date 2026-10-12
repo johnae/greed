@@ -32,6 +32,7 @@ local DEFAULT_TIMEOUT = 60
 -- What the tools need from the plugin, which loads them after it's set up.
 export type Shells = {
 	open: (options: any) -> Shell,
+	project: () -> Shell,
 	run: (shell: Shell, line: string, options: any) -> Block?,
 	kill: (block: Block) -> boolean,
 	wait: (block: Block) -> Block,
@@ -101,16 +102,6 @@ return function(shells: Shells)
 	-- Asked for each time, as the agent plugin may have been loaded again.
 	local agent = require("@agent")
 	local object = agent.schema.object
-
-	-- The project's first shell, opened without showing it if there's none.
-	local function project_shell(): Shell
-		local project = greed.project.current()
-		local found = state.list(project.id)[1]
-		if found then
-			return found
-		end
-		return shells.open({ cwd = project.root, show = false })
-	end
 
 	-- `block` as data for `caller`: with what it printed when `output`,
 	-- cut to the option's size, and marked as untrusted unless the call
@@ -239,7 +230,7 @@ return function(shells: Shells)
 			if type(args.command) ~= "string" then
 				error("shell_run needs command, the command line to run", 0)
 			end
-			local shell = project_shell()
+			local shell = shells.project()
 			local root = greed.project.current().root
 			local env = table.clone(shell.env)
 			if type(args.env) == "table" then

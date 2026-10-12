@@ -64,3 +64,18 @@ test("a plugin without proc gets a failed block saying why, never a running one"
 	assert(block.status == "failed", block.status)
 	assert(string.find(block.stderr, 'add "proc"', 1, true), block.stderr)
 end)
+
+test(
+	"shell.project gives the project's shell, opening one out of sight when there's none",
+	function(t)
+		local before = #shell.list(greed.project.current().id)
+		local first = shell.project()
+		assert(first.cwd == greed.project.current().root, first.cwd)
+		assert(
+			#shell.list(greed.project.current().id) == before + (if before == 0 then 1 else 0),
+			"one at most"
+		)
+		assert(shell.project() == first, "the same one again")
+		assert(greed.view():buffer() ~= first.buffer or before > 0, "not shown when it was opened")
+	end
+)

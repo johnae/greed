@@ -242,7 +242,7 @@ test("tests failing only for want of approval don't keep a plugin from install",
 	}
 	local said, may = agent.describe_check(report({ waiting }), { "proc" })
 	assert(may, said)
-	assert(string.find(said, "plugin_install may go ahead", 1, true), said)
+	assert(string.find(said, "ready for plugin_install, when the user wants it", 1, true), said)
 	assert(string.find(said, "tests: 1 passed, 0 failed, 1 waiting for approval", 1, true), said)
 	local shown = agent.describe_check(report({ waiting }), { "proc" }, true)
 	assert(string.find(shown, "they run again once you install it", 1, true), shown)

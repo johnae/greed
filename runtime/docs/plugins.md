@@ -1416,7 +1416,8 @@ and goes with it.
 
 `require("@shell")` is the [shell](shell.md): `shell.run(sh, line)` runs
 a line in a shell as a new block, `shell.of(buffer)` is the shell a buffer
-shows, and `shell.wait(block)` waits for a block to finish.
+shows, `shell.project()` the project's shell (opened out of sight when
+there's none), and `shell.wait(block)` waits for a block to finish.
 `shell.change(sh, block, line)` runs a line in a block's place instead,
 stopping it first if it runs, as `space C` does. A block's
 record has what ran and how it ended, its output, and `block.value` when
@@ -1432,8 +1433,7 @@ the default runs it in a terminal, as a line you type. Leave out `by`:
 local greed = require("@greed")
 local shell = require("@shell")
 
-local sh = shell.list(greed.project.current().id)[1] or shell.open({ show = false })
-local block = shell.run(sh, "go test -json ./...", { runner = "pipe" })
+local block = shell.run(shell.project(), "go test -json ./...", { runner = "pipe" })
 if block then
 	shell.wait(block)
 	greed.echo(`{block.status}: {#block.stdout} bytes`)

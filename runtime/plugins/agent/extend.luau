@@ -127,6 +127,11 @@ else c` expressions, string interpolation with backticks, `+=`, and
   (init.luau stands for the folder); those files require each other with `require("./git")`.
   Whatever init.luau returns is the plugin's module: other plugins and the plugin's own tests
   get it with `require("@my-plugin")`, so return what tests need to reach.
+- Running a program in the project's environment (devenv, direnv, the user's PATH): use the
+  shell (`requires = ["shell"]`, capability "proc"), not greed.process:
+  `local shell = require("@shell")`, `local block = shell.wait(assert(shell.run(shell.project(),
+  "go test -json ./...", { runner = "pipe" })))`, then `block.code`, `block.stdout` and
+  `block.stderr`. `shell.project()` is the project's shell, opened out of sight if there's none.
 - Waiting (greed.sleep, greed.fs.grep, greed.signal) works in commands and event handlers.
 - Searching: Greed's own functions (buffer:find, buffer:find_all, greed.fs.grep) take Rust
   regexes (`\bTODO\b`, `a|b`); Luau's string.find and string.match take Lua patterns.
@@ -291,7 +296,7 @@ function M.describe(
 		if waiting > 0 then
 			local next_step = if for_user
 				then "they run again once you install it"
-				else "plugin_install may go ahead"
+				else "it's ready for plugin_install, when the user wants it installed"
 			table.insert(
 				lines,
 				`  those waiting need only what the plugin asks for, which installing it approves; `
