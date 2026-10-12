@@ -115,6 +115,9 @@ M.providers = {
 		secret = "mistral",
 		cache_key = true,
 		thinking_back = true,
+		-- A tool call comes whole once it's written, so a long file being
+		-- written is minutes of quiet.
+		idle = 600,
 		efforts = { "none", "high" },
 	},
 	berget = {

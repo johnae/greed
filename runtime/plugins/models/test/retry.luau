@@ -161,3 +161,13 @@ test("stopping while it waits to try again stops at once, and nothing more is se
 	done()
 	assert(seen.opened == 1, "never sent again")
 end)
+
+test(
+	"Mistral, which sends a tool call whole once it's written, waits ten minutes for quiet",
+	function()
+		models.roles.test_quiet = { provider = "mistral", model = "mistral-large-4" }
+		local idle = models.idle("test_quiet")
+		models.roles.test_quiet = nil
+		assert(idle == 600, tostring(idle))
+	end
+)

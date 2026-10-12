@@ -1135,7 +1135,8 @@ first bytes get three times as long, since a long uncached conversation
 or thinking the model doesn't show can take minutes. `:set
 models-idle-timeout 180` changes it for all of them, `idle = 180` on a
 role or provider for its models (a slow local one, say), and `0` waits for
-ever. A request that failed that way, lost its connection, or was turned
+ever. The `mistral` provider waits ten minutes: Mistral sends a tool call
+whole once the model has written it, so a long file is a long quiet. A request that failed that way, lost its connection, or was turned
 away as too busy (429, 502, 503 or 504) is sent once more after a moment,
 or as long as the server's `Retry-After` says, up to 30 seconds. It isn't
 sent again once some of the answer was shown, as the second answer would
