@@ -8,8 +8,9 @@ local core = require("@core")
 -- Signature help works in typing modes, and with the completion menu open,
 -- whose modes show as the ones they came from.
 local typing = core.style.is_typing
+local ui = core.ui
 
-type Open = { view: greed.View, list: greed.Buffer }
+type Open = { view: greed.View, drawn: core.UiView }
 
 -- What each client is shown, by its id: each types on its own.
 local opened: { [number]: Open } = {}
@@ -67,6 +68,19 @@ local function parameter_range(signature: any, active: number): (number?, number
 	return from - 1, to
 end
 
+-- A signature's label, the parameter being typed picked out.
+local function draw(state: { [string]: any }): core.UiNode
+	local label: string, from: number?, to: number? = state.label, state.from, state.to
+	if from == nil or to == nil then
+		return ui.line({ ui.span(label) })
+	end
+	return ui.line({
+		ui.span(string.sub(label, 1, from)),
+		ui.span(string.sub(label, from + 1, to), "ui.signature.parameter"),
+		ui.span(string.sub(label, to + 1)),
+	})
+end
+
 -- Shows the active signature of a signature help answer.
 local function show(help: any)
 	local signatures = help.signatures or {}
@@ -77,27 +91,21 @@ local function show(help: any)
 	end
 	local label: string = signature.label
 	local width = math.min(core.text.width(label) + 2, 80)
+	local from, to =
+		parameter_range(signature, signature.activeParameter or help.activeParameter or 0)
+	local state = { label = label, from = from, to = to }
 	local client = greed.client.id()
 	local o = opened[client]
 	if o == nil then
-		local list = greed.create_buffer("signature", label, { readonly = true })
+		local list = greed.create_buffer("signature", "", { readonly = true })
+		local drawn = ui.mount(list, draw, state, { ns = "signature", keys = false })
 		local view =
 			greed.float(list, { anchor = "above-cursor", width = width, height = 3, focus = false })
-		o = { view = view, list = list }
-		opened[client] = o
+		opened[client] = { view = view, drawn = drawn }
 	else
-		o.list:edit(function(e)
-			e:replace(0, o.list:len(), label)
-		end)
+		o.drawn:set(state)
 		o.view:configure({ width = width })
 	end
-	local from, to =
-		parameter_range(signature, signature.activeParameter or help.activeParameter or 0)
-	local marks: { greed.Mark } = {}
-	if from and to then
-		table.insert(marks, { from = from, to = to, style = "ui.signature.parameter" })
-	end
-	o.list:decorate("signature", marks)
 end
 
 -- Asks the server for signature help at the cursor of `view`, and shows
