@@ -244,6 +244,29 @@ function M.give_job(block: Block, job: Job)
 	end
 end
 
+--- Tells `block` to stop as `how` says. One whose program hasn't started
+--- yet, as when ctrl-c comes just after enter or while its environment
+--- loads, is stopped as soon as it has (see `give_job`). False when it
+--- isn't running.
+function M.stop(block: Block, how: "interrupt" | "kill"): boolean
+	if block.status ~= "running" then
+		return false
+	end
+	block.stopping = true
+	if block.stop ~= "kill" then
+		block.stop = how
+	end
+	local job = block.job
+	if job then
+		if how == "kill" then
+			job.kill()
+		else
+			job.interrupt()
+		end
+	end
+	return true
+end
+
 function M.new_id(): number
 	next_id += 1
 	return next_id
