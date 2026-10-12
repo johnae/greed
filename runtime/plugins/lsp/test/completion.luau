@@ -164,3 +164,15 @@ test("matches starting with what's typed come first, then those holding it", fun
 	end
 	assert(table.concat(ranked, " ") == "history zhistory hcisecfilter", table.concat(ranked, " "))
 end)
+
+test("a completion you pick from a menu that opened by itself is your own edit", function(t)
+	offer({ "greeting", "green" })
+	t:buffer("|")
+	t:keys("i g r")
+	t:wait(greed.option.get("completion-delay") :: number + 100)
+	assert(#t:floats() == 1, "the menu opened by itself")
+	t:keys("down enter")
+	t:expect("green|")
+	local last = greed.view():buffer():history({ limit = 1 })[1]
+	assert(last.author == "user", `{last.author} {last.plugin}`)
+end)

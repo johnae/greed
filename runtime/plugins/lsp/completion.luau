@@ -128,6 +128,17 @@ local function mine(): Open?
 	return opened[greed.client.id()]
 end
 
+-- The acting client's menu, for a command `ctx` runs on it: the view typed
+-- into is taken through `ctx` from here on, so what you pick goes in as
+-- your own edit rather than the plugin's.
+local function picked(ctx: greed.Context): Open?
+	local o = mine()
+	if o and ctx.view == o.view then
+		o.view, o.buffer = ctx.view, ctx.buffer
+	end
+	return o
+end
+
 -- The acting client's count of keystrokes.
 local function generation(): number
 	return generations[greed.client.id()] or 0
@@ -648,7 +659,8 @@ end
 greed.command({
 	name = "completion-next",
 	doc = "Move to the next completion",
-	run = function()
+	run = function(ctx)
+		picked(ctx)
 		move(1)
 	end,
 })
@@ -656,7 +668,8 @@ greed.command({
 greed.command({
 	name = "completion-prev",
 	doc = "Move to the previous completion",
-	run = function()
+	run = function(ctx)
+		picked(ctx)
 		move(-1)
 	end,
 })
@@ -665,8 +678,8 @@ greed.command({
 	name = "completion-tab",
 	doc = "Move to the next completion; where tab completes in place, as in a shell, first put in "
 		.. "what every match starts with",
-	run = function()
-		local o = mine()
+	run = function(ctx)
+		local o = picked(ctx)
 		if o == nil then
 			return
 		end
@@ -695,8 +708,8 @@ for _, key in { "up", "down" } do
 		doc = if key == "up"
 			then "Move to the previous completion, or in a shell's menu that opened by itself, the command before"
 			else "Move to the next completion, or in a shell's menu that opened by itself, the command after",
-		run = function()
-			local o = mine()
+		run = function(ctx)
+			local o = picked(ctx)
 			if o == nil then
 				return
 			end
@@ -714,8 +727,8 @@ greed.command({
 	name = "completion-accept",
 	doc = "Put the current completion in place of the word being typed; with none chosen, "
 		.. "close the menu and do what enter does",
-	run = function()
-		local o = mine()
+	run = function(ctx)
+		local o = picked(ctx)
 		if o == nil then
 			return
 		end
