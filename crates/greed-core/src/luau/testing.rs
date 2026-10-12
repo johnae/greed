@@ -390,6 +390,9 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
         for event in events.try_iter() {
             terminal::handle(lua, event)?;
         }
+        // Timers due by now fire, as the editor fires them while it waits.
+        let now = state(lua).tasks.now();
+        tasks::advance(lua, now)?;
         jobs::settle(lua)?;
         watch::check(lua)?;
         end_frame(lua)?;
@@ -840,6 +843,11 @@ impl UserData for TestContext {
         methods.add_method("wait", |lua, _, ms: f64| {
             restart_deadline(lua);
             let later = state(lua).tasks.now() + Duration::from_secs_f64(ms.max(0.0) / 1000.0);
+            // What terminals said meanwhile, as the editor hears it.
+            let events = state(lua).terminals.events.clone();
+            for event in events.try_iter() {
+                terminal::handle(lua, event)?;
+            }
             jobs::settle(lua)?;
             end_frame(lua)?;
             tasks::advance(lua, later)?;
