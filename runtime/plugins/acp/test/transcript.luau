@@ -1064,3 +1064,106 @@ test("a long transcript drawn by its tick and an update at once keeps one box", 
 	assert(string.find(text, "Thinking it over · thought", 1, true), string.sub(text, -600))
 	assert(string.match(text, "\n╭─[^\n]*─╮\nhi$"), string.sub(text, -600))
 end)
+
+-- The Markdown marks over the history of the transcript in the main view,
+-- as text to compare.
+local function history_marks(): string
+	local buffer = greed.view():buffer()
+	local stop = assert(buffer:decorations("acp-prompt")[1]).from
+	local out: { string } = {}
+	for _, mark in buffer:decorations("markdown") do
+		if mark.from < stop then
+			table.insert(
+				out,
+				`{mark.from}-{mark.to} {mark.style} {mark.text or ""} {mark.conceal} {buffer:slice(
+					mark.from,
+					mark.to
+				)}`
+			)
+		end
+	end
+	table.sort(out)
+	return table.concat(out, "\n")
+end
+
+test("an answer streamed in pieces looks as the same answer drawn at once", function(t)
+	local s = start(t)
+	local snippets = {
+		"It speaks the protocol:\n\n- **TUI**: draws frames as cells.\n- **GUI** (`greed --gui`): draws on the GPU.\n\nDone.",
+		"# Heading\n\nSome `code` and **bold** here.\n\n## Next\n\n1. one\n2. **two**",
+		"Text then a list:\n- a *b* c\n- `d` e\n\n> quoted **x**\n\n```sh\necho **x**\n```",
+	}
+	for n, text in snippets do
+		-- Drawn at once, in a transcript of its own.
+		table.insert(s.entries, { kind = "agent", text = text })
+		local old = greed.view():buffer()
+		greed.view():show(greed.create_buffer("scratch", ""))
+		old:close()
+		acp.show(s)
+		local panel = greed.view()
+		local buffer = panel:buffer()
+		panel:close()
+		greed.view():show(buffer)
+		t:wait(30)
+		local fresh = history_marks()
+		if n == 1 then
+			-- An indented list's first item has its bullet, after the bar.
+			greed.view():set_cursor(greed.view():buffer():len())
+			local drawn = screen(t, 70)
+			assert(string.find(drawn, "▍ • TUI: draws frames as cells.\n", 1, true), drawn)
+		end
+		table.remove(s.entries)
+		s.changed()
+		t:wait(30)
+		-- Streamed: in two pieces at each byte, and in pieces of three.
+		local splits: { { number } } = {}
+		for at = 1, #text - 1 do
+			table.insert(splits, { at })
+		end
+		local threes = {}
+		for at = 3, #text - 1, 3 do
+			table.insert(threes, at)
+		end
+		table.insert(splits, threes)
+		for _, cuts in splits do
+			s.status = "working"
+			local entry = { kind = "agent", text = "" }
+			table.insert(s.entries, entry)
+			for _, cut in cuts do
+				entry.text = string.sub(text, 1, cut)
+				s.changed()
+				t:wait(25)
+			end
+			entry.text = text
+			s.status = "idle"
+			s.changed()
+			t:wait(25)
+			local streamed = history_marks()
+			if streamed ~= fresh then
+				local a, b = {}, {}
+				for _, line in string.split(streamed, "\n") do
+					a[line] = true
+				end
+				for _, line in string.split(fresh, "\n") do
+					b[line] = true
+				end
+				local diff = {}
+				for line in a do
+					if not b[line] then
+						table.insert(diff, "+ " .. line)
+					end
+				end
+				for line in b do
+					if not a[line] then
+						table.insert(diff, "- " .. line)
+					end
+				end
+				error(`snippet {n} cut at {table.concat(cuts, ",")}:\n{table.concat(diff, "\n")}`)
+			end
+			table.remove(s.entries)
+			s.changed()
+			t:wait(25)
+		end
+	end
+	acp.stop(s)
+end)

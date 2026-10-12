@@ -522,6 +522,30 @@ test("the structure has headings, code, items, tables and links, tree or no tree
 	assert(markdown.structure(buffer) ~= s, "worked out again after an edit")
 end)
 
+test("indented headings and lists are where their #s and bullets are, tree or no tree", function(t)
+	-- Indented as a transcript has what was said.
+	shown(t, "  # Title\n\n  - one\n  - two\n\n  > quoted")
+	local buffer = greed.view():buffer()
+	assert(buffer:tree(), "a syntax tree")
+	local want = "h1 0-0 Title @2\nitem 2-2 - [] @13\nitem 3-3 - [] @21"
+	local s = markdown.structure(buffer)
+	assert(summary(s) == want, summary(s))
+	local scanned = markdown.structure(buffer:text())
+	assert(summary(scanned) == want, summary(scanned))
+	-- The indent stays as it is; the markup after it is drawn over.
+	local drawn = {}
+	for _, mark in buffer:decorations("markdown") do
+		if mark.conceal then
+			table.insert(drawn, `{mark.from}-{mark.to} {mark.text or ""}`)
+		end
+	end
+	table.sort(drawn)
+	assert(
+		table.concat(drawn, ", ") == "13-15 • , 2-4 , 21-23 • , 30-32 ▎ ",
+		table.concat(drawn, ", ")
+	)
+end)
+
 -- The marks in namespace `ns`, sorted, as text to compare.
 local function marks_of(ns: string): string
 	local out: { string } = {}

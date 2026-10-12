@@ -481,7 +481,8 @@ local function marks(
 		paint(line, 1, #text, "markdown.text")
 		local heading = s.heading_at[n - 1]
 		local item = s.item_at[n - 1]
-		local quote = string.match(text, "^%s*>%s?()")
+		-- Where a quote's `>` is, and where its text starts.
+		local bar, quote = string.match(text, "^%s*()>%s?()")
 		local choice, picked = string.match(text, "^%s*()[-*+] %(([ xX])%) ")
 		if choice and item then
 			-- A choice, `- ( )` or `- (x)`: a button that picks it.
@@ -526,7 +527,7 @@ local function marks(
 			hide(line, 1, #text, string.rep("─", 40), "markdown.rule")
 			continue
 		elseif quote then
-			hide(line, 1, (quote :: number) - 1, "▎ ", "markdown.quote.bar")
+			hide(line, bar :: number, (quote :: number) - 1, "▎ ", "markdown.quote.bar")
 			paint(line, quote :: number, #text, "markdown.quote")
 		elseif item and not parts.bullets and string.find(item.bullet, "^[-*+]$") then
 			local bullet = item.from - at + 1

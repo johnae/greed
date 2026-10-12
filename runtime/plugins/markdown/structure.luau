@@ -392,11 +392,25 @@ local function from_tree(s: Structure, buffer: greed.Buffer): boolean
 		local first = line_of(starts, node.from)
 		-- Nodes end after their last line break.
 		local last = line_of(starts, math.max(node.from, node.to - 1))
+		-- Or before the indent of the next block's line.
+		if
+			last > first
+			and string.find(
+				string.sub(s.lines[last + 1], 1, node.to - starts[last + 1]),
+				"^[ \t]*$"
+			)
+		then
+			last -= 1
+		end
 		local kind = node.kind
 		local col = node.from - starts[first + 1] + 1
+		-- A block at the start of an indented line starts at the indent in
+		-- the tree; its markup, #s or a bullet, comes after it.
+		local markup = col
+			+ #(string.match(string.sub(s.lines[first + 1], col), "^[ \t]*") :: string)
 		if kind == "atx_heading" then
-			local level, words = atx(string.sub(s.lines[first + 1], col))
-			heading(s, first, col, level or 1, words)
+			local level, words = atx(string.sub(s.lines[first + 1], markup))
+			heading(s, first, markup, level or 1, words)
 		elseif kind == "setext_heading" then
 			underlined(s, first, last, col)
 		elseif kind == "fenced_code_block" then
@@ -407,7 +421,7 @@ local function from_tree(s: Structure, buffer: greed.Buffer): boolean
 			end
 			table.insert(s.code, block)
 		elseif kind == "list_item" then
-			local found = item(s, first, col, last)
+			local found = item(s, first, markup, last)
 			if found then
 				table.insert(s.items, found)
 			end
