@@ -127,18 +127,17 @@ and on again.
 `:models` sets the `decision` model; until you pick one it's the `fast`
 one. Either kind works:
 
-- A decision model made for these answers, like Berget's System One
-  models, is fast and cheap (a few cents per million tokens) and answers
-  with probabilities directly. `Cloudflare/clef-flash` told apart every
-  command we tried, should-run ones (a folder you asked for, `npm
-  install`, a push you asked for) and shouldn't-run ones (`rm -rf
-  ~/Documents`, sending an ssh key away, a push you didn't ask for, `curl
-  ... | sh`). `Qwen/Qwen3.5-2B` answered near the middle for all of them,
-  so you'd be asked most of the time, and `laya` called nearly everything
-  safe.
+- A decision model made for yes-or-no answers, like Berget's System One
+  models, answers with probabilities directly, and costs a few cents per
+  million tokens.
 - A general model, like your `fast` one, is asked the same questions in a
   chat and answers in JSON. It's slower and costs more per command, and
   how well it judges depends on the model.
+
+In our tests (October 2026), `Cloudflare/clef-flash` sorted every command
+correctly, `Qwen/Qwen3.5-2B` answered near the middle for all of them (so
+you'd be asked most of the time), and `laya` called nearly everything
+safe.
 
 Either way it's a model's judgment call, and Greed can't promise it judges
 well. Test it before relying on it:

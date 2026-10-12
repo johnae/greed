@@ -413,12 +413,13 @@ terminal, Greed reads the clipboard with `wl-paste` (Wayland), `xclip`
 
 Pick "Greed" in `space i n` for an agent that runs in the editor, with any
 model the [models](using.md#models) setup knows: Anthropic's, or any server
-with OpenAI's API, like berget, Mistral or a local Ollama.
+with OpenAI's API.
 
 ```luau
 local models = require("@models")
-models.roles.agent = { provider = "berget", model = "the model you want" }
--- then :login berget for a Berget Code plan, or :secret-set berget for an API key
+models.roles.agent = { provider = "ollama", model = "qwen2.5-coder" }
+-- providers: anthropic, openai, mistral, berget, ollama, or your own
+-- :secret-set PROVIDER for an API key, :login PROVIDER for a plan with an account
 ```
 
 It uses the model playing the `agent` role (or `reasoning` without one).
@@ -458,7 +459,7 @@ copy text badly, `edits = "hashline"` on the role (or provider) makes
 hash; a changed one is refused, so the model reads it again.
 
 ```luau
-models.roles.agent = { provider = "berget", model = "moonshotai/Kimi-K3", edits = "hashline" }
+models.roles.agent = { provider = "ollama", model = "qwen2.5-coder", edits = "hashline" }
 ```
 
 When the model stops answering or its connection drops, the transcript
@@ -712,9 +713,10 @@ Auto mode lets commands that only look, build or test run by themselves,
 and asks a `decision` model about the rest. To set it up:
 
 1. Pick the decision model: in `:models`, choose the `decision` role and a
-   model. A System One model made for these answers, like Berget's
-   `Cloudflare/clef-flash`, is fast and cheap; any chat model works too,
-   slower. In your config:
+   model. Any chat model works; a model made for yes-or-no answers, like
+   Berget's System One models, is faster and cheaper (see
+   [Auto mode](permissions.md#auto-mode) for how the ones we tried did).
+   In your config:
 
    ```luau
    require("@models").roles.decision = { provider = "berget", model = "Cloudflare/clef-flash" }
@@ -923,7 +925,7 @@ require("@acp").register({
 	name = "opencode",
 	title = "opencode",
 	commands = { { "opencode", "acp" } },
-	model = "berget/llama-3.3-70b",
+	model = "ollama/qwen2.5-coder",
 	install = "npm install -g opencode-ai",
 })
 ```

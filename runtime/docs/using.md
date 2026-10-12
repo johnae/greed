@@ -1225,12 +1225,11 @@ own servers. The first time any other key would go to an address, Greed
 asks (`y` yes, `n` no) and keeps your answer, so a plugin can't add a
 provider that sends your key somewhere you didn't choose.
 
-Some plans come with an account instead of a key, like Berget Code's fixed
-monthly price. `:login berget` shows a link and a code; approve it in a
-browser on any device, and the `berget` provider uses that sign-in from
-then on, renewing it as needed. `:models` says "signed
-in (Berget Code)"; `:logout berget` forgets it, and the provider goes back
-to its key.
+Some plans come with an account instead of a key, like Berget Code.
+`:login berget` shows a link and a code; approve it in a browser on any
+device, and the `berget` provider uses that sign-in from then on, renewing
+it as needed. `:models` says "signed in (Berget Code)"; `:logout berget`
+forgets it, and the provider goes back to its key.
 
 ```luau
 models.roles.agent = { provider = "berget", model = "the model you want" }

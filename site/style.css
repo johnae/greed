@@ -148,23 +148,13 @@ pre code { background: none; padding: 0; font-size: 15px; }
 .f { color: var(--code-fn); }
 .o { color: var(--code-op); }
 
-.features {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
-  padding-top: 64px;
-}
+.also { padding-top: 64px; max-width: 760px; }
 
-.features article {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 22px 24px;
-}
+.also ul { margin: 0; padding-left: 1.2em; color: var(--muted); }
+
+.also li + li { margin-top: 10px; }
 
 h2 { font: 600 24px/1.25 var(--serif); margin: 0 0 10px; }
-
-.features p { margin: 0; color: var(--muted); }
 
 .example {
   display: grid;

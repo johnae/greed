@@ -31,10 +31,9 @@
   <section class="intro">
     <h1>Greed</h1>
     <p class="lead">A modal text editor with Helix, Vim and VS Code keys, a
-    shell, terminals and agent support. The core is a small Rust program; the
-    rest is written in <a href="https://luau.org">Luau</a> plugins that you
-    can read and change. It runs in a terminal or in its own window, locally
-    or over ssh.</p>
+    shell, terminals and agent support. It runs in a terminal or a window,
+    locally or over ssh, and everything outside a small Rust core is a
+    <a href="https://luau.org">Luau</a> plugin.</p>
     <p class="actions">
       <a class="button primary" href="#install">Install</a>
       <a class="button" href="docs/using.html">Docs</a>
@@ -74,15 +73,13 @@
   <section class="showcase flip">
     <div class="text">
       <h2>Sessions and ssh</h2>
-      <p>The editor runs as a session. <code>:detach</code> leaves it running
-      with its files, undo history, shells and language servers;
-      <code>greed attach</code> comes back to it. <code>greed ssh HOST</code>
-      runs the session on the remote machine and shows it here, with your
-      local keys, theme and config.</p>
+      <p><code>:detach</code> leaves the session running; <code>greed
+      attach</code> comes back to it. <code>greed ssh HOST</code> runs it on
+      the remote machine, with your local config.</p>
       <p><a href="docs/using.html#editing-on-another-machine">Editing on another machine</a></p>
     </div>
     <pre class="term"><code><span class="prompt">$</span> greed src/main.rs
-<span class="prompt">$</span> greed --gui         <span class="c"># same session, in a window</span>
+<span class="prompt">$</span> greed --gui   <span class="c"># a window</span>
 <span class="prompt">:</span>detach
 <span class="prompt">$</span> greed attach
 <span class="prompt">$</span> greed ssh build-box</code></pre>
@@ -118,32 +115,25 @@
   <section class="showcase">
     <div class="text">
       <h2>Agents</h2>
-      <p>Claude Code, Codex, Gemini CLI, opencode or Greed's own agent run in
-      a pane. Outside agents connect over MCP. Proposed edits show in the
-      buffer for you to accept or reject. An agent can work in its own
-      workspace, and you review its changes when it's done.</p>
+      <p>Agents that speak ACP run in a pane (Claude Code, Codex, Gemini CLI,
+      opencode), as does Greed's own, with a model from any provider you set
+      up. MCP clients connect from outside. Proposed edits show in the buffer
+      to accept or reject.</p>
       <p><a href="docs/agents.html">Agents</a></p>
     </div>
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/agent.mp4" poster="https://github.com/johnae/greed/releases/download/media/agent.png" autoplay muted loop playsinline preload="metadata" aria-label="Greed's own agent, asked why the worker pod keeps crashing, searches and reads the project, proposes a change that is allowed, and says what it checked"></video>
   </section>
 
-  <section class="features">
-    <article>
-      <h2>Plugins</h2>
-      <p>Keys, modes, pickers, themes and the agent support are Luau plugins
-      on the same typed API yours use. A plugin declares what it may access
-      (files, programs, network) and is removed cleanly when unloaded.</p>
-    </article>
-    <article>
-      <h2>Terminal or window</h2>
-      <p>The window is drawn on the GPU, with ligatures, images and PDFs.
-      Both show the same session.</p>
-    </article>
-    <article>
-      <h2>Panes and floats</h2>
-      <p>Splits, tabs, layouts and floating panes, with zellij's
-      <code>alt</code> keys. They work inside terminals too.</p>
-    </article>
+  <section class="also">
+    <ul>
+      <li>Keys, modes, pickers, themes and the agent support are Luau plugins
+      on the same typed API yours use. A plugin declares what it may access:
+      files, programs, the network.</li>
+      <li>The window is drawn on the GPU, with ligatures, images and PDFs.
+      Terminal and window show the same session.</li>
+      <li>Splits, tabs, layouts and floating panes, with zellij's
+      <code>alt</code> keys, inside terminals too.</li>
+    </ul>
   </section>
 
   <section class="example">
