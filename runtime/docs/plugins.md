@@ -1313,6 +1313,14 @@ for sorting) and `greed.compare.find("AGE<=1h")` for where an operator is.
 JSON, `kubectl describe`) as filters and folds do: how far it's indented,
 a list item's `- ` counting, and the key it starts with.
 
+For writing text the way the rest of Greed does, `require("@core")` has
+`text.width(s)` (cells on screen, wide characters two), `text.clip(s, n)`,
+`text.split_lines(s)`, `text.trim(s)`, `text.unquote(s)` and
+`text.bytes(n)` ("142.6 kB"), and `time.age(seconds)` ("3d", as kubectl
+writes an age), `time.ago(seconds)` ("4 min ago"), `time.duration(ms)`
+("0.31s", "2m 05s"), `time.iso(text)` (ISO 8601 to seconds) and
+`time.iso_text(seconds)`.
+
 `shell.parser(match, parse)` reads the output of the commands `match`
 names as tables, ahead of the shell's own look for one: a program's name,
 or a pattern for the command line. `parse(text, block)` returns a table,

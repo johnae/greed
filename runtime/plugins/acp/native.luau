@@ -471,14 +471,10 @@ end
 -- The most lines an edit's result shows of what it changed.
 local SHOWN_LINES = 30
 
--- The lines of `text`, without the empty one after a last newline, which
--- ends the last line rather than starting another.
+-- The lines of `text`; an empty file is one empty line, for a hashline
+-- edit to name.
 local function lines_of(text: string): { string }
-	local lines = string.split(text, "\n")
-	if #lines > 1 and lines[#lines] == "" then
-		table.remove(lines)
-	end
-	return lines
+	return if text == "" then { "" } else core.text.split_lines(text)
 end
 
 -- A short hash of `line`, which with its number names it in hashline

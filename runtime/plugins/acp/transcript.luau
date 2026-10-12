@@ -316,11 +316,7 @@ end
 
 -- How long since `since` (on greed.now()'s clock): 9s, 2m 05s.
 local function elapsed(since: number): string
-	local seconds = math.max(0, math.floor((greed.now() - since) / 1000))
-	if seconds < 60 then
-		return `{seconds}s`
-	end
-	return string.format("%dm %02ds", seconds // 60, seconds % 60)
+	return core.time.duration(greed.now() - since, true)
 end
 
 -- A theme entry's color, when it's a "#rrggbb" one.

@@ -19,5 +19,15 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             },
         )?,
     )?;
+    text.set(
+        "width",
+        lua.create_function(|_, (line, tab_width): (mlua::LuaString, Option<usize>)| {
+            let tab_width = tab_width.unwrap_or(crate::render::TAB_WIDTH).max(1);
+            Ok(crate::render::width(
+                &String::from_utf8_lossy(&line.as_bytes()),
+                tab_width,
+            ))
+        })?,
+    )?;
     Ok(text)
 }

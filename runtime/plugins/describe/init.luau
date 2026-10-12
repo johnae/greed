@@ -655,7 +655,7 @@ core.actions.action({
 		local items = {}
 		for _, entry in history do
 			local made = if entry.made then core.objects.get(entry.made) else nil
-			local ago = core.text.ago((greed.now() - entry.at) // 1000)
+			local ago = core.time.ago((greed.now() - entry.at) // 1000)
 			local what = if made then `  → {made.label}` else ""
 			table.insert(items, {
 				label = `{ago}  {entry.by}  {entry.action}{what}`,

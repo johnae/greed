@@ -3,6 +3,7 @@
 -- one series. Everything is placed in cells, so the scene reads the same
 -- drawn in characters or as an image.
 
+local core = require("@core")
 local scene = require("@scene")
 local scale = require("./scale")
 
@@ -48,7 +49,7 @@ local function legend(items: { scene.Item }, series: { Series }, cols: number): 
 	local x = 0
 	for i, s in series do
 		local text = `━ {s.name}`
-		local width = utf8.len(text) or #text
+		local width = core.text.width(text)
 		if x + width > cols then
 			table.insert(
 				items,
@@ -123,7 +124,7 @@ local function plot(chart: Chart, cols: number, rows: number): { scene.Item }
 			chart.unit
 		)
 		table.insert(labels, text)
-		width = math.max(width, utf8.len(text) or #text)
+		width = math.max(width, core.text.width(text))
 	end
 	local left, right = width + 1, cols - 0.5
 	local high, low = top + 0.125, bottom - 0.25
@@ -239,7 +240,7 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 	end
 	local label_width = 0
 	for _, label in labels do
-		label_width = math.max(label_width, utf8.len(label) or #label)
+		label_width = math.max(label_width, core.text.width(label))
 	end
 	label_width = math.min(label_width, math.floor(cols * 0.35))
 	local value_width = 1
@@ -273,10 +274,7 @@ local function bars(chart: Chart, cols: number, rows: number): { scene.Item }
 		local i = order[n]
 		local row = top + (n - 1) * per
 		local label = labels[i]
-		if (utf8.len(label) or #label) > label_width then
-			label = string.sub(label, 1, (utf8.offset(label, label_width) or label_width + 1) - 1)
-				.. "…"
-		end
+		label = core.text.clip(label, label_width)
 		table.insert(items, { kind = "text", at = { 0, row }, text = label, style = "chart.label" })
 		local x = left
 		for k = 1, #chart.series do

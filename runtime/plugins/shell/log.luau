@@ -289,23 +289,11 @@ function M.block_for(shell: Shell, pos: number): Block?
 	return M.strip_block(shell, pos) or M.block_at(shell, pos)
 end
 
--- How long `ms` milliseconds is, shortly: 0.04s, 3.2s, 2m 05s.
-local function duration(ms: number): string
-	local seconds = ms / 1000
-	if seconds < 10 then
-		return string.format("%.2fs", seconds)
-	elseif seconds < 60 then
-		return string.format("%.1fs", seconds)
-	end
-	local whole = math.floor(seconds)
-	return string.format("%dm %02ds", whole // 60, whole % 60)
-end
-
 --- What a block's status says after its command, e.g. "exit 1 · 0.31s".
 function M.status_text(block: Block): string
 	local parts: { string } = {}
 	if block.status == "running" then
-		table.insert(parts, duration(greed.now() - block.started))
+		table.insert(parts, core.time.duration(greed.now() - block.started))
 	else
 		if block.signal then
 			table.insert(parts, block.signal)
@@ -313,7 +301,7 @@ function M.status_text(block: Block): string
 			table.insert(parts, `exit {block.code}`)
 		end
 		if block.finished then
-			table.insert(parts, duration(block.finished - block.started))
+			table.insert(parts, core.time.duration(block.finished - block.started))
 		end
 	end
 	if block.cwd_after and block.cwd_after ~= block.cwd then
@@ -470,7 +458,7 @@ function M.running_status(block: Block): string
 		local now = summary(block)
 		return if block.change then `{now} · {block.change}` else now
 	end
-	return duration(greed.now() - block.started)
+	return core.time.duration(greed.now() - block.started)
 end
 
 --- Draws the strip: a line between the blocks and the prompt for each

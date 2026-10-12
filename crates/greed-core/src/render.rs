@@ -73,14 +73,18 @@ fn width_at(measure: &impl Measure, grapheme: &str, x: usize, tab_width: usize) 
     }
 }
 
+/// How many cells `text` takes on a line from its start, as it's drawn:
+/// wide characters take two, tabs reach the next stop.
+pub fn width(text: &str, tab_width: usize) -> usize {
+    text.graphemes(true)
+        .fold(0, |x, g| x + width_at(&CellWidth, g, x, tab_width))
+}
+
 /// The screen column of byte `pos` in its line, counting wide characters
 /// and tabs as they're drawn (but not folds, concealed or scaled text).
 pub fn display_column(text: &Rope, pos: usize, tab_width: usize) -> usize {
     let start = text.line_to_byte(text.byte_to_line(pos));
-    let before = text.byte_slice(start..pos).to_string();
-    before
-        .graphemes(true)
-        .fold(0, |x, g| x + width_at(&CellWidth, g, x, tab_width))
+    width(&text.byte_slice(start..pos).to_string(), tab_width)
 }
 
 /// The position in `line` drawn at screen column `col`: the start of the

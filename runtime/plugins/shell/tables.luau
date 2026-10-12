@@ -179,7 +179,7 @@ end
 
 -- `text`'s lines, without the blank ones at its end.
 local function lines_of(text: string): { string }
-	local lines = string.split(string.gsub(text, "\r", ""), "\n")
+	local lines = core.text.split_lines((string.gsub(text, "\r", "")))
 	while #lines > 0 and string.match(lines[#lines], "^%s*$") do
 		table.remove(lines)
 	end
@@ -836,63 +836,12 @@ local WIDEST = 48
 -- Columns whose whole numbers are sizes in bytes, as nu's `ls` gives them.
 local SIZES: { [string]: boolean } = { size = true, bytes = true, filesize = true }
 
--- `text` read as a date and time in ISO 8601 ("2026-10-10T10:55:08.68+02:00"),
--- in seconds since 1970; nil when it isn't one.
-local function iso_time(text: string): number?
-	local y, mo, d, h, mi, s, rest =
-		string.match(text, "^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d):(%d%d)[%.%d]*(.*)$")
-	if y == nil or rest == nil then
-		return nil
-	end
-	local offset = 0
-	if rest ~= "Z" and rest ~= "" then
-		local sign, oh, om = string.match(rest, "^([+-])(%d%d):?(%d%d)$")
-		if sign == nil then
-			return nil
-		end
-		offset = (tonumber(oh) :: number * 3600 + tonumber(om) :: number * 60)
-			* (if sign == "-" then -1 else 1)
-	end
-	-- Days since 1970 of the date, as the proleptic Gregorian calendar
-	-- counts them.
-	local year, month, day = tonumber(y) :: number, tonumber(mo) :: number, tonumber(d) :: number
-	year -= if month <= 2 then 1 else 0
-	local era = year // 400
-	local yoe = year - era * 400
-	local doy = (153 * (month + (if month > 2 then -3 else 9)) + 2) // 5 + day - 1
-	local doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
-	local days = era * 146097 + doe - 719468
-	return days * 86400
-		+ tonumber(h) :: number * 3600
-		+ tonumber(mi) :: number * 60
-		+ tonumber(s) :: number
-		- offset
-end
-
---- `text` read as a date and time in ISO 8601, in seconds since 1970; nil
---- when it isn't one.
-M.iso_time = iso_time
-
--- A size in bytes as people read it, as nu shows them: "899 B", "142.6 kB".
-local function bytes(n: number): string
-	if n < 1000 then
-		return `{n} B`
-	end
-	local units = { "kB", "MB", "GB", "TB", "PB" }
-	local value, unit = n / 1000, 1
-	while value >= 1000 and unit < #units do
-		value /= 1000
-		unit += 1
-	end
-	return string.format("%.1f %s", value, units[unit])
-end
-
 -- A moment, `seconds` since 1970: how long ago in the last week, else
 -- its date and time.
 local function when(seconds: number): string
 	local ago = os.time() - seconds
 	if ago >= 0 and ago < 7 * 86400 then
-		return core.text.ago(ago)
+		return core.time.ago(ago)
 	end
 	return os.date("%Y-%m-%d %H:%M", seconds) :: string
 end
@@ -934,7 +883,7 @@ function M.look(tbl: Table, column: string, rows: { number }?): Look
 			local number = tonumber(text)
 			all_numbers = all_numbers and number ~= nil
 			whole = whole and number ~= nil and number == math.floor(number)
-			all_times = all_times and iso_time(text) ~= nil
+			all_times = all_times and core.time.iso(text) ~= nil
 		end
 	end
 	if not any then
@@ -942,7 +891,7 @@ function M.look(tbl: Table, column: string, rows: { number }?): Look
 	elseif all_times then
 		return {
 			show = function(text)
-				local seconds = iso_time(text)
+				local seconds = core.time.iso(text)
 				return if seconds then when(seconds) else text
 			end,
 			right = false,
@@ -951,7 +900,7 @@ function M.look(tbl: Table, column: string, rows: { number }?): Look
 		return {
 			show = function(text)
 				local n = tonumber(text)
-				return if n then bytes(n) else text
+				return if n then core.text.bytes(n) else text
 			end,
 			right = true,
 		}
@@ -1096,15 +1045,7 @@ function M.column(tbl: Table, name: string): string?
 	return if found then name else nil
 end
 
--- `text` without blanks at its start and end.
-local function trim(text: string): string
-	return string.match(text, "^%s*(.-)%s*$") or ""
-end
-
--- `text` without the quotes around it, if it has them.
-local function unquote(text: string): string
-	return string.match(text, '^"(.*)"$') or string.match(text, "^'(.*)'$") or text
-end
+local trim, unquote = core.text.trim, core.text.unquote
 
 -- Why `name` names no column of `tbl`.
 local function no_column(tbl: Table, name: string): string

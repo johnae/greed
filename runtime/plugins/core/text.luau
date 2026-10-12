@@ -277,11 +277,9 @@ function M.reflow(lines: string, width: number): string
 	return table.concat(out, "\n") .. (if ends then "\n" else "")
 end
 
---- How many characters `text` has, one cell each on screen; its bytes
---- when it isn't valid UTF-8.
-function M.width(text: string): number
-	return utf8.len(text) or #text
-end
+--- How many cells `text` takes on screen, as Greed draws it: wide
+--- characters take two (`greed.text.width`).
+M.width = greed.text.width
 
 --- How many bytes `a` and `b` start with in common, in whole lines, each
 --- with its line break: what an edit replacing `a` with `b` can leave be,
@@ -297,26 +295,69 @@ function M.same_lines(a: string, b: string): number
 	end
 end
 
---- `text` cut to `width` characters, the last an ellipsis when it's longer.
+--- `text` cut to `width` cells, the last an ellipsis when it's longer.
 function M.clip(text: string, width: number): string
 	if M.width(text) <= width then
 		return text
 	end
-	local at = utf8.offset(text, math.max(width, 1)) or width
-	return string.sub(text, 1, at - 1) .. "…"
+	if utf8.len(text) == nil then
+		return string.sub(text, 1, math.max(width - 1, 0)) .. "…"
+	end
+	-- Whole characters, while they and the ellipsis fit.
+	local used, cut = 0, 0
+	for at, code in utf8.codes(text) do
+		local char = utf8.char(code)
+		local cells = M.width(char)
+		if used + cells > width - 1 then
+			break
+		end
+		used += cells
+		cut = at + #char - 1
+	end
+	return string.sub(text, 1, cut) .. "…"
 end
 
---- How long ago something was, `seconds` back, roughly: "just now",
---- "4 min ago", "3 h ago", "2 days ago".
-function M.ago(seconds: number): string
-	if seconds < 60 then
-		return "just now"
-	elseif seconds < 3600 then
-		return `{seconds // 60} min ago`
-	elseif seconds < 2 * 86400 then
-		return `{seconds // 3600} h ago`
+--- `text`'s lines, without their breaks (`\n` or `\r\n`), and without the
+--- empty one after a last break, which ends the last line rather than
+--- starting another. No text has no lines.
+function M.split_lines(text: string): { string }
+	if text == "" then
+		return {}
 	end
-	return `{seconds // 86400} days ago`
+	local lines = string.split(text, "\n")
+	if lines[#lines] == "" then
+		table.remove(lines)
+	end
+	for i, line in lines do
+		if string.sub(line, -1) == "\r" then
+			lines[i] = string.sub(line, 1, -2)
+		end
+	end
+	return lines
+end
+
+--- `text` without blanks at its start and end.
+function M.trim(text: string): string
+	return string.match(text, "^%s*(.-)%s*$") or ""
+end
+
+--- `text` without the quotes around it, `"…"` or `'…'`, if it has them.
+function M.unquote(text: string): string
+	return string.match(text, '^"(.*)"$') or string.match(text, "^'(.*)'$") or text
+end
+
+--- A size in bytes as people read it: "899 B", "142.6 kB".
+function M.bytes(n: number): string
+	if n < 1000 then
+		return `{n} B`
+	end
+	local units = { "kB", "MB", "GB", "TB", "PB" }
+	local value, unit = n / 1000, 1
+	while value >= 1000 and unit < #units do
+		value /= 1000
+		unit += 1
+	end
+	return string.format("%.1f %s", value, units[unit])
 end
 
 return M

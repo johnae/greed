@@ -3,6 +3,7 @@
 -- fields rather than columns on screen: pods' readiness, status and
 -- restarts, deployments' replicas, any object's name and age.
 
+local core = require("@core")
 local shell = require("@shell")
 
 type Table = shell.Table
@@ -12,19 +13,8 @@ local M = {}
 -- How long ago `stamp`, an ISO 8601 time, was, as kubectl writes an age:
 -- in its largest whole unit, `3d`, `5h`, `12m`, `40s`.
 local function age(stamp: string?, now: number): string
-	local t = if stamp then shell.tables.iso_time(stamp) else nil
-	if t == nil then
-		return ""
-	end
-	local seconds = math.max(now - t, 0)
-	local units: { { size: number, name: string } } =
-		{ { size = 86400, name = "d" }, { size = 3600, name = "h" }, { size = 60, name = "m" } }
-	for _, unit in units do
-		if seconds >= unit.size then
-			return `{seconds // unit.size}{unit.name}`
-		end
-	end
-	return `{seconds}s`
+	local t = if stamp then core.time.iso(stamp) else nil
+	return if t then core.time.age(now - t) else ""
 end
 
 -- A pod's columns: how many of its containers are ready of how many, its

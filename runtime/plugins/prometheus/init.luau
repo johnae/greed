@@ -12,6 +12,7 @@
 -- metric's name when it has none of its own.
 
 local greed = require("@greed")
+local core = require("@core")
 local shell = require("@shell")
 
 local M = {}
@@ -83,11 +84,6 @@ function M.name(metric: { [string]: string }): string
 	return table.concat(values, "/")
 end
 
--- `t`, seconds since 1970, in ISO 8601, as the shell reads a time.
-local function iso(t: number): string
-	return os.date("!%Y-%m-%dT%H:%M:%SZ", math.floor(t)) :: string
-end
-
 --- What Prometheus answered, `body`, as rows: for a query now, a row a
 --- series with its name and value; over a range, a row a time with a
 --- column a series. Nil and why when it's an error.
@@ -125,7 +121,7 @@ function M.rows(body: string): ({ { [string]: any } }?, string?)
 			if t and value and value == value then
 				local row = at[t]
 				if row == nil then
-					row = { time = iso(t) }
+					row = { time = core.time.iso_text(t) }
 					at[t] = row
 					table.insert(times, t)
 				end

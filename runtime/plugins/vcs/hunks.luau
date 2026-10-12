@@ -11,6 +11,7 @@
 --   [ ] notes.md  new file
 
 local greed = require("@greed")
+local core = require("@core")
 
 local M = {}
 
@@ -78,15 +79,6 @@ local function items_of(files: { File }): { Item }
 	return items
 end
 
--- The lines of `text`, without the empty one after a final line break.
-local function lines(text: string): { string }
-	local out = string.split(text, "\n")
-	if out[#out] == "" then
-		table.remove(out)
-	end
-	return out
-end
-
 local function render(picker: Picker)
 	local title, help = picker.options.title, "space picks, a picks all, enter goes on, q cancels"
 	local text: { string } = { title, help, "" }
@@ -108,8 +100,9 @@ local function render(picker: Picker)
 		if item.whole then
 			add(`{box}{item.file.path}  not text`, "markup.heading", 4)
 		elseif hunk then
-			local old = lines(string.sub(item.file.old or "", hunk.from + 1, hunk.to))
-			local new = lines(hunk.text)
+			local old =
+				core.text.split_lines(string.sub(item.file.old or "", hunk.from + 1, hunk.to))
+			local new = core.text.split_lines(hunk.text)
 			local _, before = string.gsub(string.sub(item.file.old or "", 1, hunk.from), "\n", "")
 			add(`{box}{item.file.path}  line {before + 1}  +{#new} -{#old}`, "markup.heading", 4)
 			for _, line in old do

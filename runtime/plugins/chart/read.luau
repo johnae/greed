@@ -3,6 +3,7 @@
 -- unless it's said. In a watch, each run adds a point to every series, so
 -- the chart is of how they went.
 
+local core = require("@core")
 local shell = require("@shell")
 local draw = require("./draw")
 local scale = require("./scale")
@@ -57,7 +58,7 @@ function M.why(chart: draw.Chart): string
 	local widths: { number } = {}
 	local widest = 0
 	for i, seen in columns do
-		widths[i] = utf8.len(seen.column) or #seen.column
+		widths[i] = core.text.width(seen.column)
 		widest = math.max(widest, widths[i])
 	end
 	for i, seen in columns do
@@ -155,7 +156,7 @@ local function times(tbl: Table, column: string): boolean
 	local named = name == "time" or name == "date" or name == "timestamp" or name == "ts"
 	for _, row in tbl.rows do
 		local cell = row[column] or ""
-		if tables.iso_time(cell) == nil and not (named and tonumber(cell)) then
+		if core.time.iso(cell) == nil and not (named and tonumber(cell)) then
 			return false
 		end
 	end
@@ -175,7 +176,7 @@ end
 
 -- `cell` as an x value: a date and time in seconds, or a number.
 local function x_of(cell: string): (number?, boolean)
-	local seconds = tables.iso_time(cell)
+	local seconds = core.time.iso(cell)
 	if seconds then
 		return seconds, true
 	end

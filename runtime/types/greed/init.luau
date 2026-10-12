@@ -1489,6 +1489,8 @@ export type Compare = {
 export type Text = {
 	--- How far `line` is indented and the key it starts with (`name:` or `"name":`), as YAML, indented JSON and `kubectl describe` nest; nil for a blank line. With `items`, a list item's `- ` counts as indent, so `- name: x` is a key `name` two further in.
 	shape: (line: string, items: boolean?) -> (number?, string?),
+	--- How many cells `text` takes on screen from a line's start, as Greed draws it: wide characters (CJK, most emoji) take two, a tab reaches the next stop, `tab_width` (default 4) apart.
+	width: (text: string, tab_width: number?) -> number,
 }
 
 --- Reading and writing the file system. Failures return nil and a message.

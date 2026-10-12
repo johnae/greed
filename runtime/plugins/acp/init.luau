@@ -183,10 +183,6 @@ local function changed(s: Session)
 	end)
 end
 
-local function trim(text: string): string
-	return string.match(text, "^%s*(.-)%s*$") or ""
-end
-
 -- Starts a session of `agent` in `workspace` (or the project at `root`),
 -- with `extra` saying what to take up or fork.
 local function launch(
@@ -937,7 +933,7 @@ greed.command({
 		if s == nil then
 			return
 		end
-		local text = trim(transcript.prompt(ctx.buffer))
+		local text = core.text.trim(transcript.prompt(ctx.buffer))
 		if text == "" and s.attached == nil then
 			greed.echo("write a message in the box first")
 			return

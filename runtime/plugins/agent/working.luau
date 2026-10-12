@@ -151,13 +151,7 @@ end
 
 -- How long ago `at` was, in words.
 local function ago(at: number): string
-	local seconds = math.floor((greed.now() - at) / 1000)
-	if seconds < 60 then
-		return `{seconds}s ago`
-	elseif seconds < 3600 then
-		return `{seconds // 60}m ago`
-	end
-	return `{seconds // 3600}h ago`
+	return `{core.time.age((greed.now() - at) / 1000)} ago`
 end
 
 registry.tool({

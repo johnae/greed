@@ -1,0 +1,38 @@
+local test = require("@greed/test")
+local time = require("@core").time
+
+test("an age is its largest whole unit, as kubectl writes it", function()
+	assert(time.age(40) == "40s", time.age(40))
+	assert(time.age(12 * 60 + 5) == "12m", time.age(12 * 60 + 5))
+	assert(time.age(5 * 3600) == "5h")
+	assert(time.age(3 * 86400 + 7) == "3d")
+	assert(time.age(-3) == "0s", "never in the future")
+end)
+
+test("how long ago is in words", function()
+	assert(time.ago(20) == "just now")
+	assert(time.ago(5 * 60) == "5 min ago")
+	assert(time.ago(3 * 3600) == "3 h ago")
+	assert(time.ago(4 * 86400) == "4 days ago")
+end)
+
+test("a duration is short: fractions under ten seconds, minutes and seconds past one", function()
+	assert(time.duration(40) == "0.04s", time.duration(40))
+	assert(time.duration(3210) == "3.21s", time.duration(3210))
+	assert(time.duration(12300) == "12.3s", time.duration(12300))
+	assert(time.duration(125000) == "2m 05s", time.duration(125000))
+	-- Whole seconds, for a count that ticks each second.
+	assert(time.duration(9400, true) == "9s", time.duration(9400, true))
+	assert(time.duration(125400, true) == "2m 05s")
+end)
+
+test("ISO 8601 times are read with their zone, and written in UTC", function()
+	local at, zoned = time.iso("2026-10-10T10:55:08.68+02:00")
+	assert(at == 1791622508 and zoned, tostring(at))
+	assert(time.iso("2026-10-10T08:55:08Z") == 1791622508)
+	local plain, has = time.iso("2026-10-10 08:55:08")
+	assert(plain == 1791622508 and not has, "no zone is UTC, and says so")
+	assert(time.iso("10 Oct 2026") == nil)
+	assert(time.iso("2026-10-10T08:55:08+0x00") == nil)
+	assert(time.iso_text(1791622508) == "2026-10-10T08:55:08Z")
+end)

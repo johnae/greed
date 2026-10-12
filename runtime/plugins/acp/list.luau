@@ -143,7 +143,7 @@ local function draw(
 			core.text.clip(row.title, TITLE_WIDTH),
 			(STATUS[row.status] or row.status)
 				.. if row.reason then `: {core.text.clip(row.reason, REASON_WIDTH)}` else "",
-			core.text.ago(now - row.time),
+			core.time.ago(now - row.time),
 			if row.tokens then `{transcript.tokens(row.tokens)} tokens` else "",
 			where(row, root),
 		}

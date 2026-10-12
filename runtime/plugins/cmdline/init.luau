@@ -133,16 +133,22 @@ local function render(o: Open, to_end: boolean?)
 		local doc = candidate.doc
 		if doc and doc ~= "" then
 			line ..= "  "
-			local room = (cols or 1000) - (utf8.len(line) or #line) - 1
-			if (utf8.len(doc) or #doc) > room then
-				doc = if room > 1
-					then string.sub(doc, 1, (utf8.offset(doc, room) or room + 1) - 1) .. "…"
-					else ""
-			end
-			table.insert(marks, { from = from + #line, to = from + #line + #doc, style = "ui.menu.doc" })
+			local room = (cols or 1000) - core.text.width(line) - 1
+			doc = if room > 1 then core.text.clip(doc, room) else ""
+			table.insert(
+				marks,
+				{ from = from + #line, to = from + #line + #doc, style = "ui.menu.doc" }
+			)
 			line ..= doc
 		end
-		menu.mark_row(marks, from, line, i == o.current, greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() }), 1)
+		menu.mark_row(
+			marks,
+			from,
+			line,
+			i == o.current,
+			greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() }),
+			1
+		)
 		table.insert(lines, line)
 		from += #line + 1
 	end
@@ -232,13 +238,15 @@ end
 -- :g/regex/command and :v/regex/command (or :g!). Returns the name, the
 -- parts, and whether a :g is inverted, or nil for anything else.
 local function pattern_command(text: string): (string?, { string }, boolean)
-	local name, bang, delimiter, rest = string.match(text, "^%s*([sgv])(!?)([^%w%s\\\"|])(.*)$")
+	local name, bang, delimiter, rest = string.match(text, '^%s*([sgv])(!?)([^%w%s\\"|])(.*)$')
 	if name == nil or delimiter == nil or rest == nil or (bang == "!" and name ~= "g") then
 		return nil, {}, false
 	end
 	local parts = split_at(rest, delimiter)
 	if name == "s" then
-		return "substitute", { parts[1], parts[2] or "", string.gsub(parts[3] or "", "%s", "") }, false
+		return "substitute",
+			{ parts[1], parts[2] or "", string.gsub(parts[3] or "", "%s", "") },
+			false
 	end
 	-- What :g runs is the rest of the line, delimiters and all.
 	local command = table.concat(parts, delimiter, 2)
@@ -316,7 +324,13 @@ local execute: (text: string, lines: { first: number, last: number }?) -> ()
 
 -- :g/regex/command runs `command` on each line from `first` to `last` that
 -- matches (or, `inverted`, doesn't); with no command it selects those lines.
-local function global(pattern: string, command: string, inverted: boolean, first: number, last: number)
+local function global(
+	pattern: string,
+	command: string,
+	inverted: boolean,
+	first: number,
+	last: number
+)
 	local view = greed.view()
 	local buffer = view:buffer()
 	local regex = core.search.pattern(if pattern == "" then core.search.last() or "" else pattern)
@@ -388,7 +402,9 @@ function execute(text: string, lines: { first: number, last: number }?)
 		local selected_first, selected_last = ex.selected_lines(view)
 		first, last, text = parse.range(text, {
 			buffer = buffer,
-			current = buffer:line_of(core.motions.cursor(buffer, selection.ranges[selection.primary])),
+			current = buffer:line_of(
+				core.motions.cursor(buffer, selection.ranges[selection.primary])
+			),
 			first = selected_first,
 			last = selected_last,
 		})

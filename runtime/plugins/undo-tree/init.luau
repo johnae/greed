@@ -12,6 +12,7 @@
 -- indented under it.
 
 local greed = require("@greed")
+local core = require("@core")
 
 type Open = {
 	-- The view whose buffer's tree it shows, and the node it started at.
@@ -28,17 +29,8 @@ local function age(time: number?): string
 	if time == nil then
 		return "loaded"
 	end
-	local seconds = math.max(0, os.time() - time)
-	if seconds < 10 then
-		return "now"
-	elseif seconds < 60 then
-		return `{math.floor(seconds)}s`
-	elseif seconds < 3600 then
-		return `{seconds // 60}m`
-	elseif seconds < 86400 then
-		return `{seconds // 3600}h`
-	end
-	return `{seconds // 86400}d`
+	local seconds = os.time() - time
+	return if seconds < 10 then "now" else core.time.age(seconds)
 end
 
 -- The tree's nodes in the order they're drawn, each with how far it's

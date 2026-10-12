@@ -289,7 +289,7 @@ local function draw_item(grid: Grid, clip: Clip, item: Item)
 	elseif kind == "text" then
 		local text = item.text or ""
 		local at = item.at or { 0, 0 }
-		local width = utf8.len(text) or #text
+		local width = greed.text.width(text)
 		local x = at[1]
 		if item.align == "middle" then
 			x -= width / 2

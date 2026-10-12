@@ -111,12 +111,12 @@ function M.show(keys: string, title: string): boolean
 	end
 	local lines = {}
 	-- As wide as the widest line, with room for the border and a space.
-	local widest = utf8.len(title) or #title
+	local widest = core.text.width(title)
 	for _, next in nexts do
 		local key = next.key .. string.rep(" ", width - #next.key)
 		local full = if keys == "" then next.key else `{keys} {next.key}`
 		local line = `{key} {describe(full, next.command, docs)}`
-		widest = math.max(widest, utf8.len(line) or #line)
+		widest = math.max(widest, core.text.width(line))
 		table.insert(lines, line)
 	end
 	local buffer = greed.create_buffer("hints", table.concat(lines, "\n"))

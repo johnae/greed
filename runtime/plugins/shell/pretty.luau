@@ -7,6 +7,7 @@
 -- them as they came.
 
 local greed = require("@greed")
+local core = require("@core")
 local state = require("./state")
 local log = require("./log")
 
@@ -96,37 +97,6 @@ local function take(fields: { [string]: any }, names: { string }): any
 	return nil
 end
 
--- Seconds since 1970 of an ISO time with its zone (`Z` or `+02:00`), or
--- nil for one without, which is already the time it says.
-local function instant(text: string): number?
-	local function n(digits: string?): number
-		return tonumber(digits or "") or 0
-	end
-	local y, mo, d, h, mi, s, zone =
-		string.match(text, "^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d):(%d%d)[%.%d]*(.*)$")
-	if y == nil or zone == nil or zone == "" then
-		return nil
-	end
-	local offset = 0
-	if zone ~= "Z" then
-		local sign, zh, zm = string.match(zone, "^([%+%-])(%d%d):?(%d%d)$")
-		if sign == nil then
-			return nil
-		end
-		offset = (n(zh) * 3600 + n(zm) * 60) * (if sign == "-" then -1 else 1)
-	end
-	-- Luau reads the fields as UTC.
-	local utc = os.time({
-		year = n(y),
-		month = n(mo),
-		day = n(d),
-		hour = n(h),
-		min = n(mi),
-		sec = n(s),
-	})
-	return utc - offset
-end
-
 -- A time as a log line shows it: the time of day here, of an ISO time or
 -- of seconds (or milliseconds) since 1970.
 local function clock(time: any): string
@@ -136,8 +106,9 @@ local function clock(time: any): string
 		return os.date(format, seconds)
 	end
 	local text = tostring(time)
-	local at = instant(text)
-	if at then
+	-- One without its zone is already the time it says.
+	local at, zoned = core.time.iso(text)
+	if at and zoned then
 		return os.date(format, at)
 	end
 	return string.match(text, "[T ](%d%d:%d%d:%d%d)") or text

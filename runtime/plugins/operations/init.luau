@@ -358,7 +358,7 @@ greed.command({
 		local items = {}
 		for _, op in M.list() do
 			local status = if op.status == "done" then "" else ` ({op.status})`
-			local ago = core.text.ago(os.time() - op.time)
+			local ago = core.time.ago(os.time() - op.time)
 			table.insert(items, {
 				label = `{op.name}{status}  {op.author}, {count(#op.files, "file")}, {ago}`,
 				value = op,

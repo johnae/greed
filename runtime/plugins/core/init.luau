@@ -142,6 +142,8 @@ return {
 	lookup = lookup,
 	--- Helpers for registries other plugins add to (registry.luau).
 	registry = require("@self/registry"),
+	--- Times and durations as Greed writes and reads them (time.luau).
+	time = require("@self/time"),
 	--- The files you've been in, most recent first (recent.luau).
 	recent = require("@self/recent"),
 	--- Watching objects for changes, with a notification saying how (watch.luau).
