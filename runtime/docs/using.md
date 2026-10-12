@@ -131,10 +131,11 @@ can say what of theirs is running with `require("@core").file.running`.
 Started without a config (`~/.config/greed/init.luau`), Greed shows a page
 with a few questions: how you like to edit, which theme, whether your font
 has icons (in a terminal, which needs a Nerd Font for them; the window has
-them built in and doesn't ask), whether to add Greed's tools to Claude Code,
-and which language model to use (Anthropic, OpenAI, Berget, Mistral, Ollama on this machine, or none
-for now). A style or theme you pick switches at once, so you can try it on
-the page.
+them built in and doesn't ask), whether to add Greed's tools to the agents
+installed here (Claude Code, Codex, Gemini CLI), and which language model
+Greed's own agent and other features use (Anthropic, OpenAI, Berget,
+Mistral, Ollama on this machine, or none for now). A style or theme you
+pick switches at once, so you can try it on the page.
 
 The page is a [questionnaire](#questionnaires) in Markdown, and works the
 same in every editing style: `tab` and `shift-tab` go from
@@ -1031,6 +1032,11 @@ model plays it. Out of the box:
 | `fast` | Claude Haiku 4.5, at Anthropic |
 | `reasoning` | Claude Opus 5.5, at Anthropic |
 | `local` | Llama 3.2, on [Ollama](https://ollama.com) on this machine |
+
+That's only where they start. The model question in `:setup` moves the
+roles to another provider at once (OpenAI, Berget, Mistral or Ollama, each
+with models it suggests), and in `:models` any role can use any provider's
+model.
 
 Greed's own agent asks for `agent`, which uses `reasoning` until you set
 it; reviewing code an agent wants to run asks for `review`, also

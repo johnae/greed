@@ -5,9 +5,10 @@ with a good editor built in, which you use in a terminal or a window, on
 your machine or on the one where the work runs. It has a small Rust core
 and everything else in Luau plugins you can read, change or replace while
 it runs. You edit in the Vim, Helix or VS Code style, modal or without
-modes, and switch with `:style`. Agents use the editor through MCP, the
-shell and Claude Code's `/ide`, or run inside it, and propose edits you
-review in the buffer.
+modes, and switch with `:style`. Agents run inside it, Greed's own with
+the model you choose or any ACP agent, or use it from outside through MCP
+and the shell (and Claude Code's `/ide`), and propose edits you review in
+the buffer.
 
 New to Greed? Start it, answer its few questions, and run `:tutor`: it
 teaches your style's keys with lines to practise on, then shows you around.

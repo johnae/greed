@@ -67,7 +67,7 @@ test(":setup asks its questions, with what's in use picked", function(t)
 		a.style == "helix" and a.theme == "default" and a.provider == "anthropic",
 		greed.json.encode(a)
 	)
-	assert(a.claude == "no", a.claude)
+	assert(a.agents == "no", a.agents)
 end)
 
 test("picking an editing style or a theme switches to it at once", function(t)

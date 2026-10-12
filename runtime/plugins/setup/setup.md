@@ -43,10 +43,11 @@ require("@greed").run("theme", { args = { answer } })
 return require("@setup").icon_choices()
 ```
 
-## Do you use Claude Code? <!-- id=claude -->
+## Do you use an agent in a terminal? <!-- id=agents -->
 
-- ( ) yes: add Greed's tools to it (`claude mcp add greed -- greed mcp`)
-- (x) no: or not now
+```luau output=choices
+return require("@setup").agent_choices()
+```
 
 ## Which language model should Greed use? <!-- id=provider -->
 

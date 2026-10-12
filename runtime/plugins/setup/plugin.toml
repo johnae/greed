@@ -1,6 +1,6 @@
 name = "setup"
 requires = ["core", "theme", "models", "markdown", "blocks"]
 # Save writes your init.luau and notes the page was answered (fs); the
-# Claude Code answer runs `claude mcp add` (proc); the page's own code
+# agents answer runs their `mcp add` (proc); the page's own code
 # blocks fill in its choices and act on picks (eval).
 capabilities = ["proc", "fs.read", "fs.write", "eval"]

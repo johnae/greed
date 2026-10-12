@@ -2014,8 +2014,10 @@ on your own machine can't be added this way yet.
 
 ## Agents
 
-Plugins can offer tools to agents. A tool shows up in Claude Code (through
-`greed mcp`) and as `greed ctl NAME` in the shell:
+Plugins can offer tools to agents. A tool shows up for every agent: those
+connected through `greed mcp` (Claude Code, Codex, Gemini CLI, opencode or
+any MCP client), the agents Greed runs over ACP, and Greed's own agent, and
+as `greed ctl NAME` in the shell:
 
 ```luau
 require("@agent").tool({
@@ -2061,9 +2063,9 @@ changed, so a tool from a plugin you've just approved can be used in the
 same conversation.
 
 `run` gets the arguments as a table, and who called as `caller`, whose
-`kind` is `"shell"` for `greed ctl`, `"socket"` for MCP clients like
-Claude Code, `"ide"` for Claude Code's IDE connection and `"agent"` for
-Greed's own agent. Any plugin can call a tool with any `caller`, so don't
+`kind` is `"shell"` for `greed ctl`, `"socket"` for MCP clients through
+`greed mcp` (agents Greed runs over ACP use it too), `"ide"` for Claude
+Code's IDE connection and `"agent"` for Greed's own agent. Any plugin can call a tool with any `caller`, so don't
 decide trust on `kind`: `agent.from_shell(caller)` says whether the call
 came from `greed ctl`, whose user can run anything already.
 

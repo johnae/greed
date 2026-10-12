@@ -1,10 +1,11 @@
 -- Setting Greed up: the first time you start it without a config, a page
 -- asks how you like to edit, which theme, whether your font has icons,
--- whether you use Claude Code and which language model to use. The page
--- is setup.md, a questionnaire in Markdown (see the markdown and blocks
--- plugins): a style or theme picked switches at once, and Save writes a
--- config from the answers and opens it, and has the model's roles use the
--- provider picked. `:setup` brings the page back any time.
+-- whether to add Greed's tools to the agents installed here, and which
+-- language model to use. The page is setup.md, a questionnaire in Markdown
+-- (see the markdown and blocks plugins): a style or theme picked switches
+-- at once, and Save writes a config from the answers and opens it, and has
+-- the model's roles use the provider picked. `:setup` brings the page back
+-- any time.
 --
 -- tab and shift-tab go from choice to choice and button to button, enter
 -- (or space) or a click picks one or presses it, and esc or q closes it as
@@ -40,6 +41,44 @@ function M.icon_choices(): { string }
 	return {
 		`{if nerd then "(x) " else ""}yes: they show here:  󰉋        `,
 		`{if nerd then "" else "(x) "}no: or they're boxes (your terminal's font needs Nerd Font icons)`,
+	}
+end
+
+-- Agents that run in a terminal and take Greed's tools as an MCP server,
+-- with how each adds one for every project.
+local AGENTS = {
+	{ name = "Claude Code", add = { "claude", "mcp", "add", "greed", "--", "greed", "mcp" } },
+	{ name = "Codex", add = { "codex", "mcp", "add", "greed", "--", "greed", "mcp" } },
+	{
+		name = "Gemini CLI",
+		add = { "gemini", "mcp", "add", "-s", "user", "greed", "greed", "mcp" },
+	},
+}
+
+-- The agents of AGENTS installed here.
+local function agents_here(): { typeof(AGENTS[1]) }
+	local here = {}
+	for _, known in AGENTS do
+		if greed.which(known.add[1]) then
+			table.insert(here, known)
+		end
+	end
+	return here
+end
+
+--- The agents question's choices: add Greed's tools to the agents
+--- installed here, or not.
+function M.agent_choices(): { string }
+	local names = {}
+	for _, known in agents_here() do
+		table.insert(names, known.name)
+	end
+	if #names == 0 then
+		return { "(x) no: none of Claude Code, Codex or Gemini CLI is installed here" }
+	end
+	return {
+		`yes: add Greed's tools to {table.concat(names, ", ")}`,
+		"(x) no: or not now",
 	}
 end
 
@@ -202,7 +241,7 @@ end
 
 --- Saves the page's `answers` as your config (or shows what to add to the
 --- one you have), has the models use the provider picked, adds Greed's
---- tools to Claude Code if you said so, and closes the page.
+--- tools to the agents installed here if you said so, and closes the page.
 function M.save(answers: { [string]: string })
 	local config = M.config(answers)
 	local dir = greed.fs.dirs().config
@@ -222,14 +261,17 @@ function M.save(answers: { [string]: string })
 		)
 	end
 	M.close()
-	if answers.claude == "yes" then
-		local added = greed.process.run({ "claude", "mcp", "add", "greed", "--", "greed", "mcp" })
-		table.insert(
-			said,
-			if added and added.code == 0
-				then "Greed's tools are added to Claude Code"
-				else "couldn't add Greed's tools to Claude Code; run: claude mcp add greed -- greed mcp"
-		)
+	if answers.agents == "yes" then
+		for _, known in agents_here() do
+			local added = greed.process.run(known.add)
+			local command = table.concat(known.add, " ")
+			table.insert(
+				said,
+				if added and added.code == 0
+					then `Greed's tools are added to {known.name}`
+					else `couldn't add Greed's tools to {known.name}; run: {command}`
+			)
+		end
 	end
 	if #said > 0 then
 		greed.echo(table.concat(said, "; "))
@@ -337,7 +379,7 @@ end
 
 greed.command({
 	name = "setup",
-	doc = "Answer a few questions to set Greed up: editing style, theme, icons, Claude Code, a model",
+	doc = "Answer a few questions to set Greed up: editing style, theme, icons, agents, a model",
 	run = function()
 		M.open()
 	end,

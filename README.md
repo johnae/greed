@@ -78,14 +78,15 @@ and propose edits that show up in the buffer for you to accept or reject.
 
 ```bash
 claude mcp add greed -- greed mcp     # Greed's tools in Claude Code
+codex mcp add greed -- greed mcp      # or Codex, or any MCP client
 ```
 
-`space i C` opens Claude Code in a pane, connected to Greed like it is to
-VS Code (outside Greed, `/ide` finds it), and its edits arrive as
-proposals; `space i W` opens one in a jj workspace or git worktree of its
-own, to review and bring in when it's done. `space i n` starts other agents
-inside Greed over ACP (Gemini CLI, Codex) or Greed's own agent, with any
-model you set up, in the project or in a workspace of their own. Agents can
+`space i n` starts an agent inside Greed: Greed's own, with any model you
+set up, or Claude Code, Codex, Gemini CLI or opencode over ACP, in the
+project or in a workspace of its own to review and bring in when it's
+done. Claude Code also runs in a pane as itself: `space i C`, connected
+to Greed as it is to VS Code, its edits arriving as proposals, and
+`space i W` for one in a workspace of its own. Agents can
 write new plugins too: Greed type checks and tests them, and you review the
 code before it loads.
 

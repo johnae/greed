@@ -7,6 +7,12 @@ you review in the buffer. Every tool is also a shell command, for scripts
 and agents that prefer a CLI. What they may do without asking you is in
 [Permissions and sandboxing](permissions.md).
 
+Greed doesn't depend on one agent or one model. Greed has an agent of its
+own that works with any model you set up (Anthropic, OpenAI, Berget,
+Mistral, Ollama and more to come); any agent that speaks ACP runs inside
+it (Claude Code, Codex, Gemini CLI, opencode); and any MCP client gets its
+tools from outside. Claude Code also has its `/ide` connection, below.
+
 ## From the shell: `greed ctl`
 
 ```bash
@@ -27,10 +33,21 @@ your home folder.
 `$GREED_SESSION`, or the only one running. Each session's socket is readable
 only by you and needs a token from a file only you can read.
 
-## Claude Code and other MCP clients
+## Agents as MCP clients
+
+Any agent that speaks MCP can use Greed's tools: add `greed mcp` as a
+server. In the common ones:
 
 ```bash
-claude mcp add greed -- greed mcp
+claude mcp add greed -- greed mcp            # Claude Code
+codex mcp add greed -- greed mcp             # Codex
+gemini mcp add -s user greed greed mcp       # Gemini CLI
+```
+
+opencode takes it in its config (`~/.config/opencode/opencode.json`):
+
+```json
+{ "mcp": { "greed": { "type": "local", "command": ["greed", "mcp"] } } }
 ```
 
 `greed mcp` connects an MCP client to the running editor. As it connects,

@@ -382,13 +382,14 @@ Pick an agent:
 - Greed's own agent works with any model `:models` sets up. Start it with
   `space i n` and "Greed". It works in the project with you, or in a
   workspace of its own.
-- Claude Code in a terminal: `claude mcp add greed -- greed mcp`, or
-  `space i C` for a pane with Claude Code already connected. Claude Code
-  asks you itself, by its own permission settings. Connected with `/ide`
-  (as the pane is), its edits come to Greed as proposals.
-- Claude Code, Gemini or Codex inside Greed, over ACP: `space i n`, the
-  agent, then where it works. "In a workspace of its own" keeps its changes
-  away from your files until you review them.
+- An agent in a terminal, with Greed's tools through `greed mcp` (Claude
+  Code, Codex, Gemini CLI, opencode; see [Agents as MCP
+  clients](agents.md#agents-as-mcp-clients)). It asks you itself, by its
+  own permission settings. Claude Code also has `space i C`, a pane already
+  connected over `/ide`, whose edits come to Greed as proposals.
+- Claude Code, Codex, Gemini CLI or opencode inside Greed, over ACP:
+  `space i n`, the agent, then where it works. "In a workspace of its own"
+  keeps its changes away from your files until you review them.
 
 Then a few settings that save questions without giving much away:
 
