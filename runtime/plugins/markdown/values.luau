@@ -286,6 +286,44 @@ function M.scope(buffer: greed.Buffer, s: Structure?): (name: string) -> any
 	return lookup
 end
 
+--- Every value in `buffer`, worked out, as plain data for a block that runs
+--- there: named questions' answers, fields, `let`s, and named tables, each a
+--- list of its rows with its formulas worked out. A `let` that goes wrong
+--- is left out.
+function M.all(buffer: greed.Buffer): { [string]: any }
+	local s = structure.of(buffer)
+	local known = M.found(s)
+	local scope = M.scope(buffer, s)
+	local names: { string } = {}
+	for name in questions.answers(buffer) do
+		table.insert(names, name)
+	end
+	for _, field in known.fields do
+		table.insert(names, field.name)
+	end
+	for name in known.lets do
+		table.insert(names, name)
+	end
+	for name in known.tables do
+		table.insert(names, name)
+	end
+	local out: { [string]: any } = {}
+	for _, name in names do
+		local ok, value = pcall(scope, name)
+		if ok and type(value) == "table" then
+			-- Its rows alone: the columns by name are for formulas.
+			local rows = {}
+			for _, row in ipairs(value) do
+				table.insert(rows, row)
+			end
+			out[name] = rows
+		elseif ok then
+			out[name] = value
+		end
+	end
+	return out
+end
+
 --- What `source`, a formula, shows as in `scope`: its value, or what went
 --- wrong after a ⚠, and whether it went wrong.
 function M.show(source: string, scope: core.FormulaScope): (string, boolean)

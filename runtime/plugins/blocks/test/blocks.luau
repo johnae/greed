@@ -430,3 +430,38 @@ test("a trusted file's blocks run by themselves only as you last let them run", 
 	buffer:save()
 	assert(blocks.refused(buffer, blocks.runnable(buffer)[1]) == nil, "your own edit")
 end)
+
+test("blocks get the page's values: fields, lets and tables", function(t)
+	local page = table.concat({
+		"Bill: [840](field:bill)",
+		"<!-- let each = bill / 3 -->",
+		"",
+		"<!-- id=costs -->",
+		"| Item | Amount |",
+		"|------|--------|",
+		"| Rent | 900    |",
+		"",
+		"```luau",
+		"return values.bill + values.costs[1].amount + values.each",
+		"```",
+		"",
+		"```sh",
+		'echo "$bill $each" && echo "$VALUES"',
+		"```",
+		"",
+	}, "\n")
+	local dir = t:tempdir({ ["page.md"] = page })
+	blocks.trust(`{dir}/page.md`)
+	greed.open(`{dir}/page.md`)
+	local function run(code: string)
+		greed.view():set_cursor((string.find(text(), code, 1, true) :: number) - 1)
+		t:run("block-run")
+	end
+	-- A program gets each as a variable of its own, and all of them as JSON.
+	run('echo "$bill')
+	t:wait_for(has("```result\n840 280\n"))
+	assert(string.find(text(), '"bill":840', 1, true), text())
+	-- Luau gets them as `values`, tables as lists of their rows.
+	run("return values")
+	t:wait_for(has("```result\n2020\n```"))
+end)

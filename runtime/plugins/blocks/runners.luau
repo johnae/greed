@@ -14,7 +14,9 @@ local M = {}
 --- `progress` takes how much output there is so far, for showing it while
 --- it runs; `started` takes a child process, so the run can be stopped.
 --- `answers` are the page's answers by question (markdown questions), and
---- `answer` the one that just changed, for a block run by a pick. `live`
+--- `answer` the one that just changed, for a block run by a pick. `values`
+--- are all the page's values (markdown values: answers, fields, `let`s,
+--- named tables). `live`
 --- is for a block that goes on after its runner returns, as a live shell
 --- block does: `stop` ends it when the block's stopped or goes away, and
 --- what `live` gives back saves a new outcome as its result, outside undo.
@@ -27,6 +29,7 @@ export type Run = {
 	started: (child: greed.Child) -> (),
 	answers: { [string]: string }?,
 	answer: string?,
+	values: { [string]: any }?,
 	live: (stop: () -> ()) -> (outcome: Outcome) -> (),
 }
 
@@ -84,7 +87,20 @@ function M.program(command: { string }): Runner
 		local env: { [string]: string | false } = {
 			ANSWER = if run.answer then run.answer else false,
 			ANSWERS = if run.answers then greed.json.encode(run.answers) else false,
+			VALUES = if run.values then greed.json.encode(run.values) else false,
 		}
+		-- And each of its values that's a number, text or yes/no under its
+		-- own name (`$bill`); names with capitals are left to the system's.
+		local values: { [string]: any } = run.values or {}
+		for name, value in values do
+			local kind = type(value)
+			if
+				(kind == "number" or kind == "string" or kind == "boolean")
+				and string.match(name, "^[%l_][%l%d_]*$")
+			then
+				env[name] = tostring(value)
+			end
+		end
 		-- A group of its own, so stopping it stops what it started too, like a
 		-- server a script runs.
 		local child, err = greed.process.spawn(args, { cwd = run.dir, group = true, env = env })
@@ -148,13 +164,14 @@ local function expression(code: string): boolean
 	return not string.match(trimmed, "^[%w_.%[%]\"']+%s*=[^=]")
 end
 
--- Runs the block's code with `input`, `answer` and `answers` set and `print`
+-- Runs the block's code with `input`, `answer`, `answers` and `values` set and `print`
 -- collected, and returns what it printed followed by what it returned,
 -- each value on a line.
 local PRELUDE = [[
 local input = %s
 local answer = %s
 local answers = %s
+local values = %s
 local __printed = {}
 local function __show(value)
 	if type(value) == "table" then
@@ -187,7 +204,10 @@ M.add("luau", function(run: Run): Outcome
 	local answers = if run.answers
 		then `require("@greed").json.decode({string.format("%q", greed.json.encode(run.answers))})`
 		else "{}"
-	local prelude = string.format(PRELUDE, input, answer, answers)
+	local values = if run.values
+		then `require("@greed").json.decode({string.format("%q", greed.json.encode(run.values))})`
+		else "{}"
+	local prelude = string.format(PRELUDE, input, answer, answers, values)
 		.. "return __finish((function()\n"
 	local ok, output = greed.eval(prelude .. `{body}\nend)())`)
 	if not ok then

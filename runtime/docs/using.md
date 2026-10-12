@@ -1397,7 +1397,12 @@ require("@greed").echo(`theme {answers.theme}, model {answers.provider}`)
   with `answer` set to it.
 - A block with `button="Label"` shows as a button, and runs when pressed.
 - Every block gets `answers`, each named question's answer (programs get
-  them as JSON in `ANSWERS`, and `ANSWER`).
+  them as JSON in `ANSWERS`, and `ANSWER`), and `values`, all the page's
+  [live values](#live-values): fields, `let`s, answers, and named tables as
+  lists of their rows. Programs get those as JSON in `VALUES`, and each
+  number or text by its name too, so a `sh` block can `echo $bill`.
+  For a button whose output stays in the file, a block with
+  `button="Label"` is the way; a `run:` link's shows in a float.
 - `<!-- if NAME=VALUE -->` to `<!-- end -->` is a part that shows only for
   that answer (`!=` for any other), or for any of several, as in
   `<!-- if style=vim,helix -->`. Its questions don't count otherwise.

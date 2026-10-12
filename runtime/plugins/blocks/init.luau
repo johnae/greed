@@ -587,6 +587,7 @@ function run_block(
 				end
 			end,
 			answers = answers,
+			values = markdown.values.all(buffer),
 			answer = answer,
 			started = function(child: greed.Child)
 				run.child = child
