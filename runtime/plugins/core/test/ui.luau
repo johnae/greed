@@ -320,3 +320,71 @@ test("soon draws a burst of changes once", function(t)
 	end)
 	assert(draws == before + 1, `drawn {draws - before} times`)
 end)
+
+test("a span's own marks go along with it, where it's drawn", function(t)
+	local buffer = shown(t)
+	local view = ui.mount(buffer, function(state)
+		return ui.column({
+			ui.line({ ui.span(state.head) }),
+			ui.line({
+				ui.span("> "),
+				{
+					text = "said",
+					marks = {
+						{ from = 0, to = 1, style = "agent.bar", text = "▍", overlay = true },
+					},
+				},
+			}),
+		})
+	end, { head = "one" }, { ns = "mine" })
+	view:set({ head = "longer" })
+	local mark = buffer:decorations("mine")[1]
+	assert(mark and mark.overlay and mark.text == "▍", "the span's mark is there")
+	assert(mark.from == buffer:line_start(1) + 2, `{mark.from}`)
+	assert(#buffer:decorations("ui") == 0, "in the view's own namespace")
+end)
+
+test("a view with an input keeps what's written after it as it is", function(t)
+	local buffer = greed.create_buffer("test-ui", "", {})
+	t:buffer("|")
+	greed.view():show(buffer)
+	local view = ui.mount(buffer, function(state)
+		local parts: { core.UiNode } = {}
+		for _, said in state.said do
+			table.insert(parts, ui.line({ ui.span(said) }))
+		end
+		table.insert(parts, ui.line({ ui.span("── box ──") }))
+		return ui.column(parts)
+	end, { said = { "hello" } }, { input = true })
+	assert(text_of(buffer) == "hello\n── box ──\n", text_of(buffer))
+	assert(view:input_start() == #"hello\n── box ──\n")
+	greed.view():set_cursor(buffer:len())
+	t:keys("i d r a f t")
+	assert(text_of(buffer) == "hello\n── box ──\ndraft", text_of(buffer))
+	view:set({ said = { "hello", "there", "more" } })
+	assert(text_of(buffer) == "hello\nthere\nmore\n── box ──\ndraft", text_of(buffer))
+	assert(greed.view():cursor() == buffer:len(), "the cursor stays in the input")
+	view:set({ said = {} })
+	assert(text_of(buffer) == "── box ──\ndraft", text_of(buffer))
+	assert(view:input() == "draft")
+	-- What it draws can't be typed in.
+	assert(buffer:readonly_before() == view:input_start())
+end)
+
+test("each gives the lines with values, in order", function(t)
+	local buffer = shown(t)
+	local view = ui.mount(buffer, function()
+		return ui.column({
+			ui.keyed("a", 1, function()
+				return ui.line({ { text = "one", value = "x" } })
+			end),
+			ui.line({ ui.span("nothing") }),
+			ui.line({ { text = "two", value = "y" } }),
+		})
+	end)
+	local seen: { string } = {}
+	view:each(function(line: number, value: any)
+		table.insert(seen, `{line}={value}`)
+	end)
+	assert(table.concat(seen, " ") == "0=x 2=y", table.concat(seen, " "))
+end)

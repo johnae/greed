@@ -1066,6 +1066,13 @@ greed.tab.set_layout({
   end))
   ```
 
+  With `ui.mount(..., { input = true })` the view is drawn at the top of
+  the buffer and what's written under it is yours, like a chat's box:
+  `view:input()` reads it, and the view is read-only above it. A span's
+  `marks` are drawn with it, counted from its start; `view:each(f)` goes
+  through the lines with values; `ns` and `width` choose the namespace of
+  its marks and how wide it's laid out.
+
   `ui.pieces(node.lay(width))` gives a node as a mark's `lines`, as the
   data plugin draws its tables under a block.
 - `require("@core").data` is where tables of data come from: one shape,
