@@ -834,15 +834,6 @@ test("alt-M's Another model… has the agent use any model a provider lists", fu
 	models.roles.agent = nil
 end)
 
-test("Greed's agent says it can't have a workspace yet", function(t)
-	local dir = t:tempdir({ [".git/HEAD"] = "ref: refs/heads/main\n" })
-	local s, err = acp.start(GREED, dir, true)
-	assert(
-		s == nil and string.find(tostring(err), "works in the project itself", 1, true),
-		tostring(err)
-	)
-end)
-
 test("a group switched on in one turn is offered in the next", function(t)
 	local asked = script({
 		{
@@ -2248,7 +2239,7 @@ test("in a workspace of its own it changes nothing outside, and edits there don'
 	})
 	local dir = t:tempdir({ ["a.txt"] = "one\n" })
 	local s = assert(acp.start(GREED, dir))
-	-- Greed's agent can't have a workspace yet; this stands in for one.
+	-- Without jj or git: this stands in for a workspace.
 	s.workspace = { kind = "jj", name = "ws", path = dir }
 	greed.spawn(function()
 		acp.prompt(s, "go")
@@ -2263,6 +2254,37 @@ test("in a workspace of its own it changes nothing outside, and edits there don'
 		refused.error and string.find(refused.text, "outside the workspace", 1, true),
 		refused.text
 	)
+end)
+
+test("in a jj workspace of its own it reads, searches and writes there", function(t)
+	if greed.which("jj") == nil then
+		return
+	end
+	local asked = script({
+		calling("read", { path = "a.txt" }),
+		calling("grep", { pattern = "one" }),
+		calling("write_file", { path = "b.txt", text = "b" }),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local dir = t:repo("jj", { ["a.txt"] = "one\n" })
+	local s = assert(acp.start(GREED, dir, true))
+	local ws = s.workspace
+	assert(ws and ws.kind == "jj" and s.cwd == ws.path and s.root == dir, "it has a workspace")
+	-- Yours changes after it started; it sees its own copy.
+	greed.fs.write(`{dir}/a.txt`, "mine\n")
+	greed.spawn(function()
+		acp.prompt(s, "go")
+	end)
+	t:wait(10)
+	assert(s.status == "idle", said(s))
+	assert(string.find(asked[1].system, `jj workspace {ws.name}`, 1, true), "told where and how")
+	local read = result_of(asked, 1)
+	assert(string.find(read.text, "one", 1, true), read.text)
+	local found = result_of(asked, 2)
+	assert(string.find(found.text, "a.txt", 1, true), found.text)
+	assert(greed.fs.read(`{ws.path}/b.txt`) == "b", "written in its workspace")
+	assert(greed.fs.read(`{dir}/b.txt`) == nil, "not in yours")
+	acp.close(s)
 end)
 
 test("its questions name the files, so a policy keyed on them answers", function(t)

@@ -380,7 +380,8 @@ shows an option's value and doc.
 Pick an agent:
 
 - Greed's own agent works with any model `:models` sets up. Start it with
-  `space i n` and "Greed". It works in the project with you.
+  `space i n` and "Greed". It works in the project with you, or in a
+  workspace of its own.
 - Claude Code in a terminal: `claude mcp add greed -- greed mcp`, or
   `space i C` for a pane with Claude Code already connected. Claude Code
   asks you itself, by its own permission settings. Connected with `/ide`

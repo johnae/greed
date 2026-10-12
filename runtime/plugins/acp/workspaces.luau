@@ -68,6 +68,43 @@ end
 
 M.IN_PROJECT = "it works in the project itself; its changes are already there"
 
+--- What an agent in `ws`, a workspace of its own for the project at `root`,
+--- needs to know about it: where it is, and how what it does there gets
+--- to the user, so it keeps its work where that finds it.
+function M.note(ws: Workspace, root: string): string
+	local lines = {
+		`You work in a workspace of your own at {ws.path}, a copy of the project at {root}; `
+			.. "paths are relative to it. Change files only there: the user's own files stay as "
+			.. "they are until they bring your work in. The editor context shows the user's copy; "
+			.. "the same relative path is in your workspace.",
+	}
+	if ws.kind == "jj" then
+		table.insert(
+			lines,
+			`It's the jj workspace {ws.name}, started from the parent of the user's working copy, `
+				.. "so it doesn't have changes they haven't committed. Keep all your work in its "
+				.. `working-copy change ({ws.name}@): the user brings that one change in, squashed `
+				.. "into theirs. Don't run jj new, commit, squash, edit, rebase, abandon or "
+				.. "restore, and leave other changes and bookmarks alone; jj describe is fine."
+		)
+	else
+		table.insert(
+			lines,
+			`It's a git worktree on the branch greed/{ws.name}, started from the user's last `
+				.. "commit, so it doesn't have changes they haven't committed. Commit there or "
+				.. "not as you like; the user brings in everything that differs from where you "
+				.. "started. Don't switch branches, rebase, merge, reset or push."
+		)
+	end
+	table.insert(
+		lines,
+		"When you're done, say what you changed and that it's ready: the user reviews it from "
+			.. "the session list (space i l: d shows the diff, R reviews it change by change, b "
+			.. "brings it in). Don't bring it in yourself or copy files into their project."
+	)
+	return table.concat(lines, " ")
+end
+
 --- What `s` changed in its workspace, as a diff.
 function M.changes(s: Session): (string?, string?)
 	local ws = s.workspace
@@ -91,7 +128,13 @@ function M.bring(s: Session): (boolean, string?)
 	elseif ws.kind == "jj" then
 		-- Any jj command in the workspace takes in what the agent wrote.
 		M.run(ws, { "status" })
-		local _, err = run("jj", s.root, { "squash", "--from", `{ws.name}@`, "--into", "@" })
+		local args = { "squash", "--from", `{ws.name}@`, "--into", "@" }
+		-- With both described, jj would open an editor to join them; yours stays.
+		local yours = run("jj", s.root, { "log", "-r", "@", "--no-graph", "-T", "description" })
+		if yours and string.match(yours, "%S") then
+			table.insert(args, "--use-destination-message")
+		end
+		local _, err = run("jj", s.root, args)
 		if err then
 			return false, err
 		end

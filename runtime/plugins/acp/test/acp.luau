@@ -406,6 +406,31 @@ test("a fork of an agent in a jj workspace gets a workspace with its edits", fun
 	acp.close(s)
 end)
 
+test("bringing in a described jj change keeps your description, asking nothing", function(t)
+	if greed.which("jj") == nil then
+		return
+	end
+	local dir = t:repo("jj", { ["a.txt"] = "a\n" })
+	local s = start(t, dir, true)
+	send(t, s, "edit a.txt")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local workspaces = require("../workspaces")
+	local ws = assert(s.workspace)
+	assert(workspaces.run(ws, { "describe", "-m", "theirs" }))
+	assert(greed.process.run({ "jj", "describe", "-m", "mine" }, { cwd = dir }))
+	local ok, err = workspaces.bring(s)
+	assert(ok, err)
+	local log = greed.process.run(
+		{ "jj", "log", "-r", "@", "--no-graph", "-T", "description" },
+		{ cwd = dir }
+	)
+	assert(log and log.stdout == "mine\n", log and log.stdout)
+	assert(greed.fs.read(dir .. "/a.txt") == "edited\n", "its edit came in")
+	acp.close(s)
+end)
+
 test("an agent that isn't installed says what it needs", function(t)
 	local s, err = acp.start(
 		{ name = "nope", commands = { { "no-such-agent-here", "--acp" } } },

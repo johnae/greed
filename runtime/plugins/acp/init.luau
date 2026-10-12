@@ -229,9 +229,8 @@ local function launch(
 	local command = agents.command_of(agent)
 	if command == nil then
 		return nil, agents.missing(agent)
-	elseif agent.native and (workspace or (extra and extra.fork)) then
-		return nil,
-			`{agent.title or agent.name} works in the project itself; it can't have a workspace or be forked yet`
+	elseif agent.native and extra and extra.fork then
+		return nil, `{agent.title or agent.name} can't be forked yet`
 	end
 	-- The agent's name, numbered from 2 while sessions have it.
 	local named = agent.title or agent.name
@@ -264,6 +263,7 @@ local function launch(
 			name = name,
 			agent = agent.name,
 			root = root,
+			workspace = workspace,
 			role = agent.model,
 			resume = extra and extra.load,
 			decide = decides,
@@ -315,10 +315,7 @@ end
 --- of its own if `own` is set.
 function M.start(agent: Agent, root: string, own: boolean?): (Session?, string?)
 	local workspace = nil
-	if own and agent.native then
-		return nil,
-			`{agent.title or agent.name} works in the project itself; it can't have a workspace yet`
-	elseif own then
+	if own then
 		local made, err = workspaces.make(root, agent.name)
 		if made == nil then
 			return nil, err
@@ -793,9 +790,10 @@ greed.command({
 			greed.echo(agents.missing(agent))
 			return
 		end
-		-- Greed's own agent, or one named outright, works in the project; there's nothing to ask.
+		-- One named outright works in the project, and outside a repository
+		-- there's nowhere else; there's nothing to ask.
 		local own = false
-		if name == nil and not agent.native then
+		if name == nil and vcs.repo.repo_of(core.project.root() .. "/.") then
 			local place = picker.choose("Where it works", {
 				{ label = "In a workspace of its own", value = "own" },
 				{ label = "In the project, with you", value = "here" },

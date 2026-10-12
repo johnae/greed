@@ -359,6 +359,7 @@ function M.store(
 		{
 			agent = s.agent,
 			root = s.root,
+			workspace = s.workspace,
 			session_id = id,
 			title = conversation.title,
 			time = conversation.time,

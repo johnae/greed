@@ -2,9 +2,10 @@
 -- a session of its own and reports back. The helper starts with an empty
 -- context, so a long search or a side task doesn't fill the caller's. An
 -- agent program works in a workspace of its own by default, so its edits
--- wait for you to bring them in. Greed's own agent can't have one yet, so
--- as a helper it works in the project and only reads, unless it's told to
--- work there. Greed's agent hands tasks to Greed's agent with its own model
+-- wait for you to bring them in. Greed's own agent, as a helper, works
+-- where its caller does and only reads, unless it's told to work there:
+-- most of what it's handed is searching, which a workspace would only
+-- slow down. Greed's agent hands tasks to Greed's agent with its own model
 -- unless it names another, and its call's row in the transcript shows what
 -- the helper does as it works; enter on the row shows the helper's
 -- transcript, which is in the session list like any other. Helpers ask you
@@ -122,7 +123,7 @@ export type From = { session: Session, row: session.Tool? }
 --- Hands `task` to a new session of `chosen` started through `sessions`,
 --- waits for it to finish and returns what it reported, with the session.
 --- An agent program works in a workspace of its own unless `here`; Greed's
---- own works in the project, and only reads unless `here`. With `from`,
+--- own works where its caller does, and only reads unless `here`. With `from`,
 --- the helper is one of that session's: stopping its turn stops the
 --- helper, and the call's row shows what the helper does. A turn that
 --- fails is an error, not an empty report.
@@ -137,12 +138,21 @@ function M.run(
 		return nil, `{M.LIMIT} subagents are working already; wait for one to finish`
 	end
 	local reads_only = chosen.native == true and not here
-	local note = if chosen.native and here
-		then `{chosen.title or chosen.name} worked in the project itself: its edits are in the `
-			.. "user's files, as they allowed them"
-		else nil
 	local caller = if from then from.session else nil
-	local root = if caller then caller.root else core.project.root()
+	local note: string? = nil
+	if chosen.native and here then
+		local named = chosen.title or chosen.name
+		note = if caller and caller.workspace
+			then `{named} worked in your workspace: its edits are there`
+			else `{named} worked in the project itself: its edits are in the user's files, `
+				.. "as they allowed them"
+	end
+	-- Greed's helper sees what its caller does: in the caller's workspace,
+	-- when it has one.
+	local root = if caller and chosen.native
+		then caller.cwd
+		elseif caller then caller.root
+		else core.project.root()
 	running += 1
 	local helper: Session? = nil
 	local unwatch: (() -> ())? = nil

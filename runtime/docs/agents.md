@@ -423,8 +423,9 @@ how long a model may go quiet.
 the two, beside the tokens each model was sent and wrote today and over the
 last week, and how many came from the provider's cache
 ([Models](using.md#models) has more). Its system
-prompt includes the project's `AGENTS.md` or `CLAUDE.md`. For now it works
-in the project itself, without a workspace of its own.
+prompt includes the project's `AGENTS.md` or `CLAUDE.md`. Like the other
+agents, it works in the project with you or in a workspace of its own
+(see below); `space i n` asks which when the project is in a repository.
 
 Each session is written down after every turn, so the [session
 list](#the-session-list) (`space i l`) shows it with the other agents'
@@ -801,7 +802,11 @@ in one step. The agent's workspace keeps its change, so after a review
 close it with `x` rather than bringing it in with `b`.
 
 A jj workspace starts from your working copy's parent, so it doesn't see
-changes you haven't committed. A fork of an agent in a jj workspace gets a
+changes you haven't committed. `b` squashes the workspace's working-copy
+change into yours, keeping your description when both have one; Greed's
+own agent is told to keep its work in that one change, and in a git
+worktree not to switch branches, rebase or push. Its searches and reads go
+to its workspace too, and it says when its work is ready for you. A fork of an agent in a jj workspace gets a
 workspace of its own with the edits made so far; in a git worktree, it
 starts from the branch's last commit.
 
@@ -823,11 +828,11 @@ away. A helper whose turn fails, like one whose model has no key, comes
 back as an error saying why.
 
 Greed's own agent has `subagent` from the start, and its helpers are
-Greed's own agent with the same model unless it names another. Greed's
-agent can't have a workspace yet, so as a helper it works in the project
-and only reads and searches; told to work in the project (`here`), it
-edits and runs commands too, asking you first as usual, and the result
-says so. Several `subagent` calls in one answer run at once.
+Greed's own agent with the same model unless it names another. As a
+helper, Greed's agent works where its caller does (its workspace, if it
+has one) and only reads and searches, since most of what it's handed is
+searching; told to work in the project (`here`), it edits and runs
+commands too, asking you first as usual, and the result says so. Several `subagent` calls in one answer run at once.
 
 While a helper works, its call's row in the transcript shows the task,
 what the helper is doing (its tool call, "thinking" or "waiting for you"),

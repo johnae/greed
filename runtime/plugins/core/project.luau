@@ -70,14 +70,42 @@ function M.nearest(dir: string, marker: string): string?
 	return nil
 end
 
+-- The folder standing for the project in each thread running `M.within`.
+local standing_in: { [thread]: string } = setmetatable({}, { __mode = "k" }) :: any
+
+-- The root paths go from by default: the folder `M.within` gave this
+-- thread, else the shown project's.
+local function base(): string
+	return standing_in[coroutine.running()] or greed.project.current().root
+end
+
+--- Runs `f` with the folder `dir` standing for the project in this thread:
+--- `root()` without a path, `resolve` and `relative` go from it. For an
+--- agent in a workspace of its own, whose tools should see the workspace.
+function M.within<T>(dir: string, f: () -> T): T
+	local thread = coroutine.running()
+	local before = standing_in[thread]
+	standing_in[thread] = M.clean(dir)
+	local ok, result = pcall(f)
+	standing_in[thread] = before
+	if not ok then
+		error(result, 0)
+	end
+	return result
+end
+
 --- The root of the project `path` (a file or folder) is in: the nearest
 --- folder up holding a marker, or the folder itself when none does.
 --- Without a path, the current buffer's file is used, or else the shown
---- project's root.
+--- project's root; inside `within`, its folder.
 function M.root(path: string?): string
+	local within = if path == nil then standing_in[coroutine.running()] else nil
+	if within then
+		return within
+	end
 	local start = path or greed.view():buffer():path()
 	if start == nil then
-		return greed.project.current().root
+		return base()
 	end
 	local first = M.clean(start)
 	local info = greed.fs.stat(first)
@@ -91,7 +119,7 @@ function M.root(path: string?): string
 		end
 		dir = parent(dir)
 	end
-	return folder or greed.project.current().root
+	return folder or base()
 end
 
 -- The first line of the file at `path`, trimmed, if there's one.
@@ -263,7 +291,7 @@ end
 function M.resolve(path: string, root: string?): string
 	local full = from_home(path) or path
 	if string.sub(full, 1, 1) ~= "/" then
-		full = `{root or greed.project.current().root}/{full}`
+		full = `{root or base()}/{full}`
 	end
 	return M.clean(full)
 end
@@ -271,14 +299,14 @@ end
 --- `path` as shown in the project at `root` (default: the shown one):
 --- relative to its root when inside it, otherwise in full.
 function M.relative(path: string, root: string?): string
-	local base = M.clean(root or greed.project.current().root)
-	local full = M.resolve(path, base)
-	if full == base then
+	local from = M.clean(root or base())
+	local full = M.resolve(path, from)
+	if full == from then
 		return "."
-	elseif base == "/" then
+	elseif from == "/" then
 		return string.sub(full, 2)
-	elseif string.sub(full, 1, #base + 1) == base .. "/" then
-		return string.sub(full, #base + 2)
+	elseif string.sub(full, 1, #from + 1) == from .. "/" then
+		return string.sub(full, #from + 2)
 	end
 	return full
 end

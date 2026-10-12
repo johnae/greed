@@ -17,6 +17,7 @@ local session = require("./session")
 local saved = require("./saved")
 local compact = require("./compact")
 local transcript = require("./transcript")
+local workspaces = require("./workspaces")
 
 type Session = session.Session
 
@@ -1157,8 +1158,11 @@ local function system(
 		"You are Greed's coding agent, working in the Greed editor with the user. You can read and "
 			.. "search the project, edit files and run commands with the tools you have."
 			.. running,
-		`The project is at {s.root}; paths are relative to it.`
-			.. (if env and env ~= "" then " " .. env else ""),
+		(
+			if s.workspace
+				then workspaces.note(s.workspace, s.root)
+				else `The project is at {s.root}; paths are relative to it.`
+		) .. (if env and env ~= "" then " " .. env else ""),
 		"A user's message starts with a <time> tag, when they sent it, and may have an "
 			.. "<editor-context> block: what they had on screen as they wrote it, and a "
 			.. "<pinned-context> block: what they pinned for you, as it is now. They're left out "
@@ -1459,7 +1463,14 @@ local function call(
 		end
 		local thread = coroutine.running()
 		calling[thread] = { session = s, tool = tool }
-		local ran, value = pcall(spec.run, input, state.caller)
+		-- In a workspace of its own, Greed's tools search and read there.
+		local ran, value = pcall(function()
+			return if s.workspace
+				then core.project.within(s.cwd, function()
+					return spec.run(input, state.caller)
+				end)
+				else spec.run(input, state.caller)
+		end)
 		calling[thread] = nil
 		if not ran then
 			error(value, 0)
@@ -1621,7 +1632,7 @@ local function prompt(
 	s.status = "working"
 	s.since = greed.now()
 	s.changed()
-	state.env = state.env or environment(s.root)
+	state.env = state.env or environment(s.cwd)
 	-- The same from turn to turn, so providers can cache it: the time goes
 	-- in each of your messages instead.
 	state.edits = models.edits(state.role)
@@ -2063,10 +2074,12 @@ end
 --- model in role `role` (by default `M.ROLE`, else `reasoning`). With
 --- `resume`, the id of a session kept from before, it takes that up where
 --- it left off: its transcript, what was said, its model and tool groups.
+--- In `workspace`, it works there instead of in the project.
 function M.start(opts: {
 	name: string,
 	agent: string,
 	root: string,
+	workspace: session.Workspace?,
 	role: string?,
 	resume: string?,
 	decide: ((permission: session.Permission) -> string?)?,
@@ -2080,7 +2093,8 @@ function M.start(opts: {
 		name = opts.name,
 		agent = opts.agent,
 		root = opts.root,
-		cwd = opts.root,
+		cwd = if opts.workspace then opts.workspace.path else opts.root,
+		workspace = opts.workspace,
 		decide = opts.decide,
 		changed = opts.changed,
 		driver = DRIVER,
@@ -2185,7 +2199,7 @@ end
 
 --- Has Greed's agent in `s` only read and search from now on: it's offered
 --- no tool that changes anything, nor told about helpers. For a helper
---- working in the project, which can't have a workspace of its own.
+--- working where its caller does, without a workspace of its own.
 function M.read_only(s: Session)
 	local state = states[s.id]
 	if state then
