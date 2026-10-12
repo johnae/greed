@@ -2,8 +2,8 @@
 -- references read fresh each time they're sent.
 --
 --   space i p   pin the selection, or the file when nothing is selected
---   space i i   show the pinned items, one a line with its size; delete a
---               line (x d) to drop the item
+--   space i i   show the pinned items, one a line with its size; d drops
+--               the items on the lines selected (x d)
 --
 -- `:context-add-problems` pins this file's problems, `:context-add-diff` the
 -- changes in progress, `:context-clear` drops everything. Assist commands
@@ -204,63 +204,84 @@ function M.text(): string
 	return table.concat(parts, "\n\n")
 end
 
--- The context buffer while it's shown, and the item each line stands for.
-local shown: { view: greed.View, buffer: greed.Buffer, lines: { Item } }? = nil
+-- The context list while it's shown, each line's value its item.
+local shown: { view: greed.View, drawn: core.UiView }? = nil
 
-local function render(): (string, { Item }, number)
-	local lines, list, total = {}, {}, 0
-	for _, item in items() do
+-- The pinned items, a line each with its size, and how many tokens they
+-- come to.
+local function listed(): (core.UiNode, number)
+	local total = 0
+	local sizes: { [Item]: number } = {}
+	local labels: { [Item]: string } = {}
+	local list = items()
+	for _, item in list do
 		local text, label = M.read(item)
-		local size = M.tokens(text)
-		total += size
-		table.insert(lines, `{label}  ({size} tokens)`)
-		table.insert(list, item)
+		sizes[item] = M.tokens(text)
+		labels[item] = label
+		total += sizes[item]
 	end
-	return table.concat(lines, "\n"), list, total
+	local node = core.ui.list(list, function(item: Item): { core.UiSpan }
+		return {
+			core.ui.span(labels[item], "context"),
+			core.ui.span(`  ({sizes[item]} tokens)`, "comment"),
+		}
+	end)
+	return node, total
 end
 
 local function title(total: number): string
-	return `Context: {total} tokens - x d drops an item, q closes`
+	return `Context: {total} tokens - d drops the items on the lines selected, q closes`
 end
-
-greed.on("buffer.changed", function(event: greed.BufferChanged)
-	local open = shown
-	if open == nil or event.buffer ~= open.buffer then
-		return
-	end
-	-- Lines whose mark went with their text were deleted: drop their items.
-	for i, item in open.lines do
-		if #open.buffer:decorations(`context-line-{i}`) == 0 then
-			M.remove(item)
-		end
-	end
-	local _, list, total = render()
-	open.lines = list
-	open.view:configure({ title = title(total) })
-end)
 
 greed.command({
 	name = "context",
-	doc = "Show what's pinned for models and agents, with sizes; delete a line to drop it",
+	doc = "Show what's pinned for models and agents, with sizes; d drops an item",
 	run = function()
 		if shown then
 			shown.view:close()
 		end
-		local text, list, total = render()
-		if #list == 0 then
+		if #items() == 0 then
 			greed.echo("nothing is pinned - space i p pins the selection or the file")
 			return
 		end
-		local buffer = greed.create_buffer("context", text)
-		for i in list do
-			local stop = if i < #list then buffer:line_start(i) else buffer:len()
-			buffer:decorate(
-				`context-line-{i}`,
-				{ { from = buffer:line_start(i - 1), to = stop, style = "context" } }
-			)
+		local buffer = greed.create_buffer("context", "", { readonly = true })
+		-- Each drawing reads the items once, for the lines and the title.
+		local drawn = core.ui.mount(buffer, function()
+			local node, total = listed()
+			if shown then
+				shown.view:configure({ title = title(total) })
+			end
+			return node
+		end, nil, { ns = "context", keys = false, draw = false })
+		shown = { view = greed.float(buffer, { width = "70%", height = "40%" }), drawn = drawn }
+		drawn:redraw()
+	end,
+})
+
+greed.command({
+	name = "context-drop",
+	doc = "Drop the pinned items on the lines selected in the context list",
+	run = function(ctx)
+		local open = shown
+		if open == nil or ctx.buffer ~= open.drawn.buffer then
+			return
 		end
-		local view = greed.float(buffer, { title = title(total), width = "70%", height = "40%" })
-		shown = { view = view, buffer = buffer, lines = list }
+		local dropped: { Item } = {}
+		for _, range in ctx.view:selection().ranges do
+			local from, to = core.text.span(range)
+			local first = ctx.buffer:line_of(from)
+			local last = ctx.buffer:line_of(math.max(from, to - 1))
+			for line = first, last do
+				local item: Item? = open.drawn:value_on(line)
+				if item and not table.find(dropped, item) then
+					table.insert(dropped, item)
+				end
+			end
+		end
+		for _, item in dropped do
+			M.remove(item)
+		end
+		open.drawn:redraw()
 	end,
 })
 
@@ -398,6 +419,9 @@ greed.keymap.bind({ layer = "leader" }, {
 	["i p"] = "context-add",
 	["i i"] = "context",
 })
-greed.keymap.bind({ kind = "context" }, { q = "context-close", esc = "context-close" })
+greed.keymap.bind(
+	{ kind = "context" },
+	{ q = "context-close", esc = "context-close", d = "context-drop" }
+)
 
 return M

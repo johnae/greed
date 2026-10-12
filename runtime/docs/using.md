@@ -1260,7 +1260,7 @@ Pin what a model or an agent should see, and it goes with every question:
 | Keys | |
 |---|---|
 | `space i p` | Pin the selection, or the whole file when nothing is selected; outside a file, what's under the cursor (a shell row, a block) |
-| `space i i` | Show what's pinned, one item a line with its size in tokens; delete a line (`x d`) to drop it |
+| `space i i` | Show what's pinned, one item a line with its size in tokens; `d` drops the items on the lines selected (`x d`) |
 | `:context-add-problems` | Pin this file's problems from the language server |
 | `:context-add-diff` | Pin the changes in progress |
 | `:context-clear` | Drop everything |
