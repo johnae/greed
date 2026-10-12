@@ -65,6 +65,11 @@ export type TestContext = {
 	--- A new, empty directory holding `files` (paths in it, to their text).
 	--- Folders in the paths are created.
 	tempdir: (self: TestContext, files: { [string]: string }?) -> string,
+	--- Has `program` stand in for the system keyring's (secret-tool, or
+	--- security on macOS) for greed.secrets; nil for no keyring, as tests
+	--- start. A program that isn't installed acts as a keyring that can't
+	--- be reached.
+	keyring: (self: TestContext, program: string?) -> (),
 	--- Opens a file in a tempdir, as greed.open does (firing "buffer.opened"),
 	--- without the plugin needing the fs.read capability for it.
 	open: (self: TestContext, path: string) -> (),

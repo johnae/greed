@@ -51,7 +51,7 @@ test("signing in shows the link and code, waits for you, and keeps the tokens", 
 			},
 		},
 	})
-	local shown: any, ok: boolean?, err: string?
+	local shown: any, ok: string?, err: string?
 	greed.spawn(function()
 		ok, err = login.sign_in("berget", function(started)
 			shown = started
@@ -61,16 +61,45 @@ test("signing in shows the link and code, waits for you, and keeps the tokens", 
 	assert(string.find(shown.complete, "code=ABCD-EFGH", 1, true) ~= nil, shown.complete)
 	assert(sent[1].body.client_id == "berget-code" and sent[1].kind == "form")
 	t:wait(5000)
-	assert(ok == nil, "still waiting")
+	assert(ok == nil and err == nil, "still waiting")
 	t:wait(5000)
 	-- slow_down: the next poll comes 10 seconds later.
 	t:wait(5000)
-	assert(ok == nil, "waits longer after slow_down")
+	assert(ok == nil and err == nil, "waits longer after slow_down")
 	t:wait(5000)
-	assert(ok == true, tostring(err))
+	assert(ok ~= nil, tostring(err))
 	assert(sent[#sent].body.grant_type == "urn:ietf:params:oauth:grant-type:device_code")
 	assert(login.signed_in("berget"))
 	assert(login.token("berget") == "a1")
+end)
+
+test("signing in with no keyring to reach keeps the tokens in the file, and says so", function(t)
+	t:keyring("greed-test-no-such-keyring")
+	serve({
+		[BERGET.device_url] = {
+			{
+				status = 200,
+				body = { device_code = "d", user_code = "C", verification_uri = "u", interval = 1 },
+			},
+		},
+		[BERGET.token_url] = {
+			{
+				status = 200,
+				body = { access_token = "a1", refresh_token = "r1", expires_in = 300 },
+			},
+		},
+	})
+	t:buffer("|x")
+	t:run("login", { "berget" })
+	t:wait(1000)
+	local said = t:messages()
+	local last = said[#said] or ""
+	assert(string.find(last, "signed in to Berget", 1, true), last)
+	assert(
+		string.find(last, "secrets.json, since the system keyring couldn't be reached", 1, true),
+		last
+	)
+	assert(login.signed_in("berget"), "found in the file")
 end)
 
 test("signing in turned down in the browser says so", function(t)
@@ -83,12 +112,12 @@ test("signing in turned down in the browser says so", function(t)
 		},
 		[BERGET.token_url] = { { status = 400, body = { error = "access_denied" } } },
 	})
-	local ok: boolean?, err: string?
+	local ok: string?, err: string?
 	greed.spawn(function()
 		ok, err = login.sign_in("berget", function() end)
 	end)
 	t:wait(1000)
-	assert(ok == false and string.find(tostring(err), "turned down", 1, true), tostring(err))
+	assert(ok == nil and string.find(tostring(err), "turned down", 1, true), tostring(err))
 	assert(not login.signed_in("berget"))
 end)
 

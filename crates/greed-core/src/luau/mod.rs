@@ -202,6 +202,9 @@ pub(crate) struct State {
     /// A folder standing in for the home, config and cache folders, for
     /// tests.
     pub dirs: Option<PathBuf>,
+    /// The program tests have stand in for the system keyring's
+    /// (`t:keyring`); with `dirs` set and none, secrets skip the keyring.
+    pub keyring: Option<String>,
     /// Programs running in terminals.
     pub terminals: terminal::Terminals,
     /// What plugins were last told of each client's views.
@@ -506,6 +509,7 @@ impl Host {
             remote: None,
             attached: true,
             dirs: None,
+            keyring: None,
             terminals: terminal::Terminals::default(),
             told: Told::default(),
             syntax: crate::syntax::Syntax::new(),

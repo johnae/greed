@@ -134,9 +134,9 @@ local function load(name: string): Tokens?
 	return if ok and type(tokens) == "table" and tokens.refresh then tokens else nil
 end
 
-local function save(name: string, tokens: Tokens): (boolean, string?)
-	local kept, err = greed.secrets.set(secret_of(name), greed.json.encode(tokens))
-	return kept ~= nil, err
+-- Keeps `name`'s tokens; returns where, or nil and why not.
+local function save(name: string, tokens: Tokens): (string?, string?)
+	return greed.secrets.set(secret_of(name), greed.json.encode(tokens))
 end
 
 -- OAuth's own refresh, for logins that don't renew their own way.
@@ -212,19 +212,19 @@ export type Started = { url: string, code: string, complete: string?, minutes: n
 
 --- Signs in to `name` with OAuth's device sign-in: `show` gets the link
 --- and code to approve in a browser, then this waits (polling as the
---- server asks) until you've approved, and keeps the tokens. Returns true,
---- or false and why.
-function M.sign_in(name: string, show: (started: Started) -> ()): (boolean, string?)
+--- server asks) until you've approved, and keeps the tokens. Returns where
+--- they were kept (greed.secrets.set's answer), or nil and why not.
+function M.sign_in(name: string, show: (started: Started) -> ()): (string?, string?)
 	local login = M.logins[name]
 	if login == nil then
-		return false, `there's no login called {name}`
+		return nil, `there's no login called {name}`
 	end
 	local status, device =
 		M.post(login.device_url, { client_id = login.client_id, scope = login.scope }, "form")
 	if status == nil then
-		return false, `can't reach {login.title}: {device}`
+		return nil, `can't reach {login.title}: {device}`
 	elseif status >= 300 or type(device.device_code) ~= "string" then
-		return false,
+		return nil,
 			`{login.title} said {status}: {device.error_description or device.error or "no"}`
 	end
 	show({
@@ -250,16 +250,16 @@ function M.sign_in(name: string, show: (started: Started) -> ()): (boolean, stri
 			elseif answer.error == "slow_down" then
 				interval = math.min(interval + 5, 30)
 			elseif answer.error == "access_denied" then
-				return false, "signing in was turned down in the browser"
+				return nil, "signing in was turned down in the browser"
 			elseif answer.error == "expired_token" then
-				return false, "the code ran out; :login again"
+				return nil, "the code ran out; :login again"
 			elseif answer.error ~= "authorization_pending" then
-				return false,
+				return nil,
 					`{login.title} said: {answer.error_description or answer.error or polled}`
 			end
 		end
 	end
-	return false, "the code ran out; :login again"
+	return nil, "the code ran out; :login again"
 end
 
 --- Forgets the tokens kept for `name`.

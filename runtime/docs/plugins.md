@@ -1824,7 +1824,11 @@ end
 Keys for those servers come from `greed.secrets.get("anthropic")`, never from
 config or plugin source. It looks in the environment (`GREED_SECRET_ANTHROPIC`,
 or the usual `ANTHROPIC_API_KEY`), then the system keyring, then Greed's own
-secrets file, and waits like the rest. A plugin declares each secret it
+secrets file, and waits like the rest. When it finds nothing and the
+keyring couldn't be reached (`secret-tool` isn't installed, there's no
+D-Bus session), it returns nil and why, since the keyring may have it.
+`greed.secrets.set` keeps a secret in the file when the keyring can't be
+reached, and the place it returns says why. A plugin declares each secret it
 reads as `secrets:NAME`, and Greed's file APIs refuse to read the secrets file
 itself.
 
@@ -1866,8 +1870,9 @@ models.playing("summary") -- "fast" until models.roles.summary is set
 
 Before asking, `models.check(role)` says what's missing without sending
 anything: no model plays the role, its provider isn't set up, or it has no
-key. `models.no_key(provider)` is the message every feature shows for a
-missing key, naming the variable that sets it and `:models`.
+key. `models.no_key(provider, why)` is the message every feature shows for a
+missing key, naming the variable that sets it and `:models`; pass the
+`why` `greed.secrets.get` gave and it says the keyring couldn't be reached.
 
 For a model that calls tools, `models.turn(role, request, on_text)` runs
 one turn: `request` has the conversation as `said` (each `{ role = "user",
@@ -2120,6 +2125,9 @@ forward for code that sleeps, `t:wait_for(check)` waits for real until
 otherwise), and `t:tempdir(files)` makes a
 folder of files to work on; `t:open(path)` opens one of them as
 `greed.open` does, without your plugin needing `fs.read` for it.
+Tests have no system keyring, so secrets go to the test's own file;
+`t:keyring(program)` has a program stand in for `secret-tool` (one that
+isn't installed acts as a keyring that can't be reached).
 `local dir, git = t:repo("git", files)` makes a repository (jj or git)
 with the files committed and returns a function that runs git there and
 fails the test if it fails; `t:vcs("jj", dir)` gives that function for a

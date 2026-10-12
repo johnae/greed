@@ -150,6 +150,31 @@ test("asking without a key names the variable that sets it", function(t)
 	models.providers.keyless = nil
 end)
 
+test("a key the keyring may have says the keyring couldn't be reached", function(t)
+	t:keyring("greed-test-no-such-keyring")
+	models.providers.keyless = {
+		kind = "anthropic",
+		url = "https://api.anthropic.com",
+		secret = "greed-test-nokey",
+		login = "berget",
+	}
+	models.roles.keyless = { provider = "keyless", model = "m" }
+	local why: string? = nil
+	greed.spawn(function()
+		local _, err = models.ask("keyless", { messages = { { role = "user", content = "hi" } } })
+		why = err
+	end)
+	t:wait_for(function()
+		return why ~= nil
+	end)
+	local said = "no API key for keyless: the system keyring couldn't be reached "
+		.. "(greed-test-no-such-keyring isn't installed here); :login berget saves it "
+		.. "in Greed's own secrets file instead, or set GREED_SECRET_GREED_TEST_NOKEY"
+	assert(string.find(why or "", said, 1, true), why)
+	local _, missing = models.key_state("keyless")
+	assert(missing == said, missing)
+end)
+
 -- A provider whose key no test machine has, and a role it plays.
 local function keyless(role: string)
 	models.providers.keyless =

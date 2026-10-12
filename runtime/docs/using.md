@@ -707,7 +707,7 @@ PATTERN` fills the panel directly.
 | `:profile` | Start counting where the editor's time goes; again, stop and show it by plugin and what it did |
 | `:debug TOPICS` | Turn debug topics on (`:debug keys frames`) or off (`:debug -keys`, `:debug off`); alone, says which are on. See [Debugging](#debugging) |
 | `:debug-log` | What the debug topics on have said, in a pane below that follows new lines |
-| `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where there's none); what you type shows as dots |
+| `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where it can't be reached); what you type shows as dots |
 | `:login PROVIDER`, `:logout PROVIDER` | Sign in to a model provider whose plan comes with an account, like Berget Code, instead of using a key (see [Models](#models)) |
 
 Closing a terminal's buffer ends its program.
@@ -1028,7 +1028,7 @@ found, and lets you change them:
 | Key | |
 |---|---|
 | `enter` | Pick the provider and model for the role under the cursor (for Ollama, from the models it has pulled); asks for the key if it needs one |
-| `k` | Set the API key of the role's provider: it goes in the system keyring, or Greed's secrets file where there's none |
+| `k` | Set the API key of the role's provider: it goes in the system keyring, or Greed's secrets file where it can't be reached |
 | `l` | Sign in to the role's provider, for those with an account instead of a key, like Berget |
 | `q` | Close |
 
@@ -1038,6 +1038,13 @@ time. Your `init.luau` is read after it, so a role set there wins, and
 can set the variable `:models` names, like `ANTHROPIC_API_KEY`, or run
 `:secret-set anthropic`. Anything that needs a model and has no key says
 the same: which variable sets it, and that `:models` adds one.
+
+Keys and sign-ins go in the system keyring through `secret-tool` on Linux
+(`security` on macOS). When Greed can't reach it, say in a session started
+where `secret-tool` isn't installed or there's no D-Bus session, a key kept
+there looks missing, so the message says the keyring couldn't be reached
+and why. Keeping a key or signing in then goes to Greed's own secrets file,
+and Greed says so; keys there are found whether the keyring answers or not.
 
 `:usage` shows how many tokens the models were sent and wrote: today, by
 model, and each day of the last week, as the providers reported them for

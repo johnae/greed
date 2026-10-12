@@ -7,6 +7,10 @@
 //! 3. Greed's own secrets file, readable only by you, for machines without a
 //!    keyring, like many reached over ssh.
 //!
+//! When the keyring can't be reached (its program isn't installed, there's
+//! no D-Bus session, it fails), a secret found nowhere comes with why, since
+//! the keyring may have it, and a secret kept goes to the file instead.
+//!
 //! A plugin reads only the secrets it declares as `secrets:NAME`, or all of
 //! them with `secrets`. Lookups run a program, so they happen on a thread
 //! and wait like `greed.sleep`.
@@ -33,27 +37,36 @@ const USUAL: &[(&str, &str)] = &[
 /// The keyring's service name for Greed's secrets.
 const SERVICE: &str = "greed";
 
+/// The program that reaches the system keyring.
+const KEYRING: &str = if cfg!(target_os = "macos") {
+    "security"
+} else {
+    "secret-tool"
+};
+
 /// Where secrets are looked for and kept, worked out on the editor's
 /// thread and handed to the job.
 #[derive(Clone)]
 pub(super) struct Places {
     /// Greed's own secrets file.
     file: PathBuf,
-    /// Whether to use the system keyring; tests don't.
-    keyring: bool,
+    /// The program that reaches the system keyring, if one is used: tests
+    /// use none unless they set one with `t:keyring`.
+    keyring: Option<String>,
 }
 
 fn places(lua: &Lua) -> Option<Places> {
-    if let Some(root) = state(lua).dirs.clone() {
+    let state = state(lua);
+    if let Some(root) = &state.dirs {
         return Some(Places {
             file: root.join("state/secrets.json"),
-            keyring: false,
+            keyring: state.keyring.clone(),
         });
     }
-    let state = crate::dirs::dir(crate::dirs::Kind::State)?;
+    let dir = crate::dirs::dir(crate::dirs::Kind::State)?;
     Some(Places {
-        file: state.join("secrets.json"),
-        keyring: true,
+        file: dir.join("secrets.json"),
+        keyring: Some(KEYRING.to_owned()),
     })
 }
 
@@ -103,58 +116,93 @@ fn from_env(name: &str) -> Option<String> {
         .find_map(|var| std::env::var(var).ok().filter(|v| !v.is_empty()))
 }
 
-/// Runs `program` with `args`, giving it `input`, and returns what it printed
-/// if it succeeded.
-fn run(program: &str, args: &[&str], input: Option<&str>) -> Option<String> {
+/// How running the keyring's program went wrong.
+enum Failed {
+    /// It isn't there or couldn't start.
+    Start(std::io::Error),
+    /// It ran and failed: its exit code, if it exited, and the first line
+    /// it printed to stderr.
+    Exit(Option<i32>, String),
+}
+
+/// Runs `program` with `args`, giving it `input`, and returns what it printed.
+fn run(program: &str, args: &[&str], input: Option<&str>) -> Result<String, Failed> {
     let command: Vec<&str> = std::iter::once(program)
         .chain(args.iter().copied())
         .collect();
     let mut child = crate::child::command(&command, None, &[], false)
-        .ok()?
+        .map_err(Failed::Start)?
         .stdin(if input.is_some() {
             Stdio::piped()
         } else {
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
-        .ok()?;
+        .map_err(Failed::Start)?;
     // Waited for even when the input can't all be written, so it's reaped.
     let wrote = match (input, child.stdin.take()) {
         (Some(input), Some(mut stdin)) => stdin.write_all(input.as_bytes()).is_ok(),
         _ => true,
     };
-    let output = child.wait_with_output().ok()?;
-    (wrote && output.status.success()).then(|| {
-        String::from_utf8_lossy(&output.stdout)
-            .trim_end_matches('\n')
-            .to_owned()
-    })
-}
-
-fn from_keyring(name: &str) -> Option<String> {
-    if cfg!(target_os = "macos") {
-        run(
-            "security",
-            &["find-generic-password", "-s", SERVICE, "-a", name, "-w"],
-            None,
-        )
-    } else {
-        run(
-            "secret-tool",
-            &["lookup", "service", SERVICE, "account", name],
-            None,
-        )
+    let output = child.wait_with_output().map_err(Failed::Start)?;
+    if !output.status.success() {
+        let said = String::from_utf8_lossy(&output.stderr);
+        let said = said.lines().map(str::trim).find(|line| !line.is_empty());
+        return Err(Failed::Exit(
+            output.status.code(),
+            said.unwrap_or_default().to_owned(),
+        ));
     }
-    .filter(|v| !v.is_empty())
+    if !wrote {
+        return Err(Failed::Exit(
+            None,
+            format!("{program} didn't take the secret"),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .trim_end_matches('\n')
+        .to_owned())
 }
 
-fn to_keyring(name: &str, value: &str) -> bool {
-    if cfg!(target_os = "macos") {
+/// Why the keyring couldn't be reached through `program`.
+fn unreachable(program: &str, failed: Failed) -> String {
+    let why = match failed {
+        Failed::Start(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            format!("{program} isn't installed here")
+        }
+        Failed::Start(err) => format!("can't run {program}: {err}"),
+        Failed::Exit(_, said) if !said.is_empty() => said,
+        Failed::Exit(Some(code), _) => format!("{program} failed with code {code}"),
+        Failed::Exit(None, _) => format!("{program} was stopped"),
+    };
+    format!("the system keyring couldn't be reached ({why})")
+}
+
+/// The secret `name` in the keyring, none if it has no such secret, or why
+/// it couldn't be asked. With no such secret, `secret-tool` fails with 1
+/// and says nothing, `security` fails with 44.
+fn from_keyring(program: &str, name: &str) -> Result<Option<String>, String> {
+    let args: &[&str] = if cfg!(target_os = "macos") {
+        &["find-generic-password", "-s", SERVICE, "-a", name, "-w"]
+    } else {
+        &["lookup", "service", SERVICE, "account", name]
+    };
+    match run(program, args, None) {
+        Ok(value) => Ok(Some(value).filter(|v| !v.is_empty())),
+        Err(Failed::Exit(Some(1), said)) if said.is_empty() => Ok(None),
+        Err(Failed::Exit(Some(44), _)) => Ok(None),
+        Err(failed) => Err(unreachable(program, failed)),
+    }
+}
+
+/// Keeps `value` as the secret `name` in the keyring, or says why it can't.
+fn to_keyring(program: &str, name: &str, value: &str) -> Result<(), String> {
+    let kept = if cfg!(target_os = "macos") {
         // `security` takes the value on its command line; -U updates.
         run(
-            "security",
+            program,
             &[
                 "add-generic-password",
                 "-U",
@@ -167,18 +215,18 @@ fn to_keyring(name: &str, value: &str) -> bool {
             ],
             None,
         )
-        .is_some()
     } else {
         let label = format!("Greed: {name}");
         run(
-            "secret-tool",
+            program,
             &[
                 "store", "--label", &label, "service", SERVICE, "account", name,
             ],
             Some(value),
         )
-        .is_some()
-    }
+    };
+    kept.map(drop)
+        .map_err(|failed| unreachable(program, failed))
 }
 
 fn read_file(file: &Path) -> BTreeMap<String, String> {
@@ -188,40 +236,71 @@ fn read_file(file: &Path) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
-fn write_file(file: &Path, secrets: &BTreeMap<String, String>) -> std::io::Result<()> {
+fn write_file(file: &Path, secrets: &BTreeMap<String, String>) -> Result<(), String> {
     use std::os::unix::fs::OpenOptionsExt;
-    if let Some(dir) = file.parent() {
-        std::fs::create_dir_all(dir)?;
+    let write = || -> std::io::Result<()> {
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let text = serde_json::to_string_pretty(secrets).map_err(std::io::Error::other)?;
+        let partial = file.with_extension("json.partial");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&partial)?
+            .write_all(text.as_bytes())?;
+        std::fs::rename(&partial, file)
+    };
+    write().map_err(|err| err.to_string())
+}
+
+/// The secret `name`, from wherever it's found first; none if it's
+/// nowhere, or why not when the keyring couldn't be asked and may have it.
+pub(super) fn find(places: &Places, name: &str) -> Result<Option<String>, String> {
+    if let Some(value) = from_env(name) {
+        return Ok(Some(value));
     }
-    let text = serde_json::to_string_pretty(secrets).map_err(std::io::Error::other)?;
-    let partial = file.with_extension("json.partial");
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&partial)?
-        .write_all(text.as_bytes())?;
-    std::fs::rename(&partial, file)
+    let asked = places
+        .keyring
+        .as_deref()
+        .map_or(Ok(None), |program| from_keyring(program, name));
+    if let Ok(Some(value)) = asked {
+        return Ok(Some(value));
+    }
+    match read_file(&places.file).remove(name) {
+        Some(value) => Ok(Some(value)),
+        None => asked,
+    }
 }
 
-/// The secret `name`, from wherever it's found first.
-pub(super) fn find(places: &Places, name: &str) -> Option<String> {
-    from_env(name)
-        .or_else(|| places.keyring.then(|| from_keyring(name)).flatten())
-        .or_else(|| read_file(&places.file).remove(name))
-}
-
-/// Keeps `value` as the secret `name`: in the keyring if there is one,
-/// otherwise in Greed's secrets file. Says where it went.
+/// Keeps `value` as the secret `name`: in the keyring if it can be
+/// reached, otherwise in Greed's secrets file. Says where it went, and why
+/// not the keyring when it couldn't be reached.
 pub(super) fn keep(places: &Places, name: &str, value: &str) -> Result<String, String> {
-    if places.keyring && to_keyring(name, value) {
-        return Ok("the system keyring".to_owned());
-    }
     let mut secrets = read_file(&places.file);
+    let unreachable = match places.keyring.as_deref() {
+        Some(program) => match to_keyring(program, name, value) {
+            Ok(()) => {
+                // A copy kept while the keyring couldn't be reached would
+                // come back once the keyring's is emptied.
+                if secrets.remove(name).is_some() {
+                    write_file(&places.file, &secrets)?;
+                }
+                return Ok("the system keyring".to_owned());
+            }
+            Err(why) => Some(why),
+        },
+        None => None,
+    };
     secrets.insert(name.to_owned(), value.to_owned());
-    write_file(&places.file, &secrets).map_err(|err| err.to_string())?;
-    Ok(places.file.display().to_string())
+    write_file(&places.file, &secrets)?;
+    let file = places.file.display();
+    Ok(match unreachable {
+        Some(why) => format!("{file}, since {why}"),
+        None => file.to_string(),
+    })
 }
 
 /// Fails unless `owner` declared the secret `name`, and what started the
@@ -250,7 +329,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         Ok(jobs::start(
             lua,
             format!("greed.secrets.get {name:?}"),
-            move || Output::Secret(Ok(find(&places, &name))),
+            move || Output::Secret(find(&places, &name)),
         ))
     })?;
     let o = owner.clone();
@@ -275,7 +354,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 }
 
 /// What a command waiting on a secret wakes with: the value (or where it
-/// was kept), nil if there's none, or nil and why it failed.
+/// was kept), nil if there's none, or nil and why.
 pub(super) fn to_lua(
     lua: &Lua,
     result: Result<Option<String>, String>,
@@ -309,25 +388,118 @@ pub(super) fn guard(lua: &Lua, path: &Path) -> LuaResult<()> {
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
 
     use super::{Places, find, keep};
 
+    fn folder(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("greed-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A stand-in for the keyring's program, running `script`.
+    fn fake_keyring(dir: &Path, script: &str) -> String {
+        let program = dir.join("keyring");
+        std::fs::write(&program, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        program.display().to_string()
+    }
+
     #[test]
     fn secrets_kept_in_the_file_come_back_and_stay_private() {
-        let dir = std::env::temp_dir().join(format!("greed-secrets-{}", std::process::id()));
+        let dir = folder("secrets");
         let places = Places {
             file: dir.join("secrets.json"),
-            keyring: false,
+            keyring: None,
         };
-        assert_eq!(find(&places, "greed-test-nothing"), None);
+        assert_eq!(find(&places, "greed-test-nothing"), Ok(None));
         let kept = keep(&places, "greed-test-key", "s3cret").unwrap();
         assert!(kept.ends_with("secrets.json"), "{kept}");
-        assert_eq!(find(&places, "greed-test-key").as_deref(), Some("s3cret"));
+        assert_eq!(
+            find(&places, "greed-test-key"),
+            Ok(Some("s3cret".to_owned()))
+        );
         let mode = std::fs::metadata(&places.file)
             .unwrap()
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600, "only you can read it");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_keyring_that_cant_be_reached_says_why_and_secrets_go_to_the_file() {
+        let dir = folder("secrets-unreachable");
+        let places = Places {
+            file: dir.join("secrets.json"),
+            keyring: Some("greed-test-no-such-keyring".to_owned()),
+        };
+        let why = find(&places, "greed-test-key").unwrap_err();
+        assert_eq!(
+            why,
+            "the system keyring couldn't be reached \
+             (greed-test-no-such-keyring isn't installed here)"
+        );
+        let kept = keep(&places, "greed-test-key", "s3cret").unwrap();
+        assert!(
+            kept.starts_with(&places.file.display().to_string()),
+            "{kept}"
+        );
+        assert!(kept.ends_with(&format!(", since {why}")), "{kept}");
+        assert_eq!(
+            find(&places, "greed-test-key"),
+            Ok(Some("s3cret".to_owned())),
+            "found in the file even though the keyring can't be asked"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_keyring_failing_says_what_it_said() {
+        let dir = folder("secrets-failing");
+        let places = Places {
+            file: dir.join("secrets.json"),
+            keyring: Some(fake_keyring(
+                &dir,
+                "echo 'Cannot autolaunch D-Bus without X11 $DISPLAY' >&2; exit 1",
+            )),
+        };
+        assert_eq!(
+            find(&places, "greed-test-key"),
+            Err("the system keyring couldn't be reached \
+                 (Cannot autolaunch D-Bus without X11 $DISPLAY)"
+                .to_owned())
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_keyring_without_the_secret_is_just_missing() {
+        let dir = folder("secrets-missing");
+        let places = Places {
+            file: dir.join("secrets.json"),
+            keyring: Some(fake_keyring(&dir, "exit 1")),
+        };
+        assert_eq!(find(&places, "greed-test-key"), Ok(None));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn keeping_in_the_keyring_drops_the_files_copy() {
+        let dir = folder("secrets-reached");
+        let mut places = Places {
+            file: dir.join("secrets.json"),
+            keyring: None,
+        };
+        keep(&places, "greed-test-key", "old").unwrap();
+        // A keyring that takes anything and has nothing.
+        places.keyring = Some(fake_keyring(&dir, "cat >/dev/null; exit 0"));
+        assert_eq!(
+            keep(&places, "greed-test-key", "new").as_deref(),
+            Ok("the system keyring")
+        );
+        assert_eq!(find(&places, "greed-test-key"), Ok(None));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -890,6 +890,13 @@ impl UserData for TestContext {
                 tempdir(&root, files.unwrap_or_default()).map_err(mlua::Error::external)
             },
         );
+        // A program standing in for the system keyring's (`secret-tool`,
+        // `security`), or nil for none. One that isn't there acts as a
+        // keyring that can't be reached.
+        methods.add_method("keyring", |lua, _, program: Option<String>| {
+            state_mut(lua).keyring = program;
+            Ok(())
+        });
         // Opens a file the test made, as greed.open does, without the
         // plugin needing fs.read just for its tests. Only inside the test's
         // own folder: a test's failures go back to whoever wrote it.

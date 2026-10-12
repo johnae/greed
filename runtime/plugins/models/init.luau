@@ -519,34 +519,47 @@ local function may_send(name: string, url: string): string?
 end
 
 --- What every feature says when the provider `name` has no key: the
---- variable that sets one, and how to add one instead.
-function M.no_key(name: string): string
+--- variable that sets one, and how to add one instead. With `unreachable`,
+--- why greed.secrets couldn't ask the system keyring, which may have it.
+function M.no_key(name: string, unreachable: string?): string
 	local provider = M.providers[name]
 	local secret = (provider and provider.secret) or name
+	local variable = greed.secrets.variable(secret)
+	if unreachable then
+		local add = if provider and provider.login
+			then `:login {provider.login}`
+			else "adding one in :models"
+		return `no API key for {name}: {unreachable}; {add} saves it in Greed's own `
+			.. `secrets file instead, or set {variable}`
+	end
 	local sign_in = if provider and provider.login then `:login {provider.login}, ` else ""
-	return `no API key for {name}: {sign_in}set {greed.secrets.variable(secret)}, `
-		.. "or add one in :models"
+	return `no API key for {name}: {sign_in}set {variable}, or add one in :models`
 end
 
-local function key_state(name: string): (string?, string?)
+-- How the provider `name` stands for keys, the message saying it has none,
+-- and why the keyring couldn't be asked, when it couldn't.
+local function key_state(name: string): (string?, string?, string?)
 	local provider = M.providers[name]
 	if provider == nil then
-		return nil, `the provider "{name}" isn't set up`
+		return nil, `the provider "{name}" isn't set up`, nil
 	elseif provider.login and login.signed_in(provider.login) then
-		return "signed in", nil
+		return "signed in", nil, nil
 	elseif provider.secret == nil then
-		return "no key needed", nil
-	elseif greed.secrets.get(provider.secret) then
-		return "key found", nil
+		return "no key needed", nil, nil
 	end
-	return nil, M.no_key(name)
+	local key, unreachable = greed.secrets.get(provider.secret)
+	if key then
+		return "key found", nil, nil
+	end
+	return nil, M.no_key(name, unreachable), unreachable
 end
 
 --- How the provider `name` stands for keys: "signed in", "key found" or
 --- "no key needed", or nil and the message saying it has no key. Any
 --- plugin may ask: it tells whether there's a key, never the key.
 function M.key_state(name: string): (string?, string?)
-	return greed.vouch(key_state, name)
+	local state, missing = greed.vouch(key_state, name)
+	return state, missing
 end
 
 --- Why the model for `role` can't be asked now, without asking it: no
@@ -621,9 +634,11 @@ local function connect(role: string): (Role?, Provider?, string?, string?)
 		end
 		key, name = token, `{provider.login} sign-in`
 	elseif provider.secret then
-		key, name = greed.secrets.get(provider.secret), provider.secret
+		local unreachable
+		key, unreachable = greed.secrets.get(provider.secret)
+		name = provider.secret
 		if key == nil then
-			return nil, nil, nil, M.no_key(chosen.provider)
+			return nil, nil, nil, M.no_key(chosen.provider, unreachable)
 		end
 	end
 	local refused = name and may_send(name, provider.url)
@@ -1057,12 +1072,15 @@ end
 
 -- Whether `provider` has a key, as the :models page says it.
 local function key_text(name: string, provider: Provider): string
-	local state = M.key_state(name)
+	local state, _, unreachable = greed.vouch(key_state, name)
 	if state then
 		return state
 	end
 	local sign_in = if provider.login then "l signs in, " else ""
-	return `no API key: {sign_in}k adds one, or set {greed.secrets.variable(provider.secret or name)}`
+	local keeps = if unreachable then " to Greed's own secrets file" else ""
+	local why = if unreachable then ` ({unreachable})` else ""
+	local variable = greed.secrets.variable(provider.secret or name)
+	return `no API key{why}: {sign_in}k adds one{keeps}, or set {variable}`
 end
 
 -- What the :models page says of `name`, which a model plays.
@@ -1386,7 +1404,7 @@ greed.command({
 		end
 		local title = login.logins[name].title
 		local float: greed.View? = nil
-		local ok, err = login.sign_in(name, function(started)
+		local kept, err = login.sign_in(name, function(started)
 			local lines = {
 				`Sign in to {title}: open`,
 				"",
@@ -1402,7 +1420,11 @@ greed.command({
 		if float then
 			pcall(float.close, float)
 		end
-		greed.echo(if ok then `signed in to {title}` else `can't sign in to {title}: {err}`)
+		greed.echo(
+			if kept
+				then `signed in to {title}, kept in {kept}`
+				else `can't sign in to {title}: {err}`
+		)
 	end,
 })
 

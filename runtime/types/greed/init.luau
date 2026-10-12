@@ -607,9 +607,9 @@ export type Http = {
 --- the system keyring, or Greed's own secrets file. Both wait like greed.sleep. A
 --- plugin needs "secrets:NAME" for each secret it reads, or "secrets" for all.
 export type Secrets = {
-	--- The secret `name`, or nil if it isn't set anywhere.
+	--- The secret `name`, or nil if it isn't set anywhere; then also why when the system keyring couldn't be reached (e.g. secret-tool isn't installed), since it may be kept there.
 	get: (name: string) -> (string?, string?),
-	--- Keeps `value` as the secret `name`: in the keyring if there is one, otherwise in Greed's secrets file. Returns where it went, or nil and why not.
+	--- Keeps `value` as the secret `name`: in the keyring if it can be reached, otherwise in Greed's secrets file. Returns where it went (with why not the keyring, when it couldn't be reached), or nil and why not.
 	set: (name: string, value: string) -> (string?, string?),
 	--- The environment variable that sets the secret `name`, to tell someone: the usual one, like ANTHROPIC_API_KEY, or GREED_SECRET_NAME. Reads nothing, so it needs no capability.
 	variable: (name: string) -> string,
