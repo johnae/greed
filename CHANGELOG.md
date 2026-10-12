@@ -31,6 +31,7 @@ the repository's history.
 
 ### Fixed
 
+- lsp: a server held back in an untrusted project says it waits for :trust
 - notes: reminders go off in one session when several are running
 - projects: space P says what enter does, and alt-o opens a project here
 

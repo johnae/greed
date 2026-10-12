@@ -36,3 +36,15 @@ test(
 		assert(status.text(buffer) == nil, status.text(buffer))
 	end
 )
+
+test("a server held back in a project you haven't trusted says how to let it start", function(t)
+	local dir = t:tempdir({ ["main.demo"] = "x\n" })
+	greed.lsp.server({ language = "demo", command = { "sh" } })
+	greed.lsp.trust({ t:tempdir() })
+	greed.open(`{dir}/main.demo`)
+	local buffer = greed.view():buffer()
+	buffer:set_language("demo")
+	assert(status.text(buffer) == "sh waits for :trust", status.text(buffer))
+	greed.lsp.trust(nil)
+	greed.lsp.remove("demo")
+end)

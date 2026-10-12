@@ -1,6 +1,7 @@
 -- The language server in the status line: its name while it runs, what
 -- it's working on as it reports progress (`rust-analyzer: indexing 40%`),
--- and whether it's starting, stopped or not installed. Each project has its
+-- and whether it's starting, stopped, waiting for you to `:trust` the
+-- project or not installed. Each project has its
 -- own server, so each buffer shows its own.
 
 local greed = require("@greed")
@@ -81,6 +82,11 @@ function M.text(buffer: greed.Buffer): string?
 	if not name then
 		local wanted = commands[1]
 		return `{wanted and wanted[1] or "server"} not installed`
+	end
+	-- Held back in a project you haven't trusted, as it would run the
+	-- project's code: it says how to let it start.
+	if greed.lsp.waits(buffer) then
+		return `{name} waits for :trust`
 	end
 	local key = M.key(language, greed.lsp.root(buffer))
 	if greed.lsp.capabilities(buffer) == nil then

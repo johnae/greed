@@ -464,7 +464,8 @@ config runs, now and whenever it opens again. `n` leaves it untrusted for
 this session; `:trust` trusts the shown project later. Any other key
 answers `n` and then does what it normally does, so your typing isn't
 lost. A project opened with its own config says so and waits for `:trust`
-too (see [Configuration](using.md#configuration)). `:format` run by hand
+too (see [Configuration](using.md#configuration)). Until then the status
+line says so, like `rust-analyzer waits for :trust`. `:format` run by hand
 works anywhere.
 
 Trust goes by folder: a project somewhere else, even a copy, asks again.
