@@ -146,7 +146,7 @@ test("a command waits for the environment to load, or runs without when interrup
 	shows(t, sh, "❄ test…")
 	local block = started(t, sh, "printenv GREED_T")
 	t:wait_for(function()
-		return block.note == "waiting for test"
+		return block.note == "loading test"
 	end)
 	assert(block.status == "running")
 	release()
@@ -161,7 +161,7 @@ test("a command waits for the environment to load, or runs without when interrup
 	end)
 	local waiting = started(t, sh, "printenv GREED_T || echo none")
 	t:wait_for(function()
-		return waiting.note == "waiting for test"
+		return waiting.note == "loading test"
 	end)
 	assert(shell.interrupt(waiting))
 	t:wait_for(function()
@@ -169,6 +169,30 @@ test("a command waits for the environment to load, or runs without when interrup
 	end)
 	assert(waiting.stdout == "none\n", waiting.stdout)
 	release()
+end)
+
+test("a block's time is its program's, without the wait for the environment", function(t)
+	provide(t)
+	local dir = t:tempdir({ ["test.env"] = "GREED_T=one\n" })
+	t:run("shell")
+	local sh = assert(shell.of(greed.view():buffer()))
+	sh.cwd = dir
+	hold()
+	greed.spawn(function()
+		envs.refresh(sh)
+	end)
+	local block = started(t, sh, "true")
+	t:wait_for(function()
+		return block.note == "loading test"
+	end)
+	greed.sleep(400)
+	release()
+	t:wait_for(function()
+		return block.status ~= "running"
+	end)
+	local took = assert(block.finished) - block.started
+	assert(took < 300, `{took}ms`)
+	assert(block.note == nil)
 end)
 
 test("changing what it comes from loads it again; env reload does too", function(t)

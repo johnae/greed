@@ -350,8 +350,10 @@ In a folder with a `devenv.nix`, the shell loads devenv's environment, as
 the `PATH`, its variables, and what `enterShell` sets up. No direnv is
 needed, and devenv's own rule applies: a project loads once you've run
 `devenv allow` there. The prompt says it's there, `❄ devenv`, with `…`
-while it loads (a command typed meanwhile waits for it, and `ctrl-c` runs
-it without), or that it failed, which `env` says more about.
+while it loads (a command typed meanwhile waits for it, its status saying
+`loading devenv`, and `ctrl-c` runs it without), or that it failed, which
+`env` says more about. A block's time counts from when its program starts,
+so the wait isn't in it.
 
 Changing `devenv.nix`, `devenv.yaml`, `devenv.lock` or anything else devenv
 read loads it again; `env reload` does too. Leaving the project leaves its

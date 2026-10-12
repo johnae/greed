@@ -215,13 +215,16 @@ function M.prepare(shell: Shell, block: Block)
 			block.stop, block.stopping = nil, nil
 			waited:send(false)
 		end
-		block.note = `waiting for {entry.provider}`
+		block.note = `loading {entry.provider}`
 		state.give_job(block, { interrupt = stop, kill = stop })
 		log.draw_block(shell, block)
 		greed.spawn(function()
 			waited:send(loading(pending):wait())
 		end)
+		local from = greed.now()
 		local loaded_in_time = waited:wait()
+		-- The block's time is its program's: the wait doesn't count.
+		block.started += greed.now() - from
 		block.note = nil
 		block.job = nil
 		if not loaded_in_time then
