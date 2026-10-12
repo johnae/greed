@@ -229,7 +229,7 @@ test(
 	function(t)
 		greed.option.set("project-trust", "ask")
 		greed.lsp.server({ language = "trustlang", command = { "sh" } })
-		require("@languages").set("trustlang", { extensions = { "tl" } })
+		greed.filetype("trustlang", { extensions = { "tl" } })
 		local dir = t:tempdir({ [".git/HEAD"] = "", ["a.tl"] = "x\n" })
 		t:buffer("|x")
 		greed.open(`{dir}/a.tl`)
@@ -238,7 +238,12 @@ test(
 			return string.find(said[#said] or "", "isn't trusted", 1, true) ~= nil
 		end)
 		assert(not project.trusts(`{dir}/a.tl`), "not yet")
-		t:keys("y")
+		-- Another key goes on to do what it does, and asks nothing more.
+		t:keys("i")
+		assert(string.find(greed.mode.get(), "insert", 1, true), greed.mode.get())
+		assert(not project.trusts(`{dir}/a.tl`), "still not")
+		t:keys("esc")
+		project.trust(dir)
 		t:wait_for(function()
 			return project.trusts(`{dir}/a.tl`)
 		end)

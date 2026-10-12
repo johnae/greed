@@ -542,11 +542,16 @@ greed.on("buffer.opened", function(event: greed.BufferChanged)
 		`{M.tilde(root)} isn't trusted: its language server and formatting on save would run `
 			.. "its code (build scripts, config files). Trust it? y yes, n not now"
 	)
-	if greed.next_key() == "y" then
+	local key = greed.next_key()
+	if key == "y" then
 		M.trust(root)
 		greed.echo(`trusted {M.tilde(root)}`)
-	else
-		greed.echo(":trust trusts it later")
+		return
+	end
+	greed.echo(":trust trusts it later")
+	-- Another key wasn't meant for the question: it does what it would have.
+	if key ~= "n" and key ~= "esc" then
+		greed.keys.feed(key)
 	end
 end)
 
