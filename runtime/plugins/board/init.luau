@@ -748,6 +748,127 @@ greed.on("buffer.closed", function(event)
 	end
 end)
 
+-- Boards and their cards as objects, for the inspector and agents.
+
+-- The open board with file `path`, if it's open.
+local function open_board(path: string): Board?
+	for _, board in boards do
+		if board.path == path then
+			return board
+		end
+	end
+	return nil
+end
+
+-- The file of the board called `name`: an open one's, or one in the folders.
+local function named(name: string): string?
+	for _, board in boards do
+		if board.name == name then
+			return board.path
+		end
+	end
+	return path_of(name)
+end
+
+local function board_object(name: string, path: string): core.Object
+	return {
+		kind = "board",
+		id = `board:{name}`,
+		label = name,
+		value = { name = name, path = path },
+	}
+end
+
+local function card_object(board: Board, index: number): core.Object
+	local card = board.cards[index]
+	return {
+		kind = "board-card",
+		id = `board-card:{board.name}/{index}`,
+		label = card.title,
+		value = { board = board, index = index },
+	}
+end
+
+core.objects.kind({
+	name = "board",
+	doc = "A board: a saved set of live shell commands, each a card",
+	list = function()
+		local out = {}
+		for _, found in M.list() do
+			table.insert(out, board_object(found.name, found.path))
+		end
+		return out
+	end,
+	get = function(key)
+		local path = named(key)
+		return if path then board_object(key, path) else nil
+	end,
+	inspect = function(value: { name: string, path: string })
+		local open = open_board(value.path)
+		local parsed = file.parse(greed.fs.read(value.path) or "")
+		return {
+			file = value.path,
+			title = parsed.title,
+			cards = #parsed.cards,
+			open = open ~= nil,
+			problem = if open then open.problem else nil,
+		}
+	end,
+	relations = function(value: { name: string, path: string })
+		local open = open_board(value.path)
+		local cards = {}
+		if open then
+			for index in open.cards do
+				table.insert(cards, card_object(open, index))
+			end
+		end
+		return { cards = cards }
+	end,
+})
+
+core.objects.kind({
+	name = "board-card",
+	doc = "A card of an open board: its command, and the block showing what it prints",
+	get = function(key)
+		local name, index = string.match(key, "^(.+)/(%d+)$")
+		local path = if name then named(name) else nil
+		local board = if path then open_board(path) else nil
+		local at = tonumber(index)
+		return if board and at and board.cards[at] then card_object(board, at) else nil
+	end,
+	inspect = function(value: { board: Board, index: number })
+		local card = value.board.cards[value.index]
+		return {
+			title = card.title,
+			command = card.command,
+			every = card.every,
+			section = card.section,
+			folder = card.dir,
+		}
+	end,
+	relations = function(value: { board: Board, index: number })
+		local board = value.board
+		local block = board.blocks[value.index]
+		local shown = if block
+			then core.objects.get(`shell-block:{board.shell.buffer:id()}.{block.number}`)
+			else nil
+		return {
+			board = { board_object(board.name, board.path) },
+			block = if shown then { shown } else {},
+		}
+	end,
+})
+
+core.actions.action({
+	kind = "board",
+	name = "open",
+	doc = "Show it",
+	run = function(target)
+		M.open(target.value.path)
+	end,
+})
+core.actions.set_default("board", "open")
+
 -- A board can't be typed in, so its keys are the same in every mode.
 for _, role in { "command", "typing" } do
 	greed.keymap.bind({ role = role, kind = KIND }, {

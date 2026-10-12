@@ -387,3 +387,19 @@ test("saved twice quickly, the board loads once after the other, as the file say
 	end, 20000)
 	assert(not string.find(b.buffer:text(), "two", 1, true), b.buffer:text())
 end)
+
+test("a board and its cards are objects; a card relates to the block showing it", function(t)
+	local dir, path = make(t, OPS)
+	local b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	local object = assert(core.objects.get(`board:{b.name}`))
+	local state = core.objects.inspect(object)
+	assert(state.cards == 3 and state.open and state.title == "ops", greed.json.encode(state))
+	local cards = core.objects.related(object).cards
+	assert(cards and #cards == 3 and cards[1].label == "the list", "its cards")
+	local card = assert(core.objects.get(cards[1].id))
+	assert(core.objects.inspect(card).command == "printf 'a\\nb\\nc\\nd\\n'")
+	local block = core.objects.related(card).block
+	assert(block and #block == 1 and block[1].kind == "shell-block", "the block showing it")
+	assert(core.objects.actions(object)[1].name == "open")
+end)

@@ -187,3 +187,7 @@ A board runs commands, so one you didn't make asks before it runs
 anything, as [code blocks](using.md#runnable-code-blocks) in Markdown do:
 `y` runs it this time, `a` always for that file. Trusting a file for one
 trusts it for the other. Boards you make with `:board-new` or "pin to board" are trusted.
+
+Boards and their cards are objects too: `space h i` (the inspector), and
+agents through `inspect`, see a board's file and cards, and a card's
+command and the block showing what it prints.
