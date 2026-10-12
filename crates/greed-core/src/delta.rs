@@ -87,6 +87,14 @@ pub struct SurfaceDelta {
         deserialize_with = "changed_to"
     )]
     pub keep: Option<Option<u16>>,
+    /// Where its view's first row now is in its text, when the view
+    /// scrolled.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "changed_to"
+    )]
+    pub top: Option<Option<[u64; 2]>>,
     /// How many rows its rows moved up, or down when negative, before the
     /// rest applies, as when its view scrolled: the rows that stay in sight
     /// aren't sent again, and a window can glide them to their new place.
@@ -181,6 +189,7 @@ impl SurfaceDelta {
             content: new.content.map(Some),
             note: new.note.clone().map(Some),
             keep: new.keep.map(Some),
+            top: new.top.map(Some),
             shift: 0,
             row_count: Some(new.rows.len()),
             rows: (new.rows.iter().enumerate())
@@ -208,6 +217,7 @@ impl SurfaceDelta {
             content: changed(&old.content, &new.content),
             note: changed(&old.note, &new.note),
             keep: changed(&old.keep, &new.keep),
+            top: changed(&old.top, &new.top),
             shift: i32::try_from(shift).unwrap_or(0),
             row_count: changed(&old.rows.len(), &new.rows.len()),
             rows,
@@ -221,6 +231,7 @@ impl SurfaceDelta {
             && self.content.is_none()
             && self.note.is_none()
             && self.keep.is_none()
+            && self.top.is_none()
             && self.shift == 0
             && self.row_count.is_none()
             && self.rows.is_empty()
@@ -241,6 +252,9 @@ impl SurfaceDelta {
         }
         if let Some(keep) = self.keep {
             surface.keep = keep;
+        }
+        if let Some(top) = self.top {
+            surface.top = top;
         }
         // Rows moved out of sight go; those coming into it are empty until
         // `rows` fills them.

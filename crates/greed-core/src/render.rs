@@ -396,6 +396,11 @@ pub struct Surface {
     /// where a terminal's program has its cursor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep: Option<u16>,
+    /// For a view, where its first row is in its text: the line, and the
+    /// row of that line when it wraps. It changes when the view scrolls,
+    /// and not when its text changes, so a client glides only real scrolls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<[u64; 2]>,
 }
 
 impl Surface {
@@ -409,6 +414,7 @@ impl Surface {
             content: None,
             note: None,
             keep: None,
+            top: None,
         }
     }
 }
@@ -439,14 +445,17 @@ impl Laid {
         }
     }
 
-    /// The surface showing view `view` as `role` in `rect`.
-    fn surface(self, view: ViewId, role: Role, rect: Rect) -> Surface {
+    /// The surface showing view `view` as `role` in `rect`, scrolled to
+    /// `scroll`.
+    fn surface(self, view: ViewId, role: Role, rect: Rect, scroll: Scroll) -> Surface {
         let mut surface = Surface::new(SurfaceId::View(view), role, rect, self.rows);
         if let Some(sized) = self.sized {
             surface.content = Some(sized.size);
             surface.note = Some(sized.note);
             surface.keep = sized.keep;
         }
+        let wide = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
+        surface.top = Some([wide(scroll.line), wide(scroll.row)]);
         surface
     }
 }
@@ -735,7 +744,7 @@ impl<M: Measure> Renderer<M> {
             if let Some(cursor) = laid.cursor {
                 cursors.push((view, cursor));
             }
-            surfaces.push(laid.surface(view, role, rect));
+            surfaces.push(laid.surface(view, role, rect, editor.view(view).scroll));
         }
         let cursor_of = |cursors: &[(ViewId, Position)], view: ViewId| {
             cursors.iter().find(|(v, _)| *v == view).map(|(_, c)| *c)
@@ -774,7 +783,7 @@ impl<M: Measure> Renderer<M> {
                 label: border_spans(options.label.as_ref()),
                 footer: border_spans(options.footer.as_ref()),
             };
-            surfaces.push(laid.surface(float.view, role, rect));
+            surfaces.push(laid.surface(float.view, role, rect, editor.view(float.view).scroll));
         }
         images.retain(|image| !covered.iter().any(|&c| image.rect.overlaps(c)));
         images.extend(self.images.take());
@@ -947,7 +956,7 @@ impl<M: Measure> Renderer<M> {
             let role = Role::Pane {
                 active: view == active,
             };
-            surfaces.push(laid.surface(view, role, rect));
+            surfaces.push(laid.surface(view, role, rect, editor.view(view).scroll));
         }
         if tabline {
             let rect = Rect {

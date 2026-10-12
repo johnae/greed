@@ -145,19 +145,20 @@ impl Painter {
     }
 
     /// Starts the glides of the surfaces `delta` scrolls, from where the
-    /// frame there is now has them. A pane under a float jumps, since the
-    /// float's quads can't be told from its own.
+    /// frame there is now has them. Only a view that scrolled glides: rows
+    /// moving as its text changes, like a line put in above them, jump. A
+    /// pane under a float, or with an image or a chart in it, jumps too,
+    /// since their quads can't be told from its own.
     fn glide(&mut self, delta: &FrameDelta) {
         let Some(frame) = self.screen.frame() else {
             return;
         };
         let now = Instant::now();
         let cell = (self.fonts.cell_w, self.fonts.cell_h);
-        for change in delta
-            .surfaces
-            .iter()
-            .filter(|s| s.shift != 0 && s.rect.is_none())
-        {
+        let scrolled = |s: &&greed_core::delta::SurfaceDelta| {
+            s.shift != 0 && s.rect.is_none() && matches!(s.top, Some(Some(_)))
+        };
+        for change in delta.surfaces.iter().filter(scrolled) {
             let Some(surface) = frame.surfaces.iter().find(|s| s.id == change.id) else {
                 continue;
             };
@@ -168,7 +169,30 @@ impl Painter {
                 }
                 Role::Pane { .. } | Role::Panel { .. } | Role::Tabline | Role::Status => false,
             });
-            if covered || !matches!(surface.role, Role::Pane { .. } | Role::Panel { .. }) {
+            let pictured = frame.images.iter().any(|i| i.rect.overlaps(surface.rect))
+                || frame.scenes.iter().any(|s| s.rect.overlaps(surface.rect));
+            // Rows that changed in place, besides those scrolling into sight:
+            // a part that stays put, like a chat's box under what scrolls,
+            // would move with the rest, so a few (the cursor's line) at most.
+            let height = surface.rows.len();
+            let by = usize::try_from(change.shift.unsigned_abs()).unwrap_or(usize::MAX);
+            let entering = |row: usize| {
+                if change.shift > 0 {
+                    row + by >= height
+                } else {
+                    row < by
+                }
+            };
+            let in_place = change
+                .rows
+                .iter()
+                .filter(|(row, _)| !entering(usize::from(*row)))
+                .count();
+            if covered
+                || pictured
+                || in_place > 2
+                || !matches!(surface.role, Role::Pane { .. } | Role::Panel { .. })
+            {
                 continue;
             }
             // A glide on the way goes on from where it got to.
@@ -464,9 +488,19 @@ mod tests {
 
     /// Ten numbered rows from `first`, as a scrolled view shows them.
     fn scrolled(first: usize, seq: u64) -> Frame {
+        let mut frame = moved(first, seq);
+        frame.surfaces[0].top = Some([first as u64, 0]);
+        frame
+    }
+
+    /// The same rows as `scrolled`, there because the text changed: the
+    /// view itself didn't scroll.
+    fn moved(first: usize, seq: u64) -> Frame {
         let lines: Vec<String> = (first..first + 10).map(|n| format!("row {n}")).collect();
         let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
-        frame_of(&lines, seq)
+        let mut frame = frame_of(&lines, seq);
+        frame.surfaces[0].top = Some([0, 0]);
+        frame
     }
 
     /// A quad on each of `rows` rows, as if each row drew one.
@@ -559,6 +593,52 @@ mod tests {
         assert_eq!(last.instances.len(), 10);
         assert!(last.instances[0].pos[1].abs() < 0.01);
         assert!(!painter.animating());
+    }
+
+    #[test]
+    fn rows_moved_by_the_text_changing_jump_and_a_pane_with_an_image_too() {
+        let (before, after) = (moved(0, 1), moved(3, 2));
+        let painter = scrolled_painter(Painter::new().gliding(), &before, &after);
+        assert!(!painter.animating(), "the view didn't scroll");
+        let (mut before, mut after) = (scrolled(0, 1), scrolled(3, 2));
+        let image = greed_core::render::ImagePlacement {
+            id: greed_core::image::ImageId(1),
+            rect: Rect {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 2,
+            },
+            col: 0,
+            row: 0,
+            cols: 4,
+            rows: 2,
+        };
+        before.images.push(image);
+        after.images.push(image);
+        let painter = scrolled_painter(Painter::new().gliding(), &before, &after);
+        assert!(!painter.animating(), "its image wouldn't move with it");
+    }
+
+    #[test]
+    fn a_scroll_under_lines_that_stay_put_jumps() {
+        // A chat's box at the bottom stays as the reply scrolls above it.
+        let box_lines = ["╭─ box ─╮", "│ typed │", "╰───────╯"];
+        let frame = |first: usize, seq: u64| {
+            let mut lines: Vec<String> = (first..first + 20).map(|n| format!("row {n}")).collect();
+            lines.extend(box_lines.iter().map(|l| (*l).to_owned()));
+            let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+            let mut frame = frame_of(&lines, seq);
+            frame.surfaces[0].top = Some([first as u64, 0]);
+            frame
+        };
+        let (before, after) = (frame(0, 1), frame(3, 2));
+        let mut painter = Painter::new().gliding();
+        let _ = painter.take(Output::Frame(before.clone()));
+        let delta = FrameDelta::between(&before, &after).unwrap();
+        assert_eq!(delta.surfaces[0].shift, 3, "it moved");
+        let _ = painter.take(Output::Delta(delta));
+        assert!(!painter.animating(), "the box would move with the rest");
     }
 
     #[test]
