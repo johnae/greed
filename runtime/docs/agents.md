@@ -19,6 +19,7 @@ tools from outside. Claude Code also has its `/ide` connection, below.
 greed ctl tools                       # what the editor offers
 greed ctl read --help                 # what a tool does and the arguments it takes
 greed ctl focus                       # the current file, selections, visible lines
+greed ctl status                      # what needs you, and the agents at work
 greed ctl read path=src/main.rs from_line=10 to_line=20
 greed ctl diagnostics
 greed ctl eval code='return require("@greed").mode.get()'
@@ -77,6 +78,7 @@ to change a setting knows where to go. The tools:
 | `code_actions`, `code_action` | The language server's quick fixes and refactors for some lines, and proposing one; actions that would run a command in the server are refused, since they can't be shown first |
 | `ask` | Ask you questions, with choices or a typed answer, on a page you fill in and send; the answers come back to the agent |
 | `project` | The project's root folder |
+| `status` | This session at a glance: what needs you (an agent waiting for an answer, a command that finished out of sight), oldest first with why and since when, and the agents at work with their state and the question they wait on; `greed ctl status` gives the same, as JSON |
 | `objects`, `inspect`, `act` | The objects of the running editor (buffers, views (panes, floats and panels like an agent's chat), tabs, terminals, shells and their blocks, language servers, proposals, agent sessions, plugins and what plugins add): list them by kind or by what they relate to, see one's state, relations, actions and what was done to it (by you or an agent), and run an action on it as you would from the inspector (`space h i`), like closing a view or a buffer by its id; `act` says back what each object was and the views after, when they changed. Actions run in the view you were in, as `run_command` does. Agents in Greed ask before `act`, which takes several ids at once; an action that deletes or stops something always goes to you to review first, all of them together, whatever the agent was allowed, and you may run some and not others. Deciding on proposed changes stays yours |
 | `commands`, `run_command` | Find the editor's commands by words in what they do (those matching the most words first), with how each is typed and what its arguments are, and run one with its arguments checked as the command line checks them (a wrong one gives back the usage and nothing runs). It runs in the view you were in (the one `focus` reports, never the agent's own chat), or in the view the agent names, and says back which view that was and, when views closed or opened, the views there are now. A command that may close, delete or stop something asks you every time, naming the view it would run in |
 | `eval` | Run Luau inside the editor: sandboxed first, then a reviewer or you for anything more (below); what it edits is one operation you can review and undo |

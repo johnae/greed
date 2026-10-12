@@ -76,6 +76,14 @@ fn ctl_runs_tools_with_arguments_as_pairs_or_json() {
         focus.contains("\"path\""),
         "JSON results are pretty-printed: {focus}"
     );
+    let (status, _) = text(&world.greed(&["ctl", "status"]));
+    let status: serde_json::Value = serde_json::from_str(&status).unwrap();
+    assert_eq!(status["schema"], 1, "{status}");
+    assert_eq!(status["session"], "tools", "{status}");
+    assert!(
+        status["attention"].is_array() && status["agents"].is_array(),
+        "{status}"
+    );
 
     let failed = world.greed(&["ctl", "nope"]);
     assert!(!failed.status.success());

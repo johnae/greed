@@ -1818,6 +1818,51 @@ test("a call made again with the same result says so, and running out of turns t
 	assert(string.find(said(s), "stopped: it took 100 turns without finishing", 1, true), said(s))
 end)
 
+test("the status lists an agent waiting on a question until it is answered", function(t)
+	script({
+		{
+			text = "",
+			calls = {
+				{
+					id = "c1",
+					name = "edit_file",
+					input = { path = "a.txt", old_text = "two", new_text = "TWO" },
+				},
+			},
+			stop = "tools",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local status: agent.Tool? = nil
+	for _, found in agent.tools() do
+		if found.name == "status" then
+			status = found
+		end
+	end
+	local function now(): any
+		return (status :: agent.Tool).run({}, agent.caller())
+	end
+	local s = ask(t, "shout two")
+	t:wait(30)
+	local shown = now()
+	assert(shown.schema == 1 and shown.session == greed.session.current(), "the session")
+	local mine: any = nil
+	for _, found in shown.agents do
+		if found.id == `agent-session:{s.id}` then
+			mine = found
+		end
+	end
+	assert(mine and mine.status == "waiting" and mine.question == "Edit a.txt", "the agent")
+	local need = shown.attention[#shown.attention]
+	assert(need and need.id == `agent-session:{s.id}` and need.reason == "waits for your answer")
+	waiting(s).answer:send("once")
+	t:wait(30)
+	for _, found in now().attention do
+		assert(found.id ~= `agent-session:{s.id}`, "answered, it no longer needs you")
+	end
+	acp.close(s)
+end)
+
 test("agent-max-tokens stops a session once it has used that many, until raised", function(t)
 	local function step(i: number): any
 		return {

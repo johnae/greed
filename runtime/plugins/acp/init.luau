@@ -219,20 +219,21 @@ local function changed(s: Session)
 		greed.sleep(20)
 		queued[s.id] = nil
 		local buffer = buffers[s.id]
-		if buffer and buffer:valid() and terms[s.id] == nil then
+		local shown = buffer and buffer:valid() and terms[s.id] == nil
+		if shown then
 			pcall(transcript.render, buffer, s)
-			-- Waiting for you: its float, if it has one, and the status say so.
-			core.attention.set(
-				`agent-session:{s.id}`,
-				if s.status == "waiting"
-					then {
-						label = saved.title(s),
-						reason = "waits for your answer",
-						buffer = buffer,
-					}
-					else nil
-			)
 		end
+		-- Waiting for you: the status says so, and its float, if it has one.
+		core.attention.set(
+			`agent-session:{s.id}`,
+			if s.status == "waiting"
+				then {
+					label = saved.title(s),
+					reason = "waits for your answer",
+					buffer = if shown then buffer else nil,
+				}
+				else nil
+		)
 		list.render()
 		participants.draw(sessions)
 		saved.keep(s)
@@ -688,6 +689,7 @@ local function drop(s: Session)
 	if index then
 		table.remove(sessions, index)
 	end
+	core.attention.set(`agent-session:{s.id}`, nil)
 	local buffer = buffers[s.id]
 	buffers[s.id] = nil
 	if buffer then
@@ -1871,16 +1873,21 @@ core.objects.kind({
 		return nil
 	end,
 	inspect = function(s: Session)
+		local pending = session.pending(s)
+		local newest = pending[#pending]
 		return {
 			name = s.name,
 			agent = s.agent,
 			status = s.status,
+			doing = s.doing,
+			question = if newest then newest.title else nil,
 			folder = s.cwd,
 			workspace = if s.workspace then s.workspace.path else nil,
 			tool = s.tool,
 			failed = s.failed,
 			tokens = s.tokens,
 			window = s.window,
+			spent = s.spent,
 		}
 	end,
 	relations = function(s: Session)
