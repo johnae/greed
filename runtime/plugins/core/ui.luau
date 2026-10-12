@@ -512,19 +512,33 @@ function M.matched(text: string, matched: { number }, style: string?, rest: stri
 	return out
 end
 
---- `items` one a line, each drawn as `spans(item)`; pressing a line calls
---- `on_open` with its item, and the item is its line's value.
-function M.list<T>(items: { T }, spans: (item: T) -> { Span }, on_open: ((item: T) -> ())?): Node
+--- `items` one a line, each drawn as `spans(item)`, the item its line's
+--- value. Pressing a line calls `open` with its item. The `current` one
+--- (by index) is marked as a menu marks its selected row, for a list
+--- whose cursor is somewhere else, like in a picker's query.
+function M.list<T>(
+	items: { T },
+	spans: (item: T) -> { Span },
+	opts: { open: ((item: T) -> ())?, current: number? }?
+): Node
+	local open = opts and opts.open
+	local current = opts and opts.current
 	local lines: { Node } = {}
-	for _, item in items do
+	for i, item in items do
 		local parts = spans(item)
 		for _, span in parts do
 			span.value = item
-			if on_open then
+			if open then
 				span.press = function()
-					on_open(item)
+					open(item)
 				end
 			end
+		end
+		if i == current then
+			if #parts == 0 then
+				table.insert(parts, { text = "", value = item })
+			end
+			parts[1].line = "ui.menu.selected"
 		end
 		table.insert(lines, M.line(parts))
 	end

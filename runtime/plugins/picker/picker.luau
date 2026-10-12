@@ -154,14 +154,11 @@ local function draw(o: Open): core.UiNode
 	-- A label too long for the float is cut with an ellipsis, so every item
 	-- keeps one row.
 	local _, cols = o.view:size()
-	local rows: { core.UiNode } = {}
-	for i, index in o.matches do
-		if i > LIMIT then
-			break
-		end
+	local shown = table.move(o.matches, 1, math.min(#o.matches, LIMIT), 1, {})
+	return ui.list(shown, function(index: number): { core.UiSpan }
 		local label = o.labels[index]
-		local shown = if cols then core.text.clip(label, math.max(cols - 2, 1)) else label
-		local kept = if shown == label then #label else #shown - #"…"
+		local cut = if cols then core.text.clip(label, math.max(cols - 2, 1)) else label
+		local kept = if cut == label then #label else #cut - #"…"
 		local matched: { number } = if o.source
 			then {}
 			else greed.fuzzy_positions(
@@ -175,15 +172,12 @@ local function draw(o: Open): core.UiNode
 				table.insert(visible, pos)
 			end
 		end
-		local spans: { core.UiSpan } = {
-			{ text = " ", line = if i == o.current then "ui.menu.selected" else nil },
-		}
-		for _, span in ui.matched(shown, visible) do
+		local spans: { core.UiSpan } = { ui.span(" ") }
+		for _, span in ui.matched(cut, visible) do
 			table.insert(spans, span)
 		end
-		table.insert(rows, ui.line(spans))
-	end
-	return ui.column(rows)
+		return spans
+	end, { current = o.current })
 end
 
 -- Draws the matches under the query, keeping the cursor where it is in

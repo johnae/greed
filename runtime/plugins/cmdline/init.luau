@@ -124,14 +124,9 @@ local function draw(o: Open): core.UiNode
 	-- A match's doc is cut to the width rather than wrapped, so every match
 	-- keeps one row and the first ones stay in sight.
 	local _, cols = o.view:size()
-	local rows: { core.UiNode } = {}
-	for i, candidate in o.candidates do
-		if i > SHOWN then
-			break
-		end
-		local spans: { core.UiSpan } = {
-			{ text = " ", line = if i == o.current then "ui.menu.selected" else nil },
-		}
+	local shown = table.move(o.candidates, 1, math.min(#o.candidates, SHOWN), 1, {})
+	return ui.list(shown, function(candidate: complete.Candidate): { core.UiSpan }
+		local spans: { core.UiSpan } = { ui.span(" ") }
 		local matched = greed.fuzzy_positions(o.word, candidate.text, { case = core.search.case() })
 		for _, span in ui.matched(candidate.text, matched) do
 			table.insert(spans, span)
@@ -145,9 +140,8 @@ local function draw(o: Open): core.UiNode
 				ui.span(if room > 1 then core.text.clip(doc, room) else "", "ui.menu.doc")
 			)
 		end
-		table.insert(rows, ui.line(spans))
-	end
-	return ui.column(rows)
+		return spans
+	end, { current = o.current })
 end
 
 -- Draws the matches above, then ":" and `o.text`. The cursor stays where it

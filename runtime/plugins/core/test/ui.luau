@@ -484,3 +484,32 @@ test("a view over an input can have no lines, leaving only the input", function(
 	view:set({ matches = { "quit" } })
 	assert(text_of(buffer) == "quit\n:", text_of(buffer))
 end)
+
+test("a list marks its current row, and opens a row when pressed", function(t)
+	local buffer = shown(t)
+	local opened: { string } = {}
+	local view = ui.mount(buffer, function(state)
+		return ui.list({ "one", "two", "three" }, function(item: string)
+			return { ui.span(item) }
+		end, {
+			current = state.current,
+			open = function(item: string)
+				table.insert(opened, item)
+			end,
+		})
+	end, { current = 2 })
+	local function selected(): { string }
+		local out: { string } = {}
+		for _, mark in buffer:decorations("ui") do
+			if mark.line and mark.style == "ui.menu.selected" then
+				table.insert(out, buffer:slice(mark.from, mark.to))
+			end
+		end
+		return out
+	end
+	assert(table.concat(selected(), ",") == "two", table.concat(selected(), ","))
+	view:set({ current = 3 })
+	assert(table.concat(selected(), ",") == "three", table.concat(selected(), ","))
+	t:keys("enter")
+	assert(opened[1] == "one", opened[1])
+end)

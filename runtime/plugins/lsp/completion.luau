@@ -256,31 +256,28 @@ local function draw(o: Open): core.UiNode
 		width = math.max(width, core.text.width(item.label))
 		badges = math.max(badges, if item.badge then core.text.width(item.badge) else 0)
 	end
-	local rows: { core.UiNode } = {}
-	for i = 1, math.min(#o.matches, SHOWN) do
-		local item = o.items[o.matches[i]]
+	local shown = table.move(o.matches, 1, math.min(#o.matches, SHOWN), 1, {})
+	return ui.list(shown, function(index: number): { core.UiSpan }
+		local item = o.items[index]
 		local label = item.label
-		local spans: { core.UiSpan } = {
-			{ text = " ", line = if i == o.current then "ui.menu.selected" else nil },
-		}
+		local spans: { core.UiSpan } = { ui.span(" ") }
 		local matched = greed.fuzzy_positions(typed, label, { case = core.search.case() })
 		for _, span in ui.matched(label, matched) do
 			table.insert(spans, span)
 		end
 		table.insert(spans, ui.span(string.rep(" ", width - core.text.width(label))))
 		if badges > 0 then
-			local shown = item.badge or ""
+			local badge = item.badge or ""
 			table.insert(spans, ui.span("  "))
-			table.insert(spans, ui.span(shown, "ui.menu.badge"))
-			table.insert(spans, ui.span(string.rep(" ", badges - core.text.width(shown))))
+			table.insert(spans, ui.span(badge, "ui.menu.badge"))
+			table.insert(spans, ui.span(string.rep(" ", badges - core.text.width(badge))))
 		end
 		if item.detail then
 			table.insert(spans, ui.span("  "))
 			table.insert(spans, ui.span(item.detail, "ui.menu.doc"))
 		end
-		table.insert(rows, ui.line(spans))
-	end
-	return ui.column(rows)
+		return spans
+	end, { current = o.current })
 end
 
 -- Draws the matching items and marks the current one, the float as big
