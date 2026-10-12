@@ -16,6 +16,8 @@ usage: greed ctl tools                 list the tools the editor offers
                                       KEY=@- reads that value from standard input
        greed ctl TOOL --help           what a tool does and the arguments it takes
        greed ctl sessions              list running editors
+       greed ctl watch [SESSION]       the session's status as JSON, a line at once, whenever
+                                      it changes and at least every 15 seconds
        greed ctl agent-socket [SESSION]
                                       the socket a session from greed ssh reaches your
                                       ssh agent on, for SSH_AUTH_SOCK
@@ -61,6 +63,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
         [cmd] if cmd == "agent-socket" => agent_socket(None),
         [cmd, name] if cmd == "agent-socket" => agent_socket(Some(name)),
+        [cmd] if cmd == "watch" => watch(None),
+        [cmd, name] if cmd == "watch" => watch(Some(name)),
         [cmd] if cmd == "sessions" => {
             for session in control::sessions()? {
                 let root = session
@@ -115,10 +119,49 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// How long `greed ctl watch` waits to hear from the session before taking
+/// it for gone: three of the times it says its status anyway (every 15
+/// seconds, the agent plugin's `status.RESEND`).
+const WATCH_QUIET: Duration = Duration::from_secs(45);
+
+/// `greed ctl watch [SESSION]`: prints the session's status as JSON, a line
+/// at a time: at once, whenever it changes, and at least every 15 seconds,
+/// until the session ends or goes quiet. Asked as an ordinary client, not
+/// a shell's: watching can't do anything there.
+fn watch(name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write;
+    let mut client = session_client(name, false)?;
+    client.set_wait(Some(WATCH_QUIET))?;
+    let first = client
+        .call("status/watch", &Value::Null)?
+        .map_err(io::Error::other)?;
+    let mut out = io::stdout().lock();
+    writeln!(out, "{first}")?;
+    out.flush()?;
+    loop {
+        let message = match client.next_notification() {
+            Ok(message) => message,
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                return Err("the session went quiet".into());
+            }
+            Err(err) => return Err(err.into()),
+        };
+        if message["method"] == "status/changed" {
+            writeln!(out, "{}", message["params"])?;
+            out.flush()?;
+        }
+    }
+}
+
 /// Prints what the tool `name` does and the arguments it takes, from the
 /// editor's list; for ctl's own commands, the usage.
 fn tool_help(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    if matches!(name, "tools" | "sessions" | "quit" | "state") {
+    if matches!(name, "tools" | "sessions" | "quit" | "state" | "watch") {
         println!("{USAGE}");
         return Ok(());
     }

@@ -91,4 +91,77 @@ agent.tool({
 	end,
 })
 
+-- Watching the status (`status/watch`, `greed ctl watch`): each watcher gets
+-- the whole status at once, again whenever it changes, and at least every
+-- `M.RESEND` milliseconds even when it doesn't, so a watcher that hears
+-- nothing for a while knows the session or the way to it is gone. Every
+-- message is the whole status, so one missed only means a later look.
+
+--- How often watchers get the status even when nothing changed.
+M.RESEND = 15000
+
+-- The connections watching, with the status each was sent last, as JSON.
+local watchers: { [number]: string } = {}
+
+-- Sends each watcher the status now: those it changed for, or all of them.
+local function tell(all: boolean)
+	local now = M.status()
+	local text = greed.json.encode(now)
+	for connection, last in watchers do
+		if all or text ~= last then
+			watchers[connection] = text
+			pcall(greed.control.send, connection, "status/changed", now)
+		end
+	end
+end
+
+-- Whether a look is due soon, and whether the resending runs.
+local due, resending = false, false
+
+-- Looks again soon after something changed: changes come in bursts.
+local function changed()
+	if due or next(watchers) == nil then
+		return
+	end
+	due = true
+	greed.spawn(function()
+		greed.sleep(50)
+		due = false
+		-- Whatever changed, sending the status to those who asked for it is
+		-- this plugin's own doing, with its own capabilities.
+		greed.vouch(tell, false)
+	end)
+end
+
+agent.method("status/watch", function(request)
+	local connection = request.connection
+	if connection == nil then
+		error("only a connection to the session can watch its status", 0)
+	end
+	local now = M.status()
+	watchers[connection] = greed.json.encode(now)
+	if not resending then
+		resending = true
+		greed.spawn(function()
+			while next(watchers) ~= nil do
+				greed.sleep(M.RESEND)
+				tell(true)
+			end
+			resending = false
+		end)
+	end
+	return now
+end)
+
+greed.on("control.closed", function(event: greed.ControlClosed)
+	watchers[event.connection] = nil
+end)
+
+core.attention.on_change(changed)
+core.objects.on_changed(function(id)
+	if string.sub(id, 1, 14) == "agent-session:" or string.sub(id, 1, 9) == "terminal:" then
+		changed()
+	end
+end)
+
 return M

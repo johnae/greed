@@ -984,14 +984,7 @@ impl Client {
             json!({ "jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params });
         writeln!(self.writer, "{request}")?;
         let response = loop {
-            let mut line = String::new();
-            if self.reader.read_line(&mut line)? == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "the session closed the connection",
-                ));
-            }
-            let message: Value = serde_json::from_str(&line).map_err(io::Error::other)?;
+            let message = self.read_message()?;
             if message.get("id").is_some() {
                 break message;
             }
@@ -1005,6 +998,41 @@ impl Client {
                 .to_owned()),
             None => Ok(response.get("result").cloned().unwrap_or(Value::Null)),
         })
+    }
+
+    /// Gives up on an answer or notification that takes longer than `wait`
+    /// from now on; none waits for ever.
+    pub fn set_wait(&self, wait: Option<Duration>) -> io::Result<()> {
+        self.writer.set_read_timeout(wait)
+    }
+
+    /// Waits for the next notification the session sends, like a watched
+    /// status changing; one that came while a request waited comes first.
+    /// Fails when the connection closes, or nothing comes within the wait
+    /// it was made with.
+    pub fn next_notification(&mut self) -> io::Result<Value> {
+        if !self.notifications.is_empty() {
+            return Ok(self.notifications.remove(0));
+        }
+        loop {
+            let message = self.read_message()?;
+            if message.get("id").is_none() {
+                return Ok(message);
+            }
+        }
+    }
+
+    /// Reads the next message the session sends, an answer or a
+    /// notification.
+    fn read_message(&mut self) -> io::Result<Value> {
+        let mut line = String::new();
+        if self.reader.read_line(&mut line)? == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "the session closed the connection",
+            ));
+        }
+        serde_json::from_str(&line).map_err(io::Error::other)
     }
 
     /// The notifications the session sent since last asked, oldest first.

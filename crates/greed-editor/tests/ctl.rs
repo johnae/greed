@@ -151,6 +151,28 @@ fn an_agents_hooks_in_a_terminal_reach_the_status() {
         std::fs::read_to_string(&told).unwrap().trim(),
         format!("{terminal} {}", greed.display())
     );
+    // Watching the status: the whole of it at once, then again as it changes.
+    let mut watch = Command::new(GREED);
+    watch
+        .args(["ctl", "watch", "hooks"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    world.env(&mut watch);
+    let mut watch = watch.spawn().unwrap();
+    let (lines, watched) = std::sync::mpsc::channel::<String>();
+    let watch_out = std::io::BufReader::new(watch.stdout.take().unwrap());
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        for line in watch_out.lines().map_while(Result::ok) {
+            if lines.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    let first = watched
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .unwrap();
+    assert!(first.contains("\"schema\":1"), "{first}");
     let mut hook = Command::new(GREED);
     hook.args([
         "ctl",
@@ -170,6 +192,20 @@ fn an_agents_hooks_in_a_terminal_reach_the_status() {
         .unwrap();
     let said = hook.wait_with_output().unwrap();
     assert_eq!(text(&said).0.trim(), "waiting", "{:?}", text(&said));
+    let changed = loop {
+        let line = watched
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        if line.contains("\"waiting\"") {
+            break line;
+        }
+    };
+    assert!(
+        changed.contains(&format!("terminal:{terminal}")),
+        "{changed}"
+    );
+    let _ = watch.kill();
+    let _ = watch.wait();
     let (status, _) = text(&world.greed(&["ctl", "status"]));
     let status: serde_json::Value = serde_json::from_str(&status).unwrap();
     let id = format!("terminal:{terminal}");

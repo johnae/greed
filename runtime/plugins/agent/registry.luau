@@ -486,6 +486,13 @@ local methods: { [string]: (request: greed.ControlRequest) -> any } = {
 	end,
 }
 
+--- Answers the session method `name` (beside MCP's) with what `handler`
+--- returns, like `status/watch`; an error it raises goes back as the
+--- error. It goes when the plugin that added it does.
+function M.method(name: string, handler: (request: greed.ControlRequest) -> any)
+	greed.plugin.tie(registry.set(methods, name, handler))
+end
+
 greed.on("control.request", function(request: greed.ControlRequest)
 	local method = methods[request.method]
 	-- Notifications, like notifications/initialized, need no answer, but the

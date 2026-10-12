@@ -20,6 +20,7 @@ greed ctl tools                       # what the editor offers
 greed ctl read --help                 # what a tool does and the arguments it takes
 greed ctl focus                       # the current file, selections, visible lines
 greed ctl status                      # what needs you, and the agents at work
+greed ctl watch                       # the same as JSON lines: at once, on each change, every 15 s
 greed ctl read path=src/main.rs from_line=10 to_line=20
 greed ctl diagnostics
 greed ctl eval code='return require("@greed").mode.get()'
@@ -34,6 +35,13 @@ your home folder.
 `greed ctl` talks to the running session: the one named by
 `$GREED_SESSION`, or the only one running. Each session's socket is readable
 only by you and needs a token from a file only you can read.
+
+`greed ctl watch [SESSION]` follows a session's status: a JSON line with all
+of it at once, another each time it changes (an agent starts waiting, a
+command finishes out of sight), and one at least every 15 seconds even when
+nothing changed, so a script or another Greed can tell a session that went
+away from a quiet one. Each line is the whole status, so `greed ctl watch |
+jq` always shows the latest.
 
 ## Agents as MCP clients
 
