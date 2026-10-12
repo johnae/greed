@@ -964,6 +964,12 @@ among those of the same greed build, or the one the `hub-session` option
 names. When it ends, the next one takes over by itself. The others follow
 only it, so there is one connection per session however many run.
 
+When an agent starts waiting for you in any session on this machine, your
+desktop is told: each machine you're attached from gets one notification,
+whichever session its windows or terminals show, so two windows on one
+machine don't both say it. Each time an agent waits is told once, also after
+a restart.
+
 ## Plugins written by agents
 
 An agent can extend Greed while you work:

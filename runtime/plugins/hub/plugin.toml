@@ -1,4 +1,5 @@
 name = "hub"
 requires = ["core", "agent", "picker", "statusline"]
-# Runs `greed ctl watch` to follow the other sessions on the machine.
-capabilities = ["proc"]
+# Runs `greed ctl watch` to follow the other sessions on the machine, and
+# keeps what it told you in its data folder.
+capabilities = ["proc", "fs.read", "fs.write"]

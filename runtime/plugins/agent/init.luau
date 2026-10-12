@@ -65,6 +65,8 @@ return table.freeze({
 	tool = registry.tool,
 	--- How many agents work and wait for you, in a few words (status.luau).
 	status_summary = status.summary,
+	--- This session's status, as `greed ctl status` gives it (status.luau).
+	status = status.status,
 	--- Adding to the status, and saying it changed (status.luau).
 	status_part = status.part,
 	status_changed = status.changed,

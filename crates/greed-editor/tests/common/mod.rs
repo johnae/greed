@@ -56,6 +56,7 @@ impl World {
             .env("XDG_RUNTIME_DIR", self.root.join("run"))
             .env("XDG_CONFIG_HOME", self.root.join("config"))
             .env("XDG_CACHE_HOME", self.root.join("cache"))
+            .env("XDG_DATA_HOME", self.root.join("data"))
             .env("CLAUDE_CONFIG_DIR", self.root.join("claude"))
             .env_remove("GREED_SESSION")
             .env_remove("GREED_TERMINAL")

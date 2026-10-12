@@ -2003,10 +2003,11 @@ impl Editor {
         self.acting_client_mut().copied.take()
     }
 
-    /// Asks the client used last to notify the user's desktop.
-    pub fn notify(&mut self, notice: Notice) {
-        let last = self.last_active;
-        if let Some(client) = self.clients.get_mut(&last) {
+    /// Asks a client to notify the user's desktop: `to`, or without it the
+    /// client used last. Nothing happens when that client isn't attached.
+    pub fn notify(&mut self, notice: Notice, to: Option<ClientId>) {
+        let to = to.unwrap_or(self.last_active);
+        if let Some(client) = self.clients.get_mut(&to) {
             client.notices.push(notice);
         }
     }

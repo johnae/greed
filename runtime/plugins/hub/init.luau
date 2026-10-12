@@ -77,10 +77,16 @@ local followed: { [string]: Followed } = {}
 -- When each session that couldn't be followed was last tried.
 local tried: { [string]: number } = {}
 
--- Tells whoever shows the picture that it changed: the status line, and
--- the watchers of this session's status, like the other sessions when
--- this one is the hub.
-local changed = agent.status_changed
+-- Looks for what to tell you soon, when this is the hub (set below).
+local announce_soon = function() end
+
+-- Tells whoever shows the picture that it changed: the status line, the
+-- watchers of this session's status (like the other sessions when this one
+-- is the hub), and what tells you an agent waits.
+local function changed()
+	agent.status_changed()
+	announce_soon()
+end
 
 -- Follows the session `name` with `greed ctl watch`, keeping what it says.
 local function follow(name: string)
@@ -266,6 +272,183 @@ greed.command({
 		picker.pick("Agents on this machine", items, function(item)
 			greed.session.switch({ name = item.value })
 		end)
+	end,
+})
+
+-- Telling you ----------------------------------------------------------------
+--
+-- The hub tells you when an agent starts waiting, anywhere on the machine:
+-- each machine you're attached from gets it once, through one of its
+-- clients, so two windows on one machine don't both say it. What it told
+-- is kept, so a restart or a new hub doesn't tell it again.
+
+--- What one session says, as its status gives it.
+export type Status = { [string]: any }
+
+--- Where you can be told: for each machine with a client attached in any
+--- of `statuses` (by session), a session it's attached to and that client's
+--- name ("gui@laptop"), the first by session name.
+function M.reachable(
+	statuses: { [string]: Status }
+): { [string]: { session: string, client: string } }
+	local names: { string } = {}
+	for name in statuses do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	local out: { [string]: { session: string, client: string } } = {}
+	for _, name in names do
+		local clients = statuses[name].clients
+		if type(clients) == "table" then
+			for _, found in clients do
+				local client = tostring(found)
+				local machine = string.match(client, "@(.+)$") or client
+				out[machine] = out[machine] or { session = name, client = client }
+			end
+		end
+	end
+	return out
+end
+
+--- An agent waiting in one of `statuses`, with what tells this time apart
+--- from another time it waits (`key`), and the words to tell you with.
+export type Waiting = { key: string, session: string, title: string, body: string }
+
+--- The agents waiting for you in `statuses`, by session name.
+function M.waiting(statuses: { [string]: Status }): { Waiting }
+	local out: { Waiting } = {}
+	for name, status in statuses do
+		local agents = status.agents
+		if type(agents) == "table" then
+			for _, found in agents do
+				if found.status == "waiting" then
+					local what = found.question or found.label or found.agent
+					table.insert(out, {
+						key = `{name}|{found.id}|{found.since or found.question or ""}`,
+						session = name,
+						title = `{found.label or found.agent} waits for you`,
+						body = `{what} · {name}`,
+					})
+				end
+			end
+		end
+	end
+	table.sort(out, function(a: Waiting, b: Waiting): boolean
+		return a.key < b.key
+	end)
+	return out
+end
+
+-- How many of what it told the hub keeps.
+local KEPT = 500
+
+-- What was told, as keys, oldest first, and kept in the data folder.
+local told: { string }? = nil
+
+local function told_file(): string?
+	local data = greed.fs.dirs().data
+	return if data then `{data}/hub-told` else nil
+end
+
+local function was_told(): { string }
+	if told == nil then
+		local file = told_file()
+		local text = if file then greed.fs.read(file) else nil
+		local list = {}
+		for line in string.gmatch(text or "", "[^\n]+") do
+			table.insert(list, line)
+		end
+		told = list
+	end
+	return told :: { string }
+end
+
+local function remember(key: string)
+	local list = was_told()
+	table.insert(list, key)
+	while #list > KEPT do
+		table.remove(list, 1)
+	end
+	local file = told_file()
+	if file then
+		greed.fs.write(file, table.concat(list, "\n") .. "\n")
+	end
+end
+
+-- Notifies through this session's client called `client`, if it's attached.
+local function notify_here(client: string, title: string, body: string?): boolean
+	for _, attached in greed.client.list() do
+		if attached.name == client then
+			greed.client.notify(title, body, attached.id)
+			return true
+		end
+	end
+	return false
+end
+
+-- Tells the client `client` of session `session` (this one or another).
+local function tell_client(session: string, client: string, title: string, body: string)
+	if session == greed.session.current() then
+		notify_here(client, title, body)
+		return
+	end
+	local program = greed.session.program()
+	if program then
+		local said = greed.json.encode({ title = title, body = body, client = client })
+		local env: { [string]: string | false } = { GREED_SESSION = session }
+		greed.process.run({ program, "ctl", "hub_notify", said }, { env = env })
+	end
+end
+
+-- Tells you what started waiting since the last look, when this is the hub.
+local function announce()
+	local me = greed.session.current()
+	if me == nil or M.hub() ~= me then
+		return
+	end
+	local statuses = M.machine()
+	statuses[me] = agent.status()
+	local list = was_told()
+	local where = M.reachable(statuses)
+	for _, waiting in M.waiting(statuses) do
+		if not table.find(list, waiting.key) then
+			remember(waiting.key)
+			for _, target in where do
+				tell_client(target.session, target.client, waiting.title, waiting.body)
+			end
+		end
+	end
+end
+
+local announcing = false
+announce_soon = function()
+	if announcing then
+		return
+	end
+	announcing = true
+	greed.spawn(function()
+		greed.sleep(50)
+		announcing = false
+		-- Telling you is this plugin's own doing, whatever changed.
+		greed.vouch(announce)
+	end)
+end
+
+agent.tool({
+	name = "hub_notify",
+	shell_only = true,
+	description = "For the hub: notifies your desktop through this session's client called "
+		.. "`client` (like gui@laptop), with `title` and `body`",
+	input = agent.schema.object({
+		title = { type = "string" },
+		body = { type = "string" },
+		client = { type = "string" },
+	}, { "title", "client" }),
+	run = function(args)
+		if notify_here(args.client, tostring(args.title), args.body) then
+			return "told"
+		end
+		return `no client {args.client} here`
 	end,
 })
 

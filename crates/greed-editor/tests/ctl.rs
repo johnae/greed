@@ -403,3 +403,75 @@ fn the_hub_follows_the_other_sessions_and_the_rest_follow_the_hub() {
         let _ = server.wait();
     }
 }
+
+#[test]
+fn an_agent_waiting_in_one_session_is_told_to_your_client_in_another() {
+    use greed_core::server::{Input, Output};
+    use std::io::{BufRead, Write};
+    let Some(world) = World::new("ctl-told") else {
+        return;
+    };
+    let mut servers: Vec<Child> = ["alpha", "beta", "gamma"]
+        .iter()
+        .map(|name| serve(&world, &world.project(name, &[("a.txt", "one\n")])))
+        .collect();
+    world.wait_for("three sessions", |w| w.sessions().lines().count() == 3);
+    // A window on "testbox" is attached to gamma.
+    let (socket, token) = {
+        let dir = world.root.join("run/greed");
+        (dir.join("gamma.sock"), dir.join("gamma.token"))
+    };
+    let token = std::fs::read_to_string(token).unwrap();
+    let mut params = greed_core::control::handshake();
+    params["client"] = serde_json::json!({ "kind": "gui", "name": "gui@testbox" });
+    let mut attached = greed_core::control::Client::connect(&socket, token.trim())
+        .unwrap()
+        .attach_with(&params)
+        .unwrap();
+    let resize = Input::Resize(greed_core::render::Size {
+        width: 80,
+        height: 20,
+    });
+    writeln!(
+        attached.writer,
+        "{}",
+        serde_json::to_string(&resize).unwrap()
+    )
+    .unwrap();
+    // Wait until the hub knows of the client before the agent waits.
+    world.wait_for("the hub to see the client", |w| {
+        w.eval(
+            "alpha",
+            "local s = require('@hub').machine().gamma return tostring(s and s.clients and s.clients[1])",
+        ) == "gui@testbox"
+    });
+    let terminal = world.eval(
+        "beta",
+        "return require('@terminal').open({ 'sh', '-c', 'sleep 60' }).buffer:id()",
+    );
+    world.eval(
+        "beta",
+        &format!(
+            "require('@terminal').agent_report(require('@greed').buffer({terminal}), \
+             {{ source = 'hook', trusted = true, name = 'claude', state = 'waiting' }})"
+        ),
+    );
+    // The window in gamma hears that an agent waits in beta.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let notice = loop {
+        assert!(std::time::Instant::now() < deadline, "no notification came");
+        let mut line = String::new();
+        attached.reader.read_line(&mut line).unwrap();
+        if let Ok(Output::Notify(notice)) = serde_json::from_str::<Output>(&line) {
+            break notice;
+        }
+    };
+    assert!(notice.title.contains("waits for you"), "{notice:?}");
+    assert!(notice.body.contains("beta"), "{notice:?}");
+    for name in ["alpha", "beta", "gamma"] {
+        world.eval(name, "require('@greed').quit()");
+    }
+    for server in &mut servers {
+        let _ = server.wait();
+    }
+}

@@ -1227,11 +1227,15 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
     )?;
     client.set(
         "notify",
-        lua.create_function(|lua, (title, body): (String, Option<String>)| {
-            let body = body.unwrap_or_default();
-            state_mut(lua).editor.notify(Notice { title, body });
-            Ok(())
-        })?,
+        lua.create_function(
+            |lua, (title, body, to): (String, Option<String>, Option<u32>)| {
+                let body = body.unwrap_or_default();
+                state_mut(lua)
+                    .editor
+                    .notify(Notice { title, body }, to.map(ClientId));
+                Ok(())
+            },
+        )?,
     )?;
     client.set(
         "id",

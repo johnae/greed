@@ -23,3 +23,68 @@ test("what a watched session prints comes as whole lines, the rest kept for late
 	local more, left = hub.lines(rest .. "2}\n")
 	assert(#more == 1 and more[1] == '{"b":2}' and left == "", tostring(#more))
 end)
+
+test("each machine you're attached from is told once, through one of its clients", function()
+	local statuses: any = {
+		b = { clients = { "gui@laptop", "tui@laptop" } },
+		a = { clients = { "tui@laptop" } },
+		c = { clients = { "gui@desk" } },
+		d = { clients = {} },
+	}
+	local where = hub.reachable(statuses)
+	assert(
+		where.laptop.session == "a" and where.laptop.client == "tui@laptop",
+		where.laptop.session
+	)
+	assert(where.desk.session == "c" and where.desk.client == "gui@desk", "the other machine")
+	local count = 0
+	for _ in where do
+		count += 1
+	end
+	assert(count == 2, `{count} machines`)
+end)
+
+test("an agent waiting is told with what it waits on, and once per time it waits", function()
+	local agents: { any } = {
+		{ id = "terminal:5", label = "claude", status = "waiting", since = 100 },
+		{ id = "agent-session:1", label = "Greed", status = "working" },
+		{ id = "agent-session:2", label = "Greed 2", status = "waiting", question = "Edit a.txt" },
+	}
+	local statuses: any = {
+		["greed-2"] = { agents = agents },
+	}
+	local waiting = hub.waiting(statuses)
+	assert(#waiting == 2, tostring(#waiting))
+	local session = waiting[1]
+	assert(
+		session.title == "Greed 2 waits for you" and session.body == "Edit a.txt · greed-2",
+		session.body
+	)
+	assert(waiting[2].key == "greed-2|terminal:5|100", waiting[2].key)
+	-- Waiting again later is another time to tell.
+	statuses["greed-2"].agents[1].since = 200
+	assert(hub.waiting(statuses)[2].key == "greed-2|terminal:5|200")
+end)
+
+test("hub_notify tells the client of this session it names, and says when there's none", function(t)
+	local greed = require("@greed")
+	local agent = require("@agent")
+	t:buffer("|")
+	local name = greed.client.list()[1].name
+	local tool: agent.Tool? = nil
+	for _, found in agent.tools() do
+		if found.name == "hub_notify" then
+			tool = found
+		end
+	end
+	local run = (tool :: agent.Tool).run
+	assert(
+		run({ title = "Claude waits", body = "in greed-2", client = name }, agent.caller())
+			== "told"
+	)
+	local notices = t:notices()
+	assert(#notices == 1 and notices[1].title == "Claude waits", tostring(#notices))
+	assert(
+		run({ title = "x", client = "gui@nowhere" }, agent.caller()) == "no client gui@nowhere here"
+	)
+end)

@@ -1416,8 +1416,8 @@ export type Client = {
 	id: () -> number,
 	--- Every client, in the order they attached.
 	list: () -> { ClientInfo },
-	--- Sends a notification to your desktop through the acting client: a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.
-	notify: (title: string, body: string?) -> (),
+	--- Sends a notification to your desktop through a client: `client` (an id from `list`), or the one used last; a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.
+	notify: (title: string, body: string?, client: number?) -> (),
 	--- Lays a client (the acting one by default) out on its own, "independent", starting from a copy of the tabs, panes and panels it had, with views of its own; or has it "follow" the others again, closing those views (their buffers stay). Returns whether it changed.
 	set_layout: (layout: "follow" | "independent", client: number?) -> boolean,
 }
