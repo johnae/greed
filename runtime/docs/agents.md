@@ -320,6 +320,8 @@ Code (through `claude-agent-acp`), Gemini CLI, Codex (`codex-acp`), OpenCode, or
 agent that speaks it, found on your `PATH`. Each gets a transcript buffer,
 and several can work at once. Greed has an agent of its own too, below.
 
+[![Greed's own agent, asked why the worker pod keeps crashing, searches and reads the project, proposes a change that is allowed, and says what it checked](https://github.com/johnae/greed/releases/download/media/agent.png)](https://github.com/johnae/greed/releases/download/media/agent.mp4)
+
 `space i n` lists them and says which aren't installed, with the command
 that installs each:
 

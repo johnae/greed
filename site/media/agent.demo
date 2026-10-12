@@ -1,0 +1,30 @@
+# Greed's own agent: asked why a pod keeps crashing, it searches and reads
+# the project, proposes a change you allow, and says what it checked. The
+# model is scripted in the demo profile, so it records the same each time.
+size 1280 800
+hide
+keys :
+type open src/worker.rs
+keys enter
+wait-for ATTEMPTS
+show
+wait 1
+keys space i n
+wait 1
+type Greed
+wait 0.5
+keys enter
+wait 0.8
+type project
+wait 0.5
+keys enter
+wait 1.2
+type The worker pod keeps crashing. Why?
+wait 0.4
+keys alt-enter
+wait 6
+shot agent-asks
+keys enter
+wait 6
+shot agent
+wait 1.5

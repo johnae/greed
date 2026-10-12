@@ -27,6 +27,13 @@ for name in "${names[@]}"; do
   cp -r "$media/home" "$scratch/home"
   cp -r "$media/shop" "$scratch/home/shop"
   cp -r "$media/infra" "$scratch/home/infra"
+  # Repositories, as real projects are: their root is the project's.
+  for project in shop infra; do
+    git -C "$scratch/home/$project" init -q -b main
+    git -C "$scratch/home/$project" add -A
+    git -C "$scratch/home/$project" -c user.name=demo -c user.email=demo@greed.rs \
+      commit -q -m "$project"
+  done
   cp "$media/$name.demo" "$scratch/"
   echo "recording $name"
   # Nothing of this machine: a home of its own, and only the variables

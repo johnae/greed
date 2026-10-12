@@ -185,14 +185,13 @@
       choice run in a pane next to your work. Outside agents connect over
       MCP, <code>greed ctl</code> and Claude Code's <code>/ide</code>. They see
       your unsaved changes and selections, and propose edits you review in the
-      buffer. Ask one for a command or a setting and it can write you a
-      plugin, which Greed type checks and tests before you approve it.</p>
+      buffer. Several can work at once, each in a workspace of its own whose
+      changes you review and bring in when it's done. Ask one for a command
+      or a setting and it can write you a plugin, which Greed type checks and
+      tests before you approve it.</p>
       <p><a href="docs/agents.html">Agents</a></p>
     </div>
-    <pre class="term"><code><span class="prompt">$</span> claude mcp add greed -- greed mcp
-<span class="prompt">$</span> greed ctl focus
-{ "path": "src/main.rs", "mode": "normal", "selections": [ ... ] }
-<span class="prompt">$</span> greed ctl diagnostics</code></pre>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/agent.mp4" poster="https://github.com/johnae/greed/releases/download/media/agent.png" autoplay muted loop playsinline preload="metadata" aria-label="Greed's own agent, asked why the worker pod keeps crashing, searches and reads the project, proposes a change that is allowed, and says what it checked"></video>
   </section>
 
   <section class="features">
