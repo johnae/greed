@@ -122,6 +122,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: packages
@@ -136,9 +137,20 @@ jobs:
           done
       - name: checksums
         run: cd packages && sha256sum -- * > SHA256SUMS
+      # The version's section of CHANGELOG.md is the release page's text.
+      - name: notes
+        run: |
+          awk -v version="${GITHUB_REF_NAME#v}" '
+            $1 == "##" { if (found) exit; found = ($2 == version); next }
+            found
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if ! grep -q . "$RUNNER_TEMP/notes.md"; then
+            echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME#v}" >&2
+            exit 1
+          fi
       - name: draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" \
-            --draft --title "Greed ${GITHUB_REF_NAME#v}" --generate-notes
+            --draft --title "Greed ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"

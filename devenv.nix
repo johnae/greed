@@ -19,6 +19,8 @@
     # `script`, which the terminal tests run greed under
     pkgs.util-linux
     pkgs.bacon
+    # CHANGELOG.md from the commits (cliff.toml)
+    pkgs.git-cliff
 
     # Luau: runtime/analyzer, language server, formatter
     pkgs.luau

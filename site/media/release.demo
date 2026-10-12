@@ -1,0 +1,12 @@
+# Pictures for the changelog's highlights: a live Markdown page.
+size 2200 1200
+scale 2
+hide
+keys :
+type open budget.md
+keys enter
+wait-for Shop
+wait 2
+show
+wait 1
+shot live-markdown

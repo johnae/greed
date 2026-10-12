@@ -82,3 +82,7 @@ models.turn = function(_role, request, on_text, _on_open, on_thinking)
 	},
 		nil
 end
+
+-- No spelling or grammar notes from a Markdown language server on the
+-- recording machine.
+greed.lsp.remove("markdown")
