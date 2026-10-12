@@ -1184,6 +1184,35 @@ end
 
 -- Why `name` names no column of `tbl`.
 local function no_column(tbl: Table, name: string): string
+	-- A field inside a column of JSON objects, as kubectl's items keep
+	-- `phase` in `status`, named the way that reaches it.
+	local want = string.lower(string.match(name, "([^%.]+)$") or name)
+	local found: { string } = {}
+	local function look(value: any, path: string)
+		if type(value) ~= "table" or #found >= 3 then
+			return
+		end
+		for key, inner in value do
+			if type(key) == "string" then
+				local here = `{path}.{key}`
+				if string.lower(key) == want and not table.find(found, here) then
+					table.insert(found, here)
+				end
+				look(inner, here)
+			end
+		end
+	end
+	for i = 1, math.min(#tbl.rows, 20) do
+		for _, column in tbl.columns do
+			local cell = tbl.rows[i][column]
+			if cell and string.match(cell, "^%s*[{%[]") then
+				look(M.json(cell), column)
+			end
+		end
+	end
+	if #found > 0 then
+		return `no column {name}; it's {table.concat(found, " or ")}`
+	end
 	return `no column {name}; there's {table.concat(tbl.columns, ", ")}`
 end
 

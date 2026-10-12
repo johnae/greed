@@ -641,6 +641,10 @@ test("a dotted column reaches inside JSON objects, as kubectl's items are", func
 	assert(tbl.rows[1]["status.podIP"] == "10.0.0.1", running.output)
 	local missing = run(t, sh, `${first.number} | where status.nothing = x`)
 	assert(missing.status ~= "done", "no such column")
+	-- A field by its own name says where it is.
+	local leaf = run(t, sh, `${first.number} | where phase = Running`)
+	local said = tostring(leaf.stderr) .. leaf.output
+	assert(string.find(said, "it's status.phase", 1, true), said)
 end)
 
 test("stages after a program read what it prints as a table", function(t)
