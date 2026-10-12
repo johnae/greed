@@ -245,18 +245,6 @@ impl Drop for Temp {
 // ---------------------------------------------------------------------------
 // The editor, as `greed` runs it
 
-/// The default plugins, core first, as `greed` loads them.
-fn default_plugins() -> Vec<PathBuf> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(root)
-        .unwrap()
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|path| path.join("plugin.toml").is_file())
-        .collect();
-    dirs.sort_by_key(|path| (path.file_name() != Some("core".as_ref()), path.clone()));
-    dirs
-}
-
 /// An editor with `text` open and every default plugin loaded, as `greed`
 /// starts one, with no language servers.
 fn host(text: &str, path: Option<PathBuf>) -> Host {
@@ -264,7 +252,7 @@ fn host(text: &str, path: Option<PathBuf>) -> Host {
     editor.open("file", text, path);
     let host = Host::new(editor).unwrap();
     host.set_lsp_launcher(Box::new(|_, _| Ok(None)));
-    host.load_dirs(&default_plugins()).unwrap();
+    host.load_dirs(&sessions::default_plugins()).unwrap();
     // A measurement isn't a first start to set up: the page would take the
     // first client's keys.
     host.eval("require('@greed').option.set('setup-first-start', false)")

@@ -1399,16 +1399,7 @@ greed.command({
 	run = function(ctx)
 		local from = opened_from[ctx.view:id()]
 		if from == nil then
-			-- What the key runs in the layers under this one.
-			local ours: string? = nil
-			for _, bound in greed.keymap.describe(ctx.keys or "") do
-				if bound.command == "agent-float-close" then
-					ours = ours or bound.layer
-				elseif ours and bound.layer ~= ours then
-					greed.run(bound.command)
-					return
-				end
-			end
+			core.keys.otherwise(ctx.keys or "", "agent-float-close")
 			return
 		end
 		opened_from[ctx.view:id()] = nil

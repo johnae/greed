@@ -2,7 +2,6 @@
 //! every frame the session sends, not just where it settles.
 
 use std::io::{BufRead, Write};
-use std::path::{Path, PathBuf};
 
 use greed_core::Editor;
 use greed_core::control::{self, Client};
@@ -15,19 +14,6 @@ use greed_core::server::{self, Input, Output};
 use greed_text::ClientId;
 
 mod sessions;
-
-/// The default plugins, core first, as `greed` loads them, and `extra`.
-fn default_plugins(extra: &Path) -> Vec<PathBuf> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
-    let mut dirs: Vec<PathBuf> = std::fs::read_dir(root)
-        .unwrap()
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|path| path.join("plugin.toml").is_file())
-        .collect();
-    dirs.sort_by_key(|path| (path.file_name() != Some("core".as_ref()), path.clone()));
-    dirs.push(extra.to_owned());
-    dirs
-}
 
 /// A plugin that, once loaded, shows a session of Greed's agent with a long
 /// history (so drawing it takes more than a time slice) in the main view,
@@ -113,7 +99,8 @@ fn stream(label: &str) -> Seen {
     .unwrap();
     let code = STREAMER.replace("ROOT", &format!("{:?}", root.to_string_lossy()));
     std::fs::write(plugin.join("init.luau"), code).unwrap();
-    let all = default_plugins(&plugin);
+    let mut all = sessions::default_plugins();
+    all.push(plugin);
     let name = format!("transcript-{label}-{}", std::process::id());
     let session = control::listen(&name, None).unwrap();
     let conn = server::spawn_with_session(

@@ -6,6 +6,7 @@
 -- on. Every block still lands in the shell too, in the order it ran.
 
 local greed = require("@greed")
+local core = require("@core")
 local state = require("./state")
 local log = require("./log")
 local peek = require("./peek")
@@ -234,12 +235,7 @@ greed.command({
 			return
 		end
 		-- Anywhere else the key does what it always does, like undo in vscode.
-		for _, bound in greed.keymap.describe(KEEP) do
-			if bound.command ~= "shell-drill-keep" then
-				greed.run(bound.command)
-				return
-			end
-		end
+		core.keys.otherwise(KEEP, "shell-drill-keep")
 	end,
 })
 greed.keymap.bind({ role = "command", kind = "shell" }, { [KEEP] = "shell-drill-keep" })

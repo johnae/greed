@@ -155,4 +155,6 @@ return {
 	watch = require("@self/watch"),
 	--- Which command lines are risky for an agent to run, and why (risk.luau).
 	risk = require("@self/risk"),
+	--- Running what a key does under a command bound to it (keys.luau).
+	keys = require("@self/keys"),
 }
