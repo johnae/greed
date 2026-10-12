@@ -1889,8 +1889,10 @@ text = ... }`, `{ role = "assistant", text = ..., calls = ... }` or `{ role =
 `on_text` gets the answer's text as it arrives, and the turn comes back as
 its `text`, the `calls` it asks for (`id`, `name`, `input`) and `stop`:
 `"done"`, or `"tools"` when it wants them run and their results sent in the
-next turn. It works the same with Anthropic and with servers that speak
-OpenAI's chat completions. A user's turn can carry `images`, a list of PNG
+next turn. A fourth argument, `on_open`, gets a function that closes the
+answer's stream once it starts, to stop it early (a closed stream ends the
+turn with what came so far). It works the same with Anthropic and with
+servers that speak OpenAI's chat completions. A user's turn can carry `images`, a list of PNG
 file paths read when the request goes out; `models.sees_images(role)` says
 whether the role's model can see them, and they're left out for one that
 can't.

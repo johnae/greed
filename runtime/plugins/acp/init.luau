@@ -6,10 +6,10 @@
 --   space i l   the sessions, running and kept: show, take up, review or bring them in
 --   space i m   move this session's transcript to a pane, tab, float or panel
 --
--- In a transcript, alt-enter sends what's in the box at the bottom and
--- ctrl-c stops the agent's turn. A question the agent asks shows as a row
--- of choices in the box, answered with enter or a choice's letter in any
--- mode (question.luau).
+-- In a transcript, alt-enter sends what's in the box at the bottom (queued
+-- while the agent works) and ctrl-c stops the agent's turn. A question the
+-- agent asks shows as a row of choices in the box, answered with enter or
+-- a choice's letter in any mode, or rejected with esc (question.luau).
 --
 -- Agents are registered by name with the commands that run them; the first
 -- one installed is used. Add your own in init.luau:
@@ -980,12 +980,22 @@ greed.command({
 			return
 		end
 		local text = core.text.trim(transcript.prompt(ctx.buffer))
-		if text == "" and s.attached == nil then
+		if text == "" and s.attached == nil and s.queued == nil then
 			greed.echo("write a message in the box first")
 			return
 		end
+		-- Sent while it asks something, it rejects that, saying what to do
+		-- instead.
+		if text ~= "" and question.reject(ctx.buffer, s, text) then
+			transcript.clear_prompt(ctx.buffer)
+			return
+		end
+		-- Sent while it works, it waits its turn.
 		if s.status == "working" or s.status == "waiting" then
-			greed.echo("the agent is still working; ctrl-c stops it")
+			if text ~= "" then
+				transcript.clear_prompt(ctx.buffer)
+				session.queue(s, text)
+			end
 			return
 		end
 		-- A message it can't answer, like one to a model without a key,
@@ -1148,12 +1158,26 @@ greed.command({
 })
 
 greed.command({
+	name = "agent-copy-or-stop",
+	doc = "Copy the selection, or with nothing selected stop the agent's turn",
+	run = function(ctx)
+		for _, range in ctx.view:selection().ranges do
+			if range.anchor ~= range.head then
+				greed.run("copy-or-line")
+				return
+			end
+		end
+		greed.run("agent-stop")
+	end,
+})
+
+greed.command({
 	name = "agent-answer",
-	doc = "Show the question the agent waits on in the box, to answer it there; on a button, like a code block's run, press it",
+	doc = "Draw the question the agent waits on in the box again, to answer it there; on a button, like a code block's run, press it",
 	run = function(ctx)
 		local s = current(ctx)
 		local buffer = s and buffers[s.id]
-		if s == nil or buffer == nil or not question.show(s) then
+		if s == nil or buffer == nil or not question.waits(s) then
 			if #core.buttons.at(ctx.buffer, ctx.view:cursor()) > 0 then
 				greed.run("press-button")
 			else
@@ -1321,7 +1345,6 @@ end, "position")
 
 greed.keymap.bind({ role = "command", kind = "agent-transcript" }, {
 	enter = "agent-answer",
-	["ctrl-c"] = "agent-stop",
 	tab = "agent-fold",
 })
 greed.keymap.bind({ kind = "agents" }, {
@@ -1347,11 +1370,16 @@ greed.keymap.bind({ kind = "agents" }, {
 -- These work in every mode, while typing too.
 greed.keymap.bind({ kind = "agent-transcript" }, {
 	["alt-enter"] = "agent-send",
+	["ctrl-c"] = "agent-stop",
 	["alt-q"] = "agent-answer",
 	["alt-m"] = "agent-mode",
 	["alt-M"] = "agent-model",
 	["alt-v"] = "paste-image",
 	["alt-x"] = "agent-drop-images",
+})
+-- In the vscode style ctrl-c copies a selection.
+greed.keymap.bind({ style = "vscode", role = "typing", kind = "agent-transcript" }, {
+	["ctrl-c"] = "agent-copy-or-stop",
 })
 greed.keymap.bind({ layer = "leader" }, {
 	["i n"] = "agent-new",

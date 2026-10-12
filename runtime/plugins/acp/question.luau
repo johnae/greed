@@ -5,11 +5,12 @@
 --   │ Allow Run cargo test?  [y] Allow once  [a] Allow always  [n] Reject │
 --   │ now add a test                                                   │
 --
--- Enter picks the highlighted choice, tab and the arrows move it, a
--- choice's letter picks it and esc hides the row, leaving the question in
--- the transcript. Letters answer unless you're typing with something in
--- the box already, so a message you're writing never answers by accident;
--- what's in the box stays as it was.
+-- Enter picks the highlighted choice, tab and the arrows move it, and a
+-- choice's letter picks it. Esc rejects, and what's in the box goes with
+-- the rejection as what to do instead (alt-enter does the same). Letters
+-- answer unless you're typing with something in the box already, so a
+-- message you're writing never answers by accident; other answers leave
+-- what's in the box as it was.
 --
 -- The keys are bound for the transcript buffer alone (`buffer:set_keys`)
 -- and only while the row shows, so every style's keys work as always
@@ -46,8 +47,8 @@ local function keys_of(permission: Permission): { string }
 end
 
 -- Per session: the question shown, its highlighted option, and whether
--- you hid the row.
-type State = { permission: Permission, index: number, hidden: boolean }
+-- you answered it, which hides the row before the agent hears.
+type State = { permission: Permission, index: number, answered: boolean }
 local states: { [number]: State } = {}
 
 -- Each transcript buffer's session, as last drawn.
@@ -61,6 +62,21 @@ function M.on_redraw(call: (buffer: greed.Buffer, s: Session) -> ())
 	redraw = call
 end
 
+-- What's written in a transcript's box, and what empties it; transcript.luau
+-- sets them.
+local box = {
+	text = function(_: greed.Buffer): string
+		return ""
+	end,
+	clear = function(_: greed.Buffer) end,
+}
+
+--- Sets what reads and empties a transcript's box, for a rejection to take
+--- what you wrote along.
+function M.on_box(text: (buffer: greed.Buffer) -> string, clear: (buffer: greed.Buffer) -> ())
+	box.text, box.clear = text, clear
+end
+
 -- The state for `s`'s first pending question, fresh when that question is
 -- new; nil when there's none.
 local function state_of(s: Session): State?
@@ -71,7 +87,7 @@ local function state_of(s: Session): State?
 	end
 	local state = states[s.id]
 	if state == nil or state.permission ~= permission then
-		state = { permission = permission, index = 1, hidden = false }
+		state = { permission = permission, index = 1, answered = false }
 		states[s.id] = state
 	end
 	return state
@@ -81,7 +97,7 @@ end
 local function shown_in(buffer: greed.Buffer): (Session?, State?)
 	local s = sessions[buffer:id()]
 	local state = if s then state_of(s) else nil
-	if s and state and not state.hidden then
+	if s and state and not state.answered then
 		return s, state
 	end
 	return nil, nil
@@ -94,7 +110,7 @@ end
 function M.row(buffer: greed.Buffer, s: Session, cells: number): (string?, { greed.Mark })
 	sessions[buffer:id()] = s
 	local state = state_of(s)
-	if state == nil or state.hidden then
+	if state == nil or state.answered then
 		return nil, {}
 	end
 	local permission = state.permission
@@ -145,7 +161,7 @@ function M.bind(buffer: greed.Buffer, draft: string)
 		right = "agent-choice-next",
 		["shift-tab"] = "agent-choice-prev",
 		left = "agent-choice-prev",
-		esc = "agent-choice-hide",
+		esc = "agent-choice-reject",
 	}
 	if letters_answer(draft) then
 		for _, key in keys_of(state.permission) do
@@ -158,34 +174,34 @@ end
 --- What the box's bottom line says works for the question `s` waits on.
 function M.hint(s: Session, draft: string): string
 	local state = state_of(s)
-	local typing = core.style.is_typing()
-	if state == nil then
+	if state == nil or state.answered then
 		return ""
-	elseif state.hidden then
-		return if typing then "alt-q shows the question" else "enter shows the question"
-	elseif letters_answer(draft) then
-		return `{table.concat(keys_of(state.permission), "/")} or enter answers · esc hides`
 	end
-	return "enter answers · tab moves · esc hides"
+	local keys = `{table.concat(keys_of(state.permission), "/")} or enter answers`
+	if not string.match(draft, "%S") then
+		return `{keys} · esc rejects`
+	end
+	-- Short, so the narrow box has room for what esc does with your message.
+	local answers = if letters_answer(draft) then keys else "enter answers"
+	return `{answers} · esc rejects with your message`
 end
 
---- Shows the row for the question `s` waits on again, after esc hid it.
---- Returns whether there's a question.
-function M.show(s: Session): boolean
-	local state = state_of(s)
-	if state then
-		state.hidden = false
+-- The option of `permission` that rejects: "reject once" if it has one.
+local function reject_of(permission: Permission): Option?
+	local found: Option? = nil
+	for _, option in permission.options do
+		if option.kind == "reject_once" then
+			return option
+		elseif found == nil and string.match(option.kind or "", "^reject") then
+			found = option
+		end
 	end
-	return state ~= nil
+	return found
 end
 
--- Answers with option `index` of the row in `buffer`.
-local function answer(buffer: greed.Buffer, index: number)
-	local _, state = shown_in(buffer)
-	local option: Option? = state and state.permission.options[index]
-	if state == nil or option == nil then
-		return
-	end
+-- Answers the question `state` holds with `option`, or as cancelled
+-- without one, in `buffer`.
+local function answer(buffer: greed.Buffer, state: State, option: Option?)
 	-- A cursor on the row (a click puts it there) goes to the end of the
 	-- box, so typing after the row goes doesn't land in the transcript.
 	local first = buffer:decorations("acp-choices")[1]
@@ -200,25 +216,49 @@ local function answer(buffer: greed.Buffer, index: number)
 		end
 	end
 	-- At once, so a key pressed before the agent hears doesn't answer again.
-	state.hidden = true
+	state.answered = true
 	buffer:set_keys(nil)
-	state.permission.answer:send(option.id)
+	state.permission.answer:send(option and option.id)
 end
 
--- Changes the row in `buffer` with `change` and redraws it.
-local function change(buffer: greed.Buffer, call: (state: State) -> ())
-	local s, state = shown_in(buffer)
-	if s and state then
-		call(state)
-		redraw(buffer, s)
+-- Answers with option `index` of the row in `buffer`.
+local function pick(buffer: greed.Buffer, index: number)
+	local _, state = shown_in(buffer)
+	local option: Option? = state and state.permission.options[index]
+	if state and option then
+		answer(buffer, state, option)
 	end
 end
 
+--- Rejects the question `s` waits on, from its transcript `buffer`, with
+--- `note`, what you wrote, as what to do instead (`session.ask` passes it
+--- on). Returns whether there was a question.
+function M.reject(buffer: greed.Buffer, s: Session, note: string?): boolean
+	local state = state_of(s)
+	if state == nil or state.answered then
+		return false
+	end
+	if note and string.match(note, "%S") then
+		state.permission.note = core.text.trim(note)
+	end
+	answer(buffer, state, reject_of(state.permission))
+	return true
+end
+
+--- Whether `s` waits on a question that isn't answered yet.
+function M.waits(s: Session): boolean
+	local state = state_of(s)
+	return state ~= nil and not state.answered
+end
+
+-- Moves the highlight of the row in `buffer` by `by` and redraws it.
 local function move(buffer: greed.Buffer, by: number)
-	change(buffer, function(state)
+	local s, state = shown_in(buffer)
+	if s and state then
 		local count = #state.permission.options
 		state.index = (state.index - 1 + by) % count + 1
-	end)
+		redraw(buffer, s)
+	end
 end
 
 greed.command({
@@ -227,7 +267,7 @@ greed.command({
 	run = function(ctx)
 		local _, state = shown_in(ctx.buffer)
 		if state then
-			answer(ctx.buffer, state.index)
+			pick(ctx.buffer, state.index)
 		end
 	end,
 })
@@ -239,7 +279,7 @@ greed.command({
 		local _, state = shown_in(ctx.buffer)
 		local index = state and table.find(keys_of(state.permission), ctx.char or ctx.keys or "")
 		if index then
-			answer(ctx.buffer, index)
+			pick(ctx.buffer, index)
 		end
 	end,
 })
@@ -261,12 +301,14 @@ greed.command({
 })
 
 greed.command({
-	name = "agent-choice-hide",
-	doc = "Hide the agent's question from the box; it still waits in the transcript",
+	name = "agent-choice-reject",
+	doc = "Reject the agent's question; what's in the box goes with it, as what to do instead",
 	run = function(ctx)
-		change(ctx.buffer, function(state)
-			state.hidden = true
-		end)
+		local s = shown_in(ctx.buffer)
+		if s then
+			M.reject(ctx.buffer, s, box.text(ctx.buffer))
+			box.clear(ctx.buffer)
+		end
 	end,
 })
 
@@ -279,7 +321,7 @@ greed.command({
 		local cursor = ctx.view:cursor()
 		for _, mark in ctx.buffer:decorations("acp-choices") do
 			if mark.from <= cursor and cursor < mark.to and mark.data then
-				answer(ctx.buffer, mark.data :: number)
+				pick(ctx.buffer, mark.data :: number)
 				return
 			end
 		end

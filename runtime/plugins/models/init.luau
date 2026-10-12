@@ -1020,11 +1020,14 @@ end
 
 --- One turn of a conversation with tools, by the model playing `role`:
 --- `on_text` gets its text as it arrives, and the turn says what it said,
---- the tool calls it asked for and why it stopped. Waits like greed.sleep.
+--- the tool calls it asked for and why it stopped. `on_open` gets what
+--- closes the answer's stream once it starts, to stop it early: the turn
+--- then ends with what came so far. Waits like greed.sleep.
 function M.turn(
 	role: string,
 	request: turn.Request,
-	on_text: ((text: string) -> ())?
+	on_text: ((text: string) -> ())?,
+	on_open: ((close: () -> ()) -> ())?
 ): (turn.Turn?, string?)
 	local chosen, provider, key, why = greed.vouch(connect, role)
 	if chosen == nil or provider == nil then
@@ -1042,6 +1045,12 @@ function M.turn(
 	local response, err = greed.vouch(send, role, chosen, sent)
 	if response == nil then
 		return nil, err
+	end
+	if on_open then
+		local stream: greed.HttpStream = response
+		on_open(function()
+			stream:close()
+		end)
 	end
 	local reader = turn.reader(provider.kind)
 	local buffered = ""

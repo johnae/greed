@@ -17,7 +17,7 @@
 --   ╭─ Claude · Plan · Sonnet ────── alt-enter sends · ctrl-c stops ─╮
 --   │ Allow Run cargo test?  [y] Allow once  [n] Reject              │
 --   │ now add a test                                                 │
---   ╰─  waiting for you  enter answers · tab moves · esc hides · 12s ─╯
+--   ╰─  waiting for you  enter answers · esc rejects with your message ─╯
 --
 -- The box's top line is in the buffer and marks where the history ends,
 -- with the row of choices for a question under it (question.luau); its
@@ -235,6 +235,14 @@ function M.history(s: Session): History
 			end
 		end
 	end
+	-- What you sent while it worked, dimmed at the end until it goes.
+	local queued = s.queued
+	if queued and #queued > 0 then
+		gap()
+		speaker = "user"
+		add("  You · queued", "comment")
+		body(table.concat(queued, "\n\n"), "comment")
+	end
 	gap()
 	local plain: { [number]: boolean } = {}
 	for line = 0, #lines - 1 do
@@ -397,6 +405,10 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 		piece(core.text.clip(s.problem, math.max(cells - 8, 10)), "agent.failed")
 	else
 		piece("ready", "agent.hint")
+	end
+	local queued = if s.queued then #s.queued else 0
+	if queued > 0 then
+		piece(` · {queued} queued`, "agent.hint")
 	end
 	if busy(s) and s.since then
 		piece(` · {elapsed(s.since)}`, "agent.hint")
@@ -746,6 +758,7 @@ greed.on("view.resized", function(event: greed.ViewResized)
 end)
 
 question.on_redraw(M.render)
+question.on_box(M.prompt, M.clear_prompt)
 
 -- What answers a question, and the hint saying so, depend on the mode.
 greed.on("mode.changed", function()

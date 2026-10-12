@@ -527,7 +527,21 @@ text). Scroll up away from the box and it stays where you are.
 
 Write in the box at the bottom; it grows as you write, and its top shows
 the agent, its mode and model. `alt-enter` sends and `ctrl-c` stops the
-agent's turn. The box's bottom line says what the agent is doing (the
+agent's turn, in any mode, while typing too (in the vscode style, with a
+selection it copies): what it was answering or running is left behind at
+once, and the next message carries on from there. A command it started in
+the project's shell goes on there, where `ctrl-c` stops it.
+
+What you send while the agent works waits its turn, shown at the end of
+the transcript as `You · queued` and counted under the box (`thinking · 1
+queued`). Greed's own agent reads it at its next step, along with the
+result of the tool it just ran; other agents get it as the next message
+once their turn ends, several queued messages together. It then shows
+where the agent got it. Messages still queued when you stop the agent stay
+queued and go ahead of your next message (`alt-enter` on an empty box sends
+them alone).
+
+The box's bottom line says what the agent is doing (the
 tool it runs, or thinking) and for how long this turn has taken, `waiting
 for you` when it asks something, and how many tokens of the model's
 context the conversation takes when the agent says (out of how many it
@@ -544,7 +558,8 @@ of choices at the top of the box, like
 `Allow Edit a.txt?  [y] Allow once  [a] Allow always  [n] Reject`, and
 you answer it from there in any mode and editing style: `enter` picks the
 highlighted choice, `tab` moves, a choice's letter picks it and `esc`
-hides the row. [Answering an agent](permissions.md#answering-an-agent) has
+rejects it, taking what you wrote in the box along as what to do instead
+(`alt-enter` with a message does the same). [Answering an agent](permissions.md#answering-an-agent) has
 the keys and what "Allow always" covers for each agent.
 The agent reads open files as you have them, unsaved changes included,
 and its edits to an open file are made in the buffer and saved, so undo

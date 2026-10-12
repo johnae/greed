@@ -38,13 +38,20 @@ You answer it from there in any mode and editing style:
 | `enter` | The highlighted choice (the first, until you move) |
 | `tab`, `shift-tab`, `left`, `right` | Highlight the next or previous choice |
 | `y`, `a`, `n`, `N` | Allow once, allow always, reject, and reject always when the agent offers it; a choice of some other kind goes by its number |
-| `esc` | Hide the row, to read the question in the transcript; `enter` outside typing (or `alt-q`) shows it again |
+| `esc` | Reject; what's in the box goes along as what to do instead |
 
 Clicking a choice picks it too. Letters type as usual once the box has
 something in it, so a message you're writing doesn't answer by accident;
-`enter` and `tab` still work then. What you've typed stays as it was, and
-the box's bottom line says which keys answer at the moment. The transcript
-keeps each answer under the call it was for, like `? Edit a.txt: Allow once`.
+`enter` and `tab` still work then. What you've typed stays as it was
+unless you reject with `esc`, and the box's bottom line says which keys
+answer at the moment.
+
+To say no and what to do instead, write it in the box and press `esc`, or
+send it with `alt-enter`: the question is rejected and your message goes
+along. Greed's own agent gets it with the rejection, in the same step;
+other agents get it as your next message once their turn ends. The
+transcript keeps each answer under the call it was for, like `? Edit a.txt:
+Allow once`.
 
 What "Allow always" covers depends on the agent:
 

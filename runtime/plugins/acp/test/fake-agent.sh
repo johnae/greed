@@ -9,6 +9,7 @@
 #   run          runs `echo from a terminal` and says what it printed
 #   wait         says nothing until it's cancelled
 #   busy         runs a tool call until it's cancelled
+#   slow         answers after half a second
 #   plan         reports a plan and a tool call that fails
 #   context      says whether editor context came with the prompt
 #   servers      says what MCP servers it was given
@@ -136,6 +137,11 @@ while IFS= read -r line; do
 			await 905
 			out=$(field "$reply" output | sed 's/\\n$//')
 			say "It printed: $out"
+			turn_done "$id" end_turn
+			;;
+		slow*)
+			sleep 0.5
+			say "Slow done."
 			turn_done "$id" end_turn
 			;;
 		busy*)

@@ -160,7 +160,7 @@ test("waiting on you shows as a chip, and how much context is used on the right"
 	assert(
 		string.find(
 			drawn,
-			"╰─  waiting for you  y/n or enter answers · esc hides · 0s ─",
+			"╰─  waiting for you  y/n or enter answers · esc rejects · 0s ─",
 			1,
 			true
 		),
@@ -282,7 +282,7 @@ end
 test("a question shows as choices in the box; letters answer outside typing", function(t)
 	local s = start(t)
 	ask(t, s)
-	assert(string.find(bottom(), "y/n or enter answers · esc hides", 1, true), bottom())
+	assert(string.find(bottom(), "y/n or enter answers · esc rejects", 1, true), bottom())
 	t:keys("n")
 	assert(answered(t, s) == "Reject", greed.view():buffer():text())
 	assert(not string.find(greed.view():buffer():text(), "[y]", 1, true), "the row is gone")
@@ -294,7 +294,15 @@ test("while you type, enter answers and what you typed stays in the box", functi
 	-- An empty box takes letters as answers, but h and i aren't any.
 	t:keys("i h")
 	t:keys("i")
-	assert(string.find(bottom(), "enter answers · tab moves · esc hides", 1, true), bottom())
+	assert(
+		string.find(
+			bottom(),
+			" waiting for you  enter answers · esc rejects with your message",
+			1,
+			true
+		),
+		bottom()
+	)
 	-- With something typed, letters type.
 	t:keys("y")
 	local status = s.status
@@ -308,22 +316,49 @@ test("while you type, enter answers and what you typed stays in the box", functi
 	assert(greed.mode.get() == "helix-insert", greed.mode.get())
 end)
 
-test("esc hides the choices, leaving the question; alt-q brings them back", function(t)
+test("esc rejects the question, and with an empty box nothing more is sent", function(t)
 	local s = start(t)
 	ask(t, s)
 	t:keys("esc")
+	assert(answered(t, s) == "Reject", greed.view():buffer():text())
 	local text = greed.view():buffer():text()
-	assert(not string.find(text, "[y]", 1, true), text)
-	assert(string.find(text, "? Allow Edit a.txt?", 1, true), "still asked")
-	assert(string.find(bottom(), "enter shows the question", 1, true), bottom())
-	-- Keys do what they always do again: i starts typing.
-	t:keys("i")
-	assert(string.find(bottom(), "alt-q shows the question", 1, true), bottom())
-	t:keys("alt-q")
-	t:keys("right")
-	t:keys("left")
-	t:keys("enter")
-	assert(answered(t, s) == "Allow once", greed.view():buffer():text())
+	assert(string.find(text, "Left it alone.", 1, true), text)
+	assert(not string.find(text, "[y]", 1, true), "the row is gone")
+	local _, users = string.gsub(text, "\n  You\n", "")
+	assert(users == 1, "only the first message went: " .. text)
+end)
+
+test("esc with a message in the box rejects and sends the message next", function(t)
+	local s = start(t)
+	ask(t, s)
+	t:keys("i h e l l o")
+	t:keys("esc")
+	t:wait_for(function()
+		return string.find(greed.view():buffer():text(), "Hello there", 1, true) ~= nil
+	end)
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	t:wait(30)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "? Edit a.txt: Reject", 1, true), text)
+	local rejected = string.find(text, "Left it alone.", 1, true)
+	local sent = string.find(text, "  You\n  hello\n", 1, true)
+	assert(rejected and sent and sent > rejected, "the message went once the turn ended: " .. text)
+	assert(draft() == "", draft())
+end)
+
+test("sending while the agent asks rejects the question with the message", function(t)
+	local s = start(t)
+	ask(t, s)
+	t:keys("i h e l l o alt-enter")
+	t:wait_for(function()
+		return string.find(greed.view():buffer():text(), "Hello there", 1, true) ~= nil
+	end)
+	t:wait(30)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "? Edit a.txt: Reject", 1, true), text)
+	assert(draft() == "", draft())
 end)
 
 test("clicking a choice answers with it", function(t)
@@ -381,6 +416,27 @@ test("in the vscode style letters answer only while the box is empty", function(
 	greed.option.set("editing-style", "vscode")
 	t:keys("n")
 	assert(answered(t, s) == "Reject", greed.view():buffer():text())
+	greed.option.set("editing-style", "helix")
+end)
+
+test("in the vscode style ctrl-c copies a selection, and stops the agent without one", function(t)
+	local s = start(t)
+	type_in(t, "b u s y")
+	t:keys("alt-enter")
+	t:wait_for(function()
+		return s.tool ~= nil
+	end)
+	greed.option.set("editing-style", "vscode")
+	local view = greed.view()
+	view:set_selection({ ranges = { { anchor = 0, head = 4 } }, primary = 1 })
+	t:keys("ctrl-c")
+	local status = s.status
+	assert(status == "working", "a selection is copied, the agent goes on")
+	view:set_cursor(view:buffer():len())
+	t:keys("ctrl-c")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
 	greed.option.set("editing-style", "helix")
 end)
 

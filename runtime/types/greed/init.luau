@@ -583,7 +583,7 @@ export type HttpResponse = {
 
 --- A response whose body arrives in pieces. `read` waits for the next piece
 --- and returns it, nil at the end, or nil and why it failed; `close` stops
---- reading.
+--- reading, and a read waiting in another task returns nil.
 export type HttpStream = {
 	status: number,
 	headers: { [string]: string },

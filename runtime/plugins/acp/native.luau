@@ -142,7 +142,42 @@ type State = {
 	order: { string },
 	--- How its model edits files (models.edits), worked out each prompt.
 	edits: string?,
+	--- Goes up each time a turn is stopped, so what a stopped turn left
+	--- running (a stream, a tool call) changes nothing when it ends.
+	run: number,
+	--- What the model's answer or the tool call going on now is waited
+	--- for with, and what closes the answer's stream: stopping the turn
+	--- uses them to end it at once.
+	waiting: greed.Signal?,
+	close: (() -> ())?,
 }
+
+-- What the model hears of a call stopped as it ran, and of those after it.
+local STOPPED = "the user stopped the turn while this ran; it may have done part of its work"
+local NOT_RUN = "not run: the user stopped the turn first"
+
+-- Runs `f` in a task of its own and waits for what it returns, unless the
+-- turn is stopped first: then it's false at once, and `f` is left to end
+-- on its own.
+local function unless_stopped(state: State, f: () -> (any, any)): (boolean, any, any)
+	if state.cancelled then
+		return false, nil, nil
+	end
+	local done = greed.signal()
+	state.waiting = done
+	greed.spawn(function()
+		local ok, a, b = pcall(f)
+		done:send({ ok = ok, a = a, b = b })
+	end)
+	local got = done:wait()
+	state.waiting = nil
+	if got == false then
+		return false, nil, nil
+	elseif not got.ok then
+		error(got.a, 0)
+	end
+	return true, got.a, got.b
+end
 
 local states: { [number]: State } = {}
 
@@ -1114,15 +1149,15 @@ local function allowed(
 	title: string,
 	kind: string,
 	locations: { string }?
-): boolean
+): (boolean, string?)
 	if state.allowed[kind] then
-		return true
+		return true, nil
 	end
-	local chosen = session.ask(s, title, kind, ALLOW, locations)
+	local chosen, note = session.ask(s, title, kind, ALLOW, locations)
 	if chosen == "always" then
 		state.allowed[kind] = true
 	end
-	return chosen == "once" or chosen == "always"
+	return chosen == "once" or chosen == "always", note
 end
 
 -- Runs one call the model asked for and returns what it gets back, and
@@ -1133,6 +1168,7 @@ local function call(
 	by_name: { [string]: any },
 	c: models.Call
 ): (string, boolean)
+	local run = state.run
 	local found = by_name[c.name]
 	if found == nil then
 		return `there's no tool called {c.name}`, true
@@ -1197,18 +1233,20 @@ local function call(
 		then session.may_write(s, tool.title, kind, locations)
 		else nil
 	if refused == nil then
-		if widens then
-			local title = `{tool.title}, which {widens}`
-			if session.ask(s, title, kind, session.ONCE, locations, true) ~= "once" then
-				refused = session.NOT_WIDENED
-			end
-		elseif danger then
-			local title = `{tool.title}: {danger}`
-			if session.ask(s, title, kind, session.ONCE, locations, true) ~= "once" then
-				refused = "the user didn't allow it"
-			end
-		elseif asks and not outside and not allowed(s, state, tool.title, kind, locations) then
-			refused = "the user didn't allow it"
+		local title = if widens
+			then `{tool.title}, which {widens}`
+			elseif danger then `{tool.title}: {danger}`
+			else nil
+		local ok, note = true, nil
+		if title then
+			local chosen, said = session.ask(s, title, kind, session.ONCE, locations, true)
+			ok, note = chosen == "once", said
+		elseif asks and not outside then
+			ok, note = allowed(s, state, tool.title, kind, locations)
+		end
+		if not ok then
+			local why = if widens then session.NOT_WIDENED else "the user didn't allow it"
+			refused = session.refused(why, note)
 		end
 	end
 	if refused then
@@ -1243,6 +1281,10 @@ local function call(
 		return said
 	end)
 	local text = if ok then result else agent.error_text(result)
+	-- The turn was stopped while it ran, and its row says so already.
+	if state.run ~= run then
+		return text, not ok
+	end
 	-- How edits go, by model and how they're made, to tell which way works.
 	if own and own.spec.name == "edit_file" then
 		local chosen = models.resolve(models.playing(state.role))
@@ -1404,15 +1446,30 @@ local function prompt(
 		if may_compact and estimate(state, extra) > room and compact.cut(state.said, tail) then
 			may_compact = compact_now(s, state, tail)
 		end
-		local turn, err = models.turn(state.role, {
-			system = said_system,
-			said = state.said,
-			tools = specs,
-			cache_key = s.session_id,
-		}, function(piece)
-			say(s, piece)
+		local run = state.run
+		local answered, answer, err = unless_stopped(state, function()
+			return models.turn(state.role, {
+				system = said_system,
+				said = state.said,
+				tools = specs,
+				cache_key = s.session_id,
+			}, function(piece)
+				if state.run == run then
+					say(s, piece)
+				end
+			end, function(close)
+				if state.run == run then
+					state.close = close
+				else
+					close()
+				end
+			end)
 		end)
-		if turn == nil then
+		state.close = nil
+		local turn: models.Turn? = answer
+		if not answered then
+			break
+		elseif turn == nil then
 			-- Too long for the model after all, as the estimate can be off:
 			-- compacted, keeping half as much of the end each time, it's
 			-- tried again, a few times at most.
@@ -1481,8 +1538,33 @@ local function prompt(
 		if turn.stop ~= "tools" or #turn.calls == 0 then
 			break
 		end
-		for _, c in turn.calls do
-			local result, failed = call(s, state, by_name, c)
+		for i, c in turn.calls do
+			local ran, result, failed = unless_stopped(state, function()
+				return call(s, state, by_name, c)
+			end)
+			if not ran then
+				-- Every call the model asked for gets a result, or the next
+				-- request is turned down.
+				for k = i, #turn.calls do
+					local id = turn.calls[k].id
+					local tool = s.tools[id]
+					if tool and tool.status ~= "completed" and tool.status ~= "failed" then
+						tool.status = "failed"
+						tool.detail = { "stopped" }
+					end
+					table.insert(
+						state.said,
+						{
+							role = "tool",
+							call = id,
+							text = if k == i and tool then STOPPED else NOT_RUN,
+							error = true,
+						} :: models.Said
+					)
+				end
+				s.tool = nil
+				break
+			end
 			-- A call it made already this prompt, coming back the same, says
 			-- so: a model can go round asking the same thing.
 			local key = c.name .. " " .. greed.json.encode(c.input)
@@ -1511,11 +1593,24 @@ local function prompt(
 			)
 			s.changed()
 		end
-		keep(s, state)
 		if state.cancelled then
-			table.insert(s.entries, { kind = "note", text = "stopped: cancelled" })
+			keep(s, state)
 			break
 		end
+		-- What you sent while it worked goes with the last result, as a
+		-- word from you: a message of yours after a tool's result would end
+		-- the model's turn for some providers.
+		local queued = session.take_queued(s)
+		if queued then
+			local last = state.said[#state.said]
+			last.text = `{last.text or ""}\n\n[The user, while you worked: {queued}]`
+			table.insert(s.entries, { kind = "user", text = queued })
+			s.changed()
+		end
+		keep(s, state)
+	end
+	if state.cancelled then
+		table.insert(s.entries, { kind = "note", text = "stopped: cancelled" })
 	end
 	-- Still waiting for the model's answer to its tools' results: it ran
 	-- out of turns.
@@ -1558,8 +1653,20 @@ end
 
 local DRIVER: session.Driver = {
 	prompt = prompt,
+	-- At once: the answer streaming in or the tool call running is left
+	-- behind, and the stream closed.
 	cancel = function(s)
-		states[s.id].cancelled = true
+		local state = states[s.id]
+		state.cancelled = true
+		state.run += 1
+		local close, waiting = state.close, state.waiting
+		state.close = nil
+		if close then
+			close()
+		end
+		if waiting then
+			waiting:send(false)
+		end
 	end,
 	set_model = function(s, id)
 		if models.roles[id] == nil then
@@ -1625,6 +1732,7 @@ function M.start(opts: {
 		allowed = {},
 		caller = agent.caller(),
 		order = {},
+		run = 0,
 	}
 	states[s.id] = state
 	s.session_id = if kept then kept.id else new_id()

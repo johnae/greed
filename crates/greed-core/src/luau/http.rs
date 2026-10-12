@@ -324,10 +324,15 @@ pub(super) fn stream_started(
     stream.set(
         "close",
         lua.create_function(move |lua, ()| {
-            if let Some(stream) = state_mut(lua).http.open.remove(&id) {
+            let waiter = state_mut(lua).http.open.remove(&id).and_then(|stream| {
                 stream.cancel.store(true, Ordering::Relaxed);
+                stream.waiter
+            });
+            // A read waiting in another task ends as at the stream's end.
+            match waiter {
+                Some(token) => tasks::deliver(lua, token, Value::Nil),
+                None => Ok(()),
             }
-            Ok(())
         })?,
     )?;
     tasks::deliver(lua, token, super::handles::methods(lua, stream)?)

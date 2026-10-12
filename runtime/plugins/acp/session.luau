@@ -37,6 +37,8 @@ export type Permission = {
 	--- Only you answer it, never a policy: for writes that let a plugin do
 	--- more.
 	firm: boolean?,
+	--- What you wrote with a rejection: what to do instead.
+	note: string?,
 }
 
 --- A mode the agent works in, like "plan" or "accept edits".
@@ -120,6 +122,12 @@ export type Session = {
 	sees_images: boolean?,
 	--- Why its last turn failed or it couldn't start, until a turn starts.
 	failed: string?,
+	--- Messages you sent while it worked, oldest first, waiting to go:
+	--- Greed's own agent hears them at its next step, any agent as the
+	--- next prompt once its turn ends.
+	queued: { string }?,
+	--- You stopped its turn (ctrl-c), until the next prompt.
+	cancelled: boolean?,
 }
 
 --- An image pasted for a prompt: where it's kept, its PNG bytes and its
@@ -649,7 +657,10 @@ M.NOT_WIDENED = "the user didn't allow letting a plugin do more; don't try anoth
 --- Asks you whether the agent may do `title` (a tool call of `kind`,
 --- touching the files at `locations` when it says), with `options` to
 --- answer by, unless a policy answers first; a `firm` question only you
---- answer. Returns the option chosen, or nil if the question was cancelled.
+--- answer. Returns the option chosen, or nil if the question was cancelled,
+--- and what you wrote with a rejection. That shows as your message: an
+--- agent in the editor tells its model with the rejection, and an ACP agent
+--- gets it as the next prompt.
 function M.ask(
 	session: Session,
 	title: string,
@@ -657,7 +668,7 @@ function M.ask(
 	options: { { id: string, name: string, kind: string } },
 	locations: { string }?,
 	firm: boolean?
-): string?
+): (string?, string?)
 	local permission: Permission = {
 		title = title,
 		kind = kind,
@@ -679,7 +690,7 @@ function M.ask(
 	if decided then
 		chose(decided, " (by policy)")
 		session.changed()
-		return decided
+		return decided, nil
 	end
 	local before: Status = session.status
 	session.status = "waiting"
@@ -693,8 +704,20 @@ function M.ask(
 	else
 		chose(chosen, "")
 	end
+	local note = permission.note
+	if note and session.driver then
+		table.insert(session.entries, { kind = "user", text = note })
+	elseif note then
+		M.queue(session, note)
+	end
 	session.changed()
-	return chosen
+	return chosen, note
+end
+
+--- Why the agent may not do something, `why`, with what you wrote with
+--- the rejection (`note`), for an agent's tool result.
+function M.refused(why: string, note: string?): string
+	return if note then `{why}; the user rejected it and says: {note}` else why
 end
 
 --- Whether the agent of `session` may change the files at `paths` (full
@@ -709,8 +732,13 @@ function M.may_write(session: Session, title: string, kind: string, paths: { str
 	elseif session.workspace then
 		return `{outside} is outside the workspace ({session.cwd})`
 	end
-	local chosen = M.ask(session, `{title}, outside the project`, kind, M.ONCE, paths)
-	return if chosen == "once" then nil else "the user didn't allow writing outside the project"
+	local chosen, note = M.ask(session, `{title}, outside the project`, kind, M.ONCE, paths)
+	if chosen == "once" then
+		return nil
+	end
+	-- An ACP agent gets your note as the next prompt instead.
+	local why = "the user didn't allow writing outside the project"
+	return if session.driver then M.refused(why, note) else why
 end
 
 local next_id = 0
@@ -1026,12 +1054,9 @@ local function about_images(attached: { Attachment }, seen: boolean): string
 	return table.concat(lines, "\n")
 end
 
---- Sends `text` to the agent and waits for its turn to end; what it says
---- and does meanwhile arrives as entries. `context` goes along before it,
---- unless the last prompt took the same, and the images attached to the
---- session go with it: as images to an agent that sees them, and as their
---- files' paths to one that doesn't. False and why when it can't.
-function M.prompt(session: Session, text: string, context: string?): (boolean, string?)
+-- One prompt, as M.prompt sends it.
+local function prompt_once(session: Session, text: string, context: string?): (boolean, string?)
+	session.cancelled = nil
 	local attached = session.attached
 	local driver = session.driver
 	local seen = if driver
@@ -1099,6 +1124,46 @@ function M.prompt(session: Session, text: string, context: string?): (boolean, s
 	return true, nil
 end
 
+--- Keeps `text`, a message you sent while the agent works, to send once it
+--- can take it (see `Session.queued`).
+function M.queue(session: Session, text: string)
+	local queued = session.queued or {}
+	table.insert(queued, text)
+	session.queued = queued
+	session.changed()
+end
+
+--- The messages queued for the agent, as one, taken out of the queue; nil
+--- when there are none.
+function M.take_queued(session: Session): string?
+	local queued = session.queued
+	session.queued = nil
+	return if queued and #queued > 0 then table.concat(queued, "\n\n") else nil
+end
+
+--- Sends `text` to the agent and waits for its turn to end; what it says
+--- and does meanwhile arrives as entries. `context` goes along before it,
+--- unless the last prompt took the same, and the images attached to the
+--- session go with it: as images to an agent that sees them, and as their
+--- files' paths to one that doesn't. Messages queued meanwhile go next,
+--- together, unless you stopped the turn. False and why when it can't.
+function M.prompt(session: Session, text: string, context: string?): (boolean, string?)
+	-- Those still queued when you stopped the last turn go first.
+	local left = if session.status == "idle" then M.take_queued(session) else nil
+	if left then
+		text = if text == "" then left else `{left}\n\n{text}`
+	end
+	local ok, err = prompt_once(session, text, context)
+	while ok and not session.cancelled and session.status == "idle" do
+		local queued = M.take_queued(session)
+		if queued == nil then
+			break
+		end
+		ok, err = prompt_once(session, queued, nil)
+	end
+	return ok, err
+end
+
 --- Puts the agent in the mode `id`. False and why when it won't.
 function M.set_mode(session: Session, id: string): (boolean, string?)
 	local conn = session.conn
@@ -1146,7 +1211,9 @@ function M.set_model(session: Session, id: string): (boolean, string?)
 end
 
 --- Asks the agent to stop its turn, answering any question it waits on.
+--- Messages queued for it stay queued, for your next one.
 function M.cancel(session: Session)
+	session.cancelled = true
 	for _, permission in M.pending(session) do
 		permission.answer:send(nil)
 	end

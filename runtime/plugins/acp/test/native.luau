@@ -1948,3 +1948,249 @@ test("a command the agent runs is a block of the project's shell", function(t)
 	end
 	assert(found, "a block of the agent's in the shell")
 end)
+
+-- What `s` is doing now, read afresh each time.
+local function status_of(s: any): string
+	return s.status
+end
+
+-- What the box's bottom line says in the transcript shown.
+local function bottom_line(): string
+	local text = ""
+	for _, mark in greed.view():buffer():decorations("acp-live") do
+		local lines: { any } = mark.lines or {}
+		for _, line in lines do
+			for _, piece in line do
+				text ..= piece.text
+			end
+		end
+	end
+	return text
+end
+
+-- Stands in for the model with `answer`, given each request (kept in the
+-- list returned, as it was then) and its turn's number.
+local function model(answer: (request: any, n: number, on_open: any) -> any): { any }
+	local asked: { any } = {}
+	models.check = function(): string?
+		return nil
+	end
+	models.turn = function(_role, request, on_text, on_open): (any, string?)
+		local copy = table.clone(request)
+		copy.said = {}
+		for i, one in request.said do
+			copy.said[i] = table.clone(one :: any)
+		end
+		table.insert(asked, copy)
+		local turn = answer(copy, #asked, on_open)
+		if turn.text ~= "" then
+			on_text(turn.text)
+		end
+		return turn, nil
+	end
+	return asked
+end
+
+local DONE = { text = "Done.", calls = {}, stop = "done" }
+
+-- A turn writing b.txt, which asks first.
+local WRITES = {
+	text = "",
+	calls = { { id = "c1", name = "write_file", input = { path = "b.txt", text = "b\n" } } },
+	stop = "tools",
+}
+
+test("esc rejects Greed's agent's question, and the model hears it wasn't allowed", function(t)
+	local asked = model(function(_, n)
+		return if n == 1 then WRITES else DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "write")
+	assert(status_of(s) == "waiting", status_of(s))
+	t:keys("esc")
+	t:wait_for(function()
+		return status_of(s) == "idle"
+	end)
+	local result = asked[2].said[3]
+	assert(result.role == "tool" and result.text == "the user didn't allow it", result.text)
+	assert(greed.fs.read(`{dir}/b.txt`) == nil, "nothing written")
+end)
+
+test("esc with a message rejects, and the model gets the message with the result", function(t)
+	local asked = model(function(_, n)
+		return if n == 1 then WRITES else DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "write")
+	t:keys("i u s e space c")
+	t:keys("esc")
+	t:wait_for(function()
+		return status_of(s) == "idle"
+	end)
+	local result = asked[2].said[3]
+	assert(
+		result.text == "the user didn't allow it; the user rejected it and says: use c",
+		result.text
+	)
+	assert(#asked == 2, "nothing more was sent")
+	assert(string.find(said(s), "permission:  | user: use c | agent: Done.", 1, true), said(s))
+	local typed = require("../transcript").prompt(greed.view():buffer())
+	assert(typed == "", "the box is empty: " .. typed)
+end)
+
+test(
+	"sent while Greed's agent works, a message is queued and goes with the next result",
+	function(t)
+		local go = greed.signal()
+		local asked = model(function(_, n)
+			if n == 1 then
+				go:wait()
+				return {
+					text = "",
+					calls = { { id = "c1", name = "focus", input = {} } },
+					stop = "tools",
+				}
+			end
+			return DONE
+		end)
+		local dir = t:tempdir({ ["a.txt"] = "one\n" })
+		local s = beside(dir, "a.txt", 0, 0)
+		send(t, "look")
+		assert(status_of(s) == "working", status_of(s))
+		send(t, "and this")
+		local text = greed.view():buffer():text()
+		assert(string.find(text, "  You · queued\n  and this\n", 1, true), text)
+		assert(string.find(bottom_line(), "thinking · 1 queued", 1, true), bottom_line())
+		local typed = require("../transcript").prompt(greed.view():buffer())
+		assert(typed == "", "the box is empty: " .. typed)
+		go:send(true)
+		t:wait_for(function()
+			return status_of(s) == "idle"
+		end)
+		t:wait(30)
+		assert(#asked == 2, "no other prompt")
+		local result = asked[2].said[3]
+		assert(result.role == "tool", result.role)
+		assert(
+			string.find(result.text, "\n\n[The user, while you worked: and this]", 1, true),
+			result.text
+		)
+		assert(
+			string.find(said(s), "tool: focus | user: and this | agent: Done.", 1, true),
+			said(s)
+		)
+		text = greed.view():buffer():text()
+		assert(not string.find(text, "queued", 1, true), text)
+	end
+)
+
+test("queued while the model answers without tools, a message is the next prompt", function(t)
+	local go = greed.signal()
+	local asked = model(function(_, n)
+		if n == 1 then
+			go:wait()
+		end
+		return DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "first")
+	send(t, "second")
+	send(t, "third")
+	go:send(true)
+	t:wait_for(function()
+		return status_of(s) == "idle" and #asked == 2
+	end)
+	local last = asked[2].said[#asked[2].said]
+	assert(last.role == "user" and untimed(last.text) == "second\n\nthird", last.text)
+	assert(s.queued == nil, "none left")
+end)
+
+test("ctrl-c stops Greed's agent at once while the model's answer never ends", function(t)
+	local closed = 0
+	local asked = model(function(_, n, on_open)
+		if n == 1 then
+			on_open(function()
+				closed += 1
+			end)
+			greed.signal():wait()
+		end
+		return DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "hang")
+	send(t, "queued")
+	assert(status_of(s) == "working", status_of(s))
+	-- While typing in the box, too.
+	t:keys("i ctrl-c")
+	t:wait(30)
+	assert(status_of(s) == "idle", status_of(s))
+	assert(closed == 1, "its stream closed")
+	assert(string.find(said(s), "note: stopped: cancelled", 1, true), said(s))
+	assert(s.queued and s.queued[1] == "queued", "what was queued stays queued")
+	t:keys("esc")
+	send(t, "again")
+	t:wait_for(function()
+		return status_of(s) == "idle" and #asked == 2
+	end)
+	local last = asked[2].said[#asked[2].said]
+	assert(untimed(last.text) == "queued\n\nagain", "queued first, then yours: " .. last.text)
+	assert(string.find(said(s), "agent: Done.", 1, true), said(s))
+end)
+
+test("ctrl-c during a tool call that doesn't end stops the turn, every call answered", function(t)
+	local agent = require("@agent")
+	agent.tool({
+		name = "test_hang",
+		description = "never ends",
+		run = function()
+			greed.signal():wait()
+			return "never"
+		end,
+	})
+	local asked = model(function(_, n)
+		if n == 1 then
+			return {
+				text = "",
+				calls = {
+					{ id = "c1", name = "test_hang", input = {} },
+					{ id = "c2", name = "focus", input = {} },
+				},
+				stop = "tools",
+			}
+		end
+		return DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "go")
+	assert(status_of(s) == "working" and s.tool == "test_hang", tostring(s.tool))
+	t:keys("ctrl-c")
+	t:wait(30)
+	assert(status_of(s) == "idle", status_of(s))
+	assert(string.find(said(s), "note: stopped: cancelled", 1, true), said(s))
+	send(t, "again")
+	t:wait_for(function()
+		return status_of(s) == "idle" and #asked == 2
+	end)
+	local results = asked[2].said
+	assert(
+		results[3].call == "c1"
+			and string.find(results[3].text, "stopped the turn while this ran", 1, true),
+		results[3].text
+	)
+	assert(
+		results[4].call == "c2" and string.find(results[4].text, "not run", 1, true),
+		results[4].text
+	)
+	agent.tool({
+		name = "test_hang",
+		description = "gone",
+		run = function()
+			return nil
+		end,
+	})
+end)

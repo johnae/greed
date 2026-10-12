@@ -181,6 +181,32 @@ fn streams_give_each_piece_as_it_arrives() {
 }
 
 #[test]
+fn closing_a_stream_ends_a_read_waiting_in_another_task() {
+    let address = serve();
+    let host = host();
+    host.load_str(
+        "close",
+        &format!(
+            r#"
+            local greed = require("@greed")
+            greed.command {{ name = "close", run = function()
+                local s = assert(greed.http.stream({{ url = "{address}/stream" }}))
+                greed.spawn(function()
+                    while s.read() do
+                    end
+                    greed.echo("ended")
+                end)
+                s.close()
+            end }}
+            "#
+        ),
+    )
+    .unwrap();
+    host.run(FIRST_CLIENT, "close").unwrap();
+    assert_eq!(messages(&host, 1), ["ended"]);
+}
+
+#[test]
 fn a_plugin_reaches_only_the_hosts_it_declares() {
     let address = serve();
     let dir = std::env::temp_dir().join(format!("greed-http-net-{}", std::process::id()));
