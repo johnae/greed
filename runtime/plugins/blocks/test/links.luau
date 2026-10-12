@@ -39,6 +39,8 @@ end
 
 test("a command button runs its command, a value in it as one argument", function(t)
 	local buffer = open(t, "Who: [x'; echo pwned](field:who)\n\n[Say](run:echo hello {{ who }})\n")
+	-- Whatever shell you use, a file's button runs in sh, as it's written.
+	greed.option.set("shell-fallback", "no-such-shell")
 	local rows = table.concat(t:draw(60, 10), "\n")
 	assert(string.find(rows, "▶ Say", 1, true), rows)
 	-- Asked first, the command as it runs shown; a lets it run from now on.

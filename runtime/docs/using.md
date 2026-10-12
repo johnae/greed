@@ -1510,7 +1510,9 @@ columns are named as formulas name them. The chart follows the table as
 you change it and the values it uses; on GitHub only the table shows.
 
 A command button runs a command in the project's shell and shows its output
-in a float as it comes (`esc` closes it, `ctrl-c` stops it):
+in a float as it comes (`esc` closes it, `ctrl-c` stops it). It runs with
+`sh`, whatever shell you use, so it works the same for anyone you share the
+file with:
 
 ```markdown
 Crate: [greed-core](field:crate)
@@ -1519,7 +1521,15 @@ Crate: [greed-core](field:crate)
 ```
 
 A `{{ formula }}` in the command goes in as one argument, quoted, so a
-field can't add to the command whatever it holds. As the label hides the
+field can't add to the command whatever it holds. For output that stays in
+the file, under the button, use a code block with a button; it gets the
+page's values as variables:
+
+````markdown
+```sh button="Run its tests"
+cargo test -p "$crate"
+```
+```` As the label hides the
 command, the first press shows it and asks: `y` runs it this time, `a`
 always. A command changed since (in the file, by a pull or an agent) asks
 again.

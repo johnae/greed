@@ -40,6 +40,10 @@ export type RunOptions = {
 	--- A finished block of the shell's to run in, in place of a new one;
 	--- see `change`.
 	block: Block?,
+	--- The shell a line that needs one runs in, without its startup files,
+	--- e.g. "sh" for a line written for anyone's machine, like a Markdown
+	--- file's button. Your own shell when left out (an agent's: "sh").
+	program: string?,
 }
 
 -- Starts `argv` for `block`: in a pseudo terminal, handed to a terminal
@@ -66,8 +70,9 @@ local function start(
 	end
 end
 
--- Runs `line` for `block` in a real shell: the user's (`sh` for an agent),
--- whose cd and export carry over to the user's commands after.
+-- Runs `line` for `block` in a real shell: the one it asks for (`sh` for
+-- an agent's), else the user's with its startup files. A user's cd and
+-- export carry over to their commands after.
 local function fall_back(
 	shell: Shell,
 	block: Block,
@@ -79,7 +84,7 @@ local function fall_back(
 	local agent = block.by == "agent"
 	envs.prepare(shell, block)
 	local wrapped =
-		fallback.prepare(block, line, { program = if agent then "sh" else nil, rc = not agent })
+		fallback.prepare(block, line, { program = block.runs_in, rc = block.runs_in == nil })
 	start(shell, block, wrapped.argv, opts, handoff, input, function()
 		local cwd, changed = fallback.collect(block, wrapped)
 		if not agent then
@@ -108,8 +113,7 @@ local function capture(
 		return own, own_errors, own_code
 	end
 	envs.prepare(shell, block)
-	local program = if block.by == "agent" then "sh" else nil
-	local wrapped = fallback.prepare(block, line, { program = program, rc = false })
+	local wrapped = fallback.prepare(block, line, { program = block.runs_in, rc = false })
 	local ran, err = greed.process.run(wrapped.argv, {
 		cwd = block.cwd,
 		env = state.environment(block),
@@ -172,7 +176,7 @@ end
 -- done.
 function M.open_stream(shell: Shell, block: Block, line: string): (greed.Child?, string?, () -> ())
 	envs.prepare(shell, block)
-	local wrapped = fallback.prepare(block, line, { program = nil, rc = false })
+	local wrapped = fallback.prepare(block, line, { program = block.runs_in, rc = false })
 	local child, err = greed.process.spawn(wrapped.argv, {
 		cwd = block.cwd,
 		env = state.environment(block),

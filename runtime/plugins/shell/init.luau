@@ -349,6 +349,7 @@ local function new_block(shell: Shell, command: string, opts: RunOptions): Block
 		runner = "builtin",
 		via = "builtin",
 		program = nil,
+		runs_in = opts.program or (if opts.by == "agent" then "sh" else nil),
 		by = opts.by or "user",
 		client = greed.client.id(),
 		started = greed.now(),

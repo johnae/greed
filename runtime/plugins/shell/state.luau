@@ -34,6 +34,9 @@ export type Block = {
 	--- named in `program`).
 	via: string,
 	program: string?,
+	--- The shell its line is to run in, without startup files, when not
+	--- yours: "sh" for an agent's or a Markdown file's button.
+	runs_in: string?,
 	--- "user" or "agent".
 	by: string,
 	--- The client it ran for.

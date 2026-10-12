@@ -1,7 +1,8 @@
 -- Command buttons in Markdown: `[Run the tests](run:cargo test {{ crate }})`
--- shows as a button, and pressing it runs the command in the project's
--- shell, its output in a float as it comes (esc closes it, ctrl-c stops
--- it). A `{{ formula }}` in the command is
+-- shows as a button, and pressing it runs the command with `sh` in the
+-- project's shell, the same for anyone whatever shell they use, its output
+-- in a float as it comes (esc closes it, ctrl-c stops it). A
+-- `{{ formula }}` in the command is
 -- worked out as values are (markdown's values.luau), and each goes in as
 -- one argument, quoted, never as more of the command: a field holding
 -- `x; rm -rf ~` stays a single argument.
@@ -111,9 +112,10 @@ function M.press(buffer: greed.Buffer, button: Button): shell.Block?
 		greed.echo("")
 	end
 	-- The project's shell is often out of sight: its output shows in a float
-	-- on the block, following it as it comes.
+	-- on the block, following it as it comes. The line runs in `sh`, as
+	-- written for whoever has the file, whatever shell they use.
 	local sh = shell.project()
-	local block = shell.run(sh, line)
+	local block = shell.run(sh, line, { program = "sh" })
 	if block then
 		shell.peek(sh, block, { tail = true })
 	end
