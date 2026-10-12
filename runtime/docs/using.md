@@ -1110,6 +1110,14 @@ only cache a request that names its conversation: `cache_key = true` on a
 provider has Greed's agent send its session's id as `prompt_cache_key`.
 The `mistral` provider has it on. `:usage` shows how much was cached.
 
+To see which requests missed, `:debug plugin:models` logs a line for each
+in `:debug-log`: the provider, model and session id, how many messages it
+sent, a short hash of all of it but the newest message, what it changed of
+the session's last request (nothing, when it's that one with more on the
+end), and the tokens sent, read from the cache and written. A request that
+starts with all of the last one and still shows little cached was missed
+by the provider, not changed by Greed.
+
 A provider with a `secret` reads its key with `:secret-set NAME`, or from
 `GREED_SECRET_NAME`. The built-in providers send their keys only to their
 own servers. The first time any other key would go to an address, Greed

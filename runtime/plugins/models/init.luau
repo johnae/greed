@@ -1100,6 +1100,10 @@ local function unseen(request: turn.Request): turn.Request
 	return out
 end
 
+-- The last request of each conversation (by its cache key, or the role),
+-- as the debug lines compare the next one with it.
+local fingerprints: { [string]: turn.Fingerprint } = {}
+
 --- One turn of a conversation with tools, by the model playing `role`:
 --- `on_text` gets its text as it arrives, and the turn says what it said,
 --- the tool calls it asked for and why it stopped. `on_open` gets what
@@ -1128,10 +1132,27 @@ function M.turn(
 		request.cache_key = nil
 	end
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
-	sent.body = greed.json.encode(turn.body(provider.kind, chosen.model, request, M.output(role)))
+	local body = turn.body(provider.kind, chosen.model, request, M.output(role))
+	sent.body = greed.json.encode(body)
+	-- One debug line a request, with what it changed of the last one in its
+	-- conversation, which the provider's cache needs it to start with.
+	local traced: string? = nil
+	if greed.debug.on() then
+		local conversation = request.cache_key or role
+		local said, now = turn.compare(body, fingerprints[conversation])
+		fingerprints[conversation] = now
+		local named = if request.cache_key then ` {request.cache_key}` else ""
+		traced = `{chosen.provider}/{chosen.model}{named}, {said}`
+	end
+	local function failed_with(err: string?): (turn.Turn?, string?)
+		if traced then
+			greed.debug.log(`{traced}; failed: {err}`)
+		end
+		return nil, err
+	end
 	local response, err = greed.vouch(send, role, chosen, sent)
 	if response == nil then
-		return nil, err
+		return failed_with(err)
 	end
 	if on_open then
 		local stream: greed.HttpStream = response
@@ -1145,13 +1166,22 @@ function M.turn(
 	local function ended(): turn.Turn
 		local done = reader.turn()
 		greed.vouch(M.count, chosen.provider, chosen.model, done.input, done.output, done.cached)
+		if traced then
+			local cached = done.cached or 0
+			local share = if done.input and done.input > 0
+				then ` ({math.floor(cached / done.input * 100 + 0.5)}%)`
+				else ""
+			greed.debug.log(
+				`{traced}; {done.input or "?"} in, {cached} cached{share}, {done.output or "?"} out`
+			)
+		end
 		return done
 	end
 	while true do
 		local piece, failed = response:read()
 		if piece == nil then
 			if failed then
-				return nil, failed
+				return failed_with(failed)
 			end
 			return ended(), nil
 		end
@@ -1161,7 +1191,7 @@ function M.turn(
 			local text, finished, problem, thinking = reader.feed(event)
 			if problem then
 				response:close()
-				return nil, problem
+				return failed_with(problem)
 			end
 			if thinking and on_thinking then
 				on_thinking(thinking)

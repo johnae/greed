@@ -2666,3 +2666,122 @@ test("tab after / lists Greed's chat commands, with what each does", function(t)
 	local typed = require("../transcript").prompt(view:buffer())
 	assert(typed == "/effort ", typed)
 end)
+
+-- A 1×1 PNG, to attach.
+local PIXEL = assert(
+	greed.base64.decode(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+	)
+)
+
+-- Each JSON value of `list` as encoded, apart.
+local function encoded(list: { any }): { string }
+	local out = {}
+	for _, item in list do
+		table.insert(out, greed.json.encode(item))
+	end
+	return out
+end
+
+test("each request is the last one with more after it, byte for byte, as caches want", function(t)
+	local session = require("../session")
+	local s: any
+	local function read(id: string, from: number?): any
+		return {
+			text = "",
+			calls = { { id = id, name = "read", input = { path = "a.txt", from_line = from } } },
+			stop = "tools",
+		}
+	end
+	local turns: { any } = {
+		read("c1"),
+		-- The same again, which brings the REPEATED note.
+		read("c2"),
+		{
+			text = "More tools.",
+			calls = { { id = "c3", name = "tools", input = { group = "refactor" } } },
+			stop = "tools",
+		},
+		-- Two calls in one answer, and a message you send while they run.
+		function()
+			session.queue(s, "and this")
+			local calls: { any } = {
+				{ id = "c4", name = "grep", input = { pattern = "one" } },
+				{ id = "c5", name = "read", input = { path = "a.txt", from_line = 2 } },
+			}
+			return { text = "", calls = calls, stop = "tools" }
+		end,
+	}
+	-- Reads in a row until the READING nudge.
+	for n = 6, 45 do
+		table.insert(turns, read(`c{n}`, n))
+	end
+	table.insert(turns, { text = "Done.", calls = {}, stop = "done" })
+	-- A second prompt, after the first one ended.
+	table.insert(turns, read("c46"))
+	table.insert(turns, { text = "Still one.", calls = {}, stop = "done" })
+	script(turns)
+	-- Each request as Mistral is sent it, encoded when it was made.
+	local sent: { { rest: string, system: string, tools: { string }, messages: { string } } } = {}
+	local answer = models.turn
+	models.turn = function(role, request, ...)
+		local body = models.tools.body("openai", "mistral-large-latest", request, 4096)
+		local messages = encoded(body.messages)
+		local tools = encoded(body.tools)
+		body.messages, body.tools = nil, nil
+		table.insert(sent, {
+			rest = greed.json.encode(body),
+			system = messages[1],
+			tools = tools,
+			messages = messages,
+		})
+		return answer(role, request, ...)
+	end
+	local sees = models.sees_images
+	models.sees_images = function()
+		return true
+	end
+	s = assert(acp.start(GREED, t:tempdir({ ["a.txt"] = "one\ntwo\n" })))
+	assert(session.attach(s, PIXEL))
+	for _, text in { "look", "and now" } do
+		greed.spawn(function()
+			acp.prompt(s, text)
+		end)
+		t:wait_for(function()
+			return s.status == "idle"
+		end)
+	end
+	models.sees_images = sees
+	assert(#sent == 47, `{#sent} requests`)
+	-- What the conversation went through, so the checks below cover it.
+	local whole = table.concat(sent[#sent].messages, "\n")
+	for _, part in
+		{
+			"You made this same call already",
+			"40 calls reading and searching in a row",
+			"[The user, while you worked: and this]",
+			"data:image/png;base64,",
+			"and now",
+		}
+	do
+		assert(string.find(whole, part, 1, true), `the conversation has {part}`)
+	end
+	assert(#sent[4].tools > #sent[3].tools, "the group's tools came in")
+	for n = 2, #sent do
+		local before, now = sent[n - 1], sent[n]
+		assert(now.rest == before.rest, `request {n}: {now.rest} after {before.rest}`)
+		assert(now.system == before.system, `request {n} changed the system prompt`)
+		assert(#now.tools >= #before.tools, `request {n} has fewer tools`)
+		for k, tool in before.tools do
+			assert(now.tools[k] == tool, `request {n} changed tool {k}: {now.tools[k]}`)
+		end
+		assert(#now.messages > #before.messages, `request {n} has no more messages`)
+		for k, message in before.messages do
+			assert(now.messages[k] == message, `request {n} changed message {k}: {now.messages[k]}`)
+		end
+		-- The list as sent, too: the one before it, then more.
+		local was = "[" .. table.concat(before.messages, ",")
+		local is = "[" .. table.concat(now.messages, ",")
+		assert(string.sub(is, 1, #was + 1) == was .. ",", `request {n} starts otherwise`)
+	end
+end)

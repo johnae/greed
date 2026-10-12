@@ -312,6 +312,101 @@ function M.body(
 	return body
 end
 
+--- A request in short, to tell what the next one in the same conversation
+--- changed: a hash of its tools, of its system prompt (Anthropic's; the
+--- rest have it as the first message), of its other fields, and of each
+--- message.
+export type Fingerprint = {
+	tools: string,
+	system: string,
+	settings: string,
+	messages: { string },
+}
+
+-- The first 8 hex digits of `text`'s SHA-256.
+local function short_hash(text: string): string
+	return string.sub(greed.hash.sha256(text), 1, 8)
+end
+
+-- `value` (a tool, a block or a message) encoded without Anthropic's
+-- cache markers, which move to the newest of each every request.
+local function unmarked(value: any): string
+	if type(value) ~= "table" then
+		return greed.json.encode(value)
+	end
+	local copy = table.clone(value)
+	copy.cache_control = nil
+	if type(copy.content) == "table" then
+		local blocks = {}
+		for _, block in copy.content do
+			if type(block) == "table" and block.cache_control then
+				block = table.clone(block)
+				block.cache_control = nil
+			end
+			table.insert(blocks, block)
+		end
+		copy.content = blocks
+	end
+	return greed.json.encode(copy)
+end
+
+-- The hash of each of `list` (nil for none), unmarked.
+local function hashes(list: { any }?): { string }
+	local out = {}
+	local items: { any } = list or {}
+	for _, item in items do
+		table.insert(out, short_hash(unmarked(item)))
+	end
+	return out
+end
+
+--- What a debug line says of `body` (from `M.body`), a request after
+--- `last`, the fingerprint of the one before it in the same conversation
+--- (nil for the first): how many messages it has, a hash of everything
+--- but its newest message, and what it changed of the last request, which
+--- a provider's cache needs it to start with. Returns that and the
+--- request's fingerprint, for the next one.
+function M.compare(body: { [string]: any }, last: Fingerprint?): (string, Fingerprint)
+	local rest = table.clone(body)
+	rest.messages, rest.tools, rest.system = nil, nil, nil
+	local now: Fingerprint = {
+		tools = table.concat(hashes(body.tools), ""),
+		system = table.concat(hashes(body.system), ""),
+		settings = short_hash(greed.json.encode(rest)),
+		messages = hashes(body.messages),
+	}
+	local messages = now.messages
+	local older = table.concat(messages, "", 1, math.max(#messages - 1, 0))
+	local prefix = short_hash(`{now.tools} {now.system} {now.settings} {older}`)
+	local said
+	if last == nil then
+		said = "the first request"
+	elseif now.settings ~= last.settings then
+		said = "other settings than the last request (model, effort, length)"
+	elseif now.system ~= last.system then
+		said = "another system prompt than the last request"
+	elseif string.sub(now.tools, 1, #last.tools) ~= last.tools then
+		said = "other tools than the last request"
+	else
+		local same = 0
+		while same < #last.messages and messages[same + 1] == last.messages[same + 1] do
+			same += 1
+		end
+		local first = body.messages and body.messages[1]
+		if same == #last.messages then
+			said = `all {same} messages of the last request first`
+		elseif same == 0 and type(first) == "table" and first.role == "system" then
+			said = "another system prompt than the last request"
+		else
+			said = `message {same + 1} of the last request's {#last.messages} changed`
+		end
+		if #now.tools > #last.tools then
+			said ..= ", and tools added after its own"
+		end
+	end
+	return `{#messages} messages, prefix {prefix}: {said}`, now
+end
+
 -- What each provider says when it stops, as a Turn's `stop`.
 local STOPS = {
 	end_turn = "done",

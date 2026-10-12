@@ -630,3 +630,58 @@ test("Anthropic's thinking blocks are kept, signed, and their text as thinking",
 	assert(signed[1].signature == "sig", tostring(signed[1].signature))
 	assert(signed[2].type == "redacted_thinking" and signed[2].data == "xyz")
 end)
+
+test("equal tables encode the same, whatever order they were built in", function()
+	local built: any = { type = "object", required = { "path" } }
+	built.properties = { path = { type = "string" }, from_line = { type = "number" } }
+	local backwards: any = {}
+	backwards.properties = {}
+	backwards.properties.from_line = { type = "number" }
+	backwards.properties.path = { type = "string" }
+	backwards.required = { "path" }
+	backwards.type = "object"
+	local again = greed.json.decode(greed.json.encode(backwards))
+	assert(greed.json.encode(built) == greed.json.encode(backwards), greed.json.encode(backwards))
+	assert(greed.json.encode(again) == greed.json.encode(built), "and read back in")
+end)
+
+test("compare says what a request changed of the last one in its conversation", function()
+	local function body(kind: string, said: { any }, tools: { any }?, effort: string?): any
+		return turn.body(
+			kind,
+			"m",
+			{ system = "be brief", said = said, tools = tools or TOOLS, effort = effort },
+			100
+		)
+	end
+	local first = { SAID[1] }
+	local second = { SAID[1], SAID[2], SAID[3] }
+	for _, kind in { "openai", "anthropic" } do
+		local said, last = turn.compare(body(kind, first))
+		assert(string.find(said, "the first request", 1, true), said)
+		local prefix = string.match(said, "prefix (%x+)")
+		said = turn.compare(body(kind, second), last)
+		assert(string.find(said, "of the last request first", 1, true), `{kind}: {said}`)
+		-- Its prefix takes in what the first request sent.
+		local whole = string.match(said, "prefix (%x+)")
+		assert(whole ~= prefix, "the prefix grew")
+		local changed = table.clone(second)
+		changed[1] = { role = "user", text = "what's in b.txt?" }
+		said = turn.compare(body(kind, changed), last)
+		local at = if kind == "openai" then 2 else 1
+		assert(string.find(said, `message {at} of the last request's`, 1, true), `{kind}: {said}`)
+		local more = table.clone(TOOLS)
+		table.insert(more, { name = "write", description = "Write a file" })
+		said = turn.compare(body(kind, second, more), last)
+		assert(string.find(said, "and tools added after its own", 1, true), `{kind}: {said}`)
+		said = turn.compare(body(kind, second, { TOOLS[2], TOOLS[1] }), last)
+		assert(string.find(said, "other tools", 1, true), `{kind}: {said}`)
+		said = turn.compare(body(kind, second, nil, "high"), last)
+		assert(string.find(said, "other settings", 1, true), `{kind}: {said}`)
+	end
+	local _, last = turn.compare(body("openai", first))
+	local other =
+		turn.body("openai", "m", { system = "be long", said = second, tools = TOOLS }, 100)
+	local said = turn.compare(other, last)
+	assert(string.find(said, "another system prompt", 1, true), said)
+end)
