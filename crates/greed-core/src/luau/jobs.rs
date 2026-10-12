@@ -17,7 +17,6 @@ type LuaResult<T> = mlua::Result<T>;
 pub enum Output {
     Grep(Result<Vec<LineMatch>, BadPattern>),
     Check(super::plugin::Check),
-    Process(std::io::Result<super::process::Finished>),
     Http(Result<super::http::Fetched, String>),
     /// A stream's status and headers, for the command waiting on `token`.
     StreamHead(u64, u64, Result<super::http::Head, String>),
@@ -59,6 +58,8 @@ pub(crate) struct Jobs {
     finished: Receiver<Done>,
     /// Jobs started and not yet finished: what each does, by its token.
     running: BTreeMap<u64, String>,
+    /// The coroutine each job [`begun`] by code is for, by its token.
+    begun: BTreeMap<u64, usize>,
 }
 
 impl Default for Jobs {
@@ -68,6 +69,7 @@ impl Default for Jobs {
             done,
             finished,
             running: BTreeMap::new(),
+            begun: BTreeMap::new(),
         }
     }
 }
@@ -86,6 +88,30 @@ impl Jobs {
     pub(super) fn is_running(&self, token: u64) -> bool {
         self.running.contains_key(&token)
     }
+
+    /// Whether coroutine `id` has a job [`begun`] running, so it's at work.
+    pub(super) fn begun_by(&self, id: usize) -> bool {
+        self.begun.values().any(|by| *by == id)
+    }
+}
+
+/// Counts work the running coroutine does elsewhere, like a program run to
+/// its end, as a running job doing `what` until [`ended`] with the token it
+/// returns: tests settle once it's done, and keys wait for it.
+pub(super) fn begun(lua: &Lua, what: impl Into<String>) -> u64 {
+    let by = tasks::key(&lua.current_thread());
+    let mut state = state_mut(lua);
+    let token = state.tasks.token();
+    state.jobs.running.insert(token, what.into());
+    state.jobs.begun.insert(token, by);
+    token
+}
+
+/// The work [`begun`] gave `token` ended.
+pub(super) fn ended(lua: &Lua, token: u64) {
+    let jobs = &mut state_mut(lua).jobs;
+    jobs.running.remove(&token);
+    jobs.begun.remove(&token);
 }
 
 /// Runs `work`, which does `what`, like "greed.fs.grep", on a new thread and
@@ -181,9 +207,6 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Secret(result) => {
             tasks::deliver(lua, done.token, super::secrets::to_lua(lua, result)?)
         }
-        Output::Process(result) => {
-            tasks::deliver(lua, done.token, super::process::to_lua(lua, result)?)
-        }
         Output::Child(id, piece) => super::process::piece_arrived(lua, id, piece),
         Output::Pdf(pdf) => super::pdf::finish(lua, done.token, pdf),
         Output::Tags(files) => {
@@ -248,21 +271,33 @@ pub(super) fn settle(lua: &Lua) -> LuaResult<()> {
 fn settle_within(lua: &Lua, limit: Duration) -> LuaResult<()> {
     let finished = state(lua).jobs.finished.clone();
     loop {
+        // When a job last said something.
+        let mut heard = Instant::now();
         while state(lua).jobs.running() > 0 {
             let waited = Instant::now();
-            let done = match finished.recv_timeout(limit) {
-                Ok(done) => done,
-                Err(RecvTimeoutError::Timeout) => {
+            // Timers fire as the real time reaches them, as the editor fires
+            // them while it waits, so a job's timeout can end it.
+            let now = state(lua).tasks.now();
+            let due = tasks::next_timer(lua).map(|at| at.saturating_duration_since(now));
+            let received = finished.recv_timeout(due.unwrap_or(limit).min(limit));
+            super::extend_deadline(lua, waited.elapsed());
+            match received {
+                Ok(done) => {
+                    heard = Instant::now();
+                    finish(lua, done)?;
+                }
+                Err(RecvTimeoutError::Timeout) if heard.elapsed() >= limit => {
                     let running: Vec<String> = state(lua).jobs.running.values().cloned().collect();
                     return Err(mlua::Error::runtime(format!(
                         "gave up after {limit:?} waiting for {}",
                         running.join(", ")
                     )));
                 }
+                // The time waited goes by for the editor too, even where a
+                // test has moved its clock ahead of the real time.
+                Err(RecvTimeoutError::Timeout) => tasks::advance(lua, now + waited.elapsed())?,
                 Err(err) => return Err(mlua::Error::external(err)),
-            };
-            super::extend_deadline(lua, waited.elapsed());
-            finish(lua, done)?;
+            }
         }
         // What programs printed so far, without waiting for more.
         let mut more = false;

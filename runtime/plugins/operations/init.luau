@@ -190,11 +190,7 @@ end
 
 --- Runs a program as part of `op`, like `greed.process.run`, and keeps how
 --- it went with the operation.
-function M.exec(
-	op: Operation,
-	argv: { string },
-	opts: { stdin: string?, cwd: string? }?
-): ({ code: number?, stdout: string, stderr: string }?, string?)
+function M.exec(op: Operation, argv: { string }, opts: greed.RunOptions?): (greed.Ran?, string?)
 	local done, err = greed.process.run(argv, opts)
 	local output = if done then done.stdout .. done.stderr else err or ""
 	if #output > OUTPUT then

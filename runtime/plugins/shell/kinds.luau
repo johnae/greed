@@ -498,24 +498,15 @@ local function fresh_row(value: any, line: string): { [string]: any }?
 		error("it isn't in a block any more", 0)
 	end
 	local block = origin.block
-	local child, err = greed.process.spawn(
+	local ran, err = greed.process.run(
 		{ "sh", "-c", line },
 		{ cwd = block.cwd, env = state.environment(block) }
 	)
-	if child == nil then
+	if ran == nil then
 		error(err or `can't run {line}`, 0)
 	end
-	child:close()
-	local parts: { string } = {}
-	while true do
-		local piece = child:read()
-		if piece == nil then
-			break
-		end
-		table.insert(parts, piece)
-	end
-	local code, errors = child:wait(), child:stderr()
-	local tbl = tables.parse(table.concat(parts), line, block)
+	local code, errors = ran.code, ran.stderr
+	local tbl = tables.parse(ran.stdout, line, block)
 	if code ~= 0 or tbl == nil or tbl.rows[1] == nil then
 		if code == 0 or string.find(string.lower(errors), "not ?found") then
 			return nil

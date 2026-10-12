@@ -591,17 +591,16 @@ export type Secrets = {
 	variable: (name: string) -> string,
 }
 
+--- How `greed.process.run` runs a program: `stdin` is its input, `cwd` its folder; in `env`, `false` leaves a variable out of what it inherits. With `timeout` (milliseconds) it's killed if it runs longer; with `group`, it gets a process group of its own, which that reaches too. `on_start(child)` gets it as it starts, to stop it from elsewhere.
+export type RunOptions = { stdin: string?, cwd: string?, env: { [string]: string | false }?, timeout: number?, group: boolean?, on_start: ((child: Child) -> ())? }
+
+--- How a program `greed.process.run` ran went: its exit `code`, or the `signal` that ended it, what it printed, and whether its timeout ended it.
+export type Ran = { code: number?, signal: string?, stdout: string, stderr: string, timed_out: boolean }
+
 --- Running other programs.
 export type Process = {
-	--- Runs `command` (the program, then its arguments), with `stdin` as its
-	--- input and `cwd` as its folder, and returns how it exited and what it
-	--- printed; nil and the error if it couldn't start. It runs in the
-	--- background and waits like greed.sleep, so only in commands, event
-	--- handlers and greed.spawn.
-	run: (
-		command: { string },
-		opts: { stdin: string?, cwd: string? }?
-	) -> ({ code: number?, stdout: string, stderr: string }?, string?),
+	--- Runs `command` (the program, then its arguments) to its end as `opts` say and returns how it went; nil and the error if it couldn't start. Like a spawned program it's the plugin's, and goes with it. It waits like greed.sleep, so only in commands, event handlers and greed.spawn.
+	run: (command: { string }, opts: RunOptions?) -> (Ran?, string?),
 	--- Starts `command` to talk to over its input and output, like an agent speaking JSON-RPC, and returns at once; nil and the error if it couldn't start. It runs until it exits, is killed, or the plugin that started it unloads. In `env`, `false` leaves a variable out of what it inherits. With `stderr = "stream"`, what it prints as errors arrives from `read` too, in the order it comes; by default it's only kept for `child:stderr()`. With `group`, it starts a process group of its own, which `kill` and `signal` reach, so the programs it starts end with it.
 	spawn: (command: { string }, opts: { cwd: string?, env: { [string]: string | false }?, stderr: ("keep" | "stream")?, group: boolean? }?) -> (Child?, string?),
 }

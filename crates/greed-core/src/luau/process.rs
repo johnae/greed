@@ -1,12 +1,13 @@
-//! `greed.process`: running other programs. `run` runs one to the end,
-//! like a formatter or `jj`, waiting for it on another thread so the editor
-//! keeps going. `spawn` starts one to talk to over its input and output,
-//! like an agent speaking JSON-RPC.
+//! `greed.process`: running other programs. `spawn` starts one to talk to
+//! over its input and output, like an agent speaking JSON-RPC; `run` runs
+//! one to the end on it, like a formatter or `jj`, and gives back what it
+//! printed. Either goes with the plugin that started it.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
-use std::os::unix::process::{CommandExt, ExitStatusExt};
-use std::process::{Command, Stdio};
+use std::os::unix::process::ExitStatusExt;
+use std::path::Path;
+use std::process::Stdio;
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -17,80 +18,10 @@ use nix::unistd::Pid;
 
 use super::jobs::{self, Output};
 use super::{state, state_mut, tasks};
+use crate::child;
 use crate::registry::PluginId;
 
 type LuaResult<T> = mlua::Result<T>;
-
-/// What a program did: how it exited and what it printed.
-pub struct Finished {
-    pub code: Option<i32>,
-    pub stdout: Vec<u8>,
-    pub stderr: Vec<u8>,
-}
-
-/// How to run a program: its command line, its input, its folder and the
-/// variables it gets besides the editor's.
-struct Run {
-    command: Vec<String>,
-    stdin: Option<Vec<u8>>,
-    cwd: Option<String>,
-    env: Vec<(String, Option<String>)>,
-}
-
-/// Why `program` didn't start, naming it.
-fn cant_run(program: &str, err: &std::io::Error) -> std::io::Error {
-    std::io::Error::new(err.kind(), format!("can't run {program}: {err}"))
-}
-
-fn run(how: Run) -> std::io::Result<Finished> {
-    let (program, args) = how
-        .command
-        .split_first()
-        .ok_or_else(|| std::io::Error::other("an empty command line"))?;
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .stdin(if how.stdin.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if let Some(cwd) = &how.cwd {
-        command.current_dir(cwd);
-    }
-    for (name, value) in &how.env {
-        match value {
-            Some(value) => command.env(name, value),
-            None => command.env_remove(name),
-        };
-    }
-    let started = crate::debug::on(crate::debug::Topic::Jobs).then(std::time::Instant::now);
-    let mut child = command.spawn().map_err(|err| cant_run(program, &err))?;
-    if let (Some(input), Some(mut stdin)) = (how.stdin, child.stdin.take()) {
-        // Written on its own thread, so a program that prints while it reads
-        // can't fill a pipe and stall both ends.
-        std::thread::spawn(move || {
-            let _ = stdin.write_all(&input);
-        });
-    }
-    let out = child.wait_with_output()?;
-    if let Some(started) = started {
-        crate::debug!(
-            Jobs,
-            "{} ended with {:?} after {} ms",
-            how.command.join(" "),
-            out.status.code(),
-            started.elapsed().as_millis()
-        );
-    }
-    Ok(Finished {
-        code: out.status.code(),
-        stdout: out.stdout,
-        stderr: out.stderr,
-    })
-}
 
 /// A program's `env` option: each name to a string to set it, or `false` to
 /// leave the variable out of what it inherits.
@@ -121,56 +52,79 @@ pub(super) fn env_from_lua(
     Ok(out)
 }
 
-fn run_from_lua(lua: &Lua, command: Vec<String>, opts: Option<&Table>) -> LuaResult<Run> {
-    let (stdin, cwd) = match opts {
-        Some(opts) => (
-            opts.get::<Option<mlua::LuaString>>("stdin")?
-                .map(|s| s.as_bytes().to_vec()),
-            opts.get("cwd")?,
-        ),
-        None => (None, None),
-    };
-    Ok(Run {
-        command,
-        stdin,
-        cwd,
-        env: super::testing::child_env(lua),
-    })
-}
+/// `greed.process.run`, in Luau on `spawn`, so what it runs is the plugin's
+/// as a spawned program is, and goes with it.
+const RUN: &str = r#"
+local spawn, background, sleep, begun, ended = ...
+return function(command, opts)
+	if not coroutine.isyieldable() then
+		error("greed.process.run waits, so it only works in a command, an event handler or greed.spawn", 2)
+	end
+	opts = opts or {}
+	local child, err = spawn(command, { cwd = opts.cwd, env = opts.env, group = opts.group, stderr = "stream" })
+	if child == nil then
+		return nil, err
+	end
+	-- A job while it runs, as tests settle once jobs are done.
+	local job = begun("greed.process.run " .. table.concat(command, " "))
+	if opts.on_start then
+		opts.on_start(child)
+	end
+	if opts.stdin then
+		child:write(opts.stdin)
+	end
+	child:close()
+	local finished, timed_out = false, false
+	if opts.timeout then
+		background(function()
+			sleep(opts.timeout)
+			if not finished then
+				timed_out = true
+				child:kill()
+			end
+		end)
+	end
+	local out, errors = {}, {}
+	while true do
+		local piece, from = child:read()
+		if piece == nil then
+			break
+		end
+		table.insert(if from == "stderr" then errors else out, piece)
+	end
+	local code, signal = child:wait()
+	finished = true
+	ended(job)
+	return {
+		code = code,
+		signal = signal,
+		stdout = table.concat(out),
+		stderr = table.concat(errors),
+		timed_out = timed_out,
+	}
+end
+"#;
 
-/// `{ code, stdout, stderr }` for a program that ran, or `nil, error` for
-/// one that couldn't start.
-pub(super) fn to_lua(lua: &Lua, result: std::io::Result<Finished>) -> LuaResult<mlua::MultiValue> {
-    match result {
-        Ok(done) => {
-            let table = lua.create_table()?;
-            table.set("code", done.code)?;
-            table.set("stdout", lua.create_string(&done.stdout)?)?;
-            table.set("stderr", lua.create_string(&done.stderr)?)?;
-            table.into_lua_multi(lua)
-        }
-        Err(err) => (mlua::Value::Nil, err.to_string()).into_lua_multi(lua),
-    }
-}
-
-pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
+/// `greed.process` for `owner`; `greed` gives it `spawn` and `sleep`.
+pub(super) fn module(lua: &Lua, owner: &PluginId, greed: &Table) -> LuaResult<Table> {
     let process = lua.create_table()?;
-    let start = lua.create_function(|lua, (command, opts): (Vec<String>, Option<Table>)| {
-        let how = run_from_lua(lua, command, opts.as_ref())?;
-        Ok(jobs::start(
-            lua,
-            format!("greed.process.run {}", how.command.join(" ")),
-            move || Output::Process(run(how)),
-        ))
-    })?;
-    process.set("run", jobs::waiting(lua, "greed.process.run", start)?)?;
     let owner = owner.clone();
-    process.set(
-        "spawn",
+    let spawn =
         lua.create_function(move |lua, (command, opts): (Vec<String>, Option<Table>)| {
             spawn(lua, &owner, &command, opts.as_ref())
+        })?;
+    let run: Function = lua.load(RUN).set_name("=greed.process.run").call((
+        spawn.clone(),
+        greed.get::<Function>("spawn")?,
+        greed.get::<Function>("sleep")?,
+        lua.create_function(|lua, what: String| Ok(jobs::begun(lua, what)))?,
+        lua.create_function(|lua, token: u64| {
+            jobs::ended(lua, token);
+            Ok(())
         })?,
-    )?;
+    ))?;
+    process.set("run", run)?;
+    process.set("spawn", spawn)?;
     Ok(process)
 }
 
@@ -422,28 +376,13 @@ fn start_child(
     options: &SpawnOptions,
     send: impl Fn(Piece) + Send + Sync + 'static,
 ) -> std::io::Result<Started> {
-    let (program, args) = command
-        .split_first()
-        .ok_or_else(|| std::io::Error::other("an empty command line"))?;
-    let mut builder = Command::new(program);
-    builder
-        .args(args)
+    let cwd = options.cwd.as_deref().map(Path::new);
+    let mut child = child::command(command, cwd, &options.env, options.group)?
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (name, value) in &options.env {
-        match value {
-            Some(value) => builder.env(name, value),
-            None => builder.env_remove(name),
-        };
-    }
-    if let Some(cwd) = &options.cwd {
-        builder.current_dir(cwd);
-    }
-    if options.group {
-        builder.process_group(0);
-    }
-    let mut child = builder.spawn().map_err(|err| cant_run(program, &err))?;
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|err| child::cant_run(&command[0], &err))?;
     crate::debug!(Jobs, "started {}", command.join(" "));
     let pid = child.id();
     let (mut stdin, mut stdout, mut stderr) = (

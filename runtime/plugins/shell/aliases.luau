@@ -99,30 +99,8 @@ local function load(): { [string]: string }
 	if argv == nil or home == nil or home ~= state.editor_environment().HOME then
 		return {}
 	end
-	local child = greed.process.spawn(argv, { cwd = home, group = true })
-	if child == nil then
-		return {}
-	end
-	local c = child :: greed.Child
-	c:close()
-	local done = false
-	greed.spawn(function()
-		greed.sleep(TIMEOUT)
-		if not done then
-			c:kill()
-		end
-	end)
-	local parts: { string } = {}
-	while true do
-		local piece = c:read()
-		if piece == nil then
-			break
-		end
-		table.insert(parts, piece)
-	end
-	c:wait()
-	done = true
-	return M.read(table.concat(parts), family)
+	local ran = greed.process.run(argv, { cwd = home, group = true, timeout = TIMEOUT })
+	return if ran then M.read(ran.stdout, family) else {}
 end
 
 --- Your shell's aliases by name, read the first time they're asked for;

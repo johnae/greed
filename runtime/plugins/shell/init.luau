@@ -524,41 +524,30 @@ local function capture(
 	envs.prepare(shell, block)
 	local program = if block.by == "agent" then "sh" else nil
 	local wrapped = fallback.prepare(block, line, { program = program, rc = false })
-	local child, err = greed.process.spawn(wrapped.argv, {
+	local ran, err = greed.process.run(wrapped.argv, {
 		cwd = block.cwd,
 		env = state.environment(block),
 		group = true,
+		stdin = input,
+		on_start = function(c: greed.Child)
+			state.give_job(block, {
+				interrupt = function()
+					c:signal("INT")
+				end,
+				kill = function()
+					c:kill()
+				end,
+			})
+		end,
 	})
-	if child == nil then
+	if ran == nil then
 		return "", err or `can't start {wrapped.argv[1]}`, 127
 	end
-	local c = child :: greed.Child
-	state.give_job(block, {
-		interrupt = function()
-			c:signal("INT")
-		end,
-		kill = function()
-			c:kill()
-		end,
-	})
-	if input and input ~= "" then
-		c:write(input)
-	end
-	c:close()
-	local parts: { string } = {}
-	while true do
-		local piece = c:read()
-		if piece == nil then
-			break
-		end
-		table.insert(parts, piece)
-	end
-	local code = c:wait()
 	block.job = nil
 	-- A pipeline's cd and export are its own.
 	fallback.collect(block, wrapped)
 	block.cwd_after, block.env_changed = nil, nil
-	return table.concat(parts), c:stderr(), code
+	return ran.stdout, ran.stderr, ran.code
 end
 
 -- `template` once for each row of `tbl`, a line each, its `{COL}`s the

@@ -74,24 +74,14 @@ function M.kubectl(sh: Shell?, args: { string }): (string?, string?)
 	local env: { [string]: string | false } = if sh then table.clone(sh.env) else {}
 	local argv = { "kubectl" }
 	table.move(args, 1, #args, 2, argv)
-	local child, err = greed.process.spawn(argv, { env = env })
-	if child == nil then
+	local ran, err = greed.process.run(argv, { env = env })
+	if ran == nil then
 		return nil, err or "can't run kubectl"
 	end
-	child:close()
-	local parts: { string } = {}
-	while true do
-		local piece = child:read()
-		if piece == nil then
-			break
-		end
-		table.insert(parts, piece)
+	if ran.code ~= 0 then
+		return nil, string.match(ran.stderr, "^%s*(.-)%s*$")
 	end
-	local code = child:wait()
-	if code ~= 0 then
-		return nil, string.match(child:stderr(), "^%s*(.-)%s*$")
-	end
-	return table.concat(parts), nil
+	return ran.stdout, nil
 end
 
 -- A YAML string, quoted as JSON is, which YAML reads the same.

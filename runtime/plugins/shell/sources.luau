@@ -120,34 +120,24 @@ function M.run(
 	if before then
 		before:kill()
 	end
-	local child = greed.process.spawn(argv, { cwd = cwd, env = env, group = true })
-	if child == nil then
-		return nil, nil, nil
-	end
-	local c = child :: greed.Child
-	running[source] = c
-	c:close()
-	local done = false
-	greed.spawn(function()
-		greed.sleep(greed.option.get("shell-completion-timeout") :: number)
-		if not done then
-			c:kill()
-		end
-	end)
-	local parts: { string } = {}
-	while true do
-		local piece = c:read()
-		if piece == nil then
-			break
-		end
-		table.insert(parts, piece)
-	end
-	local code = c:wait()
-	done = true
-	if running[source] == c then
+	local mine: greed.Child? = nil
+	local ran = greed.process.run(argv, {
+		cwd = cwd,
+		env = env,
+		group = true,
+		timeout = greed.option.get("shell-completion-timeout") :: number,
+		on_start = function(child: greed.Child)
+			mine = child
+			running[source] = child
+		end,
+	})
+	if mine and running[source] == mine then
 		running[source] = nil
 	end
-	return table.concat(parts), code, c:stderr()
+	if ran == nil then
+		return nil, nil, nil
+	end
+	return ran.stdout, ran.code, ran.stderr
 end
 
 --- The path of program `name` in the folders of `path` (a PATH).

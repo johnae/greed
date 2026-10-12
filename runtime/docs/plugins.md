@@ -1206,7 +1206,22 @@ greed.option.define({
 ## Programs and terminals
 
 `greed.process.run(command, opts)` runs a program to the end and returns
-what it printed. `greed.terminal.spawn({ command, rows, cols })` starts one
+how it went: `code` (or the `signal` that ended it), `stdout` and
+`stderr`. `opts` takes `stdin`, `cwd`, `env` (`false` leaves a variable
+out), `timeout` in milliseconds (then `timed_out` says if it ran out),
+`group` (a process group of its own, so the kill reaches what it started)
+and `on_start(child)`, which gets the program as it starts, to stop it
+from elsewhere:
+
+```luau
+local ran = greed.process.run({ "kubectl", "get", "pods", "-o", "json" }, { timeout = 5000 })
+if ran and ran.code == 0 then
+	greed.echo(#greed.json.decode(ran.stdout).items .. " pods")
+end
+```
+
+Like a spawned program, it's your plugin's and goes with it.
+`greed.terminal.spawn({ command, rows, cols })` starts one
 in a terminal: `terminal.output` events say there's something new to read
 with `terminal:screen()` and `terminal:scrollback(from)`, and
 `terminal:key("ctrl-c")`, `terminal:write(text)` and `terminal:resize(rows,

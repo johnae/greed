@@ -134,7 +134,10 @@ impl Tasks {
             else {
                 return false;
             };
-            if self.timers.iter().any(|(_, t)| *t == token) || jobs.is_running(token) {
+            if self.timers.iter().any(|(_, t)| *t == token)
+                || jobs.is_running(token)
+                || jobs.begun_by(id)
+            {
                 return true;
             }
             match self
@@ -317,7 +320,7 @@ pub(super) fn set_cause(lua: &Lua, cause: Option<Arc<str>>) {
     state.editor.set_cause(cause);
 }
 
-fn key(thread: &Thread) -> usize {
+pub(super) fn key(thread: &Thread) -> usize {
     thread.to_pointer() as usize
 }
 

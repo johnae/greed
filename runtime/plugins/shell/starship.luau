@@ -216,22 +216,11 @@ function M.prompt(shell: Shell, cwd: string, env: { [string]: string }): { Segme
 	local vars: { [string]: string | false } = table.clone(env) :: any
 	-- Without a shell named, starship prints plain colors.
 	vars.STARSHIP_SHELL = false
-	local child = greed.process.spawn(argv, { cwd = cwd, env = vars })
-	if child == nil then
+	local ran = greed.process.run(argv, { cwd = cwd, env = vars })
+	if ran == nil or ran.code ~= 0 then
 		return nil
 	end
-	local parts: { string } = {}
-	while true do
-		local piece = child:read()
-		if piece == nil then
-			break
-		end
-		table.insert(parts, piece)
-	end
-	if child:wait() ~= 0 then
-		return nil
-	end
-	local segments = M.read(table.concat(parts))
+	local segments = M.read(ran.stdout)
 	return if #segments > 0 then segments else nil
 end
 

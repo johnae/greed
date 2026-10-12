@@ -353,21 +353,11 @@ local function run(
 	cwd: string,
 	env: { [string]: string | false }
 ): (number?, string, string)
-	local child, err = greed.process.spawn(argv, { cwd = cwd, env = env })
-	if child == nil then
+	local ran, err = greed.process.run(argv, { cwd = cwd, env = env })
+	if ran == nil then
 		error(err or `can't start {argv[1]}`, 0)
 	end
-	local c = child :: greed.Child
-	c:close()
-	local parts: { string } = {}
-	while true do
-		local piece = c:read()
-		if piece == nil then
-			break
-		end
-		table.insert(parts, piece)
-	end
-	return c:wait(), table.concat(parts), c:stderr()
+	return ran.code, ran.stdout, ran.stderr
 end
 
 -- devenv and direnv keep what you allowed in your home, so they load only
