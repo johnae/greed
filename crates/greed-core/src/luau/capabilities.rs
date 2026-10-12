@@ -762,17 +762,21 @@ pub(super) fn gate(lua: &Lua, greed: &Table, owner: &PluginId, grant: &Grant) ->
         .set_name("=greed.gate")
         .call(check)?;
     for (path, capability) in GATED {
+        // A gated name that isn't there is a bug: failing beats leaving
+        // what it was meant to guard open under another name.
+        let missing = || mlua::Error::runtime(format!("{path} is gated but isn't in @greed"));
         let (table, key) = match path.split_once('.') {
             Some((module, key)) => match greed.get::<Value>(module)? {
                 Value::Table(table) => (table, key),
-                _ => continue,
+                _ => return Err(missing()),
             },
             None => (greed.clone(), *path),
         };
+        let Value::Function(original) = table.get(key)? else {
+            return Err(missing());
+        };
         if grant.allows(capability) {
-            if let Value::Function(original) = table.get(key)? {
-                table.set(key, wrap.call::<Function>((original, *capability))?)?;
-            }
+            table.set(key, wrap.call::<Function>((original, *capability))?)?;
             continue;
         }
         let owner = owner.clone();
@@ -876,4 +880,141 @@ pub(super) fn check_host(lua: &Lua, owner: &PluginId, host: &str) -> LuaResult<(
         )));
     }
     within_limit(lua, owner, &format!("net:{host}"), |g| g.allows_host(host))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::GATED;
+    use crate::Editor;
+    use crate::luau::Host;
+
+    /// Functions that need no capability, in the modules holding ones that
+    /// do. A function added beside gated ones must be gated or named here,
+    /// so none is left open by forgetting.
+    const FREE: &[&str] = &[
+        // The editor itself: buffers, views, commands, keys, events, time.
+        "animate",
+        "buffer_for",
+        "buffers",
+        "cli",
+        "command",
+        "commands",
+        "create_buffer",
+        "detach",
+        "diff",
+        "echo",
+        "errors",
+        "filetype",
+        "float",
+        "floats",
+        "fuzzy",
+        "fuzzy_positions",
+        "grammars",
+        "handlers",
+        "hostname",
+        "language_of",
+        "line_numbers",
+        "messages",
+        "next_key",
+        "now",
+        "off",
+        "on",
+        "panel",
+        "quit",
+        "reveal",
+        "set_menus",
+        "signal",
+        "sleep",
+        "spawn",
+        "stalls",
+        "statusline",
+        "view",
+        "vouch",
+        "which",
+        // `run` runs commands within what the plugin's calling chain may do.
+        "run",
+        // Copying, hashing text and images already in hand.
+        "clipboard.set",
+        "hash.sha256",
+        "image.cell_size",
+        "image.cells",
+        "image.decode",
+        "image.forget",
+        "image.size",
+        // Where things are, not what's in them.
+        "fs.cwd",
+        "fs.dirs",
+        // Servers already running; starting one is gated, and a request to
+        // run a command on one checks `proc`.
+        "lsp.capabilities",
+        "lsp.diagnostics",
+        "lsp.offset",
+        "lsp.on_notification",
+        "lsp.on_request",
+        "lsp.path",
+        "lsp.position",
+        "lsp.problems",
+        "lsp.remove",
+        "lsp.request",
+        "lsp.root",
+        "lsp.running",
+        "lsp.servers",
+        "lsp.uri",
+        // About plugins, and tying a plugin's own things to it.
+        "plugin.caller",
+        "plugin.describe",
+        "plugin.dirs",
+        "plugin.list",
+        "plugin.pending",
+        "plugin.started_within",
+        "plugin.tie",
+        "plugin.within",
+        "syntax.query",
+        "syntax.set_query",
+    ];
+
+    #[test]
+    fn every_function_beside_a_gated_one_is_gated_or_named_free() {
+        let host = Host::new(Editor::new(greed_text::ClientId(1))).unwrap();
+        let modules: BTreeSet<&str> = GATED
+            .iter()
+            .filter_map(|(path, _)| path.split_once('.').map(|(module, _)| module))
+            .collect();
+        let listed = host
+            .eval(&format!(
+                "local greed, out = require('@greed'), {{}}
+                 for _, module in {{ {} }} do
+                     for key, value in greed[module] do
+                         if type(value) == 'function' then
+                             table.insert(out, module .. '.' .. key)
+                         end
+                     end
+                 end
+                 for key, value in greed do
+                     if type(value) == 'function' then
+                         table.insert(out, key)
+                     end
+                 end
+                 table.sort(out)
+                 return table.concat(out, ' ')",
+                modules
+                    .iter()
+                    .map(|m| format!("{m:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+            .unwrap();
+        let found: BTreeSet<&str> = listed.split(' ').collect();
+        let gated: BTreeSet<&str> = GATED.iter().map(|(path, _)| *path).collect();
+        let open: Vec<&str> = found
+            .difference(&gated)
+            .filter(|name| !FREE.contains(name))
+            .copied()
+            .collect();
+        assert!(open.is_empty(), "neither gated nor named free: {open:?}");
+        let missing: Vec<&str> = gated.difference(&found).copied().collect();
+        assert!(missing.is_empty(), "gated but not in @greed: {missing:?}");
+    }
 }
