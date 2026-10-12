@@ -44,6 +44,19 @@ pub fn compose(frame: &Frame, medium: Medium) -> Vec<Vec<Cell>> {
 /// `scaled`, scaled text takes cells marked with its scale; without it, its
 /// text is one size at the start of the cells it takes.
 pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell>> {
+    compose_layers(frame, medium, scaled, true)
+}
+
+/// What's under `frame`'s floats: its rows of cells as [`compose`] has
+/// them for `medium`, without the floats. The window draws from it what
+/// shows around a float's rounded border, and lays out the text beside a
+/// float as if nothing covered the rest of its row.
+pub fn compose_beneath(frame: &Frame, medium: Medium) -> Vec<Vec<Cell>> {
+    compose_layers(frame, medium, medium == Medium::Gui, false)
+}
+
+/// `frame` as rows of cells, its floats too when `floats` says so.
+fn compose_layers(frame: &Frame, medium: Medium, scaled: bool, floats: bool) -> Vec<Vec<Cell>> {
     let theme = &frame.theme;
     let paint = Paint {
         theme,
@@ -78,7 +91,11 @@ pub fn compose_with(frame: &Frame, medium: Medium, scaled: bool) -> Vec<Vec<Cell
     let separator = panel.patch(&look(&Tag::PANEL_BORDER));
     let body = text.patch(&look(&Tag::FLOAT));
     let border = body.patch(&look(&Tag::FLOAT_BORDER));
-    for surface in &frame.surfaces {
+    let shown = frame
+        .surfaces
+        .iter()
+        .filter(|s| floats || !matches!(s.role, Role::Float { .. }));
+    for surface in shown {
         let r = surface.rect;
         let cropped = cropped_rows(frame, surface);
         let (x, y, w, h) = (
@@ -888,6 +905,75 @@ mod tests {
             Some(Color::Ansi(3)),
             "the line between"
         );
+    }
+
+    #[test]
+    fn a_float_covers_a_panel_as_it_covers_a_pane() {
+        // A pane on the left, a panel on the right with its own background,
+        // and a float over both.
+        let mut f = frame(Vec::new());
+        f.size = Size {
+            width: 12,
+            height: 6,
+        };
+        let panel_bg = Style {
+            bg: Some(Color::Ansi(2)),
+            ..Style::default()
+        };
+        Arc::make_mut(&mut f.theme).set("ui.panel", Entry::new(panel_bg));
+        f.surfaces = vec![
+            Surface::new(
+                SurfaceId::View(ViewId(1)),
+                Role::Pane { active: true },
+                rect(0, 0, 6, 5),
+                (0..5).map(|_| text_row("pppppp")).collect(),
+            ),
+            Surface::new(
+                SurfaceId::Status,
+                Role::Status,
+                rect(0, 5, 12, 1),
+                vec![Row::default()],
+            ),
+            Surface::new(
+                SurfaceId::View(ViewId(2)),
+                Role::Panel {
+                    separator: 6,
+                    title: None,
+                },
+                rect(7, 0, 5, 5),
+                (0..5).map(|_| text_row("qqqqq")).collect(),
+            ),
+            Surface::new(
+                SurfaceId::View(ViewId(3)),
+                Role::Float {
+                    border: true,
+                    title: None,
+                    label: Vec::new(),
+                    footer: Vec::new(),
+                },
+                rect(3, 2, 6, 1),
+                vec![text_row("ffffff")],
+            ),
+        ];
+        for medium in [Medium::Tui, Medium::Gui] {
+            let grid = compose(&f, medium);
+            let float_bg = grid[2][3].style.bg;
+            assert_eq!(
+                texts(&grid, 2)[..],
+                ["p", "p", "│", "f", "f", "f", "f", "f", "f", "│", "q", "q"],
+                "{medium:?}"
+            );
+            assert_eq!(texts(&grid, 4)[..], texts(&grid, 0)[..], "{medium:?}");
+            assert!(
+                (2..=9).all(|x| grid[2][x].style.bg == float_bg),
+                "over the pane, the panel's line and the panel alike ({medium:?})"
+            );
+            assert_eq!(grid[2][10].style.bg, panel_bg.bg, "the panel beside it");
+            // Under it, the pane and the panel as they are without it.
+            let beneath = compose_beneath(&f, medium);
+            assert_eq!(texts(&beneath, 2)[..], texts(&beneath, 0)[..]);
+            assert_eq!(beneath[2][8].style.bg, panel_bg.bg);
+        }
     }
 
     #[test]

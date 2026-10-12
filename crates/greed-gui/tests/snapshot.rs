@@ -960,6 +960,86 @@ fn what_is_under_a_rounded_floats_border_goes_on_behind_it_and_its_title_is_a_pi
 }
 
 #[test]
+fn a_float_over_a_panel_casts_its_shadow_on_it_with_the_panel_going_on_behind_its_border() {
+    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
+        return;
+    };
+    let mut fonts = Fonts::new(None, 16.0);
+    let mut atlas = Atlas::new(1024);
+    let palette = Palette::default();
+    let mut frame = frame();
+    let mut theme = (*frame.theme).clone();
+    let window = [0x30, 0x34, 0x46];
+    let block = [0xc0, 0xa0, 0x80];
+    for (name, bg, rounded) in [
+        ("ui.text", window, None),
+        ("ui.float", [0x41, 0x45, 0x59], Some(true)),
+        ("block", block, None),
+    ] {
+        theme.set(
+            name,
+            Entry::new(Style {
+                bg: Some(Color::Rgb(bg[0], bg[1], bg[2])),
+                rounded,
+                ..Style::default()
+            }),
+        );
+    }
+    frame.theme = Arc::new(theme);
+    // A pane on the left, a panel on the right with a block of color on
+    // every row, and a float over both, its right side over the panel.
+    let pane = &mut frame.surfaces[0];
+    pane.rect.width = 20;
+    pane.rows.truncate(6);
+    frame.surfaces.insert(
+        2,
+        Surface::new(
+            SurfaceId::View(ViewId(3)),
+            Role::Panel {
+                separator: 20,
+                title: None,
+            },
+            Rect {
+                x: 21,
+                y: 0,
+                width: 19,
+                height: 6,
+            },
+            (0..6).map(|_| row(&[(&" ".repeat(19), "block")])).collect(),
+        ),
+    );
+    frame.surfaces[3].rect = Rect {
+        x: 10,
+        y: 2,
+        width: 20,
+        height: 1,
+    };
+    let grid = compose(&frame, Medium::Gui);
+    let chrome = Chrome::of(&frame);
+    assert!(chrome.rounded && chrome.shadows);
+    let scene = build(&grid, None, &chrome, &mut fonts, &mut atlas, &palette).unwrap();
+    gpu.upload(&mut atlas);
+    let (cw, ch) = (fonts.cell_w, fonts.cell_h);
+    let size = ((40.0 * cw).ceil() as u32, (7.0 * ch).ceil() as u32);
+    let rgba = gpu.snapshot(size, &scene);
+    save("float-over-panel.png", size, &rgba);
+    let at = |col: f32, row: f32| pixel(&rgba, size.0, (col * cw) as u32, (row * ch) as u32);
+    // The float's right border (column 30) and bottom border (row 3) are
+    // over the panel. Outside its outline there, the panel's block goes on,
+    // darkened by the shadow; the window's own color would be far darker.
+    for (what, shade) in [
+        ("beside the float", at(30.8, 2.5)),
+        ("below the float", at(25.0, 3.9)),
+    ] {
+        assert!(
+            shade[0] > 0x60 && shade[0] < block[0],
+            "{what}: the block, in the shadow: {shade:?}"
+        );
+    }
+    assert_eq!(at(35.0, 0.5)[..3], block, "the block away from the float");
+}
+
+#[test]
 fn checkbox_styles_draw_an_outlined_box_or_a_filled_one_with_a_tick() {
     let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
         return;

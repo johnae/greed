@@ -4,7 +4,8 @@
 //! behind it, so a word in `code` mid-sentence doesn't leave a gap. Nothing
 //! ever moves right of its cell, so the row never grows; the server's cells
 //! stay where they are, and the cursor, selections and clicks go through
-//! this map to the text where it's drawn.
+//! this map to the text where it's drawn. A float covers a row without
+//! moving what's beside it.
 
 use greed_core::render::grid::Cell;
 
@@ -42,6 +43,32 @@ impl Columns {
             None => (x / self.cell_w).max(0.0) as usize,
         }
     }
+
+    /// Puts the cells of `row` outside floats (`outside`) where `beneath`,
+    /// the row laid out with no float over it, has them, so text beside a
+    /// float stays where it is and the float covers the rest. Returns the
+    /// cells that puts under a float, as prose set narrower than its cells
+    /// moves left, whose text isn't drawn.
+    pub fn keep_beneath(&mut self, row: usize, beneath: &[f32], outside: &[bool]) -> Vec<bool> {
+        let cw = self.cell_w;
+        let mut hidden = vec![false; outside.len()];
+        let Some(slot) = self.rows.get_mut(row) else {
+            return hidden;
+        };
+        let xs = slot.get_or_insert_with(|| (0..=outside.len()).map(|c| c as f32 * cw).collect());
+        // Where the last float left of the cell ends.
+        let mut edge: f32 = 0.0;
+        for (col, &out) in outside.iter().enumerate() {
+            if !out {
+                edge = (col + 1) as f32 * cw;
+                continue;
+            }
+            let x = beneath.get(col).copied().unwrap_or(xs[col]);
+            hidden[col] = x < edge;
+            xs[col] = x.max(edge);
+        }
+        hidden
+    }
 }
 
 /// Where every cell of `grid` goes, its prose shaped with `fonts`. Cells
@@ -58,15 +85,24 @@ pub fn lay_out(
         .iter()
         .zip(looks)
         .zip(snaps)
-        .map(|((row, looks), snaps)| {
-            let prose = row
-                .iter()
-                .zip(looks)
-                .any(|(c, l)| l.prose && !c.text.is_empty());
-            prose.then(|| flow(row, looks, snaps, fonts))
-        })
+        .map(|((row, looks), snaps)| lay_out_row(row, looks, snaps, fonts))
         .collect();
     Columns { cell_w, rows }
+}
+
+/// Where each cell of `row` goes, and its end, as [`lay_out`] has them:
+/// `None` for a row on the grid.
+pub fn lay_out_row(
+    row: &[Cell],
+    looks: &[Look],
+    snaps: &[bool],
+    fonts: &mut Fonts,
+) -> Option<Vec<f32>> {
+    let prose = row
+        .iter()
+        .zip(looks)
+        .any(|(c, l)| l.prose && !c.text.is_empty());
+    prose.then(|| flow(row, looks, snaps, fonts))
 }
 
 /// The x of each cell of a row with prose in it, and of its end.
@@ -207,6 +243,43 @@ mod tests {
         for col in 12..25 {
             assert_eq!(columns.x(0, col), col as f32 * cw, "the float's cell {col}");
         }
+    }
+
+    #[test]
+    fn prose_beside_a_float_stays_where_it_is_without_the_float() {
+        let mut fonts = Fonts::new(None, 16.0);
+        let cw = fonts.cell_w;
+        let text = "Illuminating millions of little lines";
+        let (under, under_looks) = cells(text, Some(Font::Prose));
+        let n = under.len();
+        let beneath = lay_out_row(&under, &under_looks, &vec![false; n], &mut fonts).unwrap();
+        // A float over cells 8 to 15, which the row's flow snaps around.
+        let (mut row, mut looks) = (under.clone(), under_looks.clone());
+        let (float, float_looks) = cells("│float │", None);
+        row.splice(8..16, float);
+        looks.splice(8..16, float_looks);
+        let mut snaps = vec![false; n];
+        (snaps[8], snaps[16]) = (true, true);
+        let mut columns = lay_out(&[row], &[looks], &[snaps], &mut fonts);
+        let outside: Vec<bool> = (0..n).map(|c| !(8..16).contains(&c)).collect();
+        let hidden = columns.keep_beneath(0, &beneath, &outside);
+        let edge = 16.0 * cw;
+        for col in 0..n {
+            let x = columns.x(0, col);
+            if (8..16).contains(&col) {
+                assert_eq!(x, col as f32 * cw, "the float's cell {col}");
+            } else if hidden[col] {
+                assert!(beneath[col] < edge && x == edge, "cell {col} is under it");
+            } else {
+                assert_eq!(x, beneath[col], "cell {col} stays where it is");
+            }
+        }
+        assert!(
+            hidden[16],
+            "prose set narrower puts the cell after it under it"
+        );
+        assert!(!hidden[..16].iter().any(|&h| h), "only cells after it");
+        assert!(hidden[16..].iter().any(|&h| !h), "the rest shows beside it");
     }
 
     #[test]

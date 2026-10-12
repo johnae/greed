@@ -7,14 +7,14 @@ use bytemuck::{Pod, Zeroable};
 use cosmic_text::PhysicalGlyph;
 use greed_core::CursorShape;
 use greed_core::image::ImageId;
-use greed_core::render::grid::{Cell, Content};
+use greed_core::render::grid::{self, Cell, Content};
 use greed_core::render::{Frame, ImagePlacement, Position, Rect};
 use greed_core::theme::{Checkbox, Medium, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::boxdraw;
 use crate::color::{Look, Palette, Rgba, look};
-use crate::columns::{Columns, lay_out, style_of};
+use crate::columns::{Columns, lay_out, lay_out_row, style_of};
 use crate::text::{Atlas, Fonts, Full, Slot, TextStyle};
 
 /// One quad on screen, in pixels from the top left.
@@ -104,6 +104,10 @@ pub struct Chrome<'a> {
     pub under: &'a [ImagePlacement],
     /// Each float's text, which its border goes around one cell out.
     pub floats: Vec<Rect>,
+    /// The grid without its floats, what's under them: what shows around a
+    /// rounded border, and how the text beside a float is laid out. Empty
+    /// without floats.
+    pub beneath: Vec<Vec<Cell>>,
     /// Floats with rounded corners and an outline instead of box lines.
     pub rounded: bool,
     /// Floats casting a soft shadow on what's under them: unless the theme
@@ -120,11 +124,18 @@ impl<'a> Chrome<'a> {
     /// shadow unless the theme says `shadow = false`.
     pub fn of(frame: &'a Frame) -> Self {
         let float = frame.theme.style("ui.float", Medium::Gui);
+        // A float without a border is plain cells, with no box drawn around it.
+        let floats: Vec<Rect> = frame.bordered_floats().collect();
+        let beneath = if floats.is_empty() {
+            Vec::new()
+        } else {
+            grid::compose_beneath(frame, Medium::Gui)
+        };
         Chrome {
             images: &frame.images,
             under: &[],
-            // A float without a border is plain cells, with no box drawn around it.
-            floats: frame.bordered_floats().collect(),
+            floats,
+            beneath,
             rounded: float.rounded == Some(true),
             shadows: float.shadow != Some(false),
             text: frame.theme.style("ui.text", Medium::Gui),
@@ -172,7 +183,9 @@ pub fn build(
     // another float, then their fills and outlines, then the backgrounds
     // inside them (a picker's current line, a title over the outline).
     let regions = regions(grid, chrome);
-    let columns = lay_out(grid, &looks, &snaps(grid, &regions), fonts);
+    let mut columns = lay_out(grid, &looks, &snaps(grid, &regions), fonts);
+    let beneath = beneath_looks(chrome, &regions, palette);
+    let hidden = beside_floats(&mut columns, chrome, &beneath, &regions, fonts);
     let boxes = float_boxes(chrome, &looks, (cw, ch));
     let mut instances = Vec::new();
     let fill = |pass: Pass, out: &mut Vec<Instance>| {
@@ -182,8 +195,7 @@ pub fn build(
     let rounded = chrome.rounded;
     if rounded {
         beneath_borders(
-            &looks,
-            &regions,
+            &beneath,
             &chrome.floats,
             &columns,
             ch,
@@ -209,6 +221,7 @@ pub fn build(
             heights: &heights[y],
             columns: &columns,
             outlined: &border[y],
+            hidden: hidden.get(y).map_or(&[], Vec::as_slice),
         };
         text_row(row, row_looks, &at, fonts, atlas, &mut instances)?;
     }
@@ -293,6 +306,9 @@ struct RowAt<'a> {
     heights: &'a [usize],
     columns: &'a Columns,
     outlined: &'a [bool],
+    /// Which cells are under a float though outside it (see
+    /// [`beside_floats`]): their text isn't drawn.
+    hidden: &'a [bool],
 }
 
 /// The glyphs of a row, in runs of one weight, slant, size and font so
@@ -315,7 +331,7 @@ fn text_row(
     for (x, cell) in row.iter().enumerate() {
         let l = looks[x];
         let height = at.heights.get(x).copied().unwrap_or(1);
-        if height == 0 {
+        if height == 0 || at.hidden.get(x) == Some(&true) {
             continue;
         }
         // A checkbox goes over its cells, in place of their text.
@@ -812,12 +828,11 @@ fn backgrounds(
 }
 
 /// Under the border cells of rounded floats, whose box goes through their
-/// middle, what's beside the float on the same row: the floats took the
-/// place of those cells, and a code block's color, say, should go on
-/// behind the border.
+/// middle, what's under the float there (`beneath`): the floats took the
+/// place of those cells, and a code block's or a panel's color, say,
+/// should go on behind the border.
 fn beneath_borders(
-    looks: &[Vec<Look>],
-    regions: &[Vec<Region>],
+    beneath: &[Option<Vec<Look>>],
     floats: &[Rect],
     columns: &Columns,
     ch: f32,
@@ -830,26 +845,68 @@ fn beneath_borders(
             continue;
         };
         let (right, bottom) = (x0 + usize::from(r.width), y0 + usize::from(r.height));
-        for (y, row) in looks.iter().enumerate().take(bottom + 1).skip(top) {
-            let outside =
-                |x: usize| (regions[y].get(x) == Some(&Region::Outside)).then(|| row[x].bg);
-            let color = left
-                .checked_sub(1)
-                .and_then(outside)
-                .or_else(|| outside(right + 1))
-                .unwrap_or(background);
-            if color == background {
-                continue;
-            }
+        for (y, row) in beneath.iter().enumerate().take(bottom + 1).skip(top) {
+            let Some(row) = row else { continue };
             let edge = y == top || y == bottom;
             for x in (left..=right.min(row.len().saturating_sub(1)))
                 .filter(|&x| edge || x == left || x == right)
             {
-                let (cx, w) = columns.span(y, x, x + 1);
-                out.push(rect(cx, y as f32 * ch, w, ch, color));
+                if row[x].bg != background {
+                    let (cx, w) = columns.span(y, x, x + 1);
+                    out.push(rect(cx, y as f32 * ch, w, ch, row[x].bg));
+                }
             }
         }
     }
+}
+
+/// How what's under the floats looks, on each row a float is on.
+fn beneath_looks(
+    chrome: &Chrome,
+    regions: &[Vec<Region>],
+    palette: &Palette,
+) -> Vec<Option<Vec<Look>>> {
+    chrome
+        .beneath
+        .iter()
+        .zip(regions)
+        .map(|(row, regions)| {
+            regions
+                .iter()
+                .any(|&r| r != Region::Outside)
+                .then(|| row.iter().map(|c| look(&c.style, palette)).collect())
+        })
+        .collect()
+}
+
+/// Lays out the cells beside floats, on the rows they're on, where they'd
+/// be with nothing over the row: prose beside a float goes on from where it
+/// is under it rather than starting again at its edge. Returns, for each
+/// row, the cells that puts under a float, whose text isn't drawn.
+fn beside_floats(
+    columns: &mut Columns,
+    chrome: &Chrome,
+    beneath: &[Option<Vec<Look>>],
+    regions: &[Vec<Region>],
+    fonts: &mut Fonts,
+) -> Vec<Vec<bool>> {
+    beneath
+        .iter()
+        .zip(&chrome.beneath)
+        .zip(regions)
+        .enumerate()
+        .map(|(y, ((looks, row), regions))| {
+            let Some(looks) = looks else {
+                return Vec::new();
+            };
+            let snaps = row_snaps(row, &[]);
+            let Some(under) = lay_out_row(row, looks, &snaps, fonts) else {
+                return Vec::new();
+            };
+            let outside: Vec<bool> = regions.iter().map(|&r| r == Region::Outside).collect();
+            columns.keep_beneath(y, &under, &outside)
+        })
+        .collect()
 }
 
 /// A badge behind text from `x` to `x + w` in a row at `top`: a box with
@@ -892,18 +949,22 @@ fn round_cap(c: char, x: f32, top: f32, cw: f32, ch: f32, color: Rgba) -> Option
 fn snaps(grid: &[Vec<Cell>], regions: &[Vec<Region>]) -> Vec<Vec<bool>> {
     grid.iter()
         .zip(regions)
-        .map(|(row, regions)| {
-            row.iter()
-                .enumerate()
-                .map(|(x, cell)| {
-                    let border = cell
-                        .text
-                        .chars()
-                        .next()
-                        .is_some_and(|c| boxdraw::rects(c, 1.0, 1.0).is_some());
-                    border || (x > 0 && regions[x] != regions[x - 1])
-                })
-                .collect()
+        .map(|(row, regions)| row_snaps(row, regions))
+        .collect()
+}
+
+/// [`snaps`] for one row, with its cells' `regions`, or none (`&[]`) for
+/// a row as it is with no floats over it.
+fn row_snaps(row: &[Cell], regions: &[Region]) -> Vec<bool> {
+    row.iter()
+        .enumerate()
+        .map(|(x, cell)| {
+            let border = cell
+                .text
+                .chars()
+                .next()
+                .is_some_and(|c| boxdraw::rects(c, 1.0, 1.0).is_some());
+            border || (x > 0 && regions.get(x) != regions.get(x - 1))
         })
         .collect()
 }
