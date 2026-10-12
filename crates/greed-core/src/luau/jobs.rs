@@ -35,6 +35,9 @@ pub enum Output {
     /// The image on a client's system clipboard, as PNG; none when it has
     /// none, or didn't say.
     ClipboardImage(Option<Vec<u8>>),
+    /// What another session on this machine said of itself, or why it
+    /// didn't (`greed.session.status`).
+    Status(Result<serde_json::Value, String>),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -229,6 +232,10 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Tags(files) => {
             tasks::deliver(lua, done.token, super::syntax::tags_to_lua(lua, files)?)
         }
+        Output::Status(Ok(status)) => {
+            tasks::deliver(lua, done.token, super::lsp::to_lua(lua, &status)?)
+        }
+        Output::Status(Err(why)) => tasks::deliver(lua, done.token, (Value::Nil, why)),
         Output::ClipboardImage(png) => {
             let png = png.map(|bytes| lua.create_string(bytes)).transpose()?;
             tasks::deliver(lua, done.token, png)

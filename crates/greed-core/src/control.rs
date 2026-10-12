@@ -476,6 +476,36 @@ pub struct SessionInfo {
     pub greed: Option<PathBuf>,
 }
 
+/// How long asking another session on this machine for its status waits for
+/// its answer, so one that's stuck doesn't hold up the asking.
+pub const STATUS_WAIT: Duration = Duration::from_secs(2);
+
+/// What the session `name` on this machine says of itself, as its `status`
+/// tool gives it: what needs you and its agents. It's asked as an ordinary
+/// client, not a shell's, so asking can't do anything there. Why not, when
+/// it can't say: it's gone, its greed has no `status`, or it didn't answer
+/// within `wait`.
+pub fn status_of(name: &str, wait: Duration) -> Result<Value, String> {
+    check_sessions_dir(&sessions_dir()).map_err(|err| err.to_string())?;
+    let (socket, token_file) = session_files(name);
+    let token = std::fs::read_to_string(&token_file)
+        .map_err(|err| format!("can't read its token: {err}"))?;
+    let mut client = Client::connect_within(&socket, token.trim(), false, Some(wait))
+        .map_err(|err| err.to_string())?;
+    let result = client
+        .call("tools/call", &json!({ "name": "status", "arguments": {} }))
+        .map_err(|err| err.to_string())??;
+    let text = result["content"][0]["text"].as_str().unwrap_or_default();
+    if result["isError"].as_bool() == Some(true) {
+        return Err(if text.contains("no tool called status") {
+            "its greed doesn't say its status".to_owned()
+        } else {
+            text.to_owned()
+        });
+    }
+    serde_json::from_str(text).map_err(|err| err.to_string())
+}
+
 /// The sessions running on this machine, by name.
 pub fn sessions() -> io::Result<Vec<SessionInfo>> {
     let entries = match std::fs::read_dir(sessions_dir()) {
@@ -917,7 +947,19 @@ impl Client {
     /// connection, like `greed ctl`'s: whoever runs it can run anything
     /// already, so the editor treats its requests as yours.
     pub fn connect_as(socket: &Path, token: &str, shell: bool) -> io::Result<Self> {
+        Self::connect_within(socket, token, shell, None)
+    }
+
+    /// Like [`Client::connect_as`], giving up on an answer, the first one
+    /// included, that takes longer than `wait`.
+    pub fn connect_within(
+        socket: &Path,
+        token: &str,
+        shell: bool,
+        wait: Option<Duration>,
+    ) -> io::Result<Self> {
         let writer = UnixStream::connect(socket)?;
+        writer.set_read_timeout(wait)?;
         let reader = BufReader::new(writer.try_clone()?);
         let mut client = Self {
             reader,

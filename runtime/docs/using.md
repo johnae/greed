@@ -21,7 +21,7 @@ alone.
 | `greed --new [PATH]` | Start another session for the project, beside the one running, with this greed: for trying a newer build |
 | `:detach` | Leave the session running |
 | `greed attach [NAME]` | Attach to a session; the only one if there's one |
-| `greed ls` | List running sessions and their projects, marking those running another build than this greed |
+| `greed ls` | List running sessions, their projects and how their agents are doing (`◆ 1 waiting for you`), marking those running another build than this greed |
 | `greed serve [PATH]` | Run a project's session with no terminal |
 | `:q` | Close the pane, as Vim closes a window, when the tab has others; the tab, when it's the last pane and there are other tabs. Otherwise close the shown project and leave; on the last one, end the session unless something is running in it (see below). In a panel or a float (an agent's transcript, help) it closes just that |
 | `:quit-session`, `:qa` | End the session, whatever runs in it. With unsaved files it lists them and stops; `:wa` saves them, `:wqa` saves them and ends it, `:qa!` ends it anyway |

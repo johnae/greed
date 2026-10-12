@@ -13,12 +13,28 @@
 -- `greed hello world` then prints "hello world".
 
 local greed = require("@greed")
+local agent = require("@agent")
 
 local M = {}
 
+-- How the agents of a session are doing, as its status says, like
+-- "◆ 1 waiting for you"; nil when none work or wait, or it didn't say.
+local function agents_of(name: string): string?
+	local status = greed.session.status(name)
+	if status == nil then
+		return nil
+	end
+	local states: { string } = {}
+	local agents: { any } = status.agents or {}
+	for _, found in agents do
+		table.insert(states, tostring(found.status))
+	end
+	return agent.status_summary(states)
+end
+
 greed.cli({
 	name = "ls",
-	doc = "List the running sessions, their projects, and those of another build than this greed",
+	doc = "List the running sessions, their projects, how their agents are doing, and those of another build than this greed",
 	run = function()
 		local lines = {}
 		local mine = greed.session.build()
@@ -26,9 +42,16 @@ greed.cli({
 			local other = if session.build and session.build ~= mine
 				then `  (build {session.build}, not this greed's)`
 				else ""
+			local agents = agents_of(session.name)
 			table.insert(
 				lines,
-				string.format("%-20s %s%s", session.name, session.root or "", other)
+				string.format(
+					"%-20s %s%s%s",
+					session.name,
+					session.root or "",
+					if agents then `  {agents}` else "",
+					other
+				)
 			)
 		end
 		return table.concat(lines, "\n")

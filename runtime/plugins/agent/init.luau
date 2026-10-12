@@ -12,7 +12,7 @@ local proposals = require("@self/proposals")
 local problems = require("@self/problems")
 require("@self/tools")
 require("@self/objects")
-require("@self/status")
+local status = require("@self/status")
 require("@self/hooks")
 require("@self/commands")
 require("@self/ide")
@@ -63,6 +63,8 @@ export type EvalEntry = eval.Entry
 -- like a `propose` that says the user accepted.
 return table.freeze({
 	tool = registry.tool,
+	--- How many agents work and wait for you, in a few words (status.luau).
+	status_summary = status.summary,
 	tools = registry.tools,
 	--- Groups of tools agents switch on when they need them (registry.luau).
 	group = registry.group,

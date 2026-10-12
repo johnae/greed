@@ -370,7 +370,7 @@ fn session_name(name: Option<&str>) -> Result<String, Box<dyn std::error::Error>
         [only] => Ok(only.clone()),
         [] => Err("no editor is running".into()),
         several => Err(format!(
-            "several editors are running ({}); set GREED_SESSION to pick one",
+            "several editors are running ({}); set GREED_SESSION to pick one (greed ls lists them, with how their agents are doing)",
             several.join(", ")
         )
         .into()),

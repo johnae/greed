@@ -189,6 +189,9 @@ fn an_agents_hooks_in_a_terminal_reach_the_status() {
             .any(|n| n["id"] == id.as_str() && n["reason"] == "claude waits for your answer"),
         "{status}"
     );
+    // `greed ls` asks each session how its agents are doing.
+    let (listed, _) = text(&world.greed(&["ls"]));
+    assert!(listed.contains("◆ 1 waiting for you"), "{listed}");
 
     world.eval("hooks", "require('@greed').quit()");
     let _ = server.wait();

@@ -6,6 +6,7 @@ local greed = require("@greed")
 local core = require("@core")
 local session = require("./session")
 local terminal = require("@terminal")
+local agent = require("@agent")
 
 type Session = session.Session
 
@@ -67,28 +68,14 @@ end
 --- terminals (`in_terminals`, as their hooks say): how many work and how
 --- many wait for you; nil when none do.
 function M.status(sessions: { Session }, in_terminals: { terminal.Term }): string?
-	local working, waiting = 0, 0
-	local function count(state: string)
-		if state == "working" then
-			working += 1
-		elseif state == "waiting" then
-			waiting += 1
-		end
-	end
+	local states: { string } = {}
 	for _, s in sessions do
-		count(s.status)
+		table.insert(states, s.status)
 	end
 	for _, term in in_terminals do
-		count((term.agent :: terminal.Agent).state)
+		table.insert(states, (term.agent :: terminal.Agent).state)
 	end
-	local parts = {}
-	if working > 0 then
-		table.insert(parts, `{working} working`)
-	end
-	if waiting > 0 then
-		table.insert(parts, `{waiting} waiting for you`)
-	end
-	return if #parts > 0 then "◆ " .. table.concat(parts, " · ") else nil
+	return agent.status_summary(states)
 end
 
 return M

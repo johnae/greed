@@ -1113,6 +1113,8 @@ export type Sessions = {
 	attached: () -> boolean,
 	--- Where the greed program running this editor is, to start `greed mcp` or `greed ctl` for this session.
 	program: () -> string?,
+	--- What the session `name` on this machine says of itself, as its `status` tool gives it (`schema`, `session`, `attention`, `agents`), asked as an ordinary client, so asking can't do anything there; or nil and why: it's gone, its greed has no `status`, or it didn't answer in time. It waits, so it works in a command, an event handler or `greed.spawn`.
+	status: (name: string) -> ({ [string]: any }?, string?),
 	--- Sends the attached client to the session `name`, or to the session for
 	--- the project `path` is in (opening it there), starting it if it isn't
 	--- running. This session goes on without the client. With `new`, a new

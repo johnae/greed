@@ -1,2 +1,3 @@
 name = "cli"
+requires = ["agent"]
 capabilities = ["proc", "fs.read", "fs.write"]

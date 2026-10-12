@@ -59,6 +59,28 @@ function M.status(): { [string]: any }
 	}
 end
 
+--- How many agents work and wait for you, from their states ("working",
+--- "waiting", ...), as the status line and `greed ls` say it: "◆ 1 working ·
+--- 1 waiting for you"; nil when none do.
+function M.summary(states: { string }): string?
+	local working, waiting = 0, 0
+	for _, state in states do
+		if state == "working" then
+			working += 1
+		elseif state == "waiting" then
+			waiting += 1
+		end
+	end
+	local parts = {}
+	if working > 0 then
+		table.insert(parts, `{working} working`)
+	end
+	if waiting > 0 then
+		table.insert(parts, `{waiting} waiting for you`)
+	end
+	return if #parts > 0 then "◆ " .. table.concat(parts, " · ") else nil
+end
+
 agent.tool({
 	name = "status",
 	description = "This Greed session at a glance: what needs the user (an agent waiting for "

@@ -8,6 +8,7 @@ use std::path::Path;
 use mlua::{Lua, Table};
 
 use super::arity::NoArgs;
+use super::jobs::{self, Output};
 use super::{state, state_mut};
 use crate::{SwitchTo, control, project};
 
@@ -64,48 +65,62 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
                 .map(|path| path.to_string_lossy().into_owned()))
         })?,
     )?;
+    let start_status = lua.create_function(|lua, name: String| {
+        Ok(jobs::start(
+            lua,
+            format!("greed.session.status {name:?}"),
+            move || Output::Status(control::status_of(&name, control::STATUS_WAIT)),
+        ))
+    })?;
+    session.set(
+        "status",
+        jobs::waiting(lua, "greed.session.status", start_status)?,
+    )?;
     session.set(
         "switch",
-        lua.create_function(|lua, spec: Table| {
-            let flag = |name: &str| -> LuaResult<bool> {
-                Ok(spec.get::<Option<bool>>(name)?.unwrap_or(false))
-            };
-            let mut to = SwitchTo {
-                session: spec.get("name")?,
-                path: spec.get("path")?,
-                host: spec.get("host")?,
-                window: flag("window")?,
-                back: flag("back")?,
-                home: flag("home")?,
-            };
-            let somewhere = to.session.is_some() || to.path.is_some() || to.host.is_some();
-            if to.back || to.home {
-                if somewhere || to.window || (to.back && to.home) {
-                    return Err(mlua::Error::runtime(
-                        "back and home go on their own: no name, path, host, window or each other",
-                    ));
-                }
-            } else if !somewhere {
-                return Err(mlua::Error::runtime(
-                    "switch to what? give a session name, a path or a host, or back or home",
-                ));
-            }
-            // A session of its own, even if one runs for that project here.
-            if to.host.is_none()
-                && spec.get::<Option<bool>>("new")?.unwrap_or(false)
-                && let Some(path) = &to.path
-            {
-                let taken: Vec<String> = control::sessions()
-                    .map_err(mlua::Error::external)?
-                    .into_iter()
-                    .map(|s| s.name)
-                    .collect();
-                let root = project::root_of(Path::new(path));
-                to.session = Some(project::session_name(&root, &taken));
-            }
-            state_mut(lua).editor.request_switch(to);
-            Ok(())
-        })?,
+        lua.create_function(|lua, spec: Table| switch(lua, &spec))?,
     )?;
     Ok(session)
+}
+
+/// `greed.session.switch(spec)`: asks for the attached client to go where
+/// `spec` says.
+fn switch(lua: &Lua, spec: &Table) -> LuaResult<()> {
+    let flag =
+        |name: &str| -> LuaResult<bool> { Ok(spec.get::<Option<bool>>(name)?.unwrap_or(false)) };
+    let mut to = SwitchTo {
+        session: spec.get("name")?,
+        path: spec.get("path")?,
+        host: spec.get("host")?,
+        window: flag("window")?,
+        back: flag("back")?,
+        home: flag("home")?,
+    };
+    let somewhere = to.session.is_some() || to.path.is_some() || to.host.is_some();
+    if to.back || to.home {
+        if somewhere || to.window || (to.back && to.home) {
+            return Err(mlua::Error::runtime(
+                "back and home go on their own: no name, path, host, window or each other",
+            ));
+        }
+    } else if !somewhere {
+        return Err(mlua::Error::runtime(
+            "switch to what? give a session name, a path or a host, or back or home",
+        ));
+    }
+    // A session of its own, even if one runs for that project here.
+    if to.host.is_none()
+        && flag("new")?
+        && let Some(path) = &to.path
+    {
+        let taken: Vec<String> = control::sessions()
+            .map_err(mlua::Error::external)?
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        let root = project::root_of(Path::new(path));
+        to.session = Some(project::session_name(&root, &taken));
+    }
+    state_mut(lua).editor.request_switch(to);
+    Ok(())
 }
