@@ -758,9 +758,9 @@ look stuck:
 ▍   thinking · 8.2k tokens · 4m 10s
 ```
 
-Once it's done it folds to its first line and its size
-(`▸ The user wants the pager fixed. · thought, 8.2k tokens`; tokens are
-counted roughly, four characters each). `tab` on the row shows all of it,
+Once it's done it folds to its size and first line
+(`▸ thought, 8.2k tokens · The user wants the pager fixed.`; tokens are
+counted roughly, four characters each), cut at the view's edge. `tab` on the row shows all of it,
 however long. `/thoughts` hides them in every transcript, and shows them
 again; `:set agent-thoughts false` does the same from your config.
 

@@ -98,6 +98,10 @@ end
 -- How many of a thought's newest lines show while it comes in.
 local THOUGHT_TAIL = 3
 
+-- How long a thought of one line may be to show whole, with nothing to
+-- unfold.
+local SHORT_THOUGHT = 100
+
 -- The newest lines of `text`, a thought, wrapped to `room` cells less
 -- their indent: up to `THOUGHT_TAIL`, leaving out the start of its first
 -- line, which shows above them.
@@ -238,18 +242,21 @@ local function entry_lines(
 			local took = elapsed(e.since or s.since or greed.now())
 			row(`    thinking · {tokens} tokens · {took}`, "agent.hint")
 		else
-			-- Folded to its first line, tab shows the rest.
-			local about = ` · thought, {tokens} tokens`
-			local shown = if e.open then first else core.text.clip(first, room - 4 - width(about))
-			local mark = if #thought == 1 and shown == first
-				then "…"
-				elseif e.open then "▾"
+			-- Folded to its first line, tab shows the rest. The line doesn't
+			-- wrap: the view cuts it at its edge, so it's the same at any
+			-- width and a resize leaves it as it is.
+			local mark = if e.open
+				then "▾"
+				elseif #thought == 1 and width(first) <= SHORT_THOUGHT then "…"
 				else "▸"
-			row(`  {mark} {shown}{about}`, "comment")
+			row(`  {mark} thought, {tokens} tokens · {first}`, "comment")
 			if e.open then
 				for i = 2, #thought do
 					row(`    {thought[i]}`, "comment")
 				end
+			else
+				local line = out.lines[#out.lines]
+				table.insert(line.marks, { from = 0, to = #line.text, style = "", nowrap = true })
 			end
 		end
 	elseif e.kind == "tool" then
@@ -406,8 +413,9 @@ local function history(s: Session): { core.UiNode }
 		end
 		local before: ("user" | "agent")? = speaker
 		speaker = if e.kind == "user" then "user" elseif e.kind == "note" then nil else "agent"
-		-- Everything wraps in the view but thoughts, cut to its width.
-		local wraps = e.kind ~= "thought"
+		-- Everything is the same at any width but a thought still coming
+		-- in, the last entry, whose newest lines are cut to fit.
+		local wraps = e.kind ~= "thought" or index < #s.entries
 		table.insert(
 			parts,
 			ui.keyed(`entry:{index}`, version(s, index, e, before), function()

@@ -3164,7 +3164,7 @@ test("what the model thought shows as a folded thought before its answer", funct
 	assert(
 		string.find(
 			text,
-			"  ▸ The user asks about a.txt. · thought, 11 tokens\n  It's one line.",
+			"  ▸ thought, 11 tokens · The user asks about a.txt.\n  It's one line.",
 			1,
 			true
 		),
@@ -3173,13 +3173,13 @@ test("what the model thought shows as a folded thought before its answer", funct
 	assert(not string.find(text, "It has one line.", 1, true), "folded: " .. text)
 	-- tab on it shows all of it.
 	local view = greed.view()
-	local at = (string.find(text, "▸ The user", 1, true) :: number) - 1
+	local at = (string.find(text, "▸ thought, 11", 1, true) :: number) - 1
 	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 	t:keys("tab")
 	assert(
 		string.find(
 			transcript_text(),
-			"▾ The user asks about a.txt. · thought, 11 tokens\n    It has one line.\n",
+			"▾ thought, 11 tokens · The user asks about a.txt.\n    It has one line.\n",
 			1,
 			true
 		),

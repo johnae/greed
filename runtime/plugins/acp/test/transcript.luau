@@ -558,7 +558,7 @@ test("a thought still coming in shows its first line, its last lines and a count
 	drawn = screen(t, 70)
 	tokens = math.ceil(#s.entries[#s.entries].text / 4)
 	assert(
-		string.find(drawn, `▍ ▸ Planning the fix. · thought, {tokens} tokens\n`, 1, true),
+		string.find(drawn, `▍ ▸ thought, {tokens} tokens · Planning the fix.\n`, 1, true),
 		drawn
 	)
 	assert(not string.find(drawn, "▍   thinking", 1, true), drawn)
@@ -574,7 +574,7 @@ test("a thought is done once something comes after it", function(t)
 	s.changed()
 	t:wait(30)
 	local drawn = screen(t, 70)
-	assert(string.find(drawn, "▸ Look at a.txt. · thought, 7 tokens\n", 1, true), drawn)
+	assert(string.find(drawn, "▸ thought, 7 tokens · Look at a.txt.\n", 1, true), drawn)
 	assert(not string.find(drawn, "▍   thinking", 1, true), drawn)
 	s.status = "idle"
 	s.changed()
@@ -1224,7 +1224,7 @@ test("a long transcript drawn by its tick and an update at once keeps one box", 
 	s.changed()
 	t:wait(30)
 	local text = buffer:text()
-	assert(string.find(text, "Thinking it over · thought", 1, true), string.sub(text, -600))
+	assert(string.find(text, "tokens · Thinking it over", 1, true), string.sub(text, -600))
 	assert(string.match(text, "\n╭─[^\n]*─╮\nhi$"), string.sub(text, -600))
 end)
 
