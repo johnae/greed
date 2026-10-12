@@ -66,6 +66,10 @@ end
 
 -- Typing and moving at a prompt changes what's suggested.
 greed.on("selection.changed", function(event: greed.SelectionChanged)
+	-- It may have closed since, as a float a file was opened in does.
+	if not event.view:valid() then
+		return
+	end
 	local shell = state.of(event.view:buffer())
 	if shell then
 		M.update(shell, event.view)

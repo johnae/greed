@@ -18,7 +18,7 @@ local tables = require("./tables")
 local parse = require("./parse")
 local segments = require("./segments")
 local aliases = require("./aliases")
-local peek = require("./peek")
+local drill = require("./drill")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -792,10 +792,11 @@ function M.command(
 				greed.echo("no shell to run it in: space o s opens one")
 				return
 			end
+			local step = `{target.label} › {name}`
 			-- The same command still running is gone to, not run again.
 			for _, block in state.running(shell) do
 				if block.command == line then
-					peek.open(shell, block, { tail = opts.follow })
+					drill.open(shell, block, step, view, opts.follow)
 					greed.echo(`already running as ${block.number}`)
 					return block_id(shell, block)
 				end
@@ -805,8 +806,9 @@ function M.command(
 			end
 			local in_view = if view:buffer() == shell.buffer then view else shell.buffer:views()[1]
 			local block = runs(shell, line, in_view)
-			if block and opts.follow then
-				peek.open(shell, block, { tail = true })
+			-- What it shows comes up where you are, a level down.
+			if block then
+				drill.open(shell, block, step, in_view, opts.follow)
 			end
 			return if block then block_id(shell, block) else nil
 		end,

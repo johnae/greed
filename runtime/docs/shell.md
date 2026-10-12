@@ -151,6 +151,22 @@ Filesystem     1024-blocks       Used  Available Capacity Mounted on
 Typing a character goes back to the prompt with it, and other keys with
 nothing on them do nothing, so you never type into a command's output: in blocks mode the shell's text can't
 be changed, only acted on. `space` and its keys work as elsewhere.
+### Drilling down
+
+What an action on a row runs comes up where you are, as k9s shows it: `enter`
+on a pod, or `.` and "logs", opens what it ran in a float over the shell,
+titled with the way there:
+
+```text
+❯ 1 pods › victoria-logs-collector-5c9b6 › describe
+```
+
+Acting on a row in that float goes a level further down in its place, and
+`esc` goes back up one, to the row you were on. Every command still lands
+in the shell too, in the order it ran, so it's there to read again,
+filter, or pin to a board. This works for every kind of row with actions,
+not only pods.
+
 A float showing a block, like the one `enter` on a running block opens,
 keeps its own keys: `esc` closes it.
 `:set shell-blocks false` goes back to moving about the shell as text, with

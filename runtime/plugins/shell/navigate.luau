@@ -479,7 +479,8 @@ greed.command({
 -- That last is for the cursor having `moved`: the shell's own moves, like
 -- going back to the prompt, set the mode first.
 local function settle(view: greed.View, shell: Shell, moved: boolean)
-	if not M.on() then
+	-- The mode is the focused view's: a shell moving behind a float isn't.
+	if not M.on() or view ~= greed.view() then
 		return
 	end
 	local range = view:selection().ranges[1]

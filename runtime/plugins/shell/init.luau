@@ -93,6 +93,7 @@ M.history = history
 M.kinds = kinds
 M.live = live
 M.peek = peek
+M.drill = require("@self/drill")
 M.starship = require("@self/starship")
 
 --- Shows what `provider(ctx)` returns (`{ text, style, warning }`, or nil)

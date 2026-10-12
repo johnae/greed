@@ -32,6 +32,9 @@ type Peek = {
 	height: number,
 	tail: boolean,
 	kept: boolean,
+	-- Never follows the last line, as asked with `tail = false`: it shows its
+	-- block from the top however it grows.
+	still: boolean,
 }
 
 -- The peeks open, the oldest first.
@@ -80,11 +83,17 @@ local function height(shell: Shell, block: Block): number
 	return math.clamp(buffer:line_of(to) - buffer:line_of(from) + 2, 5, 30)
 end
 
+-- Whether `p`'s float still shows its shell: one where a file was opened
+-- shows that instead, and is left as it is.
+local function shows_shell(p: Peek): boolean
+	return p.view:valid() and p.view:buffer() == p.shell.buffer
+end
+
 -- Keeps `p`'s cursor on its block, where the float can show it, and notes
 -- whether it's on the last line.
 local function keep_cursor(p: Peek)
 	local from, to = log.range(p.block)
-	if from == nil or to == nil or not p.view:valid() then
+	if from == nil or to == nil or not shows_shell(p) then
 		return
 	end
 	local buffer = p.shell.buffer
@@ -96,14 +105,14 @@ local function keep_cursor(p: Peek)
 		cursor = if cursor < from then from else last
 		p.view:set_cursor(cursor)
 	end
-	p.tail = buffer:line_of(cursor) == buffer:line_of(last)
+	p.tail = not p.still and buffer:line_of(cursor) == buffer:line_of(last)
 end
 
 -- Fits `p`'s float to its block, showing none of the shell around it, and
 -- scrolls its view back to the block's command when it moved.
 local function fit(p: Peek)
 	local from, to = log.range(p.block)
-	if from == nil or to == nil or not p.view:valid() then
+	if from == nil or to == nil or not shows_shell(p) then
 		return
 	end
 	local buffer = p.shell.buffer
@@ -180,6 +189,7 @@ function M.open(shell: Shell, block: Block, how: How?): greed.View?
 		height = tall,
 		tail = tail,
 		kept = focus,
+		still = how ~= nil and how.tail == false,
 	}
 	table.insert(peeks, p)
 	fit(p)

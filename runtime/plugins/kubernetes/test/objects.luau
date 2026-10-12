@@ -416,3 +416,30 @@ test("in blocks mode down goes onto the pods, each one a pod to act on", functio
 	end
 	assert(table.find(names, "logs"), table.concat(names, ", "))
 end)
+
+test("enter on a pod shows what it ran where you are, and esc goes back to the pod", function(t)
+	local sh = fake(t, "prod-eu")
+	local pods = ran(t, sh, "kubectl get pods")
+	local main = greed.view()
+	on(sh, pods, "api-7d9f8b6c5-2xkqz")
+	t:keys("esc")
+	on(sh, pods, "api-7d9f8b6c5-2xkqz")
+	local line = sh.buffer:line_of(main:cursor())
+	t:keys("enter")
+	t:wait_for(function()
+		return greed.view() ~= main
+	end)
+	local float = greed.view()
+	local spec = assert(float:float_spec(), "a float")
+	assert(
+		string.find(spec.title or "", "pods › api-7d9f8b6c5-2xkqz › describe", 1, true),
+		spec.title
+	)
+	t:wait_for(function()
+		return sh.blocks[#sh.blocks].status ~= "running"
+	end)
+	t:keys("esc")
+	assert(not float:valid(), "closed")
+	assert(greed.view() == main, "back in the shell")
+	assert(sh.buffer:line_of(main:cursor()) == line, "on the pod again")
+end)
