@@ -715,7 +715,7 @@ greed.command({
 	args = {
 		{
 			name = "agent",
-			doc = "Which agent, by name (greed, claude, gemini, codex); picked when left out. Named, it works in the project",
+			doc = "Which agent, by name (greed, claude, gemini, codex, opencode); picked when left out. Named, it works in the project",
 			type = "string",
 			optional = true,
 		},

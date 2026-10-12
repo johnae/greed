@@ -303,7 +303,7 @@ removes it when the session ends.
 ## Agents inside Greed
 
 Greed can also run agents itself, over the Agent Client Protocol (ACP): Claude
-Code (through `claude-agent-acp`), Gemini CLI, Codex (`codex-acp`), or any
+Code (through `claude-agent-acp`), Gemini CLI, Codex (`codex-acp`), OpenCode, or any
 agent that speaks it, found on your `PATH`. Each gets a transcript buffer,
 and several can work at once. Greed has an agent of its own too, below.
 
@@ -314,12 +314,13 @@ that installs each:
 npm install -g @agentclientprotocol/claude-agent-acp   # Claude Code
 npm install -g @google/gemini-cli                      # Gemini CLI
 npm install -g @zed-industries/codex-acp               # Codex
+npm install -g opencode-ai                             # OpenCode
 ```
 
 A new session's transcript opens with you typing in its box.
 
 `:agent-new greed add tests for the parser` starts that agent, by name
-(`greed`, `claude`, `gemini`, `codex` or one you registered), in the
+(`greed`, `claude`, `gemini`, `codex`, `opencode` or one you registered), in the
 project, on that first message, picking nothing. From a shell, or a script:
 
 ```bash

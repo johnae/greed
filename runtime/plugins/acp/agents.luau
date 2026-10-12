@@ -87,6 +87,12 @@ M.register({
 	commands = { { "codex-acp" } },
 	install = "npm install -g @zed-industries/codex-acp",
 })
+M.register({
+	name = "opencode",
+	title = "OpenCode",
+	commands = { { "opencode", "acp" } },
+	install = "npm install -g opencode-ai",
+})
 M.register({ name = "greed", title = "Greed", commands = {}, native = true })
 
 --- Why `agent` can't start, when it isn't installed: the command it looks
