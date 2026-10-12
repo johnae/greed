@@ -1409,6 +1409,47 @@ Luau block can't wait, so one that asks for something, like a prompt or a
 secret, does it in `greed.spawn`. Greed's own setup page is a questionnaire
 like this: `setup.md` in the `setup` plugin.
 
+### Live values
+
+A Markdown file can work things out as you change it, with formulas in
+Luau's syntax:
+
+```markdown
+Bill: [840](field:bill) kr, we're [3](field:people) people.
+
+<!-- let tip = bill * 0.1 -->
+Tip: {{ fixed(tip) }} kr. Each pays {{ fixed((bill + tip) / people) }} kr.
+
+<!-- id=items -->
+| Dish  | Price |
+|-------|-------|
+| Pasta | 240   |
+| Wine  | 210   |
+
+{{ count(items.dish) }} dishes, {{ sum(items.price) }} kr in all.
+```
+
+- `{{ formula }}` shows what the formula works out to. With the cursor on
+  its line you see the formula, to edit it.
+- `[840](field:bill)` is a field: its value is the text between the
+  brackets, shown as a box. `enter` on it, or a click, asks for a new one
+  and writes it in the file, and every value from it follows.
+- `<!-- let name = formula -->` names a value for formulas anywhere in
+  the file.
+- A table with `<!-- id=name -->` right above it is a value too: `items[1]`
+  is its first row, `items[1].price` a cell and `items.price` the column,
+  by the header's words in lowercase with spaces as `_`.
+- A [named question](#questionnaires)'s answer is a value by its name.
+
+Formulas are expressions only: arithmetic, comparisons, `and`/`or`/`not`,
+`..` to join text, `if a then b else c`, and functions: `sum`, `avg`,
+`count`, `min`, `max`, `round(x, digits)`, `floor`, `ceil`, `abs`,
+`fixed(x, digits)` (a number with that many decimals, 2 unless said),
+`upper`, `lower` and `empty`, plus any a plugin adds. They can't run
+anything or loop, so they work in any file without asking, and one that
+goes wrong shows why where its value would be. On GitHub and the like, a
+field shows as a link and a value as its formula.
+
 ### Runnable code blocks
 
 A fenced block in a language Greed can run runs when you ask, and its

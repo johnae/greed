@@ -24,6 +24,7 @@ local tables = require("@self/tables")
 local links = require("@self/links")
 local structure = require("@self/structure")
 local conceal = require("@self/conceal")
+local values = require("@self/values")
 
 local M = {}
 
@@ -32,6 +33,9 @@ M.choices = choices
 
 --- Named questions, their answers, and parts shown only for some answers.
 M.questions = questions
+
+--- Live values: `{{ formula }}`, `<!-- let name = formula -->` and fields.
+M.values = values
 
 export type Structure = structure.Structure
 export type Heading = structure.Heading
@@ -178,9 +182,12 @@ local function inline(line: Line)
 			table.insert(line.taken, { first, last })
 		end
 	end
-	for from, label, to in string.gmatch(text, "()%[([^%]]+)%]%([^%)]*%)()") do
+	for from, label, target, to in string.gmatch(text, "()%[([^%]]+)%]%(([^%)]*)%)()") do
 		local first, last = from :: number, (to :: number) - 1
-		if free(line, first, last) then
+		if string.match(target :: string, "^field:") then
+			-- A field, which values.luau draws.
+			table.insert(line.taken, { first, last })
+		elseif free(line, first, last) then
 			local label_end = first + #(label :: string)
 			if line.reading then
 				table.insert(line.out, {
@@ -577,15 +584,75 @@ local redraw_questions = conceal.add({
 	draw = questions.marks,
 })
 
--- A pick can show or hide parts anywhere in the file.
+-- Whether each buffer has live values, so those without don't pay for
+-- them; and what its formulas could name when it was last drawn.
+local has_values: { [number]: boolean } = {}
+local named_before: { [number]: string } = {}
+
+-- Whether lines `first` to `last` of `s` have values.
+local function valued(s: Structure, first: number, last: number): boolean
+	for n = first, math.min(last, #s.lines - 1) do
+		local line = s.lines[n + 1]
+		if
+			string.find(line, "{{", 1, true)
+			or string.find(line, "field:", 1, true)
+			or string.find(line, "<!%-%-%s*let%s")
+		then
+			return true
+		end
+	end
+	return false
+end
+
+local redraw_values: (buffer: greed.Buffer?) -> ()
+
+-- Live values (values.luau). After an edit only its lines are drawn again,
+-- unless it changed what formulas name (a field, a `let`, a table): then
+-- the whole file is, as values anywhere in it can change.
+redraw_values = conceal.add({
+	ns = "markdown-values",
+	wants = function(buffer: greed.Buffer): boolean
+		return is_markdown(buffer) and (reading[buffer:id()] ~= nil or look(buffer))
+	end,
+	draw = function(
+		buffer: greed.Buffer,
+		s: Structure,
+		first: number,
+		last: number
+	): { greed.Mark }
+		local id = buffer:id()
+		local whole = first == 0 and last >= #s.lines - 1
+		has_values[id] = (has_values[id] and not whole) or valued(s, first, last)
+		if not has_values[id] then
+			return {}
+		end
+		local key = values.found(s).key
+		local before = named_before[id]
+		named_before[id] = key
+		if not whole and before ~= nil and before ~= key then
+			greed.spawn(function()
+				redraw_values(buffer)
+			end)
+		end
+		return values.marks(buffer, s, first, last)
+	end,
+})
+
+greed.on("buffer.closed", function(event: greed.BufferClosed)
+	has_values[event.id], named_before[event.id] = nil, nil
+end)
+
+-- A pick can show or hide parts anywhere in the file, and change values.
 choices.on_pick(function(buffer)
 	redraw_questions(buffer)
+	redraw_values(buffer)
 end)
 
 -- Draws `buffer` (or every Markdown buffer) again as a document.
 local function redraw(buffer: greed.Buffer?)
 	redraw_document(buffer)
 	redraw_questions(buffer)
+	redraw_values(buffer)
 end
 
 --- Draws `buffer`, or every Markdown buffer, again: for a page a plugin
