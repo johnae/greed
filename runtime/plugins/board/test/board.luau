@@ -145,6 +145,19 @@ test("saving a board's file shows the board as it says, in the blocks it had", f
 	end)
 end)
 
+test("i on a board opens its file in typing mode too, as a board can't be typed in", function(t)
+	local dir, path = make(t, "# ops\n\n```sh\necho one\n```\n")
+	local b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	-- Typing somewhere else first, as in an agent's box, then on the board.
+	greed.view():show(greed.create_buffer("text", ""))
+	t:keys("i")
+	t:expect_mode("helix-insert")
+	greed.view():show(b.buffer)
+	t:keys("i")
+	assert(greed.view():buffer():path() == path, "the file opened")
+end)
+
 test("a board from a file you didn't trust asks before it runs anything", function(t)
 	local dir = t:tempdir({ ["ops.md"] = "```sh\necho hi\n```\n" })
 	local opened: board.Board? = nil

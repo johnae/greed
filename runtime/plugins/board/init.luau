@@ -945,20 +945,20 @@ core.actions.action({
 })
 core.actions.set_default("board", "open")
 
--- A board can't be typed in, so its keys are the same in every mode.
+-- A board can't be typed in, so its keys are the same in every mode, as
+-- when you come to it typing somewhere else. It's drawn from its file, so
+-- what would change a card's text goes to the card in the file.
 for _, role in { "command", "typing" } do
 	greed.keymap.bind({ role = role, kind = KIND }, {
 		enter = "board-open-card",
 		["<"] = "board-move-back",
 		[">"] = "board-move-forward",
+		i = "board-edit",
+		a = "board-edit",
+		c = "board-edit",
+		o = "board-edit",
 	})
 end
--- A board is drawn from its file, so what would change a card's text
--- goes to the card in the file.
-greed.keymap.bind(
-	{ role = "command", kind = KIND },
-	{ i = "board-edit", a = "board-edit", c = "board-edit", o = "board-edit" }
-)
 greed.keymap.bind(
 	{ layer = "leader", kind = KIND },
 	{ a = "board-add", e = "board-edit", r = "board-refresh" }
