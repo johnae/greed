@@ -286,10 +286,43 @@ h3 { font: 600 19px/1.3 var(--serif); margin: 0; }
   .showcase.wide { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* A recording of Greed, drawn as its window draws it. */
+/* On a wide screen the recordings get the room: twice the words' width. */
+@media (min-width: 1400px) {
+  .showcase:has(> .shot) {
+    max-width: 1640px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 56px;
+  }
+  .showcase.flip:has(> .shot) { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+}
+
+/* A recording of Greed, drawn as its window draws it. A click shows it
+   larger. */
 .shot {
   display: block;
   width: 100%;
+  height: auto;
+  aspect-ratio: 1280 / 800;
+  border-radius: 12px;
+  background: var(--code-bg);
+  cursor: zoom-in;
+}
+
+.enlarged {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  max-width: 96vw;
+  max-height: 94vh;
+  cursor: zoom-out;
+  outline: none;
+}
+
+.enlarged::backdrop { background: rgba(16, 17, 24, 0.85); }
+
+.enlarged video {
+  display: block;
+  width: min(96vw, calc(94vh * 1280 / 800));
   height: auto;
   aspect-ratio: 1280 / 800;
   border-radius: 12px;

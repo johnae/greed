@@ -266,6 +266,26 @@ greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span 
   </section>
 </main>
 
+<dialog class="enlarged" aria-label="The recording, larger"><video muted loop playsinline></video></dialog>
+<script>
+  // A click on a recording shows it as large as the screen allows, from
+  // where it was; a click, escape or the back of the page closes it.
+  const dialog = document.querySelector(".enlarged");
+  const big = dialog.querySelector("video");
+  for (const shot of document.querySelectorAll("video.shot")) {
+    shot.addEventListener("click", () => {
+      big.src = shot.currentSrc || shot.src;
+      big.poster = shot.poster;
+      big.setAttribute("aria-label", shot.getAttribute("aria-label") || "");
+      big.currentTime = shot.currentTime;
+      dialog.showModal();
+      big.play().catch(() => {});
+    });
+  }
+  dialog.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => big.pause());
+</script>
+
 <footer>
   <p>Greed is early and changes often.</p>
   <p><a href="docs/using.html">Using Greed</a> · <a href="docs/shell.html">The shell</a> ·
