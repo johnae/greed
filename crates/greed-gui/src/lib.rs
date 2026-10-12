@@ -22,6 +22,7 @@ mod menubar;
 mod paint;
 pub mod record;
 pub mod text;
+mod watchdog;
 mod window;
 
 pub use color::Palette;

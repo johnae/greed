@@ -1,9 +1,11 @@
 //! The window: a winit event loop that draws the session's frames and sends
 //! keys, the mouse and its size back, as the TUI does in a terminal.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender};
 use greed_core::keymap::{Key, KeyCode, Mods};
@@ -12,7 +14,7 @@ use greed_core::server::{Input, Output};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{Window, WindowId};
@@ -20,6 +22,7 @@ use winit::window::{Window, WindowId};
 use crate::columns::Columns;
 use crate::gpu::Gpu;
 use crate::paint::{ATLAS_SIZE, Painter, Taken};
+use crate::watchdog::{Alarm, Watchdog};
 
 /// What reaches the event loop from the session's thread.
 pub(crate) enum Event {
@@ -108,6 +111,8 @@ struct App {
     /// Scrolling by pixels, gathered until it adds up to a line.
     scrolled: f64,
     clipboard: Option<arboard::Clipboard>,
+    /// Notices when the window stops showing frames, so it can recover.
+    watchdog: Watchdog,
     ended: Option<Output>,
     /// The window's size, before the screen's scale.
     size: Option<LogicalSize<f64>>,
@@ -145,6 +150,7 @@ impl App {
             held: None,
             scrolled: 0.0,
             clipboard: arboard::Clipboard::new().ok(),
+            watchdog: Watchdog::default(),
             ended: None,
             size: None,
             #[cfg(target_os = "macos")]
@@ -204,21 +210,92 @@ impl App {
     }
 
     fn redraw(&mut self) {
-        let started = self.logging().then(std::time::Instant::now);
+        let started = self.logging().then(Instant::now);
         let drawn = self.draw();
+        match &drawn {
+            Ok(()) => self.watchdog.presented(),
+            // Before the first frame there's nothing to present.
+            Err(_) if self.painter.frame().is_none() => self.watchdog.presented(),
+            Err(_) => {
+                if let Some(alarm) = self.watchdog.missed(Instant::now()) {
+                    self.alarm(&alarm);
+                }
+            }
+        }
         if let Some(started) = started {
             let took = started.elapsed().as_secs_f64() * 1000.0;
-            self.log(|| format!("{drawn} in {took:.2} ms"));
+            let what = drawn.err().unwrap_or(Cow::Borrowed("drew a frame"));
+            self.log(|| format!("{what} in {took:.2} ms"));
         }
     }
 
-    /// Draws the last frame, saying what came of it.
-    fn draw(&mut self) -> &'static str {
+    /// Sends what a key press is: the system's paste, or a key.
+    fn key_pressed(&mut self, event: &KeyEvent) {
+        let input = if is_paste(&event.logical_key, self.mods) {
+            if let Some(text) = self.clipboard_text() {
+                Some(Input::Paste(text))
+            } else if self.clipboard_has_image() {
+                // An image, which what you're in may take, like an agent's
+                // box.
+                Some(Input::Run("paste-image".into()))
+            } else {
+                None
+            }
+        } else {
+            option_key(event, self.mods).or_else(|| key(event, self.mods).map(Input::Key))
+        };
+        if let Some(input) = input
+            && self.input.send(input).is_ok()
+        {
+            self.watchdog.sent(Instant::now());
+        }
+    }
+
+    /// Asks the window for a redraw, which the watchdog waits on.
+    fn want_redraw(&mut self) {
+        if let Some(shown) = &self.shown {
+            shown.window.request_redraw();
+            self.watchdog.wanted(Instant::now());
+        }
+    }
+
+    /// Recovers from what the watchdog noticed. Redraws that never showed
+    /// are said whatever the debug topics, on stderr and to the session's
+    /// `client` topic; a refresh after input only while the topic is on.
+    fn alarm(&mut self, alarm: &Alarm) {
+        let did: Cow<str> = match alarm {
+            Alarm::Unpresented { .. } => {
+                let made = match self.shown.as_mut().map(Shown::remake) {
+                    Some(Ok(())) => "made the window's surface again".into(),
+                    Some(Err(e)) => format!("couldn't make the window's surface again ({e})"),
+                    None => "no window yet".into(),
+                };
+                self.want_redraw();
+                format!("{made}, asked for a whole frame").into()
+            }
+            Alarm::Unanswered(_) => "asked for a whole frame".into(),
+        };
+        if self.input.send(Input::Refresh).is_err() {
+            return;
+        }
+        let text = format!("{alarm}; {did}");
+        // A key that changes nothing gets no frame either, so a refresh
+        // after one is said only while the session asks.
+        if matches!(alarm, Alarm::Unanswered(_)) {
+            self.log(|| text);
+            return;
+        }
+        eprintln!("greed: {text}");
+        let _ = self.input.send(Input::Log(text));
+    }
+
+    /// Draws the last frame. Err says why nothing was presented.
+    fn draw(&mut self) -> Result<(), Cow<'static, str>> {
         let Some(shown) = &mut self.shown else {
-            return "no window to draw in yet";
+            return Err("no window to draw in yet".into());
         };
         let Some(scene) = self.painter.paint(&mut shown.gpu) else {
-            return "no frame to draw yet";
+            return Err("no frame to draw yet".into());
         };
         let texture = match shown.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture)
@@ -226,22 +303,35 @@ impl App {
             // Drawn again when the window shows (a window opened from
             // Spotlight starts out covered).
             wgpu::CurrentSurfaceTexture::Occluded => {
-                return "left a frame undrawn: the window is covered";
+                return Err("left a frame undrawn: the window is covered".into());
             }
             // Configuring a lost surface again doesn't bring it back, and
             // the window would keep its last picture: it's made anew.
             wgpu::CurrentSurfaceTexture::Lost => {
-                if let Ok(surface) = shown.instance.create_surface(shown.window.clone()) {
-                    shown.surface = surface;
-                }
-                shown.surface.configure(&shown.gpu.device, &shown.config);
+                let made = shown.remake();
                 shown.window.request_redraw();
-                return "the window's surface was lost; made it again";
+                return Err(match made {
+                    Ok(()) => "the window's surface was lost; made it again".into(),
+                    Err(e) => format!(
+                        "the window's surface was lost and making it again failed ({e}); \
+                         configured the old one again"
+                    )
+                    .into(),
+                });
             }
-            _ => {
+            not_ready @ (wgpu::CurrentSurfaceTexture::Timeout
+            | wgpu::CurrentSurfaceTexture::Outdated
+            | wgpu::CurrentSurfaceTexture::Validation) => {
                 shown.surface.configure(&shown.gpu.device, &shown.config);
                 shown.window.request_redraw();
-                return "the window wasn't ready to draw in; drawing again";
+                let why = match not_ready {
+                    wgpu::CurrentSurfaceTexture::Timeout => "timed out",
+                    wgpu::CurrentSurfaceTexture::Outdated => "outdated",
+                    _ => "a validation error",
+                };
+                return Err(
+                    format!("the window wasn't ready to draw in ({why}); drawing again").into(),
+                );
             }
         };
         let view = texture
@@ -263,7 +353,7 @@ impl App {
             );
         }
         self.columns = scene.columns;
-        "drew a frame"
+        Ok(())
     }
 
     fn handle(&mut self, event_loop: &ActiveEventLoop, output: Output) {
@@ -307,9 +397,8 @@ impl App {
         if let (Some(bar), Some(frame)) = (&mut self.menubar, self.painter.frame()) {
             bar.show(&frame.menus);
         }
-        if let Some(shown) = &self.shown {
-            shown.window.request_redraw();
-        }
+        self.watchdog.frame();
+        self.want_redraw();
     }
 
     /// The cell under `position`, as the last frame placed its text: in a
@@ -366,9 +455,9 @@ impl ApplicationHandler<Event> for App {
         };
         self.painter.set_scale(window.scale_factor());
         self.send_size(window.inner_size());
-        // Frames may have come before the window did.
-        window.request_redraw();
         self.shown = Some(shown);
+        // Frames may have come before the window did.
+        self.want_redraw();
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
@@ -405,19 +494,7 @@ impl ApplicationHandler<Event> for App {
             }
             WindowEvent::ModifiersChanged(mods) => self.mods = mods.state(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                if is_paste(&event.logical_key, self.mods) {
-                    if let Some(text) = self.clipboard_text() {
-                        let _ = self.input.send(Input::Paste(text));
-                    } else if self.clipboard_has_image() {
-                        // An image, which what you're in may take, like an
-                        // agent's box.
-                        let _ = self.input.send(Input::Run("paste-image".into()));
-                    }
-                } else if let Some(input) = option_key(&event, self.mods) {
-                    let _ = self.input.send(input);
-                } else if let Some(key) = key(&event, self.mods) {
-                    let _ = self.input.send(Input::Key(key));
-                }
+                self.key_pressed(&event);
             }
             // What you copied in another program becomes Greed's clipboard
             // too, for its own paste keys.
@@ -454,6 +531,7 @@ impl ApplicationHandler<Event> for App {
                 if state == ElementState::Pressed {
                     self.held = Some(button);
                     self.mouse(MouseKind::Press(button));
+                    self.watchdog.sent(Instant::now());
                 } else {
                     self.held = None;
                     self.mouse(MouseKind::Release(button));
@@ -480,13 +558,27 @@ impl ApplicationHandler<Event> for App {
             }
             WindowEvent::RedrawRequested => self.redraw(),
             WindowEvent::DroppedFile(path) => self.dropped(path),
-            WindowEvent::Occluded(false) => {
-                if let Some(shown) = &self.shown {
-                    shown.window.request_redraw();
+            WindowEvent::Occluded(covered) => {
+                self.watchdog.covered(covered);
+                if !covered {
+                    self.want_redraw();
                 }
             }
             _ => {}
         }
+    }
+
+    /// Acts on the watchdog's alarms that are due, and wakes up again only
+    /// when the next one could be.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        while let Some(alarm) = self.watchdog.due(Instant::now()) {
+            self.alarm(&alarm);
+        }
+        event_loop.set_control_flow(
+            self.watchdog
+                .deadline()
+                .map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
+        );
     }
 }
 
@@ -537,6 +629,17 @@ impl Shown {
             config,
             gpu: Gpu::new(device, queue, format, ATLAS_SIZE),
         })
+    }
+
+    /// Makes the surface anew and configures it. When making it fails, the
+    /// old one is configured again and kept.
+    fn remake(&mut self) -> Result<(), wgpu::CreateSurfaceError> {
+        let made = self
+            .instance
+            .create_surface(self.window.clone())
+            .map(|surface| self.surface = surface);
+        self.surface.configure(&self.gpu.device, &self.config);
+        made
     }
 }
 
