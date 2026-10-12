@@ -4,8 +4,10 @@
 -- prompt with what's typed. Nothing here edits the shell's text: `o` opens
 -- a block's output in a buffer of its own for that.
 --
---     up down (k j)    the command before or after; on a row, the row
---     right (l)        into the command's rows; left (h) back out
+--     up down (k j)    a step through everything: a command, its rows,
+--                      the next command
+--     J K              the next or previous command, past the rows
+--     right (l)        into the command's rows; left (h) back to it
 --     enter            change the command at the prompt, to run in its
 --                      place; on a row, what the row does (open a file,
 --                      describe a pod)
@@ -128,14 +130,15 @@ end
 -- What can be done with what's selected, for the line under it.
 local function hint(on_row: boolean, block: Block): string
 	if on_row then
-		return "enter what it does · . actions · y copy · ← the command · esc prompt"
+		return "enter what it does · . actions · y copy · J K commands · esc prompt"
 	end
 	local parts = { "enter change", "r run again", "/ filter", ". actions" }
 	if block.before then
 		table.insert(parts, "b before")
 		table.insert(parts, "d what changed")
 	end
-	table.insert(parts, "→ rows")
+	table.insert(parts, "↓ rows")
+	table.insert(parts, "J K commands")
 	table.insert(parts, "esc prompt")
 	return table.concat(parts, " · ")
 end
@@ -220,23 +223,22 @@ function M.leave(view: greed.View)
 	M.draw(view)
 end
 
--- Moves `view` a step up (`back`) or down: between commands, or between
--- the rows of the one it's in.
-local function step(view: greed.View, back: boolean)
+-- Whether `block` is folded under its command, its rows out of sight.
+local function folded(shell: Shell, block: Block): boolean
+	local line = command_line(shell, block)
+	return line ~= nil and core.folds.starts(shell.buffer, line)
+end
+
+-- The rows of `block` to move through: none while it's folded.
+local function visible_rows(shell: Shell, block: Block): { number }
+	return if folded(shell, block) then {} else row_lines(shell, block)
+end
+
+-- Moves `view` to the command after or before (`back`) the one it's on.
+local function to_command(view: greed.View, back: boolean)
 	local shell = shell_in(view)
-	local block, row = M.at(view)
+	local block = M.at(view)
 	if shell == nil or block == nil then
-		return
-	end
-	if row then
-		local lines = row_lines(shell, block)
-		local i = table.find(lines, row) or 0
-		local to = lines[if back then i - 1 else i + 1]
-		if to then
-			land(view, to)
-		elseif back then
-			select_block(view, shell, block)
-		end
 		return
 	end
 	local all = in_order(shell)
@@ -246,6 +248,44 @@ local function step(view: greed.View, back: boolean)
 		select_block(view, shell, to)
 	elseif not back then
 		greed.echo("the last command: esc goes to the prompt")
+	end
+end
+
+-- Moves `view` a step down, or up with `back`, through everything in
+-- order: a command, its rows, the next command.
+local function step(view: greed.View, back: boolean)
+	local shell = shell_in(view)
+	local block, row = M.at(view)
+	if shell == nil or block == nil then
+		return
+	end
+	local rows_here = visible_rows(shell, block)
+	if back then
+		local i = if row then table.find(rows_here, row) else nil
+		if i and i > 1 then
+			land(view, rows_here[i - 1])
+		elseif row then
+			select_block(view, shell, block)
+		else
+			local all = in_order(shell)
+			local before = all[(table.find(all, block) or 0) - 1]
+			if before then
+				local above = visible_rows(shell, before)
+				if #above > 0 then
+					land(view, above[#above])
+				else
+					select_block(view, shell, before)
+				end
+			end
+		end
+		return
+	end
+	local i = if row then table.find(rows_here, row) or 0 else 0
+	local to = rows_here[i + 1]
+	if to then
+		land(view, to)
+	else
+		to_command(view, false)
 	end
 end
 
@@ -271,12 +311,26 @@ command(
 
 command("shell-blocks-prompt", "Go back to the prompt", M.leave)
 
-command("shell-blocks-up", "The command before, or the row before", function(view)
+command("shell-blocks-up", "Up a step: the row before, or the command before", function(view)
 	step(view, true)
 end)
 
-command("shell-blocks-down", "The command after, or the row after", function(view)
+command("shell-blocks-down", "Down a step: the next row, or the next command", function(view)
 	step(view, false)
+end)
+
+command("shell-blocks-next", "The next command, past its rows", function(view)
+	to_command(view, false)
+end)
+
+command("shell-blocks-previous", "The command before", function(view)
+	local shell = shell_in(view)
+	local block, row = M.at(view)
+	if shell and block and row then
+		select_block(view, shell, block)
+	else
+		to_command(view, true)
+	end
 end)
 
 command("shell-blocks-rows", "Into the rows the command printed", function(view)
@@ -448,6 +502,10 @@ greed.keymap.bind(M.MODE, {
 	k = "shell-blocks-up",
 	down = "shell-blocks-down",
 	j = "shell-blocks-down",
+	J = "shell-blocks-next",
+	K = "shell-blocks-previous",
+	["ctrl-down"] = "shell-blocks-next",
+	["ctrl-up"] = "shell-blocks-previous",
 	right = "shell-blocks-rows",
 	l = "shell-blocks-rows",
 	left = "shell-blocks-out",

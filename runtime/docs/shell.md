@@ -123,15 +123,15 @@ you can do with it on a line under it:
 
 ```text
 ❯ 2 df -kP ✓ 0.04s · table · 13 rows
-enter change · r run again · / filter · . actions · → rows · esc prompt
+enter change · r run again · / filter · . actions · ↓ rows · J K commands · esc prompt
 Filesystem     1024-blocks       Used  Available Capacity Mounted on
 ```
 
 | Key | |
 |---|---|
-| `up` `down` (`k` `j`) | The command before or after; on a row, the row before or after |
-| `right` (`l`) | Into the rows the command printed: a table's rows, or its lines |
-| `left` (`h`) | Back out of the rows to the command |
+| `up` `down` (`k` `j`) | A step through everything you can act on, in order: a command, the rows it printed (a table's rows, like pods or files, or its lines), the next command |
+| `J` `K` (`ctrl-down` `ctrl-up`) | The next or previous command, past its rows |
+| `right` `left` (`l` `h`) | Into the command's rows, or back up to the command |
 | `enter` | On a command, put it at the prompt to change: running it then runs it again in its place (`↻ 2` before the prompt says so; empty the prompt to run something new instead). On a row, what the row does: open the file and line it names, describe the pod |
 | `r` | Run the command again in its place |
 | `b` `d` | What it showed the run before, or what changed since then, `-` then and `+` now |

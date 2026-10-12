@@ -44,7 +44,7 @@ local function hint(): string
 	return ""
 end
 
-test("esc at the prompt selects the last command; up and down go between commands", function(t)
+test("esc at the prompt selects the last command; J and K go between commands", function(t)
 	local sh = open(t)
 	type_line(t, sh, "echo one")
 	type_line(t, sh, "echo two")
@@ -52,12 +52,14 @@ test("esc at the prompt selects the last command; up and down go between command
 	assert(greed.mode.get() == "blocks", greed.mode.get())
 	assert(current() == "echo two", current())
 	assert(string.find(hint(), "r run again", 1, true), hint())
-	t:keys("up")
+	t:keys("K")
 	assert(current() == "echo one", current())
-	t:keys("k")
+	t:keys("K")
 	assert(current() == "echo one", "the first stays: " .. current())
-	t:keys("j")
+	t:keys("J")
 	assert(current() == "echo two", current())
+	t:keys("ctrl-up")
+	assert(current() == "echo one", current())
 	t:keys("g")
 	assert(current() == "echo one", current())
 end)
@@ -200,3 +202,22 @@ test("r on an earlier command stays on it as it runs, so d compares that one", f
 	local shown = greed.view():buffer():text()
 	assert(string.find(shown, "- web 20\n+ web 25\n  db 50\n", 1, true), shown)
 end)
+
+test(
+	"up and down go through everything in order: a command, its rows, the next command",
+	function(t)
+		local sh = open(t)
+		type_line(t, sh, "cat pods")
+		type_line(t, sh, "echo two")
+		t:keys("esc g")
+		assert(current() == "cat pods", current())
+		t:keys("down")
+		assert(string.find(current(), "^api"), current())
+		t:keys("j j")
+		assert(current() == "echo two", "past the last row, the next command: " .. current())
+		t:keys("up")
+		assert(string.find(current(), "^worker"), "back up, the last row: " .. current())
+		t:keys("J")
+		assert(current() == "echo two", "J from a row: the next command: " .. current())
+	end
+)

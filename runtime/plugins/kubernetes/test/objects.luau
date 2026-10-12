@@ -401,3 +401,18 @@ test(
 		assert(newest[1].id == `shell-block:{sh.buffer:id()}.{again.number}`, newest[1].id)
 	end
 )
+
+test("in blocks mode down goes onto the pods, each one a pod to act on", function(t)
+	local sh = fake(t, "prod-eu")
+	ran(t, sh, "kubectl get pods -A")
+	shell.log.set_prompt(sh, "", { greed.view() })
+	greed.view():set_cursor(sh.buffer:len())
+	t:keys("esc down")
+	local pod = assert(thing_here("pod"), "a pod under the cursor")
+	assert(pod.value.namespace ~= nil, "with its namespace")
+	local names: { string } = {}
+	for _, action in core.actions.for_kind("pod") do
+		table.insert(names, action.name)
+	end
+	assert(table.find(names, "logs"), table.concat(names, ", "))
+end)
