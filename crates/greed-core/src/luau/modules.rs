@@ -87,6 +87,18 @@ impl Modules {
         Ok(modules)
     }
 
+    /// The files loaded so far, by path.
+    pub fn loaded(&self) -> &Table {
+        &self.loaded
+    }
+
+    /// These modules with `loaded` as the files loaded so far, to share
+    /// them with another plugin's.
+    pub fn sharing(mut self, loaded: Table) -> Self {
+        self.loaded = loaded;
+        self
+    }
+
     /// Runs a file of this plugin, returning what it returns.
     pub fn run_file(&self, lua: &Lua, file: &Path) -> LuaResult<Value> {
         self.load_file(lua, file)
@@ -187,8 +199,11 @@ impl Modules {
             }
             return read_only(lua, module, plugin);
         }
+        // Canonical, so a plugin and its tests, loaded from different
+        // spellings of its folder, find each other's files.
         let path = self.resolve(from, name)?;
-        let key = path.to_string_lossy();
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+        let key = canonical.to_string_lossy();
         if let Some(module) = self.loaded.get::<Option<Value>>(&*key)? {
             return Ok(module);
         }

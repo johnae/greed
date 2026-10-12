@@ -395,13 +395,16 @@ impl Host {
     }
 
     fn run_test_file(&self, root: &Path, file: &Path, test: Function) -> Result<(), HostError> {
-        let modules = Modules::new(
+        let mut modules = Modules::new(
             &self.lua,
             "test",
             Some(root.to_owned()),
             Some(test),
             &Grant::All,
         )?;
+        if let Some(loaded) = super::loaded_at(&self.lua, root) {
+            modules = modules.sharing(loaded);
+        }
         budgeted(&self.lua, || modules.run_file(&self.lua, file))?;
         Ok(())
     }

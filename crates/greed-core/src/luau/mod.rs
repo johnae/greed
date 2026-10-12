@@ -97,6 +97,9 @@ pub(crate) struct State {
     pub sources: HashMap<String, PathBuf>,
     /// What each plugin's entry file returned, for `require("@name")`.
     pub exports: HashMap<PluginId, Value>,
+    /// Each directory plugin's loaded files, so its tests require the same
+    /// ones rather than fresh copies.
+    loaded: HashMap<PluginId, mlua::Table>,
     /// Commands and handlers waiting on a timer or a reply.
     pub tasks: tasks::Tasks,
     /// The command waiting for each client's next key press, and the limit
@@ -442,6 +445,7 @@ impl Host {
             statusline: None,
             sources: HashMap::new(),
             exports: HashMap::new(),
+            loaded: HashMap::new(),
             tasks: tasks::Tasks::default(),
             key_waiter: HashMap::new(),
             recording: HashMap::new(),
@@ -1281,6 +1285,21 @@ fn install(lua: &Lua, name: &str, plugin: Plugin) -> Result<(), HostError> {
     Ok(())
 }
 
+/// The files the plugin in folder `dir` loaded, if one is loaded from there.
+fn loaded_at(lua: &Lua, dir: &Path) -> Option<mlua::Table> {
+    let dir = dir.canonicalize().ok()?;
+    let state = state(lua);
+    state
+        .plugins
+        .iter()
+        .find_map(|(name, plugin)| match plugin {
+            Plugin::Dir { dir: at, .. } if at.canonicalize().ok().as_ref() == Some(&dir) => {
+                state.loaded.get(&**name).cloned()
+            }
+            Plugin::Dir { .. } | Plugin::Inline(_) => None,
+        })
+}
+
 fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
     let plugin = state(lua).plugins[name].clone();
     let owner = Some(PluginId::from(name));
@@ -1290,6 +1309,9 @@ fn run_plugin(lua: &Lua, name: &str) -> Result<(), HostError> {
         } => {
             let file = dir.join(entry);
             let modules = Modules::new(lua, name, Some(dir), None, &grant)?;
+            state_mut(lua)
+                .loaded
+                .insert(name.into(), modules.loaded().clone());
             capabilities::running_as(lua, owner.as_ref(), "loading", || {
                 budgeted(lua, || modules.run_file(lua, &file))
             })?
@@ -1606,6 +1628,7 @@ pub(crate) fn unload(lua: &Lua, name: &str) -> Result<(), HostError> {
         let mut state = state_mut(lua);
         state.plugins.remove(name);
         state.exports.remove(name);
+        state.loaded.remove(name);
         state.grants.remove(name);
     }
     let payload = lua.create_table()?;
