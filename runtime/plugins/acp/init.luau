@@ -712,43 +712,82 @@ end
 greed.command({
 	name = "agent-new",
 	doc = "Start an agent: Greed's own, or Claude Code, Gemini or Codex over ACP; pick which, and where it works",
+	args = {
+		{
+			name = "agent",
+			doc = "Which agent, by name (greed, claude, gemini, codex); picked when left out. Named, it works in the project",
+			type = "string",
+			optional = true,
+		},
+		{
+			name = "prompt",
+			doc = "A first message to send it",
+			type = "rest",
+			optional = true,
+		},
+	},
 	run = function(ctx)
 		leave_list(ctx)
-		local items = {}
-		for _, agent in agents.list do
-			local command = agents.command_of(agent)
-			local how = if agent.native
-				then "in the editor, with the model in :models"
-				elseif command then table.concat(command, " ")
-				elseif agent.install then `not installed: {agent.install}`
-				else "not installed"
-			table.insert(items, { label = `{agent.title or agent.name}  ({how})`, value = agent })
+		local chosen: Agent? = nil
+		local name = ctx.values.agent
+		if name then
+			chosen = agents.named(name)
+			if chosen == nil then
+				greed.echo(`no agent called {name}`)
+				return
+			end
+		else
+			local items = {}
+			for _, agent in agents.list do
+				local command = agents.command_of(agent)
+				local how = if agent.native
+					then "in the editor, with the model in :models"
+					elseif command then table.concat(command, " ")
+					elseif agent.install then `not installed: {agent.install}`
+					else "not installed"
+				table.insert(
+					items,
+					{ label = `{agent.title or agent.name}  ({how})`, value = agent }
+				)
+			end
+			local picked = picker.choose("Agent", items)
+			if picked == nil then
+				return
+			end
+			chosen = picked.value
 		end
-		local agent = picker.choose("Agent", items)
-		if agent == nil then
-			return
-		elseif agents.command_of(agent.value) == nil then
-			greed.echo(agents.missing(agent.value))
+		local agent = chosen :: Agent
+		if agents.command_of(agent) == nil then
+			greed.echo(agents.missing(agent))
 			return
 		end
-		-- Greed's own agent works in the project; there's nothing to ask.
-		local place = if agent.value.native
-			then { value = "here" }
-			else picker.choose("Where it works", {
+		-- Greed's own agent, or one named outright, works in the project; there's nothing to ask.
+		local own = false
+		if name == nil and not agent.native then
+			local place = picker.choose("Where it works", {
 				{ label = "In a workspace of its own", value = "own" },
 				{ label = "In the project, with you", value = "here" },
 			})
-		if place == nil then
-			return
+			if place == nil then
+				return
+			end
+			own = place.value == "own"
 		end
-		local s, err = M.start(agent.value, core.project.root(), place.value == "own")
+		local s, err = M.start(agent, core.project.root(), own)
 		if s == nil then
 			greed.echo(err :: string)
 			return
 		end
 		M.show(s)
-		-- Ready for the first message, so the first key types it.
-		greed.mode.set(core.style.typing_mode())
+		local prompt = ctx.values.prompt
+		if prompt then
+			greed.spawn(function()
+				M.prompt(s, prompt)
+			end)
+		else
+			-- Ready for the first message, so the first key types it.
+			greed.mode.set(core.style.typing_mode())
+		end
 	end,
 })
 

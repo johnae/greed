@@ -1239,6 +1239,28 @@ test("starting Greed's agent from space i n leaves you typing in its box", funct
 	assert(string.find(typed, "hi", 1, true), "the first key typed: " .. typed)
 end)
 
+test("agent-new with an agent and a prompt starts it on that, picking nothing", function(t)
+	local asked = script({ { text = "on it", calls = {}, stop = "done" } })
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	greed.open(`{dir}/a.txt`)
+	t:run("agent-new", { "greed", "add", "a", "test" })
+	t:wait(30)
+	assert(#acp.sessions() == 1, "one started")
+	assert(
+		#asked == 1 and string.find(untimed(asked[1].said[1].text), "add a test", 1, true),
+		"sent"
+	)
+	assert(greed.view():buffer():kind() == "agent-transcript", "shown")
+end)
+
+test("agent-new with an agent it doesn't know says so", function(t)
+	script({})
+	t:run("agent-new", { "nobody" })
+	assert(#acp.sessions() == 0, "nothing started")
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "no agent called nobody", 1, true), messages[#messages])
+end)
+
 test(":agent starts an agent when none runs, and shows the latest one when one does", function(t)
 	script({})
 	local dir = t:tempdir({ ["a.txt"] = "one\n" })

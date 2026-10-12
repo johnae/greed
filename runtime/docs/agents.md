@@ -318,6 +318,14 @@ npm install -g @zed-industries/codex-acp               # Codex
 
 A new session's transcript opens with you typing in its box.
 
+`:agent-new greed add tests for the parser` starts that agent, by name
+(`greed`, `claude`, `gemini`, `codex` or one you registered), in the
+project, on that first message, picking nothing. From a shell, or a script:
+
+```bash
+greed ctl run_command name=agent-new 'args=["greed", "add tests for the parser"]'
+```
+
 Shell code an agent writes (a `sh`, `bash` or `console` block) has buttons
 on its opening fence. `▶ run` runs it in this project's shell, in the
 folder the agent works in, as a block of its own there: output as it
