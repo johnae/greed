@@ -31,6 +31,7 @@ local greed = require("@greed")
 local core = require("@core")
 local parse = require("@self/parse")
 local runners = require("@self/runners")
+local links = require("@self/links")
 local markdown = require("@markdown")
 local scene = require("@scene")
 
@@ -1081,6 +1082,16 @@ greed.keymap.bind({ layer = "leader" }, {
 	["m R"] = "blocks-run-all",
 	["m c"] = "block-result-clear",
 	["m s"] = "block-stop",
+})
+
+--- Command buttons in Markdown, `[label](run:command)`; see links.luau.
+--- What they're let run is kept with the blocks'.
+M.links = links
+links.use({
+	approved = M.approved,
+	approve = function(key: string, texts: { string })
+		M.approve(key, texts)
+	end,
 })
 
 return M

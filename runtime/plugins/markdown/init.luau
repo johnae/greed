@@ -184,8 +184,9 @@ local function inline(line: Line)
 	end
 	for from, label, target, to in string.gmatch(text, "()%[([^%]]+)%]%(([^%)]*)%)()") do
 		local first, last = from :: number, (to :: number) - 1
-		if string.match(target :: string, "^field:") then
-			-- A field, which values.luau draws.
+		if string.match(target :: string, "^field:") or string.match(target :: string, "^run:") then
+			-- A field, which values.luau draws, or a command button, which
+			-- the blocks plugin does.
 			table.insert(line.taken, { first, last })
 		elseif free(line, first, last) then
 			local label_end = first + #(label :: string)
@@ -597,11 +598,15 @@ local function look(buffer: greed.Buffer): boolean
 	return greed.option.get("markdown-look") == true
 end
 
+--- Whether `buffer` shows as a document: Markdown, with the look on or in
+--- the reading view. For plugins drawing over it with `conceal`.
+function M.drawn(buffer: greed.Buffer): boolean
+	return is_markdown(buffer) and (reading[buffer:id()] ~= nil or look(buffer))
+end
+
 local redraw_document = conceal.add({
 	ns = "markdown",
-	wants = function(buffer: greed.Buffer): boolean
-		return is_markdown(buffer) and (reading[buffer:id()] ~= nil or look(buffer))
-	end,
+	wants = M.drawn,
 	draw = function(
 		buffer: greed.Buffer,
 		s: Structure,
@@ -616,9 +621,7 @@ local redraw_document = conceal.add({
 -- (questions.luau), wherever the rest shows as a document.
 local redraw_questions = conceal.add({
 	ns = "markdown-questions",
-	wants = function(buffer: greed.Buffer): boolean
-		return is_markdown(buffer) and (reading[buffer:id()] ~= nil or look(buffer))
-	end,
+	wants = M.drawn,
 	draw = questions.marks,
 })
 
@@ -652,9 +655,7 @@ local redraw: (buffer: greed.Buffer?) -> ()
 -- change.
 redraw_values = conceal.add({
 	ns = "markdown-values",
-	wants = function(buffer: greed.Buffer): boolean
-		return is_markdown(buffer) and (reading[buffer:id()] ~= nil or look(buffer))
-	end,
+	wants = M.drawn,
 	draw = function(
 		buffer: greed.Buffer,
 		s: Structure,

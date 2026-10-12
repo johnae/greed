@@ -68,6 +68,7 @@ fn core_plugin_tests_pass() {
         plugin("approvals"),
         plugin("agent"),
         plugin("scene"),
+        plugin("shell"),
         plugin("blocks"),
         plugin("setup"),
         plugin("describe"),

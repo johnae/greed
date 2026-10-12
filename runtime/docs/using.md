@@ -1460,6 +1460,21 @@ they show what it works out, and whatever they say in the file gives way.
 Formulas go in order, so a later one can use an earlier one's column, and
 the table's value has them too (`sum(costs.per_year)`).
 
+A command button runs a command in the project's shell, where its output
+shows:
+
+```markdown
+Crate: [greed-core](field:crate)
+
+[Run its tests](run:cargo test -p {{ crate }})
+```
+
+A `{{ formula }}` in the command goes in as one argument, quoted, so a
+field can't add to the command whatever it holds. As the label hides the
+command, the first press shows it and asks: `y` runs it this time, `a`
+always. A command changed since (in the file, by a pull or an agent) asks
+again.
+
 Formulas are expressions only: arithmetic, comparisons, `and`/`or`/`not`,
 `..` to join text, `if a then b else c`, and functions: `sum`, `avg`,
 `count`, `min`, `max`, `round(x, digits)`, `floor`, `ceil`, `abs`,

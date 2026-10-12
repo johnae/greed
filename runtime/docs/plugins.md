@@ -1016,7 +1016,10 @@ greed.tab.set_layout({
   buffers `wants` says, calling `draw(buffer, structure, first, last)`,
   which returns the marks, for the lines an edit changed (and any code block or table they touch)
   rather than the whole file. It returns a function that draws a buffer,
-  or all of them, again in full.
+  or all of them, again in full. `markdown.drawn(buffer)` says whether a
+  buffer shows as a document, for `wants`. `markdown.values.scope(buffer)`
+  is what its formulas can name (fields, `let`s, tables, answers), to work
+  out a `core.formula` there.
 
 ## Clients
 
