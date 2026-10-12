@@ -104,6 +104,17 @@ test("drawing again changes only the lines that changed, so the cursor stays", f
 	assert(text_of(buffer) == "line 1\nline 2\nline 3\nline 4\nline 5", text_of(buffer))
 end)
 
+test("a cursor kept on a line that changed lands on a whole character", function(t)
+	local buffer = shown(t)
+	local view = ui.mount(buffer, function(state)
+		return ui.column({ ui.line({ ui.span(state.text) }) })
+	end, { text = "abcdef" })
+	greed.view():set_selection({ ranges = { { anchor = 2, head = 2 } }, primary = 1 })
+	-- "·" is two bytes: byte 2 is inside the second one.
+	view:set({ text = "a··" })
+	assert(greed.view():cursor() == 1, tostring(greed.view():cursor()))
+end)
+
 test("a table lines up its columns and opens a row when pressed", function(t)
 	local buffer = shown(t)
 	local opened: { string } = {}

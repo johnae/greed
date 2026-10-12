@@ -693,6 +693,19 @@ local function flatten(
 	return out
 end
 
+-- Where byte `column` of 0-based `line` is, at most its end and moved back
+-- to the start of the character it falls in, as the line may have changed.
+local function at_column(buffer: greed.Buffer, line: number, column: number): number
+	local start = buffer:line_start(line)
+	local text = buffer:slice(start, buffer:line_end(line))
+	local i = math.min(column, #text) + 1
+	-- Back over continuation bytes (10xxxxxx).
+	while i > 1 and bit32.band(string.byte(text, i) or 0, 0xC0) == 0x80 do
+		i -= 1
+	end
+	return start + i - 1
+end
+
 -- Makes lines `first` to `last_a` (1-based) of the `total_a` lines of
 -- `buffer` from 0-based line `base` on, which end at byte `stop`, read as
 -- lines `first` to `last_b` of the `total_b` that `new(i)` gives, as one
@@ -760,8 +773,7 @@ local function replace_lines(
 		e:replace(from, to, text)
 	end, { undo = false })
 	for _, kept in inside do
-		local line = math.min(kept.line, buffer:line_count() - 1)
-		local pos = math.min(buffer:line_start(line) + kept.column, buffer:line_end(line))
+		local pos = at_column(buffer, math.min(kept.line, buffer:line_count() - 1), kept.column)
 		kept.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
 	end
 end
@@ -1132,8 +1144,7 @@ function M.mount(
 			for _, cursor in cursors do
 				local line = line_keyed(cursor.key)
 				if line and cursor.view:valid() then
-					local pos =
-						math.min(buffer:line_start(line) + cursor.column, buffer:line_end(line))
+					local pos = at_column(buffer, line, cursor.column)
 					cursor.view:set_selection({
 						ranges = { { anchor = pos, head = pos } },
 						primary = 1,
