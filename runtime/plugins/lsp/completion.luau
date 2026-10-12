@@ -15,7 +15,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
-local menu = core.menu
+local ui = core.ui
 
 greed.option.define({
 	name = "completion-delay",
@@ -89,6 +89,8 @@ type Open = {
 	view: greed.View,
 	buffer: greed.Buffer,
 	float: core.TypingFloat,
+	-- What draws the menu in the float.
+	drawn: core.UiView,
 	-- Every item the server sent, and the ones matching what's typed.
 	items: { Item },
 	matches: { number },
@@ -241,63 +243,56 @@ local function close()
 	end
 end
 
--- Draws the matching items and marks the current one.
-local function render(o: Open)
+-- The matching items, a row each: the label with what's typed picked out,
+-- its badge and its detail, the current one marked.
+local function draw(o: Open): core.UiNode
 	local typed = o.original or o.buffer:slice(start_of(o), o.view:cursor())
-	local labels = {}
 	local width, badges = 0, 0
 	for i, index in o.matches do
 		if i > SHOWN then
 			break
 		end
 		local item = o.items[index]
-		table.insert(labels, item.label)
 		width = math.max(width, core.text.width(item.label))
 		badges = math.max(badges, if item.badge then core.text.width(item.badge) else 0)
 	end
-	local lines, marks = {}, {}
-	local from = 0
-	for i, label in labels do
+	local rows: { core.UiNode } = {}
+	for i = 1, math.min(#o.matches, SHOWN) do
 		local item = o.items[o.matches[i]]
-		local line = ` {label}{string.rep(" ", width - core.text.width(label))}`
-		local badge = item.badge
+		local label = item.label
+		local spans: { core.UiSpan } = {
+			{ text = " ", line = if i == o.current then "ui.menu.selected" else nil },
+		}
+		local matched = greed.fuzzy_positions(typed, label, { case = core.search.case() })
+		for _, span in ui.matched(label, matched) do
+			table.insert(spans, span)
+		end
+		table.insert(spans, ui.span(string.rep(" ", width - core.text.width(label))))
 		if badges > 0 then
-			local at = #line + 2
-			local shown = badge or ""
-			line ..= `  {shown}{string.rep(" ", badges - core.text.width(shown))}`
-			if badge then
-				table.insert(
-					marks,
-					{ from = from + at, to = from + at + #badge, style = "ui.menu.badge" }
-				)
-			end
+			local shown = item.badge or ""
+			table.insert(spans, ui.span("  "))
+			table.insert(spans, ui.span(shown, "ui.menu.badge"))
+			table.insert(spans, ui.span(string.rep(" ", badges - core.text.width(shown))))
 		end
 		if item.detail then
-			local at = #line + 2
-			line ..= `  {item.detail}`
-			table.insert(marks, { from = from + at, to = from + #line, style = "ui.menu.doc" })
+			table.insert(spans, ui.span("  "))
+			table.insert(spans, ui.span(item.detail, "ui.menu.doc"))
 		end
-		menu.mark_row(
-			marks,
-			from,
-			line,
-			i == o.current,
-			greed.fuzzy_positions(typed, label, { case = core.search.case() }),
-			1
-		)
-		table.insert(lines, line)
-		from += #line + 1
+		table.insert(rows, ui.line(spans))
 	end
+	return ui.column(rows)
+end
+
+-- Draws the matching items and marks the current one, the float as big
+-- as they are.
+local function render(o: Open)
+	o.drawn:redraw()
 	local buffer = o.float.buffer
-	buffer:edit(function(e)
-		e:replace(0, buffer:len(), table.concat(lines, "\n"))
-	end)
-	buffer:decorate("completion", marks)
 	local longest = 0
-	for _, line in lines do
-		longest = math.max(longest, core.text.width(line))
+	for line = 0, buffer:line_count() - 1 do
+		longest = math.max(longest, core.text.width(buffer:line_text(line)))
 	end
-	o.float.view:configure({ width = longest + 3, height = #lines + 2 })
+	o.float.view:configure({ width = longest + 3, height = buffer:line_count() + 2 })
 end
 
 -- The items of `items` matching `typed`, best first.
@@ -449,6 +444,9 @@ local function show(
 		placed = false,
 		original = nil :: string?,
 		placing = false,
+		drawn = ui.mount(float.buffer, function()
+			return draw(o)
+		end, nil, { ns = "completion", keys = false, draw = false }),
 	}
 	opened[client] = o
 	refresh(o)
