@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::CursorShape;
 use crate::render::{
     Frame, ImagePlacement, Menu, Position, Rect, Role, Row, ScenePlacement, Separator, Size,
-    Surface, SurfaceId,
+    Surface, SurfaceId, uncounted,
 };
 use crate::theme::Theme;
 
@@ -52,6 +52,12 @@ pub struct FrameDelta {
     pub gui: Option<BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub menus: Option<Vec<Menu>>,
+    /// The `seq` of the frame it was made against, and of the one it makes;
+    /// 0 from a session that doesn't count them.
+    #[serde(default, skip_serializing_if = "uncounted")]
+    pub base: u64,
+    #[serde(default, skip_serializing_if = "uncounted")]
+    pub seq: u64,
 }
 
 /// What changed in one surface. Anything left out is as it was; a new
@@ -226,6 +232,8 @@ impl FrameDelta {
             theme,
             gui: changed(&old.gui, &new.gui),
             menus: changed(&old.menus, &new.menus),
+            base: old.seq,
+            seq: new.seq,
         };
         (!delta.is_empty()).then_some(delta)
     }
@@ -246,12 +254,24 @@ impl FrameDelta {
     }
 
     /// Turns `frame` (the old frame this delta was made against) into the
-    /// new one.
-    pub fn apply(self, frame: &mut Frame) {
+    /// new one. False when it doesn't fit `frame`: it was made against
+    /// another frame, or changes or removes a surface `frame` doesn't have,
+    /// as when a message on the way was lost. It's applied as far as it
+    /// makes sense then, and the client should ask for a whole frame
+    /// (`Input::Refresh`).
+    #[must_use]
+    pub fn apply(self, frame: &mut Frame) -> bool {
+        let mut fits = self.base == 0 || self.base == frame.seq;
         if let Some(size) = self.size {
             frame.size = size;
         }
+        fits &= self
+            .removed
+            .iter()
+            .all(|id| frame.surfaces.iter().any(|s| s.id == *id));
         frame.surfaces.retain(|s| !self.removed.contains(&s.id));
+        // Surfaces new to `frame`, which their deltas have to say all of.
+        let mut new = Vec::new();
         if let Some(order) = self.order {
             let mut kept: HashMap<SurfaceId, Surface> =
                 frame.surfaces.drain(..).map(|s| (s.id, s)).collect();
@@ -260,6 +280,7 @@ impl FrameDelta {
                 .map(|id| {
                     // A new one; its delta below says what it is.
                     kept.remove(&id).unwrap_or_else(|| {
+                        new.push(id);
                         Surface::new(
                             id,
                             Role::Pane { active: false },
@@ -271,9 +292,17 @@ impl FrameDelta {
                 .collect();
         }
         for delta in self.surfaces {
-            if let Some(surface) = frame.surfaces.iter_mut().find(|s| s.id == delta.id) {
-                delta.apply(surface);
+            if delta.role.is_some() && delta.rect.is_some() {
+                new.retain(|id| *id != delta.id);
             }
+            match frame.surfaces.iter_mut().find(|s| s.id == delta.id) {
+                Some(surface) => delta.apply(surface),
+                None => fits = false,
+            }
+        }
+        fits &= new.is_empty();
+        if self.seq != 0 {
+            frame.seq = self.seq;
         }
         if let Some(lines) = self.lines {
             frame.lines = lines;
@@ -299,5 +328,37 @@ impl FrameDelta {
         if let Some(menus) = self.menus {
             frame.menus = menus;
         }
+        fits
+    }
+}
+
+/// The frame a client shows: the last whole one its session sent, with the
+/// deltas since applied.
+#[derive(Debug, Default)]
+pub struct Latest {
+    frame: Option<Frame>,
+    /// Whether it asked for a whole frame since the last one came.
+    asked: bool,
+}
+
+impl Latest {
+    pub fn frame(&self) -> Option<&Frame> {
+        self.frame.as_ref()
+    }
+
+    pub fn whole(&mut self, frame: Frame) {
+        self.frame = Some(frame);
+        self.asked = false;
+    }
+
+    /// Applies `delta`, as far as it makes sense. True when the client
+    /// should ask for a whole frame (`Input::Refresh`), since the delta
+    /// doesn't fit what it has (see [`FrameDelta::apply`]) or it has no
+    /// frame yet; once, until the whole frame comes.
+    pub fn delta(&mut self, delta: FrameDelta) -> bool {
+        let fits = self.frame.as_mut().is_some_and(|frame| delta.apply(frame));
+        let ask = !fits && !self.asked;
+        self.asked |= ask;
+        ask
     }
 }

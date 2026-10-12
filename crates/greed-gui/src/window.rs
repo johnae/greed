@@ -88,6 +88,8 @@ pub fn run(
 /// The window's drawing state, made once it exists.
 struct Shown {
     window: Arc<Window>,
+    /// Kept to make the surface again, should it be lost.
+    instance: wgpu::Instance,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     gpu: Gpu,
@@ -179,8 +181,7 @@ impl App {
 
     fn logging(&self) -> bool {
         self.painter
-            .frame
-            .as_ref()
+            .frame()
             .is_some_and(|frame| frame.gui.contains_key(greed_core::debug::CLIENT))
     }
 
@@ -227,6 +228,16 @@ impl App {
             wgpu::CurrentSurfaceTexture::Occluded => {
                 return "left a frame undrawn: the window is covered";
             }
+            // Configuring a lost surface again doesn't bring it back, and
+            // the window would keep its last picture: it's made anew.
+            wgpu::CurrentSurfaceTexture::Lost => {
+                if let Ok(surface) = shown.instance.create_surface(shown.window.clone()) {
+                    shown.surface = surface;
+                }
+                shown.surface.configure(&shown.gpu.device, &shown.config);
+                shown.window.request_redraw();
+                return "the window's surface was lost; made it again";
+            }
             _ => {
                 shown.surface.configure(&shown.gpu.device, &shown.config);
                 shown.window.request_redraw();
@@ -242,7 +253,7 @@ impl App {
         shown.window.pre_present_notify();
         shown.gpu.queue.present(texture);
         // An input method shows what it's composing by the cursor.
-        if let Some(at) = self.painter.frame.as_ref().and_then(|frame| frame.cursor) {
+        if let Some(at) = self.painter.frame().and_then(|frame| frame.cursor) {
             let fonts = &self.painter.fonts;
             let (cw, ch) = (f64::from(fonts.cell_w), f64::from(fonts.cell_h));
             let x = scene.columns.x(usize::from(at.row), usize::from(at.col));
@@ -258,6 +269,9 @@ impl App {
     fn handle(&mut self, event_loop: &ActiveEventLoop, output: Output) {
         match self.painter.take(output) {
             Ok(Taken::Frame) => {}
+            Ok(Taken::Stale) => {
+                let _ = self.input.send(Input::Refresh);
+            }
             // `session::show` answers ssh agent requests before output gets here.
             Ok(Taken::Kept) | Err(Output::Notify(_) | Output::SshAgentRequest(..)) => return,
             Err(Output::Clipboard(text)) => {
@@ -290,7 +304,7 @@ impl App {
         }
         self.follow_options();
         #[cfg(target_os = "macos")]
-        if let (Some(bar), Some(frame)) = (&mut self.menubar, &self.painter.frame) {
+        if let (Some(bar), Some(frame)) = (&mut self.menubar, self.painter.frame()) {
             bar.show(&frame.menus);
         }
         if let Some(shown) = &self.shown {
@@ -518,6 +532,7 @@ impl Shown {
         surface.configure(&device, &config);
         Some(Self {
             window,
+            instance,
             surface,
             config,
             gpu: Gpu::new(device, queue, format, ATLAS_SIZE),

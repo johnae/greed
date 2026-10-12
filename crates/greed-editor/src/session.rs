@@ -309,8 +309,16 @@ fn show(
     std::thread::spawn(move || {
         for line in reader.lines() {
             let Ok(line) = line else { break };
-            let Ok(message) = serde_json::from_str::<Output>(&line) else {
-                continue;
+            // One this client can't read, as from a newer session, is left
+            // out; a frame or delta left out makes the next delta not fit,
+            // and the client asks for a whole frame.
+            let message = match serde_json::from_str::<Output>(&line) {
+                Ok(message) => message,
+                Err(err) => {
+                    let said = format!("couldn't read a message from the session: {err}");
+                    let _ = replies.send(Input::Log(said));
+                    continue;
+                }
             };
             // Asked off this thread: a key touch can take a while.
             if let Output::SshAgentRequest(id, body) = message {

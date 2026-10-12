@@ -330,6 +330,21 @@ pub struct Frame {
     /// The menus plugins set, for a window to show as its menu bar.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub menus: Vec<Menu>,
+    /// Which of the frames a session sent this client it is, counting from
+    /// 1, so a delta can say which one it was made against (see
+    /// [`crate::delta::FrameDelta::apply`]). 0 when nobody counts, as for
+    /// a client in the same process.
+    #[serde(default, skip_serializing_if = "uncounted")]
+    pub seq: u64,
+}
+
+/// Whether a frame's `seq` is 0: from a session that doesn't count them.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+pub(crate) fn uncounted(seq: &u64) -> bool {
+    *seq == 0
 }
 
 /// A menu in a window's menu bar: its title and what's in it, in order.
@@ -765,6 +780,7 @@ impl<M: Measure> Renderer<M> {
             theme: editor.theme().clone(),
             gui: BTreeMap::new(),
             menus: editor.menus().to_vec(),
+            seq: 0,
         }
     }
 

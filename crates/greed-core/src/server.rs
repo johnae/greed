@@ -59,6 +59,10 @@ pub enum Input {
     /// A debug line from the client's side, sent while the frames it gets
     /// say the `client` topic is on (see [`crate::debug`]).
     Log(String),
+    /// The client's frame doesn't match what it was sent, as when a delta
+    /// didn't fit it (see [`crate::delta::FrameDelta::apply`]): the next
+    /// frame comes whole.
+    Refresh,
     Quit,
 }
 
@@ -187,6 +191,7 @@ where
             reuse_status: false,
             agent_asks: HashMap::new(),
             agent_asked: 0,
+            logs: session.is_some(),
         };
         if let Some(session) = &session {
             host.set_session_name(&session.name);
@@ -221,8 +226,9 @@ struct Client {
     /// out.
     connection: u64,
     /// The last frame a remote client got, so the next can be sent as what
-    /// changed.
+    /// changed, and how many it got (see [`Frame::seq`]).
     last: Option<Frame>,
+    sent: u64,
     /// The images whose data it has.
     images: HashSet<ImageId>,
     /// The version of each scene it has.
@@ -254,6 +260,7 @@ impl Client {
             connection,
             ssh_agent: false,
             last: None,
+            sent: 0,
             images: HashSet::new(),
             scenes: HashMap::new(),
             renderer: Renderer::new(CellWidth),
@@ -266,14 +273,20 @@ impl Client {
     }
 
     /// What to send this client for `frame`, or `None` if nothing changed.
-    fn output_for(&mut self, frame: Frame) -> Option<Output> {
+    fn output_for(&mut self, mut frame: Frame) -> Option<Output> {
         if self.local {
             return Some(Output::Frame(frame));
         }
+        frame.seq = self.sent + 1;
         let output = match &self.last {
             None => Some(Output::Frame(frame.clone())),
             Some(last) => FrameDelta::between(last, &frame).map(Output::Delta),
         };
+        // Numbered by what's sent: the client never sees one unchanged.
+        match output {
+            Some(_) => self.sent = frame.seq,
+            None => frame.seq = self.sent,
+        }
         self.last = Some(frame);
         output
     }
@@ -302,6 +315,9 @@ struct Server<'a> {
     /// Programs' ssh agent requests on their way, by id, and the last id.
     agent_asks: HashMap<u64, AgentAsk>,
     agent_asked: u64,
+    /// Whether problems go to the session's log, which its output is. An
+    /// editor in a terminal has none, and keeps the screen clean.
+    logs: bool,
 }
 
 /// A program's ssh agent request on its way to the agent: the client
@@ -366,6 +382,7 @@ fn turn_of(input: &Input) -> Turn {
         | Input::ClipboardImage(..)
         | Input::SshAgentReply(..)
         | Input::Log(_)
+        | Input::Refresh
         | Input::Quit => Turn::Never,
     }
 }
@@ -844,6 +861,15 @@ impl Server<'_> {
             }
             Input::SshAgentReply(ask, ref answer) => self.agent_reply(id, ask, answer.as_deref()),
             Input::Log(ref text) => crate::debug!(Client, "client {}: {text}", id.0),
+            Input::Refresh => {
+                if let Some(client) = self.clients.get_mut(&id) {
+                    client.last = None;
+                    self.log(&format!(
+                        "client {}: its frame didn't match what it was sent; sending it whole",
+                        id.0
+                    ));
+                }
+            }
             // The client in this process ends the editor; another leaves it.
             Input::Quit if id == FIRST_CLIENT => return false,
             Input::Quit => self.detach(id),
@@ -857,9 +883,20 @@ impl Server<'_> {
         match crate::panics::catching(|| f(self)) {
             Ok(go_on) => go_on,
             Err(panic) => {
+                self.log(&panic.to_string());
                 self.say(first_line(&panic.to_string()));
                 true
             }
+        }
+    }
+
+    /// Writes `line` to the session's log, if it has one, and as a debug
+    /// line on the `client` topic: what went wrong between the editor and
+    /// its clients, for when a screen stops showing what it should.
+    fn log(&self, line: &str) {
+        crate::debug!(Client, "{line}");
+        if self.logs {
+            eprintln!("greed: {line}");
         }
     }
 
@@ -1089,13 +1126,22 @@ impl Server<'_> {
         let (output, outgoing) = crossbeam_channel::unbounded::<Output>();
         // With no thread to spare, the client is let go: it sees the
         // connection close.
+        let logs = self.logs;
         let writing = reading.and_then(|_| {
             thread::Builder::new().spawn(move || {
                 for message in outgoing {
                     let last =
                         matches!(message, Output::Exit | Output::Detached | Output::Switch(_));
-                    let Ok(line) = serde_json::to_string(&message) else {
-                        continue;
+                    // Left out, a frame or delta the client goes without
+                    // makes the next delta not fit, and it asks again.
+                    let line = match serde_json::to_string(&message) {
+                        Ok(line) => line,
+                        Err(err) => {
+                            if logs {
+                                eprintln!("greed: client {}: couldn't send a message: {err}", id.0);
+                            }
+                            continue;
+                        }
                     };
                     if writeln!(writer, "{line}").is_err() || last {
                         return;
@@ -1134,10 +1180,19 @@ impl Server<'_> {
             return true;
         }
         let host = self.host;
+        // A bug drawing one client's screen leaves the others theirs.
         let render_all = |server: &mut Self| -> Vec<(ClientId, Frame)> {
             sized
                 .iter()
-                .filter_map(|&(id, size)| Some((id, server.render(id, size)?)))
+                .filter_map(|&(id, size)| {
+                    match crate::panics::catching(|| server.render(id, size)) {
+                        Ok(frame) => Some((id, frame?)),
+                        Err(panic) => {
+                            server.log(&format!("client {}: drawing its screen: {panic}", id.0));
+                            None
+                        }
+                    }
+                })
                 .collect()
         };
         let mut frames = render_all(self);

@@ -128,7 +128,10 @@ impl Attached {
     fn first_row(&mut self) -> String {
         match self.next() {
             Output::Frame(frame) => self.1 = Some(frame),
-            Output::Delta(delta) => delta.apply(self.1.as_mut().expect("a whole frame came first")),
+            Output::Delta(delta) => assert!(
+                delta.apply(self.1.as_mut().expect("a whole frame came first")),
+                "it fits the frame before"
+            ),
             other => panic!("expected a frame, got {other:?}"),
         }
         greed_core::render::grid::text_rows(self.1.as_ref().unwrap()).swap_remove(0)
@@ -147,7 +150,10 @@ impl Attached {
         loop {
             match self.next() {
                 Output::Frame(frame) => self.1 = Some(frame),
-                Output::Delta(delta) => delta.apply(self.1.as_mut().expect("a whole frame first")),
+                Output::Delta(delta) => assert!(
+                    delta.apply(self.1.as_mut().expect("a whole frame first")),
+                    "it fits the frame before"
+                ),
                 Output::Exit => panic!("the editor ended"),
                 other => {
                     others.push(other);
@@ -174,7 +180,10 @@ impl Attached {
             }
             match next {
                 Output::Frame(frame) => self.1 = Some(frame),
-                Output::Delta(delta) => delta.apply(self.1.as_mut().expect("a whole frame first")),
+                Output::Delta(delta) => assert!(
+                    delta.apply(self.1.as_mut().expect("a whole frame first")),
+                    "it fits the frame before"
+                ),
                 Output::Exit => panic!("the editor ended"),
                 _ => {}
             }
@@ -236,6 +245,38 @@ fn a_client_taking_over_lets_the_others_go() {
     first.until(|o| matches!(o, Output::Detached));
     second.send(&Input::Resize(SIZE));
     assert_eq!(second.first_row(), "1 hello");
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_client_whose_frame_lost_track_asks_and_gets_a_whole_one() {
+    let (conn, attach, _) = start("refresh");
+    let mut client = attach();
+    client.send(&Input::Resize(SIZE));
+    let Output::Frame(first) = client.next() else {
+        panic!("a whole frame first");
+    };
+    assert_eq!(first.seq, 1);
+    let next_delta = |client: &mut Attached, keys: &str| {
+        client.keys(keys);
+        let Output::Delta(delta) = client.until(|o| matches!(o, Output::Delta(_))) else {
+            unreachable!()
+        };
+        delta
+    };
+    let insert = next_delta(&mut client, "i");
+    assert_eq!((insert.base, insert.seq), (1, 2));
+    // As if that delta was lost on the way: the next doesn't fit frame 1.
+    let typed = next_delta(&mut client, "X");
+    let mut behind = first.clone();
+    assert!(!typed.apply(&mut behind));
+    client.send(&Input::Refresh);
+    let Output::Frame(whole) = client.next() else {
+        panic!("a whole frame after asking");
+    };
+    assert_eq!(whole.seq, 4);
+    assert_eq!(greed_core::render::grid::text_rows(&whole)[0], "1 Xhello");
+    client.keys("esc");
     conn.input.send(Input::Quit).unwrap();
 }
 

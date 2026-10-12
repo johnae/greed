@@ -205,7 +205,7 @@ pub fn output_of(script: &Script, path: &Path) -> PathBuf {
 
 /// The screen's text, a row a line, for `wait-for`.
 fn screen_text(painter: &Painter) -> String {
-    let Some(frame) = &painter.frame else {
+    let Some(frame) = painter.frame() else {
         return String::new();
     };
     grid::compose(frame, Medium::Gui)
@@ -372,7 +372,10 @@ impl Recorder<'_> {
     /// Takes in what the session sent. True once it ended.
     fn receive(&mut self, message: Output) -> bool {
         match self.painter.take(message) {
-            Ok(Taken::Frame) => {
+            Ok(taken @ (Taken::Frame | Taken::Stale)) => {
+                if matches!(taken, Taken::Stale) {
+                    let _ = self.input.send(Input::Refresh);
+                }
                 self.changed = true;
                 if self.painter.follow_options() {
                     self.send_size();

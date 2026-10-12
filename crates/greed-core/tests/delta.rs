@@ -46,7 +46,10 @@ fn delta(before: &Frame, after: &Frame) -> FrameDelta {
     let delta = FrameDelta::between(before, after).expect("something changed");
     let sent: FrameDelta = serde_json::from_str(&serde_json::to_string(&delta).unwrap()).unwrap();
     let mut applied = before.clone();
-    sent.apply(&mut applied);
+    assert!(
+        sent.apply(&mut applied),
+        "it fits the frame it was made against"
+    );
     assert_eq!(&applied, after, "{delta:#?}");
     delta
 }
@@ -360,7 +363,7 @@ fn deltas_turn_each_frame_into_the_next_through_edits_splits_floats_resizes_and_
             let sent: FrameDelta =
                 serde_json::from_str(&serde_json::to_string(&delta).unwrap()).unwrap();
             let mut applied = before.clone();
-            sent.apply(&mut applied);
+            assert!(sent.apply(&mut applied), "after {name:?}");
             assert_eq!(applied, after, "after {name:?}");
         } else {
             assert_eq!(before, after, "after {name:?}");
@@ -439,7 +442,7 @@ fn a_broken_frame_or_delta_from_a_session_is_drawn_as_far_as_it_makes_sense() {
     let delta: FrameDelta =
         serde_json::from_str(r#"{ "order": [], "size": { "width": 65535, "height": 65535 } }"#)
             .unwrap();
-    delta.apply(&mut f);
+    assert!(delta.apply(&mut f));
     assert!(f.surfaces.is_empty());
     compose(&f, Medium::Tui);
     screen_rows(&f);
@@ -461,7 +464,7 @@ fn a_broken_frame_or_delta_from_a_session_is_drawn_as_far_as_it_makes_sense() {
         usize::MAX
     ))
     .unwrap();
-    delta.apply(&mut f);
+    assert!(!delta.apply(&mut f), "the status line isn't there");
     assert_eq!(f.surfaces.len(), 2);
     assert_eq!(f.surfaces[0].rows.len(), usize::from(u16::MAX));
     screen_rows(&f);
@@ -491,4 +494,73 @@ fn what_goes_away_goes_away_after_a_trip_through_json() {
         (Some(None), Some(&None))
     );
     assert_eq!(d.cursor, Some(None));
+}
+
+/// The frames of a pane being split and typed in, numbered as a session
+/// sends them.
+fn numbered() -> [Frame; 3] {
+    let mut ed = editor("|one\ntwo");
+    let mut first = frame(&mut ed);
+    let pane = ed.focus();
+    ed.split_pane(pane, Direction::Right, None);
+    let mut split = frame(&mut ed);
+    insert(&mut ed, 0, "x");
+    let mut typed = frame(&mut ed);
+    (first.seq, split.seq, typed.seq) = (1, 2, 3);
+    [first, split, typed]
+}
+
+#[test]
+fn a_delta_says_which_frame_it_was_made_against_and_fits_only_that_one() {
+    let [first, split, typed] = numbered();
+    let next = delta(&split, &typed);
+    assert_eq!((next.base, next.seq), (2, 3));
+    let mut behind = first.clone();
+    assert!(
+        !next.clone().apply(&mut behind),
+        "made against another frame"
+    );
+    let mut caught_up = first.clone();
+    assert!(delta(&first, &split).apply(&mut caught_up));
+    assert_eq!(caught_up.seq, 2);
+    assert!(next.apply(&mut caught_up));
+    assert_eq!(caught_up, typed);
+}
+
+#[test]
+fn a_delta_changing_a_surface_the_client_doesnt_have_doesnt_fit() {
+    // From a session that doesn't count frames, a client that missed the
+    // split has no new pane for the typing to change.
+    let [mut first, mut split, mut typed] = numbered();
+    for frame in [&mut first, &mut split, &mut typed] {
+        frame.seq = 0;
+    }
+    let missed = FrameDelta::between(&split, &typed).unwrap();
+    assert!(!missed.apply(&mut first));
+    // Nor does one removing a surface it doesn't have.
+    let mut closed = first.clone();
+    closed.surfaces.retain(|s| s.id != SurfaceId::Status);
+    let gone = FrameDelta::between(&first, &closed).unwrap();
+    let mut without = closed.clone();
+    assert!(!gone.apply(&mut without));
+}
+
+#[test]
+fn a_client_asks_once_for_a_whole_frame_when_a_delta_doesnt_fit() {
+    use greed_core::delta::Latest;
+    let [first, split, typed] = numbered();
+    let mut latest = Latest::default();
+    assert!(latest.delta(delta(&first, &split)), "no frame yet");
+    latest.whole(first.clone());
+    let next = delta(&split, &typed);
+    assert!(latest.delta(next.clone()), "it missed the split");
+    assert!(!latest.delta(next), "it asked already");
+    latest.whole(typed);
+    assert!(
+        latest.delta(delta(&first, &split)),
+        "after a whole frame it asks again"
+    );
+    latest.whole(first.clone());
+    assert!(!latest.delta(delta(&first, &split)));
+    assert_eq!(latest.frame(), Some(&split));
 }

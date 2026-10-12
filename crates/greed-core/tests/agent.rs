@@ -384,3 +384,133 @@ fn a_plugin_loaded_while_an_agent_is_connected_tells_it_of_its_tools() {
     conn.input.send(Input::Quit).unwrap();
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A window attached to the session `start(label, ..)` made, reading what
+/// it's sent on a thread of its own so it can wait for quiet.
+struct Window {
+    outputs: crossbeam_channel::Receiver<greed_core::server::Output>,
+    frame: greed_core::delta::Latest,
+    /// Kept open, or the session lets it go.
+    _writer: std::os::unix::net::UnixStream,
+}
+
+impl Window {
+    fn attach(label: &str) -> Self {
+        use std::io::{BufRead, Write};
+        let mut params = control::attach_params("gui");
+        params["client"] = json!({ "kind": "gui", "name": "gui@here" });
+        let attachment = connect(label).attach_with(&params).unwrap();
+        let (sent, outputs) = crossbeam_channel::unbounded();
+        let mut reader = attachment.reader;
+        std::thread::spawn(move || {
+            let mut line = String::new();
+            while matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
+                let output = serde_json::from_str(&line).expect("a message a client reads");
+                if sent.send(output).is_err() {
+                    return;
+                }
+                line.clear();
+            }
+        });
+        let mut writer = attachment.writer;
+        let size = greed_core::render::Size {
+            width: 60,
+            height: 16,
+        };
+        writeln!(
+            writer,
+            "{}",
+            serde_json::to_string(&Input::Resize(size)).unwrap()
+        )
+        .unwrap();
+        Self {
+            outputs,
+            frame: greed_core::delta::Latest::default(),
+            _writer: writer,
+        }
+    }
+
+    /// Takes in frames until the status line says `said`, each delta
+    /// fitting the frame before it.
+    fn until_said(&mut self, said: &str) -> &greed_core::render::Frame {
+        use greed_core::server::Output;
+        loop {
+            let output = self
+                .outputs
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap_or_else(|_| panic!("no frame saying {said:?}"));
+            match output {
+                Output::Frame(frame) => self.frame.whole(frame),
+                Output::Delta(delta) => assert!(!self.frame.delta(delta), "a delta didn't fit"),
+                Output::Exit | Output::Detached | Output::Switch(_) => panic!("let go: {output:?}"),
+                _ => continue,
+            }
+            let frame = self.frame.frame().unwrap();
+            let rows = greed_core::render::grid::text_rows(frame);
+            if rows.last().is_some_and(|row| row.contains(said)) {
+                return self.frame.frame().unwrap();
+            }
+        }
+    }
+}
+
+/// What a window showed when an agent closed and changed its views from
+/// under it, the way one did when a window stopped redrawing: its focused
+/// panel, panes, buffers, another buffer shown, a mode that doesn't exist.
+#[test]
+fn a_window_keeps_up_as_an_agent_changes_its_views_under_it() {
+    let dir = std::env::temp_dir().join(format!("greed-agent-under-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("plugin.toml"),
+        "name = \"trusting\"\ncapabilities = [\"eval\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("init.luau"),
+        "require('@greed').option.set('agent-eval', 'allow')\nreturn {}\n",
+    )
+    .unwrap();
+    let (conn, mut agent) = start_with("under", "one two three", vec![dir.clone()]);
+    let mut window = Window::attach("under");
+    let mut eval = |code: &str| {
+        let code = format!("local greed = require('@greed')\n{code}");
+        call(&mut agent, "eval", &json!({ "code": code }))
+    };
+    let steps = [
+        "greed.panel(greed.create_buffer('scratch', 'agent chat'), { focus = true, side = 'right' })",
+        "local out = greed.create_buffer('scratch', 'old output')
+         greed.view():split('down', out):split('right', out)
+         greed.float(greed.create_buffer('scratch', 'a float'))",
+        "greed.tab.new(greed.create_buffer('scratch', 'second tab'))",
+        "greed.tab.switch(greed.tab.list()[1].id)",
+        "for _, b in greed.buffers() do if b:text() == 'agent chat' then for _, v in b:views() do v:close() end end end",
+        "for _, b in greed.buffers() do if b:text() == 'old output' then for _, v in b:views() do v:close() end end end",
+        "for _, b in greed.buffers() do if b:text() == 'old output' then b:close() end end",
+        "greed.view():show(greed.create_buffer('scratch', 'shell now'))",
+        "greed.mode.set('no-such-mode')",
+        "for _, v in greed.floats() do v:close() end",
+        "for _, t in greed.tab.list() do greed.tab.close(t.id) end",
+        "greed.client.set_layout('independent')",
+        "greed.panel(greed.create_buffer('scratch', 'own chat'), { focus = true })",
+        "greed.client.set_layout('follow')",
+    ];
+    for (i, code) in steps.iter().enumerate() {
+        let (said, failed) = eval(code);
+        // What the session says the window has focused, and that it's on
+        // the window's screen.
+        let (focus, _) = eval(&format!("greed.echo('step {i}'); return greed.view():id()"));
+        let frame = window.until_said(&format!("step {i}"));
+        let focus = greed_core::ViewId(focus.parse().unwrap());
+        assert!(
+            frame
+                .surface(greed_core::render::SurfaceId::View(focus))
+                .is_some(),
+            "after {code:?} ({said}, failed: {failed}) {focus:?} isn't shown: {:?}",
+            frame.surfaces.iter().map(|s| s.id).collect::<Vec<_>>()
+        );
+    }
+    conn.input.send(Input::Quit).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}

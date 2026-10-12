@@ -59,7 +59,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     let screen = &mut painter.0;
     let mut out = io::BufWriter::new(io::stdout());
     // Deltas change the last whole frame into the next.
-    let mut current: Option<Frame> = None;
+    let mut current = greed_core::delta::Latest::default();
     let ended = loop {
         let Ok(first) = output.recv() else {
             break Output::Exit;
@@ -93,14 +93,14 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
                     }
                 }
                 Output::Frame(frame) => {
-                    current = Some(frame);
+                    current.whole(frame);
                     changed = true;
                 }
                 Output::Delta(delta) => {
-                    if let Some(frame) = &mut current {
-                        delta.apply(frame);
-                        changed = true;
+                    if current.delta(delta) {
+                        let _ = input.send(Input::Refresh);
                     }
+                    changed = true;
                 }
                 other => {
                     ended = Some(other);
@@ -108,7 +108,7 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
                 }
             }
         }
-        if changed && let Some(frame) = &current {
+        if changed && let Some(frame) = current.frame() {
             let log = frame.gui.contains_key(greed_core::debug::CLIENT);
             logging.store(log, Ordering::Relaxed);
             let started = log.then(std::time::Instant::now);
@@ -1048,6 +1048,7 @@ mod tests {
             theme: std::sync::Arc::default(),
             gui: std::collections::BTreeMap::new(),
             menus: Vec::new(),
+            seq: 0,
         }
     }
 

@@ -247,7 +247,7 @@ fn measure(
             }
             times.push(took);
             if let (Some((_, painter)), Some(drawn), Some(frame)) =
-                (&mut screen, &mut drawn, &client.current)
+                (&mut screen, &mut drawn, client.current.frame())
             {
                 drawn.draw(painter, frame)?;
             }
@@ -305,7 +305,7 @@ fn terminal_echo(
             }
             times.push(took);
             if let (Some((_, painter)), Some(drawn), Some(frame)) =
-                (screen.as_mut(), &mut drawn, &client.current)
+                (screen.as_mut(), &mut drawn, client.current.frame())
             {
                 drawn.draw(painter, frame)?;
             }
@@ -387,7 +387,7 @@ fn report(name: &str, times: &mut [Duration]) {
 struct Bench {
     attachment: Attachment,
     pending: std::sync::mpsc::Receiver<Output>,
-    current: Option<Frame>,
+    current: greed_core::delta::Latest,
 }
 
 /// Drawing frames in the terminal: what it took `greed`'s client, how many
@@ -463,17 +463,17 @@ impl Bench {
         Bench {
             attachment,
             pending,
-            current: None,
+            current: greed_core::delta::Latest::default(),
         }
     }
 
     /// Keeps `output`'s frame as the current one.
     fn take(&mut self, output: Output) {
         match output {
-            Output::Frame(frame) => self.current = Some(frame),
+            Output::Frame(frame) => self.current.whole(frame),
             Output::Delta(delta) => {
-                if let Some(frame) = &mut self.current {
-                    delta.apply(frame);
+                if self.current.delta(delta) {
+                    let _ = self.send(&Input::Refresh);
                 }
             }
             _ => {}
@@ -527,11 +527,11 @@ impl Bench {
             if let Err(err) = self.frame() {
                 let screen = self
                     .current
-                    .as_ref()
+                    .frame()
                     .map_or_else(String::new, |frame| grid::text_rows(frame).join("\n"));
                 return Err(format!("{key} never showed ({err}); the screen:\n{screen}").into());
             }
-            if self.current.as_ref().is_some_and(&shows) {
+            if self.current.frame().is_some_and(&shows) {
                 return Ok(start.elapsed());
             }
         }

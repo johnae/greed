@@ -717,6 +717,7 @@ mod tests {
             theme: Arc::new(theme),
             gui: std::collections::BTreeMap::new(),
             menus: Vec::new(),
+            seq: 0,
         }
     }
 
