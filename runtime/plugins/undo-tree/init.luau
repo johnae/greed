@@ -73,12 +73,12 @@ end
 local function render(o: Open)
 	o.drawn:redraw()
 	local current = o.view:buffer():undo_tree().current
-	local buffer = o.float:buffer()
-	o.drawn:each(function(line: number, item: { id: number })
-		if item.id == current then
-			o.float:set_cursor(buffer:line_start(line))
-		end
+	local line = o.drawn:line_of(function(item: { id: number }): boolean
+		return item.id == current
 	end)
+	if line then
+		o.float:set_cursor(o.float:buffer():line_start(line))
+	end
 end
 
 local function close()
@@ -102,7 +102,7 @@ greed.command({
 		local view = ctx.view
 		local drawn = ui.mount(buffer, function()
 			return tree_of(view)
-		end, nil, { keys = false })
+		end, nil, { keys = false, draw = false })
 		local o: Open = { view = view, start = tree.current, float = float, drawn = drawn }
 		open = o
 		render(o)
@@ -117,7 +117,7 @@ local function move(delta: number)
 	end
 	local buffer = o.float:buffer()
 	local line = math.clamp(buffer:line_of(o.float:cursor()) + delta, 0, buffer:line_count() - 1)
-	local item: { id: number }? = o.drawn:value_at(buffer:line_start(line))
+	local item: { id: number }? = o.drawn:value_on(line)
 	if item then
 		o.view:undo_to(item.id)
 	end

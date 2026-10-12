@@ -131,13 +131,9 @@ end
 
 -- The first line of item `i`.
 local function line_of_item(picker: Picker, i: number): number?
-	local found: number? = nil
-	picker.drawn:each(function(line: number, item: number)
-		if item == i and found == nil then
-			found = line
-		end
+	return picker.drawn:line_of(function(item: number): boolean
+		return item == i
 	end)
-	return found
 end
 
 local function go_to(picker: Picker, line: number)
@@ -153,19 +149,18 @@ function M.pick(view: greed.View, options: Options)
 	buffer:set_line_numbers(false)
 	buffer:set_kept(true)
 	local previous = view:buffer()
-	local picker: Picker = {
+	local picker: Picker
+	picker = {
 		options = options,
 		items = items_of(options.files),
 		view = view,
 		buffer = buffer,
 		previous = previous,
 		was_kept = previous:kept(),
-		-- Mounted once it's made, since mounting draws it.
-		drawn = nil :: any,
+		drawn = ui.mount(buffer, function()
+			return draw(picker)
+		end, nil, { ns = "hunks", keys = false, draw = false }),
 	}
-	picker.drawn = ui.mount(buffer, function()
-		return draw(picker)
-	end, nil, { ns = "hunks", keys = false })
 	previous:set_kept(true)
 	pickers[buffer:id()] = picker
 	view:show(buffer)

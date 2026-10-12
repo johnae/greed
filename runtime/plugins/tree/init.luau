@@ -118,12 +118,12 @@ local function render(t: Tree, keep: string?)
 		t.open = greed.view():buffer():path()
 	end
 	t.drawn:redraw()
-	if keep then
-		t.drawn:each(function(line: number, node: Node)
-			if node.path == keep then
-				t.view:set_cursor(t.buffer:line_start(line))
-			end
+	local line = keep
+		and t.drawn:line_of(function(node: Node): boolean
+			return node.path == keep
 		end)
+	if line then
+		t.view:set_cursor(t.buffer:line_start(line))
 	end
 	t.buffer:decorate("tree-hover", {})
 end
@@ -158,30 +158,30 @@ function M.open(root: string?)
 	local buffer = greed.create_buffer("tree", "", { readonly = true })
 	local title = if root then core.project.tilde(dir) else "Files"
 	local view = greed.panel(buffer, { title = title, width = 32 })
-	local t: Tree = {
+	local t: Tree
+	t = {
 		view = view,
 		buffer = buffer,
 		root = dir,
 		expanded = {},
 		nodes = {},
 		open = open,
-		-- Mounted once it's made, since mounting draws it.
-		drawn = nil :: any,
-	}
-	t.drawn = ui.mount(
-		buffer,
-		function()
-			return draw(t)
-		end,
-		nil,
-		{
-			ns = "tree",
-			keys = false,
-			key = function(node: Node): string
-				return node.path
+		drawn = ui.mount(
+			buffer,
+			function()
+				return draw(t)
 			end,
-		}
-	)
+			nil,
+			{
+				ns = "tree",
+				keys = false,
+				draw = false,
+				key = function(node: Node): string
+					return node.path
+				end,
+			}
+		),
+	}
 	trees[greed.project.current().id] = t
 	render(t)
 end

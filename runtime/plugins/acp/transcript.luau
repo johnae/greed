@@ -689,10 +689,7 @@ end
 -- What `line` of `buffer` stands for, as last drawn.
 local function value_at(buffer: greed.Buffer, line: number): Value?
 	local view = view_of(buffer)
-	if view == nil or line < 0 or line >= buffer:line_count() then
-		return nil
-	end
-	return view:value_at(buffer:line_start(line))
+	return if view then view:value_on(line) else nil
 end
 
 -- The lines of `buffer` that aren't what you or the agent said, as
@@ -727,15 +724,9 @@ end
 --- The first line tool call `id` is drawn on in `buffer`, if it is.
 function M.line_of_tool(buffer: greed.Buffer, id: string): number?
 	local view = view_of(buffer)
-	local found: number? = nil
-	if view then
-		view:each(function(line: number, value: Value)
-			if found == nil and value.tool == id then
-				found = line
-			end
-		end)
-	end
-	return found
+	return view and view:line_of(function(value: Value): boolean
+		return value.tool == id
+	end)
 end
 
 -- How wide the box is: the widest view of `buffer`, less a cell so it

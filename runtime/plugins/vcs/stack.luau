@@ -153,11 +153,7 @@ end
 
 -- The change on 0-based `line` of `stack`, if any.
 local function row_at(stack: Stack, line: number): Change?
-	local buffer = stack.buffer
-	if line < 0 or line >= buffer:line_count() then
-		return nil
-	end
-	return stack.drawn:value_at(buffer:line_start(line))
+	return stack.drawn:value_on(line)
 end
 
 -- The 0-based line the cursor of `stack`'s view is on.
@@ -181,15 +177,12 @@ local function render(stack: Stack, select: string?)
 	if stack.view:buffer() ~= buffer then
 		return
 	end
-	local kept, working = nil :: number?, nil :: number?
-	stack.drawn:each(function(line: number, change: Change)
-		if change.id == keep then
-			kept = line
-		elseif change.marker == "@" and working == nil then
-			working = line
-		end
+	local line = stack.drawn:line_of(function(change: Change): boolean
+		return change.id == keep
+	end) or stack.drawn:line_of(function(change: Change): boolean
+		return change.marker == "@"
 	end)
-	stack.view:set_cursor(buffer:line_start(kept or working or 2))
+	stack.view:set_cursor(buffer:line_start(line or 2))
 end
 
 --- Opens the change stack of the repository the project is in, in `view`.
@@ -214,18 +207,17 @@ function M.open(view: greed.View)
 	-- what was there before under the stack.
 	buffer:set_kept(true)
 	local previous = view:buffer()
-	local stack: Stack = {
+	local stack: Stack
+	stack = {
 		repo = repo,
 		view = view,
 		buffer = buffer,
 		previous = previous,
 		was_kept = previous:kept(),
-		-- Mounted once it's made, since mounting draws it.
-		drawn = nil :: any,
-	}
-	stack.drawn = ui.mount(buffer, function()
-		return draw(stack)
-	end, nil, { ns = "change-stack", keys = false })
+		drawn = ui.mount(buffer, function()
+			return draw(stack)
+		end, nil, { ns = "change-stack", keys = false, draw = false }),
+	} :: Stack
 	previous:set_kept(true)
 	stacks[buffer:id()] = stack
 	view:show(buffer)
