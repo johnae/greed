@@ -404,6 +404,23 @@ mod tests {
         let program = dir.join("keyring");
         std::fs::write(&program, format!("#!/bin/sh\n{script}\n")).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // A test forking in another thread while the file was open for
+        // writing holds it until that child runs its program, and until
+        // then running the script fails with "Text file busy".
+        for _ in 0..100 {
+            // The shell exits 126 when it can't run the program at all.
+            let ran = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(format!(
+                    "exec {} </dev/null >/dev/null 2>&1",
+                    program.display()
+                ))
+                .status();
+            if ran.is_ok_and(|status| status.code() != Some(126)) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         program.display().to_string()
     }
 
