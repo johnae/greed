@@ -4,7 +4,8 @@ Agents use Greed the way you do, as clients of the running editor. They can
 read buffers with your unsaved changes, see what you have selected and what
 the language servers report, open files for you, and propose edits that
 you review in the buffer. Every tool is also a shell command, for scripts
-and agents that prefer a CLI.
+and agents that prefer a CLI. What they may do without asking you is in
+[Permissions and sandboxing](permissions.md).
 
 ## From the shell: `greed ctl`
 
@@ -124,10 +125,11 @@ greed.option.set("web-search-url", "https://searx.example.org")
 
 Pages and results are written by strangers and can say anything, including
 "ignore your instructions and…". They reach the agent marked as someone
-else's text to use as information, and everything an agent does with them
-still goes through you: edits come as proposals or ask first, commands ask,
-and `eval` runs in its sandbox. The group is off until an agent switches it
-on, unless `agent-tool-groups` names it.
+else's text to use as information, and what an agent does with them goes
+through the same checks as anything else: edits come as proposals or ask
+first, risky commands always ask, and `eval` runs in its sandbox (see
+[Permissions and sandboxing](permissions.md)). The group is off until an
+agent switches it on, unless `agent-tool-groups` names it.
 
 ### The repo map
 
@@ -145,30 +147,13 @@ shows it.
 
 ### What `eval` may do
 
-`greed ctl eval` from a shell runs as you: whoever runs it can already run
-anything. Greed knows a call came from `greed ctl` by its connection, so
-a plugin calling the tool can't claim to be one. For agents, through
-`greed mcp`, Claude Code's `/ide` or Greed's own agents, `eval` runs as the
-`agent-eval` option says:
-
-| Value | |
-|---|---|
-| `"auto"` (the default) | Sandboxed first: the code can read the editor and how it's set up (options, keys, plugins), open files in the project and edit buffers, and nothing else. When it needs more (running programs or commands, other files, keys, options, plugins), a reviewer decides: the model playing the `review` role, or `reasoning` without one (see `:models`). A small fast model is too easy to talk round, so it never reviews. If the reviewer isn't sure, or there's none, you're asked. |
-| `"ask"` | You see the code and press **Run** every time |
-| `"allow"` | It runs with every capability, as a plugin would |
-| `"off"` | There's no `eval` |
-
-The sandbox is enforced by the editor, so what it keeps out doesn't depend
-on anyone reading the code right. Its edits are taken back before the code
-runs again with more, so nothing happens twice. The reviewer gets the code
-wrapped as someone else's text, is told that comments or strings in it may
-try to talk it into allowing, and answers in a fixed form. A model can
-still be fooled, so set `agent-eval` to `"ask"` if you'd rather see every
-run past the sandbox yourself. When you're asked, the page shows the code,
-what it would do and the reviewer's reason, with **Run**, **Allow for this
-session** and **Deny** (or `r`, `s` and `d`); closing it, or leaving it five
-minutes, denies.
-`:eval-log` lists every run past the sandbox and who let it.
+`greed ctl eval` from a shell runs as you. For agents, `eval` runs
+sandboxed first, where the code can read the editor and edit buffers;
+code that needs more goes to a reviewer model or to you, as the
+`agent-eval` option says (`auto`, `ask`, `allow` or `off`).
+[Permissions and sandboxing](permissions.md#code-from-agents-eval) has
+the details, and `:eval-log` lists every run past the sandbox and who let
+it.
 
 ## Reviewing proposed edits
 
@@ -206,9 +191,10 @@ what's saved no longer shows as changed.
 Side by side, the two panes scroll together, matching lines across the
 changes, and the right one keeps up as you edit, accept and reject.
 
-## Questions from agents
+## Questions on a page (`ask`)
 
-An agent that needs to know something can `ask`. Greed shows its questions
+An agent that needs to know something can `ask`. (Questions about whether
+it may do something are in [Permissions and sandboxing](permissions.md).) Greed shows its questions
 as a page in a float: each with choices to pick one of (`enter` or a click),
 if it has any, and a line to type your own answer after `Answer:`, alone or
 to go with a choice. **Send** gives your answers back to the
@@ -379,16 +365,16 @@ grep, symbols, diagnostics, the plan, ...) but `propose`, plus `edit_file`,
 `write_file`, `move_file`, `delete_file` and `run` for shell commands (a
 block of the project's shell, marked ◆, with the project's environment): its
 edits show the change and ask first, so a proposal left for review isn't
-needed. Reading never asks; editing and
-running ask the way other agents' questions do (`y` once, `a` for the rest
-of the session, `n` no), and your policies answer them too. So do the
-tools above that write, run or fetch something, like `notes_write`,
-`blocks_run` and `web_fetch`, by the kind of thing they do; tools that show
-you their work themselves, like `propose`, `ask` and `eval`, don't ask
-first. A command that destroys, stops or sends something (`kubectl
-delete`, `git push`, `rm`, `docker rm`, `curl -X POST`) asks every time,
-saying why, whatever you allowed; so does `shell_run` from any agent. Its
-edits go
+needed. Reading never asks. Editing, moving, deleting, running and
+fetching ask (`y` once, `a` for every action of that kind for the rest of
+the session, `n` no), and your policies answer them too. So do the tools
+above that write, run or fetch something, like `notes_write`, `blocks_run`
+and `web_fetch`, by the kind of thing they do; tools that show you their
+work themselves, like `propose`, `ask` and `eval`, don't ask first. A
+risky command (`kubectl delete`, `git push`, `rm`, `docker rm`, `curl -X
+POST`) asks every time, saying why, whatever you allowed, whether it comes
+through `run` or `shell_run`. [Permissions and sandboxing](permissions.md)
+has what asks and what you can answer for good. Its edits go
 through the file's buffer, so `u` takes them back, and it hears what the
 language server reports about the file right after. Several changes to a
 file in one `edit_file` are one change to undo. It won't write a whole file
@@ -540,19 +526,10 @@ is idle. Themes style it with `agent.you` (your messages' background),
 When the agent asks before doing something, the question shows as a row
 of choices at the top of the box, like
 `Allow Edit a.txt?  [y] Allow once  [a] Allow always  [n] Reject`, and
-you answer it from there in any mode and editing style:
-
-| Keys | |
-|---|---|
-| `enter` | The highlighted choice (the first, until you move) |
-| `tab`, `shift-tab`, `left`, `right` | Highlight the next or previous choice |
-| A choice's letter | That choice, unless you're typing with something in the box already |
-| `esc` | Hide the row, to read the question in the transcript; `enter` outside typing (or `alt-q`) shows it again |
-
-Clicking a choice picks it too. What you've typed in the box stays as it
-was. Letters type as usual once the box has something in it, so a
-message you're writing doesn't answer by accident; `enter` and `tab` still
-work then. The box's bottom line says which keys answer at the moment.
+you answer it from there in any mode and editing style: `enter` picks the
+highlighted choice, `tab` moves, a choice's letter picks it and `esc`
+hides the row. [Answering an agent](permissions.md#answering-an-agent) has
+the keys and what "Allow always" covers for each agent.
 The agent reads open files as you have them, unsaved changes included,
 and its edits to an open file are made in the buffer and saved, so undo
 takes them back.
@@ -634,37 +611,11 @@ running; only `x` in the list, or quitting Greed, ends it.
 Some questions can be answered for you. An agent in a workspace of its own
 edits, moves and deletes files there without asking, since nothing reaches
 your files until you bring it in (`:set agent-workspace-edits false` to be
-asked anyway). That holds only for edits that name their files, all inside
-the workspace; anything else asks, and Greed won't write a file outside the
-workspace for it at all. An agent working in the project asks again before
-Greed writes a file outside the project for it. A question's `locations`
-lists the files it touches, for rules of your own. Those go in
-`init.luau`; the first that returns
-an option's id answers, and `nil` leaves it to the next, and in the end to
-you:
-
-```luau
-require("@acp").policy(function(session, question)
-	-- Reading files never needs asking.
-	if question.kind == "read" then
-		for _, option in question.options do
-			if option.kind == "allow_once" then
-				return option.id
-			end
-		end
-	end
-	return nil
-end)
-```
-
-One kind of question is always yours. A write to a `plugin.toml` that adds
-capabilities, letting a plugin do more than it could, asks every time and
-says what it adds, like `Write plugin.toml, which widens what acp may do:
-+ plugins`. No policy answers it, "allow always" doesn't cover it, and it
-has no "allow always" of its own. This matters most for Greed's own
-plugins, which load without asking you to approve their capabilities.
-It covers writes that go through Greed. An agent with a shell of its own
-can still change files there.
+asked anyway), and Greed won't write a file outside the workspace for it at
+all. Rules of your own, policies in `init.luau`, can answer others, like
+letting the agent run your tests. Some questions are always yours: risky
+commands, and writes that let a plugin do more. See
+[Permissions and sandboxing](permissions.md#policies).
 
 An agent works either in the project with you, or in a workspace of its
 own: a jj workspace, or a git worktree on a branch `greed/NAME`, in Greed's
@@ -746,6 +697,9 @@ An agent can extend Greed while you work:
    it into `~/.config/greed/plugins` (or `~/.local/share/greed/plugins` when
    your config can't be written, as when Nix manages it), approves what it
    asks for and loads it right away, `r` rejects it.
+
+[Permissions and sandboxing](permissions.md#plugins-and-the-sandbox) says
+what an approved plugin may do and how the sandbox keeps the rest out.
 
 Pages like this one, and the one asking before an agent's code runs, show
 one at a time: when an agent asks for two at once, the second shows once

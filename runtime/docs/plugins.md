@@ -107,13 +107,11 @@ And they limit plugins only: an agent that runs commands in a shell of its
 own isn't affected.
 
 A plugin that isn't one of Greed's own and declares capabilities loads once
-you've approved them. Until then Greed says it waits, and
-`:plugins-approve` shows each waiting plugin with what it asks for; choose
-one to approve and load it. Approvals are kept per plugin folder in
-`~/.local/state/greed/approved.json`, and a plugin that later asks for more
-waits again. Plugins that use nothing beyond the editor load at once, and
-installing a plugin an agent wrote approves it, since its review shows the
-same list. Plugins can't write the approvals file through Greed.
+you've approved them with `:plugins-approve`, and one that later asks for
+more waits again. Plugins that use nothing beyond the editor load at once,
+and installing a plugin an agent wrote approves it. [Permissions and
+sandboxing](permissions.md#plugins-and-the-sandbox) has how approving
+works, where approvals are kept, and the time budget each call gets.
 
 The plugins folders are watched while Greed runs. A plugin folder that
 appears loads, and a plugin reloads when its `plugin.toml` or code
@@ -1995,21 +1993,22 @@ A plugin offering tools lists `agent` in `requires`. The tool's parts:
 | `kind` | What it does beyond reading: `"edit"` (changes files or notes), `"execute"` (runs code or programs) or `"fetch"` (reaches the network); left out, `"read"` |
 | `reviews` | `true` when the tool puts what it does in front of the user itself, as a proposal or a question does |
 | `danger` | `danger(args)` says why a call is risky (`kubectl delete` "changes the cluster"), or nil; such a call asks the user every time, whatever they allowed |
+| `sandboxed` | `true` when the tool does more than read but needs no say from the user, like checking a plugin in an editor of its own |
+| `shell_only` | `true` keeps the tool for `greed ctl` and the programs Greed's shell runs, like `greed edit`: agents aren't offered it and can't call it |
 | `run` | `run(args, caller)` does the work |
 
 Greed's own agent asks the user before a tool whose `kind` isn't `"read"`
-runs, the way it asks before its own edits, unless the tool `reviews`;
-MCP clients see the others marked read-only. Set `kind` on every tool
-that changes, runs or fetches something, so it isn't run unasked.
-`sandboxed = true` marks a tool that does more than read but needs no say
-from the user, like checking a plugin in an editor of its own.
+runs, the way it asks before its own edits, unless the tool `reviews` or
+is `sandboxed`; MCP clients see the read-only ones marked read-only, and
+their own permissions decide about the rest. Set `kind` on every tool that
+changes, runs or fetches something, so it isn't run unasked.
 A call whose `danger` says why waits for the user's yes every time, from
 any agent, MCP clients included; only `greed ctl` skips it. For command
 lines, `require("@core").risk.of(line)` says why one is risky, and
 `risk.rule(program, function(words) ... end)` teaches it a program's,
-as the kubernetes and docker plugins do for kubectl and docker.
-`shell_only = true` keeps a tool for `greed ctl` and the programs Greed's
-shell runs, like `greed edit`: agents aren't offered it and can't call it.
+as the kubernetes and docker plugins do for kubectl and docker. See
+[Permissions and sandboxing](permissions.md#what-always-asks) for how
+the user sees these.
 
 Agents connected when a plugin loads or unloads hear that their tools
 changed, so a tool from a plugin you've just approved can be used in the

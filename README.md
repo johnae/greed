@@ -150,6 +150,8 @@ To use your own copy of them, point `GREED_RUNTIME` at a folder shaped like
   tests and types.
 - [Agents](runtime/docs/agents.md): `greed ctl`, MCP, proposals, `/ide`, agents
   inside Greed and plugins written by agents.
+- [Permissions and sandboxing](runtime/docs/permissions.md): what agents and
+  plugins may do, what asks you, and rules that answer for you.
 - [How Greed is built](runtime/docs/design.md): what lives in Rust, what lives in
   Luau, and why.
 

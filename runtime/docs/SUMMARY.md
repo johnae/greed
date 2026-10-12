@@ -12,6 +12,7 @@
 - [Highlighting](highlighting.md)
 - [Writing plugins](plugins.md)
 - [Agents](agents.md)
+- [Permissions and sandboxing](permissions.md)
 - [How Greed is built](design.md)
 
 # Reference
