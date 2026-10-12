@@ -1004,3 +1004,59 @@ test("in the vscode style a key typed above the box types in it", function(t)
 	assert(history() == before, history())
 	greed.option.set("editing-style", "helix")
 end)
+
+test("a long transcript drawn by its tick and an update at once keeps one box", function(t)
+	local s = start(t)
+	local buffer = greed.view():buffer()
+	-- Long enough that drawing it takes more than a task's time slice.
+	for n = 1, 3000 do
+		table.insert(s.entries, {
+			kind = "tool",
+			tool = {
+				id = `c{n}`,
+				title = `read file{n}.txt`,
+				status = "completed",
+				detail = { "3 lines" },
+				output = {},
+				open = false,
+			},
+		})
+	end
+	s.status = "working"
+	s.since = greed.now()
+	table.insert(s.entries, { kind = "thought", text = "Thinking it over", since = greed.now() })
+	s.changed()
+	type_in(t, "h i")
+	local function check(step: string)
+		local text = buffer:text()
+		local _, tops = string.gsub(text, "╭─", "")
+		local _, ends = string.gsub(text, "─╮", "")
+		assert(
+			tops == 1 and ends == 1,
+			`{step}: {tops} tops, {ends} ends\n{string.sub(text, -600)}`
+		)
+		local _, counters = string.gsub(text, "thinking · ", "")
+		assert(counters == 1, `{step}: {counters} counters\n{string.sub(text, -600)}`)
+		-- The box's top comes right after the history, and what you typed
+		-- right after it.
+		local tail = string.match(text, "thinking · [^\n]*\n\n╭─[^\n]*─╮\n(.*)$")
+		assert(tail == "hi", `{step}: {string.sub(text, -600)}`)
+	end
+	-- Each update lands on the second the status ticks on, so the two draw
+	-- at once.
+	t:wait(1000)
+	check("start")
+	for round = 1, 5 do
+		s.entries[#s.entries].text ..= `\nstep {round}`
+		s.changed()
+		t:wait(1000)
+		check(`round {round}`)
+		assert(string.find(buffer:text(), `step {round}\n`, 1, true), `round {round}`)
+	end
+	s.status = "idle"
+	s.changed()
+	t:wait(30)
+	local text = buffer:text()
+	assert(string.find(text, "Thinking it over · thought", 1, true), string.sub(text, -600))
+	assert(string.match(text, "\n╭─[^\n]*─╮\nhi$"), string.sub(text, -600))
+end)

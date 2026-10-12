@@ -684,7 +684,8 @@ local function tick(buffer: greed.Buffer, s: Session)
 	end
 	ticking[id] = true
 	greed.spawn(function()
-		local second = nil
+		-- It starts from a draw, which counted this second.
+		local second = greed.now() // SECOND_MS
 		while busy(s) and shown[id] == s do
 			local animate = core.effects.enabled()
 			local now = greed.now()
@@ -703,9 +704,8 @@ local function tick(buffer: greed.Buffer, s: Session)
 	end)
 end
 
---- Redraws the history of `s` in `buffer`, changing only what changed so a
---- reply streaming in only adds to the end.
-function M.render(buffer: greed.Buffer, s: Session)
+-- Draws the history of `s` in `buffer` (see `M.render`).
+local function draw(buffer: greed.Buffer, s: Session)
 	local id = buffer:id()
 	-- Drawn as the plugin, which may change the history, though a command's
 	-- handle (yours) may not.
@@ -785,6 +785,38 @@ function M.render(buffer: greed.Buffer, s: Session)
 	code.draw(buffer, at, history.plain)
 	live(buffer, s, if busy(s) and core.effects.enabled() then greed.now() else nil)
 	tick(buffer, s)
+end
+
+-- Per transcript buffer being drawn: the session to draw again once that
+-- draw is done, if something asked meanwhile, or false.
+local drawing: { [number]: Session | false } = {}
+
+--- Redraws the history of `s` in `buffer`, changing only what changed so a
+--- reply streaming in only adds to the end.
+---
+--- A long history takes more than a task's time slice to draw, so a draw
+--- can pause between reading where the box is and replacing what's above
+--- it. Another draw in that pause would leave the first replacing a stale
+--- range: bits of the box's top line piled up above it, or new history
+--- inside it. So a buffer is drawn by one call at a time, and a call while
+--- it draws has it draw again once it's done.
+function M.render(buffer: greed.Buffer, s: Session)
+	local id = buffer:id()
+	if drawing[id] ~= nil then
+		drawing[id] = s
+		return
+	end
+	local pending: Session? = s
+	local ok, problem = true, nil
+	while ok and pending do
+		drawing[id] = false
+		ok, problem = pcall(draw, buffer, pending)
+		pending = drawing[id] or nil
+	end
+	drawing[id] = nil
+	if not ok then
+		error(problem, 0)
+	end
 end
 
 --- A new transcript buffer for `s`, with an empty box to write in.
@@ -892,6 +924,7 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	plains[event.id] = nil
 	spinning[event.id] = nil
 	owned[event.id] = nil
+	drawing[event.id] = nil
 end)
 
 return M
