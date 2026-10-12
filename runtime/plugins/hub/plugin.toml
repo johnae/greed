@@ -1,0 +1,4 @@
+name = "hub"
+requires = ["core", "agent", "picker", "statusline"]
+# Runs `greed ctl watch` to follow the other sessions on the machine.
+capabilities = ["proc"]

@@ -14,6 +14,9 @@ local M = {}
 --- meaning or goes, not when one is added.
 M.SCHEMA = 1
 
+-- What plugins add to the status, by name (`part`).
+local parts: { [string]: () -> any } = {}
+
 --- This session's status: its name, build and project, what needs you
 --- (oldest first) and its agents with their state.
 function M.status(): { [string]: any }
@@ -49,14 +52,36 @@ function M.status(): { [string]: any }
 			})
 		end
 	end
-	return {
+	-- Where you are: the clients attached, by name ("gui@laptop").
+	local clients = {}
+	for _, client in greed.client.list() do
+		if client.kind ~= "headless" and client.kind ~= "test" then
+			table.insert(clients, client.name)
+		end
+	end
+	local status: { [string]: any } = {
 		schema = M.SCHEMA,
 		session = greed.session.current(),
 		build = greed.session.build(),
 		root = greed.project.current().root,
 		attention = greed.json.array(needs),
 		agents = greed.json.array(agents),
+		clients = greed.json.array(clients),
 	}
+	for name, part in parts do
+		local ok, value = pcall(part)
+		if ok and value ~= nil then
+			status[name] = value
+		end
+	end
+	return status
+end
+
+--- Adds `part()` to the status as `name`, like the hub's picture of the
+--- other sessions on the machine; nil leaves it out. It goes when the plugin
+--- that added it does.
+function M.part(name: string, part: () -> any)
+	greed.plugin.tie(core.registry.set(parts, name, part))
 end
 
 --- How many agents work and wait for you, from their states ("working",
@@ -132,6 +157,11 @@ local function changed()
 		greed.vouch(tell, false)
 	end)
 end
+
+--- Says the status may have changed, as a plugin adding a part (`part`)
+--- does when its part changes: watchers look again soon, and hear only
+--- if it did.
+M.changed = changed
 
 agent.method("status/watch", function(request)
 	local connection = request.connection

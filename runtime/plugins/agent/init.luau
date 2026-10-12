@@ -65,6 +65,9 @@ return table.freeze({
 	tool = registry.tool,
 	--- How many agents work and wait for you, in a few words (status.luau).
 	status_summary = status.summary,
+	--- Adding to the status, and saying it changed (status.luau).
+	status_part = status.part,
+	status_changed = status.changed,
 	tools = registry.tools,
 	--- Groups of tools agents switch on when they need them (registry.luau).
 	group = registry.group,

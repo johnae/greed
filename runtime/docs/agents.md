@@ -952,6 +952,18 @@ require("@acp").register({
 Which models an agent offers is up to the agent: opencode, for example,
 offers the ones its own config sets up.
 
+### Agents in your other sessions
+
+Each Greed session on this machine knows how the agents in the others are
+doing. The status line says so beside its own count, like `◆ 1 waiting for
+you in greed-2`, and `space i A` (`:machine`) lists the agents of the other
+sessions; `enter` goes to that session.
+
+One of your sessions follows the others for all of them: the first by name
+among those of the same greed build, or the one the `hub-session` option
+names. When it ends, the next one takes over by itself. The others follow
+only it, so there is one connection per session however many run.
+
 ## Plugins written by agents
 
 An agent can extend Greed while you work:

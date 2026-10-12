@@ -361,3 +361,45 @@ fn edit_opens_files_and_waits_until_they_are_done_with() {
     world.eval("edit", "require('@greed').quit()");
     let _ = server.wait();
 }
+
+#[test]
+fn the_hub_follows_the_other_sessions_and_the_rest_follow_the_hub() {
+    let Some(world) = World::new("ctl-hub") else {
+        return;
+    };
+    let mut servers: Vec<Child> = ["alpha", "beta", "gamma"]
+        .iter()
+        .map(|name| serve(&world, &world.project(name, &[("a.txt", "one\n")])))
+        .collect();
+    world.wait_for("three sessions", |w| w.sessions().lines().count() == 3);
+    // An agent waits in beta.
+    let terminal = world.eval(
+        "beta",
+        "return require('@terminal').open({ 'sh', '-c', 'sleep 60' }).buffer:id()",
+    );
+    world.eval(
+        "beta",
+        &format!(
+            "require('@terminal').agent_report(require('@greed').buffer({terminal}), \
+             {{ source = 'hook', trusted = true, name = 'claude', state = 'waiting' }})"
+        ),
+    );
+    // alpha, first by name, is the hub and sees it; gamma sees it through
+    // the hub.
+    let sees = |w: &World, name: &str| {
+        w.eval(
+            name,
+            "local found = require('@hub').elsewhere() \
+             for _, f in found do if f.session == 'beta' and f.agent.status == 'waiting' then return 'yes' end end \
+             return 'no'",
+        ) == "yes"
+    };
+    world.wait_for("the hub to see beta's agent", |w| sees(w, "alpha"));
+    world.wait_for("gamma to see it through the hub", |w| sees(w, "gamma"));
+    for name in ["alpha", "beta", "gamma"] {
+        world.eval(name, "require('@greed').quit()");
+    }
+    for server in &mut servers {
+        let _ = server.wait();
+    }
+}
