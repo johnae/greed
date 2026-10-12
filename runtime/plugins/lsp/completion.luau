@@ -488,10 +488,14 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 	if buffer:path() == nil then
 		return
 	end
-	local ok, result = pcall(greed.lsp.request, buffer, "textDocument/completion", {
-		textDocument = { uri = greed.lsp.uri(buffer) },
-		position = greed.lsp.position(buffer, view:cursor()),
-	})
+	-- Where the cursor is takes the server's encoding: a buffer with no
+	-- server fails there as much as at the request.
+	local ok, result = pcall(function()
+		return greed.lsp.request(buffer, "textDocument/completion", {
+			textDocument = { uri = greed.lsp.uri(buffer) },
+			position = greed.lsp.position(buffer, view:cursor()),
+		})
+	end)
 	if not ok or result == nil or wanted ~= generation() or greed.mode.get() ~= mode then
 		return
 	end
