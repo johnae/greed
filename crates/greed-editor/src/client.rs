@@ -15,6 +15,20 @@ use crate::tui;
 
 static GUI: AtomicBool = AtomicBool::new(false);
 
+/// Whether the session shown is on another machine, through `greed ssh`: a
+/// paste of paths to files here then sends the files.
+static REMOTE: AtomicBool = AtomicBool::new(false);
+
+/// Says whether the session about to be shown is on another machine.
+pub fn set_remote(remote: bool) {
+    REMOTE.store(remote, Ordering::Relaxed);
+}
+
+/// Whether the session shown is on another machine (see [`set_remote`]).
+pub fn remote() -> bool {
+    REMOTE.load(Ordering::Relaxed)
+}
+
 /// A recording's script and where it goes, when this client records.
 #[cfg(feature = "gui")]
 static RECORD: OnceLock<(greed_gui::record::Script, PathBuf)> = OnceLock::new();

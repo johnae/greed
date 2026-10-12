@@ -173,7 +173,7 @@ fn follow(mut name: String, mut open: Option<PathBuf>, mut opening: Opening) -> 
             }
         };
         opening = Opening::Nothing;
-        match show(reader, writer)? {
+        match show(reader, writer, false)? {
             Output::Switch(SwitchTo {
                 host: Some(host),
                 session,
@@ -269,12 +269,14 @@ fn resolve(to: &SwitchTo) -> Result<(String, Option<PathBuf>), Error> {
 }
 
 /// Shows an attached session in this terminal: input goes to `writer` and
-/// frames come from `reader`, one JSON message per line. Returns how it
-/// ended.
+/// frames come from `reader`, one JSON message per line, from a session on
+/// another machine with `remote`. Returns how it ended.
 fn show(
     reader: impl BufRead + Send + 'static,
     mut writer: impl Write + Send + 'static,
+    remote: bool,
 ) -> Result<Output, Error> {
+    client::set_remote(remote);
     let (input, inputs) = crossbeam_channel::unbounded::<Input>();
     let (outputs, output) = crossbeam_channel::unbounded::<Output>();
     std::thread::spawn(move || {
@@ -578,7 +580,7 @@ fn ssh_once(
     };
     let (mut child, mut writer, mut reader) = remote(host, &line).map_err(attach_failed)?;
     handshake(&mut reader, &mut writer, to.session.as_deref(), opening).map_err(attach_failed)?;
-    let ended = show(reader, writer)?;
+    let ended = show(reader, writer, true)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
     let _ = child.kill();

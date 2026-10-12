@@ -10,6 +10,17 @@ use base64::Engine;
 /// How big a dropped file a client sends along, for a session elsewhere.
 pub const MOST: u64 = 50 * 1024 * 1024;
 
+/// What's in the file at `path` as base64, for a session on another
+/// machine to keep; None for a folder, or a file bigger than [`MOST`].
+pub fn contents(path: &Path) -> Option<String> {
+    let small = std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() <= MOST);
+    if !small {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    Some(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
 /// What to paste for the file a client dropped at `path` (on its own
 /// machine), with what's in it as base64 in `data`: the path itself for a
 /// client on this machine, or else the file written into `dir` under its
@@ -39,6 +50,38 @@ pub fn paste_text(
         path.to_owned()
     };
     Ok(format!("{} ", here.replace(' ', "\\ ")))
+}
+
+/// The files a paste names, when it's nothing but paths to files that
+/// `exists` says are there, as a terminal pastes files dropped on it: each
+/// with its spaces escaped (`My\ Shot.png`) or in quotes, separated by
+/// spaces. None for anything else.
+pub fn paths_in(text: &str, exists: impl Fn(&str) -> bool) -> Option<Vec<String>> {
+    let mut paths = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut chars = text.trim().chars();
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (None, '\\') => current.push(chars.next()?),
+            (None, '"' | '\'') => quote = Some(c),
+            (None, c) if c.is_whitespace() => {
+                if !current.is_empty() {
+                    paths.push(std::mem::take(&mut current));
+                }
+            }
+            (_, c) => current.push(c),
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    if !current.is_empty() {
+        paths.push(current);
+    }
+    let all = !paths.is_empty() && paths.iter().all(|p| p.starts_with('/') && exists(p));
+    all.then_some(paths)
 }
 
 /// A path in `dir` for `name` that no file has: `name`, else with `-2`,
@@ -87,6 +130,30 @@ mod tests {
         let second = paste_text("/Users/me/shot.png", Some(&data), true, &dir).unwrap();
         assert_eq!(second, format!("{} ", dir.join("shot-2.png").display()));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_paste_of_paths_to_files_here_is_files_whatever_way_they_re_written() {
+        let here = |p: &str| p.starts_with("/home/me/");
+        assert_eq!(
+            paths_in("/home/me/My\\ Shot.png ", here),
+            Some(vec!["/home/me/My Shot.png".to_owned()])
+        );
+        assert_eq!(
+            paths_in("'/home/me/a b.png' \"/home/me/c.png\"", here),
+            Some(vec![
+                "/home/me/a b.png".to_owned(),
+                "/home/me/c.png".to_owned()
+            ])
+        );
+        assert_eq!(paths_in("/elsewhere/x.png", here), None, "not a file here");
+        assert_eq!(
+            paths_in("echo /home/me/x.png", here),
+            None,
+            "more than paths"
+        );
+        assert_eq!(paths_in("relative.png", |_| true), None, "only whole paths");
+        assert_eq!(paths_in("", here), None);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //! draws the frames it sends back.
 
 use std::io::{self, Write};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -148,7 +149,7 @@ fn read_keys(
                     convert(key).map(Input::Key)
                 }
                 Event::Mouse(mouse) => Some(Input::Mouse(convert_mouse(mouse))),
-                Event::Paste(text) => Some(Input::Paste(text)),
+                Event::Paste(text) => Some(pasted(&input, text)),
                 Event::Resize(width, height) => {
                     send_cell_size(&input);
                     Some(Input::Resize(Size { width, height }))
@@ -168,6 +169,26 @@ fn read_keys(
             }
         }
     })
+}
+
+/// What a paste sends: the files it names, when it names nothing else and
+/// the session is on another machine, as a terminal pastes files dropped on
+/// it, so the session gets them rather than paths it can't read; else the
+/// text. The files go as messages of their own, the paste as the last.
+fn pasted(input: &Sender<Input>, text: String) -> Input {
+    let found = crate::client::remote()
+        .then(|| greed_core::dropped::paths_in(&text, |p| Path::new(p).is_file()))
+        .flatten();
+    let Some(mut paths) = found else {
+        return Input::Paste(text);
+    };
+    let last = paths.pop().expect("a paste of paths names one at least");
+    for path in paths {
+        let data = greed_core::dropped::contents(Path::new(&path));
+        let _ = input.send(Input::Dropped(path, data));
+    }
+    let data = greed_core::dropped::contents(Path::new(&last));
+    Input::Dropped(last, data)
 }
 
 /// Tells the server how big a cell is in pixels, if the terminal says, for
@@ -711,6 +732,31 @@ mod tests {
     use greed_core::ViewId;
     use greed_core::render::{Rect, Role, Row, Surface, SurfaceId, Tag};
     use greed_core::theme::Theme;
+
+    #[test]
+    fn a_paste_of_files_here_sends_the_files_to_a_session_elsewhere() {
+        let dir = std::env::temp_dir().join(format!("greed-paste-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("My Shot.png");
+        std::fs::write(&file, b"png").unwrap();
+        let pasted_text = file.display().to_string().replace(' ', "\\ ");
+        let (tx, _rx) = crossbeam_channel::unbounded();
+        crate::client::set_remote(false);
+        assert_eq!(
+            pasted(&tx, pasted_text.clone()),
+            Input::Paste(pasted_text.clone()),
+            "a session here reads the path"
+        );
+        crate::client::set_remote(true);
+        let sent = pasted(&tx, pasted_text);
+        crate::client::set_remote(false);
+        let Input::Dropped(path, Some(data)) = sent else {
+            panic!("sent the file: {sent:?}");
+        };
+        assert_eq!(path, file.display().to_string());
+        assert_eq!(data, "cG5n", "png in base64");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn notifications_use_the_escape_the_terminal_takes() {

@@ -187,6 +187,9 @@ does, so dropping a screenshot on a terminal pane running Claude Code
 hands it the picture. With the session on another machine (`greed ssh`),
 the file is copied there first, into the cache folder's `dropped`, and that
 path is pasted; files over 50 MB stay behind with a message saying so.
+In a terminal, dropping a file pastes its path the same way; over `greed
+ssh` a paste of nothing but paths to files on your machine sends the files
+along too, so the session gets paths it can read.
 
 What you copy in Greed goes on the system clipboard, and what you copied in
 another program becomes Greed's clipboard when the window gets focus, so

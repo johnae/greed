@@ -190,13 +190,7 @@ impl App {
     fn dropped(&self, path: std::path::PathBuf) {
         let input = self.input.clone();
         std::thread::spawn(move || {
-            use base64::Engine;
-            let small = std::fs::metadata(&path)
-                .is_ok_and(|m| m.is_file() && m.len() <= greed_core::dropped::MOST);
-            let data = small
-                .then(|| std::fs::read(&path).ok())
-                .flatten()
-                .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes));
+            let data = greed_core::dropped::contents(&path);
             let _ = input.send(Input::Dropped(path.to_string_lossy().into_owned(), data));
         });
     }
