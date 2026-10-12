@@ -461,8 +461,7 @@ local function read_event(kind: string, event: sse.Event): (string?, boolean, st
 		return nil, decoded.type == "message_stop", nil
 	end
 	local choice = decoded.choices and decoded.choices[1]
-	local text = choice and choice.delta and choice.delta.content
-	return if type(text) == "string" then text else nil, false, nil
+	return turn.content_text(choice and choice.delta and choice.delta.content), false, nil
 end
 
 -- Why a request the server refused failed, from its body.

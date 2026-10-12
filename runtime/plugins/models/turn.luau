@@ -258,29 +258,54 @@ export type Reader = {
 	turn: () -> Turn,
 }
 
+--- The answer's text in a streamed `delta.content` of OpenAI's API: a
+--- string, or with Mistral's reasoning models a list of parts, the
+--- thinking (left out) and the text, whose first word comes in the same
+--- list as the end of the thinking.
+function M.content_text(content: any): string?
+	if type(content) == "string" then
+		return content
+	elseif type(content) ~= "table" then
+		return nil
+	end
+	local parts = {}
+	for _, part in content do
+		if type(part) == "table" and part.type == "text" and type(part.text) == "string" then
+			table.insert(parts, part.text)
+		end
+	end
+	return table.concat(parts)
+end
+
 --- Reads a streamed answer from a provider of `kind`, as events arrive.
 function M.reader(kind: string): Reader
 	local text: { string } = {}
 	-- Calls being put together, in order, with their arguments as the JSON
-	-- text that has come so far.
-	local building: { { id: string, name: string, json: { string } } } = {}
-	local by_index: { [number]: number } = {}
+	-- text that has come so far. `given` says the server named its id.
+	local building: { { id: string, name: string, json: { string }, given: boolean } } = {}
+	local by_index: { [any]: number } = {}
 	local stop: string = "done"
 	-- Tokens read (the prompt, cached or not) and written, as reported.
 	local read: number?, written: number?, cached: number? = nil, nil, nil
-	local function call_at(index: number, id: string?, name: string?)
+	-- The call at `index`, or a new one there when the server names
+	-- another id for it, as Mistral may with several whole calls at 0.
+	local function call_at(index: any, id: string?, name: string?)
 		local at = by_index[index]
-		if at == nil then
-			table.insert(
-				building,
-				{ id = id or `call_{index}`, name = name or "", json = {} :: { string } }
-			)
+		local named = id ~= nil and id ~= ""
+		if at == nil or (named and building[at].given and building[at].id ~= id) then
+			table.insert(building, {
+				id = `call_{#building}`,
+				name = name or "",
+				json = {} :: { string },
+				given = false,
+			})
 			at = #building
 			by_index[index] = at
 		end
 		local call = building[at]
-		if id and id ~= "" then
-			call.id = id
+		if named then
+			call.id = id :: string
+			call.given = true
 		end
 		if name and name ~= "" then
 			call.name = name
@@ -351,9 +376,11 @@ function M.reader(kind: string): Reader
 				return nil, false, nil
 			end
 			local delta = choice.delta or {}
-			for _, piece in delta.tool_calls or {} do
+			local pieces: { any } = delta.tool_calls or {}
+			for position, piece in pieces do
 				local fn = piece["function"] or {}
-				local call = call_at(piece.index or 0, piece.id, fn.name)
+				-- Without an index, each piece is a whole call of its own.
+				local call = call_at(piece.index or `#{position}`, piece.id, fn.name)
 				if type(fn.arguments) == "string" then
 					table.insert(call.json, fn.arguments)
 				end
@@ -361,9 +388,10 @@ function M.reader(kind: string): Reader
 			if choice.finish_reason then
 				stop = STOPS[choice.finish_reason] or choice.finish_reason
 			end
-			if type(delta.content) == "string" and delta.content ~= "" then
-				table.insert(text, delta.content)
-				return delta.content, false, nil
+			local said = M.content_text(delta.content)
+			if said and said ~= "" then
+				table.insert(text, said)
+				return said, false, nil
 			end
 			return nil, false, nil
 		end,

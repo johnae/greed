@@ -2,6 +2,7 @@ local test = require("@greed/test")
 local greed = require("@greed")
 local models = require("@models")
 local turn = models.tools
+local sse = require("../sse")
 
 local TOOLS: { models.ToolSpec } = {
 	{
@@ -301,4 +302,137 @@ test("Mistral is sent a cache key by default, since it only caches with one", fu
 	assert(mistral and mistral.cache_key == true, "on for Mistral")
 	local openai = models.providers.openai
 	assert(openai and not openai.cache_key, "off where it isn't asked for")
+end)
+
+test("Mistral's stream: thinking parts left out, the first word kept from its part list", function()
+	local result = events("openai", {
+		{ choices = { { index = 0, delta = { role = "assistant", content = "" } } } },
+		{
+			choices = {
+				{
+					index = 0,
+					delta = {
+						content = {
+							{
+								type = "thinking",
+								thinking = { { type = "text", text = "The user" } },
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			choices = {
+				{
+					index = 0,
+					delta = {
+						content = {
+							{
+								type = "thinking",
+								thinking = { { type = "text", text = " says hi." } },
+								closed = true,
+							},
+							{ type = "text", text = "Let" },
+						} :: { any },
+					},
+				},
+			},
+		},
+		{ choices = { { index = 0, delta = { content = " me check" } } } },
+		{ choices = { { index = 0, delta = { content = {} }, finish_reason = "stop" } } },
+		"[DONE]",
+	})
+	assert(result.text == "Let me check", result.text)
+	assert(result.stop == "done", result.stop)
+end)
+
+test("Mistral's tool calls come whole in one chunk, several at once", function()
+	local result = events("openai", {
+		{ choices = { { index = 0, delta = { role = "assistant", content = "" } } } },
+		{
+			choices = {
+				{
+					index = 0,
+					delta = {
+						content = "",
+						tool_calls = {
+							{
+								id = "D681PevKs",
+								type = "function",
+								index = 0,
+								["function"] = { name = "read", arguments = '{"path": "a.txt"}' },
+							},
+							{
+								id = "Zq3mK9xTb",
+								type = "function",
+								index = 1,
+								["function"] = { name = "now", arguments = "{}" },
+							},
+						},
+					},
+					finish_reason = "tool_calls",
+				},
+			},
+		},
+		"[DONE]",
+	})
+	assert(result.stop == "tools" and #result.calls == 2, `{#result.calls} calls`)
+	assert(result.calls[1].id == "D681PevKs" and result.calls[1].input.path == "a.txt")
+	assert(result.calls[2].id == "Zq3mK9xTb" and result.calls[2].name == "now")
+end)
+
+test("whole tool calls without an index, or all at index 0, stay apart", function()
+	local function whole(id: string, name: string, index: number?): any
+		return { id = id, index = index, ["function"] = { name = name, arguments = "{}" } }
+	end
+	for _, index in { nil, 0 } :: { number? } do
+		local result = events("openai", {
+			{
+				choices = {
+					{
+						delta = {
+							tool_calls = {
+								whole("aaaaaaaaa", "read", index),
+								whole("bbbbbbbbb", "now", index),
+							},
+						},
+						finish_reason = "tool_calls",
+					},
+				},
+			},
+		})
+		assert(#result.calls == 2, `{#result.calls} calls`)
+		assert(result.calls[1].name == "read" and result.calls[2].id == "bbbbbbbbb")
+	end
+end)
+
+test("server-sent events survive any split between reads", function()
+	local stream = 'data: {"a":1}\r\n\r\n: ping\r\n\r\ndata: {"b":2}\r\n\r\ndata: [DONE]\r\n\r\n'
+	for size = 1, 7 do
+		local got: { string } = {}
+		local buffered = ""
+		for at = 1, #stream, size do
+			local found
+			found, buffered = sse.parse(buffered .. string.sub(stream, at, at + size - 1))
+			for _, event in found do
+				table.insert(got, event.data)
+			end
+		end
+		assert(
+			table.concat(got, "|") == '{"a":1}|{"b":2}|[DONE]',
+			`{size}: {table.concat(got, "|")}`
+		)
+		assert(buffered == "", buffered)
+	end
+end)
+
+test("content_text takes a string, or the text parts of a list, leaving thinking out", function()
+	assert(turn.content_text("hi") == "hi")
+	assert(turn.content_text(nil) == nil)
+	local parts: { any } = {
+		{ type = "thinking", thinking = { { type = "text", text = "hmm" } }, closed = true },
+		{ type = "text", text = "Let" },
+	}
+	assert(turn.content_text(parts) == "Let", tostring(turn.content_text(parts)))
 end)
