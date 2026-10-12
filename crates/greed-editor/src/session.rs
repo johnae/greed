@@ -411,6 +411,9 @@ fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, 
     if let Some(dir) = control::runtime_dir() {
         command.env("XDG_RUNTIME_DIR", dir);
     }
+    if let Some(path) = path_with_greed() {
+        command.env("PATH", path);
+    }
     if remote {
         command.env(control::REMOTE_ENV, "1");
         // Its programs reach your ssh agent through the session, at a
@@ -441,6 +444,21 @@ fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, 
         std::thread::sleep(Duration::from_millis(5));
     }
     Ok(child)
+}
+
+/// `PATH` with this greed's folder added at the end, when no greed is on it,
+/// as on a machine `greed ssh` put greed on: so `greed FILE` and `greed ctl`
+/// work in the session's terminals. A greed you installed stays first.
+fn path_with_greed() -> Option<std::ffi::OsString> {
+    if greed_core::lsp::which("greed").is_some() {
+        return None;
+    }
+    let exe = std::env::current_exe().ok()?;
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect())
+        .unwrap_or_default();
+    dirs.push(exe.parent()?.to_path_buf());
+    std::env::join_paths(dirs).ok()
 }
 
 /// Tells a `greed --fresh` that the session `name` is already running, so

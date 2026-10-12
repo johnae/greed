@@ -495,3 +495,41 @@ fn a_session_the_bridge_starts_with_fresh_knows_it() {
     assert_eq!(fresh(&["--fresh"], "fresh"), "true");
     assert_eq!(fresh(&[], "restored"), "false");
 }
+
+#[test]
+fn a_session_started_where_greed_isnt_on_path_puts_its_own_there() {
+    let which = |path: &std::path::Path, label: &str| {
+        let file = temp_file(label, "text");
+        let name = format!("bridge-{label}-{}", std::process::id());
+        let _session = Session::named("shared", &name);
+        let mut command = greed();
+        command
+            .env("PATH", path)
+            .args(["bridge", "--session", &name, file.to_str().unwrap()]);
+        let mut bridge = Bridge::spawn(command);
+        bridge.attach();
+        let out = greed()
+            .args([
+                "ctl",
+                "eval",
+                "code=return tostring(require('@greed').which('greed'))",
+            ])
+            .env("GREED_SESSION", &name)
+            .output()
+            .unwrap();
+        bridge.quit();
+        std::fs::remove_file(file).unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    };
+    let empty = world("shared").join("path-without-greed");
+    std::fs::create_dir_all(&empty).unwrap();
+    let ours = std::fs::canonicalize(GREED).unwrap();
+    assert_eq!(which(&empty, "no-greed"), ours.to_string_lossy());
+    // One you installed stays the one programs run.
+    let installed = world("shared").join("path-with-greed");
+    std::fs::create_dir_all(&installed).unwrap();
+    let theirs = installed.join("greed");
+    std::fs::write(&theirs, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&theirs, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    assert_eq!(which(&installed, "own-greed"), theirs.to_string_lossy());
+}

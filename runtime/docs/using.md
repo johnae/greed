@@ -377,7 +377,9 @@ you connect with a version, `greed ssh` puts the same version there, in
 greed you run when it runs there; otherwise, as when the other machine is
 NixOS or an arm machine, it fetches that version's static build from the
 releases and checks it against the release's checksums. A greed of the same
-version already on the other machine's `PATH` is used as it is.
+version already on the other machine's `PATH` is used as it is. Where
+there's no greed on its `PATH`, a session puts its own at the end of its
+programs' `PATH`, so `greed FILE` in its terminal opens the file there.
 
 `GREED_REMOTE` sets the path of `greed` on the other machine, and nothing
 is copied (the two ends check they speak the same protocol, and say so if
