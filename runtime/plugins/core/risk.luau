@@ -116,30 +116,46 @@ end
 -- Words that run what follows as another user.
 local AS_ROOT: { [string]: boolean } = { sudo = true, doas = true }
 
---- Why `line` is risky to run: what the first risky command in it does,
---- by its program's rules, or else that something in it runs as root; nil
---- when nothing in it is.
-function M.of(line: string): string?
+--- The commands in `line` (each of a pipeline or list, and what's inside
+--- `$(...)`), each as its words from the program it runs, quotes taken
+--- off; and whether any of them runs as root.
+function M.commands(line: string): ({ { string } }, boolean)
+	local out: { { string } } = {}
 	local root = false
 	for _, typed in commands(line) do
 		for _, word in typed do
 			root = root or AS_ROOT[word] == true
 		end
 		local words = program_words(typed)
-		local first = words[1]
-		if first then
-			local program = string.match(first, "([^/]+)$") or first
-			for _, entry in rules do
-				if entry.program == program then
-					local ok, why = pcall(entry.rule, words)
-					if ok and why then
-						return why
-					end
+		if #words > 0 then
+			table.insert(out, words)
+		end
+	end
+	return out, root
+end
+
+--- Why `line` is risky to run: what the first risky command in it does,
+--- by its program's rules, or else that something in it runs as root; nil
+--- when nothing in it is.
+function M.of(line: string): string?
+	local found, root = M.commands(line)
+	for _, words in found do
+		local program = M.program(words)
+		for _, entry in rules do
+			if entry.program == program then
+				local ok, why = pcall(entry.rule, words)
+				if ok and why then
+					return why
 				end
 			end
 		end
 	end
 	return if root then "runs as root" else nil
+end
+
+--- The name of the program `words` run, without its folder.
+function M.program(words: { string }): string
+	return string.match(words[1], "([^/]+)$") or words[1]
 end
 
 --- Whether `words` has any of `flags`, alone or with a value (`--force`,
@@ -218,34 +234,24 @@ end
 --- (`safe_when`) says only looks, or builds and tests, and nothing goes
 --- into a file. A command no rule knows isn't, nor one run as root.
 function M.safe(line: string): boolean
-	if into_file(line) then
+	local found, root = M.commands(line)
+	if root or #found == 0 or into_file(line) then
 		return false
 	end
-	local any = false
-	for _, typed in commands(line) do
-		for _, word in typed do
-			if AS_ROOT[word] then
-				return false
+	for _, words in found do
+		local program = M.program(words)
+		local known = false
+		for _, entry in safe_rules do
+			if entry.program == program then
+				local ok, safe = pcall(entry.safe, words)
+				known = known or (ok and safe == true)
 			end
 		end
-		local words = program_words(typed)
-		local first = words[1]
-		if first then
-			local program = string.match(first, "([^/]+)$") or first
-			local known = false
-			for _, entry in safe_rules do
-				if entry.program == program then
-					local ok, safe = pcall(entry.safe, words)
-					known = known or (ok and safe == true)
-				end
-			end
-			if not known then
-				return false
-			end
-			any = true
+		if not known then
+			return false
 		end
 	end
-	return any
+	return true
 end
 
 -- The rules for programs no plugin knows better.
