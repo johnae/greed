@@ -887,8 +887,16 @@ local function place(buffer: greed.Buffer, entry: Mounted, pieces: { Piece })
 		local text = table.concat(lines, "\n")
 		if entry.input and #old == 0 then
 			-- Drawn first above what's written there.
+			if #pieces > 0 then
+				buffer:edit(function(e)
+					e:replace(0, 0, text .. "\n")
+				end, { undo = false })
+			end
+		elseif entry.input then
+			-- Nothing to draw now: only what's written there is left.
+			local stop = end_of(old) + 1
 			buffer:edit(function(e)
-				e:replace(0, 0, text .. "\n")
+				e:replace(0, stop, "")
 			end, { undo = false })
 		elseif entry.above and #old == 0 then
 			-- Drawn first under the line that's written in.
@@ -1082,8 +1090,8 @@ function M.mount(
 			local seen: { [string]: Piece } = {}
 			local pieces = flatten(render(self.state), width_of(buffer), entry.cache, seen)
 			entry.cache = seen
-			if (input or above) and #pieces == 0 then
-				-- An empty line, for the input to come after or before.
+			if above and #pieces == 0 then
+				-- An empty line, for the input to come before.
 				pieces = { piece_of({ {} }) }
 			end
 			local first = #entry.placed == 0
@@ -1180,7 +1188,7 @@ function M.mount(
 			return value_of(entry, line)
 		end,
 		input_start = function(_self: View): number
-			if entry.above then
+			if entry.above or #entry.placed == 0 then
 				return 0
 			end
 			return math.min(end_of(entry.placed) + 1, buffer:len())

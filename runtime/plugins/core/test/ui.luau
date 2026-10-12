@@ -464,3 +464,23 @@ test(
 		assert(spots == 2, `{spots} marks`)
 	end
 )
+
+test("a view over an input can have no lines, leaving only the input", function(t)
+	local buffer = greed.create_buffer("test-ui", ":", {})
+	t:buffer("|")
+	greed.view():show(buffer)
+	local view = ui.mount(buffer, function(state)
+		return ui.list(state.matches, function(name: string)
+			return { ui.span(name) }
+		end)
+	end, { matches = {} }, { input = true })
+	assert(text_of(buffer) == ":", text_of(buffer))
+	assert(view:input() == ":" and view:input_start() == 0)
+	view:set({ matches = { "write", "wq" } })
+	assert(text_of(buffer) == "write\nwq\n:", text_of(buffer))
+	assert(view:input() == ":")
+	view:set({ matches = {} })
+	assert(text_of(buffer) == ":", text_of(buffer))
+	view:set({ matches = { "quit" } })
+	assert(text_of(buffer) == "quit\n:", text_of(buffer))
+end)
