@@ -1032,12 +1032,33 @@ fn ssh_once(
         agent.is_some(),
     )
     .map_err(attach_failed)?;
+    remember_host(host);
     let ended = show(reader, writer, true, agent.clone(), problem, heartbeat)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
     let _ = child.kill();
     let _ = child.wait();
     Ok((session, ended))
+}
+
+/// Notes in Greed's data folder that you reached `host` now (`ssh-hosts`:
+/// JSON, each host with when, in seconds since 1970), so this machine's hub
+/// follows the hub there; the hub plugin reads it. Not noted if it can't be.
+fn remember_host(host: &str) {
+    let Some(data) = greed_core::dirs::dir(greed_core::dirs::Kind::Data) else {
+        return;
+    };
+    let file = data.join("ssh-hosts");
+    let mut hosts: serde_json::Map<String, Value> = std::fs::read_to_string(&file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    hosts.insert(host.to_owned(), now.into());
+    let _ = std::fs::create_dir_all(&data);
+    let _ = std::fs::write(&file, Value::Object(hosts).to_string());
 }
 
 /// Asks to attach over `reader` and `writer`, already connected to the

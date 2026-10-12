@@ -596,15 +596,19 @@ fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
         let out = command.output().unwrap();
         String::from_utf8(out.stdout).unwrap().trim().to_owned()
     };
+    // Each machine reached the other with greed ssh lately, which noted it.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    for (data, other) in [("data/greed", "there"), ("there/data/greed", "here")] {
+        let dir = world.root.join(data);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("ssh-hosts"), format!("{{\"{other}\": {now}}}")).unwrap();
+    }
     let mut servers = [start("alpha", false), start("beta", true)];
-    for (name, there, other) in [("alpha", false, "there"), ("beta", true, "here")] {
-        common::wait_until(name, || {
-            eval(
-                name,
-                there,
-                &format!("require('@greed').option.set('hub-hosts', '{other}') return 'set'"),
-            ) == "set"
-        });
+    for (name, there) in [("alpha", false), ("beta", true)] {
+        common::wait_until(name, || eval(name, there, "return 'up'") == "up");
     }
     let mut attached = attach_window(&world.root.join("run"), "alpha", "gui@desk");
     // Each hub sees the other machine, and not itself through it.

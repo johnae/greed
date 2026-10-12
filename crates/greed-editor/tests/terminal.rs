@@ -186,6 +186,9 @@ fn greed_ssh_puts_greed_on_a_machine_without_it_once() {
     let command = format!("ssh somehost {}", project.join("main.rs").display());
     let first = world.terminal(&project, &command, &env, &steps);
     assert!(first.contains("putting this greed (build "), "{first}");
+    // Noted, so this machine's hub follows that one's.
+    let reached = std::fs::read_to_string(world.root.join("data/greed/ssh-hosts")).unwrap();
+    assert!(reached.contains("\"somehost\":"), "{reached}");
     let server = world.root.join("remote-home/.local/share/greed/server");
     let installed: Vec<_> = std::fs::read_dir(&server).unwrap().flatten().collect();
     assert_eq!(installed.len(), 1, "one build");

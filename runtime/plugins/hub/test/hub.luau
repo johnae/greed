@@ -101,16 +101,48 @@ test("an agent on another machine is told with the machine, and apart from one h
 	assert(hub.waiting(statuses)[1].key ~= there.key, "the same agent here is another")
 end)
 
-test("hub-hosts names the machines to follow", function()
+test("hub-hosts names more machines to follow", function(t)
 	local greed = require("@greed")
+	local data = hub.dirs.data
+	hub.dirs.data = t:tempdir()
 	greed.option.set("hub-hosts", "eris  mini,box")
 	local hosts = hub.hosts()
 	greed.option.set("hub-hosts", "")
-	assert(table.concat(hosts, " ") == "eris mini box", table.concat(hosts, " "))
+	assert(table.concat(hosts, " ") == "box eris mini", table.concat(hosts, " "))
 	assert(#hub.hosts() == 0)
+	hub.dirs.data = data
 end)
 
 test("another machine's agent is placed on it", function()
 	assert(hub.place({ session = "greed-2", agent = {} }) == "greed-2")
 	assert(hub.place({ session = "greed-2", agent = {}, machine = "eris" }) == "greed-2 on eris")
+end)
+
+test("machines you reached with greed ssh lately are followed, and can be forgotten", function(t)
+	local greed = require("@greed")
+	local data = hub.dirs.data
+	hub.dirs.data = t:tempdir()
+	local file = `{hub.dirs.data}/ssh-hosts`
+	local now = os.time()
+	greed.fs.write(
+		file,
+		greed.json.encode({ eris = now - 60, old = now - hub.REMEMBER - 60, odd = "x" })
+	)
+	greed.option.set("hub-hosts", "mini")
+	local hosts = hub.hosts()
+	assert(table.concat(hosts, " ") == "eris mini", table.concat(hosts, " "))
+	hub.forget("eris")
+	assert(hub.reached().eris == nil and hub.reached().old ~= nil, "eris forgotten")
+	greed.option.set("hub-hosts", "")
+	assert(#hub.hosts() == 0, table.concat(hub.hosts(), " "))
+	greed.fs.write(file, "not json")
+	assert(next(hub.reached()) == nil, "a broken file is no machines")
+	hub.dirs.data = data
+end)
+
+test("what can't be followed is left alone longer each time, up to half an hour", function()
+	assert(hub.backoff(1) == hub.SKIP)
+	assert(hub.backoff(2) == 2 * hub.SKIP)
+	assert(hub.backoff(3) == 4 * hub.SKIP)
+	assert(hub.backoff(20) == hub.SKIP_MOST)
 end)

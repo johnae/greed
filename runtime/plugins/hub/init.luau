@@ -9,9 +9,10 @@
 -- they say to its own status (`machine`); the others follow only the hub.
 -- Every message is a whole status, so a missed one only means a later look.
 --
--- Hubs follow hubs: the hosts in `hub-hosts` are other machines whose hubs
--- this one follows over ssh (`greed ssh HOST ctl watch --hub`), and what
--- they say of the machines they know comes along (`machines`). There's no
+-- Hubs follow hubs: the machines you reached with `greed ssh` lately, and
+-- the hosts in `hub-hosts`, are other machines whose hubs this one follows
+-- over ssh (`greed ssh HOST ctl watch --hub`), and what they say of the
+-- machines they know comes along (`machines`). There's no
 -- main hub: every entry names the machine it's about, a hub ignores news
 -- of its own machine, and of each other machine it keeps what it heard
 -- itself, else the freshest, so loops die out.
@@ -31,7 +32,7 @@ greed.option.define({
 
 greed.option.define({
 	name = "hub-hosts",
-	doc = 'Other machines whose hubs this machine\'s hub follows, as ssh hosts separated by spaces, like "eris mini"',
+	doc = 'More machines whose hubs this machine\'s hub follows, beside the ones you reached with greed ssh lately, as ssh hosts separated by spaces, like "eris mini"',
 	default = "",
 })
 
@@ -41,12 +42,24 @@ local M = {}
 M.LOOK = 3000
 
 --- How long a session or machine that couldn't be followed (an older
---- greed, a machine that's off) is left alone, in milliseconds.
+--- greed, a machine that's off) is left alone, in milliseconds; twice as
+--- long each time again, up to `M.SKIP_MOST`.
 M.SKIP = 60000
+M.SKIP_MOST = 30 * 60000
 
 --- How old, in seconds, news of another machine may be before it's
 --- dropped: a hub says its status at least every 15 seconds.
 M.STALE = 90
+
+--- How long, in seconds, a machine you reached with `greed ssh` is
+--- followed after you last did.
+M.REMEMBER = 14 * 24 * 3600
+
+--- How long to leave alone what couldn't be followed `fails` times in a
+--- row, in milliseconds.
+function M.backoff(fails: number): number
+	return math.min(M.SKIP * 2 ^ math.max(fails - 1, 0), M.SKIP_MOST)
+end
 
 --- The hub among `sessions` (as `greed.session.list` gives them): the one
 --- `wanted` names if it runs, else the first by name of those of `build`.
@@ -73,13 +86,65 @@ function M.hub(): string?
 	)
 end
 
---- The other machines' hosts the hub follows (`hub-hosts`).
+--- Greed's data folder, where the hub keeps what it told and `greed ssh`
+--- notes the machines you reach; tests point it elsewhere.
+M.dirs = { data = greed.fs.dirs().data }
+
+-- Where `greed ssh` notes the machines you reach, with when (seconds, like
+-- `os.time()`).
+local function reached_file(): string?
+	local data = M.dirs.data
+	return if data then `{data}/ssh-hosts` else nil
+end
+
+--- The machines you reached with `greed ssh`, by ssh host, with when you
+--- last did (seconds, like `os.time()`).
+function M.reached(): { [string]: number }
+	local file = reached_file()
+	local ok, said = pcall(function()
+		return greed.json.decode((if file then greed.fs.read(file) else nil) or "{}")
+	end)
+	local out: { [string]: number } = {}
+	if ok and type(said) == "table" then
+		for host, at in said do
+			if type(host) == "string" and type(at) == "number" then
+				out[host] = at
+			end
+		end
+	end
+	return out
+end
+
+--- Stops following `host` until you reach it with `greed ssh` again.
+function M.forget(host: string)
+	local reached = M.reached()
+	reached[host] = nil
+	local file = reached_file()
+	if file then
+		greed.fs.write(file, greed.json.encode(reached))
+	end
+end
+
+--- The other machines' hosts the hub follows: the ones you reached with
+--- `greed ssh` in the last `M.REMEMBER` seconds and the ones in
+--- `hub-hosts`, by name.
 function M.hosts(): { string }
-	local hosts: { string } = {}
+	local seen: { [string]: boolean } = {}
+	local now = os.time()
+	for host, at in M.reached() do
+		if now - at <= M.REMEMBER then
+			seen[host] = true
+		end
+	end
 	local said = greed.option.get("hub-hosts")
 	for host in string.gmatch(if type(said) == "string" then said else "", "[^%s,]+") do
+		seen[host] = true
+	end
+	local hosts: { string } = {}
+	for host in seen do
 		table.insert(hosts, host)
 	end
+	table.sort(hosts)
 	return hosts
 end
 
@@ -104,8 +169,9 @@ export type Status = { [string]: any }
 type Followed = { child: greed.Child, status: Status?, at: number? }
 
 -- What's followed of one kind, by name, and when each that couldn't be
--- followed was last tried.
-type Following = { now: { [string]: Followed }, tried: { [string]: number } }
+-- followed was last tried, and how many times in a row it couldn't.
+type Tried = { at: number, fails: number }
+type Following = { now: { [string]: Followed }, tried: { [string]: Tried } }
 
 -- The sessions on this machine, by name.
 local sessions: Following = { now = {}, tried = {} }
@@ -135,9 +201,15 @@ local function follow(following: Following, name: string, args: { string })
 	for _, arg in args do
 		table.insert(command, arg)
 	end
+	-- It couldn't be followed (again, unless it said something first).
+	local function failed(said: boolean)
+		local before = following.tried[name]
+		local fails = if said or before == nil then 1 else before.fails + 1
+		following.tried[name] = { at = greed.now(), fails = fails }
+	end
 	local child = greed.process.spawn(command)
 	if child == nil then
-		following.tried[name] = greed.now()
+		failed(false)
 		return
 	end
 	local mine: Followed = { child = child }
@@ -167,7 +239,7 @@ local function follow(following: Following, name: string, args: { string })
 		-- a machine that's off).
 		if following.now[name] == mine then
 			following.now[name] = nil
-			following.tried[name] = greed.now()
+			failed(mine.status ~= nil)
 			changed()
 		end
 	end)
@@ -183,7 +255,10 @@ local function keep(following: Following, want: { [string]: { string } })
 	end
 	for name, args in want do
 		local last = following.tried[name]
-		if following.now[name] == nil and (last == nil or greed.now() - last > M.SKIP) then
+		if
+			following.now[name] == nil
+			and (last == nil or greed.now() - last.at > M.backoff(last.fails))
+		then
 			follow(following, name, args)
 		end
 	end
@@ -438,6 +513,25 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "machine-forget",
+	doc = "Stop following a machine you reached with greed ssh, until you do again",
+	run = function()
+		local items: { picker.Item } = {}
+		for host, at in M.reached() do
+			table.insert(items, { label = `{host}  {os.date("%Y-%m-%d", at)}`, value = host })
+		end
+		if #items == 0 then
+			greed.echo("no machines reached with greed ssh")
+			return
+		end
+		picker.pick("Forget a machine", items, function(item)
+			M.forget(item.value)
+			greed.echo(`forgot {item.value}`)
+		end)
+	end,
+})
+
 -- Telling you ----------------------------------------------------------------
 --
 -- The hub tells you when an agent starts waiting, here or on a machine it
@@ -515,7 +609,7 @@ local KEPT = 500
 local told: { string }? = nil
 
 local function told_file(): string?
-	local data = greed.fs.dirs().data
+	local data = M.dirs.data
 	return if data then `{data}/hub-told` else nil
 end
 

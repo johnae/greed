@@ -972,27 +972,29 @@ a restart.
 
 ### Agents on your other machines
 
-Name the other machines in your config, as you reach them with ssh:
+Once you've used `greed ssh eris`, the agents on eris show up here too. The
+status line says `◆ 1 waiting for you in greed-2 on eris`, `space i A`
+lists them, and `enter` opens that session as `greed ssh eris` would. When
+one starts waiting, your desktop is told as it is for this machine.
+
+Greed remembers each machine you reach with `greed ssh` and keeps following
+it for two weeks after you last did. `:machine-forget` stops following one
+until you `greed ssh` there again. To follow a machine you never ssh to from
+here, name it in your config:
 
 ```luau
-greed.option.set("hub-hosts", "eris mini")
+greed.option.set("hub-hosts", "mini")
 ```
 
-Then the agents there show up too: the status line says `◆ 1 waiting for
-you in greed-2 on eris`, `space i A` lists them, and `enter` opens that
-session as `greed ssh eris` would. When one starts waiting, your desktop is
-told as it is for this machine.
+Following a machine runs `greed ssh HOST ctl watch --hub`, which puts this
+greed there if it isn't yet and never asks for a password or a new host
+key, so it needs your keys (or an agent) to work without asking. A machine
+that's off or unreachable is tried again after a minute, then less and
+less often, at most every half hour.
 
-The machine following them reaches each one over ssh with `greed ssh HOST
-ctl watch --hub`, which puts this greed there if it isn't yet and never
-asks for a password or a new host key: set up keys (and an agent) first, and
-`ssh eris` once to accept its key. A machine that's off or unreachable is
-tried again a minute later.
-
-Set `hub-hosts` on both ends and each machine follows the other; that's
-fine. You still get one notification for each time an agent waits: an
-agent's own machine tells the windows attached to it, and the other machine
-tells only the ones it can't reach.
+When two machines follow each other you still get one notification for
+each time an agent waits: an agent's own machine tells the windows attached
+to it, and the other machine tells only the ones it can't reach.
 
 ## Plugins written by agents
 
