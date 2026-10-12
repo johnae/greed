@@ -1688,36 +1688,20 @@ function M.use_provider(name: string): string?
 	return M.choose("fast", name, fast) or M.choose("reasoning", name, reasoning)
 end
 
--- The :models page while it's open, and the role on each of its lines.
-local page: { buffer: greed.Buffer, roles: { [number]: string } }? = nil
+-- The :models page while it's open, each role's line's value its row.
+local page: { buffer: greed.Buffer, drawn: core.UiView }? = nil
 
 local PAGE_HINT = "enter changes the role's model · e its effort · k sets its provider's API key · "
 	.. "l signs in · q closes"
 
--- Writes the page again, as roles and keys change.
+-- Draws the page again, as roles and keys change.
 local function render()
 	local shown = page
 	if shown == nil or not shown.buffer:valid() then
 		page = nil
 		return
 	end
-	local lines = { "Models by role", PAGE_HINT, "" }
-	shown.roles = {}
-	for _, row in rows() do
-		shown.roles[#lines] = row.role
-		table.insert(lines, row.text)
-	end
-	local text = table.concat(lines, "\n")
-	local buffer = shown.buffer
-	if buffer:text() ~= text then
-		buffer:edit(function(e)
-			e:replace(0, buffer:len(), text)
-		end)
-	end
-	buffer:decorate("models", {
-		{ from = 0, to = #lines[1], style = "markup.heading" },
-		{ from = #lines[1] + 1, to = #lines[1] + 1 + #PAGE_HINT, style = "comment" },
-	})
+	shown.drawn:redraw()
 end
 
 -- The role on the cursor's line of the page, or why there's none.
@@ -1726,11 +1710,11 @@ local function role_at(ctx: greed.Context): string?
 	if shown == nil or shown.buffer ~= ctx.buffer then
 		return nil
 	end
-	local role = shown.roles[ctx.buffer:line_of(ctx.view:cursor())]
-	if role == nil then
+	local row: Row? = shown.drawn:value_at(ctx.view:cursor())
+	if row == nil then
 		greed.echo("move to a role's line first")
 	end
-	return role
+	return row and row.role
 end
 
 -- The provider whose model plays `role` now, following its fallback.
@@ -1752,8 +1736,29 @@ greed.command({
 			end
 		end
 		local buffer = greed.create_buffer("models", "", { readonly = true })
-		page = { buffer = buffer, roles = {} }
-		render()
+		local drawn = core.ui.mount(
+			buffer,
+			function()
+				return core.ui.column({
+					core.ui.line({ core.ui.span("Models by role", "markup.heading") }),
+					core.ui.line({ core.ui.span(PAGE_HINT, "comment") }),
+					core.ui.gap(),
+					core.ui.list(rows(), function(row: Row): { core.UiSpan }
+						return { core.ui.span(row.text) }
+					end),
+				})
+			end,
+			nil,
+			{
+				ns = "models",
+				keys = false,
+				-- The cursor stays on its role as models change.
+				key = function(row: Row): string
+					return row.role
+				end,
+			}
+		)
+		page = { buffer = buffer, drawn = drawn }
 		buffer:set_keys({
 			enter = "models-change",
 			e = "models-effort",
