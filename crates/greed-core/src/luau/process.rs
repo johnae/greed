@@ -66,6 +66,7 @@ fn run(how: Run) -> std::io::Result<Finished> {
             None => command.env_remove(name),
         };
     }
+    let started = crate::debug::on(crate::debug::Topic::Jobs).then(std::time::Instant::now);
     let mut child = command.spawn().map_err(|err| cant_run(program, &err))?;
     if let (Some(input), Some(mut stdin)) = (how.stdin, child.stdin.take()) {
         // Written on its own thread, so a program that prints while it reads
@@ -75,6 +76,15 @@ fn run(how: Run) -> std::io::Result<Finished> {
         });
     }
     let out = child.wait_with_output()?;
+    if let Some(started) = started {
+        crate::debug!(
+            Jobs,
+            "{} ended with {:?} after {} ms",
+            how.command.join(" "),
+            out.status.code(),
+            started.elapsed().as_millis()
+        );
+    }
     Ok(Finished {
         code: out.status.code(),
         stdout: out.stdout,
@@ -331,6 +341,7 @@ fn start_child(
         builder.process_group(0);
     }
     let mut child = builder.spawn().map_err(|err| cant_run(program, &err))?;
+    crate::debug!(Jobs, "started {}", command.join(" "));
     let pid = child.id();
     let (mut stdin, mut stdout, mut stderr) = (
         child.stdin.take().expect("piped"),

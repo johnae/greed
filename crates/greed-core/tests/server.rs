@@ -661,3 +661,31 @@ fn refusals_and_unknown_commands_from_the_command_line_are_plain() {
     );
     assert!(!line.contains("runtime error"), "{line:?}");
 }
+
+#[test]
+fn with_the_client_topic_on_frames_ask_for_the_clients_side_and_its_lines_are_kept() {
+    let conn = start("hello", None);
+    greed_core::debug::set("client", true).unwrap();
+    conn.input
+        .send(Input::Resize(Size {
+            width: 20,
+            height: 3,
+        }))
+        .unwrap();
+    let f = frame(&conn);
+    assert!(f.gui.contains_key(greed_core::debug::CLIENT), "{:?}", f.gui);
+    conn.input
+        .send(Input::Log("drew a frame in 1.00 ms".into()))
+        .unwrap();
+    let kept = |text: &str| {
+        greed_core::debug::lines(0, usize::MAX)
+            .iter()
+            .any(|l| l.text == text)
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !kept("client 1: drew a frame in 1.00 ms") && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    greed_core::debug::set("client", false).unwrap();
+    assert!(kept("client 1: drew a frame in 1.00 ms"));
+}

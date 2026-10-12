@@ -339,3 +339,19 @@ test("trying a plugin doesn't ask: it's checked in a sandbox", function()
 	assert(by_name.plugin_try and not agent.asks(by_name.plugin_try), "plugin_try runs at once")
 	assert(by_name.eval and not agent.asks(by_name.eval), "eval puts its review in front of you")
 end)
+
+test("debug_log turns topics on and reads what they said, newer than an id", function(t)
+	t:buffer("|one\ntwo")
+	local first = run("debug_log", { set = "keys", topic = "keys" })
+	assert(table.find(first.on, "keys"), "keys on")
+	local last = if #first.lines > 0 then first.lines[#first.lines].id else 0
+	t:keys("j")
+	-- Left on: other tests beside this one may be reading keys lines.
+	local after = run("debug_log", { after = last, topic = "keys" })
+	local said = {}
+	for _, line in after.lines do
+		assert(line.id > last, "only newer lines")
+		table.insert(said, line.text)
+	end
+	assert(string.find(table.concat(said, "\n"), "j runs ", 1, true), table.concat(said, "\n"))
+end)

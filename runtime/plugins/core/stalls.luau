@@ -98,4 +98,77 @@ greed.command({
 	end,
 })
 
+-- :debug turns debug topics on and off; :debug-log shows their lines in a
+-- pane below, following new ones while it's open.
+greed.command({
+	name = "debug",
+	doc = "Turn debug topics on (:debug keys frames), off (:debug -keys, :debug off), or say which are on",
+	args = {
+		{
+			name = "topics",
+			doc = "keys, runs, frames, rpc, jobs, client, plugins, plugin:NAME or all; -NAME turns one off",
+		},
+	},
+	run = function(ctx)
+		greed.debug.switch(table.concat(ctx.args, " "))
+		local on = greed.debug.enabled()
+		if #on == 0 then
+			greed.echo(`debug: nothing on; topics are {table.concat(greed.debug.topics(), ", ")}`)
+		else
+			greed.echo(`debug: {table.concat(on, ", ")} on; :debug-log shows what they say`)
+		end
+	end,
+})
+
+-- One debug line as the log shows it: when, in seconds since the editor
+-- started, then its topic or plugin.
+local function log_line(line: greed.DebugLine): string
+	return string.format("%10.3f  %-8s %s", line.at / 1000, line.plugin or line.topic, line.text)
+end
+
+-- How often an open log looks for new lines, in milliseconds.
+local FOLLOW_EVERY = 200
+
+greed.command({
+	name = "debug-log",
+	doc = "Show what the debug topics on have said, in a pane below, following new lines",
+	run = function(ctx)
+		local lines = greed.debug.lines()
+		local text = {}
+		for _, line in lines do
+			table.insert(text, log_line(line))
+		end
+		if #text == 0 then
+			table.insert(text, "Nothing said yet. :debug keys (or another topic) turns one on.")
+		end
+		local buffer =
+			greed.create_buffer("debug-log", table.concat(text, "\n") .. "\n", { readonly = true })
+		local view = ctx.view:split("down", buffer)
+		view:set_cursor(buffer:len())
+		local last = if #lines > 0 then lines[#lines].id else 0
+		greed.spawn(function()
+			while view:valid() do
+				greed.sleep(FOLLOW_EVERY)
+				local new = greed.debug.lines({ after = last })
+				if #new > 0 and view:valid() then
+					last = new[#new].id
+					local more = {}
+					for _, line in new do
+						table.insert(more, log_line(line) .. "\n")
+					end
+					local following = view:cursor() >= buffer:len() - 1
+					buffer:set_readonly(false)
+					buffer:edit(function(e)
+						e:insert(buffer:len(), table.concat(more))
+					end)
+					buffer:set_readonly(true)
+					if following then
+						view:set_cursor(buffer:len())
+					end
+				end
+			end
+		end)
+	end,
+})
+
 return {}

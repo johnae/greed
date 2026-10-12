@@ -54,8 +54,15 @@ Type Luau to evaluate it, or one of:
   :help           show this help
   :quit           leave";
 
-fn main() -> ExitCode {
+/// What this process says about itself before anything else: its build,
+/// and the debug topics `$GREED_DEBUG` turns on.
+fn process_setup() {
     greed_core::control::set_build(runtime::BUILD);
+    greed_core::debug::from_env();
+}
+
+fn main() -> ExitCode {
+    process_setup();
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // Anywhere on the line: which folders Greed keeps things in. Greed runs
     // again with them in its environment, so the sessions, terminals and

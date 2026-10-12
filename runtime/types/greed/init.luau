@@ -1087,6 +1087,31 @@ export type Control = {
 --- One row of `greed.profile.stop()`: what a plugin (nil for the editor itself) spent doing one thing, in all and at most once, in milliseconds.
 export type ProfileRow = { plugin: string?, what: string, ms: number, longest: number, runs: number }
 
+--- One line `greed.debug.lines()` returns: `id` counts up, `at` is milliseconds since the editor started, `plugin` is set for a plugin's own lines.
+export type DebugLine = { id: number, at: number, topic: string, plugin: string?, text: string }
+
+--- Debug lines: what the editor, its clients and plugins say they're doing, kept while their topic is on. Topics: keys, runs, frames, rpc, jobs, client, plugins (or `plugin:NAME` for one). Off, a topic costs next to nothing.
+export type Debug = {
+	--- Keeps a line from this plugin, its parts joined by spaces, when `plugins` or `plugin:NAME` is on; otherwise does nothing. Check `on()` first when making the parts costs something.
+	log: (...any) -> (),
+	--- Whether this plugin's lines are kept, or with `name`, whether that topic (or `plugin:NAME`) is on.
+	on: (name: string?) -> boolean,
+	--- Turns a topic, `plugin:NAME`, or `all` on or off.
+	set: (name: string, on: boolean) -> (),
+	--- Switches topics as `words` say, with spaces between: a name turns it on, `-name` off, `off` everything, as `:debug` takes them.
+	switch: (words: string) -> (),
+	--- Turns every topic off.
+	off: () -> (),
+	--- What's on.
+	enabled: () -> { string },
+	--- Every topic's name.
+	topics: () -> { string },
+	--- The lines kept, oldest first: those after the id `after`, of one `topic` or `plugin`, at most the last `limit` (1000).
+	lines: (opts: { after: number?, limit: number?, topic: string?, plugin: string? }?) -> { DebugLine },
+	--- Forgets the lines kept so far.
+	clear: () -> (),
+}
+
 --- A client attached, e.g. `greed FILE` in a session that was running. Handlers run as that client.
 export type ClientAttached = {
 	--- The client's id.
@@ -1742,6 +1767,8 @@ export type Greed = {
 	errors: () -> { { plugin: string?, what: string, message: string, traceback: string, time: number } },
 	--- Counting where the editor's time goes: every run of plugin code (each command, event handler, status line) and the editor's own work (handling a key, parsing, drawing), by plugin and what it did. `start` begins, `stop` ends and returns the rows, the most time first; `running` says whether one is being taken.
 	profile: { start: () -> (), stop: () -> { ProfileRow }, running: () -> boolean },
+	--- Debug lines and their topics, for seeing what the editor and plugins do: `:debug` and `:debug-log` use them.
+	debug: Debug,
 	--- Milliseconds on the editor's clock, for timing animations. While a
 	--- timer wakes code, it reads the time the timer was due.
 	now: () -> number,

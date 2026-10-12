@@ -191,6 +191,7 @@ pub(super) fn press_or_type(lua: &Lua, key: Key, text: &str) -> Result<(), HostE
     if !typed {
         return press(lua, key);
     }
+    crate::debug!(Keys, "{key} types {text:?}");
     for c in text.chars() {
         press(
             lua,
@@ -228,6 +229,7 @@ fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<Option<usize>,
             state_mut(lua).key_waiter.insert(client, (token, waiting));
             return Err(HostError::Lua(mlua::Error::runtime(error)));
         }
+        crate::debug!(Keys, "{key} answers a command waiting for a key");
         tasks::wake(lua, token, key.to_string())?;
         return Ok(None);
     }
@@ -235,10 +237,12 @@ fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<Option<usize>,
     match outcome {
         KeyOutcome::Pending => {
             let pending = keys_text(state(lua).editor.pending());
+            crate::debug!(Keys, "{pending}: more keys to come");
             keys_pending(lua, &pending)?;
             Ok(None)
         }
         KeyOutcome::Command { name, keys, count } => {
+            crate::debug!(Keys, "{} runs {name}", keys_text(&keys));
             if keys.len() > 1 {
                 keys_pending(lua, "")?;
             }
@@ -254,6 +258,7 @@ fn press_key(lua: &Lua, key: Key, limit: Option<Limit>) -> Result<Option<usize>,
             )
         }
         KeyOutcome::Unbound(keys) => {
+            crate::debug!(Keys, "{} isn't bound here", keys_text(&keys));
             if keys.len() > 1 {
                 keys_pending(lua, "")?;
             }
@@ -547,6 +552,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         lua.create_function(|lua, ()| super::stalls::list(lua))?,
     )?;
     greed.set("profile", super::stalls::profile_module(lua)?)?;
+    greed.set("debug", super::debug::module(lua, owner)?)?;
     greed.set(
         "errors",
         lua.create_function(|lua, ()| super::errors::list(lua))?,

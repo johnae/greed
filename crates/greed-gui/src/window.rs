@@ -160,6 +160,30 @@ impl App {
         }
     }
 
+    /// Sends what `what` says as a debug line, while the session asks for
+    /// what happens on this side (its `client` topic is on).
+    fn log(&self, what: impl FnOnce() -> String) {
+        if self.logging() {
+            let _ = self.input.send(Input::Log(what()));
+        }
+    }
+
+    /// Says what a window event was, while the session asks.
+    fn log_event(&self, event: &WindowEvent) {
+        if self.logging()
+            && let Some(text) = described(event, self.mods)
+        {
+            let _ = self.input.send(Input::Log(text));
+        }
+    }
+
+    fn logging(&self) -> bool {
+        self.painter
+            .frame
+            .as_ref()
+            .is_some_and(|frame| frame.gui.contains_key(greed_core::debug::CLIENT))
+    }
+
     /// Tells the session how many cells fit in `size`, and how big a cell is.
     fn send_size(&self, size: PhysicalSize<u32>) {
         for input in self.painter.size_inputs(size.width, size.height) {
@@ -168,22 +192,34 @@ impl App {
     }
 
     fn redraw(&mut self) {
+        let started = self.logging().then(std::time::Instant::now);
+        let drawn = self.draw();
+        if let Some(started) = started {
+            let took = started.elapsed().as_secs_f64() * 1000.0;
+            self.log(|| format!("{drawn} in {took:.2} ms"));
+        }
+    }
+
+    /// Draws the last frame, saying what came of it.
+    fn draw(&mut self) -> &'static str {
         let Some(shown) = &mut self.shown else {
-            return;
+            return "no window to draw in yet";
         };
         let Some(scene) = self.painter.paint(&mut shown.gpu) else {
-            return;
+            return "no frame to draw yet";
         };
         let texture = match shown.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture)
             | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
             // Drawn again when the window shows (a window opened from
             // Spotlight starts out covered).
-            wgpu::CurrentSurfaceTexture::Occluded => return,
+            wgpu::CurrentSurfaceTexture::Occluded => {
+                return "left a frame undrawn: the window is covered";
+            }
             _ => {
                 shown.surface.configure(&shown.gpu.device, &shown.config);
                 shown.window.request_redraw();
-                return;
+                return "the window wasn't ready to draw in; drawing again";
             }
         };
         let view = texture
@@ -205,6 +241,7 @@ impl App {
             );
         }
         self.columns = scene.columns;
+        "drew a frame"
     }
 
     fn handle(&mut self, event_loop: &ActiveEventLoop, output: Output) {
@@ -319,6 +356,7 @@ impl ApplicationHandler<Event> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        self.log_event(&event);
         match event {
             WindowEvent::CloseRequested => {
                 self.ended = Some(Output::Detached);
@@ -472,6 +510,30 @@ impl Shown {
             gpu: Gpu::new(device, queue, format, ATLAS_SIZE),
         })
     }
+}
+
+/// What a window event was, for a debug line: keys as the system gave them
+/// and what they became, the input method, modifiers and focus. None for
+/// the rest, like the mouse moving.
+fn described(event: &WindowEvent, mods: ModifiersState) -> Option<String> {
+    Some(match event {
+        WindowEvent::KeyboardInput { event: key, .. } if key.state == ElementState::Pressed => {
+            let sent = option_key(key, mods)
+                .map(|input| format!("{input:?}"))
+                .or_else(|| self::key(key, mods).map(|key| format!("{key}")))
+                .unwrap_or_else(|| "nothing".to_owned());
+            format!(
+                "key {:?} ({:?}) typing {:?} with {mods:?}: sent {sent}",
+                key.logical_key, key.physical_key, key.text
+            )
+        }
+        WindowEvent::Ime(ime) => format!("input method: {ime:?}"),
+        WindowEvent::ModifiersChanged(now) => format!("modifiers: {:?}", now.state()),
+        WindowEvent::Focused(focused) => format!("focused: {focused}"),
+        WindowEvent::Occluded(covered) => format!("covered: {covered}"),
+        WindowEvent::Resized(size) => format!("resized to {}x{}", size.width, size.height),
+        _ => return None,
+    })
 }
 
 /// A window size kept as "WIDTH HEIGHT", if it's one a screen could have.

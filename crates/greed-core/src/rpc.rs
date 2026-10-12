@@ -84,6 +84,7 @@ impl Transport {
         let (program, args) = command
             .split_first()
             .ok_or_else(|| io::Error::other("no command"))?;
+        crate::debug!(Rpc, "starting {} in {}", command.join(" "), dir.display());
         let mut child = Command::new(program)
             .args(args)
             .current_dir(dir)
@@ -114,6 +115,8 @@ impl Transport {
 /// One JSON-RPC peer: what's sent to it, the requests waiting for its
 /// answer, and its process.
 pub struct Connection {
+    /// Which connection this is, as its events say.
+    server: ServerId,
     input: BufWriter<Box<dyn Write + Send>>,
     child: Option<Child>,
     next_id: i64,
@@ -136,6 +139,7 @@ impl Connection {
             thread::spawn(move || keep_lines(from, &lines));
         }
         Self {
+            server: id,
             input: BufWriter::new(transport.input),
             child: transport.child,
             next_id: 0,
@@ -152,6 +156,7 @@ impl Connection {
 
     /// Writes `message` as it is.
     pub fn send(&mut self, message: &Value) -> io::Result<()> {
+        crate::debug!(Rpc, "server {}: -> {}", self.server, summary(message));
         write_message(&mut self.input, message)
     }
 
@@ -197,6 +202,7 @@ impl Connection {
     /// dropped: `None`. When its output ends, the connection is no longer
     /// alive and nothing is waiting any more.
     pub fn receive(&mut self, event: Event) -> Option<Event> {
+        crate::debug!(Rpc, "<- {}", event_summary(&event));
         match &event {
             Event::Response { id, .. } if !self.pending.remove(id) => None,
             Event::Exited { .. } => {
@@ -366,5 +372,39 @@ fn keep_lines(from: impl Read, lines: &Mutex<VecDeque<String>>) {
             kept.pop_front();
         }
         kept.push_back(text);
+    }
+}
+
+/// A message in a few words, for debug lines: its method and id, or that
+/// it answers one.
+fn summary(message: &Value) -> String {
+    let id = message.get("id").map(Value::to_string);
+    match (message.get("method").and_then(Value::as_str), id) {
+        (Some(method), Some(id)) => format!("request {id} {method}"),
+        (Some(method), None) => format!("notification {method}"),
+        (None, Some(id)) if message.get("error").is_some() => format!("error answering {id}"),
+        (None, Some(id)) => format!("answer to {id}"),
+        (None, None) => "a message with neither method nor id".to_owned(),
+    }
+}
+
+/// An event from the other side in a few words, for debug lines.
+fn event_summary(event: &Event) -> String {
+    match event {
+        Event::Response { server, id, result } => format!(
+            "server {server}: {} {id}",
+            if result.is_ok() {
+                "answer to"
+            } else {
+                "error answering"
+            }
+        ),
+        Event::Notification { server, method, .. } => {
+            format!("server {server}: notification {method}")
+        }
+        Event::Request {
+            server, method, id, ..
+        } => format!("server {server}: request {id} {method}"),
+        Event::Exited { server, .. } => format!("server {server} exited"),
     }
 }

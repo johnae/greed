@@ -9,6 +9,7 @@ mod api;
 mod approvals;
 mod capabilities;
 mod cli;
+mod debug;
 mod diff;
 mod errors;
 mod fs;
@@ -585,9 +586,10 @@ impl Host {
     }
 
     /// The options named `gui-...` as `client` has them, as text, for its
-    /// window to read: a window can have its own, like its font size.
+    /// window to read: a window can have its own, like its font size. With
+    /// the `client` debug topic on, [`crate::debug::CLIENT`] too.
     pub fn gui_options(&self, client: ClientId) -> BTreeMap<String, String> {
-        self.with_registry(|registry| {
+        let mut options: BTreeMap<String, String> = self.with_registry(|registry| {
             registry
                 .option_states()
                 .filter(|o| o.def.name.starts_with("gui-"))
@@ -596,7 +598,12 @@ impl Host {
                     (o.def.name.to_string(), value.to_string())
                 })
                 .collect()
-        })
+        });
+        // The client says what happens on its side while this is on.
+        if crate::debug::on(crate::debug::Topic::Client) {
+            options.insert(crate::debug::CLIENT.to_owned(), "true".to_owned());
+        }
+        options
     }
 
     /// Loads the plugin in `dir`, described by its `plugin.toml`.

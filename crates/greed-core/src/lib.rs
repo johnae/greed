@@ -15,6 +15,7 @@
 
 mod buffer;
 pub mod control;
+pub mod debug;
 pub mod delta;
 pub mod diff;
 pub mod dirs;

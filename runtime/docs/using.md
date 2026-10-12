@@ -617,6 +617,8 @@ that changed on disk since the search is left alone and reported. `:grep PATTERN
 | `:stalls` | The times plugin code held the editor up, with the plugin and what it was doing |
 | `:errors` | Errors from plugin code that nothing caught, newest first: the plugin, what it was doing, the message and where in its code it failed |
 | `:profile` | Start counting where the editor's time goes; again, stop and show it by plugin and what it did |
+| `:debug TOPICS` | Turn debug topics on (`:debug keys frames`) or off (`:debug -keys`, `:debug off`); alone, says which are on. See [Debugging](#debugging) |
+| `:debug-log` | What the debug topics on have said, in a pane below that follows new lines |
 | `:secret-set NAME` | Keep a secret, like an API key, in the system keyring (or Greed's own secrets file where there's none); what you type shows as dots |
 | `:login PROVIDER`, `:logout PROVIDER` | Sign in to a model provider whose plan comes with an account, like Berget Code, instead of using a key (see [Models](#models)) |
 
@@ -696,6 +698,31 @@ Setup turns icons on when you run it in the window, or when you say a
 terminal shows them. The same config works for the window and terminals,
 so if you set Greed up in the window and later use a terminal without a
 Nerd Font, set both options back to `"none"` in your `init.luau`.
+
+## Debugging
+
+When something feels off, like keys going missing or a pause, debug topics
+say what happens inside, and `:debug-log` shows it as it comes. Turn on
+what you're after, do the thing again, and read the log:
+
+| Topic | What it says |
+|---|---|
+| `keys` | Each key from each client, what it ran (or that it isn't bound), and how long it waited behind a command at work |
+| `runs` | Every run of plugin code: the plugin, what it ran, how long it took |
+| `frames` | Each frame built for a client, how long that took, and whether all of it was sent or what changed |
+| `rpc` | Messages to and from language servers and other JSON-RPC programs |
+| `jobs` | Programs plugins ran, how long they took and how they ended |
+| `client` | The terminal's or window's side: keys and input method events as the system gave them, focus, and how long drawing each frame took |
+| `plugins` | What plugins say with `greed.debug.log`; `plugin:NAME` for one |
+
+`:debug keys client` turns two on, `:debug -client` one off, `:debug off`
+all of them, and `:debug all` everything. A topic that's off costs next to
+nothing, so they can stay in a release build; one that's on keeps its last
+10 000 lines in memory. To catch what happens at start, set them in your
+`init.luau` (`greed.debug.switch("keys frames")`), or start with
+`GREED_DEBUG=keys,frames greed` (a session started in the background gets
+it too). Agents and scripts read the same lines with `greed ctl debug_log`
+(`set=keys` turns topics on, `after=ID` reads only newer lines).
 
 ## Language servers
 

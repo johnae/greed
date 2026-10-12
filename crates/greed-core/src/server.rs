@@ -48,6 +48,9 @@ pub enum Input {
     /// The answer to `Output::ReadClipboardImage`: the image on the system
     /// clipboard, as PNG in base64, or none.
     ClipboardImage(u64, Option<String>),
+    /// A debug line from the client's side, sent while the frames it gets
+    /// say the `client` topic is on (see [`crate::debug`]).
+    Log(String),
     Quit,
 }
 
@@ -329,6 +332,7 @@ fn turn_of(input: &Input) -> Turn {
         | Input::CellSize(..)
         | Input::Clipboard(_)
         | Input::ClipboardImage(..)
+        | Input::Log(_)
         | Input::Quit => Turn::Never,
     }
 }
@@ -385,6 +389,11 @@ impl Server<'_> {
     fn inputs(&mut self, id: ClientId, inputs: impl Iterator<Item = Input>) -> bool {
         for input in inputs {
             if self.must_wait(id, &input) {
+                crate::debug!(
+                    Keys,
+                    "client {} {input:?} waits for its last key's command",
+                    id.0
+                );
                 if let Some(client) = self.clients.get_mut(&id) {
                     client.held.push_back(input);
                 }
@@ -477,6 +486,12 @@ impl Server<'_> {
             if since.elapsed() < KEYS_WAIT_AT_MOST {
                 return None;
             }
+            crate::debug!(
+                Keys,
+                "client {}: let through after {} ms, the command still at work",
+                id.0,
+                since.elapsed().as_millis()
+            );
             self.host.let_keys_through(id);
         }
         client.held.pop_front()
@@ -706,6 +721,7 @@ impl Server<'_> {
     fn input(&mut self, id: ClientId, input: &Input) -> bool {
         match *input {
             Input::Key(key) => {
+                crate::debug!(Keys, "client {} pressed {key}", id.0);
                 // A message lasts until the next key, unless that key
                 // brings another.
                 if let Some(client) = self.clients.get_mut(&id) {
@@ -716,6 +732,7 @@ impl Server<'_> {
                 self.report(pressed);
             }
             Input::KeyOrText(key, ref text) => {
+                crate::debug!(Keys, "client {} pressed {key}, which types {text:?}", id.0);
                 if let Some(client) = self.clients.get_mut(&id) {
                     client.message = None;
                 }
@@ -769,6 +786,7 @@ impl Server<'_> {
                 self.host
                     .with_editor_mut(|ed| ed.answer_image_ask(id, ask, png));
             }
+            Input::Log(ref text) => crate::debug!(Client, "client {}: {text}", id.0),
             // The client in this process ends the editor; another leaves it.
             Input::Quit if id == FIRST_CLIENT => return false,
             Input::Quit => self.detach(id),
@@ -1007,7 +1025,19 @@ impl Server<'_> {
                 frame
             })
         };
-        Some(host.timed("drawing", render))
+        let started = crate::debug::on(crate::debug::Topic::Frames).then(Instant::now);
+        let frame = host.timed("drawing", render);
+        if let Some(started) = started {
+            crate::debug!(
+                Frames,
+                "client {}: built a {}x{} frame in {:.2} ms",
+                id.0,
+                size.width,
+                size.height,
+                started.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+        Some(frame)
     }
 
     /// Sends client `id` its `frame`, with what it copied and the images
@@ -1052,6 +1082,16 @@ impl Server<'_> {
         let Some(output) = host.timed("what changed on screen", || client.output_for(frame)) else {
             return true;
         };
+        crate::debug!(
+            Frames,
+            "client {}: sent {}",
+            id.0,
+            if matches!(output, Output::Delta(_)) {
+                "what changed"
+            } else {
+                "a whole frame"
+            }
+        );
         if sent && client.output.send(output).is_ok() {
             return true;
         }

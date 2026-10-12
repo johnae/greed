@@ -45,42 +45,15 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     let reading = Arc::new(AtomicBool::new(true));
     // Terminals that don't report focus count as focused.
     let focused = Arc::new(AtomicBool::new(true));
-    let keys = {
-        let input = input.clone();
-        let reading = reading.clone();
-        let focused = focused.clone();
-        thread::spawn(move || {
-            while reading.load(Ordering::Relaxed) {
-                if !event::poll(KEY_POLL).unwrap_or(false) {
-                    continue;
-                }
-                let Ok(event) = event::read() else { break };
-                let message = match event {
-                    Event::Key(key) if key.kind != KeyEventKind::Release => {
-                        convert(key).map(Input::Key)
-                    }
-                    Event::Mouse(mouse) => Some(Input::Mouse(convert_mouse(mouse))),
-                    Event::Paste(text) => Some(Input::Paste(text)),
-                    Event::Resize(width, height) => {
-                        send_cell_size(&input);
-                        Some(Input::Resize(Size { width, height }))
-                    }
-                    Event::FocusGained => {
-                        focused.store(true, Ordering::Relaxed);
-                        None
-                    }
-                    Event::FocusLost => {
-                        focused.store(false, Ordering::Relaxed);
-                        None
-                    }
-                    Event::Key(_) => None,
-                };
-                if message.is_some_and(|m| input.send(m).is_err()) {
-                    break;
-                }
-            }
-        })
-    };
+    // Whether the session asks what happens on this side (its `client`
+    // debug topic is on).
+    let logging = Arc::new(AtomicBool::new(false));
+    let keys = read_keys(
+        input.clone(),
+        reading.clone(),
+        focused.clone(),
+        logging.clone(),
+    );
 
     let screen = &mut painter.0;
     let mut out = io::BufWriter::new(io::stdout());
@@ -133,7 +106,14 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
             }
         }
         if changed && let Some(frame) = &current {
+            let log = frame.gui.contains_key(greed_core::debug::CLIENT);
+            logging.store(log, Ordering::Relaxed);
+            let started = log.then(std::time::Instant::now);
             screen.draw(&mut out, frame)?;
+            if let Some(started) = started {
+                let took = started.elapsed().as_secs_f64() * 1000.0;
+                let _ = input.send(Input::Log(format!("drew a frame in {took:.2} ms")));
+            }
         }
         if let Some(ended) = ended {
             break ended;
@@ -143,6 +123,51 @@ pub fn run(input: &Sender<Input>, output: &Receiver<Output>) -> Result<Output, E
     let _ = keys.join();
     drop(terminal);
     Ok(ended)
+}
+
+/// Reads the terminal's keys, mouse and resizes into `input` on a thread of
+/// its own while `reading`, keeping whether it has focus in `focused`, and
+/// saying what it read while `logging`.
+fn read_keys(
+    input: Sender<Input>,
+    reading: Arc<AtomicBool>,
+    focused: Arc<AtomicBool>,
+    logging: Arc<AtomicBool>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        while reading.load(Ordering::Relaxed) {
+            if !event::poll(KEY_POLL).unwrap_or(false) {
+                continue;
+            }
+            let Ok(event) = event::read() else { break };
+            if logging.load(Ordering::Relaxed) {
+                let _ = input.send(Input::Log(format!("read {event:?}")));
+            }
+            let message = match event {
+                Event::Key(key) if key.kind != KeyEventKind::Release => {
+                    convert(key).map(Input::Key)
+                }
+                Event::Mouse(mouse) => Some(Input::Mouse(convert_mouse(mouse))),
+                Event::Paste(text) => Some(Input::Paste(text)),
+                Event::Resize(width, height) => {
+                    send_cell_size(&input);
+                    Some(Input::Resize(Size { width, height }))
+                }
+                Event::FocusGained => {
+                    focused.store(true, Ordering::Relaxed);
+                    None
+                }
+                Event::FocusLost => {
+                    focused.store(false, Ordering::Relaxed);
+                    None
+                }
+                Event::Key(_) => None,
+            };
+            if message.is_some_and(|m| input.send(m).is_err()) {
+                break;
+            }
+        }
+    })
 }
 
 /// Tells the server how big a cell is in pixels, if the terminal says, for

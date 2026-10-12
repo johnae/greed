@@ -55,6 +55,12 @@ struct Spent {
 /// Notes that `plugin`'s code ran for `took` running `what` (a command's
 /// name, "the status line", ...), keeping it if that held the editor up.
 fn note(lua: &Lua, took: Duration, plugin: Option<&str>, what: &str) {
+    crate::debug!(
+        Runs,
+        "{} {what}: {:.2} ms",
+        plugin.unwrap_or("greed"),
+        took.as_secs_f64() * 1000.0
+    );
     if let Some(profile) = &mut state_mut(lua).stalls.profile {
         let spent = profile
             .entry((plugin.map(str::to_owned), what.to_owned()))

@@ -979,6 +979,14 @@ where time goes when nothing stalls, `:profile` (or `greed.profile.start()`
 and `stop()`) counts every run of plugin code and the editor's own work by
 plugin and what it did, the most time first.
 
+To see what your plugin does as it runs, `greed.debug.log(...)` keeps a
+line while the `plugins` debug topic is on, or `plugin:NAME` for yours
+alone (`:debug plugin:myplugin`); off, it returns at once, and
+`greed.debug.on()` says whether it's on, for lines that cost something to
+make. `:debug-log` shows them with the editor's own topics (`keys`, `runs`
+and the rest, in [Debugging](using.md#debugging)), and
+`greed.debug.lines({ after = id })` returns them.
+
 Keys typed while a key's command is still at work wait their turn, so
 typing ahead gives the same result as typing slowly. At work means paused
 as above, or waiting on a timer, a program, a request or a command that

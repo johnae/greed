@@ -360,4 +360,37 @@ agent.tool({
 	end,
 })
 
+agent.tool({
+	name = "debug_log",
+	group = "plugins",
+	description = "What Greed and its plugins say about what they're doing, kept while a debug "
+		.. "topic is on: keys (each key, what it ran, how long it waited), runs (every run of "
+		.. "plugin code and its time), frames (each frame built), rpc (language server "
+		.. "messages), jobs (programs run), client (the terminal's or window's side), plugins "
+		.. "(greed.debug.log; plugin:NAME for one). Turn topics on with `set`, do what you want "
+		.. "to see, then read the lines; pass the last id as `after` to read only newer ones",
+	input = object({
+		set = {
+			type = "string",
+			description = 'Topics to turn on, with spaces between; "-keys" turns one off, "off" all',
+		},
+		after = { type = "number", description = "Only lines after this id" },
+		limit = { type = "number", description = "At most this many, the newest; 200 if left out" },
+		topic = { type = "string", description = "Only this topic's lines" },
+		plugin = { type = "string", description = "Only this plugin's lines" },
+	}),
+	run = function(args)
+		greed.debug.switch(args.set or "")
+		return {
+			on = greed.json.array(greed.debug.enabled()),
+			lines = greed.json.array(greed.debug.lines({
+				after = args.after,
+				limit = args.limit or 200,
+				topic = args.topic,
+				plugin = args.plugin,
+			})),
+		}
+	end,
+})
+
 return {}
