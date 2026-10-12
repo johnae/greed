@@ -1053,6 +1053,19 @@ greed.tab.set_layout({
   `ui.mount(..., { key = function(value) return value.id end })` each
   cursor stays on its item as the lines change places. A span's `tag` is
   found with `view:spots(tag)`, and its `line` styles its whole line.
+
+  For a long view that changes at one end, like a chat streaming in, wrap
+  each part in `ui.keyed(key, version, build)`: a part whose version is
+  the same as last time isn't laid out or drawn again, so a token costs
+  what its message does. `view:soon(patch)` draws once for a burst of
+  changes:
+
+  ```lua
+  ui.column(map(messages, function(m)
+      return ui.keyed(m.id, #m.text, function() return ui.text(m.text) end)
+  end))
+  ```
+
   `ui.pieces(node.lay(width))` gives a node as a mark's `lines`, as the
   data plugin draws its tables under a block.
 - `require("@core").data` is where tables of data come from: one shape,

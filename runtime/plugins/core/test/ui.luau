@@ -199,3 +199,124 @@ test("with a key, each cursor stays on its item as the lines change places", fun
 	assert(text_of(buffer) == "three\none\ntwo", text_of(buffer))
 	assert(greed.view():cursor() == buffer:line_start(2) + 1, "still on two, a letter in")
 end)
+
+test("a keyed part is laid out again only when its version changes", function(t)
+	local buffer = shown(t)
+	local built: { [string]: number } = {}
+	local function message(key: string, version: number, text: string): core.UiNode
+		return ui.keyed(key, version, function()
+			built[key] = (built[key] or 0) + 1
+			return ui.line({ ui.span(text, "markdown.value") })
+		end)
+	end
+	local view = ui.mount(buffer, function(state)
+		local parts: { core.UiNode } = { ui.line({ ui.span(`{#state.said} said`) }) }
+		for i, said in state.said do
+			table.insert(parts, message(`m{i}`, #said, said))
+		end
+		return ui.column(parts)
+	end, { said = { "hello", "how" } })
+	assert(text_of(buffer) == "2 said\nhello\nhow", text_of(buffer))
+	view:set({ said = { "hello", "how are" } })
+	view:set({ said = { "hello", "how are you" } })
+	assert(text_of(buffer) == "2 said\nhello\nhow are you", text_of(buffer))
+	assert(built.m1 == 1 and built.m2 == 3, `{built.m1} {built.m2}`)
+	-- The first message's style is still on it.
+	local styled = false
+	for _, mark in buffer:decorations("ui") do
+		styled = styled or (mark.from == buffer:line_start(1) and mark.style == "markdown.value")
+	end
+	assert(styled, "the part not drawn again keeps its marks")
+end)
+
+test("widgets in parts not drawn again still press", function(t)
+	local buffer = shown(t)
+	local pressed: { string } = {}
+	local view = ui.mount(buffer, function(state)
+		return ui.column({
+			ui.keyed("top", 1, function()
+				return ui.button("Top", function()
+					table.insert(pressed, "top")
+				end)
+			end),
+			ui.line({ ui.span(`n = {state.n}`) }),
+			ui.keyed("bottom", state.n, function()
+				return ui.button(`Bottom {state.n}`, function()
+					table.insert(pressed, `bottom {state.n}`)
+				end)
+			end),
+		})
+	end, { n = 1 })
+	view:set({ n = 2 })
+	view:set({ n = 3 })
+	t:keys("enter")
+	t:keys("tab enter")
+	assert(table.concat(pressed, ",") == "top,bottom 3", table.concat(pressed, ","))
+	assert(text_of(buffer) == " Top \nn = 3\n Bottom 3 ", text_of(buffer))
+end)
+
+test("parts come, go and change places", function(t)
+	local buffer = shown(t)
+	local view = ui.mount(buffer, function(state)
+		local parts: { core.UiNode } = {}
+		for _, name in state.names do
+			table.insert(
+				parts,
+				ui.keyed(name, 1, function()
+					return ui.column({ ui.line({ ui.span(name) }), ui.line({ ui.span("-") }) })
+				end)
+			)
+		end
+		return ui.column(parts)
+	end, { names = { "a", "b", "c" } })
+	view:set({ names = { "a", "c" } })
+	assert(text_of(buffer) == "a\n-\nc\n-", text_of(buffer))
+	view:set({ names = { "c", "a", "d" } })
+	assert(text_of(buffer) == "c\n-\na\n-\nd\n-", text_of(buffer))
+	view:set({ names = {} })
+	assert(text_of(buffer) == "", text_of(buffer))
+	view:set({ names = { "b" } })
+	assert(text_of(buffer) == "b\n-", text_of(buffer))
+	local values = view:values()
+	assert(#values == 0)
+end)
+
+test("values and spots are found in parts not drawn again", function(t)
+	local buffer = shown(t)
+	local view = ui.mount(buffer, function(state)
+		return ui.column({
+			ui.keyed("head", 1, function()
+				return ui.line({ { text = "head", value = "h", tag = "x" } })
+			end),
+			ui.line({ { text = `n {state.n}`, value = state.n } }),
+			ui.keyed("tail", 1, function()
+				return ui.line({ { text = "tail", value = "t", tag = "x" } })
+			end),
+		})
+	end, { n = 1 })
+	view:set({ n = 22 })
+	assert(view:value_at(0) == "h" and view:value_at(buffer:line_start(1)) == 22)
+	assert(view:value_at(buffer:line_start(2)) == "t")
+	local values = view:values()
+	assert(#values == 3 and values[3] == "t")
+	local spots = view:spots("x")
+	assert(#spots == 2 and buffer:slice(spots[2].from, spots[2].to) == "tail")
+end)
+
+test("soon draws a burst of changes once", function(t)
+	local buffer = shown(t)
+	local draws = 0
+	local view = ui.mount(buffer, function(state)
+		draws += 1
+		return ui.line({ ui.span(state.text) })
+	end, { text = "" })
+	local before = draws
+	for i = 1, 50 do
+		view:soon({ text = `token {i}` })
+	end
+	assert(draws == before, "not drawn yet")
+	t:wait_for(function()
+		return text_of(buffer) == "token 50"
+	end)
+	assert(draws == before + 1, `drawn {draws - before} times`)
+end)

@@ -22,6 +22,7 @@ local greed = require("@greed")
 local text_helpers = require("./text")
 local prompt = require("./prompt")
 local formula = require("./formula")
+local atomic = require("./atomic")
 
 local width, clip = text_helpers.width, text_helpers.clip
 
@@ -43,8 +44,14 @@ export type Span = {
 --- A line of spans.
 export type Line = { Span }
 
---- A part of an interface: its lines, laid out for a width in cells.
-export type Node = { lay: (cells: number) -> { Line } }
+--- A part of an interface: its lines, laid out for a width in cells. A
+--- column has its `parts`; a keyed part its `key` and `version`.
+export type Node = {
+	lay: (cells: number) -> { Line },
+	parts: { Node }?,
+	key: string?,
+	version: any?,
+}
 
 --- A mounted view: its buffer, its state, and what draws it.
 export type View = {
@@ -52,6 +59,9 @@ export type View = {
 	state: { [string]: any },
 	--- Merges `patch` into the state and draws the view again.
 	set: (self: View, patch: { [string]: any }) -> (),
+	--- Merges `patch` (if any) into the state and draws the view again
+	--- soon, once for everything set meanwhile, like tokens streaming in.
+	soon: (self: View, patch: { [string]: any }?) -> (),
 	--- Draws the view again, as its state says now.
 	redraw: (self: View) -> (),
 	--- Stops drawing it; the buffer stays as it was last drawn.
@@ -134,6 +144,7 @@ end
 --- `children` one under another.
 function M.column(children: { Node }): Node
 	return {
+		parts = children,
 		lay = function(cells: number): { Line }
 			local out: { Line } = {}
 			for _, child in children do
@@ -142,6 +153,21 @@ function M.column(children: { Node }): Node
 				end
 			end
 			return out
+		end,
+	}
+end
+
+--- A part `build` makes, laid out again only when `version` or the width
+--- changes; until then a view keeps its lines, its marks and its place in
+--- the buffer as they are. A history of messages, each keyed by its id and
+--- versioned by its length, draws only the one streaming in. Keys are the
+--- view's own, one per part; a part is kept among a column's parts.
+function M.keyed(key: string, version: any, build: () -> Node): Node
+	return {
+		key = key,
+		version = version,
+		lay = function(cells: number): { Line }
+			return build().lay(cells)
 		end,
 	}
 end
@@ -464,16 +490,36 @@ function M.list<T>(items: { T }, spans: (item: T) -> { Span }, on_open: ((item: 
 	return M.column(lines)
 end
 
---- `node` as text and marks for `cells` wide: each pressable span a mark
---- whose action is `ui-press`, with its index in `presses`; and what else
---- the drawing says (`Drawn`).
-function M.draw(node: Node, cells: number): (string, { greed.Mark }, { () -> () }, Drawn)
+-- Some lines drawn: their text and marks, from 0 at the first line's
+-- start; each pressable span a mark whose action is `ui-press`, its data
+-- the index of what it does in `presses`; each line's value by 0-based
+-- line, and where tagged spans are. A keyed part's also says what it was
+-- drawn for.
+type Piece = {
+	text: string,
+	lines: { string },
+	marks: { greed.Mark },
+	presses: { () -> () },
+	values: { [number]: any },
+	spots: { [string]: { { from: number, to: number } } },
+	key: string?,
+	version: any,
+	cells: number?,
+}
+
+local function piece_of(lines: { Line }): Piece
 	local texts: { string } = {}
-	local marks: { greed.Mark } = {}
-	local presses: { () -> () } = {}
-	local drawn: Drawn = { values = {}, spots = {} }
+	local piece: Piece = {
+		text = "",
+		lines = texts,
+		marks = {},
+		presses = {},
+		values = {},
+		spots = {},
+	}
+	local marks, presses, values, spots = piece.marks, piece.presses, piece.values, piece.spots
 	local at = 0
-	for n, line in node.lay(cells) do
+	for n, line in lines do
 		local parts: { string } = {}
 		local start = at
 		local line_style: string? = nil
@@ -481,14 +527,14 @@ function M.draw(node: Node, cells: number): (string, { greed.Mark }, { () -> () 
 			local from = at
 			at += #span.text
 			table.insert(parts, span.text)
-			if span.value ~= nil and drawn.values[n - 1] == nil then
-				drawn.values[n - 1] = span.value
+			if span.value ~= nil and values[n - 1] == nil then
+				values[n - 1] = span.value
 			end
 			line_style = line_style or span.line
 			local tag = span.tag
 			if tag then
-				local list = drawn.spots[tag] or {}
-				drawn.spots[tag] = list
+				local list = spots[tag] or {}
+				spots[tag] = list
 				table.insert(list, { from = from, to = at })
 			end
 			if span.press then
@@ -513,7 +559,16 @@ function M.draw(node: Node, cells: number): (string, { greed.Mark }, { () -> () 
 		table.insert(texts, table.concat(parts))
 		at += 1
 	end
-	return table.concat(texts, "\n"), marks, presses, drawn
+	piece.text = table.concat(texts, "\n")
+	return piece
+end
+
+--- `node` as text and marks for `cells` wide: each pressable span a mark
+--- whose action is `ui-press`, with its index in `presses`; and what else
+--- the drawing says (`Drawn`).
+function M.draw(node: Node, cells: number): (string, { greed.Mark }, { () -> () }, Drawn)
+	local piece = piece_of(node.lay(cells))
+	return piece.text, piece.marks, piece.presses, { values = piece.values, spots = piece.spots }
 end
 
 --- `lines` (a node laid out) as lines a mark shows under a line (a mark's
@@ -530,9 +585,276 @@ function M.pieces(lines: { Line }): { greed.MarkLine }
 	return out
 end
 
--- What's mounted, by buffer id: its view, what each widget does and what
--- its last drawing says.
-local mounted: { [number]: { view: View, presses: { () -> () }, drawn: Drawn } } = {}
+-- `node` laid out `cells` wide as pieces, top to bottom: each keyed part
+-- one, taken from `cache` if it was drawn for the same version and width,
+-- and the lines between them one each. Every keyed piece goes in `seen`.
+local function flatten(
+	node: Node,
+	cells: number,
+	cache: { [string]: Piece },
+	seen: { [string]: Piece }
+): { Piece }
+	local out: { Piece } = {}
+	local loose: { Line } = {}
+	local function flush()
+		if #loose > 0 then
+			table.insert(out, piece_of(loose))
+			loose = {}
+		end
+	end
+	local function walk(part: Node)
+		local key = part.key
+		if key ~= nil then
+			flush()
+			local piece = cache[key]
+			if piece == nil or piece.version ~= part.version or piece.cells ~= cells then
+				piece = piece_of(part.lay(cells))
+				piece.key, piece.version, piece.cells = key, part.version, cells
+			end
+			seen[key] = piece
+			if #piece.lines > 0 then
+				table.insert(out, piece)
+			end
+		elseif part.parts then
+			for _, child in part.parts do
+				walk(child)
+			end
+		else
+			for _, line in part.lay(cells) do
+				table.insert(loose, line)
+			end
+		end
+	end
+	walk(node)
+	flush()
+	return out
+end
+
+-- Makes lines `first` to `last_a` (1-based) of `buffer`'s `total_a` lines
+-- read as lines `first` to `last_b` of the `total_b` that `new(i)` gives,
+-- as one edit of the lines that differ. A cursor in what's replaced stays
+-- on its line and column, rather than going to either end of the new text.
+local function replace_lines(
+	buffer: greed.Buffer,
+	total_a: number,
+	total_b: number,
+	first: number,
+	last_a: number,
+	last_b: number,
+	new: (i: number) -> string
+)
+	local function old(i: number): string
+		return buffer:slice(buffer:line_start(i - 1), buffer:line_end(i - 1))
+	end
+	while first <= last_a and first <= last_b and old(first) == new(first) do
+		first += 1
+	end
+	while last_a >= first and last_b >= first and old(last_a) == new(last_b) do
+		last_a -= 1
+		last_b -= 1
+	end
+	if last_a < first and last_b < first then
+		return
+	end
+	-- Lines `first` to `last_a` of the old text become `first` to `last_b`.
+	local from = if first <= total_a then buffer:line_start(first - 1) else buffer:len()
+	local to = if last_a >= first then buffer:line_end(last_a - 1) else from
+	local lines: { string } = {}
+	for i = first, last_b do
+		table.insert(lines, new(i))
+	end
+	local text = table.concat(lines, "\n")
+	if last_a < first then
+		-- Only lines added: they join with a line break on the right side.
+		text = if first <= total_a then text .. "\n" else "\n" .. text
+	elseif last_b < first then
+		-- Only lines taken away, with the line break before or after them.
+		if first > 1 then
+			from = buffer:line_end(first - 2)
+		elseif last_a < total_a then
+			to = buffer:line_start(last_a)
+		end
+	end
+	local inside: { { view: greed.View, line: number, column: number } } = {}
+	for _, shown in buffer:views() do
+		local pos = shown:cursor()
+		if pos >= from and pos <= to then
+			local line = buffer:line_of(pos)
+			table.insert(
+				inside,
+				{ view = shown, line = line, column = pos - buffer:line_start(line) }
+			)
+		end
+	end
+	buffer:edit(function(e)
+		e:replace(from, to, text)
+	end, { undo = false })
+	for _, kept in inside do
+		local line = math.min(kept.line, buffer:line_count() - 1)
+		local pos = math.min(buffer:line_start(line) + kept.column, buffer:line_end(line))
+		kept.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	end
+end
+
+-- A piece where it's drawn: where it starts (byte and 0-based line) and
+-- the ids its widgets' presses have.
+type Placed = { piece: Piece, at: number, line: number, ids: { number } }
+
+-- What's mounted, by buffer id: its view, what each widget does by id, the
+-- pieces drawn and the keyed ones to reuse.
+type Mounted = {
+	view: View,
+	presses: { [number]: () -> () },
+	next: number,
+	placed: { Placed },
+	cache: { [string]: Piece },
+}
+
+local mounted: { [number]: Mounted } = {}
+
+-- `piece`'s marks for it drawn at `at`, its widgets given ids in `entry`.
+local function marks_of(entry: Mounted, piece: Piece, at: number): ({ greed.Mark }, { number })
+	local ids: { number } = {}
+	for i, press in piece.presses do
+		entry.next += 1
+		entry.presses[entry.next] = press
+		ids[i] = entry.next
+	end
+	local out: { greed.Mark } = {}
+	for _, mark in piece.marks do
+		local moved = table.clone(mark)
+		moved.from += at
+		moved.to += at
+		local data: any = mark.data
+		if data then
+			moved.data = { ui = ids[data.ui] }
+		end
+		table.insert(out, moved)
+	end
+	return out, ids
+end
+
+local function forget_presses(entry: Mounted, placed: Placed)
+	for _, id in placed.ids do
+		entry.presses[id] = nil
+	end
+end
+
+-- The one of `placed` drawn at 0-based `line`, if any.
+local function placed_at(placed: { Placed }, line: number): Placed?
+	local lo, hi = 1, #placed
+	while lo <= hi do
+		local mid = (lo + hi) // 2
+		local p = placed[mid]
+		if line < p.line then
+			hi = mid - 1
+		elseif line >= p.line + #p.piece.lines then
+			lo = mid + 1
+		else
+			return p
+		end
+	end
+	return nil
+end
+
+-- Draws `pieces` in `buffer` where `entry`'s were, changing only the text
+-- and marks of the pieces that changed: a piece kept as it was (the same
+-- keyed piece) keeps its lines and marks as they are.
+local function place(buffer: greed.Buffer, entry: Mounted, pieces: { Piece })
+	local old = entry.placed
+	local function same(a: Piece, b: Piece): boolean
+		return a == b or (a.key == nil and b.key == nil and a.text == b.text)
+	end
+	local head = 0
+	while head < #old and head < #pieces and same(old[head + 1].piece, pieces[head + 1]) do
+		head += 1
+	end
+	local tail = 0
+	while
+		tail < #old - head
+		and tail < #pieces - head
+		and same(old[#old - tail].piece, pieces[#pieces - tail])
+	do
+		tail += 1
+	end
+	-- The new pieces' places, and each line's text by number.
+	local placed: { Placed } = {}
+	local at, count = 0, 0
+	for i, piece in pieces do
+		placed[i] = { piece = piece, at = at, line = count, ids = {} }
+		count += #piece.lines
+		at += #piece.text + 1
+	end
+	local function new(i: number): string
+		local p = placed_at(placed, i - 1)
+		return if p then p.piece.lines[i - p.line] else ""
+	end
+	local function marks_from(from_index: number, to_index: number): { greed.Mark }
+		local marks: { greed.Mark } = {}
+		for i = from_index, to_index do
+			local own, ids = marks_of(entry, placed[i].piece, placed[i].at)
+			placed[i].ids = ids
+			table.move(own, 1, #own, #marks + 1, marks)
+		end
+		return marks
+	end
+	if #old == 0 or #pieces == 0 then
+		-- Nothing drawn before (or now): the buffer is whatever it holds.
+		local lines = math.max(count, 1)
+		replace_lines(buffer, buffer:line_count(), lines, 1, buffer:line_count(), lines, new)
+		for _, was in old do
+			forget_presses(entry, was)
+		end
+		buffer:decorate("ui", marks_from(1, #placed))
+		entry.placed = placed
+		return
+	end
+	local total_a = old[#old].line + #old[#old].piece.lines
+	local kept_after = 0
+	for i = #old - tail + 1, #old do
+		kept_after += #old[i].piece.lines
+	end
+	local first = (if head > 0 then placed[head].line + #pieces[head].lines else 0) + 1
+	replace_lines(buffer, total_a, count, first, total_a - kept_after, count - kept_after, new)
+	-- Marks: the changed pieces' as one, and those of a piece of loose lines
+	-- that read the same but were drawn again.
+	for i = head + 1, #old - tail do
+		forget_presses(entry, old[i])
+	end
+	local function redecorate(from_index: number, to_index: number)
+		local last = placed[to_index]
+		-- To the line break after it, where a mark of a piece taken away
+		-- may have been squeezed.
+		local stop = last.at + #last.piece.text + 1
+		buffer:decorate(
+			"ui",
+			marks_from(from_index, to_index),
+			{ from = placed[from_index].at, to = stop }
+		)
+	end
+	for i, p in placed do
+		local was = if i <= head
+			then old[i]
+			elseif i > #pieces - tail then old[#old - (#pieces - i)]
+			else nil
+		if was and was.piece == p.piece then
+			p.ids = was.ids
+		elseif was then
+			forget_presses(entry, was)
+			redecorate(i, i)
+		end
+	end
+	if head + 1 <= #pieces - tail then
+		redecorate(head + 1, #pieces - tail)
+	end
+	entry.placed = placed
+end
+
+-- The value of 0-based `line` of `entry`'s view.
+local function value_of(entry: Mounted, line: number): any
+	local p = placed_at(entry.placed, line)
+	return if p then p.piece.values[line - p.line] else nil
+end
 
 --- How wide `buffer` is shown: the narrowest view of it, else 80 cells.
 function M.width(buffer: greed.Buffer): number
@@ -546,66 +868,18 @@ function M.width(buffer: greed.Buffer): number
 	return least or 80
 end
 
--- Replaces the lines of `buffer` that differ from `text`, as one edit.
-local function replace_changed(buffer: greed.Buffer, text: string)
-	local old = buffer:slice(0, buffer:len())
-	if old == text then
-		return
-	end
-	local a, b = string.split(old, "\n"), string.split(text, "\n")
-	local first = 1
-	while first <= #a and first <= #b and a[first] == b[first] do
-		first += 1
-	end
-	local last_a, last_b = #a, #b
-	while last_a >= first and last_b >= first and a[last_a] == b[last_b] do
-		last_a -= 1
-		last_b -= 1
-	end
-	-- Lines `first` to `last_a` of the old text become `first` to `last_b`.
-	local from = if first <= #a then buffer:line_start(first - 1) else buffer:len()
-	local to = if last_a >= first then buffer:line_end(last_a - 1) else from
-	local lines = table.move(b, first, last_b, 1, {})
-	local new = table.concat(lines, "\n")
-	if last_a < first and last_b >= first then
-		-- Only lines added: they join with a line break on the right side.
-		new = if first <= #a then new .. "\n" else "\n" .. new
-	elseif last_b < first and last_a >= first then
-		-- Only lines taken away, with the line break before or after them.
-		if first > 1 then
-			from = buffer:line_end(first - 2)
-		elseif last_a < #a then
-			to = buffer:line_start(last_a)
-		end
-	end
-	-- A cursor in what's replaced stays on its line and column, rather than
-	-- going to either end of the new text.
-	local inside: { { view: greed.View, line: number, column: number } } = {}
-	for _, shown in buffer:views() do
-		local pos = shown:cursor()
-		if pos >= from and pos <= to then
-			local line = buffer:line_of(pos)
-			table.insert(
-				inside,
-				{ view = shown, line = line, column = pos - buffer:line_start(line) }
-			)
-		end
-	end
-	buffer:edit(function(e)
-		e:replace(from, to, new)
-	end, { undo = false })
-	for _, kept in inside do
-		local line = math.min(kept.line, buffer:line_count() - 1)
-		local pos = math.min(buffer:line_start(line) + kept.column, buffer:line_end(line))
-		kept.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
-	end
-end
+-- How long `View:soon` waits to draw, gathering what's set meanwhile.
+local SOON_MS = 16
 
 --- Draws `render(state)` into `buffer` for the width of its views, and
 --- again whenever the state is set or a view of it is resized. Gives the
 --- view, whose `set` merges into its state. With `key`, which names a
 --- line's value, each cursor stays on the line of the same value as the
 --- lines change places, like a list's row as it's sorted again.
+---
+--- Drawing again changes only the lines that changed, and a `keyed` part
+--- whose version is the same isn't laid out again at all, so a long view
+--- that changes at one end costs what that end does.
 function M.mount(
 	buffer: greed.Buffer,
 	render: (state: { [string]: any }) -> Node,
@@ -613,8 +887,9 @@ function M.mount(
 	opts: { key: ((value: any) -> string)? }?
 ): View
 	local key = opts and opts.key
+	local entry: Mounted
 	-- Each view's cursor: its line's value's key, and how far along it.
-	local function held(drawn: Drawn): { { view: greed.View, key: string, column: number } }
+	local function held(): { { view: greed.View, key: string, column: number } }
 		local out = {}
 		if key == nil then
 			return out
@@ -622,7 +897,7 @@ function M.mount(
 		for _, shown in buffer:views() do
 			local pos = shown:cursor()
 			local line = buffer:line_of(pos)
-			local value = drawn.values[line]
+			local value = value_of(entry, line)
 			if value ~= nil then
 				table.insert(
 					out,
@@ -632,6 +907,17 @@ function M.mount(
 		end
 		return out
 	end
+	local function line_keyed(wanted: string): number?
+		for _, p in entry.placed do
+			for line, value in p.piece.values do
+				if (key :: (any) -> string)(value) == wanted then
+					return p.line + line
+				end
+			end
+		end
+		return nil
+	end
+	local soon = false
 	local view: View = {
 		buffer = buffer,
 		state = state or {},
@@ -641,46 +927,57 @@ function M.mount(
 			end
 			self:redraw()
 		end,
-		redraw = function(self: View)
-			local entry = mounted[buffer:id()]
-			if entry == nil or entry.view ~= self or not buffer:valid() then
+		soon = function(self: View, patch: { [string]: any }?)
+			if patch then
+				for k, v in patch do
+					self.state[k] = v
+				end
+			end
+			if soon then
 				return
 			end
-			local cursors = held(entry.drawn)
-			local text, marks, presses, drawn = M.draw(render(self.state), M.width(buffer))
-			entry.presses, entry.drawn = presses, drawn
-			replace_changed(buffer, text)
-			buffer:decorate("ui", marks)
+			soon = true
+			greed.spawn(function()
+				greed.sleep(SOON_MS)
+				soon = false
+				self:redraw()
+			end)
+		end,
+		redraw = function(self: View)
+			if mounted[buffer:id()] ~= entry or entry.view ~= self or not buffer:valid() then
+				return
+			end
+			local cursors = held()
+			local seen: { [string]: Piece } = {}
+			local pieces = flatten(render(self.state), M.width(buffer), entry.cache, seen)
+			entry.cache = seen
+			-- No frame shows the new text with the old marks.
+			atomic(place, buffer, entry, pieces)
 			for _, cursor in cursors do
-				for line, value in drawn.values do
-					if (key :: (any) -> string)(value) == cursor.key and cursor.view:valid() then
-						local start = buffer:line_start(line)
-						local pos = math.min(start + cursor.column, buffer:line_end(line))
-						cursor.view:set_selection({
-							ranges = { { anchor = pos, head = pos } },
-							primary = 1,
-						})
-						break
-					end
+				local line = line_keyed(cursor.key)
+				if line and cursor.view:valid() then
+					local pos =
+						math.min(buffer:line_start(line) + cursor.column, buffer:line_end(line))
+					cursor.view:set_selection({
+						ranges = { { anchor = pos, head = pos } },
+						primary = 1,
+					})
 				end
 			end
 		end,
 		unmount = function(self: View)
-			local entry = mounted[buffer:id()]
-			if entry and entry.view == self then
+			if mounted[buffer:id()] == entry and entry.view == self then
 				mounted[buffer:id()] = nil
 			end
 		end,
 		value_at = function(_self: View, pos: number): any
-			local entry = mounted[buffer:id()]
-			return if entry then entry.drawn.values[buffer:line_of(pos)] else nil
+			return value_of(entry, buffer:line_of(pos))
 		end,
 		values = function(_self: View): { any }
-			local entry = mounted[buffer:id()]
 			local out: { any } = {}
-			if entry then
-				for line = 0, buffer:line_count() - 1 do
-					local value = entry.drawn.values[line]
+			for _, p in entry.placed do
+				for line = 0, #p.piece.lines - 1 do
+					local value = p.piece.values[line]
 					if value ~= nil then
 						table.insert(out, value)
 					end
@@ -689,11 +986,20 @@ function M.mount(
 			return out
 		end,
 		spots = function(_self: View, tag: string): { { from: number, to: number } }
-			local entry = mounted[buffer:id()]
-			return if entry then entry.drawn.spots[tag] or {} else {}
+			local out: { { from: number, to: number } } = {}
+			for _, p in entry.placed do
+				local spots = p.piece.spots[tag]
+				if spots then
+					for _, spot in spots do
+						table.insert(out, { from = p.at + spot.from, to = p.at + spot.to })
+					end
+				end
+			end
+			return out
 		end,
 	}
-	mounted[buffer:id()] = { view = view, presses = {}, drawn = { values = {}, spots = {} } }
+	entry = { view = view, presses = {}, next = 0, placed = {}, cache = {} }
+	mounted[buffer:id()] = entry
 	buffer:set_keys({ tab = "ui-next", ["shift-tab"] = "ui-prev" })
 	greed.plugin.tie(function()
 		view:unmount()
