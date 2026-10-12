@@ -62,6 +62,12 @@ test("ctrl-p, ctrl-b and ctrl-P open the pickers", function(t)
 	end
 end)
 
+test("backspace after a multi-byte character deletes all of it", function(t)
+	check(t, "ab❯\n|cd", "backspace", "ab❯|cd")
+	check(t, "a⎇|b", "backspace", "a|b")
+	check(t, "❯\r\n|x", "backspace", "❯|x")
+end)
+
 test("enter, backspace and delete keep CRLF line breaks whole", function(t)
 	t:buffer("a|b\r\ncd")
 	greed.mode.set("vscode")

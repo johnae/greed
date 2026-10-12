@@ -84,6 +84,18 @@ test(":shell opens a buffer of blocks with the prompt at the bottom", function(t
 	assert(string.find(drawn, `{short} ❯ \n`, 1, true), drawn)
 end)
 
+test("backspace at the prompt after output ending in a multi-byte character", function(t)
+	local sh = open(t)
+	finished(t, type_line(t, sh, "echo ⎇ ❯"))
+	assert(text() == "echo ⎇ ❯\n⎇ ❯\n", text())
+	assert(core.style.is_typing(), greed.mode.get())
+	t:keys("x ❯ backspace")
+	assert(log.prompt_text(sh) == "x", log.prompt_text(sh))
+	t:keys("backspace backspace")
+	assert(log.prompt_text(sh) == "", log.prompt_text(sh))
+	assert(string.find(text(), "⎇ ❯\n", 1, true), text())
+end)
+
 test("a prompt of many lines, like a pasted transcript, runs only once you say so", function(t)
 	local sh = open(t, t:tempdir())
 	local pasted = "kubectl get pods\nNAME   READY\napi    1/1\ndb     1/1\ncache  1/1\nweb    1/1"

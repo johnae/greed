@@ -109,6 +109,14 @@ test("x, D and . repeat", function(t)
 	t:expect("|c")
 end)
 
+test("backspace after a multi-byte character deletes all of it", function(t)
+	for _, case in { { "ab❯\n|cd", "ab❯|cd" }, { "a⎇|b", "a|b" }, { "❯\r\n|x", "❯|x" } } do
+		buffer(t, case[1])
+		t:keys("i backspace")
+		t:expect(case[2])
+	end
+end)
+
 test("i a o O enter insert mode in the right place", function(t)
 	buffer(t, "a|b")
 	t:keys("i X esc")
@@ -845,6 +853,11 @@ test("lines copied in one style paste as lines in the others", function(t)
 	t:buffer("a|b")
 	t:keys("p")
 	t:expect("ab^\nlast|")
+	buffer(t, "o|ne\ntwo")
+	t:keys("y y")
+	buffer(t, "a❯|")
+	t:keys("p")
+	t:expect("a❯\n|one")
 
 	t:buffer("|line\nmore")
 	t:keys("x y")

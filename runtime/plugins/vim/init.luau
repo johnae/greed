@@ -82,7 +82,7 @@ local function paste(ctx: greed.Context, after: boolean)
 				then buffer:line_start(line + 1)
 				else buffer:len()
 			local br = string.match(text, "\r?\n$")
-			if br and at == buffer:len() and buffer:char_at(at - 1) ~= "\n" then
+			if br and at == buffer:len() and buffer:char_at(buffer:prev_char(at)) ~= "\n" then
 				text = br .. string.sub(text, 1, -#br - 1)
 			end
 		else

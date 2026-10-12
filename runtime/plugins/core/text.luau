@@ -221,8 +221,11 @@ end
 -- The start of the character before `pos`, counting "\r\n" as one.
 function M.before(buffer: Buffer, pos: number): number
 	local prev = buffer:prev_char(pos)
-	if prev > 0 and buffer:char_at(prev) == "\n" and buffer:char_at(prev - 1) == "\r" then
-		return prev - 1
+	if prev > 0 and buffer:char_at(prev) == "\n" then
+		local cr = buffer:prev_char(prev)
+		if buffer:char_at(cr) == "\r" then
+			return cr
+		end
 	end
 	return prev
 end

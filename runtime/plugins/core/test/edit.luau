@@ -132,6 +132,12 @@ test("deleting back at the start of the buffer does nothing", function(t)
 	check(t, "|abc", "i backspace esc", "|abc")
 end)
 
+test("backspace after a multi-byte character deletes all of it", function(t)
+	check(t, "ab❯\n|cd", "i backspace", "ab❯|cd")
+	check(t, "a⎇|b", "i backspace", "a|b")
+	check(t, "❯\r\n|x", "i backspace", "❯|x")
+end)
+
 test("o and O at several cursors on one line open one line each", function(t)
 	check(t, "a|b|c\nd", "o", "abc\n|\nd")
 end)
