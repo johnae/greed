@@ -1,0 +1,4 @@
+name = "data"
+requires = ["core", "markdown", "blocks", "shell"]
+# The sqlite and psql sources run sqlite3 and psql; csv reads files.
+capabilities = ["proc", "fs.read"]

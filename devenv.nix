@@ -40,6 +40,9 @@
 
     # An agent to try Greed's agent support with, beside Claude Code
     pkgs.opencode
+
+    # The data plugin's sqlite source runs it, and its tests do
+    pkgs.sqlite
   ];
 
   # What the window client (`greed --gui`) loads at run time: the display

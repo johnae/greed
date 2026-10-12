@@ -1546,6 +1546,52 @@ anything or loop, so they work in any file without asking, and one that
 goes wrong shows why where its value would be. On GitHub and the like, a
 field shows as a link and a value as its formula.
 
+### Data blocks
+
+A fenced block named after a data source shows the table it reads, live,
+under it:
+
+````markdown
+City: [oslo](field:city)
+
+```sqlite db=shop.db rows=10 id=customers
+SELECT name, total FROM customers WHERE city = @city ORDER BY total DESC
+```
+<!-- chart: bar total -->
+
+The best customer: {{ customers[1].name }}.
+````
+
+Its first line says what it reads and how it went (`▦ sqlite · shop.db · 10
+rows`), and the query folds under it: with the cursor on that line it shows,
+dimmed, to edit. A table is read again when what it asks changes, a moment
+after you stop typing, and when the file it reads changes. Reading never holds
+the editor up.
+
+| Source | Reads |
+|---|---|
+| `csv` | a CSV file with a header (`path=sales.csv`, from the document's folder), or the block's own lines |
+| `sqlite` | a query over the SQLite database `db=FILE`, by the `sqlite3` program |
+| `psql` | a query over PostgreSQL by `psql`, `db=` a connection (else psql's own settings) |
+
+- `@name` in a query is the document's value of that name (a field, a `let`,
+  an answer), passed to the database as a parameter, never pasted into the
+  query: a field holding `'; drop table customers; --` is only text. Change
+  the field and the table is read again.
+- `rows=N` shows N rows at a time; `space m n` and `space m p` turn the page.
+- `id=NAME` makes the table a value for formulas, as a named Markdown table is
+  (`customers[1].name`, `sum(customers.total)`), and a `<!-- chart: ... -->`
+  line under the block charts it.
+- `sqlite` and `psql` open the database read-only unless the block says
+  `write=true`. They run programs, so a block waits, as a code block does,
+  until you let it: `enter` on its first line asks, `a` lets the file's data
+  blocks run from then on. `enter` there later reads it again.
+- The programs are `sqlite3` and `psql` unless `:set data-sqlite3` or
+  `:set data-psql` names others.
+
+Plugins add sources with `require("@core").data.source({ name, read, ... })`;
+see `core.data` for what a source gives.
+
 ### Runnable code blocks
 
 A fenced block in a language Greed can run runs when you ask, and its

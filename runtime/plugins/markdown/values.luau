@@ -230,8 +230,46 @@ function M.found(s: Structure): Found
 	return result
 end
 
+--- Values a buffer's text names but doesn't hold, like a table a data block
+--- read from a database: the names it has now, and each one's value. Both
+--- quick, as formulas are worked out as the document draws.
+export type Provider = {
+	names: (buffer: greed.Buffer) -> { string },
+	value: (buffer: greed.Buffer, name: string) -> any,
+}
+
+local providers: { Provider } = {}
+
+--- Lets formulas name the values `provider` gives. It goes when the plugin
+--- that added it does.
+function M.provide(provider: Provider)
+	greed.plugin.tie(core.registry.put(providers, provider))
+end
+
+--- `t` as formulas see a table: a list of its rows, each by its columns'
+--- names (as `key` makes them), and each column as a list under its name.
+function M.table(t: core.DataTable): any
+	local keys: { [string]: string } = {}
+	local out: any = {}
+	for _, column in t.columns do
+		keys[column.name] = M.key(column.name)
+		out[keys[column.name]] = {}
+	end
+	for _, row in t.rows do
+		local named: { [string]: any } = {}
+		for _, column in t.columns do
+			local key = keys[column.name]
+			named[key] = row[column.name]
+			table.insert(out[key], row[column.name])
+		end
+		table.insert(out, named)
+	end
+	return out
+end
+
 --- The scope `buffer`'s formulas are worked out in: its fields, tables,
---- answers and `let`s, each `let` worked out when it's first named.
+--- answers and `let`s, each `let` worked out when it's first named, then
+--- what providers give.
 function M.scope(buffer: greed.Buffer, s: Structure?): (name: string) -> any
 	local known = M.found(s or structure.of(buffer))
 	local values: { [string]: any } = {}
@@ -253,6 +291,12 @@ function M.scope(buffer: greed.Buffer, s: Structure?): (name: string) -> any
 		-- A table with its formulas worked out, or a `let`: each once.
 		local sheet, source = known.tables[name], known.lets[name]
 		if sheet == nil and source == nil then
+			for _, provider in providers do
+				local given = provider.value(buffer, name)
+				if given ~= nil then
+					return given
+				end
+			end
 			return nil
 		end
 		local done = worked[name]
@@ -299,6 +343,11 @@ function M.all(buffer: greed.Buffer): { [string]: any }
 	end
 	for name in known.tables do
 		table.insert(names, name)
+	end
+	for _, provider in providers do
+		for _, name in provider.names(buffer) do
+			table.insert(names, name)
+		end
 	end
 	local out: { [string]: any } = {}
 	for _, name in names do

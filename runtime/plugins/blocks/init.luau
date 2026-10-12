@@ -79,7 +79,11 @@ local function save_trusted()
 		table.insert(paths, path)
 	end
 	table.sort(paths)
-	greed.fs.write(trust_file, table.concat(paths, "\n") .. "\n")
+	-- This plugin's own record, whichever plugin asked to trust a file.
+	local file = trust_file :: string
+	greed.vouch(function()
+		greed.fs.write(file, table.concat(paths, "\n") .. "\n")
+	end)
 end
 
 -- The buffer's file, if it has one and is still open.
@@ -125,7 +129,10 @@ local function save_approved()
 		end
 		out[path] = list
 	end
-	greed.fs.write(approved_file, greed.json.encode(out))
+	local file = approved_file :: string
+	greed.vouch(function()
+		greed.fs.write(file, greed.json.encode(out))
+	end)
 end
 
 --- Whether `text`, something the file `key` runs (a block, a board's card),
@@ -173,10 +180,15 @@ function M.yours(buffer: greed.Buffer): boolean
 		and #buffer:history({ author = "external", limit = 1 }) == 0
 end
 
--- A block as it's approved: what it runs as and its code.
-local function block_text(buffer: greed.Buffer, block: Block): string
+--- A block as it's approved (`approved`, `approve`): what it runs as and
+--- its code.
+local function block_text(
+	buffer: greed.Buffer,
+	block: { info: string, code_from: number, code_to: number }
+): string
 	return block.info .. "\n" .. buffer:slice(block.code_from, block.code_to)
 end
+M.text = block_text
 
 -- The block named `id` in `buffer`.
 local function named(buffer: greed.Buffer, id: string): Block?
@@ -660,6 +672,20 @@ function M.runnable(buffer: greed.Buffer): { Block }
 	return list
 end
 
+--- The blocks in `buffer` that run once they're let, in order: those with
+--- a runner, and those reading a data source that runs a program or
+--- reaches a service (see `core.data`), which a file shows as it's drawn.
+function M.approvable(buffer: greed.Buffer): { Block }
+	local list = {}
+	for _, block in parse.blocks(buffer) do
+		local source = core.data.get(block.lang)
+		if runners.get(block.lang) or (source and source.runs) then
+			table.insert(list, block)
+		end
+	end
+	return list
+end
+
 --- Asks whether what the file at `path` holds may run (`what`, "code
 --- blocks" unless said), unless it may already: `y` for now, `a` always.
 --- Boards share this, so a file trusted for one is trusted for the other.
@@ -704,7 +730,7 @@ local function allow(buffer: greed.Buffer): boolean
 		return false
 	end
 	if trusted[path] then
-		approve(buffer, M.runnable(buffer))
+		approve(buffer, M.approvable(buffer))
 	end
 	draw(buffer)
 	return true
@@ -871,7 +897,7 @@ greed.on("buffer.saved", function(event: greed.BufferChanged)
 	local buffer = event.buffer
 	local path = path_of(buffer)
 	if path and trusted[path] and M.on(buffer) and M.yours(buffer) then
-		approve(buffer, M.runnable(buffer))
+		approve(buffer, M.approvable(buffer))
 	end
 end)
 
@@ -884,7 +910,7 @@ greed.on("buffer.opened", function(event: greed.BufferChanged)
 		-- running what it holds now.
 		local path = path_of(buffer)
 		if path and trusted[path] and not M.known(path) then
-			approve(buffer, M.runnable(buffer))
+			approve(buffer, M.approvable(buffer))
 		end
 		greed.spawn(function()
 			M.refresh_choices(buffer, true)

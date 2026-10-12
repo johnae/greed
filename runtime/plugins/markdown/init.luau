@@ -63,6 +63,10 @@ M.structure = structure.of
 --- few lines at a time; see conceal.luau.
 M.conceal = conceal.add
 
+--- Draws all of a buffer again, every concealer's layer, as when something
+--- its marks show changed outside its text (a data block's table read).
+M.redraw = conceal.redraw
+
 -- When hidden markup shows: as the mode says (see `core.reveal`), only while
 -- typing (a table's borders), or never in the reading view.
 type Reveal = "auto" | "never" | "typing"
