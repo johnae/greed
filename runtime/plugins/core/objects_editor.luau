@@ -308,6 +308,14 @@ return function(objects: any)
 		end,
 	})
 	actions.action({
+		kind = "buffer",
+		name = "close",
+		doc = "Close it, as :bc does: views showing it show another file; refuses with unsaved changes",
+		run = function(target)
+			require("./file").close(target.value)
+		end,
+	})
+	actions.action({
 		kind = "view",
 		name = "focus",
 		doc = "Go to it",

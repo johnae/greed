@@ -15,6 +15,27 @@ M.MAX_SELECTION = 4000
 --- agent's pane, its context is still the file you were in (core.file).
 M.view = core.file.view
 
+--- Runs `fn` with `view` focused, the user's (`M.view`) by default, as
+--- what an agent runs acts on the focused view: so a command or action
+--- meant for the user's file never hits the agent's own chat. Focus goes
+--- back to where it was after, unless `fn` moved it on itself.
+function M.within(fn: () -> ...any, view: greed.View?)
+	local target = view or M.view()
+	local was = greed.view()
+	if target == nil or target == was then
+		fn()
+		return
+	end
+	target:focus()
+	local ok, err = pcall(fn)
+	if was:valid() and (greed.view() == target or not target:valid()) then
+		was:focus()
+	end
+	if not ok then
+		error(err, 0)
+	end
+end
+
 -- 1-based line and column, as people and agents count them.
 local function position(buffer: greed.Buffer, pos: number): { line: number, column: number }
 	local line = buffer:line_of(pos)

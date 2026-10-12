@@ -9,6 +9,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local agent = require("./registry")
+local context = require("./context")
 
 local object = agent.schema.object
 local objects = core.objects
@@ -138,7 +139,8 @@ agent.tool({
 	kind = "execute",
 	description = "Run one of an object's actions (inspect lists them), on that object, as "
 		.. "the user would from the inspector: show a buffer, run a shell block again, "
-		.. "stop a terminal's program. Give `ids` to run it on several at once. Actions "
+		.. "stop a terminal's program, close a view (view:12). It acts in the user's view, "
+		.. "never your chat. Give `ids` to run it on several at once. Actions "
 		.. "that destroy or stop something (delete, kill) go to the user to review first, "
 		.. "all of them together, and they may run some and not others; deciding on "
 		.. "proposed changes is only theirs. Gives back the ids it ran on and those the "
@@ -164,7 +166,11 @@ agent.tool({
 		for _, id in ids do
 			table.insert(list, find(id))
 		end
-		local ran, declined, missing = objects.act_all(list, args.action, "agent")
+		-- What an action does to "the focused view" it does to the user's.
+		local ran: { string }, declined: { string }, missing: { string } = {}, {}, {}
+		context.within(function()
+			ran, declined, missing = objects.act_all(list, args.action, "agent")
+		end)
 		if #missing > 0 then
 			local names = {}
 			for _, action in objects.actions(assert(objects.get(missing[1]))) do

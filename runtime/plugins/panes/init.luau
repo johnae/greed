@@ -331,22 +331,27 @@ function M.to_panel(side: ("left" | "right")?)
 	end)
 end
 
---- Closes the pane, unless it's the last one.
-function M.close_pane()
-	-- A panel or a float closes like a pane would.
-	local view = greed.view()
+--- Closes `view`: a pane, ending a terminal nothing shows any more, or a
+--- panel or a float. False for the last pane of the tab, which stays open.
+function M.close(view: greed.View): boolean
 	if not view:is_pane() then
 		view:close()
-		return
+		return true
 	end
-	local pane = M.pane()
-	local buffer = pane:buffer()
-	if not pane:close() then
-		greed.echo("the last pane stays open")
-		return
+	local buffer = view:buffer()
+	if not view:close() then
+		return false
 	end
 	terminal.forget(buffer)
 	settle(greed.view())
+	return true
+end
+
+--- Closes the focused pane, unless it's the last one.
+function M.close_pane()
+	if not M.close(greed.view()) then
+		greed.echo("the last pane stays open")
+	end
 end
 
 --- Closes every other pane in the tab.
@@ -900,6 +905,17 @@ core.actions.action({
 	doc = "Open it in a new pane beside this one",
 	run = function(target)
 		M.focus(M.pane():split(longer_side(M.pane()), greed.load(target.value)))
+	end,
+})
+
+core.actions.action({
+	kind = "view",
+	name = "close",
+	doc = "Close it: a pane (not the tab's last), a panel or a float; its buffer stays open",
+	run = function(target)
+		if not M.close(target.value) then
+			error("the last pane stays open", 0)
+		end
 	end,
 })
 

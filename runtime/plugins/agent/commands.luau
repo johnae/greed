@@ -4,7 +4,9 @@
 -- for what no command does.
 
 local greed = require("@greed")
+local core = require("@core")
 local registry = require("./registry")
+local context = require("./context")
 
 local object = registry.schema.object
 
@@ -76,7 +78,8 @@ registry.tool({
 	description = "Run one of the editor's commands (find them with commands) with its arguments, "
 		.. "as typing it on the command line would, checked first: a wrong or missing argument "
 		.. "gives back the command's usage and what was wrong, and nothing runs. Use it rather "
-		.. "than eval for anything a command does",
+		.. "than eval for anything a command does. It acts on the user's view (the file "
+		.. "they're in, never your chat), or the one in `view`; close a view with act",
 	input = object({
 		name = { type = "string", description = "The command, e.g. layout-save" },
 		args = {
@@ -84,6 +87,7 @@ registry.tool({
 			items = { type = "string" },
 			description = "Its arguments in order, each a word as typed",
 		},
+		view = { type = "string", description = "A view's id to run it in, e.g. view:12" },
 	}, { "name" }),
 	danger = function(args)
 		local name = tostring(args.name)
@@ -102,7 +106,17 @@ registry.tool({
 				table.insert(words, tostring(word))
 			end
 		end
-		greed.run(name, { args = words, wait = true })
+		local view: greed.View? = nil
+		if args.view ~= nil then
+			local found = core.objects.get(tostring(args.view))
+			if found == nil or found.kind ~= "view" then
+				error(`{args.view} isn't a view; objects with kind view lists them`, 0)
+			end
+			view = found.value
+		end
+		context.within(function()
+			greed.run(name, { args = words, wait = true })
+		end, view)
 		return `ran {name}`
 	end,
 })
