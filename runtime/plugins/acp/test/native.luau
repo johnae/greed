@@ -1722,3 +1722,37 @@ test("move_file and delete_file move and delete files", function(t)
 	assert(not got[2].error and greed.fs.stat(`{dir}/old.txt`) == nil, got[2].text)
 	assert(got[3].error and string.find(got[3].text, "there's no nope.rs", 1, true), got[3].text)
 end)
+
+test("a command the agent runs is a block of the project's shell", function(t)
+	local asked = script({
+		{
+			text = "",
+			calls = { { id = "c1", name = "run", input = { command = "echo from-the-agent" } } },
+			stop = "tools",
+		},
+		{ text = "done", calls = {}, stop = "done" },
+	})
+	local s = ask(t, "go")
+	t:wait_for(function()
+		if s.status == "waiting" then
+			waiting(s).answer:send("once")
+		end
+		return s.status == "idle"
+	end)
+	local result = ""
+	for _, one in asked[#asked].said do
+		if one.role == "tool" then
+			result = one.text
+		end
+	end
+	assert(string.find(result, "from-the-agent", 1, true), result)
+	assert(string.find(result, '"status"', 1, true), "as shell_run gives it")
+	local shell = require("@shell")
+	local found = false
+	for _, sh in shell.list(greed.project.current().id) do
+		for _, block in sh.blocks do
+			found = found or (block.by == "agent" and block.command == "echo from-the-agent")
+		end
+	end
+	assert(found, "a block of the agent's in the shell")
+end)

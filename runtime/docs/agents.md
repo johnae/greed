@@ -373,7 +373,8 @@ models.roles.agent = { provider = "berget", model = "the model you want" }
 
 It has the tools the list above gives agents (the repo map, working set,
 grep, symbols, diagnostics, the plan, ...) but `propose`, plus `edit_file`,
-`write_file`, `move_file`, `delete_file` and `run` for shell commands: its
+`write_file`, `move_file`, `delete_file` and `run` for shell commands (a
+block of the project's shell, marked ◆, with the project's environment): its
 edits show the change and ask first, so a proposal left for review isn't
 needed. Reading never asks; editing and
 running ask the way other agents' questions do (`y` once, `a` for the rest

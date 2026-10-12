@@ -110,6 +110,10 @@ function M.fit(text: string, name: string): string
 		.. `read it from line {#shown + 1} on with read's from_line, or search it with grep and that path]`
 end
 
+-- How long `run` waits for a command in the shell before it gets back that
+-- it still runs, in seconds.
+local RUN_SECONDS = 600
+
 -- The most of a project's instructions (AGENTS.md, CLAUDE.md) it reads.
 local MAX_INSTRUCTIONS = 20000
 
@@ -893,6 +897,14 @@ local OWN: { Own } = {
 			return if type(args.command) == "string" then core.risk.of(args.command) else nil
 		end,
 		run = function(s, args)
+			-- As a block of the project's shell when there is one: you see
+			-- it there (◆), and it runs with the project's environment.
+			for _, tool in agent.tools() do
+				if tool.name == "shell_run" then
+					local call = { command = args.command, cwd = s.cwd, timeout_s = RUN_SECONDS }
+					return agent.as_text(tool.run(call, agent.caller()))
+				end
+			end
 			local done, err = greed.process.run({ "sh", "-c", args.command }, { cwd = s.cwd })
 			if done == nil then
 				error(err or "it didn't start", 0)
