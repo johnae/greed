@@ -279,9 +279,15 @@ pub(super) fn await_child_for(lua: &Lua, wait: Duration) -> LuaResult<bool> {
 }
 
 /// Whether a test may be waiting on a program: one it reads from or talks
-/// JSON-RPC to, or one running in a terminal.
+/// JSON-RPC to, or one running in a terminal or whose last output and exit
+/// haven't been handled yet. A terminal's program can be seen to have
+/// exited before what it printed last has been read.
 pub(super) fn awaited(lua: &Lua) -> bool {
-    super::process::awaited(lua) || super::rpc::awaited(lua) || state(lua).terminals.running()
+    let state = state(lua);
+    let terminals = &state.terminals;
+    let terminal = terminals.running() || !terminals.events.is_empty();
+    drop(state);
+    terminal || super::process::awaited(lua) || super::rpc::awaited(lua)
 }
 
 /// Waits for every running job and finishes it, and lets work cut into time
