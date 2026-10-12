@@ -1136,7 +1136,18 @@ local function prompt_once(session: Session, text: string, context: string?): (b
 	end
 	if driver then
 		session.attached = nil
-		local ok, err = driver.prompt(session, said, context, shown, if seen then attached else nil)
+		local ran, ok, err =
+			pcall(driver.prompt, session, said, context, shown, if seen then attached else nil)
+		if not ran then
+			-- A mistake on Greed's side ends the turn, saying so, rather than
+			-- leaving the agent working on nothing.
+			err = `the turn stopped on an error in Greed: {ok}`
+			table.insert(session.entries, { kind = "note", text = err })
+			session.status = "idle"
+			session.tool = nil
+			session.changed()
+			ok = false
+		end
 		if not ok then
 			session.attached = attached
 		end

@@ -237,6 +237,32 @@ test("several edits to a file are made in order as one, or none is", function(t)
 	assert(greed.fs.read(`{dir}/a.txt`) == "ONE\nTWO\n", (greed.fs.read(`{dir}/a.txt`)))
 end)
 
+test("an edit without a path tells the model so, and the turn goes on", function(t)
+	local got = results(t, {
+		{ "edit_file", { old_text = "one", new_text = "ONE" } },
+		{ "write_file", { text = "x" } },
+	}, { ["a.txt"] = "one\n" })
+	assert(
+		got[1].error and got[1].text == "edit_file needs path, the file it works on",
+		got[1].text
+	)
+	assert(got[2].error and string.find(got[2].text, "needs path", 1, true), got[2].text)
+end)
+
+test("an error in Greed during a turn ends it, saying so, and the agent is idle", function(t)
+	local s = assert(acp.start(GREED, t:tempdir({ ["a.txt"] = "one\n" })))
+	local driver: any = setmetatable({
+		prompt = function()
+			error("something broke")
+		end,
+	}, { __index = s.driver })
+	s.driver = driver
+	local ok, err = acp.prompt(s, "go")
+	assert(not ok and string.find(tostring(err), "something broke", 1, true), tostring(err))
+	assert(s.status == "idle", tostring(s.status))
+	assert(string.find(said(s), "note: the turn stopped on an error in Greed", 1, true), said(s))
+end)
+
 test("a change with more after it makes them all, and a missing part is named", function(t)
 	local got, dir = results(t, {
 		{

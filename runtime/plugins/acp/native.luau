@@ -1356,6 +1356,17 @@ local function call(
 	end
 	local own = if found.spec then found :: Own else nil
 	local registered = if own then nil else found :: agent.Tool
+	-- Its own tools look up their file by `path` before they run, to ask
+	-- you and show the change: without one, the model hears what's missing.
+	local input = own and own.spec.input
+	local properties = input and input.properties
+	if
+		properties
+		and properties.path
+		and (type(c.input) ~= "table" or type(c.input.path) ~= "string")
+	then
+		return `{c.name} needs path, the file it works on`, true
+	end
 	local kind = kind_of(found)
 	-- The files it touches, as its questions name them: its own tools say,
 	-- Greed's name one by their path.
