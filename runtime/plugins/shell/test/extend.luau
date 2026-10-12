@@ -92,3 +92,33 @@ test("a plugin's builtin runs ahead of programs, and ^NAME skips it", function(t
 	end)
 	assert(not ok and string.find(tostring(err), "shell's own builtins", 1, true), tostring(err))
 end)
+
+test("a builtin that waits stops with ctrl-c, and what it does after goes nowhere", function(t)
+	local go = greed.signal()
+	local saw_stop = false
+	shell.builtin({ name = "hang", usage = "hang", doc = "Wait for a go" }, function(_, ctx)
+		go:wait()
+		saw_stop = ctx.stopped()
+		ctx.write("too late\n")
+		return 0
+	end)
+	local sh = open(t)
+	-- Run aside, since it waits.
+	greed.spawn(function()
+		shell.run(sh, "hang")
+	end)
+	t:wait(10)
+	local block = sh.blocks[#sh.blocks]
+	assert(block and block.command == "hang", "it runs")
+	local function status(): string
+		return block.status
+	end
+	assert(status() == "running", status())
+	shell.interrupt(block)
+	assert(status() == "killed" and block.signal == "INT", `{status()} {block.signal}`)
+	go:send(true)
+	t:wait(10)
+	assert(saw_stop, "it can tell")
+	assert(status() == "killed", status())
+	assert(not string.find(block.output or "", "too late", 1, true), block.output)
+end)

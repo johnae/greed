@@ -1209,7 +1209,9 @@ what it printed. `greed.terminal.spawn({ command, rows, cols })` starts one
 in a terminal: `terminal.output` events say there's something new to read
 with `terminal:screen()` and `terminal:scrollback(from)`, and
 `terminal:key("ctrl-c")`, `terminal:write(text)` and `terminal:resize(rows,
-cols)` talk back. Styles in a screen are inline names like `=fg:red bold`,
+cols)` talk back. `terminal:interrupt()` interrupts it as ctrl-c does,
+and also reaches a program that has only just started, which a typed
+ctrl-c can miss. Styles in a screen are inline names like `=fg:red bold`,
 which you can use in your own marks too. A row says `wrapped` when its
 line carries on on the next row, so long lines can be joined again.
 `terminal:modes()` tells what kind of program runs: `alternate` (a full
@@ -1482,7 +1484,9 @@ programs and aliases of that name (`^NAME` still runs the program).
 `run(args, ctx)` gets the words after the name, and `ctx` with the `shell`,
 the `block`, its `cwd`, and `write(text)` and `error(text)` to print in
 the block; it returns the exit code, 0 when it returns nothing, and an
-error fails the block with its message. It can wait, as commands can.
+error fails the block with its message. It can wait, as commands can;
+ctrl-c ends its block at once, after which what it prints goes nowhere and
+`ctx.stopped()` says so, for one that waits in steps to quit early.
 Neither can replace the shell's own, and both go when the plugin does.
 
 `shell.kind(spec)` says what the rows of some commands' tables are, so

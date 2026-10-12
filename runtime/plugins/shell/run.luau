@@ -594,6 +594,17 @@ function M.builtin(shell: Shell, block: Block, name: string, args: { string })
 		M.fail(shell, block, `{name}: no such builtin`, 127)
 		return
 	end
+	-- A builtin that waits can't be cut short, so stopping it ends its block
+	-- at once; what it does after goes nowhere.
+	local function stop(signal: string)
+		return function()
+			M.finish(shell, block, nil, signal)
+		end
+	end
+	state.give_job(block, { interrupt = stop("INT"), kill = stop("KILL") })
+	if block.status ~= "running" then
+		return
+	end
 	local ok, result = pcall(run, shell, block, args)
 	if not ok then
 		M.fail(shell, block, `{name}: {result}`, 1)

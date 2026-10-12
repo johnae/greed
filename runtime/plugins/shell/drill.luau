@@ -33,8 +33,17 @@ type Level = {
 	owned: boolean,
 }
 
--- The levels open, the deepest last.
-local levels: { Level } = {}
+-- The levels each client has open, the deepest last: each goes down its
+-- own way.
+local levels: { [number]: { Level } } = {}
+
+-- The levels of the client the code acts for.
+local function mine(): { Level }
+	local id = greed.client.id()
+	local list = levels[id] or {}
+	levels[id] = list
+	return list
+end
 
 local FOOTER = "esc back · enter or space . on a row · / filter · ctrl-c stops"
 
@@ -46,13 +55,16 @@ local KEEP = "ctrl-z"
 local OWNED_FOOTER =
 	`esc back, stopping it · {KEEP} back, keeping it running · / filter · . on a row`
 
-local function level_of(view: greed.View): Level?
-	for _, level in levels do
-		if level.view == view then
-			return level
+-- The level `view` shows, and the list of levels it's in.
+local function level_of(view: greed.View): (Level?, { Level }?)
+	for _, list in levels do
+		for _, level in list do
+			if level.view == view then
+				return level, list
+			end
 		end
 	end
-	return nil
+	return nil, nil
 end
 
 -- A block in a few words, for the first step of the way: its number and
@@ -97,7 +109,7 @@ function M.open(
 	tail: boolean?,
 	owned: boolean?
 )
-	local parent = level_of(from)
+	local parent, list = level_of(from)
 	local above: string
 	if parent then
 		above = parent.title
@@ -121,7 +133,7 @@ function M.open(
 		parent.at = from:cursor()
 		parent.view:close()
 	end
-	table.insert(levels, level)
+	table.insert(list or mine(), level)
 	show(level, nil, tail)
 end
 
@@ -133,27 +145,29 @@ end
 -- A level's float closing goes back up a level: to the one above, shown
 -- again where it was, or to the row the first action was taken from.
 greed.on("view.closed", function(event: greed.ViewClosed)
-	for i = #levels, 1, -1 do
-		local level = levels[i]
-		if level.view:id() == event.view then
-			-- Kept, to come back to from the level below.
-			if level.replaced then
+	for _, list in levels do
+		for i = #list, 1, -1 do
+			local level = list[i]
+			if level.view:id() == event.view then
+				-- Kept, to come back to from the level below.
+				if level.replaced then
+					return
+				end
+				table.remove(list, i)
+				local job = level.block.job
+				if level.owned and level.block.status == "running" and job then
+					job.interrupt()
+				end
+				local parent = level.parent
+				if parent then
+					parent.replaced = false
+					show(parent, parent.at)
+				elseif level.from:valid() then
+					level.from:focus()
+					level.from:set_cursor(level.at)
+				end
 				return
 			end
-			table.remove(levels, i)
-			local job = level.block.job
-			if level.owned and level.block.status == "running" and job then
-				job.interrupt()
-			end
-			local parent = level.parent
-			if parent then
-				parent.replaced = false
-				show(parent, parent.at)
-			elseif level.from:valid() then
-				level.from:focus()
-				level.from:set_cursor(level.at)
-			end
-			return
 		end
 	end
 end)
@@ -161,17 +175,21 @@ end)
 -- A level's command ending has nothing left to stop or keep running: its
 -- footer says what's left to do.
 run.on_finish(function(_, block: Block)
-	for _, level in levels do
-		if level.block == block and not level.replaced and level.view:valid() then
-			level.view:configure({ footer = FOOTER })
+	for _, list in levels do
+		for _, level in list do
+			if level.block == block and not level.replaced and level.view:valid() then
+				level.view:configure({ footer = FOOTER })
+			end
 		end
 	end
 end)
 
--- Closes every level's float, going nowhere: what replaced them shows.
+-- Closes the acting client's levels' floats, going nowhere: what replaced
+-- them shows.
 local function close_all()
-	local open = levels
-	levels = {}
+	local id = greed.client.id()
+	local open: { Level } = levels[id] or {}
+	levels[id] = nil
 	for _, level in open do
 		if level.view:valid() then
 			level.view:close()
@@ -180,14 +198,15 @@ local function close_all()
 end
 
 -- A file opened from a level, as a row of files does, opens where the
--- first action was taken, and the levels go: in a level's float it's moved
--- there, and opened there already, the floats over it close.
+-- first action was taken, and the client's levels go: in a level's float
+-- it's moved there, and opened there already, the floats over it close.
 greed.on("selection.changed", function(event: greed.SelectionChanged)
 	local view = event.view
-	if #levels == 0 or not view:valid() then
+	local list = levels[event.client]
+	if list == nil or #list == 0 or not view:valid() then
 		return
 	end
-	local first = levels[1]
+	local first = list[1]
 	if view:buffer() == first.shell.buffer then
 		return
 	end

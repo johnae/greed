@@ -151,6 +151,9 @@ export type BuiltinContext = {
 	cwd: string,
 	write: (text: string) -> (),
 	error: (text: string) -> (),
+	--- Whether the block was stopped (ctrl-c): its output goes nowhere now,
+	--- so a builtin that waits in steps can quit early.
+	stopped: () -> boolean,
 }
 
 export type BuiltinSpec = {
@@ -183,16 +186,24 @@ function M.builtin(spec: BuiltinSpec, call: (args: { string }, ctx: BuiltinConte
 	local entry: parse.Builtin =
 		{ usage = spec.usage, doc = spec.doc, args = spec.args, plugin = greed.plugin.caller() }
 	local function runs(shell: Shell, block: Block, args: { string }): number
+		local function stopped(): boolean
+			return block.status ~= "running"
+		end
 		return call(args, {
 			shell = shell,
 			block = block,
 			cwd = block.cwd,
 			write = function(text: string)
-				run.write(shell, block, text, "stdout")
+				if not stopped() then
+					run.write(shell, block, text, "stdout")
+				end
 			end,
 			error = function(text: string)
-				run.write(shell, block, text, "stderr")
+				if not stopped() then
+					run.write(shell, block, text, "stderr")
+				end
 			end,
+			stopped = stopped,
 		}) or 0
 	end
 	greed.plugin.tie(core.registry.set(parse.BUILTINS, name, entry))
@@ -224,6 +235,9 @@ local function builtin_capture(shell: Shell, block: Block, line: string): (strin
 		end,
 		error = function(text: string)
 			table.insert(errors, text)
+		end,
+		stopped = function(): boolean
+			return block.status ~= "running"
 		end,
 	})
 	if not ok then
