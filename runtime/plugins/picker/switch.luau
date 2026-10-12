@@ -4,7 +4,8 @@
 -- is. `@shell` (or `@sh`) keeps one kind, `@modified` those with unsaved
 -- changes, `@shown` those in a pane now, and a word a plugin tags its
 -- places with (like `@waiting` or a machine's name) those; the rest of
--- what's typed is matched against the names. enter goes there; for a
+-- what's typed is matched against the names. enter goes there, and ctrl-a
+-- lists what can be done to it (answer an agent wherever it waits); for a
 -- buffer ctrl-v opens it in a pane beside this one, ctrl-s below it and
 -- ctrl-f in a float, and beside the list a preview shows it as it is: a
 -- file where its cursor is, a shell or terminal at its end.
@@ -144,7 +145,7 @@ end
 
 greed.command({
 	name = "pick-anything",
-	doc = "Switch to anything: a file, a shell, a terminal or another buffer, and what plugins add, like your sessions and agents; @kind keeps one kind, ctrl-v, ctrl-s and ctrl-f open a buffer beside, below or in a float",
+	doc = "Switch to anything: a file, a shell, a terminal or another buffer, and what plugins add, like your sessions and agents; @kind keeps one kind, ctrl-a lists what can be done to it (answer an agent), ctrl-v, ctrl-s and ctrl-f open a buffer beside, below or in a float",
 	run = function()
 		local list = entries()
 		local width = 0
@@ -180,6 +181,20 @@ greed.command({
 				end,
 				["ctrl-s"] = function(_items, current)
 					act("split below", current)
+				end,
+				-- What can be done to it: a buffer's actions, or a place's,
+				-- like answering an agent waiting on another machine.
+				["ctrl-a"] = function(_items, current)
+					local entry: Entry? = current and current.value
+					if entry == nil then
+						return
+					end
+					if entry.place then
+						picker.act_on_place(entry.place)
+					elseif entry.buffer then
+						local buffer = entry.buffer
+						picker.act({ { kind = "buffer", label = buffer:title(), value = buffer } })
+					end
 				end,
 			},
 		})

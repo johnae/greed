@@ -1004,6 +1004,22 @@ on one comes back to it, and `space B` goes back to where you came from.
 What passes this way can only be read; nothing on your machine can be done
 through it from the other.
 
+### Answering an agent from anywhere
+
+`ctrl-a` on an agent in `space space` or `space i A` lists what you can do
+to it where it runs: `allow`, `allow-always` or `reject` while Greed's own
+agent waits for an answer, `stop`, and `close` for an agent in a terminal.
+It works the same for an agent in this session, another session here or
+on another machine you reach with `greed ssh`. On the machine your client
+is on (seen from a session you reached with `greed ssh`), `enter` takes
+you there first.
+
+From a shell it's `greed ctl act id=agent-session:3 action=allow`, with
+`--session NAME` before the tool for another session, also as `greed ssh
+HOST ctl --session NAME act ...`. Run that way it acts as you, and one that
+stops something doesn't ask again in that session, where nobody may be
+looking. An agent can't answer another agent's question: only you can.
+
 ## Plugins written by agents
 
 An agent can extend Greed while you work:

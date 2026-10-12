@@ -478,8 +478,15 @@ M.KEYS = KEYS
 --- Somewhere to switch to beside the buffers `space space` lists, from
 --- another plugin: what it is (`kind`, shown before its label and kept by
 --- `@kind`), its label, more words `@` keeps it by (`tags`, like "waiting"
---- or a machine's name), and what enter does.
-export type Place = { kind: string, label: string, tags: { string }?, go: () -> () }
+--- or a machine's name), what enter does, and what ctrl-a offers to do to
+--- it there (`actions`), like answering an agent on another machine.
+export type Place = {
+	kind: string,
+	label: string,
+	tags: { string }?,
+	go: () -> (),
+	actions: { { name: string, run: () -> () } }?,
+}
 
 -- What plugins add to `space space`, by name.
 local places: { [string]: () -> { Place } } = {}
@@ -491,6 +498,22 @@ function M.add_places(name: string, found: () -> { Place }): () -> ()
 	local remove = core.registry.set(places, name, found)
 	greed.plugin.tie(remove)
 	return remove
+end
+
+--- Picks one of `place`'s actions and runs it, or says it has none.
+function M.act_on_place(place: Place)
+	local items: { Item } = {}
+	local actions: { { name: string, run: () -> () } } = place.actions or {}
+	for _, action in actions do
+		table.insert(items, { label = action.name, value = action })
+	end
+	if #items == 0 then
+		greed.echo(`nothing to do to {place.label} from here`)
+		return
+	end
+	M.pick(`{place.kind}: {place.label}`, items, function(item)
+		item.value.run()
+	end)
 end
 
 --- What the plugins add to `space space`, by the names they added them

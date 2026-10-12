@@ -2011,6 +2011,55 @@ core.actions.action({
 	end,
 })
 core.actions.set_default("agent-session", "show")
+-- Answering the question an agent waits on, as its options say (the kinds
+-- ACP names them by), from wherever the session is shown: only you, never
+-- another agent.
+for _, answer in
+	{
+		{ name = "allow", kinds = { "allow_once" }, doc = "Allow what it asks, this once" },
+		{
+			name = "allow-always",
+			kinds = { "allow_always" },
+			doc = "Allow what it asks, and the like from now on",
+		},
+		{
+			name = "reject",
+			kinds = { "reject_once", "reject_always" },
+			doc = "Reject what it asks",
+		},
+	}
+do
+	-- The option of the question `s` shows that answers so, if it waits.
+	local function option(s: Session): (session.Permission?, string?)
+		local pending = session.pending(s)
+		local asked = pending[#pending]
+		if asked then
+			for _, kind in answer.kinds do
+				local id = option_of(asked, kind)
+				if id then
+					return asked, id
+				end
+			end
+		end
+		return nil, nil
+	end
+	core.actions.action({
+		kind = "agent-session",
+		name = answer.name,
+		doc = answer.doc,
+		yours = true,
+		offers = function(target)
+			local _, id = option(target.value)
+			return id ~= nil
+		end,
+		run = function(target)
+			local asked, id = option(target.value)
+			if asked and id then
+				asked.answer:send(id)
+			end
+		end,
+	})
+end
 core.actions.action({
 	kind = "agent-session",
 	name = "stop",

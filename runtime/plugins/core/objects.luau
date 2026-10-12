@@ -406,12 +406,14 @@ end
 
 --- Runs the action `name` on every one of `list` for `by`, as `act` does
 --- on one, asking once for all those its action destroys or stops something
---- on. Gives back the ids it ran on, those it didn't (not chosen when asked)
---- and those whose kind has no action by that name.
+--- on, unless you chose it already where it was shown (`confirmed`). Gives
+--- back the ids it ran on, those it didn't (not chosen when asked) and those
+--- whose kind has no action by that name.
 function M.act_all(
 	list: { Object },
 	name: string,
-	by: string?
+	by: string?,
+	confirmed: boolean?
 ): ({ string }, { string }, { string })
 	local ran, skipped, missing = {}, {}, {}
 	-- Those of one kind share an action, and are asked about together.
@@ -438,7 +440,7 @@ function M.act_all(
 	for _, group in groups do
 		local chosen = actions.run_all(group.action, group.targets, by, function(target)
 			go_to(assert(M.from(target)))
-		end)
+		end, confirmed)
 		for _, target in group.targets do
 			table.insert(if table.find(chosen, target) then ran else skipped, assert(target.id))
 		end

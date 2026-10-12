@@ -510,6 +510,38 @@ fn an_agent_waiting_in_one_session_is_told_to_your_client_in_another() {
     }
 }
 
+/// From alpha, here, closes the terminal of an agent in beta, on the other
+/// machine, where it runs: over ssh, as you, without asking there where
+/// nobody looks.
+fn close_an_agent_there(machines: &common::TwoMachines) {
+    let terminals = || {
+        machines.eval(
+            "beta",
+            true,
+            "return #require('@core').objects.list('terminal')",
+        )
+    };
+    assert_eq!(terminals(), "2", "two agents' terminals there");
+    // It waits for greed ctl, so it runs on its own and says how it went.
+    let said = machines.world.root.join("acted").display().to_string();
+    machines.eval(
+        "alpha",
+        false,
+        &format!(
+            "local greed = require('@greed') local hub = require('@hub') \
+             greed.spawn(function() \
+             for _, f in hub.elsewhere() do \
+             if f.session == 'beta' and f.machine then \
+             greed.fs.write({said:?}, tostring(hub.act(f, 'close'))) return end end \
+             greed.fs.write({said:?}, 'none') end)"
+        ),
+    );
+    common::wait_until("the action there", || std::path::Path::new(&said).exists());
+    let acted = std::fs::read_to_string(&said).unwrap();
+    assert_eq!(acted, "nil", "acted: {acted}");
+    assert_eq!(terminals(), "1", "one closed");
+}
+
 #[test]
 fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
     let Some(world) = World::new("ctl-hosts") else {
@@ -533,7 +565,7 @@ fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
     }
     let mut attached = attach_window(&world.root.join("run"), "alpha", "gui@desk");
     // Each hub sees the other machine, and not itself through it.
-    let machines = |name: &str, there: bool| {
+    let seen = |name: &str, there: bool| {
         eval(
             name,
             there,
@@ -542,10 +574,8 @@ fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
              return `{n} {require('@hub').machines()[me] == nil}`",
         )
     };
-    common::wait_until("alpha to follow there", || {
-        machines("alpha", false) == "1 true"
-    });
-    common::wait_until("beta to follow here", || machines("beta", true) == "1 true");
+    common::wait_until("alpha to follow there", || seen("alpha", false) == "1 true");
+    common::wait_until("beta to follow here", || seen("beta", true) == "1 true");
     agent_waits(|code| eval("beta", true, code));
     // alpha has the agent on the other machine, and tells the window here.
     common::wait_until("alpha to see the agent there", || {
@@ -591,6 +621,7 @@ fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
     let notice = next_notice(&mut there);
     assert!(notice.body.contains("beta"), "{notice:?}");
     no_notice(&mut attached);
+    close_an_agent_there(&machines);
     eval("alpha", false, "require('@greed').quit()");
     eval("beta", true, "require('@greed').quit()");
     for server in &mut servers {

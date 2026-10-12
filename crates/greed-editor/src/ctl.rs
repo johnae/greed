@@ -29,14 +29,25 @@ usage: greed ctl tools                 list the tools the editor offers
                                       end a session, even one of another greed version,
                                       unless files in it have unsaved changes (--force
                                       ends it anyway)
-The session is $GREED_SESSION, or the only editor running.";
+The session is the one --session NAME names first (greed ctl --session NAME TOOL ...),
+or $GREED_SESSION, or the only editor running.";
 
 /// Whether `arg` asks for help.
 fn is_help(arg: &str) -> bool {
     matches!(arg, "help" | "--help" | "-h")
 }
 
+/// The session `--session NAME` named, for what this run of `greed ctl`
+/// talks to; it comes before `$GREED_SESSION`, which can't be set over ssh.
+static SESSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if let [flag, name, rest @ ..] = args
+        && flag == "--session"
+    {
+        let _ = SESSION.set(name.clone());
+        return run(rest);
+    }
     match args {
         [cmd] if is_help(cmd) => {
             println!("{USAGE}");
@@ -420,10 +431,12 @@ fn session_client(name: Option<&str>, shell: bool) -> Result<Client, Box<dyn std
     Ok(Client::connect_as(&socket, token.trim(), shell)?)
 }
 
-/// `name`, or without one `$GREED_SESSION` or the only running editor.
+/// `name`, or without one the session `--session` named, `$GREED_SESSION`
+/// or the only running editor.
 fn session_name(name: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(name) = name
         .map(str::to_owned)
+        .or_else(|| SESSION.get().cloned())
         .or_else(|| std::env::var("GREED_SESSION").ok())
     {
         return Ok(name);

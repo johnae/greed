@@ -936,7 +936,12 @@ greed.tab.set_layout({
   matches. `require("@picker").add_places(name, function() ... end)` adds
   places of your own to `space space`, each `{ kind = "session", label =
   "notes on eris", tags = { "eris" }, go = function() ... end }`, after the
-  buffers; `@kind` and `@tag` keep them and `enter` runs `go`.
+  buffers; `@kind` and `@tag` keep them and `enter` runs `go`. With
+  `actions = { { name = "stop", run = function() ... end } }`, `ctrl-a`
+  offers them.
+- An action that decides for the user, like answering an agent's question,
+  is `yours = true` in `core.actions.action`: an agent asking for it
+  through `act` is refused.
 - The completion menu asks sources before the language server, in any
   buffer, a file or not: `require("@lsp").completion.source(function(view,
   ask) ... end)` returns items like `{ label = "src/", text = "src/", from

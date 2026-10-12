@@ -143,7 +143,8 @@ agent.tool({
 		.. "never your chat. Give `ids` to run it on several at once. Actions "
 		.. "that destroy or stop something (delete, kill) go to the user to review first, "
 		.. "all of them together, and they may run some and not others; deciding on "
-		.. "proposed changes is only theirs. Gives back the ids it ran on, what each was "
+		.. "proposed changes and answering agents' questions is only theirs. Run from "
+		.. "`greed ctl`, it acts for the user. Gives back the ids it ran on, what each was "
 		.. "(targets), those the user turned down, the views there are after when they "
 		.. "changed, and with one id the object's state afterwards",
 	input = object({
@@ -155,10 +156,13 @@ agent.tool({
 		},
 		action = { type = "string", description = "The action's name, as inspect gives it" },
 	}, { "action" }),
-	run = function(args)
+	run = function(args, caller)
 		if type(args.action) ~= "string" then
 			error("give the action's name; inspect lists them", 0)
 		end
+		-- Whoever runs `greed ctl` can do anything already: it's the user, who
+		-- chose the action where it was shown, so it isn't asked about again.
+		local by = if agent.from_shell(caller) then "you" else "agent"
 		local ids: { any } = if type(args.ids) == "table" then args.ids :: { any } else { args.id }
 		if #ids == 0 then
 			error("give the object's id, or ids for several", 0)
@@ -174,7 +178,7 @@ agent.tool({
 		local ran: { string }, declined: { string }, missing: { string } = {}, {}, {}
 		local views_before = context.views()
 		context.within(function()
-			ran, declined, missing = objects.act_all(list, args.action, "agent")
+			ran, declined, missing = objects.act_all(list, args.action, by, by == "you")
 		end)
 		local views_after = context.views()
 		if #missing > 0 then

@@ -653,6 +653,14 @@ test("space space lists what plugins add, kept by kind or tag, and enter goes th
 				go = function()
 					table.insert(went, "claude")
 				end,
+				actions = {
+					{
+						name = "allow",
+						run = function()
+							table.insert(went, "allowed")
+						end,
+					},
+				},
 			},
 			{
 				kind = "session",
@@ -676,7 +684,12 @@ test("space space lists what plugins add, kept by kind or tag, and enter goes th
 	end)
 	t:keys("enter")
 	t:keys("space space @ s e s s enter")
-	assert(table.concat(went, " ") == "claude notes", table.concat(went, " "))
+	-- ctrl-a lists what can be done to it, and runs what's chosen there.
+	t:keys("space space @ w a i t ctrl-a")
+	local offered = table.concat(t:floats(), "\n")
+	assert(string.find(offered, "allow", 1, true), offered)
+	t:keys("enter")
+	assert(table.concat(went, " ") == "claude notes allowed", table.concat(went, " "))
 	remove()
 	t:keys("space space")
 	list = table.concat(t:floats(), "\n")

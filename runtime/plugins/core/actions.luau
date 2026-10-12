@@ -53,6 +53,8 @@ export type Finder = {
 --- One that destroys or stops something (`delete`, `kill`) is `danger`:
 --- it asks first, saying what it will do (`says`, the command it runs) and
 --- warning where one is due (`warns`, "in PRODUCTION (prod-eu)").
+--- One that decides for you (answering an agent's question) is `yours`:
+--- an agent can't run it.
 export type Action = {
 	kind: string,
 	name: string,
@@ -60,6 +62,7 @@ export type Action = {
 	plugin: string?,
 	quiet: boolean?,
 	danger: boolean?,
+	yours: boolean?,
 	says: ((target: Target) -> string?)?,
 	warns: ((target: Target) -> string?)?,
 	--- Whether it's offered for `target`, for an action that suits only
@@ -252,16 +255,22 @@ end
 
 --- Runs `action` on each of `targets` for `by` ("you" by default, "agent"
 --- for an agent's), keeping each in the history of what was done. One
---- that destroys or stops something asks first (`confirm`). `before`, if
---- given, runs before each, as to put the cursor on it. Gives back those it
---- ran on.
+--- that destroys or stops something asks first (`confirm`), unless you
+--- chose it already where it was shown (`confirmed`, as from another
+--- machine). `before`, if given, runs before each, as to put the cursor on
+--- it. Gives back those it ran on.
 function M.run_all(
 	action: Action,
 	targets: { Target },
 	by: string?,
-	before: ((target: Target) -> ())?
+	before: ((target: Target) -> ())?,
+	confirmed: boolean?
 ): { Target }
-	local chosen: { Target } = if action.danger then M.confirm(action, targets, by) else targets
+	if action.yours and by == "agent" then
+		error(`only the user can {action.name}: an agent can't decide that for them`, 0)
+	end
+	local asks = action.danger and not (confirmed and by ~= "agent")
+	local chosen: { Target } = if asks then M.confirm(action, targets, by) else targets
 	for _, target in chosen do
 		if before then
 			before(target)

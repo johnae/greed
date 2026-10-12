@@ -17,7 +17,8 @@
 -- of its own machine, and of each other machine it keeps what it heard
 -- itself, else the freshest, so loops die out.
 --
---   space i A   the agents of every session you can reach: enter goes there
+--   space i A   the agents of every session you can reach: enter goes there,
+--               ctrl-a answers or stops one where it runs
 
 local greed = require("@greed")
 local agent = require("@agent")
@@ -525,6 +526,33 @@ function M.go(found: { session: string, via: string?, home: boolean? })
 	end
 end
 
+--- Runs the action `name` (as its status lists them, like "allow") on the
+--- agent `found` in its session, as you: in another session here or on
+--- another machine through `greed ctl act`, run as you are. Nil once done,
+--- else why not. The machine your client is on only tells this session
+--- what's there; nothing there is done from here.
+function M.act(found: Found, name: string): string?
+	if found.home then
+		return `{M.place(found)} is on the machine you're at: enter goes there`
+	end
+	local program = greed.session.program()
+	if program == nil then
+		return "this greed can't run itself to reach other sessions"
+	end
+	local command = if found.via then { program, "ssh", found.via } else { program }
+	for _, arg in
+		{ "ctl", "--session", found.session, "act", `id={found.agent.id}`, `action={name}` }
+	do
+		table.insert(command, arg)
+	end
+	local ran, err = greed.process.run(command, { timeout = 30000 })
+	if ran == nil or ran.code ~= 0 then
+		local why = if ran then string.match(ran.stderr, "[^\n]+") else err
+		return `{name} in {M.place(found)}: {why or "it failed"}`
+	end
+	return nil
+end
+
 --- The other sessions here and on the other machines, by machine then
 --- name: those the hub has heard from, and with `all` the ones here it
 --- hasn't yet. Listing those looks at every session's socket, so the
@@ -617,6 +645,19 @@ function M.places(): { picker.Place }
 	for _, found in M.elsewhere() do
 		local said = found.agent
 		local what = if said.question then `: {said.question}` else ""
+		local actions = {}
+		if type(said.actions) == "table" and not found.home then
+			for _, said_name in said.actions do
+				local name = tostring(said_name)
+				table.insert(actions, {
+					name = name,
+					run = function()
+						local why = M.act(found, name)
+						greed.echo(why or `{name}: done in {M.place(found)}`)
+					end,
+				})
+			end
+		end
 		table.insert(out, {
 			kind = "agent",
 			label = `{said.agent or said.label} {said.status} in {M.place(found)}{what}`,
@@ -624,6 +665,7 @@ function M.places(): { picker.Place }
 			go = function()
 				M.go(found)
 			end,
+			actions = actions,
 		})
 	end
 	return out
@@ -658,7 +700,7 @@ end, "agents")
 
 greed.command({
 	name = "machine",
-	doc = "The agents of every other session, here and on the machines the hub follows: enter goes there (space i A)",
+	doc = "The agents of every other session, here and on the machines the hub follows: enter goes there, ctrl-a answers or stops it (space i A)",
 	run = function()
 		local items: { picker.Item } = {}
 		for _, place in M.places() do
@@ -672,7 +714,16 @@ greed.command({
 		end
 		picker.pick("Agents in your sessions", items, function(item)
 			item.value.go()
-		end)
+		end, {
+			keys = {
+				-- What can be done to it there: answer it, stop it.
+				["ctrl-a"] = function(_items, current)
+					if current then
+						picker.act_on_place(current.value)
+					end
+				end,
+			},
+		})
 	end,
 })
 

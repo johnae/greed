@@ -283,6 +283,59 @@ test("an answer the question doesn't offer is no answer: it still waits", functi
 	end
 end)
 
+test("a waiting agent's answers are its actions, which only you run", function(t)
+	local core = require("@core")
+	local agent = require("@agent")
+	script({
+		{
+			text = "",
+			calls = {
+				{
+					id = "c1",
+					name = "edit_file",
+					input = { path = "a.txt", old_text = "one", new_text = "ONE" },
+				},
+			},
+			stop = "tools",
+		},
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "go", { ["a.txt"] = "one\n" })
+	t:wait_for(function()
+		return s.status == "waiting"
+	end)
+	local found = assert(core.objects.get(`agent-session:{s.id}`))
+	local names = {}
+	for _, action in core.objects.actions(found) do
+		table.insert(names, action.name)
+	end
+	local listed = table.concat(names, " ")
+	assert(string.find(listed, "allow", 1, true), listed)
+	assert(string.find(listed, "allow-always", 1, true), listed)
+	assert(string.find(listed, "reject", 1, true), listed)
+	-- An agent can't answer another's question.
+	local act: agent.Tool? = nil
+	for _, tool in agent.tools() do
+		if tool.name == "act" then
+			act = tool
+		end
+	end
+	local ok, err =
+		pcall((act :: agent.Tool).run, { id = found.id, action = "allow" }, agent.caller())
+	assert(not ok and string.find(tostring(err), "only the user", 1, true), tostring(err))
+	assert(s.status == "waiting", "still asking")
+	-- You can, from wherever it's shown.
+	assert(core.objects.act(found, "allow"))
+	t:wait_for(function()
+		return (s.status :: string) == "idle"
+	end)
+	assert(greed.fs.read(`{dir}/a.txt`) == "ONE\n", (greed.fs.read(`{dir}/a.txt`)))
+	local after = assert(core.objects.get(found.id))
+	for _, action in core.objects.actions(after) do
+		assert(action.name ~= "allow", "no question, nothing to allow")
+	end
+end)
+
 test("an error in Greed during a turn ends it, saying so, and the agent is idle", function(t)
 	local s = assert(acp.start(GREED, t:tempdir({ ["a.txt"] = "one\n" })))
 	local driver: any = setmetatable({

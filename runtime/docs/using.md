@@ -720,7 +720,7 @@ PATTERN` fills the panel directly.
 | `space '` | Open the last picker again |
 | `space .` | What you can do with what's under the cursor (a file, link, symbol, problem, change or the selection), to pick one; `alt-.` in the vscode style |
 | `space b` | Switch to an open file |
-| `space space` | Switch to anything: files, shells, terminals and other buffers, and your other sessions and the agents in them on every machine you reach, each saying what it is. `@shell` (or `@sh`) keeps one kind, `@modified` those with unsaved changes, `@shown` those in a pane, `@agent` or `@session` those, `@waiting` the agents waiting for you and a machine's name (`@eris`, `@here`) what's there; the preview shows a shell or terminal at its end. `enter` goes there, and for a buffer `ctrl-v` opens it beside, `ctrl-s` below and `ctrl-f` in a float |
+| `space space` | Switch to anything: files, shells, terminals and other buffers, and your other sessions and the agents in them on every machine you reach, each saying what it is. `@shell` (or `@sh`) keeps one kind, `@modified` those with unsaved changes, `@shown` those in a pane, `@agent` or `@session` those, `@waiting` the agents waiting for you and a machine's name (`@eris`, `@here`) what's there; the preview shows a shell or terminal at its end. `enter` goes there, `ctrl-a` lists what can be done to it (answer or stop an agent where it runs), and for a buffer `ctrl-v` opens it beside, `ctrl-s` below and `ctrl-f` in a float |
 | `space j` | Pick a place from the jumplist |
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
 | `space e` | File tree in a side panel |

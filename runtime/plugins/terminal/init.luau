@@ -1820,4 +1820,14 @@ core.objects.kind({
 	end,
 })
 
+core.actions.action({
+	kind = "terminal",
+	name = "close",
+	doc = "Stop its program and close it, like an agent running in it",
+	danger = true,
+	run = function(target)
+		M.close(target.value)
+	end,
+})
+
 return M

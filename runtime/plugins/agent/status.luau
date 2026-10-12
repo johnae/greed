@@ -57,11 +57,22 @@ function M.status(): { [string]: any }
 			since = need.since,
 		})
 	end
+	-- What can be done to an agent now, by action name, so a view elsewhere
+	-- (another session, another machine) can offer it: answering it while it
+	-- waits, stopping it.
+	local function actions_of(found: core.Object): { string }
+		local names: { string } = {}
+		for _, action in core.objects.actions(found) do
+			table.insert(names, action.name)
+		end
+		return greed.json.array(names)
+	end
 	local agents = {}
 	for _, found in core.objects.list("agent-session") do
 		local state = core.objects.inspect(found)
 		state.id = found.id
 		state.label = found.label
+		state.actions = actions_of(found)
 		table.insert(agents, state)
 	end
 	-- Agents in terminals, as what they report says, and whether that can be
@@ -77,6 +88,7 @@ function M.status(): { [string]: any }
 				since = running.since,
 				source = running.source,
 				trusted = running.trusted,
+				actions = actions_of(found),
 			})
 		end
 	end
