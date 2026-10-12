@@ -9,6 +9,7 @@ use std::time::SystemTime;
 use mlua::{Lua, Table};
 
 use super::api::emit;
+use super::fs::UserPath;
 use super::{state, state_mut};
 use crate::registry::PluginId;
 
@@ -50,7 +51,7 @@ pub(super) fn add_to(lua: &Lua, fs: &Table, owner: &PluginId) -> LuaResult<()> {
     let owner = owner.clone();
     fs.set(
         "watch",
-        lua.create_function(move |lua, path: String| {
+        lua.create_function(move |lua, UserPath(path): UserPath| {
             let path = PathBuf::from(path);
             let now = stamp(&path);
             state_mut(lua)

@@ -7,7 +7,7 @@ use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Component, Path, PathBuf};
 
-use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table};
+use mlua::{FromLua, Function, IntoLuaMulti, Lua, MultiValue, Table, Value};
 
 use super::jobs::{self, Output};
 use super::state;
@@ -31,7 +31,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     fs.set(
         "list",
-        lua.create_function(|lua, (dir, opts): (String, Option<Table>)| {
+        lua.create_function(|lua, (UserPath(dir), opts): (UserPath, Option<Table>)| {
             let flag = |key: &str| -> LuaResult<bool> {
                 Ok(match &opts {
                     Some(opts) => opts.get::<Option<bool>>(key)?.unwrap_or(false),
@@ -56,7 +56,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     fs.set(
         "read",
-        lua.create_function(|lua, (path, limit): (String, Option<usize>)| {
+        lua.create_function(|lua, (UserPath(path), limit): (UserPath, Option<usize>)| {
             super::secrets::guard(lua, Path::new(&path))?;
             match read(Path::new(&path), limit) {
                 Ok(text) => text.into_lua_multi(lua),
@@ -66,7 +66,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     )?;
     fs.set(
         "read_bytes",
-        lua.create_function(|lua, path: String| {
+        lua.create_function(|lua, UserPath(path): UserPath| {
             super::secrets::guard(lua, Path::new(&path))?;
             match std::fs::read(&path) {
                 Ok(bytes) => lua.create_string(bytes)?.into_lua_multi(lua),
@@ -77,7 +77,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
     fs.set(
         "stat",
-        lua.create_function(|lua, path: String| {
+        lua.create_function(|lua, UserPath(path): UserPath| {
             let meta = match std::fs::metadata(&path) {
                 Ok(meta) => meta,
                 Err(err)
@@ -134,7 +134,7 @@ fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
     fs.set(
         "write",
         lua.create_function(
-            |lua, (path, text, opts): (String, mlua::LuaString, Option<Table>)| {
+            |lua, (UserPath(path), text, opts): (UserPath, mlua::LuaString, Option<Table>)| {
                 guard_write(lua, Path::new(&path))?;
                 let private = match opts {
                     Some(opts) => opts.get::<Option<bool>>("private")?.unwrap_or(false),
@@ -157,15 +157,18 @@ fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
 
     fs.set(
         "mkdir",
-        lua.create_function(|lua, path: String| match std::fs::create_dir_all(&path) {
-            Ok(()) => true.into_lua_multi(lua),
-            Err(err) => failure(lua, format!("can't make {path}: {err}")),
+        lua.create_function(|lua, UserPath(path): UserPath| {
+            guard_write(lua, Path::new(&path))?;
+            match std::fs::create_dir_all(&path) {
+                Ok(()) => true.into_lua_multi(lua),
+                Err(err) => failure(lua, format!("can't make {path}: {err}")),
+            }
         })?,
     )?;
 
     fs.set(
         "remove",
-        lua.create_function(|lua, (path, opts): (String, Option<Table>)| {
+        lua.create_function(|lua, (UserPath(path), opts): (UserPath, Option<Table>)| {
             let recursive = match opts {
                 Some(opts) => opts.get::<Option<bool>>("recursive")?.unwrap_or(false),
                 None => false,
@@ -180,27 +183,31 @@ fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
 
     fs.set(
         "rename",
-        lua.create_function(|lua, (from, to): (String, String)| {
-            guard_removal(lua, Path::new(&from), "move")?;
-            guard_write(lua, Path::new(&to))?;
-            match std::fs::rename(&from, &to) {
-                Ok(()) => true.into_lua_multi(lua),
-                Err(err) => failure(lua, format!("can't move {from} to {to}: {err}")),
-            }
-        })?,
+        lua.create_function(
+            |lua, (UserPath(from), UserPath(to)): (UserPath, UserPath)| {
+                guard_removal(lua, Path::new(&from), "move")?;
+                guard_write(lua, Path::new(&to))?;
+                match std::fs::rename(&from, &to) {
+                    Ok(()) => true.into_lua_multi(lua),
+                    Err(err) => failure(lua, format!("can't move {from} to {to}: {err}")),
+                }
+            },
+        )?,
     )?;
 
     fs.set(
         "copy",
-        lua.create_function(|lua, (from, to): (String, String)| {
-            super::secrets::guard(lua, Path::new(&from))?;
-            guard_write(lua, Path::new(&to))?;
-            let copied = create_parent(Path::new(&to)).and_then(|()| std::fs::copy(&from, &to));
-            match copied {
-                Ok(_) => true.into_lua_multi(lua),
-                Err(err) => failure(lua, format!("can't copy {from} to {to}: {err}")),
-            }
-        })?,
+        lua.create_function(
+            |lua, (UserPath(from), UserPath(to)): (UserPath, UserPath)| {
+                super::secrets::guard(lua, Path::new(&from))?;
+                guard_write(lua, Path::new(&to))?;
+                let copied = create_parent(Path::new(&to)).and_then(|()| std::fs::copy(&from, &to));
+                match copied {
+                    Ok(_) => true.into_lua_multi(lua),
+                    Err(err) => failure(lua, format!("can't copy {from} to {to}: {err}")),
+                }
+            },
+        )?,
     )
 }
 
@@ -208,7 +215,7 @@ fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
 /// searching a big project never holds up the editor.
 fn grep_function(lua: &Lua) -> LuaResult<Function> {
     let start = lua.create_function(
-        |lua, (pattern, dir, opts): (String, Option<String>, Option<Table>)| {
+        |lua, (pattern, dir, opts): (String, Option<UserPath>, Option<Table>)| {
             let (dir, options) = grep_args(dir, opts.as_ref())?;
             // Greed's secrets file is read only through greed.secrets.
             let secrets = super::secrets::file(lua);
@@ -231,7 +238,7 @@ fn grep_function(lua: &Lua) -> LuaResult<Function> {
 }
 
 /// The directory and options from `greed.fs.grep`'s arguments.
-fn grep_args(dir: Option<String>, opts: Option<&Table>) -> LuaResult<(String, GrepOptions)> {
+fn grep_args(dir: Option<UserPath>, opts: Option<&Table>) -> LuaResult<(String, GrepOptions)> {
     let get =
         |key: &str| -> LuaResult<Option<mlua::Value>> { opts.map_or(Ok(None), |o| o.get(key)) };
     let flag = |key: &str| -> LuaResult<bool> {
@@ -244,7 +251,8 @@ fn grep_args(dir: Option<String>, opts: Option<&Table>) -> LuaResult<(String, Gr
             .and_then(|v| v.as_usize())
             .unwrap_or(DEFAULT_GREP_LIMIT),
     };
-    Ok((dir.unwrap_or_else(|| ".".to_owned()), options))
+    let dir = dir.map_or_else(|| ".".to_owned(), |UserPath(dir)| dir);
+    Ok((dir, options))
 }
 
 /// How many matching lines `greed.fs.grep` returns unless told otherwise.
@@ -382,6 +390,16 @@ fn read(path: &Path, limit: Option<usize>) -> std::io::Result<String> {
         bytes.truncate(err.valid_up_to());
     }
     Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// A path a plugin gave, with a leading `~` as the home folder: what every
+/// `greed.fs` function, `greed.open` and `greed.load` take.
+pub(super) struct UserPath(pub String);
+
+impl FromLua for UserPath {
+    fn from_lua(value: Value, lua: &Lua) -> LuaResult<Self> {
+        Ok(Self(expand_home(lua, String::from_lua(value, lua)?)))
+    }
 }
 
 /// `path` with a leading `~` as the home folder (a test's own, in tests), as

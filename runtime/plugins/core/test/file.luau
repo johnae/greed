@@ -186,6 +186,24 @@ test("open and save take ~ as the home folder", function(t)
 	assert(greed.fs.read(`{home}/copy.md`) == "my notes\n", "saved there")
 end)
 
+test("greed.fs takes ~ as the home folder everywhere", function()
+	local home = assert(greed.fs.dirs().home)
+	assert(greed.fs.mkdir("~/made"))
+	assert(greed.fs.stat(`{home}/made`), "made in the home folder")
+	assert(greed.fs.write("~/made/a.txt", "a\n"))
+	assert(greed.fs.read("~/made/a.txt") == "a\n")
+	assert(greed.fs.read_bytes("~/made/a.txt") == "a\n")
+	assert((assert(greed.fs.stat("~/made/a.txt"))).kind == "file")
+	assert(assert(greed.fs.list("~/made"))[1].name == "a.txt")
+	assert(greed.fs.copy("~/made/a.txt", "~/made/b.txt"))
+	assert(greed.fs.rename("~/made/b.txt", "~/made/c.txt"))
+	assert(greed.fs.read(`{home}/made/c.txt`) == "a\n")
+	assert(greed.fs.remove("~/made/c.txt"))
+	assert(greed.fs.stat(`{home}/made/c.txt`) == nil)
+	-- Only at the start, as a shell has it.
+	assert(greed.fs.stat("~nobody/x") == nil)
+end)
+
 test("on-quit keeps the session while something runs, and as told", function()
 	local file = require("@core").file
 	local running = {}

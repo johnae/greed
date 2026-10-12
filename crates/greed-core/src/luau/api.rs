@@ -11,6 +11,7 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
 use super::capabilities::{self, Limit};
+use super::fs::UserPath;
 use super::handles::{self, BufferRef, ViewRef};
 use super::tasks;
 use super::{HostError, state, state_mut};
@@ -1570,8 +1571,7 @@ fn buffer_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()>
     let o = owner.clone();
     greed.set(
         "buffer_for",
-        lua.create_function(move |lua, path: String| {
-            let path = super::fs::expand_home(lua, path);
+        lua.create_function(move |lua, UserPath(path): UserPath| {
             Ok(state(lua)
                 .editor
                 .buffer_for(Path::new(&path))
@@ -1615,8 +1615,7 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
 
     greed.set(
         "open",
-        lua.create_function(|lua, path: String| {
-            let path = super::fs::expand_home(lua, path);
+        lua.create_function(|lua, UserPath(path): UserPath| {
             super::secrets::guard(lua, Path::new(&path))?;
             open_file(lua, &path)
         })?,
@@ -2128,8 +2127,7 @@ fn spawn_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
 /// `greed.load(path)`: the buffer for a file, opened without being shown.
 fn load_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
-    lua.create_function(move |lua, path: String| {
-        let path = super::fs::expand_home(lua, path);
+    lua.create_function(move |lua, UserPath(path): UserPath| {
         super::secrets::guard(lua, Path::new(&path))?;
         let buffer = state_mut(lua)
             .editor

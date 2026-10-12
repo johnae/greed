@@ -578,7 +578,8 @@ Files opened another way, like `greed FILE` from a shell or `greed.open`,
 open as text first and the opener then takes over the views showing them.
 
 For files on disk with no buffer, `greed.fs` has the usual operations, so
-a plugin needs no `rm` or `mv`. Each returns `true`, or nil and why:
+a plugin needs no `rm` or `mv`. Each returns `true`, or nil and why. Paths
+starting with `~` are in your home folder, as in a shell:
 
 ```luau
 greed.fs.write(path, text)                        -- creates its folders too

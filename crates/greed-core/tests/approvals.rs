@@ -322,6 +322,17 @@ fn plugins_cant_write_the_approvals_file() {
         err.to_string().contains("can't write Greed's approvals"),
         "{err}"
     );
+    // Nor make a folder in its place, which would keep it from being written.
+    let err = host
+        .eval(&format!(
+            "require('@greed').fs.mkdir({:?})",
+            store.to_str().unwrap()
+        ))
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("can't write Greed's approvals"),
+        "{err}"
+    );
     assert!(!store.exists());
 }
 
