@@ -22,6 +22,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -102,6 +103,7 @@ fn run_on(
         tests.extend(names?.into_iter().map(|name| (file, name)));
     }
     let failures = side_by_side(&tests, threads, |(file, name)| {
+        let _watched = Watched::start(file, name);
         fresh_host(plugins, approved)?.run_test(dir, file, name)
     });
     tests
@@ -171,6 +173,56 @@ fn joined<R>(thread: std::thread::ScopedJoinHandle<'_, R>) -> R {
     thread
         .join()
         .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
+/// How long a test runs before the watchdog names it.
+const STUCK: Duration = Duration::from_secs(30);
+
+/// The tests running now, by a number of their own, with when each started.
+static RUNNING: Mutex<Vec<(usize, String, Instant)>> = Mutex::new(Vec::new());
+
+/// A test running, which the watchdog names on stderr once it has run
+/// longer than `STUCK`, so a test that never ends says which it is.
+struct Watched(usize);
+
+impl Watched {
+    fn start(file: &Path, name: &str) -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        static WATCHDOG: std::sync::Once = std::sync::Once::new();
+        WATCHDOG.call_once(|| {
+            let _ = std::thread::Builder::new()
+                .name("greed-test-watchdog".into())
+                .spawn(watchdog);
+        });
+        let id = NEXT.fetch_add(1, Ordering::Relaxed);
+        let what = format!("{} {name:?}", file.display());
+        running().push((id, what, Instant::now()));
+        Self(id)
+    }
+}
+
+impl Drop for Watched {
+    fn drop(&mut self) {
+        running().retain(|(id, ..)| *id != self.0);
+    }
+}
+
+fn running() -> std::sync::MutexGuard<'static, Vec<(usize, String, Instant)>> {
+    RUNNING.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn watchdog() {
+    let mut told = BTreeSet::new();
+    loop {
+        std::thread::sleep(Duration::from_secs(5));
+        for (id, what, started) in running().iter() {
+            if started.elapsed() > STUCK && told.insert(*id) {
+                // Past `cargo test`'s capture, which shows nothing of a
+                // test that never ends.
+                let _ = writeln!(std::io::stderr(), "still running after {STUCK:?}: {what}");
+            }
+        }
+    }
 }
 
 fn cores() -> usize {
