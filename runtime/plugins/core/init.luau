@@ -109,6 +109,7 @@ export type UiView = ui.View
 export type UiNode = ui.Node
 export type UiSpan = ui.Span
 export type UiLine = ui.Line
+export type UiGridRow = ui.GridRow
 --- A float being typed in, from `floats.typing`.
 export type TypingFloat = floats.Typing
 

@@ -1044,11 +1044,17 @@ greed.tab.set_layout({
   ```
 
   `text`, `line` (of `ui.span`s), `column`, `row`, `box`, `gap`, `button`,
-  `field` (asks with a prompt), `toggle`, `list` and `table` are there. A
+  `field` (asks with a prompt), `toggle`, `list`, `grid` (columns lined up
+  without borders, as the agent sessions list is) and `table` are there. A
   widget is pressed with `enter`, `space` or a click, and `tab` and
   `shift-tab` go between them; the cursor is the focus, so each client has
-  its own. `ui.pieces(node.lay(width))` gives a node as a mark's `lines`,
-  as the data plugin draws its tables under a block.
+  its own. A span's `value` is what its line stands for, found with
+  `view:value_at(pos)` (a list's item, a grid's row), and with
+  `ui.mount(..., { key = function(value) return value.id end })` each
+  cursor stays on its item as the lines change places. A span's `tag` is
+  found with `view:spots(tag)`, and its `line` styles its whole line.
+  `ui.pieces(node.lay(width))` gives a node as a mark's `lines`, as the
+  data plugin draws its tables under a block.
 - `require("@core").data` is where tables of data come from: one shape,
   `{ columns = { { name, kind? } }, rows = { { [name] = value } } }`, and
   sources by name. `data.source({ name, doc, runs?, read, watch? })` adds

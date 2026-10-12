@@ -98,7 +98,7 @@ function M.open(buffer: greed.Buffer, code: any)
 		end
 		table.insert(buttons, ui.button("Read again", read))
 		table.insert(parts, ui.gap())
-		table.insert(parts, ui.row(buttons, { gap = 1 }))
+		table.insert(parts, ui.row(buttons, { gap = 2, fit = true }))
 		return ui.column(parts)
 	end, { status = "reading" })
 	read()

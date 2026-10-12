@@ -28,7 +28,17 @@ local width, clip = text_helpers.width, text_helpers.clip
 local M = {}
 
 --- Text in a style; `press`, if given, makes it a widget pressing calls.
-export type Span = { text: string, style: string?, press: (() -> ())? }
+--- `value` is what its line stands for (a row's thing), found under the
+--- cursor with `View:value_at`; `tag` names where it is, for `View:spots`;
+--- `line` is a style for the whole line it's on.
+export type Span = {
+	text: string,
+	style: string?,
+	press: (() -> ())?,
+	value: any?,
+	tag: string?,
+	line: string?,
+}
 
 --- A line of spans.
 export type Line = { Span }
@@ -46,6 +56,19 @@ export type View = {
 	redraw: (self: View) -> (),
 	--- Stops drawing it; the buffer stays as it was last drawn.
 	unmount: (self: View) -> (),
+	--- The value of the line at `pos`, if a span on it has one.
+	value_at: (self: View, pos: number) -> any,
+	--- The values of its lines, top to bottom.
+	values: (self: View) -> { any },
+	--- Where the spans tagged `tag` are, as drawn last.
+	spots: (self: View, tag: string) -> { { from: number, to: number } },
+}
+
+--- What a drawing says besides its text: each line's value (by 0-based
+--- line) and where tagged spans are.
+export type Drawn = {
+	values: { [number]: any },
+	spots: { [string]: { { from: number, to: number } } },
 }
 
 --- A span of `text`, in `style`.
@@ -53,23 +76,30 @@ function M.span(text: string, style: string?): Span
 	return { text = text, style = style }
 end
 
---- One line of `spans`, cut where it's wider than the view.
+--- One line of `spans`. A view wraps it where it's wider, as any long line;
+--- in a `row`, it's cut at its column's width.
 function M.line(spans: { Span }): Node
 	return {
-		lay = function(cells: number): { Line }
-			local out: Line = {}
-			local room = cells
-			for _, span in spans do
-				if room <= 0 then
-					break
-				end
-				local shown = clip(span.text, room)
-				room -= width(shown)
-				table.insert(out, { text = shown, style = span.style, press = span.press })
-			end
-			return { out }
+		lay = function(_cells: number): { Line }
+			return { table.clone(spans) }
 		end,
 	}
+end
+
+-- `line` cut at `cells` wide.
+local function fit(line: Line, cells: number): Line
+	local out: Line = {}
+	local room = cells
+	for _, span in line do
+		if room <= 0 then
+			break
+		end
+		local cut = table.clone(span)
+		cut.text = clip(span.text, room)
+		room -= width(cut.text)
+		table.insert(out, cut)
+	end
+	return out
 end
 
 --- `text` in `style`, wrapped at spaces to the view's width; its own
@@ -126,10 +156,15 @@ local function line_width(line: Line): number
 end
 
 --- `children` side by side, `gap` cells apart, sharing the width evenly
---- unless `widths` says how wide each is (the last taking what's left).
-function M.row(children: { Node }, opts: { gap: number?, widths: { number }? }?): Node
+--- unless `widths` says how wide each is (the last taking what's left), or
+--- with `fit` each as wide as it is, as a row of buttons.
+function M.row(
+	children: { Node },
+	opts: { gap: number?, widths: { number }?, fit: boolean? }?
+): Node
 	local gap = (opts and opts.gap) or 2
 	local fixed: { number } = (opts and opts.widths) or {}
+	local fitted = opts ~= nil and opts.fit == true
 	return {
 		lay = function(cells: number): { Line }
 			local n = #children
@@ -138,6 +173,12 @@ function M.row(children: { Node }, opts: { gap: number?, widths: { number }? }?)
 			local used = 0
 			for i = 1, n do
 				local given = fixed[i]
+				if fitted then
+					given = 1
+					for _, line in children[i].lay(cells) do
+						given = math.max(given, line_width(line))
+					end
+				end
 				widths[i] = if given and i < n
 					then given
 					elseif i == n then math.max(cells - used - gap * (n - 1), 1)
@@ -154,7 +195,7 @@ function M.row(children: { Node }, opts: { gap: number?, widths: { number }? }?)
 			for r = 1, height do
 				local line: Line = {}
 				for i = 1, n do
-					local part: Line = laid[i][r] or {}
+					local part = fit(laid[i][r] or {}, widths[i])
 					for _, span in part do
 						table.insert(line, span)
 					end
@@ -180,7 +221,8 @@ function M.box(title: string, child: Node, style: string?): Node
 			local rest = string.rep("─", math.max(inner + 1 - width(head), 0))
 			local top = "╭─" .. head .. rest .. "╮"
 			local out: { Line } = { { { text = top, style = border } } }
-			for _, line in child.lay(inner) do
+			for _, laid in child.lay(inner) do
+				local line = fit(laid, inner)
 				local row: Line = { { text = "│ ", style = border } }
 				for _, span in line do
 					table.insert(row, span)
@@ -198,9 +240,10 @@ function M.box(title: string, child: Node, style: string?): Node
 	}
 end
 
---- A button: `[ label ]`, calling `on_press` when pressed.
+--- A button: its label in the theme's `ui.button` (a badge in the window),
+--- calling `on_press` when pressed.
 function M.button(label: string, on_press: () -> ()): Node
-	return M.line({ { text = `[ {label} ]`, style = "markdown.field", press = on_press } })
+	return M.line({ { text = ` {label} `, style = "ui.button", press = on_press } })
 end
 
 --- A field: `label: [ value ]`; pressing it asks for a new value, which
@@ -354,14 +397,63 @@ function M.table(spec: {
 	}
 end
 
+--- A row of a grid: its cells, each some spans; what the row stands for
+--- (`value`, under the cursor anywhere on its line); a style for its line.
+export type GridRow = { cells: { { Span } }, value: any?, line: string? }
+
+--- `rows` lined up in columns `gap` cells apart (2), without borders, like
+--- a list of things with a few facts each. Each column is as wide as its
+--- widest cell; a line ends where its last cell does.
+function M.grid(rows: { GridRow }, opts: { gap: number? }?): Node
+	local gap = (opts and opts.gap) or 2
+	return {
+		lay = function(_cells: number): { Line }
+			local widths: { number } = {}
+			for _, row in rows do
+				for c, cell in row.cells do
+					widths[c] = math.max(widths[c] or 0, line_width(cell))
+				end
+			end
+			local out: { Line } = {}
+			for _, row in rows do
+				local line: Line = {}
+				-- Cells up to the last one with something in it.
+				local last = #row.cells
+				while last > 0 and line_width(row.cells[last]) == 0 do
+					last -= 1
+				end
+				for c = 1, last do
+					local cell = row.cells[c]
+					for _, span in cell do
+						local placed = table.clone(span)
+						placed.value = row.value
+						table.insert(line, placed)
+					end
+					if c < last then
+						local pad = widths[c] - line_width(cell) + gap
+						table.insert(line, { text = string.rep(" ", pad), value = row.value })
+					end
+				end
+				if #line == 0 then
+					table.insert(line, { text = "", value = row.value })
+				end
+				line[1].line = row.line
+				table.insert(out, line)
+			end
+			return out
+		end,
+	}
+end
+
 --- `items` one a line, each drawn as `spans(item)`; pressing a line calls
---- `on_open` with its item.
+--- `on_open` with its item, and the item is its line's value.
 function M.list<T>(items: { T }, spans: (item: T) -> { Span }, on_open: ((item: T) -> ())?): Node
 	local lines: { Node } = {}
 	for _, item in items do
 		local parts = spans(item)
-		if on_open then
-			for _, span in parts do
+		for _, span in parts do
+			span.value = item
+			if on_open then
 				span.press = function()
 					on_open(item)
 				end
@@ -373,18 +465,32 @@ function M.list<T>(items: { T }, spans: (item: T) -> { Span }, on_open: ((item: 
 end
 
 --- `node` as text and marks for `cells` wide: each pressable span a mark
---- whose action is `ui-press`, with its index in `presses`.
-function M.draw(node: Node, cells: number): (string, { greed.Mark }, { () -> () })
+--- whose action is `ui-press`, with its index in `presses`; and what else
+--- the drawing says (`Drawn`).
+function M.draw(node: Node, cells: number): (string, { greed.Mark }, { () -> () }, Drawn)
 	local texts: { string } = {}
 	local marks: { greed.Mark } = {}
 	local presses: { () -> () } = {}
+	local drawn: Drawn = { values = {}, spots = {} }
 	local at = 0
-	for _, line in node.lay(cells) do
+	for n, line in node.lay(cells) do
 		local parts: { string } = {}
+		local start = at
+		local line_style: string? = nil
 		for _, span in line do
 			local from = at
 			at += #span.text
 			table.insert(parts, span.text)
+			if span.value ~= nil and drawn.values[n - 1] == nil then
+				drawn.values[n - 1] = span.value
+			end
+			line_style = line_style or span.line
+			local tag = span.tag
+			if tag then
+				local list = drawn.spots[tag] or {}
+				drawn.spots[tag] = list
+				table.insert(list, { from = from, to = at })
+			end
 			if span.press then
 				table.insert(presses, span.press)
 				table.insert(marks, {
@@ -398,10 +504,16 @@ function M.draw(node: Node, cells: number): (string, { greed.Mark }, { () -> () 
 				table.insert(marks, { from = from, to = at, style = span.style })
 			end
 		end
+		if line_style then
+			table.insert(
+				marks,
+				{ from = start, to = at, style = line_style :: string, line = true }
+			)
+		end
 		table.insert(texts, table.concat(parts))
 		at += 1
 	end
-	return table.concat(texts, "\n"), marks, presses
+	return table.concat(texts, "\n"), marks, presses, drawn
 end
 
 --- `lines` (a node laid out) as lines a mark shows under a line (a mark's
@@ -418,8 +530,9 @@ function M.pieces(lines: { Line }): { greed.MarkLine }
 	return out
 end
 
--- What's mounted, by buffer id: its view and what each widget does.
-local mounted: { [number]: { view: View, presses: { () -> () } } } = {}
+-- What's mounted, by buffer id: its view, what each widget does and what
+-- its last drawing says.
+local mounted: { [number]: { view: View, presses: { () -> () }, drawn: Drawn } } = {}
 
 --- How wide `buffer` is shown: the narrowest view of it, else 80 cells.
 function M.width(buffer: greed.Buffer): number
@@ -465,19 +578,60 @@ local function replace_changed(buffer: greed.Buffer, text: string)
 			to = buffer:line_start(last_a)
 		end
 	end
+	-- A cursor in what's replaced stays on its line and column, rather than
+	-- going to either end of the new text.
+	local inside: { { view: greed.View, line: number, column: number } } = {}
+	for _, shown in buffer:views() do
+		local pos = shown:cursor()
+		if pos >= from and pos <= to then
+			local line = buffer:line_of(pos)
+			table.insert(
+				inside,
+				{ view = shown, line = line, column = pos - buffer:line_start(line) }
+			)
+		end
+	end
 	buffer:edit(function(e)
 		e:replace(from, to, new)
 	end, { undo = false })
+	for _, kept in inside do
+		local line = math.min(kept.line, buffer:line_count() - 1)
+		local pos = math.min(buffer:line_start(line) + kept.column, buffer:line_end(line))
+		kept.view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	end
 end
 
 --- Draws `render(state)` into `buffer` for the width of its views, and
 --- again whenever the state is set or a view of it is resized. Gives the
---- view, whose `set` merges into its state.
+--- view, whose `set` merges into its state. With `key`, which names a
+--- line's value, each cursor stays on the line of the same value as the
+--- lines change places, like a list's row as it's sorted again.
 function M.mount(
 	buffer: greed.Buffer,
 	render: (state: { [string]: any }) -> Node,
-	state: { [string]: any }?
+	state: { [string]: any }?,
+	opts: { key: ((value: any) -> string)? }?
 ): View
+	local key = opts and opts.key
+	-- Each view's cursor: its line's value's key, and how far along it.
+	local function held(drawn: Drawn): { { view: greed.View, key: string, column: number } }
+		local out = {}
+		if key == nil then
+			return out
+		end
+		for _, shown in buffer:views() do
+			local pos = shown:cursor()
+			local line = buffer:line_of(pos)
+			local value = drawn.values[line]
+			if value ~= nil then
+				table.insert(
+					out,
+					{ view = shown, key = key(value), column = pos - buffer:line_start(line) }
+				)
+			end
+		end
+		return out
+	end
 	local view: View = {
 		buffer = buffer,
 		state = state or {},
@@ -492,10 +646,24 @@ function M.mount(
 			if entry == nil or entry.view ~= self or not buffer:valid() then
 				return
 			end
-			local text, marks, presses = M.draw(render(self.state), M.width(buffer))
-			entry.presses = presses
+			local cursors = held(entry.drawn)
+			local text, marks, presses, drawn = M.draw(render(self.state), M.width(buffer))
+			entry.presses, entry.drawn = presses, drawn
 			replace_changed(buffer, text)
 			buffer:decorate("ui", marks)
+			for _, cursor in cursors do
+				for line, value in drawn.values do
+					if (key :: (any) -> string)(value) == cursor.key and cursor.view:valid() then
+						local start = buffer:line_start(line)
+						local pos = math.min(start + cursor.column, buffer:line_end(line))
+						cursor.view:set_selection({
+							ranges = { { anchor = pos, head = pos } },
+							primary = 1,
+						})
+						break
+					end
+				end
+			end
 		end,
 		unmount = function(self: View)
 			local entry = mounted[buffer:id()]
@@ -503,8 +671,29 @@ function M.mount(
 				mounted[buffer:id()] = nil
 			end
 		end,
+		value_at = function(_self: View, pos: number): any
+			local entry = mounted[buffer:id()]
+			return if entry then entry.drawn.values[buffer:line_of(pos)] else nil
+		end,
+		values = function(_self: View): { any }
+			local entry = mounted[buffer:id()]
+			local out: { any } = {}
+			if entry then
+				for line = 0, buffer:line_count() - 1 do
+					local value = entry.drawn.values[line]
+					if value ~= nil then
+						table.insert(out, value)
+					end
+				end
+			end
+			return out
+		end,
+		spots = function(_self: View, tag: string): { { from: number, to: number } }
+			local entry = mounted[buffer:id()]
+			return if entry then entry.drawn.spots[tag] or {} else {}
+		end,
 	}
-	mounted[buffer:id()] = { view = view, presses = {} }
+	mounted[buffer:id()] = { view = view, presses = {}, drawn = { values = {}, spots = {} } }
 	buffer:set_keys({ tab = "ui-next", ["shift-tab"] = "ui-prev" })
 	greed.plugin.tie(function()
 		view:unmount()

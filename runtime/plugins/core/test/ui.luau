@@ -135,3 +135,67 @@ test("a table narrower than its columns gives up room from the widest", function
 		assert(core.text.width(line) <= 20, line)
 	end
 end)
+
+test("a grid lines its cells up, its rows' values found under the cursor", function(t)
+	local buffer = shown(t)
+	local view = ui.mount(buffer, function(state)
+		local rows: { core.UiGridRow } = {}
+		for _, item in state.items do
+			table.insert(rows, {
+				value = item,
+				line = if item.marked then "ui.selection" else nil,
+				cells = {
+					{ ui.span(item.name, "keyword") },
+					{
+						{
+							text = item.status,
+							tag = if item.status == "working" then "spin" else nil,
+						},
+					},
+					{ ui.span(item.note or "") },
+				},
+			})
+		end
+		return ui.grid(rows)
+	end, {
+		items = {
+			{ key = "a", name = "Claude", status = "working", note = "in greed-b" },
+			{ key = "b", name = "Greed 2", status = "idle", marked = true },
+		} :: { any },
+	})
+	local text = text_of(buffer)
+	assert(text == "Claude   working  in greed-b\nGreed 2  idle", text)
+	local second = buffer:line_start(1) + 3
+	assert(view:value_at(second).key == "b" and view:value_at(0).key == "a")
+	assert(#view:values() == 2 and view:values()[2].key == "b")
+	local spots = view:spots("spin")
+	assert(#spots == 1 and buffer:slice(spots[1].from, spots[1].to) == "working")
+	local lined = false
+	for _, mark in buffer:decorations("ui") do
+		lined = lined
+			or (
+				mark.line == true
+				and mark.style == "ui.selection"
+				and mark.from == buffer:line_start(1)
+			)
+	end
+	assert(lined, "the marked row's line is styled")
+end)
+
+test("with a key, each cursor stays on its item as the lines change places", function(t)
+	local buffer = shown(t)
+	local view = ui.mount(buffer, function(state)
+		return ui.list(state.items, function(item: { key: string })
+			return { ui.span(item.key) }
+		end)
+	end, { items = { { key = "one" }, { key = "two" }, { key = "three" } } }, {
+		key = function(item: { key: string }): string
+			return item.key
+		end,
+	})
+	local two = buffer:line_start(1) + 1
+	greed.view():set_selection({ ranges = { { anchor = two, head = two } }, primary = 1 })
+	view:set({ items = { { key = "three" }, { key = "one" }, { key = "two" } } })
+	assert(text_of(buffer) == "three\none\ntwo", text_of(buffer))
+	assert(greed.view():cursor() == buffer:line_start(2) + 1, "still on two, a letter in")
+end)

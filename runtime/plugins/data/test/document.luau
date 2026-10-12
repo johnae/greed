@@ -174,7 +174,7 @@ test("space m o opens the table in a float as text, a page at a time", function(
 	end)
 	local text = buffer:slice(0, buffer:len())
 	assert(string.find(text, "rows 1–2", 1, true), text)
-	assert(string.find(text, "[ Later ▶ ]", 1, true), text)
+	assert(string.find(text, " Later ▶ ", 1, true), text)
 	-- Enter on a row shows the whole record.
 	local row = assert((string.find(text, "│ ann", 1, true))) + #"│ " - 1
 	float:set_selection({ ranges = { { anchor = row, head = row } }, primary = 1 })
@@ -187,7 +187,7 @@ test("space m o opens the table in a float as text, a page at a time", function(
 	t:keys("q")
 	assert(greed.view() == float, "back on the table")
 	-- The next page, by its button.
-	local later = assert((string.find(buffer:slice(0, buffer:len()), "[ Later", 1, true))) - 1
+	local later = assert((string.find(buffer:slice(0, buffer:len()), " Later", 1, true))) - 1
 	float:set_selection({ ranges = { { anchor = later, head = later } }, primary = 1 })
 	t:keys("enter")
 	t:wait_for(function()
