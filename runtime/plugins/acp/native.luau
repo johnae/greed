@@ -1174,9 +1174,10 @@ local function system(
 		"Find your way with focus (what the user is looking at), symbols, grep and files before "
 			.. "reading whole files. Files are read as the user has them, unsaved changes included. "
 			.. how,
-		"More tools come in groups you switch on with the tools tool when you need them: the "
-			.. "repo map and the user's working set, renaming and the language server's fixes, "
-			.. "history, notes, plugins and more.",
+		"More tools come in groups you switch on with the tools tool when you need them. Look "
+			.. "there first for what they cover, like the user's notes and todos, rather than "
+			.. "searching the project:\n"
+			.. agent.groups_text(),
 		"When the user asks for something new in Greed itself (a command, keys, a panel, an "
 			.. "integration like a GitHub client), build it as a plugin with the plugins group: "
 			.. "plugin_guide, then plugin_try until it passes, then plugin_install, which installs "

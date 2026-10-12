@@ -34,9 +34,10 @@ claude mcp add greed -- greed mcp
 ```
 
 `greed mcp` connects an MCP client to the running editor. As it connects,
-the client is told where your config is and how to add to Greed with a
-plugin, so an agent asked to change a setting or add a command knows where
-to go. The tools:
+the client is told where your config is, how to add to Greed with a
+plugin, and which groups of tools it can switch on (your notes and todos,
+the shell, the plan and the rest), so an agent asked about your todos or
+to change a setting knows where to go. The tools:
 
 | Tool | What it does |
 |---|---|

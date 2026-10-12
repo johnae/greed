@@ -240,6 +240,18 @@ function M.group(name: string, description: string)
 	end)
 end
 
+--- The groups of tools, one a line ("notes: Your notes and their
+--- todos..."), sorted by name, so an agent knows what switching one on
+--- would give it before it asks.
+function M.groups_text(): string
+	local lines = {}
+	for name, description in groups do
+		table.insert(lines, `- {name}: {description}`)
+	end
+	table.sort(lines)
+	return table.concat(lines, "\n")
+end
+
 local function sorted(list: { Tool }): { Tool }
 	table.sort(list, function(a: Tool, b: Tool)
 		return a.name < b.name
@@ -425,6 +437,9 @@ function M.instructions(): string
 			.. "and use plugin_guide, then plugin_try until it passes, then plugin_install, which the "
 			.. "user reviews. Don't write plugins into the project unless they ask.",
 		untrusted.NOTE,
+		"More tools come in groups, switched on with the tools tool. Look there first for what "
+			.. "they cover, like the user's notes and todos, rather than searching the project:\n"
+			.. M.groups_text(),
 	}
 	local config = greed.fs.dirs().config
 	if config then

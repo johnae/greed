@@ -65,6 +65,8 @@ return table.freeze({
 	--- Groups of tools agents switch on when they need them (registry.luau).
 	group = registry.group,
 	offered = registry.offered,
+	--- The groups of tools with what each is for, a line each (registry.luau).
+	groups_text = registry.groups_text,
 	caller = registry.caller,
 	--- Helpers for tools' argument schemas, like `schema.object` (registry.luau).
 	schema = table.freeze(registry.schema),

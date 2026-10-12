@@ -90,6 +90,10 @@ fn agents_get_mcp_answers_and_the_tools_list() {
         "what marks text from outside: {said}"
     );
     assert!(said.contains("plugin_guide"), "how to add to Greed: {said}");
+    assert!(
+        said.contains("- map: Where things are"),
+        "the tool groups, to switch on: {said}"
+    );
     assert_eq!(
         init["capabilities"]["tools"],
         json!({ "listChanged": true })
