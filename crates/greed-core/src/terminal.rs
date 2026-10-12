@@ -508,6 +508,31 @@ impl Terminal {
     pub fn kill(&mut self) {
         let _ = self.killer.kill();
     }
+
+    /// Interrupts the program as ctrl-c does: SIGINT to what runs in the
+    /// foreground. Typed, ctrl-c reaches nothing until the program has made
+    /// the terminal its own, just after it starts; this reaches it then too.
+    /// Returns whether it went.
+    pub fn interrupt(&self) -> bool {
+        use nix::sys::signal::{Signal, kill, killpg};
+        use nix::unistd::Pid;
+        if self.exit_code().is_some() {
+            return false;
+        }
+        let pid = self
+            .pid
+            .and_then(|pid| i32::try_from(pid).ok())
+            .map(Pid::from_raw);
+        let foreground = self
+            .master
+            .process_group_leader()
+            .filter(|leader| *leader > 0)
+            .map(Pid::from_raw);
+        foreground.is_some_and(|group| killpg(group, Signal::SIGINT).is_ok())
+            || pid.is_some_and(|pid| {
+                killpg(pid, Signal::SIGINT).is_ok() || kill(pid, Signal::SIGINT).is_ok()
+            })
+    }
 }
 
 impl Drop for Terminal {

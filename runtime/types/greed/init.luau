@@ -722,6 +722,8 @@ export type Terminal = {
 	busy: (self: Terminal) -> boolean,
 	--- Asks the program to end.
 	kill: (self: Terminal) -> (),
+	--- Interrupts what runs in the foreground, as ctrl-c does, even in the moment after it starts, before a typed ctrl-c would reach it. Returns whether it went.
+	interrupt: (self: Terminal) -> boolean,
 	--- Ends the program and lets the terminal go; its handle stops working.
 	close: (self: Terminal) -> (),
 }

@@ -531,3 +531,12 @@ fn a_variable_can_be_unset() {
     exited(&received);
     assert_eq!(terminal.screen().rows[0].text, "unset hi");
 }
+
+#[test]
+fn an_interrupt_reaches_a_program_the_moment_it_starts() {
+    for _ in 0..20 {
+        let (terminal, events) = start(&["sleep", "30"], 5, 40);
+        assert!(terminal.interrupt());
+        assert_eq!(exited(&events), (1, true), "ended by the interrupt");
+    }
+}

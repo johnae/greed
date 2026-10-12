@@ -421,7 +421,7 @@ function M.start(shell: Shell, block: Block, argv: { string }, options: Options?
 	state.give_job(block, {
 		interrupt = function()
 			r.stopped = "INT"
-			t:key("ctrl-c")
+			t:interrupt()
 		end,
 		kill = function()
 			r.stopped = "KILL"
