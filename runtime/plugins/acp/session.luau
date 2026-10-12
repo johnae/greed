@@ -122,6 +122,9 @@ export type Session = {
 	--- how many it has room for, when the agent says.
 	tokens: number?,
 	window: number?,
+	--- The tokens Greed's own agent has read and written in this session,
+	--- every request counted, for `agent-max-tokens`.
+	spent: number?,
 	--- What keeps it from working before it's asked anything, like its
 	--- model's provider having no key: the transcript says it in place of
 	--- "ready".

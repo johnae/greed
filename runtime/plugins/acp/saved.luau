@@ -37,6 +37,8 @@ export type Conversation = {
 	time: number,
 	role: string,
 	groups: { string },
+	--- The tokens it read and wrote, so `agent-max-tokens` counts on.
+	spent: number?,
 	said: { models.Said },
 	entries: { session.Entry },
 }
@@ -345,6 +347,7 @@ function M.store(
 		time = os.time(),
 		role = state.role,
 		groups = greed.json.array(state.groups),
+		spent = s.spent,
 		-- A copy, since marking a table an array changes it.
 		said = greed.json.array(table.move(state.said, 1, #state.said, 1, {})),
 		entries = greed.json.array(entries),

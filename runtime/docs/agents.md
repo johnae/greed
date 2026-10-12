@@ -543,7 +543,10 @@ Greed's agent works on a prompt until it's done, however many steps that
 takes; every 200 steps the transcript notes `this has taken 200 steps;
 carrying on`, and `ctrl-c` stops it. For runs nobody watches, `:set
 agent-max-turns 300` stops it after that many steps, with a note saying
-so; `go on` lets it carry on.
+so; `go on` lets it carry on. To cap what a session costs, `:set
+agent-max-tokens 2000000` stops it once it has read and written that many
+tokens, counting every request (a session taken up again counts on from
+where it was); raise the limit and say `go on` to let it carry on.
 
 Before it answers how something works, why it behaves as it does, or how to
 build or change something, Greed's agent is told to read the code and docs

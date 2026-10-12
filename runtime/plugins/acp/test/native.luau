@@ -1818,6 +1818,36 @@ test("a call made again with the same result says so, and running out of turns t
 	assert(string.find(said(s), "stopped: it took 100 turns without finishing", 1, true), said(s))
 end)
 
+test("agent-max-tokens stops a session once it has used that many, until raised", function(t)
+	local function step(i: number): any
+		return {
+			text = "",
+			calls = { { id = `c{i}`, name = "project", input = {} } },
+			stop = "tools",
+			input = 100,
+			output = 50,
+		}
+	end
+	local asked =
+		script({ step(1), step(2), step(3), { text = "Done.", calls = {}, stop = "done" } })
+	greed.option.set("agent-max-tokens", 250)
+	local s = assert(acp.start(GREED, t:tempdir({})))
+	acp.prompt(s, "look")
+	assert(#asked == 2 and s.spent == 300, `{#asked} requests, {s.spent} tokens`)
+	assert(
+		string.find(said(s), "stopped: this session has used 300 tokens, its limit is 250", 1, true),
+		said(s)
+	)
+	assert(not string.find(said(s), "turns without finishing", 1, true), said(s))
+	-- Still over it, nothing more is asked.
+	acp.prompt(s, "go on")
+	assert(#asked == 2, `{#asked} requests`)
+	greed.option.set("agent-max-tokens", 0)
+	acp.prompt(s, "go on")
+	assert(#asked == 4 and string.find(said(s), "agent: Done.", 1, true), said(s))
+	acp.close(s)
+end)
+
 test("without agent-max-turns it works on until done, saying so every so many steps", function(t)
 	-- Every 5 steps here rather than 200, to keep the test quick.
 	local native = require("../native")

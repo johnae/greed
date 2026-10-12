@@ -1660,7 +1660,14 @@ local function prompt(
 	local asking = false
 	local most = tonumber(greed.option.get("agent-max-turns")) or 0
 	local turns = 0
+	-- The session's token limit, once it's reached.
+	local spent_all: number? = nil
 	while most <= 0 or turns < most do
+		local budget = tonumber(greed.option.get("agent-max-tokens")) or 0
+		if budget > 0 and (s.spent or 0) >= budget then
+			spent_all = budget
+			break
+		end
 		turns += 1
 		if turns % M.CHECK_IN == 0 then
 			table.insert(
@@ -1793,6 +1800,7 @@ local function prompt(
 			state.reported = { tokens = turn.tokens, at = #state.said }
 		end
 		s.tokens = turn.tokens or s.tokens
+		s.spent = (s.spent or 0) + (turn.input or 0) + (turn.output or 0)
 		if asking then
 			break
 		elseif cut then
@@ -1985,10 +1993,15 @@ local function prompt(
 	if state.cancelled then
 		table.insert(s.entries, { kind = "note", text = "stopped: cancelled" })
 	end
-	-- Still waiting for the model's answer to its tools' results: it ran
-	-- out of turns.
+	-- Stopped at the session's token limit, or still waiting for the
+	-- model's answer to its tools' results: it ran out of turns.
 	local last = state.said[#state.said]
-	if last and last.role == "tool" and not state.cancelled and not s.failed then
+	if spent_all then
+		table.insert(s.entries, {
+			kind = "note",
+			text = `stopped: this session has used {s.spent} tokens, its limit is {spent_all} (agent-max-tokens); raise it with :set agent-max-tokens, then say go on`,
+		})
+	elseif last and last.role == "tool" and not state.cancelled and not s.failed then
 		table.insert(s.entries, {
 			kind = "note",
 			text = `stopped: it took {most} turns without finishing (agent-max-turns); say go on to let it carry on`,
@@ -2122,6 +2135,7 @@ function M.start(opts: {
 		end
 		table.insert(s.entries, { kind = "note", text = "taken up again" })
 		state.said = kept.said
+		s.spent = kept.spent
 		if models.roles[kept.role] then
 			role = kept.role
 		end

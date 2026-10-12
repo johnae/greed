@@ -107,6 +107,12 @@ greed.option.define({
 })
 
 greed.option.define({
+	name = "agent-max-tokens",
+	doc = "Stop Greed's own agent once a session has read and written this many tokens, every request counted; 0 sets no limit",
+	default = 0,
+})
+
+greed.option.define({
 	name = "agent-max-thought",
 	doc = "Stop a thought of Greed's own agent once it passes this many tokens, before it acts, and ask for smaller steps; 0 lets thoughts run on",
 	default = 8000,
