@@ -823,8 +823,10 @@ scale 2                pixels per point, for sharper pictures
 fps 30                 frames a second
 typing 0.04            seconds between the keys `type` presses
 output media/shell     where the frames and screenshots go (beside the script)
+show-keys              show the keys each `keys` step presses, for a moment
 hide                   stop keeping frames, while setting things up
 show                   keep them again
+caption Selections     a line over the screen until the next; `caption` alone takes it away
 keys space f           press keys, named as in keymaps
 type kubectl get pods  type text, a key at a time
 run shell              run a command
