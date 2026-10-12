@@ -18,11 +18,23 @@ local M = {}
 --- `choices` to pick one of, if any; an answer can be typed in too.
 export type Question = { id: string, question: string, choices: { string }? }
 
--- A question being asked: its page, its questions, and who waits.
-type Asking =
-	{ buffer: greed.Buffer, view: greed.View?, questions: { Question }, done: greed.Signal }
+-- Questions being asked: a number for each time, its title, its page, its
+-- questions, and who waits.
+type Asking = {
+	id: number,
+	title: string,
+	buffer: greed.Buffer,
+	view: greed.View?,
+	questions: { Question },
+	done: greed.Signal,
+}
 
 local asking: { Asking } = {}
+local asked = 0
+
+local function object_id(a: Asking): string
+	return `questions:{a.id}`
+end
 
 -- `text` on one line, with what could start Markdown's syntax at its
 -- beginning escaped, so it reads as the words it is.
@@ -111,14 +123,83 @@ local function finish(a: Asking, result: any)
 		pcall(view.close, view)
 	end
 	a.done:send(result)
+	core.objects.changed(object_id(a))
 end
+
+--- The questions agents wait on you for now, as the status shows them, so
+--- you can answer them from another session or machine (`ask_answer`).
+function M.open(): { { id: string, title: string, questions: { Question } } }
+	local out = {}
+	for _, a in asking do
+		table.insert(out, { id = object_id(a), title = a.title, questions = a.questions })
+	end
+	return out
+end
+
+-- The questions asked as `questions:N`, if they wait still.
+local function asking_as(id: string): Asking?
+	for _, a in asking do
+		if object_id(a) == id then
+			return a
+		end
+	end
+	return nil
+end
+
+local function object(a: Asking): core.Object
+	return { kind = "questions", id = object_id(a), label = a.title, value = a }
+end
+
+core.objects.kind({
+	name = "questions",
+	doc = "Questions an agent waits on you for, on a page you answer and send",
+	list = function()
+		local out = {}
+		for _, a in asking do
+			table.insert(out, object(a))
+		end
+		return out
+	end,
+	get = function(key)
+		local a = asking_as(`questions:{key}`)
+		return if a then object(a) else nil
+	end,
+	inspect = function(a: Asking)
+		return { title = a.title, questions = a.questions }
+	end,
+})
+
+-- Going to them: the page, brought back if it was moved out of sight.
+core.actions.action({
+	kind = "questions",
+	name = "show",
+	doc = "Show the page to answer them on",
+	run = function(target)
+		local a: Asking = target.value
+		local view = a.view
+		if view and view:valid() then
+			view:focus()
+		else
+			greed.view():show(a.buffer)
+		end
+	end,
+})
+core.actions.set_default("questions", "show")
 
 --- Shows `questions` as a page and waits until you send or cancel it.
 --- Returns the answers by id and whether you cancelled.
 function M.ask(title: string, questions: { Question }): ({ [string]: string }, boolean)
 	local buffer = greed.create_buffer("file", page(title, questions), { language = "markdown" })
-	local a: Asking = { buffer = buffer, questions = questions, done = greed.signal() }
+	asked += 1
+	local a: Asking = {
+		id = asked,
+		title = title,
+		buffer = buffer,
+		questions = questions,
+		done = greed.signal(),
+	}
 	table.insert(asking, a)
+	core.objects.changed(object_id(a))
 	-- Send and cancel buttons after the last line, which only you can press.
 	local last = buffer:line_start(buffer:line_count() - 1)
 	local function button(text: string, action: string): greed.Mark
@@ -269,5 +350,53 @@ registry.tool({
 		return { answers = answered, cancelled = cancelled }
 	end,
 })
+
+registry.tool({
+	name = "ask_answer",
+	shell_only = true,
+	description = "Answer questions an agent waits on you for (`questions:N`, as the status "
+		.. "lists them), from another session or machine: `answers` by question id. As the "
+		.. "Send on their page, for you only: `greed ctl --session NAME ask_answer "
+		.. 'id=questions:3 answers=\'{"name": "rope"}\'`',
+	input = registry.schema.object({
+		id = { type = "string", description = "The questions' id, like questions:3" },
+		answers = { type = "object", description = "The answers, by question id" },
+	}, { "id", "answers" }),
+	run = function(args)
+		local a = asking_as(tostring(args.id))
+		if a == nil then
+			error(`no questions {args.id} wait now`, 0)
+		end
+		local given: { [string]: string } = {}
+		local sent: { [string]: any } = if type(args.answers) == "table"
+			then args.answers :: any
+			else {}
+		for _, q in a.questions do
+			local answer = sent[q.id]
+			if answer ~= nil then
+				given[q.id] = tostring(answer)
+			end
+		end
+		finish(a, { answers = given, cancelled = false })
+		return "sent"
+	end,
+})
+
+-- `greed ctl` acts as you, so an agent running it in a shell to answer
+-- another agent, or to run an action for you, asks you every time.
+for _, program in { "greed", "$GREED_BIN" } do
+	core.risk.rule(program, function(words: { string }): string?
+		local ctl = table.find(words, "ctl")
+		if ctl == nil then
+			return nil
+		end
+		for i = ctl + 1, #words do
+			if words[i] == "act" or words[i] == "ask_answer" or words[i] == "agent_permission" then
+				return "acts as you in Greed: answers an agent or runs an action"
+			end
+		end
+		return nil
+	end)
+end
 
 return M

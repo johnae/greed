@@ -154,3 +154,51 @@ test("the page says its keys, and enter goes from question to question", functio
 	local got = result()
 	assert(got.answers.style == "Vim" and got.answers.name == "tidy", greed.json.encode(got))
 end)
+
+test("questions waiting are in the status, and answered from another session as you", function(t)
+	local core = require("@core")
+	t:buffer("|")
+	local result = ask({
+		title = "Naming",
+		questions = {
+			{ id = "name", question = "What should it be called?", choices = { "rope", "text" } },
+		},
+	})
+	t:wait(10)
+	local asking = agent.status().asking
+	assert(#asking == 1 and asking[1].questions[1].question == "What should it be called?")
+	local id = asking[1].id
+	assert(core.objects.get(id), "an object, as the inspector and agents see it")
+	-- As `greed ctl --session NAME ask_answer` runs it, from another session.
+	local answer: agent.Tool? = nil
+	for _, tool in agent.tools() do
+		if tool.name == "ask_answer" then
+			answer = tool
+		end
+	end
+	assert((answer :: agent.Tool).shell_only, "only from a shell: not an agent's to send")
+	local said = (answer :: agent.Tool).run(
+		{ id = id, answers = { name = "rope", other = "x" } },
+		agent.caller()
+	)
+	assert(said == "sent", tostring(said))
+	t:wait_for(function()
+		return result() ~= nil
+	end)
+	local got = result()
+	assert(got.answers.name == "rope" and got.answers.other == nil and not got.cancelled)
+	assert(#agent.status().asking == 0, "answered")
+	assert(#t:floats() == 0, "its page closed")
+end)
+
+test("an agent running greed ctl to act or answer as you is asked about every time", function()
+	local risk = require("@core").risk
+	assert(risk.of("greed ctl act id=agent-session:3 action=allow"))
+	assert(risk.of("greed ctl --session main ask_answer id=questions:1 answers={}"))
+	assert(
+		risk.of('"$GREED_BIN" ctl act id=terminal:4 action=close')
+			or risk.of("$GREED_BIN ctl act id=terminal:4 action=close")
+	)
+	assert(risk.of("greed ctl status") == nil, "looking is fine")
+	assert(risk.of("greed ctl read path=a.txt") == nil)
+end)

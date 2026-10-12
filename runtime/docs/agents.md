@@ -1029,6 +1029,16 @@ it asks there, in its own screen, as it always does; so does a question
 asked while you're looking, and one nobody answers for half an hour. Its
 multiple-choice questions stay in its own screen.
 
+Questions Greed's own agent asks on a page (its `ask` tool) can be answered
+from anywhere too: they show in `space space` as questions waiting for you,
+and `ctrl-a` then `answer` asks each in a picker, where you pick a choice
+or type your own words, and sends the answers to the agent once you've
+answered them all. A notification says when one is asked. From a shell
+it's `greed ctl --session NAME ask_answer id=questions:3
+answers='{"name": "rope"}'`. An agent running `greed ctl act` or
+`ask_answer` in a shell is asked about it every time, whatever you allowed
+always: it would act as you.
+
 ## Plugins written by agents
 
 An agent can extend Greed while you work:

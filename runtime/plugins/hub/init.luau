@@ -526,12 +526,14 @@ function M.go(found: { session: string, via: string?, home: boolean? })
 	end
 end
 
---- Runs the action `name` (as its status lists them, like "allow") on the
---- agent `found` in its session, as you: in another session here or on
---- another machine through `greed ctl act`, run as you are. Nil once done,
---- else why not. The machine your client is on only tells this session
---- what's there; nothing there is done from here.
-function M.act(found: Found, name: string): string?
+-- Runs `greed ctl TOOL ARGS` in the session `found` is in, as you: in
+-- another session here, or on another machine over ssh. Nil once done,
+-- else why not. The machine your client is on only tells this session
+-- what's there; nothing there is done from here.
+local function ctl_there(
+	found: { session: string, via: string?, home: boolean?, machine: string? },
+	args: { string }
+): string?
 	if found.home then
 		return `{M.place(found)} is on the machine you're at: enter goes there`
 	end
@@ -540,17 +542,73 @@ function M.act(found: Found, name: string): string?
 		return "this greed can't run itself to reach other sessions"
 	end
 	local command = if found.via then { program, "ssh", found.via } else { program }
-	for _, arg in
-		{ "ctl", "--session", found.session, "act", `id={found.agent.id}`, `action={name}` }
-	do
+	for _, arg in { "ctl", "--session", found.session, table.unpack(args) } do
 		table.insert(command, arg)
 	end
 	local ran, err = greed.process.run(command, { timeout = 30000 })
 	if ran == nil or ran.code ~= 0 then
 		local why = if ran then string.match(ran.stderr, "[^\n]+") else err
-		return `{name} in {M.place(found)}: {why or "it failed"}`
+		return `{args[1]} in {M.place(found)}: {why or "it failed"}`
 	end
 	return nil
+end
+
+--- Runs the action `name` (as its status lists them, like "allow") on the
+--- agent `found` in its session, as you (`greed ctl act`). Nil once done,
+--- else why not.
+function M.act(found: Found, name: string): string?
+	return ctl_there(found, { "act", `id={found.agent.id}`, `action={name}` })
+end
+
+--- Questions an agent in another session waits on you for, as its status
+--- lists them (`asking`).
+export type Asked = {
+	id: string,
+	title: string,
+	questions: { { id: string, question: string, choices: { string }? } },
+}
+
+--- Sends `answers` (by question id) to the questions `asked` in the session
+--- `found` is, as you (`greed ctl ask_answer`). Nil once sent, else why not.
+function M.answer(found: Session, asked: Asked, answers: { [string]: string }): string?
+	return ctl_there(
+		found,
+		{ "ask_answer", `id={asked.id}`, `answers={greed.json.encode(answers)}` }
+	)
+end
+
+-- Asks you each of `asked`'s questions in a picker, its choices to pick or
+-- your own words to type, and sends the answers there once you've answered
+-- them all.
+local function answer_in_pickers(found: Session, asked: Asked)
+	local answers: { [string]: string } = {}
+	local function next_question(n: number)
+		local q = asked.questions[n]
+		if q == nil then
+			greed.echo(M.answer(found, asked, answers) or `answered in {M.place(found)}`)
+			return
+		end
+		local items: { picker.Item } = {}
+		local choices: { string } = q.choices or {}
+		for _, choice in choices do
+			table.insert(items, { label = choice, value = choice })
+		end
+		local function answered(text: string)
+			answers[q.id] = text
+			next_question(n + 1)
+		end
+		picker.pick(q.question, items, function(item)
+			answered(item.value)
+		end, {
+			-- Words of your own, when no choice is what you mean.
+			fallback = function(query)
+				if query ~= "" then
+					answered(query)
+				end
+			end,
+		})
+	end
+	next_question(1)
 end
 
 --- The other sessions here and on the other machines, by machine then
@@ -641,6 +699,32 @@ function M.places(): { picker.Place }
 				M.go(found)
 			end,
 		})
+		-- Questions an agent there waits on you for, answered from here.
+		local asking = found.status and found.status.asking
+		if type(asking) == "table" then
+			for _, asked: Asked in asking do
+				local first = asked.questions[1]
+				local more = if #asked.questions > 1 then ` (+{#asked.questions - 1})` else ""
+				table.insert(out, {
+					kind = "question",
+					label = `{first and first.question or asked.title}{more} in {M.place(found)}`,
+					tags = { "waiting", found.machine or "here" },
+					go = function()
+						M.go(found)
+					end,
+					actions = if found.home
+						then {}
+						else {
+							{
+								name = "answer",
+								run = function()
+									answer_in_pickers(found, asked)
+								end,
+							},
+						},
+				})
+			end
+		end
 	end
 	for _, found in M.elsewhere() do
 		local said = found.agent
@@ -791,22 +875,44 @@ function M.waiting(
 	machine: { id: string, name: string }?
 ): { Waiting }
 	local out: { Waiting } = {}
+	local function add(name: string, key: string, title: string, what: string)
+		table.insert(out, {
+			key = if machine then `{machine.id}|{key}` else key,
+			session = name,
+			title = title,
+			body = if machine then `{what} · {name} on {machine.name}` else `{what} · {name}`,
+		})
+	end
 	for name, status in statuses do
 		local agents = status.agents
 		if type(agents) == "table" then
 			for _, found in agents do
+				-- An agent in a terminal by its name ("claude"), not the title its
+				-- terminal shows; Greed's own sessions by theirs ("Greed 2").
+				local who = if found.source
+					then found.agent or found.label
+					else found.label or found.agent
 				if found.status == "waiting" then
-					local what = found.question or found.label or found.agent
-					local key = `{name}|{found.id}|{found.since or found.question or ""}`
-					table.insert(out, {
-						key = if machine then `{machine.id}|{key}` else key,
-						session = name,
-						title = `{found.label or found.agent} waits for you`,
-						body = if machine
-							then `{what} · {name} on {machine.name}`
-							else `{what} · {name}`,
-					})
+					add(
+						name,
+						`{name}|{found.id}|{found.since or found.question or ""}`,
+						`{who} waits for you`,
+						found.question or found.label or found.agent
+					)
 				end
+			end
+		end
+		-- Questions on a page, which wait for you as much.
+		local asking = status.asking
+		if type(asking) == "table" then
+			for _, asked in asking do
+				local first = type(asked.questions) == "table" and asked.questions[1]
+				add(
+					name,
+					`{name}|{asked.id}`,
+					"An agent asks you",
+					if first then tostring(first.question) else tostring(asked.title)
+				)
 			end
 		end
 	end

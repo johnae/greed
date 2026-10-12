@@ -8,6 +8,7 @@ local greed = require("@greed")
 local core = require("@core")
 local agent = require("./registry")
 local hooks = require("./hooks")
+local ask = require("./ask")
 
 local M = {}
 
@@ -112,6 +113,8 @@ function M.status(): { [string]: any }
 		attention = greed.json.array(needs),
 		agents = greed.json.array(agents),
 		clients = greed.json.array(clients),
+		-- Questions agents wait on you for, to answer from anywhere.
+		asking = greed.json.array(ask.open()),
 	}
 	for name, part in parts do
 		local ok, value = pcall(part)
@@ -234,7 +237,8 @@ end)
 
 core.attention.on_change(changed)
 core.objects.on_changed(function(id)
-	if string.sub(id, 1, 14) == "agent-session:" or string.sub(id, 1, 9) == "terminal:" then
+	local kind = string.match(id, "^([^:]+):")
+	if kind == "agent-session" or kind == "terminal" or kind == "questions" then
 		changed()
 	end
 end)

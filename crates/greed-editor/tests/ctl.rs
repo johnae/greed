@@ -510,6 +510,50 @@ fn an_agent_waiting_in_one_session_is_told_to_your_client_in_another() {
     }
 }
 
+fn answer_a_question_there(machines: &common::TwoMachines) {
+    let root = &machines.world.root;
+    let (got, said) = (
+        root.join("answers").display().to_string(),
+        root.join("answered").display().to_string(),
+    );
+    // An agent in beta, there, asks on a page and waits.
+    machines.eval(
+        "beta",
+        true,
+        &format!(
+            "local greed = require('@greed') greed.spawn(function() \
+             for _, tool in require('@agent').tools() do if tool.name == 'ask' then \
+             local r = tool.run({{ questions = {{ {{ id = 'name', question = 'Called?', choices = {{ 'rope' }} }} }} }}, require('@agent').caller()) \
+             greed.fs.write({got:?}, greed.json.encode(r)) end end end)"
+        ),
+    );
+    // From alpha, here, once its hub hears of it, answered as you.
+    machines.eval(
+        "alpha",
+        false,
+        &format!(
+            "local greed = require('@greed') local hub = require('@hub') \
+             greed.spawn(function() \
+             for _ = 1, 200 do \
+             for _, f in hub.sessions() do \
+             local asking = f.status and f.status.asking \
+             if f.session == 'beta' and f.machine and asking and asking[1] then \
+             greed.fs.write({said:?}, tostring(hub.answer(f, asking[1], {{ name = 'rope' }}))) return end end \
+             greed.sleep(100) end \
+             greed.fs.write({said:?}, 'never heard') end)"
+        ),
+    );
+    common::wait_until("the answer sent there", || {
+        std::path::Path::new(&said).exists()
+    });
+    assert_eq!(std::fs::read_to_string(&said).unwrap(), "nil");
+    common::wait_until("the agent there to have it", || {
+        std::path::Path::new(&got).exists()
+    });
+    let answers = std::fs::read_to_string(&got).unwrap();
+    assert!(answers.contains("\"name\":\"rope\""), "{answers}");
+}
+
 /// From alpha, here, closes the terminal of an agent in beta, on the other
 /// machine, where it runs: over ssh, as you, without asking there where
 /// nobody looks.
@@ -622,6 +666,7 @@ fn hubs_on_two_machines_follow_each_other_and_tell_you_once() {
     assert!(notice.body.contains("beta"), "{notice:?}");
     no_notice(&mut attached);
     close_an_agent_there(&machines);
+    answer_a_question_there(&machines);
     eval("alpha", false, "require('@greed').quit()");
     eval("beta", true, "require('@greed').quit()");
     for server in &mut servers {
