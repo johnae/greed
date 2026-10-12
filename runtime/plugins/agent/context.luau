@@ -36,6 +36,31 @@ function M.within(fn: () -> ...any, view: greed.View?)
 	end
 end
 
+-- The most views `views` names.
+local MAX_VIEWS = 15
+
+--- `view` as an agent's results name it: its id and what it shows, like
+--- "view:61 a.txt (pane)".
+function M.named(view: greed.View): string
+	local id = `view:{view:id()}`
+	local found = core.objects.get(id)
+	return if found then `{id} {found.label}` else `{id} (closed)`
+end
+
+--- Every view there is now, as `named` names them, with commas between.
+function M.views(): string
+	local names: { string } = {}
+	local all = core.objects.list("view")
+	for i, found in all do
+		if i > MAX_VIEWS then
+			table.insert(names, `and {#all - MAX_VIEWS} more`)
+			break
+		end
+		table.insert(names, `{found.id} {found.label}`)
+	end
+	return table.concat(names, ", ")
+end
+
 -- 1-based line and column, as people and agents count them.
 local function position(buffer: greed.Buffer, pos: number): { line: number, column: number }
 	local line = buffer:line_of(pos)
@@ -58,14 +83,18 @@ function M.focus(view: greed.View): { [string]: any }
 		})
 	end
 	local first, final = view:visible()
+	local mode = greed.mode.get()
 	return {
+		view = `view:{view:id()}`,
+		buffer = `buffer:{buffer:id()}`,
 		path = buffer:path(),
 		kind = buffer:kind(),
 		language = buffer:language(),
 		modified = buffer:modified(),
-		-- The mode as the status line names it, like "normal" or "insert",
-		-- and the editing style apart.
-		mode = core.style.label(greed.mode.get()),
+		-- The mode as greed.mode.get() gives it, like "helix-normal", and as
+		-- the status line names it, like "normal".
+		mode = mode,
+		label = core.style.label(mode),
 		style = core.style.current().name,
 		selections = selections,
 		visible = { from = position(buffer, first).line, to = position(buffer, final).line },

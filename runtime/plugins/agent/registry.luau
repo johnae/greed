@@ -18,10 +18,17 @@ local registry = core.registry
 --- to tell when their list changes. `kind` is for telling callers apart,
 --- not for trust: `from_shell(caller)` says whether a call really came
 --- from a shell.
+--- A call of the agent's the user rejected: the tool, the call's title,
+--- and what they wrote with the rejection.
+export type Refusal = { tool: string, title: string, note: string? }
+
 export type Caller = {
 	kind: "shell" | "socket" | "ide" | "agent",
 	groups: { [string]: boolean },
 	connection: number?,
+	--- What the user rejected of the agent's calls in its current prompt,
+	--- for eval's reviewer; Greed's own agent keeps it.
+	refused: { Refusal }?,
 }
 
 --- What a tool does beyond reading, named as ACP names tool kinds.

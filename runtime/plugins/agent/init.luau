@@ -43,12 +43,13 @@ registry.group(
 )
 registry.group(
 	"plugins",
-	"Greed itself: what a command, option or API function is, and writing plugins"
+	"Writing plugins for Greed, and what Greed and its plugins log as they run"
 )
 
 export type Tool = registry.Tool
 export type Kind = registry.Kind
 export type Caller = registry.Caller
+export type Refusal = registry.Refusal
 export type Content = registry.Content
 export type Edit = proposals.Edit
 export type FileEdits = proposals.FileEdits

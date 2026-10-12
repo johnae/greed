@@ -40,9 +40,9 @@ to go. The tools:
 
 | Tool | What it does |
 |---|---|
-| `focus` | The file you are in (the last one, while an agent's pane has focus), your selections with their text, the lines on screen, the mode (`normal`, `insert`, ...) and the editing style |
+| `focus` | The file you are in (the last one, while an agent's pane has focus), its view and buffer ids, your selections with their text, the lines on screen, the mode (as `greed.mode.get()` names it, like `helix-insert`, with the status line's `insert` as its label) and the editing style |
 | `buffers` | Open files and which have unsaved changes |
-| `read` | A file as the editor has it, unsaved changes included |
+| `read` | A file as the editor has it, unsaved changes included, or a buffer or view by its id (`buffer:12`) |
 | `diagnostics` | Errors and warnings from language servers |
 | `history_recent` | What changed lately in open files, who changed it (you, a plugin, an agent, the disk) and a diff |
 | `context_get` | What you pinned for agents (`space i p`, see [the context](using.md#the-context)): selections, files, problems, the changes in progress, objects as they are now |
@@ -59,10 +59,10 @@ to go. The tools:
 | `code_actions`, `code_action` | The language server's quick fixes and refactors for some lines, and proposing one; actions that would run a command in the server are refused, since they can't be shown first |
 | `ask` | Ask you questions, with choices or a typed answer, on a page you fill in and send; the answers come back to the agent |
 | `project` | The project's root folder |
-| `objects`, `inspect`, `act` | The objects of the running editor (buffers, views, tabs, terminals, shells and their blocks, language servers, proposals, agent sessions, plugins and what plugins add): list them by kind or by what they relate to, see one's state, relations, actions and what was done to it (by you or an agent), and run an action on it as you would from the inspector (`space h i`), like closing a view or a buffer by its id. Actions run in the view you were in, as `run_command` does. Agents in Greed ask before `act`, which takes several ids at once; an action that deletes or stops something always goes to you to review first, all of them together, whatever the agent was allowed, and you may run some and not others. Deciding on proposed changes stays yours |
-| `commands`, `run_command` | Find the editor's commands by what they do, with how each is typed and what its arguments are, and run one with its arguments checked as the command line checks them (a wrong one gives back the usage and nothing runs). It runs in the view you were in (the one `focus` reports, never the agent's own chat), or in the view the agent names. A command that may close, delete or stop something asks you every time |
+| `objects`, `inspect`, `act` | The objects of the running editor (buffers, views (panes, floats and panels like an agent's chat), tabs, terminals, shells and their blocks, language servers, proposals, agent sessions, plugins and what plugins add): list them by kind or by what they relate to, see one's state, relations, actions and what was done to it (by you or an agent), and run an action on it as you would from the inspector (`space h i`), like closing a view or a buffer by its id; `act` says back what each object was and the views after, when they changed. Actions run in the view you were in, as `run_command` does. Agents in Greed ask before `act`, which takes several ids at once; an action that deletes or stops something always goes to you to review first, all of them together, whatever the agent was allowed, and you may run some and not others. Deciding on proposed changes stays yours |
+| `commands`, `run_command` | Find the editor's commands by words in what they do (those matching the most words first), with how each is typed and what its arguments are, and run one with its arguments checked as the command line checks them (a wrong one gives back the usage and nothing runs). It runs in the view you were in (the one `focus` reports, never the agent's own chat), or in the view the agent names, and says back which view that was and, when views closed or opened, the views there are now. A command that may close, delete or stop something asks you every time, naming the view it would run in |
 | `eval` | Run Luau inside the editor: sandboxed first, then a reviewer or you for anything more (below); what it edits is one operation you can review and undo |
-| `describe` | What a command, option, event, API function, plugin or mode is: its doc, keys, value, who defined it and where |
+| `describe` | What a command, option, event, API function or type, plugin or mode is: its doc, keys, value, who defined it and where; `greed.tab` lists a module's functions and `View` a type's methods |
 | `why` | How some lines came to be: each change that made them, newest first, with its description and diff |
 | `plugin_guide`, `plugin_try`, `plugin_install` | Write a plugin (below) |
 | `debug_log` | What Greed and its plugins say they do while a debug topic is on (keys, runs, frames, language server messages, programs, a plugin's own `greed.debug.log` lines): turn topics on, do the thing, read the lines |
@@ -86,7 +86,7 @@ Every tool an agent is offered costs tokens on every request, so most of
 the tools above come in groups that an agent switches on with `tools` when
 it needs them. These are always offered: `focus`, `buffers`, `read`,
 `diagnostics`, `propose`, `open`, `project`, `files`, `grep`, `symbols`,
-`outline`, `ask`, `eval`, `context_get`, `objects`, `inspect`, `act`,
+`outline`, `ask`, `eval`, `describe`, `context_get`, `objects`, `inspect`, `act`,
 `commands`, `run_command`,
 `memory_list`, `memory_propose` and `tools`.
 
@@ -99,7 +99,7 @@ it needs them. These are always offered: `focus`, `buffers`, `read`,
 | `notes` | the `notes_` tools |
 | `syntax` | `syntax_query` |
 | `blocks` | `blocks_list`, `blocks_run` |
-| `plugins` | `describe`, `plugin_guide`, `plugin_try`, `plugin_install`, `debug_log` |
+| `plugins` | `plugin_guide`, `plugin_try`, `plugin_install`, `debug_log` |
 | `subagents` | `subagent` |
 | `web` | `web_search`, `web_fetch` |
 | `shell` | `shell_run`, `shell_read`, `shell_wait`, `shell_kill` |
@@ -531,6 +531,12 @@ agent's turn, in any mode, while typing too (in the vscode style, with a
 selection it copies): what it was answering or running is left behind at
 once, and the next message carries on from there. A command it started in
 the project's shell goes on there, where `ctrl-c` stops it.
+
+Everything above the box is read-only. You can move, search, select and
+copy there in any style, but typing, going into insert mode or pasting
+there puts the cursor at the end of the box and types there, and deleting
+there is refused. While the agent asks something, its keys answer from
+anywhere in the transcript.
 
 What you send while the agent works waits its turn, shown at the end of
 the transcript as `You · queued` and counted under the box (`thinking · 1

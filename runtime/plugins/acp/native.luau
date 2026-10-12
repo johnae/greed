@@ -47,7 +47,15 @@ local EMPTY = "\n\n(Your answer after this came back empty, with no text and no 
 -- and tried again.
 local MAX_OVERFLOWS = 3
 
--- What the model hears after a call it made already, which came back the same.
+-- Calls the user rejects in one prompt before the turn stops to ask them:
+-- a model told no can go round trying other ways to do the same.
+local MAX_REJECTED = 2
+local NOT_RUN_REJECTED = "not run: the user rejected a call before this"
+local ASK_NOW = "\n\n(The turn stops here: no more calls run. Ask the user what they want, "
+	.. "in a sentence or two, and say plainly what wasn't done.)"
+
+-- What the model hears after a call that only reads which it made
+-- already, and which came back the same.
 local REPEATED = "\n\n(You made this same call already and got the same result. "
 	.. "Asking again won't change it: try something else.)"
 
@@ -180,6 +188,13 @@ local function unless_stopped(state: State, f: () -> (any, any)): (boolean, any,
 end
 
 local states: { [number]: State } = {}
+
+--- Who Greed's agent in `s` calls Greed's tools as, or nil for another
+--- agent's session.
+function M.caller(s: Session): agent.Caller?
+	local state = states[s.id]
+	return if state then state.caller else nil
+end
 
 -- What a tool says after changing the file at `path` (in full) through
 -- `buffer`, with what its language server reports about it then.
@@ -1078,6 +1093,9 @@ local function system(s: Session, env: string?, edits: string?): string
 		config_note(),
 		"Keep your plan for bigger tasks with plan_read and plan_write, where the user sees and "
 			.. "changes it. Follow the decisions the decisions tool lists as accepted.",
+		"When the user rejects a call, don't make it again or get the same effect another way "
+			.. "(another tool, a command or eval): ask them what they want, and don't say it was "
+			.. "done.",
 		"Be brief: say what you did and what's left, not every step.",
 		agent.memory.prompt(s.root),
 	}
@@ -1160,6 +1178,42 @@ local function allowed(
 	return chosen == "once" or chosen == "always", note
 end
 
+-- What a tool (one of its own, or Greed's) does, as ACP names tool kinds.
+local function kind_of(tool: Own | agent.Tool): string
+	return (tool :: any).kind or "read"
+end
+
+-- A call by its tool and arguments, to tell when it's made again.
+local function call_key(c: models.Call): string
+	return c.name .. " " .. greed.json.encode(c.input)
+end
+
+-- The call you rejected this prompt that `c` could do the same as: the
+-- same call again (`rejected` holds them by call_key), or, after you
+-- rejected one without saying what to do instead, one that runs code or
+-- commands (eval, run_command). Nil when `c` may run.
+local function like_rejected(
+	refused: { agent.Refusal },
+	rejected: { [string]: string },
+	by_name: { [string]: any },
+	c: models.Call
+): string?
+	local again = rejected[call_key(c)]
+	if again then
+		return again
+	end
+	local found = by_name[c.name]
+	if found == nil or kind_of(found) ~= "execute" then
+		return nil
+	end
+	for _, one in refused do
+		if one.note == nil then
+			return one.title
+		end
+	end
+	return nil
+end
+
 -- Runs one call the model asked for and returns what it gets back, and
 -- whether that's an error.
 local function call(
@@ -1175,7 +1229,7 @@ local function call(
 	end
 	local own = if found.spec then found :: Own else nil
 	local registered = if own then nil else found :: agent.Tool
-	local kind = if own then own.kind else (registered and registered.kind) or "read"
+	local kind = kind_of(found)
 	-- The files it touches, as its questions name them: its own tools say,
 	-- Greed's name one by their path.
 	local locations = if own and own.paths
@@ -1232,6 +1286,8 @@ local function call(
 	local refused = if outside and locations
 		then session.may_write(s, tool.title, kind, locations)
 		else nil
+	-- Whether you were asked and said no, and what you wrote then.
+	local rejected: boolean, told: string? = refused ~= nil and s.workspace == nil, nil
 	if refused == nil then
 		local title = if widens
 			then `{tool.title}, which {widens}`
@@ -1247,9 +1303,15 @@ local function call(
 		if not ok then
 			local why = if widens then session.NOT_WIDENED else "the user didn't allow it"
 			refused = session.refused(why, note)
+			rejected, told = true, note
 		end
 	end
 	if refused then
+		if rejected then
+			local list = state.caller.refused or {}
+			state.caller.refused = list
+			table.insert(list, { tool = c.name, title = tool.title, note = told })
+		end
 		tool.status = "failed"
 		s.tool = nil
 		return refused, true
@@ -1432,6 +1494,12 @@ local function prompt(
 	local seen: { [string]: string } = {}
 	-- Calls that only read in a row, and whether it heard about them.
 	local reads, nudged = 0, false
+	-- What you rejected this prompt, also by call_key; once the turn stops
+	-- over them, the model's next answer, to ask you, is its last.
+	local refused: { agent.Refusal } = {}
+	state.caller.refused = refused
+	local rejected_calls: { [string]: string } = {}
+	local asking = false
 	for _ = 1, MAX_TURNS do
 		-- Again each turn, for the groups it switched on in the last.
 		local specs, by_name = tools(state)
@@ -1493,15 +1561,19 @@ local function prompt(
 		-- An answer cut off at its length may end in half a tool call, so
 		-- none of its calls run; the model hears why and goes on in parts.
 		local cut = turn.stop == "length"
+		-- Asked to ask you, it gets no more calls.
+		local calls = if cut or asking then {} else turn.calls
 		table.insert(
 			state.said,
-			{ role = "assistant", text = turn.text, calls = if cut then {} else turn.calls } :: models.Said
+			{ role = "assistant", text = turn.text, calls = calls } :: models.Said
 		)
 		if turn.tokens then
 			state.reported = { tokens = turn.tokens, at = #state.said }
 		end
 		s.tokens = turn.tokens or s.tokens
-		if cut then
+		if asking then
+			break
+		elseif cut then
 			cuts += 1
 			if cuts > MAX_CUTS then
 				table.insert(
@@ -1538,7 +1610,36 @@ local function prompt(
 		if turn.stop ~= "tools" or #turn.calls == 0 then
 			break
 		end
+		-- Stops the turn over `title`, which you rejected: calls from
+		-- `from` on don't run, and the model hears it must ask you.
+		local function stop_to_ask(from: number, title: string)
+			for k = from, #turn.calls do
+				table.insert(
+					state.said,
+					{
+						role = "tool",
+						call = turn.calls[k].id,
+						text = NOT_RUN_REJECTED,
+						error = true,
+					} :: models.Said
+				)
+			end
+			local last = state.said[#state.said]
+			last.text = (last.text or "") .. ASK_NOW
+			table.insert(
+				s.entries,
+				{ kind = "note", text = `stopped: you rejected {title}; asking what you want` }
+			)
+			asking = true
+			s.changed()
+		end
 		for i, c in turn.calls do
+			local like = like_rejected(refused, rejected_calls, by_name, c)
+			if like then
+				stop_to_ask(i, like)
+				break
+			end
+			local rejections = #refused
 			local ran, result, failed = unless_stopped(state, function()
 				return call(s, state, by_name, c)
 			end)
@@ -1565,13 +1666,22 @@ local function prompt(
 				s.tool = nil
 				break
 			end
-			-- A call it made already this prompt, coming back the same, says
-			-- so: a model can go round asking the same thing.
-			local key = c.name .. " " .. greed.json.encode(c.input)
-			local before = seen[key]
-			seen[key] = result
-			if before == result then
-				result ..= REPEATED
+			local tool = s.tools[c.id]
+			local rejected = #refused > rejections
+			local key = call_key(c)
+			if rejected then
+				rejected_calls[key] = refused[#refused].title
+			end
+			-- A call that only reads, made already this prompt and coming back
+			-- the same, says so: a model can go round asking the same thing.
+			-- One that changes something, or that you rejected, doesn't: told
+			-- to try something else, a model tries to get past you.
+			if tool and tool.kind == "read" and not rejected then
+				local before = seen[key]
+				seen[key] = result
+				if before == result then
+					result ..= REPEATED
+				end
 			end
 			-- What it read is what it saw, for writing over it later.
 			if c.name == "read" and not failed and type(c.input.path) == "string" then
@@ -1581,7 +1691,6 @@ local function prompt(
 				end
 			end
 			-- Asking the user counts as doing something, as an edit does.
-			local tool = s.tools[c.id]
 			reads = if tool and tool.kind == "read" and c.name ~= "ask" then reads + 1 else 0
 			if reads >= READS and not nudged then
 				nudged = true
@@ -1592,6 +1701,10 @@ local function prompt(
 				{ role = "tool", call = c.id, text = result, error = failed } :: models.Said
 			)
 			s.changed()
+			if rejected and #refused >= MAX_REJECTED then
+				stop_to_ask(i + 1, refused[#refused].title)
+				break
+			end
 		end
 		if state.cancelled then
 			keep(s, state)

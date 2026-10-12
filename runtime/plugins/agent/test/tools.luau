@@ -20,10 +20,15 @@ test("focus tells the file you were in while a pane without one has focus", func
 	local focus = run("focus")
 	assert(focus.path == dir .. "/a.txt", tostring(focus.path))
 	assert(focus.selections[1].text == "two", focus.selections[1].text)
-	assert(focus.mode == "normal" and focus.style == "helix", `{focus.mode} {focus.style}`)
+	-- The mode's id is what greed.mode.get() gives, which isn't always the label.
+	assert(focus.mode == greed.mode.get() and focus.label == "normal", `{focus.mode} {focus.label}`)
+	assert(focus.style == "helix", focus.style)
+	local file = assert(greed.tab.current().panes[1])
+	assert(focus.view == `view:{file:id()}`, tostring(focus.view))
+	assert(focus.buffer == `buffer:{file:buffer():id()}`, tostring(focus.buffer))
 	t:keys("i")
 	local typing = run("focus")
-	assert(typing.mode == "insert", tostring(typing.mode))
+	assert(typing.mode == "helix-insert" and typing.label == "insert", typing.mode)
 	t:keys("esc")
 end)
 
@@ -60,6 +65,20 @@ test("tools take relative paths from the project's root, wherever Greed started"
 	assert(run("read", { path = "./src/a.txt" }) == "open\n", "read sees the open buffer")
 	run("open", { path = "src/a.txt" })
 	assert(greed.view():buffer():path() == dir .. "/src/a.txt", "open")
+end)
+
+test("read takes an object's id: a buffer's text, unsaved too, or a pointer to inspect", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "disk\n" })
+	greed.open(dir .. "/a.txt")
+	t:keys("i x esc")
+	local view = greed.view()
+	local buffer = view:buffer()
+	assert(run("read", { path = `buffer:{buffer:id()}` }) == "xdisk\n")
+	assert(run("read", { path = `view:{view:id()}`, from_line = 1, to_line = 1 }) == "xdisk")
+	local ok, err = pcall(run, "read", { path = "editor:" }, nil)
+	assert(not ok and string.find(tostring(err), "use inspect", 1, true), tostring(err))
+	ok, err = pcall(run, "read", { path = "buffer:99999" }, nil)
+	assert(not ok and string.find(tostring(err), "no object buffer:99999", 1, true), tostring(err))
 end)
 
 test("buffers lists open files and which have changes", function(t)
@@ -123,6 +142,39 @@ test("eval returns what the code returns, and fails with its error", function(t)
 	assert(run("eval", { code = "return 6 * 7" }) == "42")
 	local ok, err = pcall(run, "eval", { code = "error('broken')" }, nil)
 	assert(not ok and string.find(tostring(err), "broken", 1, true), tostring(err))
+end)
+
+test("eval's errors keep the agent's own lines and say what a type has", function(t)
+	t:buffer("|x")
+	local code = "local greed = require('@greed')\nlocal function f()\n  error('broken')\nend\nf()"
+	local ok, err = pcall(run, "eval", { code = code }, nil)
+	local text = tostring(err)
+	assert(not ok and string.find(text, "broken", 1, true), text)
+	assert(not string.find(text, "agent/", 1, true), text)
+	assert(not string.find(text, "%.luau:"), text)
+	-- Run as a whole, past the sandbox, too: only the agent's frames are left.
+	greed.option.set("agent-eval", "allow")
+	ok, err = pcall(run, "eval", { code = code }, nil)
+	greed.option.set("agent-eval", "auto")
+	text = tostring(err)
+	local frames = assert(string.match(text, "stack traceback:\n(.*)$"), text)
+	for _, frame in string.split(frames, "\n") do
+		assert(string.match(frame, "^%s*repl:%d"), text)
+	end
+	assert(string.find(text, "in function 'f'", 1, true), text)
+	ok, err = pcall(run, "eval", { code = "return require('@greed').view():focused()" }, nil)
+	text = tostring(err)
+	assert(not ok and string.find(text, "'focused' of View", 1, true), text)
+	assert(not string.find(text, "ViewRef", 1, true), text)
+	assert(string.find(text, "View has: ", 1, true), text)
+	assert(string.find(text, "buffer", 1, true) and string.find(text, "close", 1, true), text)
+	local description = ""
+	for _, tool in agent.tools() do
+		if tool.name == "eval" then
+			description = tool.description
+		end
+	end
+	assert(string.find(description, "describe greed.tab", 1, true), description)
 end)
 
 test("tool names are checked, and a tool with the same name replaces the old one", function(t)
@@ -224,6 +276,15 @@ test("describe tells an agent what something is, or the names like it", function
 	local like = run("describe", { name = "option.s", kind = "api" })
 	assert(string.find(like, "api greed.option.set", 1, true), like)
 	assert(run("describe", { name = "zzz-nothing" }) == "nothing called zzz-nothing")
+	local offered = false
+	for _, tool in agent.offered(agent.caller()) do
+		offered = offered or tool.name == "describe"
+	end
+	assert(offered, "describe is always offered")
+	local view = run("describe", { name = "View" })
+	assert(string.find(view, "api type View", 1, true), view)
+	local module = run("describe", { name = "greed.tab" })
+	assert(string.find(module, "api greed.tab.current", 1, true), module)
 end)
 
 local function names(tools: { agent.Tool }): { [string]: boolean }

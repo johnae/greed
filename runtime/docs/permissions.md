@@ -53,6 +53,14 @@ other agents get it as your next message once their turn ends. The
 transcript keeps each answer under the call it was for, like `? Edit a.txt:
 Allow once`.
 
+A rejected call tells the agent not to get there another way (another
+tool, a command or `eval`) and to ask you what you want. Greed's own agent
+is also held to it: the same call again, or after a plain rejection any
+command or `eval`, doesn't run, and neither does anything after a second
+rejection in one prompt. The turn stops there with a note like `stopped:
+you rejected Write b.txt; asking what you want`, and the agent's last word
+is its question to you.
+
 What "Allow always" covers depends on the agent:
 
 - Greed's own agent remembers it by kind of action: allowing an edit
@@ -257,7 +265,9 @@ on anyone reading the code right. When the code needs more, what it edited
 in the sandbox is undone before it runs again with more, so nothing happens
 twice. The reviewer gets the code wrapped as someone else's text, is told
 that comments or strings in it may try to talk it into allowing, and
-answers in a fixed form. A model can still be fooled, so set `agent-eval`
+answers in a fixed form. With Greed's own agent it also hears what you
+rejected in the agent's current prompt, and leaves code doing the same to
+you. A model can still be fooled, so set `agent-eval`
 to `"ask"` if you'd rather see every run past the sandbox yourself.
 
 When you're asked, a page shows the code, what it would do and the

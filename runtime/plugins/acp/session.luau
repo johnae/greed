@@ -534,7 +534,7 @@ local function handlers(session: Session): Handlers
 				true
 			)
 			if chosen ~= "once" then
-				return nil, M.NOT_WIDENED
+				return nil, M.refused(M.NOT_WIDENED)
 			end
 		end
 		local guarded: boolean, why: unknown = pcall(agent.memory.guard, params.path, session.root)
@@ -651,8 +651,7 @@ M.ONCE = {
 }
 
 --- What an agent hears when you don't let it widen what a plugin may do.
-M.NOT_WIDENED = "the user didn't allow letting a plugin do more; don't try another way, "
-	.. "tell them what you needed it for"
+M.NOT_WIDENED = "the user didn't allow letting a plugin do more; tell them what you needed it for"
 
 --- Asks you whether the agent may do `title` (a tool call of `kind`,
 --- touching the files at `locations` when it says), with `options` to
@@ -715,9 +714,16 @@ function M.ask(
 end
 
 --- Why the agent may not do something, `why`, with what you wrote with
---- the rejection (`note`), for an agent's tool result.
+--- the rejection (`note`), for an agent's tool result. It says not to get
+--- there another way: models told only "not allowed" go round it.
 function M.refused(why: string, note: string?): string
-	return if note then `{why}; the user rejected it and says: {note}` else why
+	if note then
+		return `{why}; the user rejected it and says: {note}\n\nDo what they say. Don't do what `
+			.. "they rejected another way (another tool, a command or eval); if it's unclear "
+			.. "what they want, ask them."
+	end
+	return `{why}. Don't try to do it another way (another tool, a command or eval): stop and `
+		.. "ask the user what they want."
 end
 
 --- Whether the agent of `session` may change the files at `paths` (full
@@ -737,8 +743,10 @@ function M.may_write(session: Session, title: string, kind: string, paths: { str
 		return nil
 	end
 	-- An ACP agent gets your note as the next prompt instead.
-	local why = "the user didn't allow writing outside the project"
-	return if session.driver then M.refused(why, note) else why
+	return M.refused(
+		"the user didn't allow writing outside the project",
+		if session.driver then note else nil
+	)
 end
 
 local next_id = 0

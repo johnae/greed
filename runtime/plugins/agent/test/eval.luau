@@ -113,6 +113,37 @@ test("a reviewer can let code run, or leave it to you with its reason", function
 	restore()
 end)
 
+test("the reviewer hears what the user just rejected of the agent's calls", function(t)
+	local asked = reset("auto", "ASK: the user rejected setting options")
+	t:buffer("hi|")
+	local caller = agent.caller()
+	caller.refused = {
+		{ tool = "write_file", title = "Write init.luau", note = "leave my config alone" },
+	}
+	local result = call(NEEDS_MORE, caller)
+	t:wait(10)
+	local content = asked[1].request.messages[1].content :: string
+	assert(string.find(content, "The user just rejected", 1, true), content)
+	assert(
+		string.find(content, "Write init.luau (they said: leave my config alone)", 1, true),
+		content
+	)
+	local system = asked[1].request.system :: string
+	assert(string.find(system, "ASK if the user just rejected", 1, true), system)
+	t:run("eval-deny")
+	settle(t, result)
+	-- Without rejections, the reviewer hears of none.
+	asked = reset("auto", "ASK: unsure")
+	t:buffer("hi|")
+	result = call(NEEDS_MORE)
+	t:wait(10)
+	content = asked[1].request.messages[1].content
+	assert(not string.find(content, "rejected", 1, true), content)
+	t:run("eval-deny")
+	settle(t, result)
+	restore()
+end)
+
 test("the reviewer gets the code wrapped so it can't close the wrapper itself", function(t)
 	local asked = reset("auto", "ASK: unsure")
 	t:buffer("hi|")

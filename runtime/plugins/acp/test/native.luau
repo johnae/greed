@@ -543,6 +543,123 @@ test("a rejected edit isn't made, and the model hears it wasn't allowed", functi
 	assert(s.tool == nil, "and it's not shown as running")
 	local result = asked[2].said[3]
 	assert(result.error and string.find(result.text, "didn't allow", 1, true), result.text)
+	-- And not to get it another way, but to ask.
+	assert(string.find(result.text, "another way", 1, true), result.text)
+	assert(string.find(result.text, "eval", 1, true), result.text)
+	assert(string.find(result.text, "ask the user what they want", 1, true), result.text)
+end)
+
+test("the system prompt says a rejected call isn't tried again or another way", function(t)
+	local asked = script({ { text = "Hi", calls = {}, stop = "done" } })
+	ask(t, "hi")
+	local system = asked[1].system :: string
+	assert(string.find(system, "When the user rejects a call", 1, true), system)
+end)
+
+test("after a rejection, a call that could do the same isn't run and the model asks", function(t)
+	local asked = script({
+		calling("write_file", { path = "b.txt", text = "x" }),
+		calling("run_command", { command = "touch b.txt" }),
+		{
+			text = "What would you like instead?",
+			calls = { { id = "c5", name = "write_file", input = { path = "c.txt", text = "y" } } },
+			stop = "tools",
+		},
+		calling("write_file", { path = "d.txt", text = "z" }),
+	})
+	local s, dir = ask(t, "make b")
+	waiting(s).answer:send("no")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(greed.fs.read(`{dir}/b.txt`) == nil, "not written")
+	assert(greed.fs.read(`{dir}/c.txt`) == nil, "its last calls are dropped")
+	assert(#asked == 3, `it's asked once more, to ask you: {#asked}`)
+	local result = asked[3].said[5]
+	assert(result.role == "tool" and result.call == "c3", result.call)
+	assert(string.find(result.text, "not run", 1, true), result.text)
+	assert(string.find(result.text, "Ask the user what they want", 1, true), result.text)
+	assert(s.tools.c3 == nil, "the command never ran or asked")
+	assert(
+		string.find(
+			said(s),
+			"note: stopped: you rejected Write b.txt; asking what you want",
+			1,
+			true
+		),
+		said(s)
+	)
+	local last = s.entries[#s.entries]
+	assert(last.kind == "agent" and last.text == "What would you like instead?", said(s))
+end)
+
+test("a rejected call made again isn't run, even after a message, and the model asks", function(t)
+	local asked = script({
+		calling("write_file", { path = "b.txt", text = "x" }),
+		calling("write_file", { path = "b.txt", text = "x" }),
+		{ text = "What should I do?", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "make b")
+	local question = waiting(s)
+	question.note = "maybe later"
+	question.answer:send("no")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(greed.fs.read(`{dir}/b.txt`) == nil, "not written")
+	assert(#asked == 3, `asked once more: {#asked}`)
+	local result = asked[3].said[5].text :: string
+	assert(string.find(result, "not run", 1, true), result)
+	assert(string.find(said(s), "note: stopped: you rejected Write b.txt", 1, true), said(s))
+end)
+
+test("rejected twice with a message each time, the turn stops to ask", function(t)
+	local asked = script({
+		calling("write_file", { path = "b.txt", text = "x" }),
+		calling("write_file", { path = "c.txt", text = "y" }),
+		{ text = "What should I write?", calls = {}, stop = "done" },
+	})
+	local s, dir = ask(t, "make b")
+	local first = waiting(s)
+	first.note = "call it c"
+	first.answer:send("no")
+	t:wait(10)
+	-- With a message, it does what you said, and is asked again.
+	local told = asked[2].said[3].text :: string
+	assert(string.find(told, "the user rejected it and says: call it c", 1, true), told)
+	local second = waiting(s)
+	second.note = "no, not that either"
+	second.answer:send("no")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(greed.fs.read(`{dir}/c.txt`) == nil, "not written")
+	assert(#asked == 3, `asked once more: {#asked}`)
+	local result = asked[3].said[5].text :: string
+	assert(string.find(result, "Ask the user what they want", 1, true), result)
+	assert(string.find(said(s), "note: stopped: you rejected Write c.txt", 1, true), said(s))
+end)
+
+test("Greed's agent's rejections this prompt are on its caller, for eval's reviewer", function(t)
+	script({
+		calling("write_file", { path = "b.txt", text = "x" }),
+		{ text = "OK.", calls = {}, stop = "done" },
+		{ text = "Hi.", calls = {}, stop = "done" },
+	})
+	local s = ask(t, "make b")
+	local question = waiting(s)
+	question.note = "not now"
+	question.answer:send("no")
+	t:wait(10)
+	local caller = assert(require("../native").caller(s))
+	local refused = assert(caller.refused)
+	assert(#refused == 1 and refused[1].title == "Write b.txt", `{#refused}`)
+	assert(refused[1].tool == "write_file" and refused[1].note == "not now", refused[1].tool)
+	greed.spawn(function()
+		acp.prompt(s, "hi")
+	end)
+	t:wait(10)
+	assert(#assert(caller.refused) == 0, "a new prompt starts with none")
 end)
 
 test("allowed always, the next edit of that kind doesn't ask", function(t)
@@ -1438,7 +1555,7 @@ test("a write letting a plugin do more asks every time, and no policy answers it
 	assert(greed.fs.read(`{dir}/b.txt`) == "b", "the first was written")
 	assert(greed.fs.read(`{dir}/plugin.toml`) == nil, "not written")
 	local result = asked[3].said[#asked[3].said]
-	assert(result.error and string.find(result.text, "don't try another way", 1, true), result.text)
+	assert(result.error and string.find(result.text, "plugin do more", 1, true), result.text)
 end)
 
 test("an answer cut off at its length runs none of its calls, and goes on in parts", function(t)
@@ -1516,6 +1633,22 @@ test("a call made again with the same result says so, and running out of turns t
 	assert(not string.find(first, "same call", 1, true), first)
 	assert(string.find(second, "You made this same call already", 1, true), second)
 	assert(string.find(said(s), "stopped: it took 100 turns without finishing", 1, true), said(s))
+end)
+
+test("a call that changes something, made again, isn't told it was the same", function(t)
+	local write = { path = "b.txt", text = "b\n" }
+	local asked = script({
+		calling("write_file", write),
+		calling("write_file", write),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s = ask(t, "write b")
+	waiting(s).answer:send("always")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local second = asked[3].said[5].text :: string
+	assert(not string.find(second, "same call", 1, true), second)
 end)
 
 -- `count` turns that each read a.txt from another line, with a write as
@@ -2013,7 +2146,10 @@ test("esc rejects Greed's agent's question, and the model hears it wasn't allowe
 		return status_of(s) == "idle"
 	end)
 	local result = asked[2].said[3]
-	assert(result.role == "tool" and result.text == "the user didn't allow it", result.text)
+	assert(
+		result.role == "tool" and string.find(result.text, "the user didn't allow it. ", 1, true),
+		result.text
+	)
 	assert(greed.fs.read(`{dir}/b.txt`) == nil, "nothing written")
 end)
 
@@ -2031,7 +2167,12 @@ test("esc with a message rejects, and the model gets the message with the result
 	end)
 	local result = asked[2].said[3]
 	assert(
-		result.text == "the user didn't allow it; the user rejected it and says: use c",
+		string.find(
+			result.text,
+			"the user didn't allow it; the user rejected it and says: use c\n",
+			1,
+			true
+		),
 		result.text
 	)
 	assert(#asked == 2, "nothing more was sent")

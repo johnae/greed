@@ -57,7 +57,8 @@ return function(objects: any)
 		return nil, 0
 	end
 
-	-- Every view there is: each tab's panes, then the floats.
+	-- Every view there is: each tab's panes, the floats, then the rest
+	-- (panels), found through the buffers they show.
 	local function all_views(): { greed.View }
 		local out: { greed.View } = {}
 		for _, tab in greed.tab.list() do
@@ -67,6 +68,18 @@ return function(objects: any)
 		end
 		for _, float in greed.floats({ hidden = true }) do
 			table.insert(out, float)
+		end
+		local seen: { [number]: boolean } = {}
+		for _, view in out do
+			seen[view:id()] = true
+		end
+		for _, buffer in greed.buffers() do
+			for _, view in buffer:views() do
+				if not seen[view:id()] then
+					seen[view:id()] = true
+					table.insert(out, view)
+				end
+			end
 		end
 		return out
 	end

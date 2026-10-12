@@ -19,8 +19,10 @@ local SEVERITY = { "error", "warning", "info", "hint" }
 
 agent.tool({
 	name = "focus",
-	description = "What the user is looking at: the current file, their selections "
-		.. "with the selected text, and the lines on screen",
+	description = "What the user is looking at: the view and buffer ids (for inspect, act or "
+		.. "run_command's view), the current file, the mode as greed.mode.get() gives it "
+		.. '(like "helix-insert") and as the status line shows it (label, "insert"), their '
+		.. "selections with the selected text, and the lines on screen",
 	run = function()
 		return context.focus(context.view() or greed.view())
 	end,
@@ -44,19 +46,50 @@ agent.tool({
 	end,
 })
 
+-- The text of what `id` names when it's an object's id rather than a path:
+-- a buffer's (unsaved changes too), a view's buffer's, a file's. Nil when
+-- it isn't an id; an error for an object that has no text.
+local function object_text(id: string): string?
+	local kind = string.match(id, "^([%w%-]+):")
+	local known = false
+	for _, each in core.objects.kinds() do
+		known = known or each.name == kind
+	end
+	if not known then
+		return nil
+	end
+	local found = core.objects.get(id) or error(`there's no object {id} now; objects lists them`, 0)
+	if found.kind == "buffer" then
+		return found.value:text()
+	elseif found.kind == "view" then
+		return found.value:buffer():text()
+	elseif found.kind == "file" then
+		local text, err = core.file.text(found.value)
+		return text or error(err, 0)
+	end
+	error(`{id} is an object's id, not a file: use inspect for its state`, 0)
+end
+
 agent.tool({
 	name = "read",
-	description = "A file's text as the editor has it, including unsaved changes. "
-		.. "Lines are 1-based and both ends are included",
+	description = "A file's text as the editor has it, including unsaved changes, or a "
+		.. "buffer's or view's by its id (buffer:12, view:3). Lines are 1-based and both ends "
+		.. "are included",
 	input = object({
-		path = { type = "string", description = "The file; the current one if left out" },
+		path = {
+			type = "string",
+			description = "The file, or a buffer's or view's id; the current file if left out",
+		},
 		from_line = { type = "integer" },
 		to_line = { type = "integer" },
 	}),
 	run = function(args)
 		local path: string? = args.path
 		local text: string
-		if path then
+		local of_object = if path then object_text(path) else nil
+		if of_object then
+			text = of_object
+		elseif path then
 			local read, err = core.file.text(path)
 			if read == nil then
 				error(err, 0)
@@ -325,16 +358,16 @@ agent.tool({
 
 agent.tool({
 	name = "describe",
-	group = "plugins",
 	description = "What a command, option, event, API function or type, plugin or mode is: "
 		.. "its doc, keys, current value, who defined it and where. Also the objects of the "
 		.. "running editor by id (buffer:12, tab:3, shell-block:7.2, terminal:9): their state, "
 		.. "the objects they relate to and their actions; editor: relates to them all. Give a "
-		.. "name that isn't exact and it lists the names that contain it",
+		.. "name that isn't exact and it lists the names that contain it: greed.tab lists that "
+		.. "module's functions, View: a type's methods",
 	input = object({
 		name = {
 			type = "string",
-			description = "e.g. next-word, text-width, buffer.changed, greed.option.set, Buffer:edit, editor:, buffer:12",
+			description = "e.g. next-word, text-width, buffer.changed, greed.option.set, View, Buffer:edit, editor:, buffer:12",
 		},
 		kind = {
 			type = "string",

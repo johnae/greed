@@ -143,8 +143,9 @@ agent.tool({
 		.. "never your chat. Give `ids` to run it on several at once. Actions "
 		.. "that destroy or stop something (delete, kill) go to the user to review first, "
 		.. "all of them together, and they may run some and not others; deciding on "
-		.. "proposed changes is only theirs. Gives back the ids it ran on and those the "
-		.. "user turned down, and with one id the object's state afterwards",
+		.. "proposed changes is only theirs. Gives back the ids it ran on, what each was "
+		.. "(targets), those the user turned down, the views there are after when they "
+		.. "changed, and with one id the object's state afterwards",
 	input = object({
 		id = { type = "string", description = "The object's id" },
 		ids = {
@@ -163,14 +164,19 @@ agent.tool({
 			error("give the object's id, or ids for several", 0)
 		end
 		local list = {}
+		local targets: { string } = {}
 		for _, id in ids do
-			table.insert(list, find(id))
+			local found = find(id)
+			table.insert(list, found)
+			table.insert(targets, `{found.id} {found.label}`)
 		end
 		-- What an action does to "the focused view" it does to the user's.
 		local ran: { string }, declined: { string }, missing: { string } = {}, {}, {}
+		local views_before = context.views()
 		context.within(function()
 			ran, declined, missing = objects.act_all(list, args.action, "agent")
 		end)
+		local views_after = context.views()
 		if #missing > 0 then
 			local names = {}
 			for _, action in objects.actions(assert(objects.get(missing[1]))) do
@@ -182,7 +188,9 @@ agent.tool({
 		local out: { [string]: any } = {
 			ran = args.action,
 			on = greed.json.array(ran),
+			targets = greed.json.array(targets),
 			declined = greed.json.array(declined),
+			views_now = if views_after ~= views_before then views_after else nil,
 		}
 		if #list == 1 then
 			local after = objects.get(list[1].id)

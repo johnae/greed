@@ -394,6 +394,22 @@ function M.text(name: string, kind: string?): string?
 		.. `{dir}/init.luau and the files it requires. Read them, or grep {dir} for {rest}.`
 end
 
+--- The names of the fields and methods of the API's type `name`, like
+--- "View", sorted; nil when there's no such type.
+function M.members(name: string): { string }?
+	local types = api.read()
+	local fields = types and types.fields[name]
+	if fields == nil then
+		return nil
+	end
+	local names: { string } = {}
+	for _, field in fields do
+		table.insert(names, field.name)
+	end
+	table.sort(names)
+	return names
+end
+
 -- The help window: where what it describes is defined, or for an object in
 -- the inspector, the object, what its lines lead to, the objects
 -- inspected before it, to go back to, and those gone back from, to go
