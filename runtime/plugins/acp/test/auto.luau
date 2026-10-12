@@ -19,11 +19,10 @@ local function asking(kind: string, locations: { string }?, command: string?): a
 	}
 end
 
--- The decision model's answers: likely harmless and asked for, likely
--- harmful, and unsure of both.
-local HARMLESS = { harmful = 0.05, asked = 0.9 }
-local HARMFUL = { harmful = 0.9, asked = 0.1 }
-local UNSURE = { harmful = 0.5, asked = 0.4 }
+-- The decision model's answers: safe and asked for, unsafe, and unsure.
+local SAFE = { safe = 0.95, asked = 0.9 }
+local UNSAFE = { safe = 0.1, asked = 0.1 }
+local UNSURE = { safe = 0.5, asked = 0.4 }
 
 -- The states the decision model is given while `f` runs, as JSON, and
 -- `answers` its answers (nil: no model).
@@ -32,7 +31,7 @@ local function deciding(answers: { [string]: number }?, f: () -> ()): { string }
 	local before = models.decide
 	models.decide = function(role: string, state: any, questions: any): (any, string?)
 		assert(role == auto.ROLE, role)
-		assert(questions.harmful and questions.asked, "both questions asked")
+		assert(questions.safe and questions.asked, "both questions asked")
 		table.insert(given, greed.json.encode(state))
 		return answers, if answers then nil else "no model"
 	end
@@ -50,7 +49,7 @@ end
 
 test("auto mode lets the agent look, edit in the project and run what only looks", function(t)
 	local s = session_in(t)
-	local given = deciding(HARMLESS, function()
+	local given = deciding(SAFE, function()
 		local function says(permission: any): string
 			local verdict, why = auto.decide(s, permission)
 			return `{verdict}: {why}`
@@ -71,23 +70,22 @@ end)
 
 test("the decision model judges other commands, risky ones too, by what you asked", function(t)
 	local s = session_in(t, "clean out /tmp/blahbleh, it's junk")
-	local given = deciding(HARMLESS, function()
+	local given = deciding(SAFE, function()
 		local verdict, why = auto.decide(s, asking("execute", nil, "rm -rf /tmp/blahbleh"))
-		assert(verdict == "allow" and why == "auto: harmless (95%)", why)
+		assert(verdict == "allow" and why == "auto: safe and what you asked for (90%)", why)
 		auto.decide(s, asking("execute", nil, "rm -rf /tmp/blahbleh"))
 	end)
 	assert(#given == 1, "asked once for the same command")
 	local state = given[1]
 	assert(string.find(state, "clean out /tmp/blahbleh, it's junk", 1, true), state)
-	assert(string.find(state, "deletes files", 1, true), state)
 	assert(string.find(state, "untrusted", 1, true), "the command goes as data")
-	deciding(HARMFUL, function()
+	deciding(UNSAFE, function()
 		local verdict, why = auto.decide(s, asking("execute", nil, "python3 make.py"))
-		assert(verdict == "block" and why == "auto: may do harm you didn't ask for (90%)", why)
+		assert(verdict == "block" and why == "auto: not safe to run unasked (90%)", why)
 	end)
-	deciding({ harmful = 0.5, asked = 0.8 }, function()
-		local verdict, why = auto.decide(s, asking("execute", nil, "python3 clean.py"))
-		assert(verdict == "allow" and why == "auto: you asked for it (80%)", why)
+	deciding({ safe = 0.8, asked = 0.3 }, function()
+		local verdict = auto.decide(s, asking("execute", nil, "python3 clean.py"))
+		assert(verdict == nil, "safe but not what you asked for asks you")
 	end)
 	deciding(UNSURE, function()
 		assert(auto.decide(s, asking("execute", nil, "python3 x.py")) == nil, "unsure asks you")
@@ -100,7 +98,7 @@ end)
 test("your rules go to the decision model", function(t)
 	local s = session_in(t)
 	greed.option.set("agent-auto-rules", "deleting under /tmp is fine")
-	local given = deciding(HARMLESS, function()
+	local given = deciding(SAFE, function()
 		auto.decide(s, asking("execute", nil, "python3 x.py"))
 	end)
 	greed.option.set("agent-auto-rules", "")
@@ -109,7 +107,7 @@ end)
 
 test("some commands always ask you, and the decision model never sees them", function(t)
 	local s = session_in(t)
-	local given = deciding(HARMLESS, function()
+	local given = deciding(SAFE, function()
 		for _, command in
 			{
 				"sudo ls",
@@ -132,7 +130,7 @@ end)
 
 test("after three blocks in a row you're asked, until you answer", function(t)
 	local s = session_in(t)
-	local given = deciding(HARMFUL, function()
+	local given = deciding(UNSAFE, function()
 		for i = 1, auto.BLOCKS do
 			assert(auto.decide(s, asking("execute", nil, `python3 x{i}.py`)) == "block")
 		end
@@ -140,7 +138,7 @@ test("after three blocks in a row you're asked, until you answer", function(t)
 	end)
 	assert(#given == auto.BLOCKS, "the model wasn't asked the fourth time")
 	s.auto_blocks = 0
-	deciding(HARMFUL, function()
+	deciding(UNSAFE, function()
 		assert(auto.decide(s, asking("execute", nil, "python3 again.py")) == "block")
 	end)
 end)
@@ -166,12 +164,12 @@ test("in auto mode an agent's question is answered for you, saying why", functio
 	local last = s.entries[#s.entries]
 	assert(last.chosen == "Allow once (auto: in the project)", last.chosen)
 	-- A block picks the agent's reject.
-	deciding(HARMFUL, function()
+	deciding(UNSAFE, function()
 		local no = session.ask(s, "Run python3 x.py", "execute", ONCE, nil, nil, "python3 x.py")
 		assert(no == "no", tostring(no))
 	end)
 	local blocked = s.entries[#s.entries].chosen
-	assert(blocked == "Reject (auto: may do harm you didn't ask for (90%))", blocked)
+	assert(blocked == "Reject (auto: not safe to run unasked (90%))", blocked)
 	assert(s.auto_blocks == 1)
 	-- New sessions start as you switched the last one, after a restart too.
 	assert(greed.option.get("agent-auto") == true, "new sessions start in auto")

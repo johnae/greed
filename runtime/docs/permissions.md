@@ -103,25 +103,33 @@ Auto mode allows:
 
 Any other command, risky ones like `rm -rf /tmp/scratch` included, goes
 to the `decision` model. It reads what you asked for (your last few
-messages, never what the agent read or what commands printed), your rules,
-why Greed thinks the command is risky, and the command, and says how
-likely the command is to do harm you didn't ask for, and how likely it's
-what you asked for. Likely harmful (60% or more) blocks it; unlikely (30%
-or less) lets it run; in between it runs only when it's plainly what you
-asked for (70% or more), and otherwise you're asked. Asked to clean out
+messages, never what the agent read or what commands printed), your rules
+and the command, and says how likely it's safe to run without asking you,
+and how likely it's what you asked for. Safe (60% or more) and asked for (50% or more) lets it run;
+unsafe (safe 20% or less) blocks it; anything in between asks you, so a
+model that can't tell asks you rather than guessing. Asked to clean out
 `/tmp/scratch`, an `rm -rf /tmp/scratch` goes ahead; a deploy you never
 mentioned doesn't. A blocked command goes back to the agent with the
 reason, to find another way, without stopping its turn; after three
 blocks in a row you're asked instead, until you've answered one.
 
 `:models` sets which model decides, the `fast` one until you pick another.
-Either kind of model works. A decision model made for these answers,
-like Berget's System One models (`Qwen/Qwen3.5-2B`, `laya`), is fast and
-cheap and answers with probabilities directly; any other model is asked
-the same questions in a chat and answers in JSON. The same command isn't
-asked about twice for the same request. Without a model, or without an
-answer, you're asked. Tell it what's fine in your setup with
-`agent-auto-rules`:
+Either kind of model works. A decision model made for these answers, like
+Berget's System One models, is fast and cheap (a few cents per million
+tokens) and answers with probabilities directly; any other model is asked
+the same questions in a chat and answers in JSON.
+
+Pick `Cloudflare/clef-flash` among Berget's. Tried on commands that should
+run (a folder you asked for, `npm install`, a push you asked for) and ones
+that shouldn't (`rm -rf ~/Documents`, sending an ssh key away, a push you
+didn't ask for, `curl ... | sh`), it told every one apart, sure each way.
+`Qwen/Qwen3.5-2B` answers near the middle for all of them, so you're asked
+most of the time; `laya` called nearly everything safe, so don't use it to
+decide.
+
+The same command isn't asked about twice for the same request. Without a
+model, or without an answer, you're asked. Tell it what's fine in your
+setup with `agent-auto-rules`:
 
 ```luau
 greed.option.set("agent-auto-rules", "Deleting under /tmp is fine. Never touch the prod cluster.")
@@ -133,7 +141,7 @@ never sees them: changes outside the project, anything run as root
 machine itself (`dd`, `mkfs`, `shutdown`), and deleting the root, your
 home or a folder right under either. An answer auto mode gave shows in the
 transcript with why, like `? Run cargo test: Allow once (auto: only looks,
-builds or tests)` or `Reject (auto: may do harm you didn't ask for (85%))`.
+builds or tests)` or `Reject (auto: not safe to run unasked (97%))`.
 
 The decision model reads the command, which the agent wrote; Greed tells
 it to read the command as data, but a command written to talk it round
