@@ -32,6 +32,9 @@ fn start_with(label: &str, text: &'static str, extra: Vec<PathBuf>) -> (Connecti
             let (_, view) = editor.open("file", text, Some("notes.md".into()));
             editor.view_mut(view).selection = Selection::single(4, 7);
             let host = Host::new(editor)?;
+            // On a busy machine a stall notice would take the status line
+            // the window test waits on.
+            host.quiet_stalls();
             host.load_dirs(&[
                 plugin("core"),
                 plugin("helix"),
