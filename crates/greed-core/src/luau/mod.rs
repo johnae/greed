@@ -592,6 +592,12 @@ impl Host {
         state_mut(&self.lua).stalls.quiet = true;
     }
 
+    /// Has `root` stand in for the home, config, cache and data folders,
+    /// so a test's plugins never write to the user's.
+    pub fn use_test_home(&self, root: PathBuf) {
+        state_mut(&self.lua).dirs = Some(root);
+    }
+
     /// The bytes Luau holds after a full garbage collection: what plugins
     /// keep, without the garbage that hasn't been collected yet.
     pub fn luau_memory(&self) -> usize {

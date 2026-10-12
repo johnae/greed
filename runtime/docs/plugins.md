@@ -1064,8 +1064,12 @@ draws, and it carries on where it was, so a slow plugin is only slow
 itself. On Linux only time spent working counts toward the 15 ms, so a
 busy machine doesn't change where code is paused. `coroutine.yield()`
 with nothing pauses the same way on purpose. Your own coroutines, like a generator made with `coroutine.wrap`, are never
-paused this way. One that works for a whole minute without finishing is
-stopped and Greed says so. Code that can't be paused, like a status line
+paused this way. A pause shows what's half done, like a buffer's new text
+with its old decorations; `core.atomic(f, ...)` runs `f` to its end with
+no frame drawn in between, so do the long work before it and only the
+changes that belong together inside it, which can't wait. A command or
+handler that works for a whole minute without finishing is stopped and
+Greed says so. Code that can't be paused, like a status line
 piece or a plugin's top level, is timed instead: anything that holds the
 editor up for 50 ms or more is kept with its plugin and what it was doing,
 `:stalls` lists them, and over 250 ms Greed tells you right away. To see

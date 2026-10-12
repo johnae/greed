@@ -328,11 +328,8 @@ fn fresh_host(plugins: &[PathBuf], approved: Option<&BTreeSet<String>>) -> Resul
     let temp = std::env::temp_dir();
     let temp = temp.canonicalize().unwrap_or(temp);
     let dirs = temp.join(format!("greed-home-{}-{n}", std::process::id()));
-    {
-        let mut state = state_mut(&host.lua);
-        state.dirs = Some(dirs);
-        state.stalls.quiet = true;
-    }
+    host.use_test_home(dirs);
+    host.quiet_stalls();
     let (Some(approved), Some((checked, others))) = (approved, plugins.split_last()) else {
         host.load_dirs(plugins)?;
         return Ok(host);

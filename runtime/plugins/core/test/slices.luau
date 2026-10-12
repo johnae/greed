@@ -133,3 +133,47 @@ test("keys fed together wait for what the key before started to finish", functio
 	t:wait(10)
 	assert(table.concat(order, " ") == "slow quick", table.concat(order, " "))
 end)
+
+test("core.atomic's work is never paused, and what it returns comes back", function(t)
+	local core = require("@core")
+	local done, got = false, nil
+	greed.command({
+		name = "test-atomic",
+		run = function()
+			got = {
+				core.atomic(function(a: number, b: number)
+					busy(80)
+					done = true
+					return a + b, "sum"
+				end, 1, 2),
+			}
+		end,
+	})
+	t:buffer("|x")
+	greed.run("test-atomic")
+	assert(done, "it finished before the editor had a turn")
+	assert(got and got[1] == 3 and got[2] == "sum", "it gave back what f returned")
+end)
+
+test("core.atomic passes on an error, and waiting in it is one", function(t)
+	local core = require("@core")
+	local failed: string?, waited: string? = nil, nil
+	greed.command({
+		name = "test-atomic-errors",
+		run = function()
+			local _, err = pcall(core.atomic, function()
+				error("broken", 0)
+			end)
+			failed = err
+			_, err = pcall(core.atomic, function()
+				greed.sleep(1)
+			end)
+			waited = err
+		end,
+	})
+	t:buffer("|x")
+	t:run("test-atomic-errors")
+	t:wait(10)
+	assert(failed == "broken", tostring(failed))
+	assert(waited and string.find(waited, "waited", 1, true), tostring(waited))
+end)

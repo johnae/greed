@@ -704,15 +704,11 @@ local function tick(buffer: greed.Buffer, s: Session)
 	end)
 end
 
--- Draws the history of `s` in `buffer` (see `M.render`).
-local function draw(buffer: greed.Buffer, s: Session)
+-- Puts `history`, the history of `s` drawn `cells` wide, in `buffer`, with
+-- the box under it and everything's decorations.
+local function show(buffer: greed.Buffer, s: Session, cells: number, history: History)
 	local id = buffer:id()
-	-- Drawn as the plugin, which may change the history, though a command's
-	-- handle (yours) may not.
-	buffer = owned[id] or buffer
 	shown[id] = s
-	local cells = box_width(buffer)
-	local history = M.history(s, cells)
 	rows[id] = history.tools
 	plains[id] = history.plain
 	spinning[id] = history.running
@@ -784,6 +780,20 @@ local function draw(buffer: greed.Buffer, s: Session)
 	buffer:decorate("acp-choices", row_marks)
 	code.draw(buffer, at, history.plain)
 	live(buffer, s, if busy(s) and core.effects.enabled() then greed.now() else nil)
+end
+
+-- Draws the history of `s` in `buffer` (see `M.render`).
+local function draw(buffer: greed.Buffer, s: Session)
+	-- Drawn as the plugin, which may change the history, though a command's
+	-- handle (yours) may not.
+	buffer = owned[buffer:id()] or buffer
+	local cells = box_width(buffer)
+	local history = M.history(s, cells)
+	-- Showing it can't be paused, or a frame would show the new text with
+	-- the old decorations: the box's sides and bottom gone (its top line was
+	-- replaced), bars missing from new lines. Working out the history,
+	-- the long part, can.
+	core.atomic(show, buffer, s, cells, history)
 	tick(buffer, s)
 end
 
@@ -794,12 +804,11 @@ local drawing: { [number]: Session | false } = {}
 --- Redraws the history of `s` in `buffer`, changing only what changed so a
 --- reply streaming in only adds to the end.
 ---
---- A long history takes more than a task's time slice to draw, so a draw
---- can pause between reading where the box is and replacing what's above
---- it. Another draw in that pause would leave the first replacing a stale
---- range: bits of the box's top line piled up above it, or new history
---- inside it. So a buffer is drawn by one call at a time, and a call while
---- it draws has it draw again once it's done.
+--- A long history takes more than a task's time slice to work out, so a
+--- draw can pause before it shows it. Another draw in that pause would have
+--- the first show an older history after it. So a buffer is drawn by one
+--- call at a time, and a call while it draws has it draw again once it's
+--- done.
 function M.render(buffer: greed.Buffer, s: Session)
 	local id = buffer:id()
 	if drawing[id] ~= nil then
