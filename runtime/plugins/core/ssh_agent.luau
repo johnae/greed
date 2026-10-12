@@ -1,8 +1,8 @@
 -- Asking before a program uses your ssh keys. A session `greed ssh` started
 -- reaches your ssh agent through the client you attached with; before a
 -- program there signs with one of your keys, you're asked on that client,
--- as `ssh-agent-confirm` says: never, the first time since the client
--- attached, or every time.
+-- as `ssh-agent-confirm` says, or `ssh-agent-confirm-hosts` for this
+-- machine: never, the first time since the client attached, or every time.
 
 local greed = require("@greed")
 
@@ -13,6 +13,26 @@ greed.option.define({
 	choices = { "never", "first", "always" },
 	doc = "When to ask before a program in a session from greed ssh signs with your ssh key: never, first (once each time you attach) or always",
 })
+
+greed.option.define({
+	name = "ssh-agent-confirm-hosts",
+	needs = "ssh-agent",
+	default = "",
+	doc = 'ssh-agent-confirm for some machines alone, by the name of the machine the session runs on: "bastion=always devbox=never"',
+})
+
+-- When to ask on this machine: its entry in ssh-agent-confirm-hosts, or
+-- ssh-agent-confirm.
+local function confirm_here(): string
+	local here = greed.hostname()
+	local hosts = greed.option.get("ssh-agent-confirm-hosts") :: string
+	for host, how in string.gmatch(hosts, "([^%s=]+)=(%S+)") do
+		if host == here and (how == "never" or how == "first" or how == "always") then
+			return how
+		end
+	end
+	return greed.option.get("ssh-agent-confirm") :: string
+end
 
 -- The clients you allowed since they attached, for "first".
 local allowed: { [number]: boolean } = {}
@@ -59,7 +79,7 @@ local function ask(host: string?, until_detach: boolean): boolean
 end
 
 greed.on("ssh_agent.use", function(event: greed.SshAgentUse)
-	local confirm = greed.option.get("ssh-agent-confirm")
+	local confirm = confirm_here()
 	local first = confirm == "first"
 	if confirm == "never" or (first and allowed[event.client]) then
 		greed.ssh_agent.answer(event.id, true)

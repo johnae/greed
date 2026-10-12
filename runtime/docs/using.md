@@ -394,6 +394,9 @@ each time you attach, `always` every time, `never` not at all.
 
 ```luau
 greed.option.set("ssh-agent-confirm", "always")
+-- Some machines their own way, by the name of the machine the session
+-- runs on: ask every time on the bastion, never on your own box.
+greed.option.set("ssh-agent-confirm-hosts", "bastion=always devbox=never")
 ```
 
 A zellij or tmux on that machine runs outside the session, with the agent
