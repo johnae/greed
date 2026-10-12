@@ -631,15 +631,17 @@ impl Editor {
 
     /// Acts for client `id` without that counting as its doing anything, as
     /// when carrying on what it started, or drawing its screen. For a client
-    /// that's gone, acts for the last active one. Returns who it acts for.
+    /// that's gone, acts for the last active one. Returns who it acted for
+    /// before, to act for again after.
     pub fn act_as(&mut self, id: ClientId) -> ClientId {
+        let before = self.acting;
         self.acting = if self.clients.contains_key(&id) {
             id
         } else {
             self.last_active
         };
         self.doer = self.acting;
-        self.acting
+        before
     }
 
     fn acting_client(&self) -> &ClientState {

@@ -1356,6 +1356,15 @@ mod clients {
     }
 
     #[test]
+    fn acting_for_another_client_gives_back_the_one_before() {
+        let mut ed = two_clients("hello");
+        let before = ed.act_as(SECOND);
+        assert_eq!((before, ed.client()), (FIRST_CLIENT, SECOND));
+        ed.act_as(before);
+        assert_eq!(ed.client(), FIRST_CLIENT, "acting for the first again");
+    }
+
+    #[test]
     fn clients_see_one_view_with_selections_of_their_own() {
         let mut ed = two_clients("hello world");
         let view = ed.focus();

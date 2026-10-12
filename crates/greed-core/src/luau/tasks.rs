@@ -342,7 +342,8 @@ fn resume(lua: &Lua, thread: Thread, args: impl IntoLuaMulti) -> LuaResult<()> {
         // A test's body, which nothing spawned, acts for whoever is acting.
         if let Some(client) = state.tasks.clients.get(&id).copied() {
             // One that's gone is replaced by the last active one, from now on.
-            let acting = state.editor.act_as(client);
+            state.editor.act_as(client);
+            let acting = state.editor.client();
             state.tasks.clients.insert(id, acting);
         }
         let cause = state.tasks.causes.get(&id).cloned();
