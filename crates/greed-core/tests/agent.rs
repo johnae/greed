@@ -434,11 +434,21 @@ impl Window {
     /// fitting the frame before it.
     fn until_said(&mut self, said: &str) -> &greed_core::render::Frame {
         use greed_core::server::Output;
+        let mut taken = 0;
         loop {
-            let output = self
+            let Ok(output) = self
                 .outputs
                 .recv_timeout(std::time::Duration::from_secs(10))
-                .unwrap_or_else(|_| panic!("no frame saying {said:?}"));
+            else {
+                // Whether frames stopped coming, or came saying something else.
+                let last = self.frame.frame().map(|frame| {
+                    let rows = greed_core::render::grid::text_rows(frame);
+                    let surfaces: Vec<_> = frame.surfaces.iter().map(|s| s.id).collect();
+                    format!("{:?} on {surfaces:?}", rows.last())
+                });
+                panic!("no frame saying {said:?} after {taken} more, the last: {last:?}");
+            };
+            taken += 1;
             match output {
                 Output::Frame(frame) => self.frame.whole(frame),
                 Output::Delta(delta) => assert!(!self.frame.delta(delta), "a delta didn't fit"),
