@@ -870,6 +870,12 @@ to its workspace too, and it says when its work is ready for you. A fork of an a
 workspace of its own with the edits made so far; in a git worktree, it
 starts from the branch's last commit.
 
+Agents in workspaces of their own don't see each other's changes. When one
+finishes a turn, Greed compares the files it changed with those the other
+agents in the project changed, and says in both transcripts which files
+they share (`Claude changes src/b.rs too; bringing both in may clash`),
+once per file, so you can steer one away before both finish.
+
 Sessions are kept in the cache folder until you close them with `x`, so
 after a restart `space i l` lists them, with what you asked first, and
 takes one up: the agent tells the conversation again into a new

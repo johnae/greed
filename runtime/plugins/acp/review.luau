@@ -56,38 +56,6 @@ function M.merge(base: string, theirs: string, mine: string): ({ Change }, numbe
 	return out, clashes
 end
 
--- The files `s` changed in its workspace, relative to it, and how to get
--- one's text as the agent started from it ("" for a file it added).
-local function changed(s: Session): ({ string }?, ((string) -> string)?, string?)
-	local ws = assert(s.workspace)
-	local names: string?
-	local base: (string) -> string
-	if ws.kind == "jj" then
-		names = workspaces.run(ws, { "diff", "--name-only" })
-		base = function(path)
-			return workspaces.run(ws, { "file", "show", "-r", "@-", "--", path }) or ""
-		end
-	else
-		workspaces.run(ws, { "add", "-A", "-N" })
-		local from = ws.base or "HEAD"
-		names = workspaces.run(ws, { "diff", "--name-only", from })
-		base = function(path)
-			return workspaces.run(ws, { "show", `{from}:{path}` }) or ""
-		end
-	end
-	if names == nil then
-		return nil, nil, `can't read what {s.name} changed`
-	end
-	local listed = names :: string
-	local list = {}
-	for _, name in string.split(listed, "\n") do
-		if name ~= "" then
-			table.insert(list, name)
-		end
-	end
-	return list, base, nil
-end
-
 export type Reviewed = {
 	--- What you decided, in words; nil when there was nothing to propose.
 	decided: string?,
@@ -103,7 +71,7 @@ function M.review(s: Session): (Reviewed?, string?)
 	if ws == nil then
 		return nil, workspaces.IN_PROJECT
 	end
-	local names, base, err = changed(s)
+	local names, base, err = workspaces.changed(s)
 	if names == nil or base == nil then
 		return nil, err
 	end

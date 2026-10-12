@@ -119,6 +119,38 @@ function M.changes(s: Session): (string?, string?)
 	return M.run(ws, { "diff", ws.base or "HEAD" })
 end
 
+--- The files `s` changed in its workspace, relative to it, and how to get
+--- one's text as the agent started from it ("" for a file it added).
+function M.changed(s: Session): ({ string }?, ((string) -> string)?, string?)
+	local ws = assert(s.workspace)
+	local names: string?
+	local base: (string) -> string
+	if ws.kind == "jj" then
+		names = M.run(ws, { "diff", "--name-only" })
+		base = function(path)
+			return M.run(ws, { "file", "show", "-r", "@-", "--", path }) or ""
+		end
+	else
+		M.run(ws, { "add", "-A", "-N" })
+		local from = ws.base or "HEAD"
+		names = M.run(ws, { "diff", "--name-only", from })
+		base = function(path)
+			return M.run(ws, { "show", `{from}:{path}` }) or ""
+		end
+	end
+	if names == nil then
+		return nil, nil, `can't read what {s.name} changed`
+	end
+	local listed = names :: string
+	local list = {}
+	for _, name in string.split(listed, "\n") do
+		if name ~= "" then
+			table.insert(list, name)
+		end
+	end
+	return list, base, nil
+end
+
 --- Brings what `s` changed in its workspace into yours: with jj its change
 --- is squashed into your working copy, with git its diff is applied.
 function M.bring(s: Session): (boolean, string?)

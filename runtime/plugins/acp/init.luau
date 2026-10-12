@@ -45,6 +45,7 @@ local agent_context = agent_api.context
 local terminal = require("@terminal")
 local slash = require("@self/slash")
 local hooks = require("@self/hooks")
+local overlap = require("@self/overlap")
 
 type Session = session.Session
 
@@ -210,6 +211,8 @@ local terms: { [number]: terminal.Term } = {}
 -- Redraws everything that shows `s`, soon: changes come in bursts while an
 -- agent streams.
 local queued: { [number]: boolean } = {}
+-- Each session's status when last redrawn, to tell when a turn ends.
+local last_status: { [number]: string } = {}
 local function changed(s: Session)
 	active[s.id] = os.time()
 	if queued[s.id] then
@@ -238,6 +241,13 @@ local function changed(s: Session)
 		list.render()
 		participants.draw(sessions)
 		saved.keep(s)
+		-- A turn just ended in a workspace of its own: did another agent
+		-- change the same files?
+		local was = last_status[s.id]
+		last_status[s.id] = s.status
+		if was == "working" and s.status == "idle" and s.workspace then
+			overlap.check(s, sessions)
+		end
 	end)
 end
 
@@ -702,6 +712,8 @@ local function drop(s: Session)
 		table.remove(sessions, index)
 	end
 	core.attention.set(`agent-session:{s.id}`, nil)
+	overlap.forget(s)
+	last_status[s.id] = nil
 	local buffer = buffers[s.id]
 	buffers[s.id] = nil
 	if buffer then
