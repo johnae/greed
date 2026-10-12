@@ -188,6 +188,11 @@ anything, as [code blocks](using.md#runnable-code-blocks) in Markdown do:
 `y` runs it this time, `a` always for that file. Trusting a file for one
 trusts it for the other. Boards you make with `:board-new` or "pin to board" are trusted.
 
+Trusting a board trusts the commands it has then. A card that changed
+from outside since (a `git pull`, an agent's edit) doesn't run: it shows
+the command it would run, and `enter` on it runs it from then on. Cards
+you add with `space a`, or write yourself and save, run as they are.
+
 Boards and their cards are objects too: `space h i` (the inspector), and
 agents through `inspect`, see a board's file and cards, and a card's
 command and the block showing what it prints.

@@ -394,3 +394,39 @@ test(
 		end)
 	end
 )
+
+test("a trusted file's blocks run by themselves only as you last let them run", function(t)
+	local dir = t:tempdir({})
+	local path = `{dir}/pick.md`
+	local function file(fruit: string): string
+		return `Pick <!-- id=fruit -->\n\n\`\`\`luau output=choices\nreturn \{ "{fruit}" }\n\`\`\`\n`
+	end
+	greed.fs.write(path, file("apple"))
+	blocks.trust(path)
+	-- Trusted before blocks were let run one by one: what it holds runs.
+	greed.open(path)
+	t:wait_for(has("- ( ) apple"))
+	local opened = greed.view():buffer()
+	greed.view():show(greed.create_buffer("text", ""))
+	opened:close()
+	-- Changed outside (a pull, an agent): it waits for you to run it.
+	greed.fs.write(path, file("pear"))
+	greed.open(path)
+	t:wait(100)
+	assert(not string.find(text(), "pear\n-", 1, true) and not has("- ( ) pear")(), text())
+	local buffer = greed.view():buffer()
+	local block = blocks.runnable(buffer)[1]
+	assert(blocks.refused(buffer, block), "an agent may not run it either")
+	-- Running it yourself lets it run as it is.
+	greed.view():set_cursor(block.code_from)
+	t:run("block-run")
+	t:wait_for(has("- ( ) pear"))
+	assert(blocks.refused(buffer, blocks.runnable(buffer)[1]) == nil, "let run")
+	-- What you change and save yourself is let run as it is.
+	local code = blocks.runnable(buffer)[1]
+	buffer:edit(function(e)
+		e:replace(code.code_from, code.code_to, 'return { "plum" }')
+	end)
+	buffer:save()
+	assert(blocks.refused(buffer, blocks.runnable(buffer)[1]) == nil, "your own edit")
+end)

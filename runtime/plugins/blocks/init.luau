@@ -14,7 +14,9 @@
 -- trust, and those whose front matter says `greed: run`, show a run button
 -- on each block. Agents run blocks only in files you trust, and only as
 -- they were when you last ran them or trusted the file, so a block an
--- agent rewrote waits for you to run it first.
+-- agent rewrote waits for you to run it first. So do blocks that run by
+-- themselves (choices as a file opens, a pick's `when=`): a block changed
+-- from outside waits, and what you change yourself and save runs.
 --
 -- Options go in the info string: `id=NAME` names a block's result, and
 -- `input=NAME` gives another block that result (on stdin, or as `input` in
@@ -125,6 +127,51 @@ local function save_approved()
 	greed.fs.write(approved_file, greed.json.encode(out))
 end
 
+--- Whether `text`, something the file `key` runs (a block, a board's card),
+--- is as you last let it run. Keys are files' paths, or a plugin's own
+--- name for what it runs from one (`board:PATH`).
+function M.approved(key: string, text: string): boolean
+	local known = approved[key]
+	return known ~= nil and known[text] == true
+end
+
+--- Whether anything from `key` was ever let run.
+function M.known(key: string): boolean
+	return approved[key] ~= nil
+end
+
+--- Lets `texts` from `key` run as they are now. With `current`, what's
+--- there now, what was let run before and isn't there any more goes.
+function M.approve(key: string, texts: { string }, current: { string }?)
+	local now: { [string]: boolean }? = nil
+	if current then
+		local set: { [string]: boolean } = {}
+		for _, text in current do
+			set[text] = true
+		end
+		now = set
+	end
+	local kept: { [string]: boolean } = {}
+	for text in approved[key] or {} :: { [string]: boolean } do
+		if now == nil or now[text] then
+			kept[text] = true
+		end
+	end
+	for _, text in texts do
+		kept[text] = true
+	end
+	approved[key] = kept
+	save_approved()
+end
+
+--- Whether the edits to `buffer` since it was read are all yours: none an
+--- agent made, and it wasn't read again after its file changed outside.
+--- What you wrote yourself is let run as it is when you save it.
+function M.yours(buffer: greed.Buffer): boolean
+	return #buffer:history({ author = "agent", limit = 1 }) == 0
+		and #buffer:history({ author = "external", limit = 1 }) == 0
+end
+
 -- A block as it's approved: what it runs as and its code.
 local function block_text(buffer: greed.Buffer, block: Block): string
 	return block.info .. "\n" .. buffer:slice(block.code_from, block.code_to)
@@ -166,21 +213,15 @@ local function approve(buffer: greed.Buffer, blocks: { Block })
 	if path == nil then
 		return
 	end
-	local now: { [string]: boolean } = {}
+	local current: { string } = {}
 	for _, block in parse.blocks(buffer) do
-		now[block_text(buffer, block)] = true
+		table.insert(current, block_text(buffer, block))
 	end
-	local kept: { [string]: boolean } = {}
-	for text in approved[path] or {} :: { [string]: boolean } do
-		if now[text] then
-			kept[text] = true
-		end
-	end
+	local texts: { string } = {}
 	for _, block in blocks do
-		kept[block_text(buffer, block)] = true
+		table.insert(texts, block_text(buffer, block))
 	end
-	approved[path] = kept
-	save_approved()
+	M.approve(path, texts, current)
 end
 
 --- Why an agent may not run `block` in `buffer`: the file isn't trusted,
@@ -620,9 +661,11 @@ end
 --- Asks whether what the file at `path` holds may run (`what`, "code
 --- blocks" unless said), unless it may already: `y` for now, `a` always.
 --- Boards share this, so a file trusted for one is trusted for the other.
-function M.allow_file(path: string, what: string?): boolean
+--- The second result says whether you were asked and said yes: what the
+--- file holds now is what you let run.
+function M.allow_file(path: string, what: string?): (boolean, boolean)
 	if trusted[path] or allowed_now[path] then
-		return true
+		return true, false
 	end
 	local name = core.project.basename(path) or path
 	greed.echo(`run {what or "code blocks"} from {name}? y yes, a always for this file, n no`)
@@ -634,10 +677,10 @@ function M.allow_file(path: string, what: string?): boolean
 		save_trusted()
 	else
 		greed.echo("nothing ran")
-		return false
+		return false, false
 	end
 	greed.echo("")
-	return true
+	return true, true
 end
 
 --- Trusts the file at `path` to run what it holds, as `a` does: for a file
@@ -787,14 +830,26 @@ greed.command({
 	end,
 })
 
+-- Whether `block` may run by itself, as its file opens or on a pick: in a
+-- file you let run for now, or as you last let it run. One that changed
+-- since (a pull, an agent's edit) waits for you to run it.
+local function runs_by_itself(buffer: greed.Buffer, block: Block): boolean
+	local path = path_of(buffer)
+	return path == nil or allowed_now[path] == true or M.refused(buffer, block) == nil
+end
+
 --- Runs every `output=choices` block in `buffer`, in order, so the choices
---- they make are as they'd be now. Waits until they're done.
-function M.refresh_choices(buffer: greed.Buffer)
+--- they make are as they'd be now. Waits until they're done. `by_itself`
+--- (as a file opens) runs only those as you last let them run.
+function M.refresh_choices(buffer: greed.Buffer, by_itself: boolean?)
 	local i = 1
 	while true do
 		local list: { Block } = {}
 		for _, block in M.runnable(buffer) do
-			if block.opts.output == "choices" then
+			if
+				block.opts.output == "choices"
+				and (not by_itself or runs_by_itself(buffer, block))
+			then
 				table.insert(list, block)
 			end
 		end
@@ -807,13 +862,30 @@ function M.refresh_choices(buffer: greed.Buffer)
 	end
 end
 
+-- Blocks you wrote or changed yourself in a trusted file are let run as
+-- they are once you save it; with an agent's edits or a change from
+-- outside among them, those wait for you to run them.
+greed.on("buffer.saved", function(event: greed.BufferChanged)
+	local buffer = event.buffer
+	local path = path_of(buffer)
+	if path and trusted[path] and M.on(buffer) and M.yours(buffer) then
+		approve(buffer, M.runnable(buffer))
+	end
+end)
+
 -- A trusted file's choices are made afresh as it opens: they're what's
 -- there now, like the themes there are.
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	local buffer = event.buffer
 	if M.on(buffer) and M.trusted(buffer) then
+		-- A file trusted before blocks were let run one by one keeps
+		-- running what it holds now.
+		local path = path_of(buffer)
+		if path and trusted[path] and not M.known(path) then
+			approve(buffer, M.runnable(buffer))
+		end
 		greed.spawn(function()
-			M.refresh_choices(buffer)
+			M.refresh_choices(buffer, true)
 		end)
 	end
 end)
@@ -841,8 +913,14 @@ local function heard(buffer: greed.Buffer, group: markdown.Group)
 				return
 			end
 			asked = true
-			approve(buffer, { block })
-			run_block(buffer, block, {}, nil, { answer = answer })
+			if runs_by_itself(buffer, block) then
+				approve(buffer, { block })
+				run_block(buffer, block, {}, nil, { answer = answer })
+			else
+				greed.echo(
+					`the block on line {block.open + 1} changed since you last ran it; space m r runs it`
+				)
+			end
 		end
 	end
 end

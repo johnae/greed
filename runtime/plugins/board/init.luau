@@ -15,7 +15,8 @@
 -- cards again. Saving the file
 -- shows the board as it says. A board from a file you didn't make asks
 -- before it runs anything, as code blocks do, and trusting one trusts the
--- other.
+-- other. A card changed from outside since you let it run waits, showing
+-- its command, until `enter` on it.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -69,6 +70,12 @@ export type Board = {
 	width: number,
 	--- The cards on each line of the buffer (0-based), by their index.
 	at: { [number]: { layout.Spot } },
+	--- The cards that didn't run, by their index: changed since you let
+	--- them run (a pull, an agent's edit), they wait for you to.
+	waiting: { [number]: boolean },
+	--- Whether to let every card run as the file says when it's read next:
+	--- you just said it may, or the edits saved were yours.
+	approve_all: boolean?,
 }
 
 -- The open boards, by their buffer's id.
@@ -207,6 +214,14 @@ local function draw(board: Board)
 		local head = if block then `{shell.glyph(block)} {card.title}` else card.title
 		local status = if block then shell.status(block) else ""
 		local out = if block then output_of(board, block) else {}
+		if board.waiting[i] then
+			-- What it would run, for you to read before you let it.
+			status = "changed since you let it run · enter runs it"
+			out = {}
+			for _, line in string.split(card.command, "\n") do
+				table.insert(out, `$ {line}`)
+			end
+		end
 		local more = #out - card.height
 		table.insert(pieces, {
 			head = if status ~= "" then `{head}  {status}` else head,
@@ -281,19 +296,55 @@ local function cwd_of(board: Board, card: Card): string
 	return if string.sub(dir, 1, 1) == "/" then dir else `{board.root}/{dir}`
 end
 
+-- What a board's cards are let run under: its file's.
+local function key_of(path: string): string
+	return `board:{path}`
+end
+
+-- What a card runs, as it's let run: its folder and its command.
+local function approval(card: Card): string
+	return `{card.dir or ""}\n{card.command}`
+end
+
+-- Lets `cards` of `board` run as they are, forgetting cards it no longer
+-- has.
+local function approve(board: Board, cards: { Card })
+	local texts, current = {}, {}
+	for _, card in cards do
+		table.insert(texts, approval(card))
+	end
+	for _, card in board.cards do
+		table.insert(current, approval(card))
+	end
+	blocks.approve(key_of(board.path), texts, current)
+end
+
 -- Runs the cards of `board` in its shell. A card running what a block
 -- of the board runs already keeps it as it is, so moving cards or editing
 -- one doesn't run the others again, unless `again`. The others run in the
 -- blocks left, in their place, so its shell doesn't fill up, and those it
 -- no longer needs go. Waits for what ran before to stop.
 local function start(board: Board, again: boolean?)
-	local free = table.clone(board.blocks)
-	local blocks: { Block? } = {}
+	if board.approve_all then
+		board.approve_all = nil
+		approve(board, board.cards)
+	end
+	board.waiting = {}
 	for i, card in board.cards do
+		if not blocks.approved(key_of(board.path), approval(card)) then
+			board.waiting[i] = true
+		end
+	end
+	local free = table.clone(board.blocks)
+	local running: { Block? } = {}
+	for i, card in board.cards do
+		if board.waiting[i] then
+			continue
+		end
 		local line, cwd = line_of(board, card), cwd_of(board, card)
 		for k, block in free do
 			if block.command == line and block.cwd == cwd then
-				blocks[i] = block
+				running[i] = block
 				table.remove(free, k)
 				if again then
 					shell.change(board.shell, block, line, { cwd = cwd })
@@ -303,15 +354,15 @@ local function start(board: Board, again: boolean?)
 		end
 	end
 	for i, card in board.cards do
-		if blocks[i] == nil then
+		if running[i] == nil and not board.waiting[i] then
 			local line, cwd = line_of(board, card), cwd_of(board, card)
 			local before = table.remove(free, 1)
-			blocks[i] = if before
+			running[i] = if before
 				then shell.change(board.shell, before, line, { cwd = cwd })
 				else shell.run(board.shell, line, { cwd = cwd })
 		end
 	end
-	board.blocks = blocks :: { Block }
+	board.blocks = running :: { Block }
 	for _, block in free do
 		shell.kill(block)
 		shell.wait(block)
@@ -373,7 +424,8 @@ function M.open(path: string, options: OpenOptions?): Board?
 		greed.echo(`there's no board at {path}`)
 		return nil
 	end
-	if not blocks.allow_file(path, "the commands") then
+	local allowed, asked = blocks.allow_file(path, "the commands")
+	if not allowed then
 		return nil
 	end
 	local name = name_of(path)
@@ -399,6 +451,10 @@ function M.open(path: string, options: OpenOptions?): Board?
 		buffer = buffer,
 		width = select(2, view:size()) or 80,
 		at = {},
+		waiting = {},
+		-- A board opened before cards were let run one by one keeps running
+		-- what it holds now.
+		approve_all = asked or not blocks.known(key_of(path)),
 	}
 	boards[buffer:id()] = board
 	view:show(buffer)
@@ -446,7 +502,13 @@ function M.add(
 		local gap: string = if string.match(text, "\n$") then "\n" else "\n\n"
 		text = text .. gap
 	end
-	greed.fs.write(path, text .. file.card_text(command, opts or {}))
+	text ..= file.card_text(command, opts or {})
+	greed.fs.write(path, text)
+	-- You added it, so it runs: the board's last card.
+	local cards = file.parse(text).cards
+	if #cards > 0 then
+		blocks.approve(key_of(path), { approval(cards[#cards]) })
+	end
 	reload(path)
 end
 
@@ -651,13 +713,17 @@ greed.command({
 
 greed.command({
 	name = "board-open-card",
-	doc = "Open the card under the cursor in a float, all of it",
+	doc = "Open the card under the cursor in a float, all of it; run it, when it waits for you to let it",
 	run = function(ctx)
-		local block, board = card_at(ctx.view)
+		local i, board = card_index(ctx.view)
 		if board == nil then
 			here(ctx)
-		elseif block then
-			shell.peek(board.shell, block)
+		elseif i and board.waiting[i] then
+			-- A card waiting to be let run runs, as it is now.
+			approve(board, { board.cards[i] })
+			load(board)
+		elseif i and board.blocks[i] then
+			shell.peek(board.shell, board.blocks[i])
 		end
 	end,
 })
@@ -728,12 +794,22 @@ greed.on("view.resized", function(event: greed.ViewResized)
 	end
 end)
 
--- Saving a board's file shows the board as it says now.
+-- Saving a board's file shows the board as it says now. Cards you wrote
+-- or changed yourself run; an agent's, or a change from outside, wait for
+-- you to let them.
 greed.on("buffer.saved", function(event: greed.BufferChanged)
 	local path = event.buffer:path()
-	if path then
-		reload(path)
+	if path == nil then
+		return
 	end
+	if blocks.yours(event.buffer) then
+		for _, board in boards do
+			if board.path == path then
+				board.approve_all = true
+			end
+		end
+	end
+	reload(path)
 end)
 
 -- Closing a board stops its cards, and its shell goes.

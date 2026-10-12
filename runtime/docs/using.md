@@ -1485,6 +1485,14 @@ blocks as they were when you last ran them yourself or trusted the file
 disk, doesn't run for an agent until you've run it, and neither does a
 block taking its input from one.
 
+Trusting a file trusts what it holds, not whatever it holds later. What
+runs by itself (choices made as the file opens, a block a pick runs, a
+board's cards) runs only as you last let it run. When the file changes
+from outside, as after a `git pull` or an agent's edit, a changed block
+waits until you run it yourself (`space m r`), and a changed card on a
+board shows the command it would run and waits for `enter`. What you
+write or change yourself and save is let run as it is.
+
 Add a language from Luau:
 
 ```luau

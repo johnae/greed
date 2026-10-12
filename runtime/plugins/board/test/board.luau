@@ -363,6 +363,8 @@ test("saved twice quickly, the board loads once after the other, as the file say
 	local dir, path = make(
 		t,
 		"# ops\n\n```sh every=1\nsleep 0.2; echo one\n```\n\n```sh every=1\nsleep 0.2; echo two\n```\n"
+			-- On the board as it opens, so it's let run when the file changes.
+			.. "\n```sh every=1\nsleep 0.2; echo three\n```\n"
 	)
 	local b = assert(board.open(path, { root = dir }))
 	t:wait_for(function()
@@ -402,4 +404,27 @@ test("a board and its cards are objects; a card relates to the block showing it"
 	local block = core.objects.related(card).block
 	assert(block and #block == 1 and block[1].kind == "shell-block", "the block showing it")
 	assert(core.objects.actions(object)[1].name == "open")
+end)
+
+test("a card changed outside waits, showing its command, until you let it run", function(t)
+	local dir, path = make(t, "# ops\n\n```sh\necho one\n```\n")
+	local b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	greed.view():show(greed.create_buffer("text", ""))
+	b.buffer:close()
+	-- A pull changes the board: the new command doesn't run by itself.
+	greed.fs.write(path, "# ops\n\n```sh\necho one\n```\n\n```sh\necho pulled\n```\n")
+	b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	local shown = text()
+	assert(string.find(shown, "changed since you let it run", 1, true), shown)
+	assert(string.find(shown, "$ echo pulled", 1, true), "its command shows: " .. shown)
+	assert(b.waiting[2] and b.blocks[2] == nil and #b.shell.blocks == 1, "it didn't run")
+	-- enter on it lets it run, as it is.
+	greed.view():set_cursor(assert((string.find(shown, "$ echo pulled", 1, true))))
+	t:run("board-open-card")
+	t:wait_for(function()
+		return b.blocks[2] ~= nil and b.blocks[2].output == "pulled\n"
+	end)
+	assert(not b.waiting[2], "it runs from now on")
 end)
