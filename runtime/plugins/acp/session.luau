@@ -23,6 +23,9 @@ export type Tool = {
 	--- All of its output, shown when it's unfolded.
 	output: { string },
 	open: boolean,
+	--- The `session_id` of the helper agent this call handed a task to
+	--- (subagent.luau), whose transcript enter on its row shows.
+	helper: string?,
 }
 
 --- A question the agent waits on you for.
@@ -128,6 +131,9 @@ export type Session = {
 	queued: { string }?,
 	--- You stopped its turn (ctrl-c), until the next prompt.
 	cancelled: boolean?,
+	--- The helpers (subagent.luau) working on tasks it handed them now:
+	--- its box counts them, and stopping its turn stops theirs.
+	helpers: { Session }?,
 }
 
 --- An image pasted for a prompt: where it's kept, its PNG bytes and its
@@ -1219,7 +1225,8 @@ function M.set_model(session: Session, id: string): (boolean, string?)
 end
 
 --- Asks the agent to stop its turn, answering any question it waits on.
---- Messages queued for it stay queued, for your next one.
+--- Messages queued for it stay queued, for your next one. Its helpers stop
+--- too.
 function M.cancel(session: Session)
 	session.cancelled = true
 	for _, permission in M.pending(session) do
@@ -1231,6 +1238,11 @@ function M.cancel(session: Session)
 	local conn = session.conn
 	if conn and session.session_id then
 		conn:notify("session/cancel", { sessionId = session.session_id })
+	end
+	-- After its own turn stopped, so what they report is left out.
+	local helpers: { Session } = session.helpers or {}
+	for _, helper in table.clone(helpers) do
+		M.cancel(helper)
 	end
 end
 

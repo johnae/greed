@@ -73,7 +73,7 @@ to go. The tools:
 | `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it, which gives back the version to write with next |
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `memory_list`, `memory_propose` | Your standing preferences (below), and proposing one for you to accept |
-| `subagent` | Hand a task to a helper agent with an empty context, in a workspace of its own by default, and get its report (below) |
+| `subagent` | Hand a task to a helper agent with an empty context and get its report; Greed's own agent has it from the start (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust and as you last ran it; the result is saved under the block |
 | `web_search`, `web_fetch` | Search the web with the service you set up, and read a page as text (below) |
 | `shell_run` | Run a command in the project's [shell](shell.md), where you see it marked ◆, and get back its id, exit code, output, errors, how long it took, the files and lines it names, its JSON and a table's first rows; one that runs past `timeout_s` comes back as running |
@@ -685,16 +685,30 @@ transcript, and its workspace is still there. Agents that can't take up a
 session (or fork one) say so. Greed's own agent keeps its sessions itself,
 as described above.
 
-An agent can start another with the `subagent` tool: for a search across
-the project, a side task or a second opinion, without filling its own
-context. The helper is an agent from the list here (the first installed,
-or the one asked for), in a workspace of its own unless the caller says
-otherwise. Its transcript shows in the session list and it asks you before doing
-things like any other; the caller gets its last answer as a report. At
-most three work at once, so helpers starting helpers can't run away.
-Greed's own agent can't have a workspace yet, so as a helper it works in
-the project, and the result says so. A helper whose turn fails, like one
-whose model has no key, comes back as an error saying why.
+An agent can start another with the `subagent` tool: for a wide search or
+survey whose details would fill its own context, a side task or a second
+opinion. The helper is an agent from the list here (the one asked for, or
+else the first installed), in a workspace of its own unless the caller
+says otherwise. Its transcript shows in the session list and it asks you
+before doing things like any other; the caller gets its last answer as a
+report. At most three work at once, so helpers starting helpers can't run
+away. A helper whose turn fails, like one whose model has no key, comes
+back as an error saying why.
+
+Greed's own agent has `subagent` from the start, and its helpers are
+Greed's own agent with the same model unless it names another. Greed's
+agent can't have a workspace yet, so as a helper it works in the project
+and only reads and searches; told to work in the project (`here`), it
+edits and runs commands too, asking you first as usual, and the result
+says so. Several `subagent` calls in one answer run at once.
+
+While a helper works, its call's row in the transcript shows the task,
+what the helper is doing (its tool call, "thinking" or "waiting for you"),
+how long it has worked and the tokens it has used, and the box's bottom
+line says `waiting for 2 helpers`. `enter` on the row shows the helper's
+own transcript in a float, during and after its work, and `ctrl-c` stops
+the helpers along with the turn. When it's done, `tab` on the row unfolds
+what it reported.
 
 Add an agent that isn't in the list in your
 `init.luau`; the first of its commands that's installed is used, and

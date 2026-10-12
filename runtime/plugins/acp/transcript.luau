@@ -187,6 +187,10 @@ function M.history(s: Session): History
 				if summary ~= "" then
 					line ..= ` · {summary}`
 				end
+				-- A helper's call: what it does, and its own transcript.
+				if tool.helper then
+					line ..= " · enter shows it"
+				end
 				if #tool.output > 1 then
 					line ..= if tool.open then " ▾" else " ▸"
 				end
@@ -385,7 +389,11 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 	if s.status == "working" then
 		piece(if now then spinner_frame(now) else "●", "agent.working")
 		piece(" ", "agent.box")
-		local doing = if s.tool then session.first_line(s.tool) else "thinking"
+		local helpers = if s.helpers then #s.helpers else 0
+		local doing = if helpers > 0
+			then `waiting for {helpers} {if helpers == 1 then "helper" else "helpers"}`
+			elseif s.tool then session.first_line(s.tool)
+			else "thinking"
 		local lit = if now then shimmer(doing, (now % 1600) / 1600) else nil
 		if lit then
 			table.move(lit, 1, #lit, #left + 1, left)

@@ -311,6 +311,7 @@ local function plain(entry: session.Entry): any
 				locations = tool.locations,
 				detail = tool.detail,
 				output = bounded(tool.output),
+				helper = tool.helper,
 			}
 			else nil,
 	}

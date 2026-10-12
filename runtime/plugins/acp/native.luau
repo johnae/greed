@@ -158,7 +158,14 @@ type State = {
 	--- uses them to end it at once.
 	waiting: greed.Signal?,
 	close: (() -> ())?,
+	--- It only reads and searches: it's offered no tool that changes
+	--- anything, as a helper working in the project (`read_only`).
+	reads_only: boolean?,
 }
+
+--- The tool groups Greed's own agent has from the start, besides those
+--- the `agent-tool-groups` option gives every agent.
+M.GROUPS = { "subagents" }
 
 -- What the model hears of a call stopped as it ran, and of those after it.
 local STOPPED = "the user stopped the turn while this ran; it may have done part of its work"
@@ -187,6 +194,44 @@ local function unless_stopped(state: State, f: () -> (any, any)): (boolean, any,
 	return true, got.a, got.b
 end
 
+-- Whether call `c` may run at once with calls like it next to it: its tool
+-- says so, and it doesn't ask you first.
+local function side_by_side(by_name: { [string]: any }, c: models.Call): boolean
+	local found = by_name[c.name]
+	return found ~= nil and found.parallel == true and not agent.asks(found)
+end
+
+-- Runs `f` on each of `items` at once, each in a task of its own, waits
+-- for them all and returns what each gave, in order. One failing fails it.
+local function together(items: { any }, f: (any) -> any): { any }
+	if #items == 1 then
+		return { f(items[1]) }
+	end
+	local out = table.create(#items)
+	local left = #items
+	local all = greed.signal()
+	local failure = nil
+	for k, item in items do
+		greed.spawn(function()
+			local ok, value = pcall(f, item)
+			if ok then
+				out[k] = value
+			else
+				failure = failure or value
+			end
+			left -= 1
+			if left == 0 then
+				all:send(true)
+			end
+		end)
+	end
+	all:wait()
+	if failure then
+		error(failure, 0)
+	end
+	return out
+end
+
 local states: { [number]: State } = {}
 
 --- Who Greed's agent in `s` calls Greed's tools as, or nil for another
@@ -194,6 +239,24 @@ local states: { [number]: State } = {}
 function M.caller(s: Session): agent.Caller?
 	local state = states[s.id]
 	return if state then state.caller else nil
+end
+
+-- The session and the row of each of Greed's tools running for Greed's
+-- agent, by the thread it runs in.
+local calling: { [thread]: { session: Session, tool: session.Tool } } = setmetatable(
+	{},
+	{ __mode = "k" }
+) :: any
+
+--- The session of Greed's agent whose call of one of Greed's tools runs
+--- in this thread, and that call's row in its transcript, e.g. for the
+--- tool to show how it's going there.
+function M.calling(): (Session?, session.Tool?)
+	local found = calling[coroutine.running()]
+	if found == nil then
+		return nil, nil
+	end
+	return found.session, found.tool
 end
 
 -- What a tool says after changing the file at `path` (in full) through
@@ -1066,7 +1129,7 @@ local function config_note(): string
 		.. "keeping what's there; don't look for it anywhere else."
 end
 
-local function system(s: Session, env: string?, edits: string?): string
+local function system(s: Session, env: string?, edits: string?, helpers: boolean): string
 	local how = if edits == "hashline"
 		then "Read gives each line a name (12#a3f): edit with edit_file by those names."
 		else "Edit with edit_file, giving enough of the old text to match once."
@@ -1099,6 +1162,14 @@ local function system(s: Session, env: string?, edits: string?): string
 		"Be brief: say what you did and what's left, not every step.",
 		agent.memory.prompt(s.root),
 	}
+	if helpers then
+		table.insert(
+			lines,
+			"Hand a wide search or survey whose details would fill your context, a side task or "
+				.. "a second opinion to a helper with subagent; calls of it in one answer run at "
+				.. "once. Not for one quick lookup."
+		)
+	end
 	local found = instructions(s.root)
 	if found then
 		table.insert(lines, "The project's instructions for agents follow.\n\n" .. found)
@@ -1111,27 +1182,38 @@ end
 -- changed a file it hadn't.
 local LEFT_OUT = { propose = true }
 
+-- What a tool (one of its own, or Greed's) does, as ACP names tool kinds.
+local function kind_of(tool: Own | agent.Tool): string
+	return (tool :: any).kind or "read"
+end
+
 -- The tools the model is told about now (Greed's tools for agents in the
 -- groups it has, and its own), and every tool it may call, by name, with
 -- what to do for each.
 local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agent.Tool })
 	local offered: { [string]: models.ToolSpec } = {}
 	local by_name: { [string]: Own | agent.Tool } = {}
+	local function may(tool: agent.Tool): boolean
+		return not LEFT_OUT[tool.name] and not (state.reads_only and kind_of(tool) ~= "read")
+	end
 	for _, tool in agent.offered(state.caller) do
-		if not LEFT_OUT[tool.name] then
+		if may(tool) then
 			offered[tool.name] =
 				{ name = tool.name, description = tool.description, input = tool.input }
 		end
 	end
 	for _, tool in agent.tools() do
-		if not LEFT_OUT[tool.name] and not tool.shell_only then
+		if may(tool) and not tool.shell_only then
 			by_name[tool.name] = tool
 		end
 	end
-	for _, own in OWN do
-		if own.edits == nil or own.edits == (state.edits or "replace") then
-			offered[own.spec.name] = own.spec
-			by_name[own.spec.name] = own
+	-- Its own tools all change something.
+	if not state.reads_only then
+		for _, own in OWN do
+			if own.edits == nil or own.edits == (state.edits or "replace") then
+				offered[own.spec.name] = own.spec
+				by_name[own.spec.name] = own
+			end
 		end
 	end
 	-- In the order the session first had them: tools of a group switched on
@@ -1176,11 +1258,6 @@ local function allowed(
 		state.allowed[kind] = true
 	end
 	return chosen == "once" or chosen == "always", note
-end
-
--- What a tool (one of its own, or Greed's) does, as ACP names tool kinds.
-local function kind_of(tool: Own | agent.Tool): string
-	return (tool :: any).kind or "read"
 end
 
 -- A call by its tool and arguments, to tell when it's made again.
@@ -1322,8 +1399,8 @@ local function call(
 		if own then
 			return own.run(s, c.input)
 		end
-		local tool = registered :: agent.Tool
-		local wrong = agent.check(tool, c.input)
+		local spec = registered :: agent.Tool
+		local wrong = agent.check(spec, c.input)
 		if wrong then
 			error(wrong, 0)
 		end
@@ -1335,7 +1412,14 @@ local function call(
 			input = table.clone(input)
 			input.path = core.project.resolve(path, s.cwd)
 		end
-		local said = agent.as_text(tool.run(input, state.caller))
+		local thread = coroutine.running()
+		calling[thread] = { session = s, tool = tool }
+		local ran, value = pcall(spec.run, input, state.caller)
+		calling[thread] = nil
+		if not ran then
+			error(value, 0)
+		end
+		local said = agent.as_text(value)
 		-- Each line named, for a model that edits by hashlines.
 		if c.name == "read" and state.edits == "hashline" then
 			said = anchored(said, tonumber(input.from_line) or 1)
@@ -1481,7 +1565,7 @@ local function prompt(
 	-- The same from turn to turn, so providers can cache it: the time goes
 	-- in each of your messages instead.
 	state.edits = models.edits(state.role)
-	local said_system = system(s, state.env, state.edits)
+	local said_system = system(s, state.env, state.edits, not state.reads_only)
 	-- Once a summary fails, it isn't asked for again until the next prompt.
 	local may_compact = true
 	-- Answers cut off at their length in a row.
@@ -1633,41 +1717,15 @@ local function prompt(
 			asking = true
 			s.changed()
 		end
-		for i, c in turn.calls do
-			local like = like_rejected(refused, rejected_calls, by_name, c)
-			if like then
-				stop_to_ask(i, like)
-				break
-			end
-			local rejections = #refused
-			local ran, result, failed = unless_stopped(state, function()
-				return call(s, state, by_name, c)
-			end)
-			if not ran then
-				-- Every call the model asked for gets a result, or the next
-				-- request is turned down.
-				for k = i, #turn.calls do
-					local id = turn.calls[k].id
-					local tool = s.tools[id]
-					if tool and tool.status ~= "completed" and tool.status ~= "failed" then
-						tool.status = "failed"
-						tool.detail = { "stopped" }
-					end
-					table.insert(
-						state.said,
-						{
-							role = "tool",
-							call = id,
-							text = if k == i and tool then STOPPED else NOT_RUN,
-							error = true,
-						} :: models.Said
-					)
-				end
-				s.tool = nil
-				break
-			end
+		-- Gives the model what call `c` came back with, and says whether the
+		-- turn stops to ask you: you rejected calls too often.
+		local function took(
+			c: models.Call,
+			result: string,
+			failed: boolean,
+			rejected: boolean
+		): boolean
 			local tool = s.tools[c.id]
-			local rejected = #refused > rejections
 			local key = call_key(c)
 			if rejected then
 				rejected_calls[key] = refused[#refused].title
@@ -1701,10 +1759,70 @@ local function prompt(
 				{ role = "tool", call = c.id, text = result, error = failed } :: models.Said
 			)
 			s.changed()
-			if rejected and #refused >= MAX_REJECTED then
-				stop_to_ask(i + 1, refused[#refused].title)
+			return rejected and #refused >= MAX_REJECTED
+		end
+		local i = 1
+		while i <= #turn.calls do
+			local like = like_rejected(refused, rejected_calls, by_name, turn.calls[i])
+			if like then
+				stop_to_ask(i, like)
 				break
 			end
+			-- Calls that may run at once, like helpers each on a task, start
+			-- together.
+			local batch = { turn.calls[i] }
+			while side_by_side(by_name, batch[1]) do
+				local after = turn.calls[i + #batch]
+				if after == nil or not side_by_side(by_name, after) then
+					break
+				end
+				table.insert(batch, after)
+			end
+			local rejections = #refused
+			local ran, results = unless_stopped(state, function()
+				return together(batch, function(one: models.Call): { any }
+					return { call(s, state, by_name, one) }
+				end)
+			end)
+			if not ran then
+				-- Every call the model asked for gets a result, or the next
+				-- request is turned down.
+				for k = i, #turn.calls do
+					local id = turn.calls[k].id
+					local tool = s.tools[id]
+					if tool and tool.status ~= "completed" and tool.status ~= "failed" then
+						tool.status = "failed"
+						tool.detail = { "stopped" }
+					end
+					table.insert(
+						state.said,
+						{
+							role = "tool",
+							call = id,
+							text = if tool then STOPPED else NOT_RUN,
+							error = true,
+						} :: models.Said
+					)
+				end
+				s.tool = nil
+				break
+			end
+			local stopped = false
+			for k, c in batch do
+				local result: string, failed: boolean = results[k][1], results[k][2]
+				-- Calls that run together don't ask you, so only one alone
+				-- can have been rejected.
+				local rejected = #batch == 1 and #refused > rejections
+				if took(c, result, failed, rejected) then
+					stop_to_ask(i + k, refused[#refused].title)
+					stopped = true
+					break
+				end
+			end
+			if stopped then
+				break
+			end
+			i += #batch
 		end
 		if state.cancelled then
 			keep(s, state)
@@ -1865,6 +1983,9 @@ function M.start(opts: {
 			state.caller.groups[group] = true
 		end
 	end
+	for _, group in M.GROUPS do
+		state.caller.groups[group] = true
+	end
 	s.models = roles()
 	use(s, state, role)
 	session.check(s)
@@ -1907,6 +2028,16 @@ function M.pick_model(s: Session): string?
 		end
 	end
 	return said
+end
+
+--- Has Greed's agent in `s` only read and search from now on: it's offered
+--- no tool that changes anything, nor told about helpers. For a helper
+--- working in the project, which can't have a workspace of its own.
+function M.read_only(s: Session)
+	local state = states[s.id]
+	if state then
+		state.reads_only = true
+	end
 end
 
 --- Switches tool group `group` on for the session `s`, as the agent would

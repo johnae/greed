@@ -63,6 +63,10 @@ export type Tool = {
 	--- It does more than read but nothing that needs your say, like
 	--- checking a plugin in a sandbox, so agents don't ask before it runs.
 	sandboxed: boolean?,
+	--- Calls of it next to each other in one answer run at once, as helper
+	--- agents each working on a task do. Greed's own agent runs the rest
+	--- one after another.
+	parallel: boolean?,
 	--- Only for `greed ctl` and the programs Greed's shell runs, like
 	--- `greed edit`: agents aren't offered it and can't call it.
 	shell_only: boolean?,
@@ -146,7 +150,8 @@ end
 
 -- The arguments that best say what a call is about, in the order they're
 -- looked for.
-local TELLING = { "path", "file", "query", "pattern", "name", "symbol", "group", "url", "command" }
+local TELLING =
+	{ "path", "file", "query", "pattern", "name", "symbol", "group", "url", "command", "task" }
 
 --- A call of tool `name` with `args` as a line names it: the tool and what
 --- it's about, like "read src/main.rs", paths from `root`.

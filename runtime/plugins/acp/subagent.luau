@@ -1,14 +1,22 @@
 -- Subagents: an agent hands a task to another agent, which works on it in
 -- a session of its own and reports back. The helper starts with an empty
--- context, so a long search or a side task doesn't fill the caller's, and
--- by default in a workspace of its own, so its edits wait for you to bring
--- them in. Its transcript is in the session list like any other, and it
--- asks you before doing things, as agents you start do.
+-- context, so a long search or a side task doesn't fill the caller's. An
+-- agent program works in a workspace of its own by default, so its edits
+-- wait for you to bring them in. Greed's own agent can't have one yet, so
+-- as a helper it works in the project and only reads, unless it's told to
+-- work there. Greed's agent hands tasks to Greed's agent with its own model
+-- unless it names another, and its call's row in the transcript shows what
+-- the helper does as it works; enter on the row shows the helper's
+-- transcript, which is in the session list like any other. Helpers ask you
+-- before doing things, as agents you start do.
 
+local greed = require("@greed")
 local core = require("@core")
 local agent = require("@agent")
 local agents = require("./agents")
 local session = require("./session")
+local native = require("./native")
+local transcript = require("./transcript")
 
 type Session = session.Session
 
@@ -32,10 +40,15 @@ M.LIMIT = 3
 
 local running = 0
 
--- What the helper is told after the task.
-local BRIEF = "\n\n(You're a helper another agent started through the Greed editor. Do the task "
-	.. "above, then end with a short report of what you found or did: that report is all the "
-	.. "other agent sees.)"
+-- What the helper is told after the task; one that only reads hears so.
+local function brief(reads_only: boolean): string
+	local only = if reads_only
+		then " You can only read and search here: say what should change rather than changing it."
+		else ""
+	return "\n\n(You're a helper another agent started through the Greed editor. Do the task "
+		.. "above, then end with a short report of what you found or did: that report is all the "
+		.. `other agent sees.{only})`
+end
 
 -- What `s` said in its last turn, after the task was sent.
 local function report(s: Session): string
@@ -51,38 +64,112 @@ local function report(s: Session): string
 	return table.concat(said, "\n")
 end
 
+-- The most of what a helper does that its row shows, in characters.
+local DOING_WIDTH = 50
+
+-- What `helper` is doing now, how long it has worked and the tokens it
+-- has used, as its row in the caller's transcript shows them.
+local function doing(helper: Session): { string }
+	local now = if helper.status == "waiting"
+		then "waiting for you"
+		elseif helper.status == "starting" then "starting"
+		elseif helper.tool then session.first_line(helper.tool)
+		else "thinking"
+	local out = { core.text.clip(now, DOING_WIDTH) }
+	if helper.since then
+		table.insert(out, core.time.duration(greed.now() - helper.since, true))
+	end
+	if helper.tokens then
+		table.insert(out, `{transcript.tokens(helper.tokens)} tokens`)
+	end
+	return out
+end
+
+-- Shows on `row`, the call's row in `caller`'s transcript, what `helper`
+-- does while the call runs: each time it changes, and each second for the
+-- time. Returns what stops it.
+local function watch(caller: Session, row: session.Tool, helper: Session): () -> ()
+	local watching = true
+	local function show()
+		if watching and row.status == "in_progress" then
+			row.detail = doing(helper)
+			caller.changed()
+		end
+	end
+	local inner = helper.changed
+	helper.changed = function()
+		inner()
+		show()
+	end
+	greed.spawn(function()
+		while watching do
+			show()
+			greed.sleep(1000)
+		end
+	end)
+	return function()
+		watching = false
+		helper.changed = inner
+	end
+end
+
 export type Done = { report: string, session: string, workspace: string?, note: string? }
 
+--- Who hands a task on: the session of Greed's agent whose call it is,
+--- and that call's row in its transcript, which shows how it goes.
+export type From = { session: Session, row: session.Tool? }
+
 --- Hands `task` to a new session of `chosen` started through `sessions`,
---- in a workspace of its own unless `here`, waits for it to finish and
---- returns what it reported, with the session. An agent that can't have
---- a workspace, like Greed's own, works in the project, and `note` says
---- so. A turn that fails is an error, not an empty report.
+--- waits for it to finish and returns what it reported, with the session.
+--- An agent program works in a workspace of its own unless `here`; Greed's
+--- own works in the project, and only reads unless `here`. With `from`,
+--- the helper is one of that session's: stopping its turn stops the
+--- helper, and the call's row shows what the helper does. A turn that
+--- fails is an error, not an empty report.
 function M.run(
 	sessions: Sessions,
 	chosen: agents.Agent,
 	task: string,
-	here: boolean?
+	here: boolean?,
+	from: From?
 ): (Done?, string?)
 	if running >= M.LIMIT then
 		return nil, `{M.LIMIT} subagents are working already; wait for one to finish`
 	end
-	local note: string? = nil
-	if chosen.native and not here then
-		here = true
-		note = `{chosen.title or chosen.name} can't have a workspace of its own yet, so it `
-			.. "worked in the project itself: its edits are in the user's files, as they allowed them"
-	end
+	local reads_only = chosen.native == true and not here
+	local note = if chosen.native and here
+		then `{chosen.title or chosen.name} worked in the project itself: its edits are in the `
+			.. "user's files, as they allowed them"
+		else nil
+	local caller = if from then from.session else nil
+	local root = if caller then caller.root else core.project.root()
 	running += 1
+	local helper: Session? = nil
+	local unwatch: (() -> ())? = nil
 	local ok, result, err = pcall(function(): (Done?, string?)
-		local s, start_err = sessions.start(chosen, core.project.root(), not here)
+		local s, start_err = sessions.start(chosen, root, not here and not chosen.native)
 		if s == nil then
 			return nil, start_err
+		end
+		helper = s
+		if reads_only then
+			native.read_only(s)
+		end
+		if caller then
+			local helpers = caller.helpers or {}
+			caller.helpers = helpers
+			table.insert(helpers, s)
+			caller.changed()
 		end
 		if not session.ready(s) then
 			return nil, s.failed or "the agent didn't start"
 		end
-		local sent, prompt_err = sessions.prompt(s, task .. BRIEF)
+		local row = if from then from.row else nil
+		if caller and row then
+			row.helper = s.session_id
+			unwatch = watch(caller, row, s)
+		end
+		local sent, prompt_err = sessions.prompt(s, task .. brief(reads_only))
 		if not sent then
 			return nil, prompt_err
 		elseif s.failed then
@@ -97,6 +184,16 @@ function M.run(
 		return done, nil
 	end)
 	running -= 1
+	if unwatch then
+		unwatch()
+	end
+	if caller and helper and caller.helpers then
+		local index = table.find(caller.helpers, helper)
+		if index then
+			table.remove(caller.helpers, index)
+		end
+		caller.changed()
+	end
 	if not ok then
 		return nil, tostring(result)
 	end
@@ -109,11 +206,11 @@ function M.offer(sessions: Sessions)
 		name = "subagent",
 		kind = "execute",
 		group = "subagents",
-		description = "Hand a task to a helper agent that starts with an empty context and works "
-			.. "on it in a session of its own, then reports back: for a search across the project, "
-			.. "a side task, or a second opinion, without filling your own context. By default it "
-			.. "works in a workspace of its own, so its edits reach the user's files only when they "
-			.. "bring them in. Returns its report",
+		-- The helper asks you before doing things itself.
+		reviews = true,
+		parallel = true,
+		description = "Hand a task to a helper agent with an empty context; it works on it in a "
+			.. "session of its own and returns its report, without filling your context",
 		input = agent.schema.object({
 			task = {
 				type = "string",
@@ -121,19 +218,30 @@ function M.offer(sessions: Sessions)
 			},
 			agent = {
 				type = "string",
-				description = 'Which agent, e.g. "claude"; the first installed by default',
+				description = 'Which agent, e.g. "claude"; by default Greed\'s own agent when '
+					.. "you are it, else the first installed",
 			},
-			here = { type = "boolean", description = "Work in the project itself instead" },
+			here = {
+				type = "boolean",
+				description = "Work in the project itself; without it a Greed helper only reads, "
+					.. "and others get a workspace of their own",
+			},
 		}, { "task" }),
 		run = function(args)
-			local chosen = agents.installed(args.agent)
+			local caller, row = native.calling()
+			local name: string? = args.agent or (if caller then "greed" else nil)
+			local chosen = agents.installed(name)
 			if chosen == nil then
-				error(
-					if args.agent then `{args.agent} isn't installed` else "no agent is installed",
-					0
-				)
+				error(if name then `{name} isn't installed` else "no agent is installed", 0)
 			end
-			local done, err = M.run(sessions, chosen, args.task, args.here)
+			-- Greed's agent as a helper of Greed's agent uses the same model.
+			if chosen.native and caller and caller.model then
+				local same = table.clone(chosen)
+				same.model = caller.model
+				chosen = same
+			end
+			local from: From? = if caller then { session = caller, row = row } else nil
+			local done, err = M.run(sessions, chosen, args.task, args.here, from)
 			if done == nil then
 				error(err, 0)
 			end

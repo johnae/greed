@@ -1169,11 +1169,41 @@ greed.command({
 	end,
 })
 
+-- The helper whose call's row the cursor is on in the transcript of `s`,
+-- and whether it's on a helper's row at all: that helper's session may
+-- not run any more.
+local function helper_at(ctx: greed.Context, s: Session): (Session?, boolean)
+	local id = transcript.tool_at(ctx.buffer, ctx.buffer:line_of(ctx.view:cursor()))
+	local tool = if id then s.tools[id] else nil
+	local wanted = if tool then tool.helper else nil
+	if wanted == nil then
+		return nil, false
+	end
+	for _, other in sessions do
+		if other.session_id == wanted then
+			return other, true
+		end
+	end
+	return nil, true
+end
+
 greed.command({
 	name = "agent-answer",
-	doc = "Draw the question the agent waits on in the box again, to answer it there; on a button, like a code block's run, press it",
+	doc = "Draw the question the agent waits on in the box again, to answer it there; on a helper's row, show its transcript; on a button, like a code block's run, press it",
 	run = function(ctx)
 		local s = current(ctx)
+		if s then
+			local helper, named = helper_at(ctx, s)
+			if helper then
+				M.show(helper, "float")
+				return
+			elseif named then
+				greed.echo(
+					"that helper's session isn't running any more; space i l lists the kept ones"
+				)
+				return
+			end
+		end
 		local buffer = s and buffers[s.id]
 		if s == nil or buffer == nil or not question.waits(s) then
 			if #core.buttons.at(ctx.buffer, ctx.view:cursor()) > 0 then

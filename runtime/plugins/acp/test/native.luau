@@ -1455,13 +1455,32 @@ local function subagent(args: { [string]: any }): (boolean, any)
 	error("no subagent tool")
 end
 
-test("Greed's agent as a subagent works here, and the result says so", function(t)
-	script({ { text = "Found it.", calls = {}, stop = "done" } })
+test("Greed's agent as a subagent only reads, unless it works here", function(t)
+	local asked = script({
+		{ text = "Found it.", calls = {}, stop = "done" },
+		{ text = "Changed it.", calls = {}, stop = "done" },
+	})
 	local dir = t:tempdir({ ["a.txt"] = "a\n" })
 	greed.open(`{dir}/a.txt`)
 	local ok, result = subagent({ task = "look", agent = "greed" })
 	assert(ok, tostring(result))
 	assert(result.report == "Found it.", result.report)
+	assert(result.note == nil, tostring(result.note))
+	local function offers(request: any, name: string): boolean
+		for _, tool in request.tools do
+			if tool.name == name then
+				return true
+			end
+		end
+		return false
+	end
+	assert(offers(asked[1], "read") and offers(asked[1], "grep"), "it reads and searches")
+	assert(not offers(asked[1], "edit_file") and not offers(asked[1], "run"), "and changes nothing")
+	assert(not offers(asked[1], "subagent"), "nor starts helpers of its own")
+	assert(string.find(asked[1].said[1].text, "only read", 1, true), "and it's told so")
+	ok, result = subagent({ task = "change", agent = "greed", here = true })
+	assert(ok, tostring(result))
+	assert(offers(asked[2], "edit_file"), "here, it edits, asking first")
 	assert(string.find(result.note or "", "worked in the project itself", 1, true), result.note)
 end)
 
@@ -2102,20 +2121,20 @@ local function bottom_line(): string
 end
 
 -- Stands in for the model with `answer`, given each request (kept in the
--- list returned, as it was then) and its turn's number.
-local function model(answer: (request: any, n: number, on_open: any) -> any): { any }
+-- list returned, as it was then), its turn's number and the role asked.
+local function model(answer: (request: any, n: number, on_open: any, role: string) -> any): { any }
 	local asked: { any } = {}
 	models.check = function(): string?
 		return nil
 	end
-	models.turn = function(_role, request, on_text, on_open): (any, string?)
+	models.turn = function(role, request, on_text, on_open): (any, string?)
 		local copy = table.clone(request)
 		copy.said = {}
 		for i, one in request.said do
 			copy.said[i] = table.clone(one :: any)
 		end
 		table.insert(asked, copy)
-		local turn = answer(copy, #asked, on_open)
+		local turn = answer(copy, #asked, on_open, role)
 		if turn.text ~= "" then
 			on_text(turn.text)
 		end
@@ -2334,4 +2353,190 @@ test("ctrl-c during a tool call that doesn't end stops the turn, every call answ
 			return nil
 		end,
 	})
+end)
+
+-- Whether `request` is a helper's: its task ends with what helpers are told.
+local function from_helper(request: any): boolean
+	return string.find(request.said[1].text or "", "You're a helper", 1, true) ~= nil
+end
+
+-- A turn handing `task` to a helper, as call `id`.
+local function hands(id: string, task: string): any
+	return { id = id, name = "subagent", input = { task = task } }
+end
+
+-- The session that isn't `s`, the helper it started.
+local function helper_of(s: any): any
+	for _, other in acp.sessions() do
+		if other ~= s then
+			return other
+		end
+	end
+	error("no helper")
+end
+
+test("Greed's agent is offered subagent from the start, and told when it pays off", function(t)
+	local asked = script({ DONE })
+	ask(t, "hi")
+	local found = false
+	for _, tool in asked[1].tools do
+		found = found or tool.name == "subagent"
+	end
+	assert(found, "offered without switching a group on")
+	assert(string.find(asked[1].system, "subagent", 1, true), "and the prompt says when")
+end)
+
+test("a subagent call starts Greed's agent as a helper with the parent's model", function(t)
+	local roles: { [string]: string } = {}
+	model(function(request, n, _, role)
+		if from_helper(request) then
+			roles.helper = role
+			return { text = "Found it in a.txt.", calls = {}, stop = "done" }
+		end
+		roles.parent = role
+		return if n == 1
+			then { text = "", calls = { hands("c1", "find the thing") }, stop = "tools" }
+			else DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s: any = assert(acp.start(GREED, dir))
+	s.driver.set_model(s, "fast")
+	acp.prompt(s, "go")
+	assert(roles.parent == "fast" and roles.helper == "fast", `{roles.parent} {roles.helper}`)
+	local helper = helper_of(s)
+	assert(helper.agent == "greed", helper.agent)
+	assert(helper.workspace == nil and helper.root == dir, "in the project")
+	local row = s.tools.c1
+	assert(row.status == "completed", tostring(row.status))
+	assert(row.helper == helper.session_id, "the row knows its helper")
+	assert(string.find(row.title, "find the thing", 1, true), row.title)
+	assert(string.find(table.concat(row.output, "\n"), "Found it in a.txt.", 1, true), "the report")
+end)
+
+test("a helper's row shows what it does while it works, and enter shows its transcript", function(t)
+	local go = greed.signal()
+	agent.tool({
+		name = "test_wait",
+		description = "waits",
+		run = function()
+			go:wait()
+			return "seen"
+		end,
+	})
+	local helped = 0
+	model(function(request, n)
+		if from_helper(request) then
+			helped += 1
+			return if helped == 1
+				then {
+					text = "",
+					calls = { { id = "h1", name = "test_wait", input = {} } },
+					stop = "tools",
+				}
+				else { text = "Found it.", calls = {}, stop = "done" }
+		end
+		return if n == 1
+			then { text = "", calls = { hands("c1", "look around") }, stop = "tools" }
+			else DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "go")
+	local row = s.tools.c1
+	t:wait_for(function()
+		return string.find(table.concat(row.detail, " · "), "test_wait", 1, true) ~= nil
+	end)
+	local detail = table.concat(row.detail, " · ")
+	assert(row.status == "in_progress", tostring(row.status))
+	assert(string.find(detail, "%d+s"), "how long: " .. detail)
+	assert(string.find(bottom_line(), "waiting for 1 helper", 1, true), bottom_line())
+	local buffer = greed.view():buffer()
+	local text = buffer:text()
+	assert(string.find(text, "look around", 1, true), text)
+	assert(string.find(text, "test_wait", 1, true), text)
+	-- enter on its row shows the helper's own transcript.
+	local transcript = require("../transcript")
+	local line = assert(transcript.line_of_tool(buffer, "c1"))
+	greed.view():set_cursor(buffer:line_start(line))
+	t:keys("esc enter")
+	t:wait(30)
+	local helper = helper_of(s)
+	assert(acp.of(greed.view():buffer()) == helper, "the helper's transcript")
+	go:send(true)
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(status_of(row) == "completed", status_of(row))
+	assert(
+		not string.find(table.concat(row.detail, " · "), "test_wait", 1, true),
+		"its result now"
+	)
+	assert(string.find(table.concat(row.output, "\n"), "Found it.", 1, true), "the report")
+	agent.tool({
+		name = "test_wait",
+		description = "gone",
+		run = function()
+			return nil
+		end,
+	})
+end)
+
+test("helpers called together work at once, each on its own row", function(t)
+	-- One for each helper: a signal wakes one waiter.
+	local gos: { greed.Signal } = {}
+	model(function(request, n)
+		if from_helper(request) then
+			local go = greed.signal()
+			table.insert(gos, go)
+			go:wait()
+			return { text = "ok", calls = {}, stop = "done" }
+		end
+		return if n == 1
+			then {
+				text = "",
+				calls = { hands("c1", "one thing"), hands("c2", "another") },
+				stop = "tools",
+			}
+			else DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "go")
+	t:wait(100)
+	assert(#gos == 2, `{#gos} started`)
+	assert(s.tools.c1.status == "in_progress" and s.tools.c2.status == "in_progress", "both run")
+	assert(string.find(bottom_line(), "waiting for 2 helpers", 1, true), bottom_line())
+	for _, go in gos do
+		go:send(true)
+	end
+	t:wait(100)
+	assert(s.status == "idle", s.status)
+	assert(
+		status_of(s.tools.c1) == "completed" and status_of(s.tools.c2) == "completed",
+		"both done"
+	)
+end)
+
+test("ctrl-c stops the helpers too", function(t)
+	model(function(request, n)
+		if from_helper(request) then
+			greed.signal():wait()
+			return DONE
+		end
+		return if n == 1
+			then { text = "", calls = { hands("c1", "hang") }, stop = "tools" }
+			else DONE
+	end)
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "go")
+	local helper = helper_of(s)
+	assert(status_of(helper) == "working", status_of(helper))
+	t:keys("ctrl-c")
+	t:wait(30)
+	assert(status_of(s) == "idle", status_of(s))
+	assert(status_of(helper) == "idle", status_of(helper))
+	assert(string.find(said(helper), "note: stopped: cancelled", 1, true), said(helper))
+	assert(s.tools.c1.status == "failed", tostring(s.tools.c1.status))
+	assert(s.helpers == nil or #s.helpers == 0, "none left working")
 end)
