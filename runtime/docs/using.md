@@ -1662,7 +1662,7 @@ to show other words.
 A todo is a list item with a box, `- [ ] call the bank`, and
 `due:2026-10-03` anywhere in it gives it a date for the agenda. Notes and
 todos are objects too: `space h i` on one shows its note, due date and
-reminder, and `space .` opens or ticks it, for agents as well. In a note,
+reminders, and `space .` opens or ticks it, for agents as well. In a note,
 links show without their brackets (except while typing on their line) and the
 notes linking to it are listed at its end. Other Markdown files, like a
 project's README, look as they always do; `:set notes-everywhere true`
@@ -1678,7 +1678,12 @@ require("@greed").option.set("notes-folder", "~/Documents/notes")
 Put `remind:2026-10-06 18:00` on a todo, or on any line of a note, and
 Greed reminds you then. A date alone, `remind:2026-10-06`, goes off at
 09:00 (`:set notes-remind-time 08:30` to change it). Times are your
-computer's local time. Ticked todos don't remind you.
+computer's local time. Ticked todos don't remind you. A line can have as
+many reminders as you like, each going off at its own time:
+
+```markdown
+- [ ] pay the invoice due:2026-10-07 remind:2026-10-06 19:00 remind:2026-10-07 12:00
+```
 
 When a reminder comes due:
 
@@ -1697,7 +1702,8 @@ When a reminder comes due:
 
 Reminders that came due while Greed wasn't running show the next time it
 starts. Greed remembers which ones went off in its cache folder, so each
-goes off once.
+goes off once. When several on one line went off while it wasn't running,
+the line shows once.
 
 The status line says how many todos are due today, like `2 due today`, in a
 warning color when some are overdue (`1 overdue, 2 due today`). Click it to

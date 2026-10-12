@@ -1,6 +1,6 @@
 -- Notes and todos as objects, for the inspector and agents: a note's file
 -- and the notes linking to it, and each todo with its note, its due date
--- and its reminder, opened by default and ticked as an action.
+-- and its reminders, opened by default and ticked as an action.
 
 local core = require("@core")
 local notes = require("./notes")

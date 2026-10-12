@@ -97,8 +97,8 @@ to change a setting knows where to go. The tools:
 | `debug_log` | What Greed and its plugins say they do while a debug topic is on (keys, runs, frames, language server messages, programs, a plugin's own `greed.debug.log` lines): turn topics on, do the thing, read the lines |
 | `notes_list`, `notes_search`, `notes_read`, `notes_write` | Your notes: find, read, write and add to them; rewriting a note that's there is proposed for you to review |
 | `notes_todos`, `notes_add_todo`, `notes_add_thought` | The todos in your notes, soonest due first, and adding a todo or a thought |
-| `notes_update_todo` | Change one todo: its text, due date or reminder, or tick it |
-| `notes_remind` | Set a reminder on a line of a note, or add a todo with one ("remind me this evening") |
+| `notes_update_todo` | Change one todo: its text, due date or reminders, or tick it |
+| `notes_remind` | Add reminders to a line of a note, or add a todo with them ("remind me this evening and tomorrow at lunch") |
 | `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it, which gives back the version to write with next |
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `memory_list`, `memory_propose` | Your standing preferences (below), and proposing one for you to accept |

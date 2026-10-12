@@ -127,7 +127,7 @@ agent.tool({
 				text = todo.text,
 				done = todo.done,
 				due = todo.due,
-				remind = todo.remind,
+				reminds = greed.json.array(todo.reminds),
 			})
 		end
 		return greed.json.array(out)
@@ -159,33 +159,49 @@ end
 
 -- `when` as a reminder writes it, "YYYY-MM-DD HH:MM" or a date alone; an
 -- error if it isn't one.
-local function checked_remind(when: string?): string?
-	if when == nil then
-		return nil
-	end
+local function checked_remind(when: string): string
 	local date, time = string.match(when, "^(%d%d%d%d%-%d%d%-%d%d)[ T](%d%d?:%d%d)$")
 	if date and time and dates.moment(date, time) then
 		return `{date} {time}`
 	end
-	return checked_date(when)
+	return checked_date(when) :: string
 end
+
+-- Each of `whens` as a reminder writes it; one alone may come as a string.
+local function checked_reminds(whens: { string } | string): { string }
+	if type(whens) == "string" then
+		return { checked_remind(whens) }
+	end
+	local out = {}
+	for _, when in whens do
+		table.insert(out, checked_remind(when))
+	end
+	return out
+end
+
+-- Reminders as tools take them.
+local REMINDS = {
+	type = "array",
+	items = { type = "string" },
+	description = '"YYYY-MM-DD HH:MM" in local time, or a date alone for the morning',
+}
 
 agent.tool({
 	name = "notes_add_todo",
 	kind = "edit",
 	group = "notes",
-	description = "Add a todo to a note, optionally due on a date (YYYY-MM-DD) and with a "
-		.. 'reminder ("YYYY-MM-DD HH:MM", local time). Left out, the note is the inbox: the '
-		.. "project's (\"project:inbox\") when it keeps notes, otherwise the user's",
+	description = "Add a todo to a note, optionally due on a date (YYYY-MM-DD) and with "
+		.. "reminders, as many as it needs. Left out, the note is the inbox: the project's "
+		.. '("project:inbox") when it keeps notes, otherwise the user\'s',
 	input = object({
 		text = { type = "string" },
 		note = { type = "string" },
 		due = { type = "string" },
-		remind = { type = "string" },
+		remind = REMINDS,
 	}, { "text" }),
 	run = function(args)
 		local note = writable(args.note or todos.inbox())
-		todos.add(args.text, note, checked_date(args.due), checked_remind(args.remind))
+		todos.add(args.text, note, checked_date(args.due), checked_reminds(args.remind or {}))
 		return `added to {note}`
 	end,
 })
@@ -208,28 +224,29 @@ agent.tool({
 	name = "notes_remind",
 	kind = "edit",
 	group = "notes",
-	description = "Remind the user at a time: on the line of a note given by note and line "
-		.. "(1-based, as notes_todos and notes_search give them), replacing any reminder it "
-		.. "has, or as a new todo with text (in note, or the inbox). when is "
-		.. '"YYYY-MM-DD HH:MM" in the user\'s local time, or a date alone for '
-		.. "the morning. The user sees it in the editor and on their desktop",
+	description = "Remind the user at one or more times: on the line of a note given by note "
+		.. "and line (1-based, as notes_todos and notes_search give them), added to the "
+		.. "reminders it has, or as a new todo with text (in note, or the inbox). The user "
+		.. "sees each in the editor and on their desktop",
 	input = object({
-		when = { type = "string" },
+		when = REMINDS,
 		note = { type = "string" },
 		line = { type = "number" },
 		text = { type = "string" },
 	}, { "when" }),
 	run = function(args)
-		local when = checked_remind(args.when) :: string
+		local whens = checked_reminds(args.when)
 		if args.line then
 			local note = writable(args.note or todos.inbox())
 			local current = line_of(note, args.line)
-			local changed = todos.with_marker(current, "remind", when)
+			local reminds = todos.reminds(current)
+			table.move(whens, 1, #whens, #reminds + 1, reminds)
+			local changed = todos.with_reminds(current, reminds)
 			notes.set_line(note, args.line - 1, changed)
 			return `{note}:{args.line}: {changed}`
 		elseif args.text then
 			local note = writable(args.note or todos.inbox())
-			todos.add(args.text, note, nil, when)
+			todos.add(args.text, note, nil, whens)
 			return `added to {note}`
 		end
 		error("give note and line for a line that's there, or text for a new todo", 0)
@@ -241,15 +258,15 @@ agent.tool({
 	kind = "edit",
 	group = "notes",
 	description = "Change one todo, given by note and line (1-based, as notes_todos gives "
-		.. "them): its text (without its due date and reminder, which stay), its due date "
-		.. '(YYYY-MM-DD), its reminder ("YYYY-MM-DD HH:MM"), or tick it with done. An empty '
-		.. "due or remind takes it away. Returns the line as it is now",
+		.. "them): its text (without its due date and reminders, which stay), its due date "
+		.. "(YYYY-MM-DD), its reminders (replacing the ones it has), or tick it with done. "
+		.. "An empty due or remind takes them away. Returns the line as it is now",
 	input = object({
 		note = { type = "string" },
 		line = { type = "number" },
 		text = { type = "string" },
 		due = { type = "string" },
-		remind = { type = "string" },
+		remind = REMINDS,
 		done = { type = "boolean" },
 	}, { "note", "line" }),
 	run = function(args)
@@ -262,22 +279,21 @@ agent.tool({
 		if args.text then
 			-- The markers it had stay, unless the new text has its own.
 			text = args.text
-			local function keep(kind: "due" | "remind", value: string?)
-				if value and todos.marker(text, kind) == nil then
-					text = todos.with_marker(text, kind, value)
-				end
+			local due = todos.due(rest)
+			if due and todos.due(text) == nil then
+				text = todos.with_due(text, due)
 			end
-			local date, time = todos.remind(rest)
-			keep("due", todos.due(rest))
-			keep("remind", if date and time then `{date} {time}` else date)
+			if #todos.reminders(text) == 0 then
+				text = todos.with_reminds(text, todos.reminds(rest))
+			end
 		end
 		if args.due then
 			local due = if args.due == "" then nil else checked_date(args.due)
-			text = todos.with_marker(text, "due", due)
+			text = todos.with_due(text, due)
 		end
 		if args.remind then
-			local remind = if args.remind == "" then nil else checked_remind(args.remind)
-			text = todos.with_marker(text, "remind", remind)
+			local reminds = if args.remind == "" then {} else checked_reminds(args.remind)
+			text = todos.with_reminds(text, reminds)
 		end
 		local ticked = if args.done == nil then done else args.done
 		local before = string.match(current, "^%s*[-*+] ") :: string

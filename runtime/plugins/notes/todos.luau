@@ -1,5 +1,6 @@
 -- Todos are list items with a box: "- [ ] call the bank due:2026-10-03",
--- maybe with a reminder, "remind:2026-10-02 18:00" (see reminders.luau).
+-- maybe with reminders, "remind:2026-10-02 18:00", as many as you like
+-- (see reminders.luau).
 -- The agenda lists the open ones from every note, soonest due first;
 -- capture adds one to the inbox note from anywhere.
 
@@ -17,9 +18,13 @@ export type Todo = {
 	text: string,
 	done: boolean,
 	due: string?,
-	--- When it reminds you, "2026-10-06 18:00" or a date alone.
-	remind: string?,
+	--- When it reminds you, each "2026-10-06 18:00" or a date alone.
+	reminds: { string },
 }
+
+--- A reminder on a line: where it is (its start and the index after its
+--- end) and when, with a time if it says one.
+export type Reminder = { from: number, to: number, date: string, time: string? }
 
 local M = {}
 
@@ -55,18 +60,63 @@ function M.marker(text: string, kind: "due" | "remind"): (number?, number?, stri
 	return from, to, date, nil
 end
 
---- When `text` says to remind you: the date, and the time if it says one.
-function M.remind(text: string): (string?, string?)
-	local _, _, date, time = M.marker(text, "remind")
-	return date, time
+--- Every reminder in `text`, in the order they're written.
+function M.reminders(text: string): { Reminder }
+	local out: { Reminder } = {}
+	local start = 1
+	while true do
+		local from, to, date, time = M.marker(string.sub(text, start), "remind")
+		if from == nil or to == nil or date == nil then
+			return out
+		end
+		table.insert(
+			out,
+			{ from = start + from - 1, to = start + to - 1, date = date, time = time }
+		)
+		start += to - 1
+	end
 end
 
---- `text` with its marker `kind` set to `value` ("2026-10-06", or
---- "2026-10-06 18:00" for a reminder): changed where it is, or added at the
---- end. Without a value the marker goes.
-function M.with_marker(text: string, kind: "due" | "remind", value: string?): string
-	local from, to = M.marker(text, kind)
-	local marker = if value then `{kind}:{value}` else ""
+--- When `text` says to remind you, each as "2026-10-06 18:00" or a date
+--- alone.
+function M.reminds(text: string): { string }
+	local out = {}
+	for _, reminder in M.reminders(text) do
+		table.insert(
+			out,
+			if reminder.time then `{reminder.date} {reminder.time}` else reminder.date
+		)
+	end
+	return out
+end
+
+--- `text` reminding you at each of `reminds` ("2026-10-06 18:00" or a
+--- date alone) and no other time: the reminders it has go, and these are
+--- added at the end, once each.
+function M.with_reminds(text: string, reminds: { string }): string
+	local reminders = M.reminders(text)
+	for i = #reminders, 1, -1 do
+		local reminder = reminders[i]
+		local before = string.gsub(string.sub(text, 1, reminder.from - 1), " $", "") :: string
+		text = before .. string.sub(text, reminder.to)
+	end
+	local seen = {}
+	for _, when in reminds do
+		if not seen[when] then
+			seen[when] = true
+			local trimmed = string.gsub(text, "%s+$", "") :: string
+			text = if trimmed == "" then `remind:{when}` else `{trimmed} remind:{when}`
+		end
+	end
+	return text
+end
+
+--- `text` with its due date set to `value` ("2026-10-06"): changed where
+--- it is, or added at the end. Without a value the marker goes. A line can
+--- have several reminders; `with_reminds` sets those.
+function M.with_due(text: string, value: string?): string
+	local from, to = M.marker(text, "due")
+	local marker = if value then `due:{value}` else ""
 	if from and to then
 		local before, after = string.sub(text, 1, from - 1), string.sub(text, to)
 		if value == nil then
@@ -83,7 +133,7 @@ end
 
 --- `text` without its due and remind markers, as a todo reads.
 function M.plain(text: string): string
-	local out = M.with_marker(M.with_marker(text, "due", nil), "remind", nil)
+	local out = M.with_reminds(M.with_due(text, nil), {})
 	return (string.gsub(out, "^%s+", ""))
 end
 
@@ -94,14 +144,13 @@ function M.at(note: string, line: number, text: string): Todo?
 	if rest == nil then
 		return nil
 	end
-	local date, time = M.remind(rest)
 	return {
 		note = note,
 		line = line,
 		text = rest,
 		done = done == true,
 		due = M.due(rest),
-		remind = if date and time then `{date} {time}` else date,
+		reminds = M.reminds(rest),
 	}
 end
 
@@ -138,16 +187,13 @@ function M.inbox(): string
 end
 
 --- Adds a todo to note `name` (the inbox by default), due on `due` and
---- reminding you at `remind` ("2026-10-06 18:00") if given.
-function M.add(text: string, name: string?, due: string?, remind: string?)
+--- reminding you at each of `reminds` ("2026-10-06 18:00") if given.
+function M.add(text: string, name: string?, due: string?, reminds: { string }?)
 	local line = `- [ ] {text}`
 	if due then
 		line ..= ` due:{due}`
 	end
-	if remind then
-		line ..= ` remind:{remind}`
-	end
-	notes.append(name or M.inbox(), line)
+	notes.append(name or M.inbox(), M.with_reminds(line, reminds or {}))
 end
 
 --- Adds a thought to note `name` (the inbox by default): a plain item with

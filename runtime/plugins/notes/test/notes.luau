@@ -409,6 +409,34 @@ test(
 	end
 )
 
+test(
+	"a todo with several reminders goes off at each, once for those that went off together",
+	function(t)
+		greed.option.set("notes-remind-desktop", false)
+		folder(t, {
+			["inbox.md"] = `- [ ] pay the invoice remind:{minute(-7200)} remind:{minute(-3600)} `
+				.. `remind:{minute(7200)}\n`,
+		})
+		t:buffer("|x")
+		t:wait(61000)
+		local notices = t:notices()
+		assert(#notices == 1 and notices[1].title == "Reminder", tostring(#notices))
+		assert(notices[1].body == "pay the invoice", notices[1].body)
+		t:keys("space n r")
+		t:wait(61000)
+		assert(#t:notices() == 0, "the two that went off don't go off again")
+		local notes = require("@notes")
+		local clock = notes.clock
+		notes.clock = function(): number
+			return os.time() + 3 * 3600
+		end
+		t:wait(61000)
+		notes.clock = clock
+		notices = t:notices()
+		assert(#notices == 1 and notices[1].body == "pay the invoice", tostring(#notices))
+	end
+)
+
 test("a reminder with only a date goes off at notes-remind-time", function(t)
 	greed.option.set("notes-remind-desktop", false)
 	local now = os.date("*t") :: any
@@ -472,7 +500,7 @@ end)
 
 test("space k on a due date or a reminder says when it is in words", function(t)
 	folder(t)
-	t:buffer(`- [ ] x due:{day(0)} due:{day(3)} remind:{day(1)} 18:00 end|`)
+	t:buffer(`- [ ] x due:{day(0)} due:{day(3)} remind:{day(1)} 18:00 remind:{day(2)} 07:30 end|`)
 	local buffer = greed.view():buffer()
 	local function words_at(marker: string): string
 		local from = string.find(buffer:text(), marker, 1, true) :: number
@@ -486,6 +514,8 @@ test("space k on a due date or a reminder says when it is in words", function(t)
 	assert(string.find(soon, ", in 3 days", 1, true), soon)
 	local remind = words_at("remind:")
 	assert(string.match(remind, "^remind tomorrow, 18:00, in %d+ hours$"), remind)
+	local second = words_at(`remind:{day(2)}`)
+	assert(string.find(second, ", 07:30, in ", 1, true), second)
 	local elsewhere = words_at("end")
 	assert(not string.find(elsewhere, "due", 1, true), "elsewhere it's the usual hover")
 	-- Every style's hover key asks the same way.
@@ -501,9 +531,12 @@ test("due dates are colored by how close they are, and reminders show their time
 	local rows = shown(
 		t,
 		`- [ ] a due:{day(-1)}\n- [ ] b due:{day(0)}\n- [ ] c due:{day(2)}\n`
-			.. `- [ ] d due:{day(30)} remind:2027-01-02 18:00\n- [ ] here`
+			.. `- [ ] d due:{day(30)} remind:2027-01-02 18:00 remind:2027-01-03\n- [ ] here`
 	)
-	assert(string.match(rows[4], "^☐ d 📅 %d+ %a+ ?%d* ⏰ 2 Jan 2027 18:00$"), rows[4])
+	assert(
+		string.match(rows[4], "^☐ d 📅 %d+ %a+ ?%d* ⏰ 2 Jan 2027 18:00 ⏰ 3 Jan 2027$"),
+		rows[4]
+	)
 	local styles: { [string]: boolean } = {}
 	for _, mark in greed.view():buffer():decorations("notes-look") do
 		styles[mark.style] = true
@@ -518,13 +551,23 @@ end)
 test("agents set reminders and change todos one at a time", function(t)
 	local dir = folder(t, { ["inbox.md"] = "- [ ] call the bank due:2026-10-05\nplain\n" })
 	run_tool("notes_remind", { note = "inbox", line = 1, when = "2026-10-06T18:00" })
-	run_tool("notes_remind", { note = "inbox", line = 1, when = "2026-10-06 19:30" })
-	run_tool("notes_remind", { text = "buy milk", when = "2026-10-07" })
+	-- Reminders add up, each time once.
+	run_tool(
+		"notes_remind",
+		{ note = "inbox", line = 1, when = { "2026-10-06 19:30", "2026-10-06 18:00" } }
+	)
+	run_tool("notes_remind", { text = "buy milk", when = { "2026-10-07" } })
+	run_tool(
+		"notes_add_todo",
+		{ text = "pay", remind = { "2026-10-07 12:00", "2026-10-07 19:00" } }
+	)
 	local text = greed.fs.read(dir .. "/inbox.md")
 	assert(
 		text
-			== "- [ ] call the bank due:2026-10-05 remind:2026-10-06 19:30\nplain\n"
-				.. "- [ ] buy milk remind:2026-10-07\n",
+			== "- [ ] call the bank due:2026-10-05 remind:2026-10-06 18:00 "
+				.. "remind:2026-10-06 19:30\nplain\n"
+				.. "- [ ] buy milk remind:2026-10-07\n"
+				.. "- [ ] pay remind:2026-10-07 12:00 remind:2026-10-07 19:00\n",
 		text
 	)
 	assert(
@@ -541,10 +584,11 @@ test("agents set reminders and change todos one at a time", function(t)
 	end
 	update(
 		{ text = "call the bank about the loan" },
-		"- [ ] call the bank about the loan due:2026-10-05 remind:2026-10-06 19:30"
+		"- [ ] call the bank about the loan due:2026-10-05 remind:2026-10-06 18:00 "
+			.. "remind:2026-10-06 19:30"
 	)
 	update(
-		{ due = "", remind = "2026-10-08 08:00", done = true },
+		{ due = "", remind = { "2026-10-08 08:00" }, done = true },
 		"- [x] call the bank about the loan remind:2026-10-08 08:00"
 	)
 	update(
@@ -560,7 +604,9 @@ test("agents set reminders and change todos one at a time", function(t)
 		"a bad date"
 	)
 	local todo = run_tool("notes_todos")[1]
-	assert(todo.remind == "2026-10-08 08:00" and todo.due == "2026-11-01", todo.remind)
+	assert(todo.reminds[1] == "2026-10-08 08:00" and #todo.reminds == 1, todo.reminds[1])
+	assert(todo.due == "2026-11-01", todo.due)
+	update({ remind = {} }, "- [ ] call the bank about the loan due:2026-11-01")
 	-- An open note changes in the editor.
 	greed.open(dir .. "/inbox.md")
 	run_tool("notes_update_todo", { note = "inbox", line = 3, done = true })

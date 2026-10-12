@@ -109,10 +109,10 @@ local function line_marks(s: markdown.Structure, n: number, out: { greed.Mark })
 			due_style(day)
 		)
 	end
-	local remind_from, remind_to, date, time = todos.marker(text, "remind")
-	if remind_from and remind_to and date then
-		local shown = if time then `{dates.short(date)} {time}` else dates.short(date)
-		show(remind_from - 1, remind_to - 1, `{symbols.remind} {shown}`, "notes.remind")
+	for _, reminder in todos.reminders(text) do
+		local date = dates.short(reminder.date)
+		local shown = if reminder.time then `{date} {reminder.time}` else date
+		show(reminder.from - 1, reminder.to - 1, `{symbols.remind} {shown}`, "notes.remind")
 	end
 	for _, rule in notes.look.rules do
 		local start = 1

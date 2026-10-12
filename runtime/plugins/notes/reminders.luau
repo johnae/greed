@@ -1,10 +1,11 @@
--- Reminders: "remind:2026-10-06 18:00" anywhere on a line of a note (a
--- date alone goes off at `notes-remind-time`). When one comes due, a notice
--- stays at the top right until you dismiss it (space n r) or click a
--- reminder in it to open its note, and it goes to your desktop: through the
--- terminal while it isn't focused (`greed.client.notify`), and with
--- notify-send or osascript where they're installed. Reminders that came due
--- while the editor wasn't running show the next time it starts.
+-- Reminders: "remind:2026-10-06 18:00" anywhere on a line of a note, as
+-- many as you like (a date alone goes off at `notes-remind-time`). When one
+-- comes due, a notice stays at the top right until you dismiss it (space n
+-- r) or click a reminder in it to open its note, and it goes to your
+-- desktop: through the terminal while it isn't focused
+-- (`greed.client.notify`), and with notify-send or osascript where they're
+-- installed. Reminders that came due while the editor wasn't running show
+-- the next time it starts.
 --
 -- The status line says how many todos are due today, in a warning style
 -- when some are overdue; clicking it opens the agenda. space k on a due
@@ -53,20 +54,25 @@ function M.scan(): { Reminder }
 	local default = greed.option.get("notes-remind-time") :: string
 	for _, line in found do
 		local done, rest = todos.parse(line.text)
-		local date, said = todos.remind(line.text)
-		local time: string = said or default
-		local at = if date then dates.moment(date, time) else nil
-		if not done and date and at then
-			local text = todos.plain(rest or (string.gsub(line.text, "^%s*[-*+] ", "")))
-			table.insert(out, {
-				note = line.note,
-				line = line.line,
-				text = text,
-				date = date,
-				time = time,
-				at = at,
-				key = `{line.note}\t{date} {time}\t{text}`,
-			})
+		if done then
+			continue
+		end
+		local text = todos.plain(rest or (string.gsub(line.text, "^%s*[-*+] ", "")))
+		for _, reminder in todos.reminders(line.text) do
+			local date = reminder.date
+			local time = reminder.time or default
+			local at = dates.moment(date, time)
+			if at then
+				table.insert(out, {
+					note = line.note,
+					line = line.line,
+					text = text,
+					date = date,
+					time = time,
+					at = at,
+					key = `{line.note}\t{date} {time}\t{text}`,
+				})
+			end
 		end
 	end
 	table.sort(out, function(a: Reminder, b: Reminder)
@@ -261,10 +267,20 @@ function M.check(): number
 	local went = load_fired()
 	local now = notes.clock()
 	local due: { Reminder } = {}
+	-- A line with several reminders that went off since the last look
+	-- shows once, at its latest.
+	local lines: { [string]: number } = {}
 	for _, reminder in reminders do
 		if reminder.at <= now and not went[reminder.key] then
 			went[reminder.key] = true
-			table.insert(due, reminder)
+			local line = `{reminder.note}\t{reminder.line}`
+			local at = lines[line]
+			if at then
+				due[at] = reminder
+			else
+				table.insert(due, reminder)
+				lines[line] = #due
+			end
 		end
 	end
 	if #due > 0 then
@@ -332,10 +348,11 @@ function M.words_at(text: string, pos: number): string?
 			return dates.due_words(date :: string)
 		end
 	end
-	local from, to, date, time = todos.marker(text, "remind")
-	if from and to and date and from <= pos and pos < to then
-		local default = greed.option.get("notes-remind-time") :: string
-		return dates.remind_words(date, time or default)
+	for _, reminder in todos.reminders(text) do
+		if reminder.from <= pos and pos < reminder.to then
+			local default = greed.option.get("notes-remind-time") :: string
+			return dates.remind_words(reminder.date, reminder.time or default)
+		end
 	end
 	return nil
 end
