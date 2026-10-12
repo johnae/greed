@@ -35,6 +35,9 @@ type Card = file.Card
 
 local M = {}
 
+-- How long a view's width stays before charts run again as wide.
+local RESIZE_SETTLE_MS = 300
+
 M.file = file
 M.layout = layout
 
@@ -71,8 +74,10 @@ export type Board = {
 	--- The cards on each line of the buffer (0-based), by their index, as
 	--- laid out last, and what draws them.
 	at: { [number]: { layout.Spot } },
-	laid: layout.Laid?,
 	drawn: core.UiView,
+	--- How many times the view's width changed, for the charts to run
+	--- again as wide once it stays.
+	resized: number?,
 	--- The cards that didn't run, by their index: changed since you let
 	--- them run (a pull, an agent's edit), they wait for you to.
 	waiting: { [number]: boolean },
@@ -242,13 +247,8 @@ local function lines_of(laid: layout.Laid): core.UiNode
 	return core.ui.column(lines)
 end
 
--- Draws `board` as its cards are now: only the lines that changed are
--- written again, so each view's cursor and scroll stay where they were.
-local function draw(board: Board)
-	local buffer = board.buffer
-	if not buffer:valid() then
-		return
-	end
+-- `board`'s cards laid out as they are now.
+local function laid_of(board: Board): layout.Laid
 	local pieces: { layout.Piece } = {}
 	for i, card in board.cards do
 		local block = board.blocks[i]
@@ -281,9 +281,7 @@ local function draw(board: Board)
 	if board.problem then
 		laid.text ..= `\ncouldn't show the file as it says: {board.problem}`
 	end
-	board.laid = laid
-	board.at = laid.at
-	board.drawn:redraw()
+	return laid
 end
 
 -- Draws over the board just drawn what depends on where its cards are:
@@ -426,10 +424,10 @@ local function load(board: Board, again: boolean?)
 			start(board, more)
 		end)
 		board.problem = if ok then nil else tostring(err)
-		draw(board)
 		more = board.wanted
 	until more == nil
 	board.loading = false
+	board.drawn:redraw()
 end
 
 export type OpenOptions = {
@@ -489,8 +487,9 @@ function M.open(path: string, options: OpenOptions?): Board?
 		drawn = core.ui.mount(
 			buffer,
 			function()
-				local laid = board.laid
-				return if laid then lines_of(laid) else core.ui.column({})
+				local laid = laid_of(board)
+				board.at = laid.at
+				return lines_of(laid)
 			end,
 			nil,
 			{
@@ -821,7 +820,7 @@ core.actions.action({
 local function redraw(block: Block)
 	for _, board in boards do
 		if table.find(board.blocks, block) then
-			draw(board)
+			board.drawn:soon()
 		end
 	end
 end
@@ -831,17 +830,21 @@ shell.on_status(redraw)
 -- A board is laid out as wide as the view showing it.
 greed.on("view.resized", function(event: greed.ViewResized)
 	local board = M.of(event.view:buffer())
-	if board and board.width ~= event.cols then
-		board.width = event.cols
-		draw(board)
-		-- Charts are drawn as wide as their cards.
-		for _, card in board.cards do
-			if card.chart then
-				greed.spawn(load, board)
-				break
-			end
-		end
+	if board == nil or board.width == event.cols then
+		return
 	end
+	board.width = event.cols
+	board.drawn:soon()
+	-- Charts are drawn as wide as their cards: they run again once the
+	-- width stays, rather than on each step of dragging the view's edge.
+	local resized = (board.resized or 0) + 1
+	board.resized = resized
+	greed.spawn(function()
+		greed.sleep(RESIZE_SETTLE_MS)
+		if board.resized == resized and board.buffer:valid() then
+			load(board)
+		end
+	end)
 end)
 
 -- Saving a board's file shows the board as it says now. Cards you wrote

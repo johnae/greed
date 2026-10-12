@@ -79,6 +79,8 @@ local function settled(t: test.TestContext, b: board.Board)
 		end
 		return true
 	end)
+	-- Updates are drawn together a moment later.
+	t:wait(50)
 end
 
 test("a board shows each card's output, cut at its height, under its section", function(t)
@@ -292,6 +294,34 @@ test("a card with chart is drawn as a chart as big as the card", function(t)
 	end)
 	local shown = b.buffer:text()
 	assert(string.find(shown, "\nb █", 1, true) and string.find(shown, "█ 3\n", 1, true), shown)
+end)
+
+test("a watched chart runs again as wide as its card when the view's width changes", function(t)
+	local dir, path = make(t, '# ops\n\n```sh every=1 chart height=3\nprintf "a 1\\nb 3\\n"\n```\n')
+	local b = assert(board.open(path, { root = dir }))
+	settled(t, b)
+	local least = greed.option.get("board-card-width") :: number
+	local function width_for(cols: number): string
+		return `--width {board.layout.card_width(cols, least, 1, b.columns)} `
+	end
+	assert(string.find(b.blocks[1].command, width_for(80), 1, true), b.blocks[1].command)
+	local block = b.blocks[1]
+	local runs = 0
+	local was = block.command
+	-- Dragging the view's edge: several widths in a row.
+	for _, cols in { 100, 110, 120 } do
+		t:draw(cols, 30)
+	end
+	t:wait_for(function()
+		if block.command ~= was then
+			runs += 1
+			was = block.command
+		end
+		return string.find(block.command, width_for(120), 1, true) ~= nil
+	end)
+	t:wait(500)
+	assert(runs == 1 and block.command == was, `ran again {runs} times: {block.command}`)
+	assert(not b.loading, "the load finished")
 end)
 
 test("i on a card opens the board's file at that card's command", function(t)
