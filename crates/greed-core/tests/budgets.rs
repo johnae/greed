@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 use greed_core::control::{self, Attachment, Client};
 use greed_core::keymap::Key;
 use greed_core::luau::Host;
-use greed_core::render::{CellWidth, Decorations, Frame, Renderer, Size, Status};
+use greed_core::render::{CellWidth, Decorations, Frame, Renderer, Row, Size, Status};
 use greed_core::search::{GrepOptions, grep};
 use greed_core::server::{self, Input, Output};
 use greed_core::syntax::{Highlight, Syntax};
@@ -796,6 +796,42 @@ impl Attached {
         }
     }
 
+    /// Waits for the first frame, whole or what changed, with a row showing
+    /// `text`.
+    fn frame_showing(&self, text: &str) {
+        fn shows<'a>(mut rows: impl Iterator<Item = &'a Row>, text: &str) -> bool {
+            rows.any(|row| {
+                row.spans
+                    .iter()
+                    .map(|span| span.text.as_str())
+                    .collect::<String>()
+                    .contains(text)
+            })
+        }
+        loop {
+            let (_, output) = self
+                .pending
+                .recv_timeout(Duration::from_secs(30))
+                .unwrap_or_else(|_| panic!("a frame showing {text:?}"));
+            let found = match &output {
+                Output::Frame(frame) => {
+                    shows(frame.surfaces.iter().flat_map(|s| s.rows.iter()), text)
+                }
+                Output::Delta(delta) => shows(
+                    delta
+                        .surfaces
+                        .iter()
+                        .flat_map(|s| s.rows.iter().map(|(_, row)| row)),
+                    text,
+                ),
+                _ => false,
+            };
+            if found {
+                return;
+            }
+        }
+    }
+
     /// Takes whatever comes until nothing has for `quiet`, and gives the
     /// bytes of the frames among it.
     fn drain(&self, quiet: Duration) -> usize {
@@ -904,6 +940,119 @@ fn clients() {
             ("typist_bytes", 2000.0, 2000.0),
             ("watcher_bytes", 1000.0, 1000.0),
             ("idle_cpu_ms_per_s", 150.0, 300.0),
+        ],
+    );
+}
+
+/// Work a plugin keeps the session busy with: Luau computing without end
+/// (cut into slices), a program it waits on again and again, a status line
+/// piece that takes 200 ms to draw, and a status line of your own that
+/// takes a second to build.
+const BUSY: &str = "local greed = require('@greed')
+local statusline = require('@statusline')
+greed.command({ name = 'budget-busy-cpu', run = function()
+    greed.spawn(function()
+        local x = 0
+        while true do
+            for i = 1, 100000 do x = (x + i) % 7919 end
+        end
+    end)
+end })
+greed.command({ name = 'budget-busy-io', run = function()
+    greed.spawn(function()
+        while true do greed.process.run({ 'sleep', '0.2' }) end
+    end)
+end })
+greed.command({ name = 'budget-busy-piece', run = function()
+    statusline.add('right', 'budget-slow', function()
+        local from = os.clock()
+        while os.clock() - from < 0.2 do end
+        return 'slow'
+    end)
+end })
+greed.command({ name = 'budget-busy-line', run = function()
+    greed.statusline(function()
+        local from = os.clock()
+        while os.clock() - from < 1 do end
+        return { left = { 'slow' }, right = {} }
+    end)
+end })";
+
+/// From typing a key to the first frame showing it, in a session the work
+/// in `BUSY` named `parts` keeps busy: the median, the 90th percentile and
+/// the slowest of 26 keys.
+fn key_to_frame(found: &mut Found, parts: &[&str]) {
+    sessions::private();
+    let dir = Temp::new("busy");
+    let path = dir.join("notes.txt");
+    std::fs::write(&path, "some text\n".repeat(50)).unwrap();
+    let name = format!("budgets-busy-{}", std::process::id());
+    let session = control::listen(&name, None).unwrap();
+    let socket = session.socket.clone();
+    let token = std::fs::read_to_string(control::session_files(&name).1).unwrap();
+    let conn = server::spawn_with_session(
+        move || {
+            let host = host("", Some(path));
+            host.load_str("budget-busy", BUSY)?;
+            Ok(host)
+        },
+        Some(session),
+    );
+    let mut client = Attached::new(Client::connect(&socket, &token).unwrap().attach().unwrap());
+    client.send(&Input::Resize(SIZE));
+    client.frame();
+    for part in parts {
+        client.send(&Input::Run(format!("budget-busy-{part}")));
+    }
+    for key in Key::parse_sequence("g g o").unwrap() {
+        client.send(&Input::Key(key));
+    }
+    client.drain(Duration::from_millis(500));
+    let mut typed = String::new();
+    let mut clocks = Vec::new();
+    for c in "abcdefghijklmnopqrstuvwxyz".chars() {
+        typed.push(c);
+        let start = Instant::now();
+        client.send(&Input::Key(Key::parse_sequence(&c.to_string()).unwrap()[0]));
+        client.frame_showing(&typed);
+        clocks.push(ms(start.elapsed()));
+    }
+    clocks.sort_by(f64::total_cmp);
+    found.set("key_to_frame_median_ms", clocks[clocks.len() / 2]);
+    found.set("key_to_frame_p90_ms", clocks[clocks.len() * 9 / 10]);
+    found.set("key_to_frame_max_ms", clocks[clocks.len() - 1]);
+    let _ = conn.input.send(Input::Quit);
+    let _ = conn.server.join();
+}
+
+/// A key shows on screen as soon as it's typed, however busy plugins keep
+/// the session: computing, waiting on programs, a status line piece slow
+/// to draw. Nothing a plugin does may hold the editor up (Emacs's freezes
+/// are what this guards against). A key waits at most for the time slice
+/// that's running when it comes.
+#[test]
+fn busy() {
+    budget(
+        "busy",
+        |found| key_to_frame(found, &["cpu", "io", "piece"]),
+        &[
+            ("key_to_frame_p90_ms", 60.0, 70.0),
+            ("key_to_frame_max_ms", 100.0, 150.0),
+        ],
+    );
+}
+
+/// A status line of your own that takes a second to build: the editor
+/// stops it, draws the last one, and tries again a second later, so keys
+/// wait for it at most once a second.
+#[test]
+fn slow_status_line() {
+    budget(
+        "slow_status_line",
+        |found| key_to_frame(found, &["line"]),
+        &[
+            ("key_to_frame_median_ms", 20.0, 40.0),
+            ("key_to_frame_max_ms", 200.0, 800.0),
         ],
     );
 }

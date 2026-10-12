@@ -477,3 +477,31 @@ test("a long path gives way, keeping its end, [+] and the right side", function(
 	assert(string.find(status, "…%S*%.rs %[%+%]"), status)
 	assert(string.find(status, "1:%d"), status)
 end)
+
+test("a piece slow to draw is drawn in the background from then on", function(t)
+	local statusline = require("@statusline")
+	local calls = 0
+	statusline.add("right", "test-slow", function()
+		calls += 1
+		if calls == 1 then
+			local from = os.clock()
+			while os.clock() - from < 0.03 do
+			end
+			return "first"
+		end
+		return `later {calls}`
+	end)
+	t:buffer("|abc")
+	local _, right = t:status()
+	assert(right and string.find(right, "first", 1, true), right)
+	-- Found slow, it isn't drawn with the status line any more: frames show
+	-- what it last made until it's drawn again, at most once a second.
+	_, right = t:status()
+	assert(right and string.find(right, "first", 1, true) and calls == 1, `{right} {calls}`)
+	t:wait(1100)
+	_, right = t:status()
+	t:wait(10)
+	_, right = t:status()
+	assert(right and string.find(right, "later", 1, true), right)
+	statusline.remove("test-slow")
+end)

@@ -475,12 +475,63 @@ local function clickable(out: { greed.StatusSegment }, first: number, action: st
 	end
 end
 
+-- A piece taking longer than this (milliseconds) to draw once is drawn in
+-- the background from then on, so the status line, built for every frame,
+-- never holds the editor up.
+local SLOW = 10
+-- How often a slow piece is drawn again, at most (milliseconds).
+local SLOW_EVERY = 1000
+
+-- The pieces found slow, and what each last made.
+local slow: { [Entry]: { part: Part?, running: boolean, at: number } } = setmetatable(
+	{},
+	{ __mode = "k" }
+) :: any
+
+-- Marks `entry` slow, having taken `took` to make `part`.
+local function found_slow(entry: Entry, part: Part?, took: string)
+	slow[entry] = { part = part, running = false, at = greed.now() }
+	greed.echo(`status line: {entry.name} took {took} to draw; it's drawn in the background now`)
+end
+
+-- What `entry` shows for `ctx`: drawn now, or for a slow piece what it last
+-- made, while it's drawn again in the background.
+local function part_of(entry: Entry, ctx: greed.StatusContext): Part?
+	local known = slow[entry]
+	if known == nil then
+		local from = greed.now()
+		local ok, part = pcall(entry.build, ctx)
+		if not ok then
+			-- The editor stops a status line that takes too long; the piece
+			-- it stopped in is slow.
+			if string.find(tostring(part), "stopped after running", 1, true) then
+				found_slow(entry, nil, "too long")
+			end
+			error(part, 0)
+		end
+		local took = greed.now() - from
+		if took > SLOW then
+			found_slow(entry, part, `{math.floor(took)} ms`)
+		end
+		return part
+	end
+	if not known.running and greed.now() - known.at >= SLOW_EVERY then
+		known.running = true
+		greed.spawn(function()
+			local ok, part = pcall(entry.build, ctx)
+			known.running, known.at = false, greed.now()
+			known.part = if ok then part else nil
+		end)
+	end
+	return known.part
+end
+
 --- The status line's segments for `ctx`, as built from the pieces.
 function M.build(ctx: greed.StatusContext): greed.StatusParts
 	local function side(list: { Entry }): { greed.StatusSegment }
 		local out: { greed.StatusSegment } = {}
 		for _, entry in list do
-			local part = entry.build(ctx)
+			local part = part_of(entry, ctx)
 			if part then
 				local first = #out + 1
 				segments(part, glows[entry.name], out)

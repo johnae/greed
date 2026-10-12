@@ -974,7 +974,9 @@ greed.tab.set_layout({
   warning. A piece that takes time to work out, like a repository's state,
   goes in with `add_async(side, name, { refresh, every, on })`: `refresh`
   runs in the background (every `every` ms, and on the events in `on`) and
-  the status line shows what it last returned, never waiting for it.
+  the status line shows what it last returned, never waiting for it. A
+  plain piece that takes over 10 ms to draw is moved to the background the
+  same way.
 - `greed.client.notify(title, body)` sends a notification to your desktop
   through the client you used last: the terminal shows it (OSC 9, or OSC
   777 in foot and urxvt) with a bell while it isn't focused.

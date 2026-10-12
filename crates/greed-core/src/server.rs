@@ -10,7 +10,7 @@ use std::ops::Range;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::{Receiver, Sender, select};
+use crossbeam_channel::{Receiver, Sender, select_biased};
 use serde::{Deserialize, Serialize};
 
 use crate::control::{Attachment, Session, read_line_within};
@@ -274,6 +274,9 @@ struct Client {
     /// The status line a plugin built for its last frame, to draw again when
     /// only highlighting changed since: no plugin code ran to change it.
     status: Option<StatusLine>,
+    /// Until when that status line is drawn again as it was, after building
+    /// it ran out of time: the editor doesn't wait for it every frame.
+    status_stale: Option<Instant>,
     /// What it typed (keys, pastes, clicks) while its last key's command
     /// was still at work, to handle in order once it's done. Another
     /// client's keys don't wait for it.
@@ -299,6 +302,7 @@ impl Client {
             size: None,
             message: None,
             status: None,
+            status_stale: None,
             held: VecDeque::new(),
             held_since: None,
         }
@@ -369,6 +373,10 @@ const WATCH_EVERY: Duration = Duration::from_millis(500);
 /// wakes the server more often than this (a program flooding a terminal, a
 /// language server's burst of messages) is drawn once for each.
 const FRAME_EVERY: Duration = Duration::from_millis(8);
+
+/// How long a status line that ran out of time to build is drawn as it was
+/// before it's built again.
+const STATUS_STALE: Duration = Duration::from_secs(1);
 
 /// How soon after a key a terminal's output counts as the program echoing
 /// it, drawn at once as the key was instead of waiting its turn. The first
@@ -598,13 +606,15 @@ impl Server<'_> {
 
     /// Wakes the code waiting on timers that are due. The next frame can show
     /// the last status lines again when all that happened since was a parse
-    /// (`only_parsed`): timers wake plugin code, which may change them.
-    fn fire_timers(&mut self, only_parsed: bool) {
+    /// (`only_parsed`): timers wake plugin code, which may change them. True
+    /// when a timer was due.
+    fn fire_timers(&mut self, only_parsed: bool) -> bool {
         let now = Instant::now();
         let due = self.host.next_timer().is_some_and(|due| due <= now);
         self.reuse_status = only_parsed && !due;
         let fired = self.host.fire_timers(now);
         self.report(fired);
+        due
     }
 
     /// Tells plugins about watched files that changed, at most every
@@ -649,8 +659,10 @@ impl Server<'_> {
                 .map_or_else(crossbeam_channel::never, crossbeam_channel::at);
             let look = self.watch_timer();
             // What clients send is drawn at once; other work waits its turn.
+            // Taken first when several are ready: work cut into time slices
+            // is always ready, and a key must not wait behind it.
             let (mut typed, mut only_parsed) = (false, false);
-            select! {
+            select_biased! {
                 recv(inbox) -> first => {
                     let Ok(first) = first else { return };
                     typed = true;
@@ -734,7 +746,14 @@ impl Server<'_> {
     /// input, messages, what the editor asked for and, when one is due, a
     /// frame for each client. False when the editor should stop.
     fn carry_on(&mut self, mut typed: bool, only_parsed: bool) -> bool {
-        self.fire_timers(only_parsed);
+        // A key is drawn first: timers, and work whose time slice ran out,
+        // carry on after its frame, and what they do is drawn a frame later.
+        let key_first = typed;
+        if key_first {
+            self.reuse_status = false;
+        } else {
+            self.fire_timers(only_parsed);
+        }
         self.look_at_watched_files();
         if !self.handle_held(&mut typed) {
             return false;
@@ -749,7 +768,12 @@ impl Server<'_> {
         if self.frame_due(typed) {
             let reported = self.host.report_selections();
             self.report(reported);
-            return self.guarded(Self::draw);
+            if !self.guarded(Self::draw) {
+                return false;
+            }
+        }
+        if key_first {
+            self.owed |= self.fire_timers(false);
         }
         true
     }
@@ -1313,12 +1337,15 @@ impl Server<'_> {
     /// sees the editor; `None` without such a client.
     fn render(&mut self, id: ClientId, size: Size) -> Option<Frame> {
         let host = self.host;
-        let (cached, message) = {
+        let (cached, message, stale) = {
             let client = self.clients.get(&id)?;
-            (client.status.clone(), client.message.clone())
+            let stale = client
+                .status_stale
+                .is_some_and(|until| Instant::now() < until);
+            (client.status.clone(), client.message.clone(), stale)
         };
         let built = match cached {
-            Some(line) if self.reuse_status => Ok(Some(line)),
+            Some(line) if self.reuse_status || stale => Ok(Some(line)),
             _ => {
                 let outer = host.with_editor_mut(|ed| ed.act_as(id));
                 let built = host.status_line(message.as_deref(), size.width);
@@ -1340,8 +1367,14 @@ impl Server<'_> {
             }
             Err(err) => {
                 client.message = Some(format!("status line: {}", first_line(&err.to_string())));
-                Status::Default {
-                    message: client.message.as_deref(),
+                // The last one stays a while, rather than waiting on the
+                // builder again next frame.
+                client.status_stale = Some(Instant::now() + STATUS_STALE);
+                match &client.status {
+                    Some(line) => Status::Line(line.clone()),
+                    None => Status::Default {
+                        message: client.message.as_deref(),
+                    },
                 }
             }
         };

@@ -80,6 +80,13 @@ const BUDGET: Duration = if cfg!(debug_assertions) {
     Duration::from_secs(2)
 };
 
+/// How long building the status line may take before it's stopped.
+const STATUS_LINE_BUDGET: Duration = if cfg!(debug_assertions) {
+    Duration::from_millis(200)
+} else {
+    Duration::from_millis(50)
+};
+
 /// How long a command or handler runs before it yields to the editor, to
 /// carry on once keys are handled and the screen is drawn.
 const SLICE: Duration = Duration::from_millis(15);
@@ -788,9 +795,19 @@ impl Host {
         message: Option<&str>,
         width: u16,
     ) -> Result<Option<StatusLine>, HostError> {
-        budgeted(&self.lua, || {
-            api::status_line(&self.lua, message, width).map_err(HostError::from)
-        })
+        let lua = &self.lua;
+        let build = || api::status_line(lua, message, width).map_err(HostError::from);
+        if deadline(lua).at.get().is_some() {
+            return build();
+        }
+        // It's built for every frame and can't yield, so it gets far less
+        // time than other calls; the server draws the last one meanwhile.
+        let full = deadline(lua).budget.replace(STATUS_LINE_BUDGET);
+        let line = within_budget(lua, build);
+        deadline(lua).budget.set(full);
+        // Work whose slice ran out carries on, as after any call.
+        budgeted(lua, || Ok::<_, HostError>(()))?;
+        line
     }
 
     /// When the next timer a command is waiting on is due.
