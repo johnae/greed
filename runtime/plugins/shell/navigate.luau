@@ -577,9 +577,9 @@ local function settle(view: greed.View, shell: Shell, moved: boolean)
 	local range = view:selection().ranges[1]
 	local mode, home = greed.mode.get(), core.style.home()
 	if mode == home and home ~= core.style.typing_mode() then
-		if not M.enter(view, true) then
-			M.leave(view)
-		end
+		-- With nothing run yet there's no block to go to: the style's own
+		-- mode stays, or esc couldn't leave typing at all.
+		M.enter(view, true)
 	elseif
 		moved
 		and range.anchor == range.head

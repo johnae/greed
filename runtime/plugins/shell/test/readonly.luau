@@ -153,3 +153,22 @@ test("blocks run again in their place still redraw their output", function(t)
 	t:keys("esc i x")
 	assert(log.prompt_text(sh) == "x", log.prompt_text(sh))
 end)
+
+test("esc in a shell with no blocks yet leaves typing, in every style with modes", function(t)
+	for _, style in { "helix", "vim" } do
+		for _, blocks in { true, false } do
+			open(t, style, blocks)
+			t:keys("i")
+			assert(core.style.is_typing(), `{style}: typing at the prompt`)
+			t:keys("esc")
+			-- What the shell does once the mode changed runs a moment later.
+			t:wait(20)
+			assert(
+				not core.style.is_typing(),
+				`{style}, blocks {blocks}: still {greed.mode.get()} after esc`
+			)
+		end
+	end
+	greed.option.set("editing-style", "helix")
+	greed.option.set("shell-blocks", true)
+end)
