@@ -231,16 +231,28 @@ end
 -- What a `kubectl get` block was about, kept as it finished.
 type Captured = { resource: string, context: string?, namespace: string?, all: boolean }
 
--- The flags naming where `value` is: its context, and its namespace.
-local function where(value: any): string
-	local parts: { string } = {}
+-- The flags naming where `value` is, as words: its context, and its
+-- namespace.
+local function where_words(value: any): { string }
+	local words: { string } = {}
 	if value.context then
-		table.insert(parts, "--context " .. parse.quote(value.context))
+		table.insert(words, "--context")
+		table.insert(words, value.context)
 	end
 	if value.namespace then
-		table.insert(parts, "-n " .. parse.quote(value.namespace))
+		table.insert(words, "-n")
+		table.insert(words, value.namespace)
 	end
-	return table.concat(parts, " ")
+	return words
+end
+
+-- The flags naming where `value` is, quoted for a command line.
+local function where(value: any): string
+	local quoted: { string } = {}
+	for _, word in where_words(value) do
+		table.insert(quoted, parse.quote(word))
+	end
+	return table.concat(quoted, " ")
 end
 
 -- `kubectl` with `args`, then where `value` is.
@@ -362,15 +374,53 @@ local function get(value: any): string
 	return kubectl(`get {object(value)}`, value)
 end
 
--- How long kubectl may take to say whether a thing is there, in seconds.
+-- How long kubectl may take to answer a lookup, in seconds.
 local LOOKUP_SECONDS = 5
+
+-- Variables kubectl runs with for lookups: a shell's `KUBECONFIG`, say;
+-- the editor's own without.
+type Env = { [string]: string | false }?
+
+-- What kubectl prints for `args` about where `value` is (its context and
+-- namespace), within LOOKUP_SECONDS; nil when it fails or says nothing.
+local function ask(value: any, args: { string }, env: Env): string?
+	local argv = { "kubectl", `--request-timeout={LOOKUP_SECONDS}s` }
+	table.move(args, 1, #args, #argv + 1, argv)
+	local flags = where_words(value)
+	table.move(flags, 1, #flags, #argv + 1, argv)
+	local ran = greed.process.run(argv, { env = env, timeout = (LOOKUP_SECONDS + 2) * 1000 })
+	if ran == nil or ran.code ~= 0 or ran.stdout == "" then
+		return nil
+	end
+	return ran.stdout
+end
+
+-- What kubectl says of `args` as JSON, or nil.
+local function ask_json(value: any, args: { string }, env: Env): any
+	local out = ask(value, args, env)
+	if out == nil then
+		return nil
+	end
+	local ok, decoded = pcall(greed.json.decode, out)
+	return if ok then decoded else nil
+end
+
+-- `thing` as an object.
+local function object_of(thing: Thing): core.Object
+	return {
+		kind = thing.kind,
+		id = `{thing.kind}:{thing.key}`,
+		label = thing.label,
+		value = thing.value,
+	}
+end
 
 --- The object of `kind` ("pod", "deployment", "kubernetes") with `key`
 --- (`context/namespace/name`, or `context/namespace/resource/name` for
 --- "kubernetes"): the newest row showing it, or else asked of kubectl. Nil
---- when kubectl says it isn't there or can't say in time. `env` is what kubectl
---- runs with (a shell's `KUBECONFIG`, say); the editor's variables without.
-function M.find(kind: string, key: string, env: { [string]: string | false }?): core.Object?
+--- when kubectl says it isn't there or can't say in time. `env` is what
+--- kubectl runs with; the editor's variables without.
+function M.find(kind: string, key: string, env: Env): core.Object?
 	local shown = core.objects.shown(`{kind}:{key}`)
 	if shown then
 		return shown
@@ -390,35 +440,90 @@ function M.find(kind: string, key: string, env: { [string]: string | false }?): 
 		if namespace == "" then nil else namespace,
 		if context == "" then nil else context
 	)
-	local argv =
-		{ "kubectl", "get", resource, name, "-o", "name", `--request-timeout={LOOKUP_SECONDS}s` }
-	if thing.value.context then
-		table.insert(argv, "--context")
-		table.insert(argv, thing.value.context)
-	end
-	if thing.value.namespace then
-		table.insert(argv, "-n")
-		table.insert(argv, thing.value.namespace)
-	end
-	local ran = greed.process.run(argv, { env = env, timeout = (LOOKUP_SECONDS + 2) * 1000 })
-	if ran == nil or ran.code ~= 0 then
+	if ask(thing.value, { "get", resource, name, "-o", "name" }, env) == nil then
 		return nil
 	end
-	return {
-		kind = thing.kind,
-		id = `{thing.kind}:{thing.key}`,
-		label = thing.label,
-		value = thing.value,
-	}
+	return object_of(thing)
+end
+
+-- The resource things of an object kind are, by the kind ("ReplicaSet" is
+-- "replicasets").
+local function resource_of_kind(kind: string): string
+	for resource, named in KIND do
+		if named == kind then
+			return resource
+		end
+	end
+	return string.lower(kind) .. "s"
+end
+
+-- The object that owns the one kubectl described as `described`, if one
+-- does: its controller, in the same place as `value`.
+local function owner_of(value: any, described: any): Thing?
+	local owners = described and described.metadata and described.metadata.ownerReferences
+	local owner = if type(owners) == "table" then owners[1] else nil
+	if owner == nil or type(owner.kind) ~= "string" or type(owner.name) ~= "string" then
+		return nil
+	end
+	return thing_of(resource_of_kind(owner.kind), owner.name, value.namespace, value.context)
+end
+
+--- What the kubernetes object with `value` relates to, asked of kubectl
+--- (`env` as `find` takes it): a deployment's `pods`, by its selector, and
+--- what owns a pod (`deployment`, through its ReplicaSet, or `owner`).
+function M.related(value: any, env: Env): { [string]: { core.Object } }
+	if value.resource == "deployments" then
+		local deployment = ask_json(value, { "get", "deployment", value.name, "-o", "json" }, env)
+		local labels = deployment
+			and deployment.spec
+			and deployment.spec.selector
+			and deployment.spec.selector.matchLabels
+		if type(labels) ~= "table" then
+			return {}
+		end
+		local selector: { string } = {}
+		for label, wanted in labels do
+			table.insert(selector, `{label}={wanted}`)
+		end
+		table.sort(selector)
+		local pods =
+			ask_json(value, { "get", "pods", "-l", table.concat(selector, ","), "-o", "json" }, env)
+		local out: { core.Object } = {}
+		local items: { any } = if pods and type(pods.items) == "table" then pods.items else {}
+		for _, pod in items do
+			local name = pod.metadata and pod.metadata.name
+			if type(name) == "string" then
+				table.insert(out, object_of(thing_of("pods", name, value.namespace, value.context)))
+			end
+		end
+		return { pods = out }
+	elseif value.resource == "pods" then
+		local pod = ask_json(value, { "get", "pod", value.name, "-o", "json" }, env)
+		local owner = owner_of(value, pod)
+		if owner and owner.value.resource == "replicasets" then
+			local set =
+				ask_json(value, { "get", "replicaset", owner.value.name, "-o", "json" }, env)
+			local deployment = owner_of(value, set)
+			if deployment then
+				return { deployment = { object_of(deployment) } }
+			end
+		end
+		return if owner then { owner = { object_of(owner) } } else {}
+	end
+	return {}
 end
 
 local fresh = shell.fresh(get)
+local function relations(value: any): { [string]: { core.Object } }
+	return M.related(value, shell.env_of(value))
+end
 core.objects.kind({
 	name = "pod",
 	doc = "A kubernetes pod, by its context, namespace and name",
 	get = function(key)
 		return M.find("pod", key)
 	end,
+	relations = relations,
 	fresh = fresh,
 })
 core.objects.kind({
@@ -427,6 +532,7 @@ core.objects.kind({
 	get = function(key)
 		return M.find("deployment", key)
 	end,
+	relations = relations,
 	fresh = fresh,
 })
 core.objects.kind({

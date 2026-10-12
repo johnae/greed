@@ -507,3 +507,37 @@ test("kubectl that changes the cluster is risky for an agent; looking isn't", fu
 		assert(why and string.find(why, says, 1, true), `{line}: {why}`)
 	end
 end)
+
+test("a deployment relates to its pods, and a pod to its deployment, as kubectl says", function(t)
+	local objects = require("../objects")
+	local dir = t:tempdir({
+		["bin/kubectl"] = [[#!/bin/sh
+case "$*" in
+  *"get deployment api "*) echo '{"spec":{"selector":{"matchLabels":{"app":"api","tier":"web"}}}}' ;;
+  *"get pods -l app=api,tier=web "*) echo '{"items":[{"metadata":{"name":"api-1"}},{"metadata":{"name":"api-2"}}]}' ;;
+  *"get pod api-1 "*) echo '{"metadata":{"ownerReferences":[{"kind":"ReplicaSet","name":"api-7d9"}]}}' ;;
+  *"get replicaset api-7d9 "*) echo '{"metadata":{"ownerReferences":[{"kind":"Deployment","name":"api"}]}}' ;;
+  *"get pod lone "*) echo '{"metadata":{"ownerReferences":[{"kind":"StatefulSet","name":"db"}]}}' ;;
+  *) exit 1 ;;
+esac
+]],
+	})
+	assert(greed.process.run({ "chmod", "+x", `{dir}/bin/kubectl` }))
+	local path = assert(greed.process.run({ "printenv", "PATH" })).stdout
+	local env: { [string]: string | false } = { PATH = `{dir}/bin:{string.gsub(path, "\n$", "")}` }
+	local deployment =
+		{ resource = "deployments", name = "api", namespace = "shop", context = "prod" }
+	local pods = objects.related(deployment, env).pods
+	assert(pods and #pods == 2 and pods[1].id == "pod:prod/shop/api-1", greed.json.encode(pods))
+	local pod = { resource = "pods", name = "api-1", namespace = "shop", context = "prod" }
+	local up = objects.related(pod, env).deployment
+	assert(up and up[1].id == "deployment:prod/shop/api", greed.json.encode(up))
+	local lone = { resource = "pods", name = "lone", namespace = "shop", context = "prod" }
+	local owner = objects.related(lone, env).owner
+	assert(
+		owner and owner[1].id == "kubernetes:prod/shop/statefulsets/db",
+		greed.json.encode(owner)
+	)
+	local gone = { resource = "pods", name = "nope", namespace = "shop", context = "prod" }
+	assert(next(objects.related(gone, env)) == nil, "nothing when kubectl fails")
+end)

@@ -515,6 +515,14 @@ local function fresh_row(value: any, line: string): { [string]: any }?
 	return out
 end
 
+--- The variables the block a thing's row came from ran with (its
+--- `KUBECONFIG`, say), for asking a program about the thing as that block
+--- would; nil for a thing no block shows.
+function M.env_of(value: any): { [string]: string | false }?
+	local origin = origins[value]
+	return if origin then state.environment(origin.block) else nil
+end
+
 --- A kind's `fresh` for things shells show: runs the command line `line`
 --- makes from a thing's value (`ps -p {pid}`) where its row came from, and
 --- reads its first row as the thing is now.

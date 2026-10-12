@@ -968,6 +968,11 @@ kubectl whether it's there. The rows of any
 other table are plain rows of their block (`row:12.3.2`, the third block
 of buffer 12, its second row), with their cells as their state.
 
+A kubernetes object knows what it belongs with, asked of kubectl as the
+block it came from would: in the inspector a deployment lists its pods
+(by its selector), and a pod its deployment (through its ReplicaSet) or
+whatever else owns it, like a StatefulSet.
+
 Some cells are things of their own: the node a pod runs on (`kubectl get
 pods -o wide`) and its namespace (with `-A`) are kubernetes objects, and a
 container's image is an image, which `inspect`, `history` and `pull` work

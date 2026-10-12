@@ -186,6 +186,10 @@ M.action_command = kinds.command
 --- lists just one; see `kinds.fresh`.
 M.fresh = kinds.fresh
 
+--- The variables the block a thing's row came from ran with; see
+--- `kinds.env_of`.
+M.env_of = kinds.env_of
+
 export type BuiltinContext = builtins.BuiltinContext
 export type BuiltinSpec = builtins.BuiltinSpec
 
