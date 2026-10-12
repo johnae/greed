@@ -48,6 +48,8 @@ Also in Greed:
   terminals and windows can show one session at once.
 - Markdown files that compute as you type: fields, formulas, charts under
   tables, and tables read live from CSV, SQLite or PostgreSQL.
+- Snippets in VS Code's format: copy in VS Code snippet files, or sets like
+  friendly-snippets, and they work as they are.
 
 ## Plugins in Luau
 

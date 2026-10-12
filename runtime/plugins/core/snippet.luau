@@ -1,16 +1,19 @@
 -- Snippets, in the syntax language servers and VS Code use: text with
 -- places to fill in. `$1` and `${1}` are places tab goes to in order,
 -- `${1:name}` one with text already there (typing replaces it), `${1|a,b|}`
--- one with choices (the first goes in), and `$0` where the cursor ends up.
+-- one with choices (the first goes in, the others are offered in a menu),
+-- and `$0` where the cursor ends up.
 -- The same number twice is filled in together. `$TM_FILENAME` and
 -- `${CURRENT_YEAR}` are variables, `${NAME:text}` one with text for when
--- it has no value; `\$`, `\}` and `\\` are those characters as they are.
+-- it has no value, and `${NAME/regex/format/gi}` one changed by a regex
+-- (see `M.transform`); `\$`, `\}` and `\\` are those characters as they are.
 --
 -- While a snippet is being filled in, tab goes to the next place and
 -- shift-tab back. It ends at `$0` (or its end), and when you leave the
 -- mode you type in.
 
 local greed = require("@greed")
+local registry = require("./registry")
 local comment = require("./comment")
 local indent = require("./indent")
 local style = require("./style")
@@ -27,6 +30,156 @@ local M = {}
 
 -- The variable called `name`'s value, or nil when it has none.
 type Variables = (name: string) -> string?
+
+-- Reads `s` from `i` up to an unescaped `stop` character: the text with
+-- `\stop` unescaped (other escapes kept for later, and `${...}` read whole),
+-- and where it ended.
+local function until_unescaped(s: string, i: number, stop: string): (string?, number?)
+	local parts = {}
+	while i <= #s do
+		local c = string.sub(s, i, i)
+		if c == "\\" and string.sub(s, i + 1, i + 1) == stop then
+			table.insert(parts, stop)
+			i += 2
+		elseif c == "\\" then
+			table.insert(parts, string.sub(s, i, i + 1))
+			i += 2
+		elseif c == "$" and string.sub(s, i + 1, i + 1) == "{" then
+			-- A format's `${1:/upcase}` holds a "/" of its own.
+			local close = string.find(s, "}", i, true)
+			if close == nil then
+				return nil, nil
+			end
+			table.insert(parts, string.sub(s, i, close))
+			i = close + 1
+		elseif c == stop then
+			return table.concat(parts), i
+		else
+			table.insert(parts, c)
+			i += 1
+		end
+	end
+	return nil, nil
+end
+
+-- A transform's parts, from just past `${NAME/` in `s` at `i`: its regex,
+-- its format and its options, and where reading goes on, past its `}`.
+local function transform_parts(s: string, i: number): (string?, string?, string?, number?)
+	local pattern, at = until_unescaped(s, i, "/")
+	if pattern == nil or at == nil then
+		return nil, nil, nil, nil
+	end
+	local format, at_format = until_unescaped(s, at + 1, "/")
+	if format == nil or at_format == nil then
+		return nil, nil, nil, nil
+	end
+	local options, close = string.match(s, "^([%a]*)}()", at_format + 1)
+	if options == nil then
+		return nil, nil, nil, nil
+	end
+	return pattern, format, options, close :: any
+end
+
+-- `group` changed as a format's `${1:/upcase}` says.
+local function cased(group: string, how: string): string
+	if how == "upcase" then
+		return string.upper(group)
+	elseif how == "downcase" then
+		return string.lower(group)
+	elseif how == "capitalize" then
+		return string.upper(string.sub(group, 1, 1)) .. string.sub(group, 2)
+	end
+	local words = {}
+	for word in string.gmatch(group, "[%w]+") do
+		table.insert(
+			words,
+			string.upper(string.sub(word, 1, 1)) .. string.lower(string.sub(word, 2))
+		)
+	end
+	local joined = table.concat(words)
+	if how == "camelcase" then
+		return string.lower(string.sub(joined, 1, 1)) .. string.sub(joined, 2)
+	end
+	return joined -- pascalcase
+end
+
+-- `format` filled in with a match's `groups`: `$1`, `${1}`,
+-- `${1:/upcase}` (downcase, capitalize, camelcase, pascalcase),
+-- `${1:+if there}`, `${1:-if not}` (or `${1:if not}`) and `${1:?if:else}`.
+local function formatted(format: string, groups: { string | false }): string
+	local function group(n: string): string?
+		local value = groups[tonumber(n) :: number]
+		return if type(value) == "string" and value ~= "" then value else nil
+	end
+	local out: { string } = {}
+	local i = 1
+	while i <= #format do
+		local c = string.sub(format, i, i)
+		if c == "\\" then
+			table.insert(out, string.sub(format, i + 1, i + 1))
+			i += 2
+			continue
+		end
+		local n, past = string.match(format, "^%$(%d+)()", i)
+		if not n then
+			n, past = string.match(format, "^%${(%d+)}()", i)
+		end
+		if n and past then
+			table.insert(out, group(n) or "")
+			i = past :: any
+			continue
+		end
+		local m, how, after_case = string.match(format, "^%${(%d+):/(%a+)}()", i)
+		if m and how and after_case then
+			table.insert(out, cased(group(m) or "", how))
+			i = after_case :: any
+			continue
+		end
+		local q, yes, no, after_q = string.match(format, "^%${(%d+):%?([^:}]*):([^}]*)}()", i)
+		if q and after_q then
+			table.insert(out, (if group(q) then yes else no) :: string)
+			i = after_q :: any
+			continue
+		end
+		local p, sign, branch, after_branch =
+			string.match(format, "^%${(%d+):([%+%-]?)([^}]*)}()", i)
+		if p and after_branch then
+			local value = group(p)
+			if sign == "+" then
+				table.insert(out, if value then branch :: string else "")
+			else
+				table.insert(out, value or branch :: string)
+			end
+			i = after_branch :: any
+			continue
+		end
+		table.insert(out, c)
+		i += 1
+	end
+	return table.concat(out)
+end
+
+--- `value` with what the regex `pattern` matches replaced by `format`, as
+--- a snippet's `${NAME/pattern/format/options}` does: the first match, or
+--- every one with the `g` option; `i` ignores case. A bad pattern leaves
+--- `value` as it is.
+function M.transform(value: string, pattern: string, format: string, options: string): string
+	local flags = if string.find(options, "i", 1, true) then "(?i)" else ""
+	local every = string.find(options, "g", 1, true) ~= nil
+	local found = greed.text.matches(value, flags .. pattern, if every then nil else 1)
+	if found == nil then
+		return value
+	end
+	local out: { string } = {}
+	local at = 1
+	for _, match in found do
+		table.insert(out, string.sub(value, at, match.from - 1))
+		table.insert(out, formatted(format, match.groups))
+		at = match.to + 1
+	end
+	table.insert(out, string.sub(value, at))
+	return table.concat(out)
+end
 
 -- Reads `s` from `i`, up to an unescaped "}" when `closing` (or the end):
 -- the text, its places (from its start) and where reading stopped, on
@@ -132,13 +285,14 @@ local function read(
 				i = j + 1
 				continue
 			end
-			-- A transform, ${NAME/regex/format/}: the value as it is.
 			local transformed, rest = string.match(s, "^%${([%a_][%w_]*)/()", i)
-			local close = if rest then string.find(s, "}", rest :: any, true) else nil
-			if transformed and close then
-				add(var(transformed) or "")
-				i = close + 1
-				continue
+			if transformed and rest then
+				local pattern, format, options, past_close = transform_parts(s, rest :: any)
+				if pattern and format and options and past_close then
+					add(M.transform(var(transformed) or "", pattern, format, options))
+					i = past_close
+					continue
+				end
 			end
 			add("$")
 			i += 1
@@ -190,7 +344,7 @@ end
 
 -- A place being filled in: the ranges its number covers, as they move with
 -- edits.
-type Group = { index: number, ranges: { greed.Tracked } }
+type Group = { index: number, ranges: { greed.Tracked }, choices: { string }? }
 
 -- A snippet being filled in: its places in the order tab goes to them,
 -- the one it's at, and where it ends.
@@ -211,6 +365,16 @@ local function finish(view: greed.View)
 		end
 	end
 	session.final:forget()
+end
+
+-- What's told when tab reaches a place with choices.
+local choosing: { (view: greed.View) -> () } = {}
+
+--- Calls `listener` with the view each time tab reaches a place in a
+--- snippet that offers choices, as completion's menu does to offer them.
+--- It goes when the plugin that added it does.
+function M.on_choices(listener: (view: greed.View) -> ())
+	greed.plugin.tie(registry.put(choosing, listener))
 end
 
 -- Selects group `n` of `view`'s snippet, or ends the snippet at its end
@@ -236,8 +400,11 @@ local function go(view: greed.View, session: Session, n: number): boolean
 	end
 	session.at = n
 	view:set_selection({ ranges = ranges, primary = 1 })
-	if session.groups[n].index == 0 then
+	local group = session.groups[n]
+	if group.index == 0 then
 		finish(view)
+	elseif group.choices then
+		registry.tell(choosing, view)
 	end
 	return true
 end
@@ -261,7 +428,7 @@ function M.expand(view: greed.View, from: number, to: number, snippet: string)
 	for _, stop in parsed.stops do
 		local group = by_index[stop.index]
 		if group == nil then
-			group = { index = stop.index, ranges = {} }
+			group = { index = stop.index, ranges = {}, choices = stop.choices }
 			by_index[stop.index] = group
 			table.insert(groups, group)
 		end
@@ -309,26 +476,47 @@ function M.move(view: greed.View, back: boolean?): boolean
 	return true
 end
 
---- When `view`'s selections are its snippet's place with its text still
---- there, deletes that text so what's typed replaces it, as typing over a
---- selection does where typing replaces it anyway. Returns whether it did.
-function M.clear_place(view: greed.View): boolean
+-- The place `view`'s snippet is at, when its selections are that place
+-- with its text still there.
+local function at_place(view: greed.View): Group?
 	local session = sessions[view:id()]
 	local group = if session then session.groups[session.at] else nil
 	if group == nil then
-		return false
+		return nil
 	end
 	local ranges = view:selection().ranges
 	if #ranges ~= #group.ranges then
-		return false
+		return nil
 	end
 	for i, range in group.ranges do
 		local from, to = range:range()
 		local lo, hi = text.span(ranges[i])
 		if from ~= lo or to ~= hi or from == to then
-			return false
+			return nil
 		end
 	end
+	return group
+end
+
+--- The choices of the place `view`'s snippet is at, and where the place
+--- starts, while it's selected with its text still there; nil otherwise.
+function M.choices(view: greed.View): ({ string }?, number?)
+	local group = at_place(view)
+	if group == nil or group.choices == nil then
+		return nil, nil
+	end
+	return group.choices, (group.ranges[1]:range())
+end
+
+--- When `view`'s selections are its snippet's place with its text still
+--- there, deletes that text so what's typed replaces it, as typing over a
+--- selection does where typing replaces it anyway. Returns whether it did.
+function M.clear_place(view: greed.View): boolean
+	local group = at_place(view)
+	if group == nil then
+		return false
+	end
+	local ranges = view:selection().ranges
 	view:buffer():edit(function(e)
 		for _, range in ranges do
 			e:delete(text.span(range))

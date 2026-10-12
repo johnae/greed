@@ -1017,11 +1017,13 @@ words in open files.
 Some completions are snippets, with places to fill in, like a function's
 arguments. Taking one selects its first place: typing replaces what's
 there, `tab` goes to the next place and `shift-tab` back, and a place used
-twice fills in both at once. The snippet ends at its last place, or when
-you leave insert mode.
+twice fills in both at once. A place with choices, `${1|let,const|}`,
+starts with the first and offers the others in the completion menu. The
+snippet ends at its last place, or when you leave insert mode.
 
-Your own snippets go in files in VS Code's format, so sets made for VS
-Code (like friendly-snippets) can be copied in as they are: one file per
+Snippets use VS Code's format, so VS Code snippet files and sets like
+friendly-snippets work as they are: choices, variables and transforms
+included. Your own go in one file per
 language in the `snippets` folder of your config, like
 `~/.config/greed/snippets/rust.json`, and a project's in
 `.greed/snippets/`. `all.json` is for every language, and a
@@ -1042,7 +1044,8 @@ what the language server offers. `:snippet` picks one by name, and
 `:snippets-edit` opens the file for the language you're in, making it if
 it isn't there; saving it takes effect at once. In a body, `\t` is a level
 of the file's indent, and `$TM_FILENAME`, `$CURRENT_DATE` and VS Code's
-other variables work.
+other variables work, with VS Code's transforms: in `user_profile.rs`,
+`${TM_FILENAME_BASE/(.*)/${1:/pascalcase}/}` is `UserProfile`.
 
 Typing `(` or `,` in a call shows the function's parameters above the
 cursor, the one you're on picked out, until the call closes or you leave

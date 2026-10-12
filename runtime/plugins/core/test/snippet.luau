@@ -110,3 +110,41 @@ test("a completion that's a snippet goes in with its places", function(t)
 	t:keys("x tab")
 	t:expect("while x {|}")
 end)
+
+test("a place with choices offers them in the menu, and picking one puts it there", function(t)
+	expand(t, "|", "let ${1|one,two,three|} = $0;")
+	t:expect("let ^one| = ;")
+	t:keys("tab enter")
+	t:expect("let two| = ;")
+	assert(snippet.active(greed.view()), "still filling it in")
+	t:keys("tab")
+	t:expect("let two = |;")
+	-- Leaving the menu keeps the first.
+	expand(t, "|", "${1|a,b|}-$0")
+	t:keys("esc")
+	t:expect("^a|-")
+end)
+
+test("a variable can be changed by a regex, as VS Code's transforms do", function()
+	local values = { TM_FILENAME = "user_profile.rs", NAME = "hello world" } :: { [string]: string }
+	local function var(name: string): string?
+		return values[name]
+	end
+	local function read(body: string): string
+		return snippet.parse(body, var).text
+	end
+	assert(
+		read("${TM_FILENAME/(.*)\\..+$/$1/}") == "user_profile",
+		read("${TM_FILENAME/(.*)\\..+$/$1/}")
+	)
+	assert(read("${TM_FILENAME/(.*)\\..+$/${1:/pascalcase}/}") == "UserProfile")
+	assert(read("${TM_FILENAME/(.*)\\..+$/${1:/camelcase}/}") == "userProfile")
+	assert(read("${NAME/o/0/}") == "hell0 world", "the first match")
+	assert(read("${NAME/o/0/g}") == "hell0 w0rld", "every match with g")
+	assert(read("${NAME/O/0/gi}") == "hell0 w0rld", "i ignores case")
+	assert(read("${NAME/^(\\w+)/${1:/upcase}/}") == "HELLO world")
+	assert(read("${NAME/(x)?.*/${1:?has x:no x}/}") == "no x")
+	assert(read("${NAME/(x)?.*/${1:+x}${1:-none}/}") == "none")
+	assert(read("${NAME/a\\/b/c/} after") == "hello world after", "an escaped slash in the regex")
+	assert(read("${NAME/(/x/}") == "hello world", "a bad regex leaves the value")
+end)

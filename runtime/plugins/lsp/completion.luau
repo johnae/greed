@@ -310,9 +310,22 @@ function M.matching(items: { Item }, typed: string, first: number?): { number }
 end
 local matching = M.matching
 
+-- What's typed for `o` to narrow it: the text from the word's start to the
+-- cursor, unless that's selected, as a snippet's place is, which typing
+-- replaces and so doesn't narrow anything.
+local function typed_for(o: Open): string
+	local from, to = start_of(o), o.view:cursor()
+	local selected = o.view:selection().ranges[1]
+	local lo, hi = core.text.span(selected)
+	if lo == from and hi == to and from < to then
+		return ""
+	end
+	return o.buffer:slice(from, to)
+end
+
 -- Narrows the items to what's typed now, closing the menu when nothing's left.
 local function refresh(o: Open)
-	o.matches = matching(o.items, o.buffer:slice(start_of(o), o.view:cursor()), o.first)
+	o.matches = matching(o.items, typed_for(o), o.first)
 	o.current = if enter_mode(o.options) == "first" then 1 else 0
 	if #o.matches == 0 then
 		close()
@@ -609,6 +622,24 @@ greed.command({
 		ask(ctx.view, next_generation(), true)
 	end,
 })
+
+-- A snippet's place with choices offers them in the menu as tab reaches it;
+-- the first is already in, and picking another puts it in its place.
+M.source(function(view: greed.View): { Item }?
+	local choices, from = core.snippet.choices(view)
+	if choices == nil then
+		return nil
+	end
+	local items: { Item } = {}
+	for _, choice in choices do
+		table.insert(items, { label = choice, text = choice, from = from })
+	end
+	return items
+end)
+
+core.snippet.on_choices(function(view: greed.View)
+	ask(view, next_generation(), true)
+end)
 
 -- Puts `o`'s current item in place of what was typed, keeping the menu.
 local function place(o: Open)
