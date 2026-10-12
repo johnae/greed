@@ -186,15 +186,16 @@ test("space o w lists what runs in every shell: enter peeks, ctrl-x stops", func
 	local sh = open(t)
 	t:run("pick-running")
 	assert(#t:floats() == 0, "nothing to pick")
-	local first = assert(shell.run(sh, "sleep 40", { view = greed.view() }))
-	local second = assert(shell.run(sh, "sleep 31", { view = greed.view() }))
+	local first = assert(shell.run(sh, "sleep 40 && echo one", { view = greed.view() }))
+	local second = assert(shell.run(sh, "sleep 31 && echo two", { view = greed.view() }))
 	t:keys("esc space o w")
 	assert(#t:floats() > 0, "a picker")
-	t:keys("3 1")
+	-- Words to pick by: digits could match how long each has run.
+	t:keys("t w o")
 	-- Beside it, the block as its shell shows it.
 	t:wait_for(function()
 		for _, text in t:floats() do
-			if string.find(text, "^sleep 31\n") then
+			if string.find(text, "^sleep 31 && echo two\n") then
 				return true
 			end
 		end
@@ -205,7 +206,7 @@ test("space o w lists what runs in every shell: enter peeks, ctrl-x stops", func
 	assert(peek.of(float) == second, "enter opened the block in a float")
 	t:keys("esc")
 	t:keys("space o w")
-	t:keys("4 0 ctrl-x")
+	t:keys("o n e ctrl-x")
 	t:wait_for(function()
 		return first.status ~= "running"
 	end)
