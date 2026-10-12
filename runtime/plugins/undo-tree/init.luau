@@ -14,13 +14,15 @@
 local greed = require("@greed")
 local core = require("@core")
 
+local ui = core.ui
+
 type Open = {
 	-- The view whose buffer's tree it shows, and the node it started at.
 	view: greed.View,
 	start: number,
 	float: greed.View,
-	-- The node on each line, top to bottom.
-	lines: { number },
+	-- What draws the tree, each line's value its node.
+	drawn: core.UiView,
 }
 
 local open: Open? = nil
@@ -55,29 +57,28 @@ local function layout(
 	return out
 end
 
--- Draws the tree into the float and puts its cursor on the current node.
-local function render(o: Open)
-	local tree = o.view:buffer():undo_tree()
-	local lines, ids = {}, {}
-	local at = 1
-	for i, item in layout(tree) do
+-- The tree of `view`'s buffer, a node a line.
+local function tree_of(view: greed.View): core.UiNode
+	local tree = view:buffer():undo_tree()
+	return ui.list(layout(tree), function(item: { id: number, indent: number })
 		local node = tree.nodes[item.id + 1]
 		local marker = if item.id == tree.current then "●" else "○"
-		table.insert(lines, `{string.rep("│ ", item.indent)}{marker} {item.id}  {age(node.time)}`)
-		table.insert(ids, item.id)
-		if item.id == tree.current then
-			at = i
-		end
-	end
-	o.lines = ids
-	local buffer = o.float:buffer()
-	buffer:set_readonly(false)
-	buffer:edit(function(e)
-		e:replace(0, buffer:len(), table.concat(lines, "\n"))
+		return {
+			ui.span(`{string.rep("│ ", item.indent)}{marker} {item.id}  {age(node.time)}`),
+		}
 	end)
-	buffer:set_readonly(true)
-	local pos = buffer:line_start(at - 1)
-	o.float:set_cursor(pos)
+end
+
+-- Draws the tree into the float and puts its cursor on the current node.
+local function render(o: Open)
+	o.drawn:redraw()
+	local current = o.view:buffer():undo_tree().current
+	local buffer = o.float:buffer()
+	o.drawn:each(function(line: number, item: { id: number })
+		if item.id == current then
+			o.float:set_cursor(buffer:line_start(line))
+		end
+	end)
 end
 
 local function close()
@@ -98,7 +99,11 @@ greed.command({
 		local buffer = greed.create_buffer("undo-tree", "", { readonly = true })
 		buffer:set_line_numbers(false)
 		local float = greed.float(buffer, { title = "Undo tree", width = 40, height = "70%" })
-		local o: Open = { view = ctx.view, start = tree.current, float = float, lines = {} }
+		local view = ctx.view
+		local drawn = ui.mount(buffer, function()
+			return tree_of(view)
+		end, nil, { keys = false })
+		local o: Open = { view = view, start = tree.current, float = float, drawn = drawn }
 		open = o
 		render(o)
 	end,
@@ -110,9 +115,12 @@ local function move(delta: number)
 	if o == nil then
 		return
 	end
-	local line = o.float:buffer():line_of(o.float:cursor()) + 1
-	local target = math.clamp(line + delta, 1, #o.lines)
-	o.view:undo_to(o.lines[target])
+	local buffer = o.float:buffer()
+	local line = math.clamp(buffer:line_of(o.float:cursor()) + delta, 0, buffer:line_count() - 1)
+	local item: { id: number }? = o.drawn:value_at(buffer:line_start(line))
+	if item then
+		o.view:undo_to(item.id)
+	end
 	render(o)
 end
 
