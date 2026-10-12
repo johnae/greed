@@ -278,4 +278,39 @@ local languages: { [string]: Language } = {
 	},
 }
 
+-- The file types and names Greed's own languages claim.
+local claimed: { [string]: boolean } = {}
+for _, language in languages do
+	for _, extension in language.extensions or {} :: { string } do
+		claimed[extension] = true
+	end
+	for _, name in language.names or {} :: { string } do
+		claimed[name] = true
+	end
+end
+
+-- Those of `items` no language of Greed's own claims.
+local function unclaimed(items: { string }?): { string }?
+	if items == nil then
+		return nil
+	end
+	local out = {}
+	for _, item in items do
+		if not claimed[item] then
+			table.insert(out, item)
+		end
+	end
+	return out
+end
+
+-- Helix's languages (helix.luau) fill in the ones Greed doesn't have.
+local helix = (require("./helix") :: any) :: { [string]: Language }
+for name, language in helix do
+	if languages[name] == nil then
+		language.extensions = unclaimed(language.extensions)
+		language.names = unclaimed(language.names)
+		languages[name] = language
+	end
+end
+
 return languages

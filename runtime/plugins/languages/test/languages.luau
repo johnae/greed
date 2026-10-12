@@ -15,6 +15,10 @@ test("files get their language from the table", function()
 	assert(greed.language_of("job.nomad") == "hcl", "plain HCL")
 	local grammars = languages.grammars.sources
 	assert(grammars.terraform == grammars.hcl and grammars.hcl.symbol == "hcl", "one grammar")
+	-- Helix's languages fill in the rest, without taking Greed's own types.
+	assert(greed.language_of("mix.ex") == "elixir", tostring(greed.language_of("mix.ex")))
+	assert(greed.language_of("Dockerfile") == "dockerfile", "by name, from Helix")
+	assert(greed.language_of("main.tf") == "terraform", "Greed's own still wins")
 end)
 
 test("set changes the fields it's given and keeps the rest", function()

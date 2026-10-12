@@ -17,5 +17,9 @@ Parts of it come from other projects, under their own licenses:
   -json, -luau, -nix, -python, -rust, -toml, -typescript, -yaml), MIT, with
   Greed's capture names.
 
+- `runtime/plugins/languages/helix.luau`: generated from the language table
+  of [Helix](https://github.com/helix-editor/helix) (`languages.toml`), and
+  the HCL queries Greed downloads come from Helix too, both MPL-2.0.
+
 Rust dependencies keep their own licenses; `cargo deny check licenses`
 (configured in `deny.toml`) checks that each is one Greed may use.

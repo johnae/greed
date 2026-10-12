@@ -863,8 +863,9 @@ it too). Agents and scripts read the same lines with `greed ctl debug_log`
 
 ## Language servers
 
-Greed knows the usual languages and their servers and starts a server when a
-file needs one and it's installed. `:health` shows each language's server,
+Greed knows some 340 languages, their files, comments, indentation and
+servers, most of them from [Helix](https://helix-editor.com)'s list, and
+starts a server when a file needs one and it's installed. `:health` shows each language's server,
 whether it was found, and the servers running. Without a server nothing
 complains until you ask for something only a server can answer, like `g d`;
 then it says which program to install.
