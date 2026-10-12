@@ -529,6 +529,50 @@ test("typing that matches nothing says so", function(t)
 	t:keys("esc")
 end)
 
+test("a label too long for the float is cut with an ellipsis, keeping one row", function(t)
+	t:buffer("|x")
+	local long = "long-item " .. string.rep("word ", 60) .. "TAIL"
+	require("@picker").pick("Long", {
+		{ label = long, value = 1 },
+		{ label = "short", value = 2 },
+	}, function() end)
+	-- The first drawing gives the float its width; the rows follow it.
+	local rows = t:screen(80, 20)
+	rows = t:screen(80, 20)
+	local row = ""
+	for _, line in rows do
+		if string.find(line, "long-item", 1, true) then
+			row = line
+		end
+	end
+	assert(string.find(row, "…", 1, true), row)
+	local screen = table.concat(rows, "\n")
+	assert(not string.find(screen, "TAIL", 1, true), "only one row")
+	-- Matching still marks what's in sight.
+	t:type("long")
+	assert(matched() == "long", matched())
+	t:keys("esc")
+end)
+
+test("the actions say what they're for in the title", function(t)
+	local core = require("@core")
+	core.actions.action({ kind = "test-thing", name = "test-poke", run = function() end })
+	t:buffer("|x")
+	local picker = require("@picker")
+	picker.act({ { kind = "test-thing", label = "zot", value = 1 } })
+	local screen = table.concat(t:screen(80, 20), "\n")
+	assert(string.find(screen, "test-thing: zot", 1, true), screen)
+	t:keys("esc")
+	picker.act({
+		{ kind = "test-thing", label = "one", value = 1 },
+		{ kind = "test-thing", label = "two", value = 2 },
+		{ kind = "test-thing", label = "three", value = 3 },
+	})
+	screen = table.concat(t:screen(80, 20), "\n")
+	assert(string.find(screen, "Act on 3 things", 1, true), screen)
+	t:keys("esc")
+end)
+
 test("each thing's own actions come before those every kind has", function(t)
 	local core = require("@core")
 	for _, kind in { "test-first", "test-second" } do

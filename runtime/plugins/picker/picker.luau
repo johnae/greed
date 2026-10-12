@@ -152,25 +152,31 @@ local function render(o: Open)
 	local lines = {}
 	local marks: { greed.Mark } = {}
 	local from = o.buffer:line_end(0) + 1
+	-- A label too long for the float is cut with an ellipsis, so every item
+	-- keeps one row.
+	local _, cols = o.view:size()
 	for i, index in o.matches do
 		if i > LIMIT then
 			break
 		end
-		local line = " " .. o.labels[index]
-		menu.mark_row(
-			marks,
-			from,
-			line,
-			i == o.current,
-			if o.source
-				then {}
-				else greed.fuzzy_positions(
-					o.matched or o.query or "",
-					o.labels[index],
-					{ case = core.search.case() }
-				),
-			1
-		)
+		local label = o.labels[index]
+		local shown = if cols then core.text.clip(label, math.max(cols - 2, 1)) else label
+		local kept = if shown == label then #label else #shown - #"…"
+		local line = " " .. shown
+		local matched: { number } = if o.source
+			then {}
+			else greed.fuzzy_positions(
+				o.matched or o.query or "",
+				label,
+				{ case = core.search.case() }
+			)
+		local visible: { number } = {}
+		for _, pos in matched do
+			if pos < kept then
+				table.insert(visible, pos)
+			end
+		end
+		menu.mark_row(marks, from, line, i == o.current, visible, 1)
 		table.insert(lines, line)
 		from += #line + 1
 	end
@@ -338,6 +344,16 @@ local function close(chosen: boolean?)
 		o.float.close()
 	end
 end
+
+-- Its rows are cut to the float's width, so they're drawn again when that
+-- changes, as when it's first drawn.
+greed.on("view.resized", function(event: greed.ViewResized)
+	for _, o in opened do
+		if o.view:id() == event.view:id() then
+			render(o)
+		end
+	end
+end)
 
 local function move(delta: number)
 	local o = mine()
@@ -601,7 +617,9 @@ function M.act(targets: { core.Target })
 		greed.echo("nothing here to act on")
 		return
 	end
-	local title = if #targets == 1 then `{targets[1].kind}: {targets[1].label}` else "Act on"
+	local title = if #targets == 1
+		then `{targets[1].kind}: {targets[1].label}`
+		else `Act on {#targets} things`
 	M.pick(title, items, function(item)
 		core.actions.run_all(item.value.action, item.value.targets)
 	end)
