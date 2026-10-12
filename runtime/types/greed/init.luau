@@ -1472,6 +1472,20 @@ export type Hash = {
 	sha256_file: (path: string) -> (string?, string?),
 }
 
+--- Comparing values the way filters do, the same in a view's filter (`level>=warn`) and a table's `where` (`RESTARTS>0`): numbers as numbers, with sizes (`512Mi`, `1.5G`, `250m`), `%` and durations (`3d16h`, `500ms`); log levels in their order; anything else as text without minding case.
+export type Compare = {
+	--- `text` as a number: its first word, with a size suffix, a `%` or a duration in seconds; with `durations`, a lone `m` is minutes (an AGE column) rather than thousandths (kubectl's CPU). Nil when it isn't one.
+	number: (text: string, durations: boolean?) -> number?,
+	--- Whether `have` passes `op` (`=`, `!=`, `~` has it in it, `!~`, `<`, `<=`, `>`, `>=`) against `want`. `durations` defaults to whether `want` is one.
+	test: (have: string, op: string, want: string, durations: boolean?) -> boolean,
+	--- -1, 0 or 1 as `a` comes before, with or after `b`: numbers first, then log levels, then text.
+	order: (a: string, b: string, durations: boolean?) -> number,
+	--- Whether `text` is a duration with a unit only durations have (`45s`, `2h`, `3d`), so a column of them takes `12m` as minutes.
+	is_duration: (text: string) -> boolean,
+	--- The first operator in `text`: where it starts and ends (as `string.find` gives) and the operator. At one place, the longest (`<=`, not `<`).
+	find: (text: string) -> (number?, number?, string?),
+}
+
 --- Reading and writing the file system. Failures return nil and a message.
 export type Fs = {
 	--- The entries directly in `dir`, folders first, then by name. Hidden
@@ -1866,6 +1880,7 @@ export type Greed = {
 	lsp: Lsp,
 	fs: Fs,
 	hash: Hash,
+	compare: Compare,
 	control: Control,
 	json: Json,
 	project: Projects,

@@ -428,8 +428,9 @@ Two kinds of words look at the structure of what's printed:
 
 | | |
 |---|---|
-| `key=value` | In a line of JSON, as many logs are, `value` in its field `key`: `level=error`, `HelmRelease.name=vikunja` (a dotted path, looking through arrays). In other lines the word itself, so `level=error` works on logfmt too |
-| `key>=value` | `>`, `>=`, `<`, `<=` compare, levels in their order (`level>=warn` keeps warnings and errors) and numbers as numbers (`took>500`); `!=` keeps the lines without it |
+| `key=value` | In a line of JSON, as many logs are, or logfmt (`level=info msg=ready`), its field `key` is `value`: `level=error`, `HelmRelease.name=vikunja` (a dotted path, looking through arrays). In other lines, the word itself in the text |
+| `key~value` | Its field `key` has `value` in it: `msg~timeout`; `!~` keeps the lines where it doesn't |
+| `key>=value` | `>`, `>=`, `<`, `<=` compare as a table's `where` does: levels in their order (`level>=warn` keeps warnings and errors), numbers as numbers with sizes and durations (`took>500`, `took>1.5s`, `mem>512Mi`); `!=` keeps the lines where it isn't, or that have no such field |
 | `.key.key` | The section of indented text under those keys, with the keys above it: `.status.conditions` of `kubectl get pod -o yaml`, `.conditions` of `kubectl describe`. The keys can be anywhere in the path, and the last matches by its start, so the section shows as you type it |
 
 `/.conditions ready` keeps the lines of that section with "ready" in them,
@@ -521,7 +522,10 @@ Column names don't mind case, and `container_id` names `CONTAINER ID`.
 Numbers are compared as numbers, with sizes (`512Mi`, `1.5G`, `250m` of a
 CPU), percentages and ages (`45s`, `12m`, `3d16h`) read as what they
 mean, so `$3 | where AGE < 1h` and `$3 | sort RESTARTS` do what they
-say; kubectl's `3 (3d16h ago)` restarts count as 3. They chain, and a
+say; kubectl's `3 (3d16h ago)` restarts count as 3. Log levels compare in
+their order, other text without minding case: `=` and `!=` the whole
+value, `~` and `!~` text in it. A filter's fields (`/level>=warn`) compare
+the same way. They chain, and a
 program after them reads the table as text:
 
 ```text

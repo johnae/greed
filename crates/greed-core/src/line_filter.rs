@@ -1,11 +1,12 @@
 //! What a view keeps of the lines it shows, as a float filtering a log.
 //!
 //! A filter is words, each of which a line must have in it, without minding
-//! case, or else a regex. Among the words, `key=value` looks in a line of
-//! JSON (a log as JSON lines) for `value` in its field `key`, a dotted path
-//! like `HelmRelease.name`; other lines must have `key=value` in their text,
-//! as logfmt does. `level>=warn`, `took>500` and `level!=debug` compare,
-//! levels in their order and numbers as numbers. A word starting with `.`,
+//! case, or else a regex. Among the words, `key=value` keeps a line of JSON
+//! (a log as JSON lines) or logfmt whose field `key`, a dotted path like
+//! `HelmRelease.name`, is `value`; other lines must have `key=value` in
+//! their text. `msg~timeout` has it in it, and `level>=warn`, `took>500ms`
+//! and `level!=debug` compare as a table's `where` does
+//! ([`compare`](crate::compare)). A word starting with `.`,
 //! like `.status.conditions`, keeps the section of nested text under those
 //! keys (YAML, indented JSON, what `kubectl describe` prints) and the keys
 //! above it; the last key matches by its start, so `.status.cond` keeps the
@@ -21,6 +22,7 @@ use regex_cursor::Input;
 use regex_cursor::engines::meta::Regex;
 use serde_json::Value;
 
+use crate::compare::{self, Op};
 use crate::search::{BadPattern, compile};
 
 /// How many lines' verdicts a filter keeps before starting over.
@@ -41,8 +43,8 @@ pub struct LineFilter {
     verdicts: Mutex<HashMap<u64, bool>>,
 }
 
-/// A `key=value` word, lowercase, or one comparing: `level>=warn`,
-/// `took>500`, `level!=debug`.
+/// A field word, lowercase: `level=warn`, `took>500ms`, `msg~timeout`,
+/// compared as [`compare`] does.
 #[derive(Debug)]
 struct Field {
     path: Vec<String>,
@@ -50,84 +52,34 @@ struct Field {
     value: String,
     /// The word itself, for lines that aren't JSON or logfmt.
     word: String,
-}
-
-/// How a field word compares the field with its value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Op {
-    /// `=`: has it in it.
-    Has,
-    /// `!=`: doesn't.
-    Not,
-    Less,
-    AtMost,
-    More,
-    AtLeast,
+    /// Whether the value is a duration, so `12m` is minutes.
+    durations: bool,
 }
 
 impl Field {
     /// The field `word` is, if it's one: a key, an operator, a value.
     fn parse(word: &str) -> Option<Self> {
-        let at = word.find(['=', '!', '<', '>']).filter(|at| *at > 0)?;
-        let (key, rest) = word.split_at(at);
-        let (op, value) = [
-            (">=", Op::AtLeast),
-            ("<=", Op::AtMost),
-            ("!=", Op::Not),
-            ("=", Op::Has),
-            (">", Op::More),
-            ("<", Op::Less),
-        ]
-        .into_iter()
-        .find_map(|(sign, op)| rest.strip_prefix(sign).map(|value| (op, value)))?;
+        let (at, op, len) = Op::find(word).filter(|(at, ..)| *at > 0)?;
+        let value = &word[at + len..];
         Some(Self {
-            path: keys(key),
+            path: keys(&word[..at]),
             op,
             value: value.to_owned(),
             word: word.to_owned(),
+            durations: compare::is_duration(value),
         })
     }
 
-    /// Whether `have`, the field's value as text, passes.
-    fn passes(&self, have: &str) -> bool {
-        let have = have.to_lowercase();
-        let order = || compare(&have, &self.value);
+    /// The test a value must pass for the line to have the field as asked,
+    /// and whether the line must have none that do instead: `!=` and `!~`
+    /// keep lines whose field doesn't match, or that have no such field.
+    fn positive(&self) -> (Op, bool) {
         match self.op {
-            Op::Has => have.contains(&self.value),
-            Op::Not => !have.contains(&self.value),
-            Op::Less => order().is_some_and(std::cmp::Ordering::is_lt),
-            Op::AtMost => order().is_some_and(std::cmp::Ordering::is_le),
-            Op::More => order().is_some_and(std::cmp::Ordering::is_gt),
-            Op::AtLeast => order().is_some_and(std::cmp::Ordering::is_ge),
+            Op::Ne => (Op::Eq, true),
+            Op::Lacks => (Op::Has, true),
+            op => (op, false),
         }
     }
-}
-
-/// How `have` compares with `want`: as numbers when both are, as log
-/// levels when both are (debug before info before warn), else as text.
-fn compare(have: &str, want: &str) -> Option<std::cmp::Ordering> {
-    if let (Ok(a), Ok(b)) = (have.parse::<f64>(), want.parse::<f64>()) {
-        return a.partial_cmp(&b);
-    }
-    if let (Some(a), Some(b)) = (level(have), level(want)) {
-        return Some(a.cmp(&b));
-    }
-    Some(have.cmp(want))
-}
-
-/// How severe a log level is, as logs spell them.
-fn level(name: &str) -> Option<u8> {
-    Some(match name {
-        "trace" => 0,
-        "debug" => 1,
-        "info" => 2,
-        "notice" => 3,
-        "warn" | "warning" => 4,
-        "error" | "err" => 5,
-        "critical" | "crit" => 6,
-        "fatal" | "panic" | "alert" | "emerg" => 7,
-        _ => return None,
-    })
 }
 
 /// Where a line is in nested text: whether it's in the section a filter
@@ -234,17 +186,18 @@ impl LineFilter {
         } else {
             None
         };
-        self.fields.iter().all(|field| match &json {
-            Some(value) if field.op == Op::Not => !holds(value, &field.path, &|have| {
-                have.to_lowercase().contains(&field.value)
-            }),
-            Some(value) => holds(value, &field.path, &|have| field.passes(have)),
-            None => match text_field(&lower, &field.path.join(".")) {
-                Some(have) => field.passes(&have),
-                // Not a `key=value` line: the word in its text will do.
-                None if field.op == Op::Has => lower.contains(field.word.as_str()),
-                None => field.op == Op::Not,
-            },
+        self.fields.iter().all(|field| {
+            let (op, negated) = field.positive();
+            let passes = |have: &str| compare::passes(have, op, &field.value, field.durations);
+            let found = match &json {
+                Some(value) => holds(value, &field.path, &passes),
+                None => match text_field(&lower, &field.path.join(".")) {
+                    Some(have) => passes(&have),
+                    // Not a `key=value` line: the word in its text will do.
+                    None => op == Op::Eq && lower.contains(field.word.as_str()),
+                },
+            };
+            found != negated
         })
     }
 
@@ -426,7 +379,12 @@ mod tests {
                 "level=error msg=plain",
             ]
         );
-        assert_eq!(kept("helmrelease.name=vik", log).len(), 1);
+        assert_eq!(kept("helmrelease.name=vikunja", log).len(), 1);
+        // `=` is the whole value; `~` has it in it.
+        assert_eq!(kept("helmrelease.name=vik", log).len(), 0);
+        assert_eq!(kept("helmrelease.name~vik", log).len(), 1);
+        assert_eq!(kept("msg~count", log).len(), 1);
+        assert_eq!(kept("msg!~count", log).len(), 3);
         assert_eq!(kept("level=error down", log).len(), 1);
     }
 

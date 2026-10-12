@@ -386,17 +386,13 @@ local function stage_args(items: { Item }, s: Spot, stage: tables.Stage)
 		local column = if count >= 2 then tables.column(tbl, s.words[2]) else nil
 		if count == 1 then
 			-- A column, or `COL=` and what's typed after it.
-			for _, op in tables.OPS do
-				local at = string.find(word, op, 1, true)
-				local typed_column = if at
-					then tables.column(tbl, string.sub(word, 1, at - 1))
-					else nil
-				if at and typed_column then
-					for _, cell in cells_of(tbl, typed_column) do
-						add(items, s, cell, typed_column, M.BADGE, s.from + at - 1 + #op)
-					end
-					return
+			local at, stop = greed.compare.find(word)
+			local typed_column = if at then tables.column(tbl, string.sub(word, 1, at - 1)) else nil
+			if stop and typed_column then
+				for _, cell in cells_of(tbl, typed_column) do
+					add(items, s, cell, typed_column, M.BADGE, s.from + stop)
 				end
+				return
 			end
 			for _, name in column_names(tbl) do
 				add(items, s, name, "column", M.BADGE)

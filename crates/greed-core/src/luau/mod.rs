@@ -9,6 +9,7 @@ mod api;
 mod approvals;
 mod capabilities;
 mod cli;
+mod compare;
 mod debug;
 mod diff;
 mod errors;

@@ -1289,6 +1289,12 @@ and `tables.draw(tbl)` lines it up as text; `tables.columns(text, true)`,
 `tables.csv(text)`, `tables.from_json(text)`, `tables.split(text, ":")`
 and `tables.lines(text)` read text that's known to be a table.
 
+`greed.compare` compares values the way `where` and a view's filter do,
+so your own filters read the same: `greed.compare.test("12 (5s ago)",
+">", "0")`, `greed.compare.test("WARN", ">=", "warn")`,
+`greed.compare.number("512Mi")`, `greed.compare.order(a, b)` (-1, 0 or 1,
+for sorting) and `greed.compare.find("AGE<=1h")` for where an operator is.
+
 `shell.parser(match, parse)` reads the output of the commands `match`
 names as tables, ahead of the shell's own look for one: a program's name,
 or a pattern for the command line. `parse(text, block)` returns a table,

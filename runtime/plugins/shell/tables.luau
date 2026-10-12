@@ -1047,79 +1047,22 @@ function M.text(tbl: Table): string
 	return table.concat(lines, "\n") .. "\n"
 end
 
--- Seconds in each unit of a duration.
-local UNITS: { [string]: number } =
-	{ s = 1, m = 60, h = 3600, d = 86400, w = 7 * 86400, y = 365 * 86400 }
-
--- What a size suffix multiplies by: k, M, G (powers of 1000), Ki, Mi, Gi
--- (of 1024), with or without B, and m for thousandths (kubectl's CPU).
-local SCALE: { [string]: number } = { [""] = 1, B = 1, m = 1e-3 }
-for i, letter in { "K", "M", "G", "T", "P", "E" } do
-	SCALE[letter] = 1000 ^ i
-	SCALE[letter .. "B"] = 1000 ^ i
-	SCALE[letter .. "i"] = 1024 ^ i
-	SCALE[letter .. "iB"] = 1024 ^ i
-end
-SCALE.k = 1000
-SCALE.kB = 1000
-
--- `token` read as a duration like kubectl's ages ("45s", "3d16h"), in
--- seconds.
-local function duration(token: string): number?
-	local total = 0
-	local rest = token
-	repeat
-		local amount, unit, after = string.match(rest, "^(%d+%.?%d*)([ywdhms])(.*)$")
-		local n = tonumber(amount)
-		if n == nil or unit == nil or after == nil then
-			return nil
-		end
-		total += n * UNITS[unit]
-		rest = after
-	until rest == ""
-	return total
-end
-
 --- Whether a column's cells read as durations, like an AGE column: one of
 --- them has hours, days, seconds, weeks or years in it. Then "12m" is
 --- twelve minutes in it, where elsewhere it's 0.012 (kubectl's CPU).
 function M.durations(tbl: Table, column: string): boolean
 	for _, row in tbl.rows do
-		local token = string.match(row[column] or "", "^%S+")
-		if token and string.find(token, "[ywdhs]") and duration(token) then
+		if greed.compare.is_duration(row[column] or "") then
 			return true
 		end
 	end
 	return false
 end
 
---- `text` read as a number: its first word, with a size suffix (`512Mi`,
---- `1.5G`, `250m`), a `%`, or a duration in seconds (`3d16h`; a lone `m`
---- is minutes only with `durations`). "3 (3d16h ago)" is 3. Nil when it
---- isn't one.
-function M.number(text: string, durations: boolean?): number?
-	local token = string.match(text, "^%s*(%S+)")
-	if token == nil then
-		return nil
-	end
-	local plain = tonumber(token)
-	if plain then
-		return plain
-	end
-	local amount, suffix = string.match(token, "^([-+]?%d*%.?%d+)(%a*)%%?$")
-	local n = tonumber(amount)
-	if n == nil or suffix == nil then
-		return duration(token)
-	end
-	if suffix == "m" and durations then
-		return n * 60
-	end
-	local scale = SCALE[suffix]
-	if scale then
-		return n * scale
-	end
-	return duration(token)
-end
+--- `text` read as a number, as filters read it (`greed.compare.number`):
+--- its first word, with a size suffix (`512Mi`, `1.5G`, `250m`), a `%`, or
+--- a duration in seconds. "3 (3d16h ago)" is 3. Nil when it isn't one.
+M.number = greed.compare.number
 
 -- `name` without case, spaces and marks, to compare column names.
 local function normal(name: string): string
@@ -1151,25 +1094,6 @@ function M.column(tbl: Table, name: string): string?
 		found = found or inner ~= nil
 	end
 	return if found then name else nil
-end
-
--- `a` before `b`: as numbers when both are, numbers first, then as text
--- without minding case. Nil when they're the same.
-local function before(a: string, b: string, durations: boolean): boolean?
-	local na, nb = M.number(a, durations), M.number(b, durations)
-	if na and nb then
-		if na == nb then
-			return nil
-		end
-		return na < nb
-	elseif na or nb then
-		return na ~= nil
-	end
-	local la, lb = string.lower(a), string.lower(b)
-	if la == lb then
-		return nil
-	end
-	return la < lb
 end
 
 -- `text` without blanks at its start and end.
@@ -1310,59 +1234,22 @@ M.STAGES = {
 	},
 } :: { Stage }
 
---- Whether `cell` (in a column of durations or not) passes `op` `value`:
---- = and != without minding case, or as numbers when both are; ~ and !~
---- for text in it; <, >, <= and >= as numbers when both are, else as text.
-function M.test(cell: string, op: string, value: string, durations: boolean?): boolean
-	if op == "~" or op == "!~" then
-		local found = string.find(string.lower(cell), string.lower(value), 1, true) ~= nil
-		return found == (op == "~")
-	end
-	local nc, nv = M.number(cell, durations), M.number(value, durations)
-	local same = if nc and nv then nc == nv else string.lower(cell) == string.lower(value)
-	if op == "=" then
-		return same
-	elseif op == "!=" then
-		return not same
-	end
-	local less = before(cell, value, durations == true)
-	if op == "<" then
-		return less == true
-	elseif op == ">" then
-		return less == false
-	elseif op == "<=" then
-		return less ~= false
-	elseif op == ">=" then
-		return less ~= true
-	end
-	return false
-end
-
 --- A condition: `COLUMN op VALUE`, read from text like "STATUS=Running" or
 --- `AGE < 1h`, with quotes around the value taken off.
 export type Condition = { column: string, op: string, value: string }
 
 --- `text` read as a condition on a column of `tbl`, or nil and why not.
 function M.condition(tbl: Table, text: string): (Condition?, string?)
-	-- The first operator in the text; at one place, the longest (`<=`
-	-- before `<`), as OPS lists them.
-	local first: { at: number, op: string }? = nil
-	for _, op in M.OPS do
-		local at = string.find(text, op, 1, true)
-		if at and (first == nil or at < first.at) then
-			first = { at = at, op = op }
-		end
-	end
-	if first == nil then
+	local at, stop, op = greed.compare.find(text)
+	if at == nil or stop == nil or op == nil then
 		return nil, "where COLUMN = VALUE (or !=, ~, !~, <, >, <=, >=)"
 	end
-	local at, op = first.at, first.op
 	local name = trim(string.sub(text, 1, at - 1))
 	local column = M.column(tbl, name)
 	if column == nil then
 		return nil, no_column(tbl, name)
 	end
-	local value = unquote(trim(string.sub(text, at + #op)))
+	local value = unquote(trim(string.sub(text, stop + 1)))
 	return { column = column, op = op, value = value }, nil
 end
 
@@ -1372,12 +1259,11 @@ function M.matching(tbl: Table, condition: Condition, rows: { number }?): { numb
 	-- "1h" says the column holds durations, even when every age in it is in
 	-- minutes.
 	local durations = M.durations(tbl, condition.column)
-		or string.match(condition.value, "^%d+%.?%d*[ywdhs]") ~= nil
+		or greed.compare.is_duration(condition.value)
 	local out: { number } = {}
 	for _, i in rows or M.all(tbl) do
-		if
-			M.test(tbl.rows[i][condition.column] or "", condition.op, condition.value, durations)
-		then
+		local cell = tbl.rows[i][condition.column] or ""
+		if greed.compare.test(cell, condition.op, condition.value, durations) then
 			table.insert(out, i)
 		end
 	end
@@ -1426,11 +1312,12 @@ function M.sorted(tbl: Table, rows: { number }, column: string, desc: boolean?):
 	local durations = M.durations(tbl, column)
 	local out = table.clone(rows)
 	table.sort(out, function(a: number, b: number): boolean
-		local less = before(tbl.rows[a][column] or "", tbl.rows[b][column] or "", durations)
-		if less == nil then
+		local order =
+			greed.compare.order(tbl.rows[a][column] or "", tbl.rows[b][column] or "", durations)
+		if order == 0 then
 			return a < b
 		end
-		return if desc then not less else less
+		return if desc then order > 0 else order < 0
 	end)
 	return out
 end
@@ -1622,12 +1509,9 @@ end
 local function named_columns(word: string, rest: string): { string }
 	local names: { string } = {}
 	if word == "where" then
-		for _, op in M.OPS do
-			local at = string.find(rest, op, 1, true)
-			if at then
-				table.insert(names, trim(string.sub(rest, 1, at - 1)))
-				break
-			end
+		local at = greed.compare.find(rest)
+		if at then
+			table.insert(names, trim(string.sub(rest, 1, at - 1)))
 		end
 	elseif word == "select" then
 		for name in string.gmatch(rest, "[^,%s]+") do
