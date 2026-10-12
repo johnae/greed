@@ -442,8 +442,8 @@ it, dimmed, nested ones as `HelmRelease.name=vikunja`:
 11:58:12 error release failed: timed out waiting  HelmRelease.name=vikunja controller=helmrelease
 ```
 
-The line the cursor is on shows as it came, and so does the record, so
-`/level=error`, copying and `$3` see the JSON. `p` in blocks mode, or
+The record keeps each line as it came, so `/level=error`, copying and
+`$3` see the JSON. `p` in blocks mode, or
 "readable or as it came" among a block's actions, switches between the two;
 `:set shell-json-lines raw` shows them as they came from the start.
 

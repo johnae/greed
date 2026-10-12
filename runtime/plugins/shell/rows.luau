@@ -385,10 +385,11 @@ local WARN = words({
 	"restarting",
 	"paused",
 	"created",
+	"warning",
 })
 
 -- Columns that say how a thing is doing.
-local STATUS = words({ "status", "state", "phase", "health", "ready", "conditions" })
+local STATUS = words({ "status", "state", "phase", "health", "ready", "conditions", "type" })
 
 -- The style of a cell of `column` holding `text`, if it says something:
 -- how a thing is doing, in a status column ("Running", "0/1"), or nothing

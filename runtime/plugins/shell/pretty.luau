@@ -1,8 +1,9 @@
 -- JSON lines, as many programs log (`kubectl logs` of a Go service,
 -- `docker logs`), shown readably: each line's time, level and message
 -- first, the other fields after it, dimmed. The buffer keeps each line as
--- it came, so a filter (`level=error`), copying and `$3` see the JSON, and
--- the line the cursor is on shows as it came.
+-- it came, so a filter (`level=error`), copying and `$3` see the JSON. Even
+-- the line the cursor is on stays readable, as a followed log keeps the
+-- cursor on its newest line; `shell-pretty` shows them as they came.
 
 local greed = require("@greed")
 local state = require("./state")
@@ -141,10 +142,14 @@ function M.marks(text: string): { greed.Mark }?
 	local marks: { greed.Mark } = {}
 	for i, piece in pieces do
 		local to = if i == #pieces then #text else i
-		table.insert(
-			marks,
-			{ from = i - 1, to = to, style = piece.style, text = piece.text, conceal = true }
-		)
+		table.insert(marks, {
+			from = i - 1,
+			to = to,
+			style = piece.style,
+			text = piece.text,
+			conceal = true,
+			reveal = "never" :: "never",
+		})
 	end
 	-- A line a row, as `tail` shows a log: the fields after the message
 	-- go past the edge, rather than wrapping under it.
