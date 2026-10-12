@@ -1,2 +1,2 @@
 name = "chart"
-requires = ["shell", "scene"]
+requires = ["core", "shell", "scene", "markdown"]

@@ -1460,6 +1460,17 @@ they show what it works out, and whatever they say in the file gives way.
 Formulas go in order, so a later one can use an earlier one's column, and
 the table's value has them too (`sum(costs.per_year)`).
 
+A chart line under a table, after any formula lines, draws it:
+
+```markdown
+<!-- chart: bar per_year -->
+```
+
+What follows `chart:` is what follows `| chart` in the shell (`bar`,
+`line`, `area`, `dot`, a column to chart, `--height`, ...), and its
+columns are named as formulas name them. The chart follows the table as
+you change it and the values it uses; on GitHub only the table shows.
+
 A command button runs a command in the project's shell, where its output
 shows:
 

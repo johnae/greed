@@ -89,6 +89,16 @@ function M.add(concealer: Concealer): (buffer: greed.Buffer?) -> ()
 	return redraw
 end
 
+--- Draws `buffer` again in full, every concealer's marks: for a change that
+--- reaches past the lines it touched, like a value others are drawn from.
+function M.redraw(buffer: greed.Buffer)
+	if buffer:valid() then
+		for _, entry in entries do
+			paint(entry, buffer)
+		end
+	end
+end
+
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	local buffer = event.buffer
 	for _, entry in entries do

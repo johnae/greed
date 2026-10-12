@@ -223,6 +223,15 @@ function M.found(s: Structure): Found
 			end
 		end
 	end
+	-- A table something's drawn from below (formulas, a chart), named or
+	-- not: an edit to it changes what's drawn there.
+	for _, tbl in s.tables do
+		if string.match(s.lines[tbl.last + 2] or "", "^%s*<!%-%-") then
+			for row = tbl.first, tbl.last do
+				table.insert(key, s.lines[row + 1])
+			end
+		end
+	end
 	result.key = table.concat(key, "\n")
 	found[s] = result
 	return result
@@ -310,6 +319,29 @@ function M.worked(
 		out[i + 1] = row
 	end
 	return out
+end
+
+--- A table's data, its formulas worked out, for a plugin drawing from it
+--- (a chart): its columns' keys in order (those of its header, then any a
+--- formula fills that the header doesn't have) and each row by key.
+export type Data = { keys: { string }, rows: { { [string]: any } } }
+
+--- The data of the table `found` in `buffer`.
+function M.data(buffer: greed.Buffer, s: Structure, found: structure.Table): Data
+	local columns = formulas_below(s, found.last)
+	local raw, keys = table_value(s, found.first, found.last)
+	local rows = work_rows(raw, columns, M.scope(buffer, s))
+	local all = table.clone(keys)
+	for _, column in columns do
+		if not table.find(all, column.key) then
+			table.insert(all, column.key)
+		end
+	end
+	local list: { { [string]: any } } = {}
+	for _, row in ipairs(rows) do
+		table.insert(list, row)
+	end
+	return { keys = all, rows = list }
 end
 
 -- Whether byte `at` of `line` is inside a code span.

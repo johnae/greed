@@ -16,6 +16,8 @@
 local greed = require("@greed")
 local shell = require("@shell")
 local scene = require("@scene")
+local core = require("@core")
+local markdown = require("@markdown")
 local draw = require("@self/draw")
 local read = require("@self/read")
 
@@ -226,5 +228,101 @@ function M.drawing(block: Block): { lines: { scene.Line }, scene: number, cols: 
 	local d = drawn[block]
 	return if d then { lines = d.lines, scene = d.scene, cols = d.cols } else nil
 end
+
+-- Charts in Markdown: `<!-- chart: bar per_year -->` right under a table
+-- (after any formula lines) draws the table, its formulas worked out
+-- (markdown's values.luau), under it, as `| chart` would: the same words
+-- after `chart:`. GitHub and the like don't show it; here it's drawn again
+-- as the table and the values it uses change.
+
+-- `line` as pieces for a mark's line, its styles kept.
+local function pieces(line: scene.Line): greed.MarkLine
+	local out: { { text: string, style: string?, action: string? } } = {}
+	local marks = table.clone(line.marks)
+	table.sort(marks, function(a: greed.Mark, b: greed.Mark): boolean
+		return a.from < b.from
+	end)
+	local at = 0
+	for _, mark in marks do
+		if mark.from > at then
+			table.insert(out, { text = string.sub(line.text, at + 1, mark.from) })
+		end
+		table.insert(
+			out,
+			{ text = string.sub(line.text, mark.from + 1, mark.to), style = mark.style }
+		)
+		at = math.max(at, mark.to)
+	end
+	if at < #line.text then
+		table.insert(out, { text = string.sub(line.text, at + 1) })
+	end
+	return out
+end
+
+-- How wide a chart in a document shown in `buffer` is: as its view, a
+-- little in, and no wider than reads well.
+local function document_width(buffer: greed.Buffer): number
+	for _, view in buffer:views() do
+		local _, cols = view:size()
+		if cols then
+			return math.clamp(cols - 4, 20, 80)
+		end
+	end
+	return 60
+end
+
+-- The lines of `data` charted as `ask` asks, for `buffer`; or why it can't be.
+local function chart_lines(
+	buffer: greed.Buffer,
+	data: markdown.Data,
+	ask: string
+): { greed.MarkLine }
+	local rows: { { [string]: string } } = {}
+	for _, row in data.rows do
+		local cells: { [string]: string } = {}
+		for _, key in data.keys do
+			cells[key] = core.formula.show(row[key])
+		end
+		table.insert(rows, cells)
+	end
+	local tbl: shell.Table = { columns = data.keys, rows = rows }
+	local lines, why = M.lines(tbl, ask, document_width(buffer), nil)
+	if lines == nil then
+		return { { { text = `⚠ {why}`, style = "markdown.value.error" } } }
+	end
+	local shown: { greed.MarkLine } = {}
+	for _, line in lines do
+		table.insert(shown, pieces(line))
+	end
+	return shown
+end
+
+markdown.conceal({
+	ns = "chart-tables",
+	wants = markdown.drawn,
+	draw = function(buffer, s, first, last): { greed.Mark }
+		local out: { greed.Mark } = {}
+		for _, found in s.tables do
+			local data: markdown.Data? = nil
+			-- The comment lines right under the table: formulas, then charts.
+			local n = found.last + 1
+			while n < #s.lines and string.match(s.lines[n + 1], "^%s*<!%-%-") do
+				local ask = string.match(s.lines[n + 1], "^%s*<!%-%-%s*chart:%s*(.-)%s*%-%->%s*$")
+				if ask and n >= first and n <= last then
+					local d = data or markdown.values.data(buffer, s, found)
+					data = d
+					table.insert(out, {
+						from = s.starts[n + 1],
+						to = s.starts[n + 1] + #s.lines[n + 1],
+						style = "",
+						lines = chart_lines(buffer, d, ask),
+					})
+				end
+				n += 1
+			end
+		end
+		return out
+	end,
+})
 
 return M

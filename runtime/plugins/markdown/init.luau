@@ -46,6 +46,8 @@ export type Link = structure.Link
 export type Concealer = conceal.Concealer
 export type Group = choices.Group
 export type Option = choices.Option
+--- A table's data, its formulas worked out, from `values.data`.
+export type Data = values.Data
 
 --- The structure of a buffer (kept until it changes) or of a file's
 --- text: its headings, code blocks, list items, tables and links.
@@ -638,6 +640,8 @@ local function valued(s: Structure, first: number, last: number): boolean
 			string.find(line, "{{", 1, true)
 			or string.find(line, "field:", 1, true)
 			or string.find(line, "<!%-%-%s*let%s")
+			or string.find(line, "<!%-%-%s*formula:")
+			or string.find(line, "<!%-%-%s*chart:")
 		then
 			return true
 		end
@@ -645,15 +649,11 @@ local function valued(s: Structure, first: number, last: number): boolean
 	return false
 end
 
-local redraw_values: (buffer: greed.Buffer?) -> ()
--- Draws a buffer again in full, every layer; set below.
-local redraw: (buffer: greed.Buffer?) -> ()
-
 -- Live values (values.luau). After an edit only its lines are drawn again,
 -- unless it changed what formulas name (a field, a `let`, a table): then
 -- the whole file is, every layer, as values and tables anywhere in it can
 -- change.
-redraw_values = conceal.add({
+local redraw_values = conceal.add({
 	ns = "markdown-values",
 	wants = M.drawn,
 	draw = function(
@@ -673,7 +673,7 @@ redraw_values = conceal.add({
 		named_before[id] = key
 		if not whole and before ~= nil and before ~= key then
 			greed.spawn(function()
-				redraw(buffer)
+				conceal.redraw(buffer)
 			end)
 		end
 		return values.marks(buffer, s, first, last)
@@ -691,7 +691,7 @@ choices.on_pick(function(buffer)
 end)
 
 -- Draws `buffer` (or every Markdown buffer) again as a document.
-function redraw(buffer: greed.Buffer?)
+local function redraw(buffer: greed.Buffer?)
 	redraw_document(buffer)
 	redraw_questions(buffer)
 	redraw_values(buffer)
