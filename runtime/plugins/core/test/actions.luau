@@ -211,3 +211,36 @@ test("an action that suits only some things of its kind is offered for those", f
 	assert(names(1) == "always", names(1))
 	assert(#own("test-offered") == 2, "without a target, all of them")
 end)
+
+test("a kind's default action is what enter does, and only where it's offered", function()
+	local ran: { string } = {}
+	actions.action({
+		kind = "ticket",
+		name = "open",
+		offers = function(target)
+			return target.label ~= "closed"
+		end,
+		run = function(target)
+			table.insert(ran, target.label)
+		end,
+	})
+	local ticket: any = { kind = "ticket", label = "ABC-1", value = "ABC-1" }
+	assert(actions.default_for(ticket) == nil, "no default until one is set")
+	assert(not actions.run_default(ticket))
+	actions.set_default("ticket", "open")
+	assert(actions.run_default(ticket))
+	assert(not actions.run_default({ kind = "ticket", label = "closed", value = "x" }))
+	assert(table.concat(ran, ",") == "ABC-1", table.concat(ran, ","))
+end)
+
+test("a kind's default action comes first in its list", function()
+	for _, name in { "a", "b", "c" } do
+		actions.action({ kind = "thing", name = name, run = function() end })
+	end
+	actions.set_default("thing", "b")
+	local names = {}
+	for _, action in actions.for_kind("thing") do
+		table.insert(names, action.name)
+	end
+	assert(string.sub(table.concat(names, ","), 1, 5) == "b,a,c", table.concat(names, ","))
+end)

@@ -264,6 +264,10 @@ several, asking once, and gives back those it ran on. An action that suits
 only some things of its kind says which with `offers = function(target)
 ... end`, like the kubernetes plugin's "another resource" on blocks that
 run `kubectl get`.
+`actions.set_default(kind, name)` makes an action what `enter` does to
+things of a kind wherever they're shown, as a shell row, and puts it first
+among their actions;
+`actions.run_default(target)` runs it and says whether there was one.
 
 The kinds Greed itself uses are `file`, `folder`, `link`, `symbol`,
 `problem`, `change` (a changed part of a file), `button`, `text` (the

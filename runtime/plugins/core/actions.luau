@@ -115,16 +115,38 @@ function M.command(kind: string, name: string, command: string, doc: string, _pl
 	})
 end
 
---- The actions for things of `kind`, in the order they were added, then
---- those for every kind (an action of kind "*"). Given `target`, only
---- those its `offers` says suit it.
+-- The name of what enter does to things of each kind.
+local defaults: { [string]: string } = {}
+
+--- Makes action `name` what enter does to things of `kind`, wherever they
+--- show (a shell block, the inspector), until the plugin that said so goes.
+function M.set_default(kind: string, name: string)
+	greed.plugin.tie(registry.set(defaults, kind, name))
+end
+
+--- What enter does to `target`: its kind's default action, when it has
+--- one that suits it.
+function M.default_for(target: Target): Action?
+	local first = M.for_kind(target.kind, target)[1]
+	return if first
+			and first.kind == target.kind
+			and first.name == defaults[target.kind]
+		then first
+		else nil
+end
+
+--- The actions for things of `kind`: its default first (`set_default`),
+--- then the rest in the order they were added, then those for every kind
+--- (an action of kind "*"). Given `target`, only those its `offers` says
+--- suit it.
 function M.for_kind(kind: string, target: Target?): { Action }
 	local out = {}
 	for _, wanted in { kind, "*" } do
 		for _, action in actions do
 			local offers = action.offers
 			if action.kind == wanted and (target == nil or offers == nil or offers(target)) then
-				table.insert(out, action)
+				local first = action.kind == kind and action.name == defaults[kind]
+				table.insert(out, if first then 1 else #out + 1, action)
 			end
 		end
 	end
@@ -224,6 +246,17 @@ end
 --- it ran.
 function M.run(action: Action, target: Target, by: string?): boolean
 	return #M.run_all(action, { target }, by) > 0
+end
+
+--- Runs `target`'s default action (`default_for`) for `by`; whether it had
+--- one.
+function M.run_default(target: Target, by: string?): boolean
+	local action = M.default_for(target)
+	if action == nil then
+		return false
+	end
+	M.run(action, target, by)
+	return true
 end
 
 --- What was done to the thing with `id`, newest first; with no `id`,

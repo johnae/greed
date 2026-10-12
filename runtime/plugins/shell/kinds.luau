@@ -707,9 +707,6 @@ function M.runs_with(run: (shell: Shell, line: string, view: greed.View) -> Bloc
 	runner = run
 end
 
--- Each kind's default action, by kind: what `enter` on such a row does.
-local defaults: { [string]: string } = {}
-
 export type CommandOptions = {
 	doc: string,
 	--- It destroys or stops something: it asks first, and says when the
@@ -805,7 +802,7 @@ function M.command(
 		end,
 	})
 	if opts.default then
-		M.default_action(kind, name)
+		core.actions.set_default(kind, name)
 	end
 end
 
@@ -813,26 +810,13 @@ end
 --- if it's one whose kind has a default. Says whether it did.
 function M.default(shell: Shell, pos: number): boolean
 	local thing = M.at(shell, pos)
-	local name = if thing then defaults[thing.kind] else nil
-	if thing == nil or name == nil then
-		return false
-	end
-	for _, action in core.actions.for_kind(thing.kind) do
-		if action.name == name then
-			core.actions.run(
-				action,
-				{ kind = thing.kind, label = thing.label, value = thing.value, id = id_of(thing) }
-			)
-			return true
-		end
-	end
-	return false
-end
-
---- Makes `name` the default action of things of `kind`, for those added
---- with `core.actions.action`.
-function M.default_action(kind: string, name: string)
-	greed.plugin.tie(core.registry.set(defaults, kind, name))
+	return thing ~= nil
+		and core.actions.run_default({
+			kind = thing.kind,
+			label = thing.label,
+			value = thing.value,
+			id = id_of(thing),
+		})
 end
 
 -- `ls -l`'s rows are files and folders, in the folder it listed.
@@ -919,7 +903,7 @@ M.kind({
 	end,
 })
 
-M.default_action("file", "open")
+core.actions.set_default("file", "open")
 M.command("folder", "cd", function(path: any): string
 	return "cd " .. parse.quote(tostring(path))
 end, { doc = "Go there in the shell", default = true })
