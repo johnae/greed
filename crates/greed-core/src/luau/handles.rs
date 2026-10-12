@@ -592,21 +592,6 @@ fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             }
         },
     );
-    methods.add_method("kept_lines", |lua, this, filter: String| {
-        let filter = crate::line_filter::LineFilter::new(&filter, false, 0)
-            .map_err(|err| mlua::Error::runtime(err.to_string()))?;
-        this.with_text(lua, |text| {
-            let all = text.len_lines();
-            let hidden = filter.hidden(text, 0..all, &[]);
-            let mut runs = hidden.iter().peekable();
-            Ok((0..all)
-                .filter(|line| {
-                    while runs.next_if(|run| run.end <= *line).is_some() {}
-                    !runs.peek().is_some_and(|run| run.contains(line))
-                })
-                .collect::<Vec<_>>())
-        })
-    });
     methods.add_method(
         "find_groups",
         |lua, this, (pattern, from, to): (String, Option<usize>, Option<usize>)| {
@@ -635,6 +620,37 @@ fn add_search_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                 }
                 Err(err) => (Value::Nil, err.to_string()).into_lua_multi(lua),
             }
+        },
+    );
+}
+
+/// `buffer:kept_lines(filter, opts)`: what a view's filter keeps.
+fn add_filter_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+    methods.add_method(
+        "kept_lines",
+        |lua, this, (filter, opts): (String, Option<mlua::Table>)| {
+            let (regex, from, to) = match &opts {
+                Some(o) => (
+                    o.get::<Option<bool>>("regex")?.unwrap_or(false),
+                    o.get::<Option<usize>>("from")?,
+                    o.get::<Option<usize>>("to")?,
+                ),
+                None => (false, None, None),
+            };
+            let filter = crate::line_filter::LineFilter::new(&filter, regex, 0)
+                .map_err(|err| mlua::Error::runtime(err.to_string()))?;
+            this.with_text(lua, |text| {
+                let all = text.len_lines();
+                let lines = from.unwrap_or(0).min(all)..to.map_or(all, |to| (to + 1).min(all));
+                let hidden = filter.hidden(text, lines.clone(), &[]);
+                let mut runs = hidden.iter().peekable();
+                Ok(lines
+                    .filter(|line| {
+                        while runs.next_if(|run| run.end <= *line).is_some() {}
+                        !runs.peek().is_some_and(|run| run.contains(line))
+                    })
+                    .collect::<Vec<_>>())
+            })
         },
     );
 }
@@ -1090,6 +1106,7 @@ impl UserData for BufferRef {
         add_setting_methods(methods);
         add_decoration_methods(methods);
         add_search_methods(methods);
+        add_filter_methods(methods);
         super::syntax::add_methods(methods);
         super::history::add_methods(methods);
         super::track::add_methods(methods);

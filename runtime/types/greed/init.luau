@@ -160,8 +160,8 @@ export type Buffer = {
 	--- Every match of the regex `pattern` between `from` and `to` (default:
 	--- the whole buffer), or nil and the error for a bad pattern.
 	find_all: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { from: number, to: number } }?, string?),
-	--- The lines (0-based) a view's filter of `filter` keeps of the buffer, as `View.set_filter` reads it: words, `key=value` fields and `.a.b` sections.
-	kept_lines: (self: Buffer, filter: string) -> { number },
+	--- The lines (0-based) a view's filter of `filter` keeps of the buffer, as `View.set_filter` reads it: words, `key=value` fields and `.a.b` sections, or with `regex` a regex; of lines `from` to `to` (inclusive) only, with them.
+	kept_lines: (self: Buffer, filter: string, opts: { regex: boolean?, from: number?, to: number? }?) -> { number },
 	--- Like `find_all`, but each match is the whole match's range followed by
 	--- each group's, false for a group that took no part.
 	find_groups: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { { from: number, to: number } | false } }?, string?),

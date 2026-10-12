@@ -147,3 +147,17 @@ test("logfmt lines show readably too, and times show as the time here", function
 	local here = os.date("%H:%M:%S", 1760270266)
 	assert(shown[1] == `{here} warn  disk is filling  path=/var used=91%`, shown[1])
 end)
+
+test("the filter's prompt says how much it keeps as it's typed", function(t)
+	local sh = open(t)
+	local logs = run(t, sh, "cat log.json")
+	greed.view():set_cursor(assert((shell.log.output_range(sh, logs))))
+	t:run("shell-filter")
+	local prompt = greed.view()
+	local function title(): string
+		return tostring(assert(prompt:float_spec()).title)
+	end
+	assert(not string.find(title(), " of ", 1, true), title())
+	t:keys("d o w n")
+	assert(string.find(title(), "1 of 3 lines", 1, true), title())
+end)

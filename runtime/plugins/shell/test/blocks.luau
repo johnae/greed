@@ -363,7 +363,10 @@ test(
 		local block = type_line(t, sh, "printf 'INFO a\\nERROR b\\nINFO c\\n'")
 		shell.drill.open(sh, block, "lines", main)
 		local float = greed.view()
-		t:keys("/ e r r o r enter")
+		t:keys("/ e r r o r")
+		local said = tostring(assert(greed.view():float_spec()).title)
+		assert(string.find(said, "1 of 3 lines", 1, true), said)
+		t:keys("enter")
 		assert(float:filter() == "error", tostring(float:filter()))
 		local text = sh.buffer:text()
 		for _, line in hidden_in(float) do

@@ -411,9 +411,9 @@ type it; several words keep the lines with all of them, in any case
 `/` is a regex (`/^error|warn`). `enter` keeps the filter; `esc`, while
 typing it or after in normal mode on the block, shows every line again,
 and `space S` also undoes a sort. The block shows the lines kept and the
-status says so (`2 of 340 lines · / error`),
-while its record keeps them all, so `$3`, `space y` and `space v` give the
-whole output. On a block's command or at the prompt, `/` searches as
+status says so (`2 of 340 lines · / error`), and so does the prompt as you
+type, while its record keeps them all, so `$3`, `space y` and `space v`
+give the whole output. On a block's command or at the prompt, `/` searches as
 usual.
 
 Two kinds of words look at the structure of what's printed:

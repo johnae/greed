@@ -2100,14 +2100,30 @@ local function to_output(shell: Shell, block: Block, view: greed.View)
 	end
 end
 
+-- How many of the lines `view`, narrowed to a block, shows past its first
+-- `skip` the filter `pattern` (a regex with `regex`) keeps, as "12 of 340
+-- lines": what it matches, without the line the cursor keeps in sight.
+local function kept_in(view: greed.View, skip: number, pattern: string, regex: boolean): string?
+	local first, last = view:narrowed()
+	if first == nil or last == nil then
+		return nil
+	end
+	local from = first + skip
+	local ok, kept = pcall(function()
+		return view:buffer():kept_lines(pattern, { regex = regex, from = from, to = last })
+	end)
+	return if ok then `{#kept} of {last - from + 1} lines` else nil
+end
+
 -- Filters what `view`, showing `block` in a float or a pane, shows of it as
 -- what's typed says: lines with every word of it, or starting with `/` a
 -- regex. Its command, and a table's header, stay.
 local function filter_view(view: greed.View, block: Block)
 	local skip = if block.table and block.table.header ~= false then 2 else 1
+	local pattern, regex = view:filter() or "", false
 	local function set(text: string)
-		local regex = string.sub(text, 1, 1) == "/"
-		local pattern = if regex then string.sub(text, 2) else text
+		regex = string.sub(text, 1, 1) == "/"
+		pattern = if regex then string.sub(text, 2) else text
 		-- Half a regex, as it's typed, filters nothing yet.
 		pcall(function()
 			view:set_filter(pattern, { regex = regex, skip = skip })
@@ -2120,6 +2136,9 @@ local function filter_view(view: greed.View, block: Block)
 		on_submit = set,
 		on_cancel = function()
 			view:set_filter(nil)
+		end,
+		kept = function(): string?
+			return if view:filter() then kept_in(view, skip, pattern, regex) else nil
 		end,
 	})
 end
@@ -2175,6 +2194,13 @@ greed.command({
 			on_submit = set,
 			on_cancel = function()
 				set("")
+			end,
+			kept = function(): string?
+				local now = block.shown
+				if now == nil or now.filter == "" then
+					return nil
+				end
+				return `{#now.rows} of {now.total} {if block.table then "rows" else "lines"}`
 			end,
 		})
 	end,

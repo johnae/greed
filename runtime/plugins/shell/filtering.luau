@@ -38,10 +38,13 @@ export type Options = {
 	on_change: (text: string) -> (),
 	on_submit: (text: string) -> (),
 	on_cancel: () -> (),
+	--- How much the filter keeps, like "11 of 144 rows", shown in the
+	--- title as it's typed; nil while it keeps everything.
+	kept: () -> string?,
 }
 
 --- Asks for a filter of `block` in the prompt; `tab` completes from what it
---- printed.
+--- printed, and the title says how much the filter keeps.
 function M.prompt(block: Block, options: Options): greed.View
 	local client = greed.client.id()
 	filtering[client] = block
@@ -50,14 +53,25 @@ function M.prompt(block: Block, options: Options): greed.View
 			filtering[client] = nil
 		end
 	end
-	return core.prompt.open({
-		-- Says where the names are: a readable log line doesn't show them.
-		title = if #M.words(block) > 0
-			then `{options.title} · tab lists fields`
-			else options.title,
+	-- Says where the names are: a readable log line doesn't show them.
+	local title = if #M.words(block) > 0
+		then `{options.title} · tab lists fields`
+		else options.title
+	local view: greed.View? = nil
+	local function retitle()
+		local kept = options.kept()
+		if view and view:valid() then
+			view:configure({ title = if kept then `{kept} · {title}` else title })
+		end
+	end
+	view = core.prompt.open({
+		title = title,
 		text = options.text,
 		kind = M.KIND,
-		on_change = options.on_change,
+		on_change = function(text: string)
+			options.on_change(text)
+			retitle()
+		end,
 		on_submit = function(text: string)
 			done()
 			options.on_submit(text)
@@ -67,6 +81,8 @@ function M.prompt(block: Block, options: Options): greed.View
 			options.on_cancel()
 		end,
 	})
+	retitle()
+	return assert(view)
 end
 
 -- The key a line of indented text starts with, and how far it's indented,
