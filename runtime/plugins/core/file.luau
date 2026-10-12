@@ -58,11 +58,7 @@ local function save(buffer: greed.Buffer, path: string?)
 		end
 		path = project.resolve(given)
 	end
-	for _, hook in before_save do
-		xpcall(hook, function(err)
-			greed.echo(tostring(err))
-		end, buffer)
-	end
+	registry.tell(before_save, buffer)
 	buffer:save(path)
 	greed.echo("wrote " .. project.name(buffer))
 end

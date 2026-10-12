@@ -313,10 +313,23 @@ local function complete(shell: Shell, block: Block, code: number?, signal: strin
 		elseif code == nil then "error"
 		else "failed"
 	log.draw_block(shell, block)
-	for _, call in table.clone(finished) do
-		pcall(call, shell, block)
-	end
+	core.registry.tell(finished, shell, block)
 	block.done:send(block)
+end
+
+--- Finishes `block` once its program exited, telling `before` how first.
+--- `before` failing doesn't keep the block running.
+function M.exited(
+	shell: Shell,
+	block: Block,
+	code: number?,
+	signal: string?,
+	before: ((code: number?, signal: string?) -> ())?
+)
+	if before then
+		core.registry.tell({ before }, code, signal)
+	end
+	M.finish(shell, block, code, signal)
 end
 
 -- Draws `block` until nothing more came in meanwhile, and ends it once it
@@ -442,10 +455,7 @@ function M.pipe(
 		end
 		local code, signal = c:wait()
 		signal = signal or (if code == nil then stopped else nil)
-		if before then
-			before(code, signal)
-		end
-		M.finish(shell, block, code, signal)
+		M.exited(shell, block, code, signal, before)
 	end)
 end
 

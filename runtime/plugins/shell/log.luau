@@ -68,7 +68,7 @@ local statuses: { (block: Block) -> () } = {}
 --- Calls `listener` each time a block's status is drawn: as it starts, each
 --- second it runs and as it ends.
 function M.on_status(listener: (block: Block) -> ())
-	table.insert(statuses, listener)
+	greed.plugin.tie(core.registry.put(statuses, listener))
 end
 
 -- The most output lines a block shows, and how many of them are its head,
@@ -443,9 +443,7 @@ function M.draw_block(shell: Shell, block: Block)
 		core.folds.extend(buffer, line, last)
 	end
 	M.draw_strip(shell)
-	for _, listener in statuses do
-		listener(block)
-	end
+	core.registry.tell(statuses, block)
 end
 
 -- What a live block shows now, in a few words: how many rows its table
@@ -672,13 +670,11 @@ local placing: { (shell: Shell, block: Block, from: number, lines: { Line }) -> 
 --- in the buffer, from `from` on, to the end of the block: new ones, or
 --- what a filter or a watch shows in place of what was there.
 function M.on_placed(listener: (shell: Shell, block: Block, from: number, lines: { Line }) -> ())
-	table.insert(placing, listener)
+	greed.plugin.tie(core.registry.put(placing, listener))
 end
 
 local function tell_placed(shell: Shell, block: Block, from: number, lines: { Line })
-	for _, listener in placing do
-		listener(shell, block, from, lines)
-	end
+	core.registry.tell(placing, shell, block, from, lines)
 end
 
 -- Adds `lines`' marks to `into`, placed as if the lines start at `pos`.
@@ -1023,13 +1019,11 @@ local updated: { (block: Block) -> () } = {}
 --- Calls `listener` each time a block shows new output, or shows its
 --- output again (filtered, sorted).
 function M.on_update(listener: (block: Block) -> ())
-	table.insert(updated, listener)
+	greed.plugin.tie(core.registry.put(updated, listener))
 end
 
 local function tell_updated(block: Block)
-	for _, listener in updated do
-		listener(block)
-	end
+	core.registry.tell(updated, block)
 end
 
 M.update = function(

@@ -1978,7 +1978,8 @@ just says who called. `require("@core").registry` makes the `remove`: `set`
 puts a value in a table under a key, `put` adds to a list, and each returns
 a function that takes the entry out unless it was replaced since. For an
 entry you put in a list yourself, `remover(list, entry)` makes that
-function.
+function. `tell(listeners, ...)` calls each one with `...`; one that fails
+has its error shown and the rest still hear.
 
 ```luau
 local core = require("@core")

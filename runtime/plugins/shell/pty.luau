@@ -314,10 +314,7 @@ local function finish(r: Run, code: number)
 	-- knows when it sent one.
 	local signal = if code ~= 0 then r.stopped else nil
 	local exit = if signal then nil else code
-	if r.before then
-		r.before(exit, signal)
-	end
-	run.finish(r.shell, r.block, exit, signal)
+	run.exited(r.shell, r.block, exit, signal, r.before)
 	-- The terminal plugin may still be giving its view back; close it after.
 	local t = r.terminal
 	greed.spawn(function()

@@ -1,0 +1,40 @@
+local test = require("@greed/test")
+local core = require("@core")
+
+test("each listener hears, and one that fails says so without stopping the rest", function(t)
+	local heard: { string } = {}
+	local listeners: { (what: string) -> () } = {}
+	core.registry.put(listeners, function(what: string)
+		table.insert(heard, `first {what}`)
+	end)
+	core.registry.put(listeners, function(_: string): ()
+		error("broke", 0)
+	end)
+	local take_out = core.registry.put(listeners, function(what: string)
+		table.insert(heard, `last {what}`)
+	end)
+	core.registry.tell(listeners, "news")
+	assert(table.concat(heard, ",") == "first news,last news", table.concat(heard, ","))
+	local messages = t:messages()
+	assert(messages[#messages] == "broke", messages[#messages])
+
+	take_out()
+	core.registry.tell(listeners, "again")
+	assert(heard[3] == "first again" and #heard == 3, table.concat(heard, ","))
+end)
+
+test("a listener that takes itself out while told doesn't make another miss it", function()
+	local heard: { number } = {}
+	local listeners: { () -> () } = {}
+	local first: () -> ()
+	first = core.registry.put(listeners, function()
+		table.insert(heard, 1)
+		first()
+	end)
+	core.registry.put(listeners, function()
+		table.insert(heard, 2)
+	end)
+	core.registry.tell(listeners)
+	core.registry.tell(listeners)
+	assert(table.concat(heard, ",") == "1,2,2", table.concat(heard, ","))
+end)
