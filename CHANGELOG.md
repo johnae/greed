@@ -3,6 +3,46 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## 0.2.1 - 2026-10-18
+
+### Highlights
+
+- Snippets in VS Code's format: copy in VS Code snippet files or sets like friendly-snippets, with places, choices, variables and transforms.
+- Brackets and quotes typed in pairs, in the Helix and VS Code styles, and completion from words in open files and from paths as you type.
+- Undo lasts across restarts, kept with each save.
+- `space -` shows a folder as text: rename, make, move and delete files by editing it. Deletes go to the trash.
+- Plugins from git, named in your config and pinned to commits in a lock file next to it.
+- Indent guides, color swatches and TODO comments picked out.
+
+### New
+
+- core: brackets and quotes typed in pairs, in the helix and vscode styles
+- lsp: words from open files and paths complete as you type
+- core: snippets with places to fill in, tab going from one to the next
+- snippets: your own snippets, in VS Code's format, a file per language
+- indent guides, color swatches and TODO comments picked out
+- undo lasts across restarts, kept with each save
+- folders: edit a folder as text to rename, make, move and delete files; deleting goes to the trash
+- git-plugins: plugins from git, fetched in the background and pinned in a lock file
+- record: demos can show the keys they press and a caption
+- core: greed.text.matches finds a regex's matches and groups in a string
+- snippets: choices offered in the menu, and VS Code's transforms
+- git-plugins: a plugin taken out of the config is removed by :plugins-sync
+
+### Fixed
+
+- notes: reminders go off in one session when several are running
+- projects: space P says what enter does, and alt-o opens a project here
+
+### Documentation
+
+- 0.2.0's highlights as the release page shows them, one line each
+- site: plain text and a recording of Greed in place of the generated picture
+- plain wording, tables and examples in place of long prose, on every page
+- provider-neutral examples, agents by protocol, a shorter front page
+- site: a short hero and a tour of recent additions
+- show-keys and caption in recording scripts
+
 ## 0.2.0 - 2026-10-17
 
 ### Highlights
