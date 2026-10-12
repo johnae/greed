@@ -1650,7 +1650,13 @@ local function prompt(
 		local calls = if cut or asking then {} else turn.calls
 		table.insert(
 			state.said,
-			{ role = "assistant", text = turn.text, calls = calls, signed = turn.signed } :: models.Said
+			{
+				role = "assistant",
+				text = turn.text,
+				calls = calls,
+				thinking = turn.thinking,
+				signed = turn.signed,
+			} :: models.Said
 		)
 		if turn.tokens then
 			state.reported = { tokens = turn.tokens, at = #state.said }

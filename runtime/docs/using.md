@@ -1110,6 +1110,11 @@ only cache a request that names its conversation: `cache_key = true` on a
 provider has Greed's agent send its session's id as `prompt_cache_key`.
 The `mistral` provider has it on. `:usage` shows how much was cached.
 
+Mistral's reasoning models also work better when they get back what they
+thought before each answer: `thinking_back = true` on a provider sends it
+back with what the model said, and the `mistral` provider has it on. It
+takes room in the conversation, so it's compacted a little sooner.
+
 To see which requests missed, `:debug plugin:models` logs a line for each
 in `:debug-log`: the provider, model and session id, how many messages it
 sent, a short hash of all of it but the newest message, what it changed of

@@ -41,7 +41,9 @@ export type TurnRequest = turn.Request
 --- `output` how long one of their answers may be, and `edits` how Greed's
 --- agent has them edit files (see `M.edits`). `cache_key` sends each
 --- conversation's name as `prompt_cache_key`, for providers that only
---- cache what's sent again with one, like Mistral. `effort` is how hard
+--- cache what's sent again with one, like Mistral. `thinking_back` sends
+--- what the model thought back with what it said, as Mistral's
+--- reasoning models want (OpenAI-like servers only). `effort` is how hard
 --- its models think when a role doesn't say (see `M.effort`), and
 --- `efforts` the ones it takes, when it doesn't take them all.
 export type Provider = {
@@ -53,6 +55,7 @@ export type Provider = {
 	output: number?,
 	edits: string?,
 	cache_key: boolean?,
+	thinking_back: boolean?,
 	effort: string?,
 	efforts: { string }?,
 }
@@ -105,6 +108,7 @@ M.providers = {
 		url = "https://api.mistral.ai/v1",
 		secret = "mistral",
 		cache_key = true,
+		thinking_back = true,
 		efforts = { "none", "high" },
 	},
 	berget = {
@@ -1131,6 +1135,7 @@ function M.turn(
 	if request.cache_key and not provider.cache_key then
 		request.cache_key = nil
 	end
+	request.thinking_back = provider.kind ~= "anthropic" and provider.thinking_back == true
 	local sent = http_request(provider, chosen.model, { messages = {} }, key)
 	local body = turn.body(provider.kind, chosen.model, request, M.output(role))
 	sent.body = greed.json.encode(body)

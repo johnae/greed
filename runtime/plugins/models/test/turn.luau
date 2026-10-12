@@ -304,6 +304,46 @@ test("Mistral is sent a cache key by default, since it only caches with one", fu
 	assert(openai and not openai.cache_key, "off where it isn't asked for")
 end)
 
+-- A conversation where the model thought before it called a tool.
+local THOUGHT: { any } = {
+	{ role = "user", text = "what's in a.txt?" },
+	{
+		role = "assistant",
+		text = "Let me look.",
+		thinking = "They want a.txt.",
+		calls = { { id = "c1", name = "read", input = { path = "a.txt" } } },
+	},
+	{ role = "tool", call = "c1", text = "hello" },
+	{ role = "assistant", text = "", thinking = "It says hello." },
+	{ role = "user", text = "and now?" },
+}
+
+test("with thinking_back, the model's thinking goes back as Mistral's thinking parts", function()
+	local messages =
+		turn.body("openai", "m", { said = THOUGHT, thinking_back = true }, 100).messages
+	local first = messages[2]
+	assert(first.role == "assistant" and type(first.content) == "table", "parts")
+	local thought = first.content[1]
+	assert(thought.type == "thinking" and thought.closed == true, "a closed thinking part")
+	assert(#thought.thinking == 1 and thought.thinking[1].type == "text", "its text parts")
+	assert(thought.thinking[1].text == "They want a.txt.", thought.thinking[1].text)
+	assert(first.content[2].type == "text" and first.content[2].text == "Let me look.", "text")
+	assert(first.tool_calls[1].id == "c1", "the calls as usual")
+	local second = messages[4]
+	assert(#second.content == 1 and second.content[1].type == "thinking", "no empty text part")
+	assert(type(messages[1].content) == "string", "your messages stay plain")
+end)
+
+test("without thinking_back, assistant messages stay plain strings", function()
+	local messages = turn.body("openai", "m", { said = THOUGHT }, 100).messages
+	assert(messages[2].content == "Let me look.", tostring(messages[2].content))
+	assert(messages[4].content == "", tostring(messages[4].content))
+	local mistral = models.providers.mistral
+	assert(mistral and mistral.thinking_back == true, "on for Mistral")
+	local openai = models.providers.openai
+	assert(openai and not openai.thinking_back, "off for others")
+end)
+
 test("Mistral's stream: thinking parts left out, the first word kept from its part list", function()
 	local result = events("openai", {
 		{ choices = { { index = 0, delta = { role = "assistant", content = "" } } } },

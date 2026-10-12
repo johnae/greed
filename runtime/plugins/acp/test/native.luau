@@ -2601,6 +2601,36 @@ test("what the model thought shows as a folded thought before its answer", funct
 	assert(string.find(transcript_text(), "The user asks", 1, true), transcript_text())
 end)
 
+test("what the model thought goes with what it said in the next request", function(t)
+	local asked = script({
+		{
+			text = "Let me look.",
+			thinking = "They want a.txt.",
+			calls = { { id = "c1", name = "read", input = { path = "a.txt" } } },
+			stop = "tools",
+		},
+		{ text = "One line.", calls = {}, stop = "done" },
+	})
+	local s = shown_agent(t)
+	send(t, "how long is a.txt?")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(#asked == 2, `{#asked} requests`)
+	local before: { any } = asked[2].said
+	local answer = before[2]
+	assert(answer.role == "assistant" and answer.thinking == "They want a.txt.", "kept")
+	local body = models.tools.body(
+		"openai",
+		"mistral-large-latest",
+		{ said = before, thinking_back = true },
+		100
+	)
+	local content = body.messages[2].content
+	assert(type(content) == "table" and content[1].type == "thinking", "sent back as thinking")
+	assert(content[1].thinking[1].text == "They want a.txt.", content[1].thinking[1].text)
+end)
+
 test(
 	"/effort sets how hard the model thinks for this session, sent with the next request",
 	function(t)
@@ -2689,6 +2719,7 @@ test("each request is the last one with more after it, byte for byte, as caches 
 	local function read(id: string, from: number?): any
 		return {
 			text = "",
+			thinking = `reading for {id}`,
 			calls = { { id = id, name = "read", input = { path = "a.txt", from_line = from } } },
 			stop = "tools",
 		}
@@ -2721,11 +2752,14 @@ test("each request is the last one with more after it, byte for byte, as caches 
 	table.insert(turns, read("c46"))
 	table.insert(turns, { text = "Still one.", calls = {}, stop = "done" })
 	script(turns)
-	-- Each request as Mistral is sent it, encoded when it was made.
+	-- Each request as Mistral is sent it, its thinking back, encoded when
+	-- it was made.
 	local sent: { { rest: string, system: string, tools: { string }, messages: { string } } } = {}
 	local answer = models.turn
 	models.turn = function(role, request, ...)
-		local body = models.tools.body("openai", "mistral-large-latest", request, 4096)
+		local back = table.clone(request)
+		back.thinking_back = true
+		local body = models.tools.body("openai", "mistral-large-latest", back, 4096)
 		local messages = encoded(body.messages)
 		local tools = encoded(body.tools)
 		body.messages, body.tools = nil, nil
@@ -2762,6 +2796,7 @@ test("each request is the last one with more after it, byte for byte, as caches 
 			"[The user, while you worked: and this]",
 			"data:image/png;base64,",
 			"and now",
+			'"thinking":[{"text":"reading for c1","type":"text"}]',
 		}
 	do
 		assert(string.find(whole, part, 1, true), `the conversation has {part}`)

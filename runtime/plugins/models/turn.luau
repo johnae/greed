@@ -19,8 +19,10 @@ export type Call = { id: string, name: string, input: { [string]: any } }
 --- What was said: by you (`text`), by the model (`text` and the `calls` it
 --- asked for), or a tool's result for the call `call`. What you said can
 --- have `images` with it, PNG files by their paths, read when the request
---- is made. `signed` is Anthropic's thinking blocks as they came, with
---- their signatures, for the models that want them back (see `body`).
+--- is made. `thinking` is what the model thought before it answered, sent
+--- back to providers with `thinking_back` (see `Request`), and `signed`
+--- Anthropic's thinking blocks as they came, with their signatures, for
+--- the models that want them back (see `body`).
 export type Said = {
 	role: "user" | "assistant" | "tool",
 	text: string?,
@@ -28,6 +30,7 @@ export type Said = {
 	call: string?,
 	error: boolean?,
 	images: { string }?,
+	thinking: string?,
 	signed: { any }?,
 }
 
@@ -189,8 +192,26 @@ local function anthropic_messages(said: { Said }, signed: boolean): { any }
 	return messages
 end
 
--- The conversation as OpenAI's chat messages.
-local function openai_messages(system: string?, said: { Said }): { any }
+-- What the model said in `s` as an assistant message's content: its text,
+-- or with `thinking_back` and thinking, Mistral's parts, the thinking (a
+-- list of text parts) and then the text.
+local function assistant_content(s: Said, thinking_back: boolean): any
+	local text = s.text or ""
+	if not thinking_back or s.thinking == nil or s.thinking == "" then
+		return text
+	end
+	local parts: { any } = {
+		{ type = "thinking", thinking = { { type = "text", text = s.thinking } }, closed = true },
+	}
+	if text ~= "" then
+		table.insert(parts, { type = "text", text = text })
+	end
+	return parts
+end
+
+-- The conversation as OpenAI's chat messages, with the model's thinking
+-- in its messages for `thinking_back`.
+local function openai_messages(system: string?, said: { Said }, thinking_back: boolean): { any }
 	local messages: { any } = {}
 	if system then
 		table.insert(messages, { role = "system", content = system })
@@ -199,7 +220,8 @@ local function openai_messages(system: string?, said: { Said }): { any }
 		if s.role == "tool" then
 			table.insert(messages, { role = "tool", tool_call_id = s.call, content = s.text or "" })
 		elseif s.role == "assistant" then
-			local message: { [string]: any } = { role = "assistant", content = s.text or "" }
+			local message: { [string]: any } =
+				{ role = "assistant", content = assistant_content(s, thinking_back) }
 			if s.calls and #s.calls > 0 then
 				local calls = {}
 				for _, call in s.calls do
@@ -252,6 +274,11 @@ export type Request = {
 	cache_key: string?,
 	--- How hard the model may think (`EFFORTS`); nil sends nothing.
 	effort: string?,
+	--- Sends the model's thinking back in its messages, as Mistral's
+	--- reasoning models want; set only for providers with `thinking_back`.
+	--- OpenAI-like servers only: many turn down parts in the model's
+	--- messages.
+	thinking_back: boolean?,
 }
 
 --- The body to send to a provider of `kind` for `model`, as a table.
@@ -305,7 +332,7 @@ function M.body(
 		end
 		body.messages = messages
 	else
-		body.messages = openai_messages(request.system, request.said)
+		body.messages = openai_messages(request.system, request.said, request.thinking_back == true)
 		body.prompt_cache_key = request.cache_key
 	end
 	M.reasoning(kind, model, request.effort, body)

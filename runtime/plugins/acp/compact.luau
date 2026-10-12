@@ -95,7 +95,7 @@ local function size(said: { models.Said }, from: number): number
 	local total = 0
 	for i = from, #said do
 		local s = said[i]
-		total += #(s.text or "")
+		total += #(s.text or "") + #(s.thinking or "")
 		if s.images then
 			total += #s.images * IMAGE
 		end
