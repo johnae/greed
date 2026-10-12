@@ -64,6 +64,24 @@ test("a tried plugin is checked and the agent hears what failed", function(t)
 	)
 end)
 
+test("paths from the project, not the plugin's folder, are named with the part to drop", function(t)
+	sandbox(t)
+	local said = in_command(t, function()
+		local ok, err = pcall(function()
+			agent.try("go-test", {
+				["greed-plugins/go-test/plugin.toml"] = 'name = "go-test"\n',
+				["greed-plugins/go-test/init.luau"] = "return {}\n",
+			})
+		end)
+		return if ok then "tried" else tostring(err)
+	end)()
+	assert(
+		said and string.find(said, "inside the plugin's folder", 1, true),
+		`it says paths are inside the folder: {said}`
+	)
+	assert(string.find(said, '"init.luau", not "greed-plugins/go-test/init.luau"', 1, true), said)
+end)
+
 test("a try keeps the files left out from the last one, and drops those given empty", function(t)
 	local dir = sandbox(t)
 	in_command(t, function()

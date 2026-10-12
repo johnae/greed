@@ -193,6 +193,21 @@ local function check_files(name: string, files: { [string]: string })
 	if not string.match(name, "^[a-z][a-z0-9%-]*$") then
 		error("plugin names are lowercase words with dashes, e.g. jump-to-cargo", 0)
 	end
+	-- Paths given from the project ("greed-plugins/NAME/init.luau") rather
+	-- than from the plugin's folder would put the files a folder too deep.
+	local prefix = `/{name}/`
+	local paths: { string } = {}
+	for path in files do
+		table.insert(paths, path)
+	end
+	table.sort(paths)
+	for _, path in paths do
+		local at = string.find(path, prefix, 1, true)
+		if at then
+			local inside = string.sub(path, at + #prefix)
+			error(`file paths are inside the plugin's folder: "{inside}", not "{path}"`, 0)
+		end
+	end
 	for path in files do
 		if string.find(path, "..", 1, true) or string.sub(path, 1, 1) == "/" then
 			error(`{path} has to stay inside the plugin's folder`, 0)
