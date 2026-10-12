@@ -5,6 +5,18 @@ here, so the default plugins in `runtime/plugins` are the best examples:
 `core` holds the editing commands, `helix` gives them Helix's keys, `grep`
 is the project search, `agent` the MCP tools.
 
+Plugins are written in [Luau](https://luau.org), Lua with gradual types,
+made at Roblox to run code from many authors safely in one process. If
+you've configured Neovim you know most of it; Luau adds types you can
+leave out or check strictly, string interpolation with backticks, `+=`,
+and `if a then b else c` as an expression. Greed uses it for what it was
+built for: it's fast, small to embed, and starts with no access to files,
+programs or the network, so Greed decides what each plugin may reach
+([capabilities](#capabilities), and
+[Plugins and the sandbox](permissions.md#plugins-and-the-sandbox)). The
+types let Greed check a plugin against its API before it loads, which is
+also how a plugin an agent wrote is tried before you approve it.
+
 ## A plugin
 
 ```text
