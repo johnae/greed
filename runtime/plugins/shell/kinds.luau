@@ -225,6 +225,18 @@ function M.finished(shell: Shell, block: Block)
 	if tbl == nil then
 		return
 	end
+	-- `$3 | where ...` keeps block 3's rows, read as block 3's were: pods
+	-- from the cluster block 3 ran against.
+	local from = block.from
+	local before = if from then read[from] else nil
+	if before then
+		read[block] = before
+		block.called = M.called(block)
+		if block.called then
+			log.draw_block(shell, block)
+		end
+		return
+	end
 	for _, by_command in { true, false } do
 		for i = #kinds, 1, -1 do
 			local kind = kinds[i]

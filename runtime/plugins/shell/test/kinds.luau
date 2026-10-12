@@ -102,6 +102,10 @@ test("rows a stage kept are still files", function(t)
 	on(sh, kept, "notes.txt")
 	local file = assert(thing_here("file"))
 	assert(file.value == `{sh.cwd}/notes.txt`, tostring(file.value))
+	-- And so are those of `$N | where`, from the block they came from.
+	local listing = ran(t, sh, "ls -l")
+	local reused = ran(t, sh, `${listing.number} | where NAME ~ notes`)
+	assert(reused.called and reused.called.many == "files", "files from $N")
 end)
 
 test("ps's rows are processes", function(t)

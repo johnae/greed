@@ -89,6 +89,9 @@ export type Block = {
 	--- For a live block (`watch`), the command it runs each time, whose
 	--- output it shows.
 	watching: string?,
+	--- The block whose output it took in (`$3 | where ...`): its rows are
+	--- what that block's were, pods still pods.
+	from: Block?,
 	--- For a live block, what changed in it last and when, as "new
 	--- worker-abc · 14:05", and whether a notification says so each time.
 	change: string?,

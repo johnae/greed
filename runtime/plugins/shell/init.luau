@@ -491,6 +491,8 @@ local function begin(
 		if from then
 			input, value, err = data.read(from, named, block.cwd)
 			source = data.table(from, named, input, value)
+			local number = tonumber(string.match(named, "^%$(%d+)$"))
+			block.from = if number then state.block(from, number) else nil
 		end
 		why = err
 	end

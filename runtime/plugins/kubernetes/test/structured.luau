@@ -104,6 +104,9 @@ test("the rows kubectl get's stages keep are pods to act on", function(t)
 	local sh = fake(t)
 	local block = ran(t, sh, "kubectl get pods -n shop | where RESTARTS > 5")
 	assert(block.called and block.called.one == "pod", "rows of pods")
+	-- Taken from that block with $N, they're its pods still.
+	local again = ran(t, sh, `${block.number} | where RESTARTS > 5`)
+	assert(again.called and again.called.one == "pod", "pods from the block they came from")
 end)
 
 test("kubectl with its own output, a watch or no stages runs as typed", function(t)

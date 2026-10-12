@@ -887,7 +887,9 @@ A kind can put the columns its rows are known by first: `docker ps` shows
 an agent reads it, stays what docker printed.
 
 Rows a table stage kept are still what the command listed: after
-`kubectl get pods -A | where name ~ api`, each row is still a pod.
+`kubectl get pods -A | where name ~ api`, each row is still a pod, and so
+after `$3 | where name ~ api` from block 3's pods, in the cluster block 3
+ran against.
 
 A pod offers `describe`, `logs`, `follow logs`, `events`, `yaml`, `json`,
 `delete` and `shell`, which opens a shell in it (bash if the image has it,
