@@ -182,9 +182,9 @@ M.kind = kinds.kind
 --- Adds an action running a command made from a thing; see `kinds.command`.
 M.action_command = kinds.command
 
---- Makes the rows that are things of a kind objects, by their key; see
---- `kinds.object_kind`.
-M.object_kind = kinds.object_kind
+--- A kind's `fresh` for things shells show, from the command line that
+--- lists just one; see `kinds.fresh`.
+M.fresh = kinds.fresh
 
 export type BuiltinContext = builtins.BuiltinContext
 export type BuiltinSpec = builtins.BuiltinSpec

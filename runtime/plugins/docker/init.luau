@@ -5,6 +5,7 @@
 -- command acting on one.
 
 local greed = require("@greed")
+local core = require("@core")
 local shell = require("@shell")
 
 local parse = shell.parse
@@ -231,13 +232,13 @@ shell.kind({
 	},
 })
 
-shell.object_kind(
-	"container",
-	"A docker container, by its name and docker context",
-	function(value: any): string
+core.objects.kind({
+	name = "container",
+	doc = "A docker container, by its name and docker context",
+	fresh = shell.fresh(function(value: any): string
 		return docker(`ps -a --filter {parse.quote(`name=^{value.name}$`)}`, value)
-	end
-)
+	end),
+})
 
 shell.action_command("container", "logs", function(value: any): string
 	return docker(`logs --tail 200 {parse.quote(value.name)}`, value)
@@ -258,7 +259,7 @@ shell.action_command("container", "stop", function(value: any): string
 	return docker(`stop {parse.quote(value.name)}`, value)
 end, { doc = "Stop it", danger = true })
 
-shell.object_kind("image", "A docker image, by its name and docker context")
+core.objects.kind({ name = "image", doc = "A docker image, by its name and docker context" })
 
 shell.action_command("image", "inspect", function(value: any): string
 	return docker(`image inspect {parse.quote(value.name)}`, value)

@@ -449,17 +449,15 @@ local function rows_of(kind: string, id: string?): { core.Object }
 	return out
 end
 
--- An object's state: its value, with its row's cells when it's a row.
-local function inspect_row(value: any): { [string]: any }
-	local out: { [string]: any } = if type(value) == "table"
-		then table.clone(value)
-		else { value = value }
+-- What a row adds to its object's state: its cells. Nil for anything that
+-- isn't a row a shell shows.
+local function row_cells(value: any): { [string]: any }?
 	local origin = origins[value]
 	local tbl = if origin then origin.block.table else nil
 	if origin and tbl and origin.column == nil then
-		out.row = table.clone(tbl.rows[origin.index])
+		return { row = table.clone(tbl.rows[origin.index]) }
 	end
-	return out
+	return nil
 end
 
 -- The block an object is in; for a row, the things its cells are, by
@@ -518,31 +516,31 @@ local function fresh_row(value: any, line: string): { [string]: any }?
 	return out
 end
 
---- Makes the rows that are things of `kind` objects, by their key, and
---- the cells that are: listed from every shell's blocks, the newest first,
---- inspected as their value (a row's with its cells), and related to the
---- block they're in. It goes when the plugin that made it does. With
---- `fresh` (the command line that lists just the thing, `ps -p {pid}`),
---- watching one runs it again to see it as it is now.
-function M.object_kind(kind: string, doc: string, fresh: ((value: any) -> string)?)
-	core.objects.kind({
-		name = kind,
-		doc = doc,
-		list = function()
-			return rows_of(kind)
-		end,
-		get = function(key)
-			return rows_of(kind, `{kind}:{key}`)[1]
-		end,
-		inspect = inspect_row,
-		relations = row_relations,
-		fresh = if fresh
-			then function(value: any)
-				return fresh_row(value, fresh(value))
-			end
-			else nil,
-	})
+--- A kind's `fresh` for things shells show: runs the command line `line`
+--- makes from a thing's value (`ps -p {pid}`) where its row came from, and
+--- reads its first row as the thing is now.
+function M.fresh(line: (value: any) -> string): (value: any) -> { [string]: any }?
+	return function(value: any)
+		return fresh_row(value, line(value))
+	end
 end
+
+-- The rows and cells of every shell's blocks are objects of the kinds
+-- they're things of, whichever plugin's kind that is: listed from the
+-- newest block first, with their row's cells to inspect, and related to
+-- the block they're in.
+core.objects.source({
+	name = "shell",
+	list = function(kind: string)
+		return rows_of(kind)
+	end,
+	get = function(id: string)
+		local kind = string.match(id, "^([^:]+):")
+		return if kind then rows_of(kind, id)[1] else nil
+	end,
+	inspect = row_cells,
+	relations = row_relations,
+})
 
 core.objects.kind({
 	name = "row",
@@ -560,7 +558,6 @@ core.objects.kind({
 		end
 		return nil
 	end,
-	relations = row_relations,
 })
 
 core.objects.kind({
@@ -578,8 +575,6 @@ core.objects.kind({
 		end
 		return nil
 	end,
-	inspect = inspect_row,
-	relations = row_relations,
 })
 
 core.actions.action({

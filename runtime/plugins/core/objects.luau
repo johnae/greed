@@ -60,14 +60,43 @@ export type Kind = {
 	fresh: ((value: any) -> { [string]: any }?)?,
 }
 
+--- Somewhere objects of any kind show up besides their kind's own list,
+--- like the rows of a shell block: its objects of a kind, the one with an
+--- id, and for a value that came from it, more to inspect (a row's cells)
+--- and more it relates to (the block). Each says nothing (nil, {}) about
+--- what isn't its own.
+export type Source = {
+	name: string,
+	list: (kind: string) -> { Object },
+	get: (id: string) -> Object?,
+	inspect: ((value: any) -> { [string]: any }?)?,
+	relations: ((value: any) -> { [string]: { Object } })?,
+}
+
 local kinds: { Kind } = {}
+local sources: { Source } = {}
 
 --- Adds kind `kind.name`, or replaces it, until the plugin that added it
---- goes.
+--- goes. The plugin that knows the things says what they are; the places
+--- that show them are sources (`source`).
 function M.kind(kind: Kind)
 	greed.plugin.tie(registry.put(kinds, kind, function(other: Kind)
 		return other.name == kind.name
 	end))
+end
+
+--- Adds a source of objects, or replaces one by the same name, until the
+--- plugin that added it goes.
+function M.source(source: Source)
+	greed.plugin.tie(registry.put(sources, source, function(other: Source)
+		return other.name == source.name
+	end))
+end
+
+-- What `f(...)` gives, or nil when it fails.
+local function tried<T>(f: (...any) -> T, ...: any): T?
+	local ok, found = pcall(f, ...)
+	return if ok then found else nil
 end
 
 --- Every kind there is, in the order they were added.
@@ -127,25 +156,38 @@ function M.target(object: Object): actions.Target
 	}
 end
 
---- Every object of `kind`, or of every kind that can be listed. A kind
---- whose list fails lists nothing.
+--- Every object of `kind`, or of every kind that can be listed: the kind's
+--- own list, then what the sources show of it, each id once. A list that
+--- fails lists nothing.
 function M.list(kind: string?): { Object }
 	local out: { Object } = {}
+	local seen: { [string]: boolean } = {}
+	local function take(found: { Object }?)
+		if found == nil then
+			return
+		end
+		for _, object in found do
+			if not seen[object.id] then
+				seen[object.id] = true
+				table.insert(out, object)
+			end
+		end
+	end
 	for _, k in kinds do
-		local list = k.list
-		if list and (kind == nil or k.name == kind) then
-			local ok, found = pcall(list)
-			if ok and found then
-				for _, object in found do
-					table.insert(out, object)
-				end
+		if kind == nil or k.name == kind then
+			if k.list then
+				take(tried(k.list))
+			end
+			for _, source in sources do
+				take(tried(source.list, k.name))
 			end
 		end
 	end
 	return out
 end
 
---- The object with `id`, if it's there.
+--- The object with `id`, if it's there: by its kind's `get`, else by a
+--- source's, else from its kind's list.
 function M.get(id: string): Object?
 	local name, key = string.match(id, "^([^:]+):(.*)$")
 	local kind = if name then kind_named(name) else nil
@@ -153,8 +195,16 @@ function M.get(id: string): Object?
 		return nil
 	end
 	if kind.get then
-		local ok, found = pcall(kind.get, key)
-		return if ok then found else nil
+		local found = tried(kind.get, key)
+		if found then
+			return found
+		end
+	end
+	for _, source in sources do
+		local found = tried(source.get, id)
+		if found then
+			return found
+		end
 	end
 	for _, object in M.list(kind.name) do
 		if object.id == id then
@@ -164,18 +214,29 @@ function M.get(id: string): Object?
 	return nil
 end
 
---- `object`'s state: its kind's say, or else its value.
+--- `object`'s state: its kind's say, or else its value, with what the
+--- source it came from adds.
 function M.inspect(object: Object): { [string]: any }
 	local kind = kind_named(object.kind)
-	if kind and kind.inspect then
-		local ok, state = pcall(kind.inspect, object.value)
-		return if ok and state then state else { error = tostring(state) }
-	end
+	local state: { [string]: any }
 	local value = object.value
-	if type(value) == "table" then
-		return table.clone(value)
+	if kind and kind.inspect then
+		local ok, said = pcall(kind.inspect, value)
+		state = if ok and said then said else { error = tostring(said) }
+	elseif type(value) == "table" then
+		state = table.clone(value)
+	else
+		state = { value = value }
 	end
-	return { value = value }
+	for _, source in sources do
+		local more = if source.inspect then tried(source.inspect, value) else nil
+		if more then
+			for key, item in more do
+				state[key] = item
+			end
+		end
+	end
+	return state
 end
 
 --- `value` as plain data JSON can carry, for agents and models: the
@@ -198,16 +259,29 @@ function M.plain(value: any, depth: number?): any
 	return out
 end
 
---- The objects `object` relates to, by name.
+--- The objects `object` relates to, by name: by its kind, and by the
+--- source it came from.
 function M.related(object: Object): { [string]: { Object } }
+	local out: { [string]: { Object } } = {}
 	local kind = kind_named(object.kind)
+	local all: { (value: any) -> { [string]: { Object } } } = {}
 	if kind and kind.relations then
-		local ok, related = pcall(kind.relations, object.value)
-		if ok and related then
-			return related
+		table.insert(all, kind.relations)
+	end
+	for _, source in sources do
+		if source.relations then
+			table.insert(all, source.relations)
 		end
 	end
-	return {}
+	for _, relations in all do
+		local found = tried(relations, object.value)
+		if found then
+			for name, related in found do
+				out[name] = out[name] or related
+			end
+		end
+	end
+	return out
 end
 
 --- The actions `object`'s kind has.

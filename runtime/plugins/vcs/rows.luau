@@ -315,9 +315,9 @@ for i, match in { "^jj log", "^jj%s*$" } do
 	})
 end
 
-shell.object_kind("changed-file", "A file git or jj says has changed, by its path")
-shell.object_kind("commit", "A git commit, by its hash")
-shell.object_kind("revision", "A jj revision, by its change id")
+core.objects.kind({ name = "changed-file", doc = "A file git or jj says has changed, by its path" })
+core.objects.kind({ name = "commit", doc = "A git commit, by its hash" })
+core.objects.kind({ name = "revision", doc = "A jj revision, by its change id" })
 
 -- `git` with `args`, in the repository at `value.root`.
 local function git(args: string, value: any): string

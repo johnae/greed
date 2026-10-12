@@ -5,6 +5,7 @@
 -- still goes where the row was, and every action spells them out.
 
 local greed = require("@greed")
+local core = require("@core")
 local shell = require("@shell")
 local config = require("./config")
 local json = require("./json")
@@ -361,13 +362,22 @@ local function get(value: any): string
 	return kubectl(`get {object(value)}`, value)
 end
 
-shell.object_kind("pod", "A kubernetes pod, by its context, namespace and name", get)
-shell.object_kind("deployment", "A kubernetes deployment, by its context, namespace and name", get)
-shell.object_kind(
-	"kubernetes",
-	"A kubernetes object, by its context, namespace, resource and name",
-	get
-)
+local fresh = shell.fresh(get)
+core.objects.kind({
+	name = "pod",
+	doc = "A kubernetes pod, by its context, namespace and name",
+	fresh = fresh,
+})
+core.objects.kind({
+	name = "deployment",
+	doc = "A kubernetes deployment, by its context, namespace and name",
+	fresh = fresh,
+})
+core.objects.kind({
+	name = "kubernetes",
+	doc = "A kubernetes object, by its context, namespace, resource and name",
+	fresh = fresh,
+})
 
 -- What every kubernetes object has.
 for _, kind in { "pod", "deployment", "kubernetes" } do

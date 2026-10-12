@@ -1,6 +1,7 @@
 -- Rows with a PID column as processes, by their PID: `ps` on Linux and
 -- macOS, nu's `ps`, `lsof`, `docker top`.
 
+local core = require("@core")
 local state = require("./state")
 local tables = require("./tables")
 local kinds = require("./kinds")
@@ -42,13 +43,13 @@ kinds.kind({
 	},
 })
 
-kinds.object_kind(
-	"process",
-	"A running program, by its PID, from a table that lists it",
-	function(value: any): string
+core.objects.kind({
+	name = "process",
+	doc = "A running program, by its PID, from a table that lists it",
+	fresh = kinds.fresh(function(value: any): string
 		return `ps -o pid,stat,%cpu,%mem,command -p {value.pid}`
-	end
-)
+	end),
+})
 
 kinds.command("process", "stop", "kill {pid}", { doc = "Ask it to stop (TERM)", danger = true })
 kinds.command("process", "kill", "kill -9 {pid}", { doc = "Make it stop (KILL)", danger = true })

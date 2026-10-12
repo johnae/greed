@@ -319,6 +319,13 @@ objects.kind({
 })
 ```
 
+A kind belongs to the plugin that knows its things. Places that show
+things of other plugins' kinds, like a shell block's rows, add them with
+`objects.source({ name, list = function(kind) ... end, get = function(id)
+... end, inspect, relations })`: `objects.list` and `objects.get` ask the
+kind first and then the sources, and a source's `inspect` and `relations`
+add to the kind's for values that came from it (nil or `{}` for others).
+
 What a finder finds is an object once it has an id: the kind's `key(value)`
 gives one, or the value itself when it's a string or a number, as a file's
 path is. An object that is somewhere in a buffer says where (`buffer`,
@@ -1577,14 +1584,16 @@ take the actions of their kind, whoever added them; `ls -l` rows are
 `key` names the thing as an [object](#objects), `kind:key`: the same for
 the same thing in any block, like a pod's context, namespace and name.
 Without one, a value that's a string (a file's path) names it, and rows
-that can't be named are plain rows of their block. `shell.object_kind(kind,
-doc)` makes the rows of a kind objects: listed from every shell's blocks,
-the newest first, inspected as their value with the row's cells (`row`),
-and related to their block. Leave it out for a kind the editor has
-already, like `file`.
-A third argument, a function from the value to a command line that lists
-just that thing (`ps -p {pid}`), lets `watch` see it as it is now: it runs
-where the row came from, and its first row is the thing's state.
+that can't be named are plain rows of their block. The plugin that knows
+the things says what they are with `core.objects.kind({ name, doc })`;
+the shell is a source of objects of every kind: rows are listed from
+every shell's blocks, the newest first, inspected with the row's cells
+(`row`) and related to their block, whoever's kind they are. Leave the
+kind out for one the editor has already, like `file`.
+`fresh = shell.fresh(function(value) return "ps -p " .. value.pid end)`
+on the kind lets `watch` see a thing as it is now: the command line that
+lists just it runs where the row came from, and its first row is the
+thing's state.
 
 `spec.complete` makes the rows complete later commands. It maps a
 program's name to a function given the command's words (the word being
@@ -1626,7 +1635,7 @@ shell.kind({
 		return "unit", "units"
 	end,
 })
-shell.object_kind("service", "A systemd service, by its unit")
+core.objects.kind({ name = "service", doc = "A systemd service, by its unit" })
 shell.action_command("service", "status", "systemctl status {unit}", { doc = "How it's doing", default = true })
 shell.action_command("service", "restart", "sudo systemctl restart {unit}", { doc = "Restart it", danger = true })
 ```

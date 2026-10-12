@@ -199,3 +199,37 @@ test("plain gives an object's state as data JSON can carry", function()
 	assert(type(state.view) == "string" and state.count == 2 and type(state.nested.f) == "string")
 	assert(greed.json.encode(state) ~= "")
 end)
+
+test("a source adds objects of a kind another plugin owns, and says more of its own", function()
+	local value = { name = "x" }
+	local gadget: core.Object = { kind = "gadget", id = "gadget:x", label = "x", value = value }
+	objects.kind({
+		name = "gadget",
+		doc = "A gadget",
+		inspect = function(v)
+			return { name = v.name }
+		end,
+	})
+	objects.source({
+		name = "shelf",
+		list = function(kind)
+			return if kind == "gadget" then { gadget } else {}
+		end,
+		get = function(id)
+			return if id == "gadget:x" then gadget else nil
+		end,
+		inspect = function(v)
+			return if v == value then { shelf = 2 } else nil
+		end,
+		relations = function(v)
+			return if v == value then { shelf = {} } else {}
+		end,
+	})
+	local listed = objects.list("gadget")
+	assert(#listed == 1 and listed[1].id == "gadget:x", tostring(#listed))
+	local found = assert(objects.get("gadget:x"))
+	local state = objects.inspect(found)
+	assert(state.name == "x" and state.shelf == 2, greed.json.encode(state))
+	assert(objects.related(found).shelf ~= nil)
+	assert(objects.get("gadget:y") == nil)
+end)
