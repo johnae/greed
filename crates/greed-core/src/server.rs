@@ -66,6 +66,10 @@ pub enum Input {
     /// Something went wrong on the client's side that you should know,
     /// like the ssh agent it relays not answering: said on its status line.
     Problem(String),
+    /// The client is still there, sent every few seconds by one that asked
+    /// for a heartbeat as it attached, so the session lets it go once they
+    /// stop, as when the network went away under it.
+    Ping,
     Quit,
 }
 
@@ -101,6 +105,23 @@ pub enum Output {
     Scene(SceneData),
     /// A notification for the user's desktop, from `greed.client.notify`.
     Notify(Notice),
+    /// The session is still there, sent every few seconds to a client that
+    /// asked for a heartbeat as it attached, so it knows the connection went
+    /// once they stop.
+    Ping,
+}
+
+impl Output {
+    /// Whether this is the last message a client gets on its connection: the
+    /// session ended, let it go, or switched it to another session. A switch
+    /// to another window leaves the client here.
+    #[must_use]
+    pub fn ends(&self) -> bool {
+        match self {
+            Output::Switch(to) => !to.window,
+            other => matches!(other, Output::Exit | Output::Detached),
+        }
+    }
 }
 
 /// An image as it goes to a client: PNG, in base64, which is how terminal
@@ -387,7 +408,22 @@ fn turn_of(input: &Input) -> Turn {
         | Input::Log(_)
         | Input::Refresh
         | Input::Problem(_)
+        | Input::Ping
         | Input::Quit => Turn::Never,
+    }
+}
+
+/// The next message for a client, or None once there are no more: with a
+/// heartbeat (`beat`), a `Ping` after that long with nothing to send, so it
+/// hears the session is still there.
+fn next_out(outgoing: &Receiver<Output>, beat: Option<Duration>) -> Option<Output> {
+    let Some(beat) = beat else {
+        return outgoing.recv().ok();
+    };
+    match outgoing.recv_timeout(beat) {
+        Ok(message) => Some(message),
+        Err(crossbeam_channel::RecvTimeoutError::Timeout) => Some(Output::Ping),
+        Err(crossbeam_channel::RecvTimeoutError::Disconnected) => None,
     }
 }
 
@@ -783,6 +819,18 @@ impl Server<'_> {
         true
     }
 
+    /// Sends the client `id` its next frame whole, as when its frame didn't
+    /// match what it was sent (`Input::Refresh`).
+    fn send_whole(&mut self, id: ClientId) {
+        if let Some(client) = self.clients.get_mut(&id) {
+            client.last = None;
+            self.log(&format!(
+                "client {}: its frame didn't match what it was sent; sending it whole",
+                id.0
+            ));
+        }
+    }
+
     /// Handles one message from client `id`. False when the editor should
     /// stop: the client in this process quit.
     fn input(&mut self, id: ClientId, input: &Input) -> bool {
@@ -870,21 +918,14 @@ impl Server<'_> {
             }
             Input::SshAgentReply(ask, ref answer) => self.agent_reply(id, ask, answer.as_deref()),
             Input::Log(ref text) => crate::debug!(Client, "client {}: {text}", id.0),
-            Input::Refresh => {
-                if let Some(client) = self.clients.get_mut(&id) {
-                    client.last = None;
-                    self.log(&format!(
-                        "client {}: its frame didn't match what it was sent; sending it whole",
-                        id.0
-                    ));
-                }
-            }
+            Input::Refresh => self.send_whole(id),
             Input::Problem(ref text) => {
                 self.log(&format!("client {}: {text}", id.0));
                 if let Some(client) = self.clients.get_mut(&id) {
                     client.message = Some(text.clone());
                 }
             }
+            Input::Ping => {}
             // The client in this process ends the editor; another leaves it.
             Input::Quit if id == FIRST_CLIENT => return false,
             Input::Quit => self.detach(id),
@@ -1098,6 +1139,7 @@ impl Server<'_> {
             takeover,
             build,
             ssh_agent,
+            heartbeat,
         } = attachment;
         let others: Vec<ClientId> = self
             .clients
@@ -1120,6 +1162,11 @@ impl Server<'_> {
         self.connections += 1;
         let connection = self.connections;
         let inbound = self.inbound.clone();
+        // A client with a heartbeat that goes quiet for three beats is gone,
+        // as when the network went away under it: reading gives up.
+        if let Some(beat) = heartbeat {
+            let _ = reader.get_ref().set_read_timeout(Some(beat * 3));
+        }
         // A line that isn't input, even one that isn't UTF-8, is skipped; one
         // too long to read lets the client go.
         let reading = thread::Builder::new().spawn(move || {
@@ -1144,12 +1191,11 @@ impl Server<'_> {
         let logs = self.logs;
         let writing = reading.and_then(|_| {
             thread::Builder::new().spawn(move || {
-                for message in outgoing {
-                    // A switch to another window leaves the client here.
-                    let last = match &message {
-                        Output::Switch(to) => !to.window,
-                        other => matches!(other, Output::Exit | Output::Detached),
+                loop {
+                    let Some(message) = next_out(&outgoing, heartbeat) else {
+                        return;
                     };
+                    let last = message.ends();
                     // Left out, a frame or delta the client goes without
                     // makes the next delta not fit, and it asks again.
                     let line = match serde_json::to_string(&message) {

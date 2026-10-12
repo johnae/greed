@@ -421,7 +421,8 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::SshAgentRequest(..)
-            | Output::Notify(_) => {}
+            | Output::Notify(_)
+            | Output::Ping => {}
             other @ (Output::Exit | Output::Switch(_)) => {
                 panic!("expected a detach, got {other:?}")
             }
@@ -577,7 +578,8 @@ fn a_session_can_send_its_client_to_another_session() {
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::SshAgentRequest(..)
-            | Output::Notify(_) => {}
+            | Output::Notify(_)
+            | Output::Ping => {}
             other => panic!("expected a switch, got {other:?}"),
         }
     }
@@ -827,5 +829,41 @@ fn a_problem_a_client_reports_shows_on_its_status_line() {
     let rows = greed_core::render::grid::text_rows(client.1.as_ref().unwrap());
     let last = rows.last().cloned().unwrap_or_default();
     assert!(last.contains("agent gone"), "{rows:?}");
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_client_with_a_heartbeat_hears_pings_and_is_let_go_once_it_goes_quiet() {
+    let (conn, _, _) = start("heartbeat");
+    let name = format!("attach-heartbeat-{}", std::process::id());
+    let (socket, token) = control::session_files(&name);
+    let token = std::fs::read_to_string(token).unwrap();
+    let mut params = control::handshake();
+    params["client"] = serde_json::json!({ "kind": "tui", "name": "tui@beat" });
+    // A beat of 100 ms, rather than seconds, for the test.
+    params["heartbeat"] = serde_json::json!(100);
+    let attachment = Client::connect(&socket, token.trim())
+        .unwrap()
+        .attach_with(&params)
+        .unwrap();
+    let mut client = Attached(attachment, None);
+    client.send(&Input::Resize(SIZE));
+    assert_eq!(client.first_row(), "1 hello");
+    // With nothing else to send, the session says it's there.
+    client.until(|o| matches!(o, Output::Ping));
+    // A client that says nothing for three beats is gone: its connection
+    // closes.
+    let started = std::time::Instant::now();
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if client.0.reader.read_line(&mut line).unwrap_or(0) == 0 {
+            break;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "still attached after going quiet"
+        );
+    }
     conn.input.send(Input::Quit).unwrap();
 }

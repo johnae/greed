@@ -253,6 +253,52 @@ fn the_terminal_follows_when_its_session_switches_to_another_machine() {
     world.eval("remote", "require('@greed').quit()");
 }
 
+#[test]
+fn greed_ssh_comes_back_to_the_same_session_when_the_connection_drops() {
+    let Some(world) = World::new("ssh-drop") else {
+        return;
+    };
+    let project = world.project("remote", &[("main.rs", "fn main() {}")]);
+    // Like `fake_ssh`, but the first connection dies a few seconds in, as
+    // when the network goes; the ones after stay. It takes the options ssh
+    // gets when trying again.
+    let dying = world.root.join("dying-ssh");
+    std::fs::write(
+        &dying,
+        format!(
+            "#!/bin/sh\nwhile [ \"$1\" = -o ]; do shift 2; done\nshift 2\n[ \"$*\" = 'sh -s' ] || exit 9\nmarker={}\nif [ ! -e \"$marker\" ]; then touch \"$marker\"; (sleep 3; kill -9 $$) & fi\nHOME={} exec sh -s\n",
+            world.root.join("died-once").display(),
+            world.root.join("remote-home").display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&dying, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let command = format!("ssh somehost {}", project.join("main.rs").display());
+    let out = world.terminal(
+        &project,
+        &command,
+        &[
+            ("GREED_SSH", dying.to_str().unwrap()),
+            // So the first connection is the session's, not the config's copy.
+            ("GREED_SSH_CONFIG", "0"),
+            ("GREED_REMOTE", GREED),
+        ],
+        &[
+            Step::Until("the remote session", running),
+            Step::Shows("main"),
+            Step::Shows("lost the connection to somehost"),
+            Step::Shows("back on somehost after losing the connection"),
+            Step::Keys(":detach\r"),
+        ],
+    );
+    assert!(
+        out.contains("detached; greed ssh somehost comes back"),
+        "{out}"
+    );
+    assert_eq!(world.sessions().lines().count(), 1, "the same session");
+    world.eval("remote", "require('@greed').quit()");
+}
+
 /// Whether a client shows the session `name`.
 fn shows(world: &World, name: &str) -> bool {
     world.eval(

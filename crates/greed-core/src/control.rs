@@ -44,6 +44,24 @@ pub(crate) fn read_line_within(reader: &mut impl BufRead, line: &mut Vec<u8>) ->
     Ok(read)
 }
 
+/// How often each side of an attachment with a heartbeat says it's there
+/// (`Ping`) when it has nothing else to send.
+pub const HEARTBEAT: Duration = Duration::from_secs(5);
+
+/// How long without hearing anything an attachment with a heartbeat waits
+/// before taking the other side for gone: three beats missed.
+pub const HEARTBEAT_LOST: Duration = Duration::from_secs(15);
+
+/// The heartbeat an attach request asks for with `heartbeat`: `true` for
+/// [`HEARTBEAT`], or a number of milliseconds.
+fn heartbeat_of(asked: &Value) -> Option<Duration> {
+    match asked {
+        Value::Bool(true) => Some(HEARTBEAT),
+        Value::Number(ms) => ms.as_u64().map(Duration::from_millis),
+        _ => None,
+    }
+}
+
 /// Set in the environment of a session `greed ssh` started, through
 /// `greed bridge`.
 pub const REMOTE_ENV: &str = "GREED_SSH_SESSION";
@@ -638,6 +656,9 @@ pub struct Attachment {
     /// Whether it relays your ssh agent, answering the session's
     /// `Output::SshAgentRequest`.
     pub ssh_agent: bool,
+    /// How often it and the session say they're there (`Ping`) when they
+    /// have nothing else to send, if it asked for a heartbeat ([`HEARTBEAT`]).
+    pub heartbeat: Option<Duration>,
 }
 
 impl Attachment {
@@ -664,6 +685,7 @@ impl Attachment {
             takeover: params["takeover"].as_bool() == Some(true),
             build: params["build"].as_str().map(str::to_owned),
             ssh_agent: params["ssh_agent"].as_bool() == Some(true),
+            heartbeat: heartbeat_of(&params["heartbeat"]),
         }
     }
 }
@@ -740,10 +762,15 @@ fn serve_connection(
                 // knowing which session it would get, to come back to.
                 let mut result = handshake();
                 result["session"] = Value::from(session);
+                let attachment = Attachment::asked(reader, writer, &message["params"]);
+                // A client that asks for a heartbeat hears that it has one.
+                if attachment.heartbeat.is_some() {
+                    result["heartbeat"] = Value::Bool(true);
+                }
                 let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": result });
                 if writeln!(lock(&shared), "{ok}").is_ok() {
                     closing.attached = true;
-                    let _ = attachments.send(Attachment::asked(reader, writer, &message["params"]));
+                    let _ = attachments.send(attachment);
                 }
                 return;
             }

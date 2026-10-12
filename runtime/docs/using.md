@@ -297,8 +297,13 @@ greed ssh build-box src/main.rs
 another machine, starting one there if none is running; `--new` starts
 another one beside it. Files, language servers,
 search and agents all run on that machine, and only keys and screen updates
-cross the network. If the connection drops or you `:detach`, the session
-keeps running, and `greed ssh HOST` comes back to it.
+cross the network. If you `:detach`, the session keeps running, and `greed
+ssh HOST` comes back to it. If the connection drops, as when the network
+goes or the laptop sleeps, `greed ssh` says so and comes back to the same
+session by itself as soon as it can, trying again after a little longer each
+time (`ctrl-c` stops it). The two ends say they're there every few seconds,
+so a connection that went quiet is noticed within about fifteen seconds,
+and the session lets that client go then too.
 
 From inside Greed, `space C` (`:connect`, or Connect to Host… in the
 window's File menu) does the same without a terminal: it lists the hosts

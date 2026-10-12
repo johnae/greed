@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use greed_core::SwitchTo;
@@ -219,31 +219,16 @@ fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
     let mut machine: Option<Machine> = None;
     // What to say once the next session shows, like why it didn't go back.
     let mut problem: Option<String> = None;
+    // How many times in a row the connection to another machine went or
+    // couldn't be made again, while it's tried again.
+    let mut tries: u32 = 0;
     loop {
         let (place, ended) = match &mut next {
             Next::Here { name, open } => {
-                let attached = ctl::connect_to(Some(name))?.attach_opening(
-                    client::kind(),
-                    open.as_deref(),
-                    opening,
-                );
-                let Attachment { reader, writer, .. } = match attached {
-                    Ok(attachment) => attachment,
-                    Err(err) => {
-                        let err: Error = err.into();
-                        let Some(refused) = versions::other_version(&err) else {
-                            return Err(err);
-                        };
-                        // Another version runs it: what to do is the user's
-                        // to say.
-                        match settle(name, &refused)? {
-                            Some(beside) => {
-                                *name = beside;
-                                continue;
-                            }
-                            None => return Ok(()),
-                        }
-                    }
+                let Some(Attachment { reader, writer, .. }) =
+                    attach_here(name, open.as_deref(), opening)?
+                else {
+                    return Ok(());
                 };
                 // Coming back to a machine finds it again, bringing your
                 // config as it is then.
@@ -252,20 +237,41 @@ fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
                     host: None,
                     session: Some(name.clone()),
                 };
-                (place, show(reader, writer, false, None, problem.take())?)
+                let Some(ended) = show(reader, writer, false, None, problem.take(), false)? else {
+                    eprintln!(
+                        "greed: the session {name} ended without saying so; its log may say why: {}",
+                        log_path(name).display()
+                    );
+                    return Ok(());
+                };
+                (place, ended)
             }
             Next::There { host, to, new } => {
                 if machine.as_ref().is_none_or(|m| m.host != *host) {
                     machine = Some(Machine::reach(host)?);
                 }
                 let there = machine.as_ref().expect("just reached");
-                match ssh_once(there, to, opening, *new, problem.take()) {
-                    Ok((session, ended)) => {
+                match ssh_once(there, to, opening, *new, problem.take(), tries > 0) {
+                    Ok((session, Some(ended))) => {
+                        tries = 0;
                         let place = Place {
                             host: Some(host.clone()),
                             session: session.or_else(|| to.session.clone()),
                         };
                         (place, ended)
+                    }
+                    // The connection went: the same session again, after a
+                    // while, until it's back or you stop it.
+                    Ok((session, None)) => {
+                        to.session = session.or_else(|| to.session.take());
+                        *new = false;
+                        wait_to_retry(host, &mut tries, &mut problem);
+                        continue;
+                    }
+                    Err(err) if tries > 0 && versions::other_version(&err).is_none() => {
+                        eprintln!("greed: can't reach {host} yet: {err}");
+                        wait_to_retry(host, &mut tries, &mut problem);
+                        continue;
                     }
                     Err(err) => {
                         let Some(refused) = versions::other_version(&err) else {
@@ -298,11 +304,7 @@ fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
                 to
             }
             Output::Detached => {
-                match (&place.host, &place.session) {
-                    (Some(host), _) => println!("detached; greed ssh {host} comes back"),
-                    (None, Some(name)) => println!("detached; greed attach {name} comes back"),
-                    (None, None) => println!("detached"),
-                }
+                say_detached(&place);
                 return Ok(());
             }
             Output::Exit
@@ -313,9 +315,61 @@ fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
             | Output::Clipboard(_)
             | Output::ReadClipboardImage(_)
             | Output::SshAgentRequest(..)
-            | Output::Notify(_) => return Ok(()),
+            | Output::Notify(_)
+            | Output::Ping => return Ok(()),
         };
     }
+}
+
+/// Attaches to the session `name` here, asking it to open `open` and
+/// `opening`. When another version of greed runs it, you say what to do:
+/// `name` becomes the session beside it to attach to instead, or None when
+/// you'd rather stop.
+fn attach_here(
+    name: &mut String,
+    open: Option<&Path>,
+    opening: Opening,
+) -> Result<Option<Attachment>, Error> {
+    loop {
+        let attached = ctl::connect_to(Some(name))?.attach_opening(client::kind(), open, opening);
+        let err: Error = match attached {
+            Ok(attachment) => return Ok(Some(attachment)),
+            Err(err) => err.into(),
+        };
+        let Some(refused) = versions::other_version(&err) else {
+            return Err(err);
+        };
+        match settle(name, &refused)? {
+            Some(beside) => *name = beside,
+            None => return Ok(None),
+        }
+    }
+}
+
+/// Waits before trying a connection to `host` again, the `tries`th time,
+/// saying so the first time; what to say once it's back goes in `problem`.
+fn wait_to_retry(host: &str, tries: &mut u32, problem: &mut Option<String>) {
+    if *tries == 0 {
+        eprintln!("greed: lost the connection to {host}; trying again (ctrl-c stops)");
+    }
+    *tries += 1;
+    *problem = Some(format!("back on {host} after losing the connection"));
+    std::thread::sleep(retry_after(*tries));
+}
+
+/// Says how to come back to `place` after letting it go.
+fn say_detached(place: &Place) {
+    match (&place.host, &place.session) {
+        (Some(host), _) => println!("detached; greed ssh {host} comes back"),
+        (None, Some(name)) => println!("detached; greed attach {name} comes back"),
+        (None, None) => println!("detached"),
+    }
+}
+
+/// How long to wait before trying a lost connection again for the
+/// `tries`th time: longer each time, up to half a minute.
+fn retry_after(tries: u32) -> Duration {
+    Duration::from_secs(1 << tries.min(5)).min(Duration::from_secs(30))
 }
 
 /// Where a switch `to` from `here` goes, with the places the client has been
@@ -491,18 +545,27 @@ pub fn open_window(to: SwitchTo) {
     });
 }
 
+/// Milliseconds since `started`.
+fn millis_since(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
 /// Shows an attached session in this terminal: input goes to `writer` and
 /// frames come from `reader`, one JSON message per line, from a session on
 /// another machine with `remote`. The session's requests for your ssh agent
 /// go to `agent`, the one this client relays. `problem` goes on its status
-/// line. Returns how it ended.
+/// line. With `heartbeat`, as the session agreed to as this client
+/// attached, both say they're there every few seconds. Returns how it
+/// ended, or None when the connection went without the session saying so:
+/// it closed, or with a heartbeat, nothing came for a while.
 fn show(
     reader: impl BufRead + Send + 'static,
     mut writer: impl Write + Send + 'static,
     remote: bool,
     agent: Option<PathBuf>,
     problem: Option<String>,
-) -> Result<Output, Error> {
+    heartbeat: bool,
+) -> Result<Option<Output>, Error> {
     client::set_remote(remote);
     let (input, inputs) = crossbeam_channel::unbounded::<Input>();
     if let Some(problem) = problem {
@@ -522,17 +585,52 @@ fn show(
             }
         }
     });
+    // When the session was last heard from, and whether the connection
+    // went without it saying how things ended.
+    let started = Instant::now();
+    let heard = Arc::new(AtomicU64::new(0));
+    let lost = Arc::new(AtomicBool::new(false));
+    // Whether this run is over, for the heartbeat to stop.
+    let over = Arc::new(AtomicBool::new(false));
+    if heartbeat {
+        let (input, outputs, heard, lost, over) = (
+            input.clone(),
+            outputs.clone(),
+            heard.clone(),
+            lost.clone(),
+            over.clone(),
+        );
+        std::thread::spawn(move || {
+            while !over.load(Ordering::Relaxed) {
+                std::thread::sleep(control::HEARTBEAT);
+                let since = millis_since(started) - heard.load(Ordering::Relaxed);
+                if Duration::from_millis(since) > control::HEARTBEAT_LOST {
+                    lost.store(true, Ordering::Relaxed);
+                    let _ = outputs.send(Output::Exit);
+                    return;
+                }
+                if input.send(Input::Ping).is_err() {
+                    return;
+                }
+            }
+        });
+    }
     let replies = input.clone();
     // Whether the agent's last failure was said, so a burst of requests
     // says it once, and again only after it answered in between.
     let failure_said = Arc::new(AtomicBool::new(false));
+    let reading_lost = lost.clone();
     std::thread::spawn(move || {
+        // Whether the session said how this ends, before the connection did.
+        let mut said_end = false;
         for line in reader.lines() {
             let Ok(line) = line else { break };
+            heard.store(millis_since(started), Ordering::Relaxed);
             // One this client can't read, as from a newer session, is left
             // out; a frame or delta left out makes the next delta not fit,
             // and the client asks for a whole frame.
             let message = match serde_json::from_str::<Output>(&line) {
+                Ok(Output::Ping) => continue,
                 Ok(message) => message,
                 Err(err) => {
                     let said = format!("couldn't read a message from the session: {err}");
@@ -559,12 +657,24 @@ fn show(
                 });
                 continue;
             }
+            said_end |= message.ends();
             if outputs.send(message).is_err() {
                 return;
             }
         }
+        if !said_end {
+            reading_lost.store(true, Ordering::Relaxed);
+            let _ = outputs.send(Output::Exit);
+        }
     });
-    crate::client::run(&input, &output)
+    let ended = crate::client::run(&input, &output);
+    over.store(true, Ordering::Relaxed);
+    let ended = ended?;
+    Ok(if lost.load(Ordering::Relaxed) {
+        None
+    } else {
+        Some(ended)
+    })
 }
 
 /// Starts `greed serve` for the session called `name` in the background, its
@@ -852,16 +962,20 @@ fn relays_agent(host: &str) -> Option<PathBuf> {
 
 /// Shows the session `to` points at on `machine` until it ends, lets go or
 /// switches; returns the session's name, when its greed says it, and which
-/// of those it was. With an agent to relay, an ssh agent's socket here, it
+/// of those it was, or None when the connection went without the session
+/// saying so. With an agent to relay, an ssh agent's socket here, it
 /// relays that agent to the session, which then has one way to it: ssh's
 /// own forwarding is off. `problem` goes on its status line once it shows.
+/// Coming back after a lost connection (`again`), ssh gives up connecting
+/// sooner, to try again.
 fn ssh_once(
     machine: &Machine,
     to: &SwitchTo,
     opening: Opening,
     new: bool,
     problem: Option<String>,
-) -> Result<(Option<String>, Output), Error> {
+    again: bool,
+) -> Result<(Option<String>, Option<Output>), Error> {
     let Machine {
         host,
         config,
@@ -876,14 +990,16 @@ fn ssh_once(
         }
         format!("couldn't attach on {host}: {err}").into()
     };
-    let options: &[&str] = if agent.is_some() {
-        &["-o", "ForwardAgent=no"]
-    } else {
-        &[]
-    };
+    let mut options: Vec<&str> = Vec::new();
+    if agent.is_some() {
+        options.extend(["-o", "ForwardAgent=no"]);
+    }
+    if again {
+        options.extend(["-o", "ConnectTimeout=15"]);
+    }
     let (mut child, mut writer, mut reader) =
-        remote_with(host, options, &line).map_err(attach_failed)?;
-    let session = handshake(
+        remote_with(host, &options, &line).map_err(attach_failed)?;
+    let (session, heartbeat) = handshake(
         &mut reader,
         &mut writer,
         to.session.as_deref(),
@@ -891,7 +1007,7 @@ fn ssh_once(
         agent.is_some(),
     )
     .map_err(attach_failed)?;
-    let ended = show(reader, writer, true, agent.clone(), problem)?;
+    let ended = show(reader, writer, true, agent.clone(), problem, heartbeat)?;
     // The session lives on the other end, so closing ssh loses nothing,
     // and the bridge there goes when its input does.
     let _ = child.kill();
@@ -900,19 +1016,22 @@ fn ssh_once(
 }
 
 /// Asks to attach over `reader` and `writer`, already connected to the
-/// session `session` (or whichever the other end picks). Fails with the
-/// session's reason if it refuses, e.g. because the two ends run greed
-/// versions that don't speak the same protocol. With `agent`, it says it
-/// relays your ssh agent. Returns the session's name, when its greed says.
+/// session `session` (or whichever the other end picks), with a heartbeat,
+/// since ssh can go quiet without closing. Fails with the session's reason
+/// if it refuses, e.g. because the two ends run greed versions that don't
+/// speak the same protocol. With `agent`, it says it relays your ssh agent.
+/// Returns the session's name, when its greed says, and whether it agreed
+/// to the heartbeat (an older one doesn't know it).
 fn handshake(
     reader: &mut impl BufRead,
     writer: &mut impl Write,
     session: Option<&str>,
     opening: Opening,
     agent: bool,
-) -> Result<Option<String>, Error> {
+) -> Result<(Option<String>, bool), Error> {
     let mut params = control::attach_params(client::kind());
     opening.ask(&mut params);
+    params["heartbeat"] = Value::Bool(true);
     if agent {
         params["ssh_agent"] = Value::Bool(true);
     }
@@ -933,7 +1052,11 @@ fn handshake(
         let said = error["message"].as_str().unwrap_or("refused");
         return Err(control::Refused::new(session, said).into());
     }
-    Ok(response["result"]["session"].as_str().map(str::to_owned))
+    let result = &response["result"];
+    Ok((
+        result["session"].as_str().map(str::to_owned),
+        result["heartbeat"].as_bool() == Some(true),
+    ))
 }
 
 /// The ssh command, which `$GREED_SSH` replaces.
