@@ -118,8 +118,33 @@ you around Greed.
 The macOS builds are signed and notarized by Apple, so Greed.app opens
 from a download like any other app.
 
-On NixOS, and anywhere with Nix, the flake builds it with the window:
-`nix run github:johnae/greed`, or `.#static` for the static binary.
+On NixOS, and anywhere with Nix, the flake has it with the window:
+`nix run github:johnae/greed`, or `.#static` for the static binary. Both
+are built for every release and for main, for x86_64 and arm64 Linux and
+Apple silicon macOS (the window build), and kept in a binary cache, so
+they download instead of building. `nix run` asks once whether to use
+the cache; to use it always, add it to your Nix settings:
+
+```nix
+nix.settings = {
+  substituters = [ "https://greed.cachix.org" ];
+  trusted-public-keys = [
+    "greed.cachix.org-1:3KCJ/GtSbnfcfrCNZAe+3vcK8YPc4FZ/2JaYTjAqmnc="
+  ];
+};
+```
+
+Then in a NixOS or home-manager configuration, with the flake as an
+input (`inputs.greed.url = "github:johnae/greed";`):
+
+```nix
+environment.systemPackages = [ inputs.greed.packages.${pkgs.system}.default ];
+# or home.packages, or nixpkgs.overlays = [ inputs.greed.overlays.default ]
+# and then pkgs.greed
+```
+
+The cache has the builds of the flake's own nixpkgs, so leave out
+`inputs.greed.inputs.nixpkgs.follows`, or Nix builds Greed against yours.
 
 To build it yourself you need a recent stable Rust and cmake (for the
 WebAssembly runtime that loads downloaded grammars):

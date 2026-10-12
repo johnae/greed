@@ -3,6 +3,14 @@
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+  # Built packages, for main and every release, so they download.
+  nixConfig = {
+    extra-substituters = [ "https://greed.cachix.org" ];
+    extra-trusted-public-keys = [
+      "greed.cachix.org-1:3KCJ/GtSbnfcfrCNZAe+3vcK8YPc4FZ/2JaYTjAqmnc="
+    ];
+  };
+
   outputs =
     { self, nixpkgs }:
     let

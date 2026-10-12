@@ -1,0 +1,56 @@
+# Builds the flake's packages, the window build and the static one, and
+# pushes them to the greed.cachix.org binary cache, so `nix run` and NixOS
+# configurations using the flake download Greed instead of building it.
+name: nix
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  # Run by hand, it builds and caches `ref`, like a release tagged before
+  # this workflow was added.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "The tag, branch or commit to build"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+            packages: .#default .#static
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+            packages: .#default .#static
+          - system: aarch64-darwin
+            runner: macos-latest
+            packages: .#default
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: cachix/install-nix-action@v31
+      - uses: cachix/cachix-action@v17
+        with:
+          name: greed
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: build
+        run: nix build --print-build-logs ${{ matrix.packages }}
+      - name: runs
+        run: |
+          for result in result*; do
+            "$result/bin/greed" --version
+          done
