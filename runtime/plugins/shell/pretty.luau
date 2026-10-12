@@ -1,9 +1,10 @@
--- JSON lines, as many programs log (`kubectl logs` of a Go service,
--- `docker logs`), shown readably: each line's time, level and message
--- first, the other fields after it, dimmed. The buffer keeps each line as
--- it came, so a filter (`level=error`), copying and `$3` see the JSON. Even
--- the line the cursor is on stays readable, as a followed log keeps the
--- cursor on its newest line; `shell-pretty` shows them as they came.
+-- Logs of JSON lines or logfmt, as many programs log (`kubectl logs` of a
+-- Go service, `docker logs`), shown readably: each line's time (here),
+-- level and message first, the other fields after it, dimmed. The buffer
+-- keeps each line as it came, so a filter (`level=error`), copying and `$3`
+-- see what was printed. Even the line the cursor is on stays readable, as
+-- a followed log keeps the cursor on its newest line; `shell-pretty` shows
+-- them as they came.
 
 local greed = require("@greed")
 local state = require("./state")
@@ -16,7 +17,7 @@ local M = {}
 
 greed.option.define({
 	name = "shell-json-lines",
-	doc = 'How a block whose lines are JSON objects, as many logs are, shows them: "pretty" (time, level and message first, the other fields after) or "raw"',
+	doc = 'How a block whose lines are JSON objects or logfmt, as many logs are, shows them: "pretty" (time, level and message first, the other fields after) or "raw"',
 	default = "pretty",
 	choices = { "pretty", "raw" },
 })
@@ -42,10 +43,42 @@ local LEVELS: { [string]: string } = {
 	trace = "shell.log.debug",
 }
 
--- The object `text` is, if it's a line of JSON with one.
+-- The fields of a logfmt line, `level=info msg="all ready" took=3ms`: nil
+-- unless it's all `key=value`, two of them at least.
+local function logfmt(text: string): { [string]: any }?
+	local fields: { [string]: any } = {}
+	local count = 0
+	local at = 1
+	while at <= #text do
+		local key, after = string.match(text, "^([%w_%.%-@/]+)=()", at)
+		if key == nil or after == nil then
+			return nil
+		end
+		local value: string
+		if string.sub(text, after, after) == '"' then
+			-- Quoted, with `\"` inside.
+			local close = after + 1
+			while close <= #text and string.sub(text, close, close) ~= '"' do
+				close += if string.sub(text, close, close) == "\\" then 2 else 1
+			end
+			value = string.gsub(string.sub(text, after + 1, close - 1), "\\(.)", "%1")
+			at = close + 1
+		else
+			local stop = string.find(text, " ", after, true) or #text + 1
+			value = string.sub(text, after, stop - 1)
+			at = stop
+		end
+		fields[key] = value
+		count += 1
+		at = string.find(text, "%S", at) or #text + 1
+	end
+	return if count >= 2 then fields else nil
+end
+
+-- The fields of a line of JSON (an object) or of logfmt, if it's one.
 local function object(text: string): { [string]: any }?
 	if string.sub(text, 1, 1) ~= "{" then
-		return nil
+		return logfmt(text)
 	end
 	local value = greed.json.decode(text)
 	return if type(value) == "table" then value else nil
@@ -63,15 +96,50 @@ local function take(fields: { [string]: any }, names: { string }): any
 	return nil
 end
 
--- A time as a log line shows it: the time of day of an ISO time, or of
--- seconds (or milliseconds) since 1970.
+-- Seconds since 1970 of an ISO time with its zone (`Z` or `+02:00`), or
+-- nil for one without, which is already the time it says.
+local function instant(text: string): number?
+	local function n(digits: string?): number
+		return tonumber(digits or "") or 0
+	end
+	local y, mo, d, h, mi, s, zone =
+		string.match(text, "^(%d%d%d%d)%-(%d%d)%-(%d%d)[T ](%d%d):(%d%d):(%d%d)[%.%d]*(.*)$")
+	if y == nil or zone == nil or zone == "" then
+		return nil
+	end
+	local offset = 0
+	if zone ~= "Z" then
+		local sign, zh, zm = string.match(zone, "^([%+%-])(%d%d):?(%d%d)$")
+		if sign == nil then
+			return nil
+		end
+		offset = (n(zh) * 3600 + n(zm) * 60) * (if sign == "-" then -1 else 1)
+	end
+	-- Luau reads the fields as UTC.
+	local utc = os.time({
+		year = n(y),
+		month = n(mo),
+		day = n(d),
+		hour = n(h),
+		min = n(mi),
+		sec = n(s),
+	})
+	return utc - offset
+end
+
+-- A time as a log line shows it: the time of day here, of an ISO time or
+-- of seconds (or milliseconds) since 1970.
 local function clock(time: any): string
+	local format: string = "%H:%M:%S"
 	if type(time) == "number" then
 		local seconds: number = if time > 1e11 then time // 1000 else time // 1
-		local format: string = "!%H:%M:%S"
 		return os.date(format, seconds)
 	end
 	local text = tostring(time)
+	local at = instant(text)
+	if at then
+		return os.date(format, at)
+	end
 	return string.match(text, "[T ](%d%d:%d%d:%d%d)") or text
 end
 
@@ -104,7 +172,7 @@ local function flatten(fields: { [string]: any }, prefix: string, into: { string
 	end
 end
 
---- The marks showing the JSON object on `text` readably, from its start,
+--- The marks showing the log line `text` (JSON or logfmt) readably, from its start,
 --- or nil for a line that isn't one with a time, level or message.
 function M.marks(text: string): { greed.Mark }?
 	local fields = object(text)
@@ -138,7 +206,7 @@ function M.marks(text: string): { greed.Mark }?
 	end
 	-- Each piece hides a character of the line, the last the rest of it, so
 	-- they all go with the line: a mark whose text is deleted goes too. A
-	-- JSON object has at least as many characters as there are pieces.
+	-- log line has at least as many characters as there are pieces.
 	local marks: { greed.Mark } = {}
 	for i, piece in pieces do
 		local to = if i == #pieces then #text else i

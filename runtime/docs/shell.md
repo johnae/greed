@@ -438,9 +438,11 @@ hid. `esc` on the filter prompt shows them all again.
 
 ### JSON lines
 
-Output whose lines are JSON objects, as many programs log, shows each
-line with its time, level and message first and the other fields after
-it, dimmed, nested ones as `HelmRelease.name=vikunja`:
+Output whose lines are JSON objects or logfmt (`level=info msg="ready"`),
+as many programs log, shows each line with its time, level and message
+first and the other fields after it, dimmed, nested ones as
+`HelmRelease.name=vikunja`. A time with its zone, like kubernetes' UTC
+`2026-10-12T11:58:12Z`, shows as the time here:
 
 ```text
 11:58:12 error release failed: timed out waiting  HelmRelease.name=vikunja controller=helmrelease

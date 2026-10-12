@@ -57,8 +57,9 @@ test("JSON lines show their time, level and message first, the rest after", func
 	assert(block.pretty == true, "readable")
 	local shown = readable(sh, block)
 	assert(#shown == 2, `the line that isn't JSON shows as it came: {#shown}`)
-	assert(shown[1] == "11:57:46 info  in sync  name=vikunja", shown[1])
-	assert(shown[2] == "11:57:46 error db down  release.name=linstor", shown[2])
+	local here = os.date("%H:%M:%S", 1760270266)
+	assert(shown[1] == `{here} info  in sync  name=vikunja`, shown[1])
+	assert(shown[2] == `{here} error db down  release.name=linstor`, shown[2])
 	-- The buffer keeps the JSON.
 	assert(string.find(sh.buffer:text(), '"msg":"db down"', 1, true) ~= nil)
 end)
@@ -135,3 +136,14 @@ test(
 		assert(string.find(tostring(spec.title), "tab lists fields", 1, true), tostring(spec.title))
 	end
 )
+
+test("logfmt lines show readably too, and times show as the time here", function(t)
+	local sh = open(t)
+	sh.cwd = t:tempdir({
+		["fmt.log"] = 'ts=2025-10-12T11:57:46Z level=warn msg="disk is filling" path=/var used=91%\n',
+	})
+	local block = run(t, sh, "cat fmt.log")
+	local shown = readable(sh, block)
+	local here = os.date("%H:%M:%S", 1760270266)
+	assert(shown[1] == `{here} warn  disk is filling  path=/var used=91%`, shown[1])
+end)
