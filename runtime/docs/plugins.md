@@ -2177,7 +2177,11 @@ A call whose `danger` says why waits for the user's yes every time, from
 any agent, MCP clients included; only `greed ctl` skips it. For command
 lines, `require("@core").risk.of(line)` says why one is risky, and
 `risk.rule(program, function(words) ... end)` teaches it a program's,
-as the kubernetes and docker plugins do for kubectl and docker. See
+as the kubernetes and docker plugins do for kubectl and docker. The other
+way round, `risk.safe(line)` says whether every command in a line only
+looks, or builds and tests, as auto mode lets agents run them, and
+`risk.safe_when(program, function(words) ... end)` says which of a
+program's commands are (all of them, without the function). See
 [Permissions and sandboxing](permissions.md#what-always-asks) for how
 the user sees these.
 
