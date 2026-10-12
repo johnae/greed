@@ -111,8 +111,11 @@ test("act on several ids reviews a destroying action once, and says which the us
 	greed.spawn(function()
 		result = run("act", { ids = { "ticket:A-1", "ticket:A-2" }, action = "delete" })
 	end)
-	local review = table.concat(t:floats(), "\n")
-	assert(string.find(review, "delete  ticket A-1", 1, true), review)
+	-- On a busy machine the call may give the editor a turn before the
+	-- review opens.
+	t:wait_for(function()
+		return string.find(table.concat(t:floats(), "\n"), "delete  ticket A-1", 1, true) ~= nil
+	end)
 	-- The user keeps A-1 and deletes A-2.
 	t:keys("space enter")
 	t:wait_for(function()
@@ -143,8 +146,9 @@ test("a risky tool call waits for the user's yes, and says so when it doesn't ge
 	greed.spawn(function()
 		result = agent.call("frob", { hard = true }, agent.caller())
 	end)
-	local review = table.concat(t:floats(), "\n")
-	assert(string.find(review, "frobs hard", 1, true), review)
+	t:wait_for(function()
+		return string.find(table.concat(t:floats(), "\n"), "frobs hard", 1, true) ~= nil
+	end)
 	t:keys("esc")
 	t:wait_for(function()
 		return result ~= nil
