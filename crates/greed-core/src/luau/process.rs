@@ -538,6 +538,32 @@ pub(super) fn awaited(lua: &Lua) -> bool {
         .any(|child| !child.exited && (child.reader.is_some() || !child.waiting.is_empty()))
 }
 
+/// The programs started and not let go, each as how far it got, for saying
+/// what a test waits on.
+pub(super) fn summary(lua: &Lua) -> String {
+    let state = state(lua);
+    let mut lines: Vec<String> = state
+        .children
+        .open
+        .iter()
+        .map(|(id, child)| {
+            let pid = child.process.lock().map_or(0, |p| p.id());
+            format!(
+                "program {id} (pid {pid}): {}, {} unread pieces, {}",
+                if child.exited { "exited" } else { "running" },
+                child.queue.len(),
+                if child.reader.is_some() {
+                    "read waiting"
+                } else {
+                    "no read waiting"
+                },
+            )
+        })
+        .collect();
+    lines.sort();
+    lines.join("; ")
+}
+
 /// What `read` gives now: `true`, a piece and the output it came from, or
 /// `true` and nil once the program exited with nothing left to read;
 /// otherwise `false` and the token the next piece wakes.

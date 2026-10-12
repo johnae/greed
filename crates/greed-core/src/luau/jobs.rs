@@ -289,8 +289,9 @@ fn settle_within(lua: &Lua, limit: Duration) -> LuaResult<()> {
                 Err(RecvTimeoutError::Timeout) if heard.elapsed() >= limit => {
                     let running: Vec<String> = state(lua).jobs.running.values().cloned().collect();
                     return Err(mlua::Error::runtime(format!(
-                        "gave up after {limit:?} waiting for {}",
-                        running.join(", ")
+                        "gave up after {limit:?} waiting for {} ({})",
+                        running.join(", "),
+                        super::process::summary(lua)
                     )));
                 }
                 // The time waited goes by for the editor too, even where a
