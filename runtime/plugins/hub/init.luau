@@ -326,39 +326,54 @@ export type Machine = {
 -- (over `greed ssh`), by client, with when (seconds, like `os.time()`).
 local homes: { [number]: { status: Status, at: number } } = {}
 
--- Asks each client attached from elsewhere what the hub on its machine
--- says, one look at a time, so a session there shows what you have where
--- you are.
-local asking = false
-local function ask_homes()
-	if asking then
+-- The clients being asked what the hub on their machine says, so a
+-- session there shows what you have where you are.
+local asking: { [number]: boolean } = {}
+
+-- Asks client `id` what the hub on its machine says, unless it's being
+-- asked already. That hub's answer has every machine it follows too, so
+-- this is one question however many machines you have.
+local function ask_home(id: number)
+	if asking[id] then
 		return
 	end
-	asking = true
+	asking[id] = true
 	greed.spawn(function()
-		local attached: { [number]: boolean } = {}
-		for _, client in greed.client.list() do
-			if client.remote then
-				attached[client.id] = true
-				local status = greed.client.home(client.id)
-				local had = homes[client.id]
-				if status then
-					local now = os.time()
-					homes[client.id] = { status = status, at = now - now % 10 }
-					if had == nil or greed.json.encode(had.status) ~= greed.json.encode(status) then
-						changed()
-					end
-				end
+		local status = greed.client.home(id)
+		local had = homes[id]
+		if status then
+			local now = os.time()
+			homes[id] = { status = status, at = now - now % 10 }
+			if had == nil or greed.json.encode(had.status) ~= greed.json.encode(status) then
+				changed()
 			end
 		end
-		for id in homes do
-			if not attached[id] then
-				homes[id] = nil
-			end
-		end
-		asking = false
+		asking[id] = nil
 	end)
 end
+
+-- Asks each client attached from elsewhere again, and forgets those gone.
+local function ask_homes()
+	local attached: { [number]: boolean } = {}
+	for _, client in greed.client.list() do
+		if client.remote then
+			attached[client.id] = true
+			ask_home(client.id)
+		end
+	end
+	for id in homes do
+		if not attached[id] then
+			homes[id] = nil
+		end
+	end
+end
+
+-- A client attaching from elsewhere is asked at once, not at the next look.
+greed.on("client.attached", function(event: greed.ClientAttached)
+	if event.remote then
+		ask_home(event.client)
+	end
+end)
 
 -- `status` without the others it says of, the way it's passed on.
 local function slim(status: Status): Status
