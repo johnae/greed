@@ -438,6 +438,10 @@ typing slowly would. They wait half a second at most; `esc` and `ctrl-c`
 reach a working command at once, unless keys typed before them are
 still waiting.
 
+A line longer than its view wraps, breaking after a space where it can,
+and its wrapped rows start at its indent, so they line up under its text
+(unless the indent would take more than half the view).
+
 Messages show on the status line, one line each; a longer one, like an
 error with its stack trace, ends in `…`. `:messages` shows the last ones
 in full.

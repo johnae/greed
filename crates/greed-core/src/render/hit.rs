@@ -262,10 +262,20 @@ impl<M: Measure> Renderer<M> {
                     let mut last = None;
                     for cell in cells.iter().filter(|c| c.inserted.is_none()) {
                         if usize::from(x) < left + cell.width {
+                            // On a wrapped row's indent: the row's first
+                            // character.
+                            if cell.repeated {
+                                return cells
+                                    .iter()
+                                    .find(|c| !c.repeated && c.inserted.is_none())
+                                    .map(|c| c.byte);
+                            }
                             return Some(cell.byte);
                         }
                         left += cell.width;
-                        last = Some(cell.byte);
+                        if !cell.repeated {
+                            last = Some(cell.byte);
+                        }
                     }
                     return last;
                 }

@@ -95,6 +95,59 @@ fn long_lines_wrap_at_word_boundaries() {
 }
 
 #[test]
+fn wrapped_rows_line_up_under_the_lines_indent() {
+    let mut ed = editor("|  the quick brown fox\nend");
+    let f = frame(&mut ed, 14, 5);
+    assert_eq!(rows(&f), ["1   the quick ", "    brown fox", "2 end", ""]);
+    // The cursor at the line's start shows there once, not on the copies.
+    assert_eq!(f.cursor, Some(Position { col: 2, row: 0 }));
+    // An indent past half the row is dropped, so the text keeps its room.
+    let mut deep = editor("|          one two three four");
+    let f = frame(&mut deep, 18, 4);
+    assert_eq!(rows(&f), ["1           one ", "  two three four", ""]);
+}
+
+#[test]
+fn a_bar_over_a_lines_indent_shows_on_each_of_its_rows() {
+    use greed_core::Mark;
+    let mut ed = editor("|  the quick brown fox\n  short");
+    let buffer = ed.view(ed.focus()).buffer;
+    let bar = |at: usize| Mark {
+        range: at..at + 1,
+        style: "agent.bar".into(),
+        text: Some("▍".into()),
+        overlay: true,
+        ..Mark::default()
+    };
+    ed.decorate(buffer, "bar", vec![bar(0), bar(22)]);
+    let f = frame(&mut ed, 14, 6);
+    assert_eq!(
+        rows(&f),
+        ["1 ▍ the quick ", "  ▍ brown fox", "2 ▍ short", "", ""]
+    );
+}
+
+#[test]
+fn a_click_on_a_wrapped_rows_indent_goes_to_its_first_character() {
+    let mut ed = editor("|  the quick brown fox");
+    let renderer = Renderer::new(CellWidth);
+    renderer.frame(
+        &mut ed,
+        Size {
+            width: 12,
+            height: 4,
+        },
+        &Status::Default { message: None },
+        &Plain,
+    );
+    let view = ed.focus();
+    // Beside the line numbers the text is 10 cells wide, so row 1 is
+    // "  quick ": its indent is a copy of the line's, and "quick" is at 6.
+    assert_eq!(renderer.byte_at(&ed, view, 0, 1), Some(6));
+    assert_eq!(renderer.byte_at(&ed, view, 3, 1), Some(7));
+}
+
+#[test]
 fn words_longer_than_the_row_break_anywhere() {
     let mut ed = editor("|abcdefghijkl");
     let f = frame(&mut ed, 7, 4);

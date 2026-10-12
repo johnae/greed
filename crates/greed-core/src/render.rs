@@ -609,6 +609,18 @@ struct Cell {
     action: Option<(Arc<str>, usize)>,
     /// How many times bigger it's drawn; `width` already counts it.
     scale: u8,
+    /// A copy of the line's leading whitespace that starts a wrapped row, so
+    /// the row lines up under the text above it: styles and overlays (a
+    /// transcript's bar) show on it as on the first row, and the cursor and
+    /// selections never do.
+    repeated: bool,
+}
+
+impl Cell {
+    /// Whitespace from the buffer, where a row may break.
+    fn is_space(&self) -> bool {
+        self.inserted.is_none() && self.text.chars().all(char::is_whitespace)
+    }
 }
 
 /// Adds `row`, `height` screen rows tall as far as `limit` rows allow, and
@@ -1029,9 +1041,9 @@ impl<M: Measure> Renderer<M> {
                 }
                 let mut x = gutter;
                 for cell in &cells {
-                    if cell.inserted.is_some() {
+                    if cell.repeated || cell.inserted.is_some() {
                         let place = screen_position(area, x, rows.len());
-                        self.push_inserted(&mut row, cell, view_id, place);
+                        self.push_not_text(&mut row, cell, &styled, view_id, place);
                         x += cell.width;
                         continue;
                     }
@@ -1127,6 +1139,23 @@ impl<M: Measure> Renderer<M> {
                     row.push(text, smallvec![Tag::from(mark.style.clone())]);
                 }
             }
+        }
+    }
+
+    /// Draws a cell that isn't the buffer's text where it stands: a wrapped
+    /// row's indent, or a mark's text, at screen position `place`.
+    fn push_not_text(
+        &self,
+        row: &mut Row,
+        cell: &Cell,
+        marks: &[&Mark],
+        view: ViewId,
+        place: Position,
+    ) {
+        if cell.repeated {
+            push_repeated(row, cell, marks);
+        } else {
+            self.push_inserted(row, cell, view, place);
         }
     }
 
@@ -1231,6 +1260,7 @@ impl<M: Measure> Renderer<M> {
                         inserted: Some(mark.style.clone()),
                         action: mark.action.clone().map(|a| (a, mark.range.start)),
                         scale,
+                        repeated: false,
                     });
                     x += w;
                 }
@@ -1257,6 +1287,7 @@ impl<M: Measure> Renderer<M> {
                 inserted: None,
                 action: None,
                 scale,
+                repeated: false,
             });
             x += w;
         }
@@ -2347,6 +2378,7 @@ fn clipped(mark: &str, byte: usize) -> Cell {
         inserted: Some(Arc::from("fold")),
         action: None,
         scale: 1,
+        repeated: false,
     }
 }
 
@@ -2361,31 +2393,72 @@ fn end_cell(end: usize) -> Cell {
         inserted: None,
         action: None,
         scale: 1,
+        repeated: false,
     }
+}
+
+/// Draws `cell`, a wrapped row's indent (see [`Cell::repeated`]): what
+/// `marks` draw there, a transcript's bar say, without the cursor or a
+/// selection.
+fn push_repeated(row: &mut Row, cell: &Cell, marks: &[&Mark]) {
+    if let Some((text, tag)) = Overlay::default().over(marks, cell) {
+        row.push_scaled(&text, smallvec![tag], cell.scale);
+        return;
+    }
+    let tags = marks
+        .iter()
+        .filter(|m| !m.line && m.range.contains(&cell.byte))
+        .map(|m| Tag::from(m.style.clone()))
+        .collect();
+    row.push_scaled(&cell.text, tags, cell.scale);
+}
+
+/// A line's leading whitespace, as copies to start its wrapped rows with
+/// (see [`Cell::repeated`]); none when the line is only whitespace or the
+/// indent would take more than half of `width`.
+fn wrap_indent(cells: &[Cell], width: usize) -> Vec<Cell> {
+    let leading: Vec<Cell> = cells
+        .iter()
+        .take_while(|c| c.is_space())
+        .map(|c| Cell {
+            repeated: true,
+            ..c.clone()
+        })
+        .collect();
+    let indent: usize = leading.iter().map(|c| c.width).sum();
+    if leading.len() == cells.len() || indent * 2 > width {
+        return Vec::new();
+    }
+    leading
 }
 
 /// A line's `cells` in rows `width` cells wide, breaking after whitespace
 /// where it can, with a cell for the end of the line (byte `end`) where a
-/// cursor can sit after it, if there's room.
+/// cursor can sit after it, if there's room. Rows after the first start
+/// with the line's indent, so wrapped text lines up under the text above.
 fn wrap(cells: Vec<Cell>, width: usize, end: usize) -> Vec<Vec<Cell>> {
+    let indent = wrap_indent(&cells, width);
+    let indent_width: usize = indent.iter().map(|c| c.width).sum();
     let mut rows = vec![Vec::new()];
     let mut x = 0;
     // Where the current row may break: just after its last whitespace.
     let mut last_break = 0;
     for cell in cells {
         let row = rows.last_mut().expect("at least one row");
-        if x + cell.width > width && !row.is_empty() {
+        if x + cell.width > width && row.iter().any(|c: &Cell| !c.repeated) {
             let carried = if last_break > 0 && last_break < row.len() {
                 row.split_off(last_break)
             } else {
                 Vec::new()
             };
-            x = carried.iter().map(|c: &Cell| c.width).sum();
-            rows.push(carried);
+            x = indent_width + carried.iter().map(|c: &Cell| c.width).sum::<usize>();
+            let mut next = indent.clone();
+            next.extend(carried);
+            rows.push(next);
             last_break = 0;
         }
         let row = rows.last_mut().expect("at least one row");
-        let breaks = cell.inserted.is_none() && cell.text.chars().all(char::is_whitespace);
+        let breaks = cell.is_space();
         x += cell.width;
         row.push(cell);
         if breaks {
