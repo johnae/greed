@@ -9,7 +9,8 @@
 --   Greed     Add a test for the pager         idle       4 min ago  3.1k tokens
 --   Claude 2  Look at the parser               saved      2 h ago                 in greed-b
 --
--- It's redrawn as sessions change; the commands acting on it are in
+-- Drawn with `core.ui`, again as sessions change, the cursor staying on its
+-- session as the rows change places; the commands acting on it are in
 -- init.luau.
 
 local greed = require("@greed")
@@ -20,6 +21,8 @@ local transcript = require("./transcript")
 local terminal = require("@terminal")
 
 type Session = session.Session
+
+local ui = core.ui
 
 local M = {}
 
@@ -75,20 +78,13 @@ local TITLE_WIDTH = 40
 -- The most of why a session failed that a line shows, in characters.
 local REASON_WIDTH = 50
 
--- Where a working row's mark is, to spin it.
-type Spot = { from: number, to: number }
-
 type Open = {
-	buffer: greed.Buffer,
-	view: greed.View,
+	view: core.UiView,
+	float: greed.View,
 	--- The project it lists the repository's sessions for.
 	root: string,
-	--- The row on each 0-based line.
-	rows: { [number]: Row },
 	marked: { [string]: boolean },
 	filter: string,
-	--- Where the working rows' marks are.
-	spinning: { Spot },
 	ticking: boolean,
 }
 
@@ -121,86 +117,58 @@ local function matches(cells: { string }, filter: string): boolean
 	return string.find(text, string.lower(filter), 1, true) ~= nil
 end
 
--- The list's lines, their decorations, the row on each line and where the
--- working rows' marks are.
-local function draw(
-	o: Open,
-	all: { Row }
-): ({ string }, { greed.Mark }, { [number]: Row }, { Spot })
-	local root = o.root
-	local heading = "Agent sessions"
+-- The list as widgets: its heading, the keys, and a line for each session
+-- the filter lets through, the row as its value.
+local function render(o: Open): core.UiNode
+	local heading: { core.UiSpan } = { ui.span("Agent sessions", "markup.heading") }
 	if o.filter ~= "" then
-		heading ..= `   / {o.filter}`
+		table.insert(heading, ui.span(`   / {o.filter}`))
 	end
-	local lines = { heading, HINTS, "" }
-	local marks: { greed.Mark } = {
-		{ from = 0, to = #"Agent sessions", style = "markup.heading" },
-		{ from = #heading + 1, to = #heading + 1 + #HINTS, style = "comment" },
-	}
 	local now = os.time()
-	local shown: { { row: Row, cells: { string } } } = {}
-	local widths = { 0, 0, 0, 0, 0 }
-	for _, row in all do
+	local lines: { core.UiGridRow } = {}
+	for _, row in source(o.root) do
+		local status = (STATUS[row.status] or row.status)
+			.. if row.reason then `: {core.text.clip(row.reason, REASON_WIDTH)}` else ""
 		local cells = {
 			row.agent,
 			core.text.clip(row.title, TITLE_WIDTH),
-			(STATUS[row.status] or row.status)
-				.. if row.reason then `: {core.text.clip(row.reason, REASON_WIDTH)}` else "",
+			status,
 			core.time.ago(now - row.time),
 			if row.tokens then `{transcript.tokens(row.tokens)} tokens` else "",
-			where(row, root),
+			where(row, o.root),
 		}
 		if matches(cells, o.filter) then
-			table.insert(shown, { row = row, cells = cells })
-			for i = 1, #widths do
-				widths[i] = math.max(widths[i], core.text.width(cells[i]))
-			end
+			local marked = o.marked[row.key]
+			table.insert(lines, {
+				value = row,
+				line = if marked then "ui.selection" else nil,
+				cells = {
+					{ ui.span(if marked then "* " else "  "), ui.span(cells[1], "keyword") },
+					{ ui.span(cells[2]) },
+					{
+						{
+							text = cells[3],
+							style = STATUS_STYLE[row.status],
+							tag = if row.status == "working" then "spin" else nil,
+						},
+					},
+					{ ui.span(cells[4], "comment") },
+					{ ui.span(cells[5], "comment") },
+					{ ui.span(cells[6], "comment") },
+				},
+			})
 		end
 	end
-	if #shown == 0 then
-		table.insert(
-			lines,
-			if o.filter ~= ""
-				then "Nothing matches the filter."
-				else "No sessions yet: n starts one."
-		)
-	end
-	local rows: { [number]: Row } = {}
-	local spinning: { Spot } = {}
-	local at = #heading + #HINTS + 3
-	for _, item in shown do
-		local row, cells = item.row, item.cells
-		local line = if o.marked[row.key] then "* " else "  "
-		-- Adds cell `i` to the line and returns where it starts.
-		local function cell(i: number, style: string?): number
-			local from = at + #line
-			line ..= cells[i]
-			if style and cells[i] ~= "" then
-				table.insert(marks, { from = from, to = from + #cells[i], style = style })
-			end
-			if i < #cells then
-				line ..= string.rep(" ", widths[i] - core.text.width(cells[i]) + 2)
-			end
-			return from
-		end
-		cell(1, "keyword")
-		cell(2)
-		local status = cell(3, STATUS_STYLE[row.status])
-		if row.status == "working" then
-			table.insert(spinning, { from = status, to = status + #"●" })
-		end
-		cell(4, "comment")
-		cell(5, "comment")
-		cell(6, "comment")
-		line = string.match(line, "^(.-)%s*$") or line
-		if o.marked[row.key] then
-			table.insert(marks, { from = at, to = at + #line, style = "ui.selection", line = true })
-		end
-		rows[#lines] = row
-		table.insert(lines, line)
-		at += #line + 1
-	end
-	return lines, marks, rows, spinning
+	local body: core.UiNode = if #lines > 0
+		then ui.grid(lines)
+		else ui.line({
+			ui.span(
+				if o.filter ~= ""
+					then "Nothing matches the filter."
+					else "No sessions yet: n starts one."
+			),
+		})
+	return ui.column({ ui.line(heading), ui.line({ ui.span(HINTS, "comment") }), ui.gap(), body })
 end
 
 -- Spins the working rows' marks while there are any and effects are on.
@@ -210,27 +178,27 @@ local function tick(o: Open)
 	end
 	o.ticking = true
 	greed.spawn(function()
-		while open == o and #o.spinning > 0 and core.effects.enabled() do
+		while open == o and #o.view:spots("spin") > 0 and core.effects.enabled() do
 			local frame = transcript.spinner_frame(greed.now())
 			local marks: { greed.Mark } = {}
-			for _, spot in o.spinning do
+			for _, spot in o.view:spots("spin") do
 				table.insert(marks, {
 					from = spot.from,
-					to = spot.to,
+					to = spot.from + #"●",
 					style = "diff.plus",
 					text = frame,
 					overlay = true,
 				})
 			end
 			pcall(function()
-				o.buffer:decorate("agents-spin", marks)
+				o.view.buffer:decorate("agents-spin", marks)
 			end)
 			greed.sleep(transcript.FRAME_MS)
 		end
 		o.ticking = false
 		if open == o then
 			pcall(function()
-				o.buffer:decorate("agents-spin", {})
+				o.view.buffer:decorate("agents-spin", {})
 			end)
 		end
 	end)
@@ -242,35 +210,17 @@ function M.render()
 	if o == nil then
 		return
 	end
-	if not o.buffer:valid() then
+	if not o.view.buffer:valid() then
 		open = nil
 		return
 	end
-	local lines, marks, rows, spinning = draw(o, source(o.root))
-	local buffer = o.buffer
-	local line = buffer:line_of(o.view:cursor())
-	-- The cursor stays on its session as the rows change places.
-	local here = o.rows[line]
-	for at, row in rows do
-		if here and row.key == here.key then
-			line = at
-		end
-	end
-	buffer:set_readonly(false)
-	buffer:edit(function(e)
-		e:replace(0, buffer:len(), table.concat(lines, "\n"))
-	end)
-	buffer:set_readonly(true)
-	buffer:decorate("agents", marks)
-	o.rows = rows
-	o.spinning = spinning
-	o.view:set_cursor(buffer:line_start(math.min(line, buffer:line_count() - 1)))
+	o.view:redraw()
 	tick(o)
 end
 
 --- Whether `buffer` is the list.
 function M.is(buffer: greed.Buffer): boolean
-	return open ~= nil and open.buffer == buffer
+	return open ~= nil and open.view.buffer == buffer
 end
 
 --- The folder the open list is for, if it's open.
@@ -282,13 +232,15 @@ end
 function M.close()
 	local o = open
 	open = nil
-	if o and o.view:valid() then
-		o.view:close()
+	if o and o.float:valid() then
+		o.float:close()
 	end
 end
 
+-- Puts the cursor on the list's first session.
 local function to_first(o: Open)
-	o.view:set_cursor(o.buffer:line_start(math.min(3, o.buffer:line_count() - 1)))
+	local buffer = o.view.buffer
+	o.float:set_cursor(buffer:line_start(math.min(3, buffer:line_count() - 1)))
 end
 
 --- Opens the list in a floating view, in place of one open already, and
@@ -297,41 +249,45 @@ function M.open(root: string)
 	M.close()
 	local buffer = greed.create_buffer("agents", "", { readonly = true })
 	buffer:set_line_numbers(false)
-	local view = greed.float(buffer, { title = "Agent sessions", width = "90%", height = "60%" })
+	local float = greed.float(buffer, { title = "Agent sessions", width = "90%", height = "60%" })
 	local o: Open = {
-		buffer = buffer,
-		view = view,
+		float = float,
 		root = root,
-		rows = {},
 		marked = {},
 		filter = "",
-		spinning = {},
 		ticking = false,
+		view = nil :: any,
 	}
 	open = o
-	M.render()
+	o.view = ui.mount(buffer, function()
+		return render(o)
+	end, {}, {
+		key = function(row: Row): string
+			return row.key
+		end,
+	})
 	to_first(o)
+	tick(o)
 end
 
 --- The row under the cursor in the list.
 function M.at_cursor(ctx: greed.Context): Row?
 	local o = open
-	if o == nil or o.buffer ~= ctx.buffer then
+	if o == nil or o.view.buffer ~= ctx.buffer then
 		return nil
 	end
-	return o.rows[ctx.buffer:line_of(ctx.view:cursor())]
+	return o.view:value_at(ctx.view:cursor())
 end
 
 --- The marked rows, in the order shown, or the one under the cursor.
 function M.chosen(ctx: greed.Context): { Row }
 	local o = open
-	if o == nil or o.buffer ~= ctx.buffer then
+	if o == nil or o.view.buffer ~= ctx.buffer then
 		return {}
 	end
 	local out: { Row } = {}
-	for line = 0, ctx.buffer:line_count() - 1 do
-		local row = o.rows[line]
-		if row and o.marked[row.key] then
+	for _, row in o.view:values() do
+		if o.marked[row.key] then
 			table.insert(out, row)
 		end
 	end
@@ -352,7 +308,7 @@ function M.mark(ctx: greed.Context)
 	o.marked[row.key] = not o.marked[row.key]
 	M.render()
 	local next = ctx.buffer:line_of(ctx.view:cursor()) + 1
-	if o.rows[next] then
+	if next < ctx.buffer:line_count() and o.view:value_at(ctx.buffer:line_start(next)) then
 		ctx.view:set_cursor(ctx.buffer:line_start(next))
 	end
 end
@@ -382,7 +338,7 @@ function M.filter()
 end
 
 greed.on("buffer.closed", function(event: greed.BufferClosed)
-	if open and open.buffer:id() == event.id then
+	if open and open.view.buffer:id() == event.id then
 		open = nil
 	end
 end)
