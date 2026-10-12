@@ -117,11 +117,13 @@ fn run(program: &str, args: &[&str], input: Option<&str>) -> Option<String> {
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin.write_all(input.as_bytes()).ok()?;
-    }
+    // Waited for even when the input can't all be written, so it's reaped.
+    let wrote = match (input, child.stdin.take()) {
+        (Some(input), Some(mut stdin)) => stdin.write_all(input.as_bytes()).is_ok(),
+        _ => true,
+    };
     let output = child.wait_with_output().ok()?;
-    output.status.success().then(|| {
+    (wrote && output.status.success()).then(|| {
         String::from_utf8_lossy(&output.stdout)
             .trim_end_matches('\n')
             .to_owned()

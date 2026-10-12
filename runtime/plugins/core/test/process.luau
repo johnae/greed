@@ -206,3 +206,29 @@ test("spawn refuses options it can't use", function(t)
 	local ok2, err2 = pcall(spawn, { "true" }, { stderr = "merge" })
 	assert(not ok2 and string.find(tostring(err2), "stream", 1, true), tostring(err2))
 end)
+
+test("a program printing more than is read waits for the reading", function(t)
+	-- 20 MB, then a word on its error output once all of it went out.
+	local script = "head -c 20000000 /dev/zero; echo done >&2"
+	local child = assert(greed.process.spawn({ "sh", "-c", script }))
+	-- Real time, with its output arriving meanwhile.
+	greed.process.run({ "sleep", "0.5" })
+	assert(child:stderr() == "", "it waits while its output isn't read")
+	local total = 0
+	while true do
+		local piece = child:read()
+		if piece == nil then
+			break
+		end
+		total += #piece
+	end
+	assert(total == 20000000, `all of it arrives: {total}`)
+	assert(child:wait() == 0)
+	assert(child:stderr() == "done\n", child:stderr())
+end)
+
+test("a group that's all gone isn't signalled", function(t)
+	local child = assert(greed.process.spawn({ "true" }, { group = true }))
+	assert(child:wait() == 0)
+	assert(not child:signal("KILL"), "nothing of it is left to reach")
+end)

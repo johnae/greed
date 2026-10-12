@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
@@ -222,6 +222,9 @@ struct Child {
     /// Whether it leads a process group of its own, which signals go to.
     group: bool,
     stderr: Arc<Mutex<Vec<u8>>>,
+    unread: Arc<Unread>,
+    /// Whether the plugin let go of it while it ran: it goes once it exits.
+    let_go: bool,
 }
 
 impl Child {
@@ -236,20 +239,91 @@ impl Child {
             return false;
         };
         let pid = Pid::from_raw(pid);
-        if self.group {
-            return nix::sys::signal::killpg(pid, signal).is_ok();
-        }
         // Holding the lock, the program can't be reaped meanwhile, so its
         // id can't go to another.
-        matches!(process.try_wait(), Ok(None)) && nix::sys::signal::kill(pid, signal).is_ok()
+        let running = matches!(process.try_wait(), Ok(None));
+        if self.group {
+            // Once reaped, its id is free, but no new program gets it while
+            // any of its group lives: a program with that id means the group
+            // is gone and the id is someone else's now.
+            let taken = nix::sys::signal::kill(pid, None) != Err(nix::errno::Errno::ESRCH);
+            return (running || !taken) && nix::sys::signal::killpg(pid, signal).is_ok();
+        }
+        running && nix::sys::signal::kill(pid, signal).is_ok()
     }
 }
 
 impl Drop for Child {
     fn drop(&mut self) {
+        self.unread.close();
         if !self.exited || self.group {
             self.signal(Signal::SIGKILL);
         }
+    }
+}
+
+/// The most of a program's output that waits to be read. Past it, reading
+/// its output stops until the plugin reads some, so a program printing
+/// faster than its plugin reads waits, as on a full pipe.
+const MAX_UNREAD: usize = 8 * 1024 * 1024;
+
+/// How much of a program's output was read from it and not yet by its
+/// plugin, and whether anyone still will.
+#[derive(Default)]
+struct Unread {
+    count: Mutex<UnreadCount>,
+    room: Condvar,
+}
+
+#[derive(Default)]
+struct UnreadCount {
+    bytes: usize,
+    closed: bool,
+}
+
+impl Unread {
+    fn count(&self) -> std::sync::MutexGuard<'_, UnreadCount> {
+        self.count.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Counts `n` more bytes, once there's room for them.
+    fn add(&self, n: usize) {
+        let mut count = self
+            .room
+            .wait_while(self.count(), |count| {
+                count.bytes >= MAX_UNREAD && !count.closed
+            })
+            .unwrap_or_else(PoisonError::into_inner);
+        count.bytes += n;
+    }
+
+    /// The plugin read `n` bytes.
+    fn read(&self, n: usize) {
+        let mut count = self.count();
+        count.bytes = count.bytes.saturating_sub(n);
+        self.room.notify_all();
+    }
+
+    /// Nobody will read any more: reading goes on, uncounted.
+    fn close(&self) {
+        self.count().closed = true;
+        self.room.notify_all();
+    }
+}
+
+/// Held by each function of a program's handle. When Luau has collected
+/// them all, the plugin can't reach the program anymore, so it's let go.
+struct Handle {
+    id: u64,
+    dropped: Arc<Mutex<Vec<u64>>>,
+}
+
+impl Drop for Handle {
+    fn drop(&mut self) {
+        self.dropped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(self.id);
     }
 }
 
@@ -279,12 +353,40 @@ fn signal_name(number: i32) -> Option<&'static str> {
 pub(crate) struct Children {
     next: u64,
     open: HashMap<u64, Child>,
+    /// Programs whose handles Luau collected since the last look.
+    dropped: Arc<Mutex<Vec<u64>>>,
 }
 
 impl Children {
     /// Ends the programs plugin `name` started.
     pub fn remove_owned_by(&mut self, name: &str) {
         self.open.retain(|_, child| &*child.owner != name);
+    }
+
+    /// Forgets the programs no plugin holds anymore once they exited,
+    /// leaving what they started to run on.
+    fn sweep(&mut self) {
+        let dropped =
+            std::mem::take(&mut *self.dropped.lock().unwrap_or_else(PoisonError::into_inner));
+        for id in dropped {
+            if let Some(child) = self.open.get_mut(&id) {
+                // Nobody reads what it prints from now on.
+                child.let_go = true;
+                child.queue.clear();
+                child.unread.close();
+                if child.exited {
+                    self.forget(id);
+                }
+            }
+        }
+    }
+
+    /// Takes program `id` out without signalling it or its group.
+    fn forget(&mut self, id: u64) {
+        if let Some(mut child) = self.open.remove(&id) {
+            child.exited = true;
+            child.group = false;
+        }
     }
 }
 
@@ -294,6 +396,7 @@ struct Started {
     stdin: Sender<Vec<u8>>,
     process: Arc<Mutex<std::process::Child>>,
     stderr: Arc<Mutex<Vec<u8>>>,
+    unread: Arc<Unread>,
 }
 
 /// How `spawn` starts a program, besides its command line.
@@ -369,7 +472,8 @@ fn start_child(
     let (stderr_reading, stderr_read) = crossbeam_channel::bounded::<()>(0);
     let (stdout_reading, stdout_read) = crossbeam_channel::bounded::<()>(0);
     let stream_stderr = options.stream_stderr;
-    let sender = send.clone();
+    let unread = Arc::new(Unread::default());
+    let (sender, counted) = (send.clone(), unread.clone());
     std::thread::spawn(move || {
         let _reading = stderr_reading;
         let mut buffer = [0; 4096];
@@ -380,15 +484,17 @@ fn start_child(
                 kept.drain(..over);
             }
             if stream_stderr {
+                counted.add(n);
                 sender(Piece::Out(Stream::Stderr, buffer[..n].to_vec()));
             }
         }
     });
-    let sender = send.clone();
+    let (sender, counted) = (send.clone(), unread.clone());
     std::thread::spawn(move || {
         let _reading = stdout_reading;
         let mut buffer = vec![0; 16 * 1024];
         while let Ok(n @ 1..) = stdout.read(&mut buffer) {
+            counted.add(n);
             sender(Piece::Out(Stream::Stdout, buffer[..n].to_vec()));
         }
     });
@@ -410,6 +516,7 @@ fn start_child(
         stdin: input,
         process,
         stderr: kept,
+        unread,
     })
 }
 
@@ -441,16 +548,21 @@ fn wait_for_exit(
 pub(super) fn piece_arrived(lua: &Lua, id: u64, piece: Piece) -> LuaResult<()> {
     let wake: Vec<(u64, mlua::MultiValue)> = {
         let mut state = state_mut(lua);
-        let Some(child) = state.children.open.get_mut(&id) else {
+        let children = &mut state.children;
+        children.sweep();
+        let Some(child) = children.open.get_mut(&id) else {
             return Ok(());
         };
         match piece {
             Piece::Out(stream, bytes) => {
                 if let Some(token) = child.reader.take() {
+                    child.unread.read(bytes.len());
                     let piece = (lua.create_string(&bytes)?, stream.name());
                     vec![(token, piece.into_lua_multi(lua)?)]
                 } else {
-                    child.queue.push_back((stream, bytes));
+                    if !child.let_go {
+                        child.queue.push_back((stream, bytes));
+                    }
                     vec![]
                 }
             }
@@ -464,6 +576,9 @@ pub(super) fn piece_arrived(lua: &Lua, id: u64, piece: Piece) -> LuaResult<()> {
                 }
                 if let Some(token) = child.reader.take() {
                     wake.push((token, mlua::Value::Nil.into_lua_multi(lua)?));
+                }
+                if child.let_go {
+                    children.forget(id);
                 }
                 wake
             }
@@ -494,6 +609,7 @@ fn read_now(lua: &Lua, id: u64) -> LuaResult<mlua::MultiValue> {
         return (true, mlua::Value::Nil).into_lua_multi(lua);
     };
     if let Some((stream, bytes)) = child.queue.pop_front() {
+        child.unread.read(bytes.len());
         return (true, lua.create_string(&bytes)?, stream.name()).into_lua_multi(lua);
     }
     if child.exited {
@@ -543,10 +659,12 @@ fn waiting_call(lua: &Lua, name: &str, now: Function) -> LuaResult<Function> {
     .call((name, now))
 }
 
-/// The table a plugin talks to program `id` through.
-fn child_to_lua(lua: &Lua, id: u64, pid: u32) -> LuaResult<Table> {
+/// The table a plugin talks to a program through. Each of its functions
+/// holds `handle`, so the program is let go once Luau collected them all.
+fn child_to_lua(lua: &Lua, handle: &Arc<Handle>, pid: u32) -> LuaResult<Table> {
     let child = lua.create_table()?;
     child.set("pid", pid)?;
+    let h = handle.clone();
     child.set(
         "write",
         lua.create_function(move |lua, text: mlua::LuaString| {
@@ -554,30 +672,33 @@ fn child_to_lua(lua: &Lua, id: u64, pid: u32) -> LuaResult<Table> {
             let sent = state
                 .children
                 .open
-                .get(&id)
+                .get(&h.id)
                 .and_then(|child| child.stdin.as_ref())
                 .is_some_and(|stdin| stdin.send(text.as_bytes().to_vec()).is_ok());
             Ok(sent)
         })?,
     )?;
+    let h = handle.clone();
     child.set(
         "close",
         lua.create_function(move |lua, ()| {
-            if let Some(child) = state_mut(lua).children.open.get_mut(&id) {
+            if let Some(child) = state_mut(lua).children.open.get_mut(&h.id) {
                 child.stdin = None;
             }
             Ok(())
         })?,
     )?;
+    let h = handle.clone();
     child.set(
         "kill",
         lua.create_function(move |lua, ()| {
-            if let Some(child) = state(lua).children.open.get(&id) {
+            if let Some(child) = state(lua).children.open.get(&h.id) {
                 child.signal(Signal::SIGKILL);
             }
             Ok(())
         })?,
     )?;
+    let h = handle.clone();
     child.set(
         "signal",
         lua.create_function(move |lua, name: String| {
@@ -585,10 +706,11 @@ fn child_to_lua(lua: &Lua, id: u64, pid: u32) -> LuaResult<Table> {
             Ok(state(lua)
                 .children
                 .open
-                .get(&id)
+                .get(&h.id)
                 .is_some_and(|child| child.signal(signal)))
         })?,
     )?;
+    let h = handle.clone();
     child.set(
         "stderr",
         lua.create_function(move |lua, ()| {
@@ -596,7 +718,7 @@ fn child_to_lua(lua: &Lua, id: u64, pid: u32) -> LuaResult<Table> {
             match state
                 .children
                 .open
-                .get(&id)
+                .get(&h.id)
                 .and_then(|child| child.stderr.lock().ok())
             {
                 Some(kept) => lua.create_string(&*kept),
@@ -604,9 +726,11 @@ fn child_to_lua(lua: &Lua, id: u64, pid: u32) -> LuaResult<Table> {
             }
         })?,
     )?;
-    let read = lua.create_function(move |lua, ()| read_now(lua, id))?;
+    let h = handle.clone();
+    let read = lua.create_function(move |lua, ()| read_now(lua, h.id))?;
     child.set("read", waiting_call(lua, "child.read", read)?)?;
-    let wait = lua.create_function(move |lua, ()| wait_now(lua, id))?;
+    let h = handle.clone();
+    let wait = lua.create_function(move |lua, ()| wait_now(lua, h.id))?;
     child.set("wait", waiting_call(lua, "child.wait", wait)?)?;
     super::handles::methods(lua, child)
 }
@@ -637,10 +761,12 @@ fn spawn(
             ..SpawnOptions::default()
         },
     };
-    let id = {
+    let (id, dropped) = {
         let mut state = state_mut(lua);
-        state.children.next += 1;
-        state.children.next
+        let children = &mut state.children;
+        children.sweep();
+        children.next += 1;
+        (children.next, children.dropped.clone())
     };
     let sender = jobs::sender(lua);
     let started = start_child(command, &options, move |piece| {
@@ -662,10 +788,43 @@ fn spawn(
                     process: started.process,
                     group: options.group,
                     stderr: started.stderr,
+                    unread: started.unread,
+                    let_go: false,
                 },
             );
-            child_to_lua(lua, id, started.pid)?.into_lua_multi(lua)
+            let handle = Arc::new(Handle { id, dropped });
+            child_to_lua(lua, &handle, started.pid)?.into_lua_multi(lua)
         }
         Err(err) => (mlua::Value::Nil, err.to_string()).into_lua_multi(lua),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::state;
+    use crate::Editor;
+    use crate::luau::Host;
+
+    #[test]
+    fn programs_nobody_holds_go_once_they_exit() {
+        let host = Host::new(Editor::new(greed_text::ClientId(1))).unwrap();
+        let open = || state(&host.lua).children.open.len();
+        host.eval("require('@greed').process.spawn({ 'true' })")
+            .unwrap();
+        host.eval("held = require('@greed').process.spawn({ 'true' })")
+            .unwrap();
+        let exited = || state(&host.lua).children.open.values().all(|c| c.exited);
+        let jobs = host.finished_jobs();
+        while !exited() {
+            let done = jobs.recv_timeout(Duration::from_secs(10)).unwrap();
+            host.finish_job(done).unwrap();
+        }
+        assert_eq!(open(), 2);
+        host.luau_memory();
+        host.eval("require('@greed').process.spawn({ 'true' })")
+            .unwrap();
+        assert_eq!(open(), 2, "the one held stays, with the new one");
     }
 }

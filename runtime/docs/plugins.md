@@ -1224,6 +1224,9 @@ over its input and output, like an agent or a server speaking JSON-RPC.
 piece it prints (nil once it exited), `child:close()` closes its input,
 and `child:wait()` waits for its exit code, or nil and the signal that
 ended it (`nil, "INT"`). It ends with the plugin that started it, too.
+A program that prints faster than you read waits once 8 MB is unread, as
+on a full pipe. Drop every reference to a child and it runs on without
+you, what it prints thrown away.
 
 ```luau
 greed.spawn(function()
