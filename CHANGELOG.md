@@ -9,22 +9,14 @@ the repository's history.
 
 ![A Markdown page working out a budget: fields, formulas, a table's worked-out columns and a bar chart](https://raw.githubusercontent.com/johnae/greed/v0.2.0/site/media/changelog/0.2.0-live-markdown.png)
 
-- Live Markdown: fields, `{{ formulas }}`, worked-out table columns and charts under tables,
-  recomputed as you type. Data blocks read tables live from CSV, SQLite and PostgreSQL.
-- Agents across machines: one session follows the others and the hubs on machines you reached
-  with `greed ssh`. `space space` lists every session and agent, and you can answer or stop
-  an agent from anywhere, Claude Code's questions included.
-- Auto mode for agents: a decision model lets safe commands run and asks you about the rest.
-  `:decision-check` tries a model before you rely on it.
-- Untrusted projects run none of their own code until you trust them: config, language
-  servers that run the project's code, and formatting on save. Greed asks once.
-- `core.ui`, a way for plugins to draw interfaces as text: lists, grids, inputs and buttons.
-  The picker, completion and the command line use it.
+- Live Markdown: fields, `{{ formulas }}`, worked-out table columns and charts under tables, recomputed as you type. Data blocks read tables live from CSV, SQLite and PostgreSQL.
+- Agents across machines: one session follows the others and the hubs on machines you reached with `greed ssh`. `space space` lists every session and agent, and you can answer or stop an agent from anywhere, Claude Code's questions included.
+- Auto mode for agents: commands that only look, build or test run by themselves, and a decision model you pick judges the rest or asks you. `:decision-check` tries a model before you rely on it.
+- Untrusted projects run none of their own code until you trust them: config, language servers that run the project's code, and formatting on save. Greed asks once.
+- `core.ui`, a way for plugins to draw interfaces as text: lists, grids, inputs and buttons. The picker, completion and the command line use it.
 - Some 330 more languages from Helix's list, Terraform, OpenTofu and HCL among them.
-- In the window, views scroll smoothly, buttons light up under the mouse and input methods
-  compose at the cursor. `:s///c` asks about each match.
-- Install on macOS and Linux with Homebrew: `brew install johnae/greed/greed`, or
-  `brew install --cask johnae/greed/greed-app` for Greed.app.
+- In the window, views scroll smoothly, buttons light up under the mouse and input methods compose at the cursor. `:s///c` asks about each match.
+- Install on macOS and Linux with Homebrew: `brew install johnae/greed/greed`, or `brew install --cask johnae/greed/greed-app` for Greed.app.
 
 ### New
 

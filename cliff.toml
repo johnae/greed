@@ -3,7 +3,8 @@
 #
 #   git-cliff --unreleased --tag v0.2.0 --prepend CHANGELOG.md
 #
-# then write the version's Highlights by hand above its lists. The release
+# then write the version's Highlights by hand above its lists, each bullet on
+# one line (the release page breaks lines where the file does). The release
 # workflow puts that section on the release page.
 
 [changelog]
