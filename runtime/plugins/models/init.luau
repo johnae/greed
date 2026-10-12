@@ -1474,6 +1474,156 @@ function M.ask(role: string, request: Request): (string?, string?)
 	end
 end
 
+--- A yes-or-no question for `decide`: what to judge, and what yes and no
+--- mean, if it helps to say.
+export type Question = { instructions: string, yes: string?, no: string? }
+
+-- How each model answers `decide`, by provider and model: a decision model
+-- (System One) directly, any other in a chat.
+local decides_by: { [string]: "systemone" | "chat" } = {}
+
+-- The System One API's form of `questions`: each a "noul", a yes-or-no
+-- question answered with how likely yes is.
+local function nouls(questions: { [string]: Question }): { [string]: any }
+	local out: { [string]: any } = {}
+	for name, question in questions do
+		local criteria = if question.yes or question.no
+			then { ["true"] = question.yes, ["false"] = question.no }
+			else nil
+		out[name] = { type = "noul", instructions = question.instructions, criteria = criteria }
+	end
+	return out
+end
+
+-- Asks the decision model playing `role` `questions` about `state` over
+-- the System One API: the answers, or nil and why, and whether that's
+-- because the model or its server doesn't speak it.
+local function systemone(
+	role: string,
+	state: any,
+	questions: { [string]: Question }
+): ({ [string]: number }?, string?, boolean)
+	local chosen, provider, key, why = connect(role)
+	if chosen == nil or provider == nil then
+		return nil, why, false
+	end
+	local headers = auth(provider, key)
+	headers["content-type"] = "application/json"
+	local body =
+		greed.json.encode({ model = chosen.model, state = state, questions = nouls(questions) })
+	local request: greed.HttpRequest = {
+		url = `{provider.url}/systemone`,
+		method = "POST",
+		headers = headers,
+		body = body,
+		timeout = 15000,
+	}
+	local ok, response, err = pcall(as_set, role, chosen, listing.request, request)
+	if not ok then
+		return nil, tostring(response), false
+	elseif response == nil then
+		return nil, `can't reach {chosen.provider}: {err}`, false
+	elseif response.status >= 300 then
+		-- A chat model, or a server without the API, says so with one of these.
+		local unsupported = response.status == 400
+			or response.status == 404
+			or response.status == 405
+			or response.status == 422
+		return nil, refusal(response.status, response.body), unsupported
+	end
+	local decoded = greed.json.decode(response.body)
+	local answers = type(decoded) == "table" and decoded.answers
+	local out: { [string]: number } = {}
+	for name in questions do
+		local answer = type(answers) == "table" and answers[name]
+		local yes = if type(answer) == "table" then tonumber(answer.noul) else nil
+		if yes == nil then
+			return nil, `the decision model gave no answer to {name}`, false
+		end
+		out[name] = yes
+	end
+	return out, nil, false
+end
+
+-- Asks the chat model playing `role` `questions` about `state`, for the
+-- same answers a decision model gives: how likely each is yes.
+local function in_chat(
+	role: string,
+	state: any,
+	questions: { [string]: Question }
+): ({ [string]: number }?, string?)
+	local lines: { string } = {}
+	for name, question in questions do
+		local meaning = ""
+		if question.yes then
+			meaning ..= ` Yes means: {question.yes}.`
+		end
+		if question.no then
+			meaning ..= ` No means: {question.no}.`
+		end
+		table.insert(lines, `- {name}: {question.instructions}{meaning}`)
+	end
+	table.sort(lines)
+	local text = if type(state) == "string" then state else greed.json.encode(state)
+	local answer, err = M.ask(role, {
+		system = "You answer yes-or-no questions about the state you're given. Reply with only a "
+			.. "JSON object giving, for each question by its name, how likely the answer is yes, "
+			.. "from 0 to 1.",
+		messages = {
+			{
+				role = "user",
+				content = `The state:\n{text}\n\nThe questions:\n{table.concat(lines, "\n")}`,
+			},
+		},
+		max_tokens = 200,
+		temperature = 0,
+	})
+	if answer == nil then
+		return nil, err
+	end
+	local json = string.match(M.unfenced(answer), "{.*}")
+	local ok, decoded = pcall(greed.json.decode, json or "")
+	if not ok or type(decoded) ~= "table" then
+		return nil, `the {role} model's answer wasn't JSON`
+	end
+	local out: { [string]: number } = {}
+	for name in questions do
+		local yes = decoded[name]
+		local number = if yes == true then 1 elseif yes == false then 0 else tonumber(yes)
+		if number == nil then
+			return nil, `the {role} model gave no answer to {name}`
+		end
+		out[name] = math.clamp(number, 0, 1)
+	end
+	return out, nil
+end
+
+--- Asks the model playing `role` yes-or-no `questions` about `state` (text,
+--- or a table sent as JSON) and waits for the answers: for each question
+--- by name, how likely yes is, from 0 to 1. A decision model, like Berget's
+--- System One models, answers them directly; any other model is asked in a
+--- chat for the same. Nil and why when there's no answer.
+function M.decide(
+	role: string,
+	state: any,
+	questions: { [string]: Question }
+): ({ [string]: number }?, string?)
+	local chosen = M.resolve(M.playing(role))
+	local provider = chosen and M.providers[chosen.provider]
+	local which = if chosen then `{chosen.provider}/{chosen.model}` else ""
+	if provider and provider.kind ~= "anthropic" and decides_by[which] ~= "chat" then
+		local answers, err, unsupported = systemone(role, state, questions)
+		if answers then
+			decides_by[which] = "systemone"
+			return answers, nil
+		elseif not unsupported or decides_by[which] == "systemone" then
+			return nil, err
+		end
+		decides_by[which] = "chat"
+	end
+	return in_chat(role, state, questions)
+end
+
 -- Whether `provider` has a key, as the :models page says it.
 local function key_text(name: string, provider: Provider): string
 	local state, _, unreachable = greed.vouch(key_state, name)

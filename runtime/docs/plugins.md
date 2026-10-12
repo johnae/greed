@@ -2011,7 +2011,20 @@ while true do
 end
 ```
 
-`models.ask(role, request)` waits for the whole answer instead. Both wait
+`models.ask(role, request)` waits for the whole answer instead.
+`models.decide(role, state, questions)` asks yes-or-no questions about a
+state and gives, for each by name, how likely yes is, from 0 to 1:
+
+```luau
+local answers = models.decide("decision", { command = "rm -rf build" }, {
+    harmful = { instructions = "Could it do harm?", yes = "it may", no = "it can't" },
+})
+if answers and answers.harmful > 0.6 then ... end
+```
+
+A decision model, like Berget's System One models, answers these
+directly; any other model is asked in a chat for the same answers, so
+either kind can play the role. Both wait
 like the rest of the API. The roles that come set up are `fast`,
 `reasoning` and `local`; a plugin can ask for any role, and the user maps it
 in their config or in `:models`.

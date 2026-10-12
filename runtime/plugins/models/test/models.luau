@@ -760,3 +760,63 @@ test("an effort set in :models is kept with the role, and shown on its line", fu
 	assert(models.set_effort("fast", nil) == nil)
 	assert((models.roles.fast :: models.Role).effort == nil, "unset")
 end)
+
+-- Two yes-or-no questions, for decide.
+local QUESTIONS: { [string]: models.Question } = {
+	harmful = { instructions = "Could it do harm?", yes = "it may", no = "it can't" },
+	asked = { instructions = "Was it asked for?" },
+}
+
+test("a decision model answers yes-or-no questions over the System One API", function()
+	local request = listing.request
+	models.providers.sone = { kind = "openai", url = "http://sone.test/v1" }
+	models.roles.judging = { provider = "sone", model = "Qwen/Qwen3.5-2B" }
+	local asked = lists({
+		["http://sone.test/v1/systemone"] = {
+			status = 200,
+			body = {
+				answers = {
+					harmful = { type = "noul", noul = 0.2 },
+					asked = { type = "noul", noul = 0.9 },
+				},
+			},
+		},
+	})
+	local answers, why = models.decide("judging", { command = "ls" }, QUESTIONS)
+	listing.request = request
+	models.roles.judging = nil
+	models.providers.sone = nil
+	assert(answers and answers.harmful == 0.2 and answers.asked == 0.9, tostring(why))
+	local sent = greed.json.decode(asked[1].body)
+	assert(asked[1].method == "POST" and sent.model == "Qwen/Qwen3.5-2B", asked[1].body)
+	assert(sent.state.command == "ls" and sent.questions.harmful.type == "noul", asked[1].body)
+	assert(sent.questions.harmful.criteria["true"] == "it may", asked[1].body)
+end)
+
+test(
+	"any other model answers the same questions in a chat, once it's found not to be one",
+	function()
+		local request, ask = listing.request, models.ask
+		models.providers.chatty = { kind = "openai", url = "http://chatty.test/v1" }
+		models.roles.judging = { provider = "chatty", model = "big" }
+		local asked = lists({
+			["http://chatty.test/v1/systemone"] = {
+				status = 400,
+				body = { error = { message = "not a system-one model" } },
+			},
+		})
+		local chats = 0
+		models.ask = function(role: string, chat: any): (string?, string?)
+			chats += 1
+			assert(role == "judging" and string.find(chat.messages[1].content, "Was it asked for?"))
+			return '```json\n{"harmful": 0.1, "asked": true}\n```', nil
+		end
+		local first = models.decide("judging", "a state", QUESTIONS)
+		local again = models.decide("judging", "a state", QUESTIONS)
+		listing.request, models.ask = request, ask
+		models.roles.judging = nil
+		models.providers.chatty = nil
+		assert(first and first.harmful == 0.1 and first.asked == 1, "from the chat")
+		assert(again and chats == 2 and #asked == 1, "the System One API is tried only once")
+	end
+)
