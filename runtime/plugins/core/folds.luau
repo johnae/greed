@@ -51,28 +51,43 @@ local function from_query(buffer: Buffer, line: number, source: string): (number
 	return first, last
 end
 
--- How far `line` is indented, or nil for a blank line.
-local function indent(buffer: Buffer, line: number): number?
+--- How far `line` is indented, or nil for a blank line. With `items`, a
+--- list item's `- ` counts as indent, as YAML nests a list under its key.
+function M.indent(buffer: Buffer, line: number, items: boolean?): number?
 	local text = buffer:line_text(line)
 	local spaces, rest = string.match(text, "^(%s*)()")
-	return if (rest :: number) > #text then nil else #(spaces :: string)
+	local width, at = #(spaces :: string), rest :: number
+	-- A dash only before a space, as `- name:`, not `-1`.
+	while items and string.match(text, "^%- +()", at) do
+		local after = string.match(text, "^%- +()", at) :: number
+		width += after - at
+		at = after
+	end
+	return if at > #text then nil else width
 end
 
 --- The lines indented under the nearest line around `line` indented less:
 --- `line` itself when the next line is indented more; among lines `top` to
---- `bottom` (default: the whole buffer).
-function M.indented(buffer: Buffer, line: number, top: number?, bottom: number?): (number?, number)
+--- `bottom` (default: the whole buffer). With `items`, a list item's `- `
+--- counts as indent, as YAML nests a list under its key.
+function M.indented(
+	buffer: Buffer,
+	line: number,
+	top: number?,
+	bottom: number?,
+	items: boolean?
+): (number?, number)
 	local first, final = top or 0, bottom or buffer:line_count() - 1
 	local function next_indent(from: number): number?
 		for i = from + 1, final do
-			local found = indent(buffer, i)
+			local found = M.indent(buffer, i, items)
 			if found then
 				return found
 			end
 		end
 		return nil
 	end
-	local own = indent(buffer, line)
+	local own = M.indent(buffer, line, items)
 	local below = next_indent(line)
 	local header: number? = nil
 	if own and below and below > own then
@@ -80,7 +95,7 @@ function M.indented(buffer: Buffer, line: number, top: number?, bottom: number?)
 	else
 		local depth = own or below or 0
 		for i = line - 1, first, -1 do
-			local found = indent(buffer, i)
+			local found = M.indent(buffer, i, items)
 			if found and found < depth then
 				header = i
 				break
@@ -90,10 +105,10 @@ function M.indented(buffer: Buffer, line: number, top: number?, bottom: number?)
 	if header == nil then
 		return nil, line
 	end
-	local base = indent(buffer, header) :: number
+	local base = M.indent(buffer, header, items) :: number
 	local last = header
 	for i = header + 1, final do
-		local found = indent(buffer, i)
+		local found = M.indent(buffer, i, items)
 		if found and found <= base then
 			break
 		elseif found then

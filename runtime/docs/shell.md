@@ -240,6 +240,11 @@ unfolds them all. In what a command printed, `tab` folds the lines indented
 under the line instead, a section of YAML or of `kubectl describe`. A block
 that's still printing stays folded as its output grows.
 
+JSON or YAML of more than `shell-fold-structured` lines (100) shows its
+top keys folded as it ends, `metadata: ⋯ 24 lines`, and inside a fold
+that long, the keys under it, so `kubectl get pods -o json` opens to its
+`items`, each one folded. `:set shell-fold-structured 0` shows it all.
+
 Resting the mouse on a folded block shows it in a float without moving the
 cursor: scroll it there, or click into it to filter it with `/` and act on
 its rows. Moving the mouse away closes it.

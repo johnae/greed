@@ -2295,7 +2295,7 @@ core.folds.provider(LANGUAGE, function(buffer: greed.Buffer, line: number): (num
 	if from and to then
 		local top, bottom = buffer:line_of(from), buffer:line_of(to)
 		if line >= top then
-			local first, last = core.folds.indented(buffer, line, top, bottom)
+			local first, last = core.folds.indented(buffer, line, top, bottom, true)
 			if first then
 				return first, last
 			end

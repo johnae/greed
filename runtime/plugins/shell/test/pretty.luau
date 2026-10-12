@@ -213,3 +213,35 @@ test("up in a filter brings back filters used on this kind of command", function
 	local other = run(t, sh, "cat pod.yaml")
 	assert(filter(other, "up") == "", "another kind of command has its own")
 end)
+
+test("long JSON or YAML shows its keys folded as it ends, a long one's keys too", function(t)
+	local sh = open(t)
+	greed.option.set("shell-fold-structured", 4)
+	local item =
+		'    {\n      "metadata": {\n        "name": "NAME",\n        "labels": { "app": "NAME" }\n      },\n      "status": { "phase": "Running" }\n    }'
+	local list = '{\n  "kind": "List",\n  "items": [\n'
+		.. (string.gsub(item, "NAME", "api"))
+		.. ",\n"
+		.. (string.gsub(item, "NAME", "db"))
+		.. "\n  ]\n}\n"
+	sh.cwd = t:tempdir({ ["list.json"] = list })
+	local block = run(t, sh, "cat list.json")
+	local view = greed.view()
+	local first = sh.buffer:line_of(assert((shell.log.output_range(sh, block))))
+	local shown: { string } = {}
+	local hidden: { [number]: boolean } = {}
+	for _, run in view:hidden_lines() do
+		for line = run.from, run.to do
+			hidden[line] = true
+		end
+	end
+	for line = first, sh.buffer:line_count() - 1 do
+		if not hidden[line] then
+			table.insert(shown, (string.gsub(sh.buffer:line_text(line), "^%s+", "")))
+		end
+	end
+	local text = table.concat(shown, "|")
+	assert(string.find(text, '"items": [', 1, true), text)
+	assert(not string.find(text, '"name"', 1, true), "the items' insides are folded: " .. text)
+	assert(string.find(text, '"kind": "List"', 1, true), text)
+end)
