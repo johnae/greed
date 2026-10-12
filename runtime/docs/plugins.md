@@ -1611,6 +1611,10 @@ Each request runs on a thread of its own and both wait like `greed.sleep`,
 so they work in commands and event handlers and never hold up the editor.
 A plugin needs `net`, or `net:HOST` for each host it talks to.
 
+Redirects are followed on the same host, never from https to http, so
+headers like an API key only go where they were meant to. Any other
+redirect comes back as the response, its `location` header saying where.
+
 To download a file, give `request` a `save` path: a successful (2xx)
 response's body is written there as it arrives, with no size limit, and
 the file appears only once it's whole. Any other response comes back with

@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use mlua::{Function, IntoLuaMulti, Lua, MultiValue, Table, Value};
+use url::{Host, Url};
 
 use super::jobs::{self, Output};
 use super::{capabilities, state_mut, tasks};
@@ -73,25 +74,25 @@ pub(crate) struct Streams {
 }
 
 /// The host a URL names, for the capability check; only http and https.
-fn host_of(url: &str) -> Option<&str> {
-    let rest = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))?;
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let host = authority.rsplit('@').next()?;
-    let host = if let Some(bracketed) = host.strip_prefix('[') {
-        bracketed.split(']').next()?
-    } else {
-        host.split(':').next()?
-    };
-    (!host.is_empty()).then_some(host)
+fn host_of(url: &Url) -> Option<String> {
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
+    }
+    Some(match url.host()? {
+        Host::Domain(domain) => domain.to_owned(),
+        Host::Ipv4(ip) => ip.to_string(),
+        Host::Ipv6(ip) => ip.to_string(),
+    })
 }
 
 fn request_from_lua(lua: &Lua, owner: &PluginId, opts: &Table) -> LuaResult<Request> {
-    let url: String = opts.get("url")?;
-    let host = host_of(&url)
-        .ok_or_else(|| mlua::Error::runtime(format!("{url:?} isn't an http or https URL")))?;
-    capabilities::check_host(lua, owner, host)?;
+    let given: String = opts.get("url")?;
+    let not_http = || mlua::Error::runtime(format!("{given:?} isn't an http or https URL"));
+    let parsed = Url::parse(&given).map_err(|_| not_http())?;
+    let host = host_of(&parsed).ok_or_else(not_http)?;
+    capabilities::check_host(lua, owner, &host)?;
+    // Sent as parsed, so the host checked is the host asked.
+    let url = String::from(parsed);
     let body: Option<mlua::LuaString> = opts.get("body")?;
     let method: Option<String> = opts.get("method")?;
     let mut headers = Vec::new();
@@ -143,18 +144,13 @@ fn send(mut request: Request) -> Result<(Head, ureq::Body), String> {
 }
 
 /// Where a redirect from `url` to `location` goes, if it stays on the same
-/// host: `location` whole, or a path on `url`'s origin.
+/// host and doesn't go from https to http, which would send the headers in
+/// the clear.
 fn redirected(url: &str, location: &str) -> Option<String> {
-    let next = if location.starts_with("http://") || location.starts_with("https://") {
-        location.to_owned()
-    } else {
-        let path = location.strip_prefix('/').filter(|p| !p.starts_with('/'))?;
-        let (scheme, rest) = url.split_once("://")?;
-        let authority = rest.split(['/', '?', '#']).next()?;
-        format!("{scheme}://{authority}/{path}")
-    };
-    let same = host_of(&next)?.eq_ignore_ascii_case(host_of(url)?);
-    same.then_some(next)
+    let url = Url::parse(url).ok()?;
+    let next = url.join(location).ok()?;
+    let downgrade = url.scheme() == "https" && next.scheme() == "http";
+    (!downgrade && host_of(&next)? == host_of(&url)?).then(|| next.into())
 }
 
 /// Sends `request` once, without following redirects.
@@ -432,21 +428,53 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
 #[cfg(test)]
 mod tests {
-    use super::host_of;
+    use super::{Url, host_of, redirected};
+
+    fn host(url: &str) -> Option<String> {
+        Url::parse(url).ok().as_ref().and_then(host_of)
+    }
 
     #[test]
     fn hosts_come_from_http_urls_only() {
         assert_eq!(
-            host_of("https://api.anthropic.com/v1/messages"),
+            host("https://api.anthropic.com/v1/messages").as_deref(),
             Some("api.anthropic.com")
         );
-        assert_eq!(host_of("http://localhost:11434/api"), Some("localhost"));
         assert_eq!(
-            host_of("https://user:pw@example.com?q"),
+            host("http://localhost:11434/api").as_deref(),
+            Some("localhost")
+        );
+        assert_eq!(
+            host("https://user:pw@Example.com?q").as_deref(),
             Some("example.com")
         );
-        assert_eq!(host_of("http://[::1]:8080/"), Some("::1"));
-        assert_eq!(host_of("file:///etc/passwd"), None);
-        assert_eq!(host_of("https://"), None);
+        assert_eq!(host("http://[::1]:8080/").as_deref(), Some("::1"));
+        // Read as browsers read it: the host is before the backslash.
+        assert_eq!(
+            host("https://good.com\\@evil.com/").as_deref(),
+            Some("good.com")
+        );
+        assert_eq!(host("file:///etc/passwd"), None);
+        assert_eq!(host("https://"), None);
+    }
+
+    #[test]
+    fn redirects_stay_on_the_host_and_never_drop_to_http() {
+        let from = "https://api.example.com/v1/a?q=1";
+        let to = |location: &str| redirected(from, location);
+        assert_eq!(to("/v2/b").as_deref(), Some("https://api.example.com/v2/b"));
+        assert_eq!(to("b").as_deref(), Some("https://api.example.com/v1/b"));
+        assert_eq!(
+            to("https://API.example.com:8443/c").as_deref(),
+            Some("https://api.example.com:8443/c")
+        );
+        assert_eq!(to("http://api.example.com/v1/a"), None, "cleartext");
+        assert_eq!(to("//other.com/x"), None);
+        assert_eq!(to("https://other.com/x"), None);
+        assert_eq!(to("ftp://api.example.com/x"), None);
+        assert_eq!(
+            redirected("http://localhost/a", "https://localhost/b").as_deref(),
+            Some("https://localhost/b")
+        );
     }
 }
