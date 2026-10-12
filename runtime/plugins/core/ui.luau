@@ -679,13 +679,14 @@ local function flatten(
 	return out
 end
 
--- Makes lines `first` to `last_a` (1-based) of the `total_a` lines at the
--- start of `buffer`, which end at byte `stop`, read as lines `first` to
--- `last_b` of the `total_b` that `new(i)` gives, as one edit of the lines
--- that differ. A cursor in what's replaced stays on its line and column,
--- rather than going to either end of the new text.
+-- Makes lines `first` to `last_a` (1-based) of the `total_a` lines of
+-- `buffer` from 0-based line `base` on, which end at byte `stop`, read as
+-- lines `first` to `last_b` of the `total_b` that `new(i)` gives, as one
+-- edit of the lines that differ. A cursor in what's replaced stays on its
+-- line and column, rather than going to either end of the new text.
 local function replace_lines(
 	buffer: greed.Buffer,
+	base: number,
 	stop: number,
 	total_a: number,
 	total_b: number,
@@ -694,8 +695,12 @@ local function replace_lines(
 	last_b: number,
 	new: (i: number) -> string
 )
+	-- Line `i` of them, 0-based in the buffer.
+	local function at(i: number): number
+		return base + i - 1
+	end
 	local function old(i: number): string
-		return buffer:slice(buffer:line_start(i - 1), buffer:line_end(i - 1))
+		return buffer:slice(buffer:line_start(at(i)), buffer:line_end(at(i)))
 	end
 	while first <= last_a and first <= last_b and old(first) == new(first) do
 		first += 1
@@ -708,8 +713,8 @@ local function replace_lines(
 		return
 	end
 	-- Lines `first` to `last_a` of the old text become `first` to `last_b`.
-	local from = if first <= total_a then buffer:line_start(first - 1) else stop
-	local to = if last_a >= first then buffer:line_end(last_a - 1) else from
+	local from = if first <= total_a then buffer:line_start(at(first)) else stop
+	local to = if last_a >= first then buffer:line_end(at(last_a)) else from
 	local lines: { string } = {}
 	for i = first, last_b do
 		table.insert(lines, new(i))
@@ -721,9 +726,9 @@ local function replace_lines(
 	elseif last_b < first then
 		-- Only lines taken away, with the line break before or after them.
 		if first > 1 then
-			from = buffer:line_end(first - 2)
+			from = buffer:line_end(at(first - 1))
 		elseif last_a < total_a then
-			to = buffer:line_start(last_a)
+			to = buffer:line_start(at(last_a + 1))
 		end
 	end
 	local inside: { { view: greed.View, line: number, column: number } } = {}
@@ -763,12 +768,23 @@ type Mounted = {
 	ns: string,
 	--- Whether what's after it is an input, written there and kept.
 	input: boolean,
+	--- Whether its first line is an input instead, drawn below it.
+	above: boolean,
 }
 
--- Where what `placed` draws ends.
+-- Where what `placed` draws ends, from where it starts.
 local function end_of(placed: { Placed }): number
 	local last = placed[#placed]
 	return if last then last.at + #last.piece.text else 0
+end
+
+-- Where `entry`'s view starts in `buffer`: the byte, and the 0-based line.
+-- Its pieces' places count from there.
+local function base(entry: Mounted, buffer: greed.Buffer): (number, number)
+	if entry.above then
+		return buffer:line_end(0) + 1, 1
+	end
+	return 0, 0
 end
 
 local mounted: { [number]: Mounted } = {}
@@ -851,9 +867,10 @@ local function place(buffer: greed.Buffer, entry: Mounted, pieces: { Piece })
 		return if p then p.piece.lines[i - p.line] else ""
 	end
 	local function marks_from(from_index: number, to_index: number): { greed.Mark }
+		local start = base(entry, buffer)
 		local marks: { greed.Mark } = {}
 		for i = from_index, to_index do
-			local own, ids = marks_of(entry, placed[i].piece, placed[i].at)
+			local own, ids = marks_of(entry, placed[i].piece, start + placed[i].at)
 			placed[i].ids = ids
 			table.move(own, 1, #own, #marks + 1, marks)
 		end
@@ -863,20 +880,25 @@ local function place(buffer: greed.Buffer, entry: Mounted, pieces: { Piece })
 	-- tells about the change.
 	entry.placed = placed
 	if #old == 0 or #pieces == 0 then
+		local lines: { string } = {}
+		for i = 1, count do
+			table.insert(lines, new(i))
+		end
+		local text = table.concat(lines, "\n")
 		if entry.input and #old == 0 then
 			-- Drawn first above what's written there.
-			local lines: { string } = {}
-			for i = 1, count do
-				table.insert(lines, new(i))
-			end
 			buffer:edit(function(e)
-				e:replace(0, 0, table.concat(lines, "\n") .. "\n")
+				e:replace(0, 0, text .. "\n")
+			end, { undo = false })
+		elseif entry.above and #old == 0 then
+			-- Drawn first under the line that's written in.
+			buffer:edit(function(e)
+				e:replace(buffer:line_end(0), buffer:len(), "\n" .. text)
 			end, { undo = false })
 		else
 			-- Nothing drawn before (or now): the buffer is whatever it holds.
-			local lines = math.max(count, 1)
-			local total = buffer:line_count()
-			replace_lines(buffer, buffer:len(), total, lines, 1, total, lines, new)
+			local total, wanted = buffer:line_count(), math.max(count, 1)
+			replace_lines(buffer, 0, buffer:len(), total, wanted, 1, total, wanted, new)
 		end
 		for _, was in old do
 			forget_presses(entry, was)
@@ -890,9 +912,11 @@ local function place(buffer: greed.Buffer, entry: Mounted, pieces: { Piece })
 		kept_after += #old[i].piece.lines
 	end
 	local first = (if head > 0 then placed[head].line + #pieces[head].lines else 0) + 1
+	local start, line = base(entry, buffer)
 	replace_lines(
 		buffer,
-		end_of(old),
+		line,
+		start + end_of(old),
 		total_a,
 		count,
 		first,
@@ -907,13 +931,14 @@ local function place(buffer: greed.Buffer, entry: Mounted, pieces: { Piece })
 	end
 	local function redecorate(from_index: number, to_index: number)
 		local last = placed[to_index]
+		local from = base(entry, buffer)
 		-- To the line break after it, where a mark of a piece taken away
 		-- may have been squeezed.
-		local stop = last.at + #last.piece.text + 1
+		local stop = from + last.at + #last.piece.text + 1
 		buffer:decorate(
 			entry.ns,
 			marks_from(from_index, to_index),
-			{ from = placed[from_index].at, to = stop }
+			{ from = from + placed[from_index].at, to = stop }
 		)
 	end
 	for i, p in placed do
@@ -935,8 +960,9 @@ end
 
 -- The value of 0-based `line` of `entry`'s view.
 local function value_of(entry: Mounted, line: number): any
-	local p = placed_at(entry.placed, line)
-	return if p then p.piece.values[line - p.line] else nil
+	local own = line - (if entry.above then 1 else 0)
+	local p = placed_at(entry.placed, own)
+	return if p then p.piece.values[own - p.line] else nil
 end
 
 --- How wide `buffer` is shown: the narrowest view of it, else 80 cells.
@@ -967,7 +993,9 @@ local SOON_MS = 16
 --- Its marks go in namespace `ns` ("ui"); `width` says how many cells wide
 --- to lay it out (`M.width`). With `input`, it's drawn at the start of the
 --- buffer and what's written after it is an input, like a chat's box: kept
---- as it is, the view read-only before it. With `keys` false it leaves the
+--- as it is, the view read-only before it. With `above` too, the buffer's
+--- first line is the input instead, like a picker's query, and the view is
+--- drawn under it, its lines counted from the buffer's. With `keys` false it leaves the
 --- buffer's keys (tab and shift-tab to go between widgets) to its plugin.
 --- `after` is called after each drawing before a frame shows it, to draw
 --- what goes with it; it can't wait. With `draw` false it's first drawn at
@@ -982,6 +1010,7 @@ function M.mount(
 		ns: string?,
 		width: ((buffer: greed.Buffer) -> number)?,
 		input: boolean?,
+		above: boolean?,
 		keys: boolean?,
 		after: ((view: View) -> ())?,
 		draw: boolean?,
@@ -989,9 +1018,12 @@ function M.mount(
 ): View
 	local key = opts and opts.key
 	local width_of = opts and opts.width or M.width
-	local input = opts ~= nil and opts.input == true
+	-- An input under it, or over it.
+	local above = opts ~= nil and opts.input == true and opts.above == true
+	local input = opts ~= nil and opts.input == true and not above
 	local after = opts and opts.after
 	local entry: Mounted
+	local view: View
 	-- Each view's cursor: its line's value's key, and how far along it.
 	local function held(): { { view: greed.View, key: string, column: number } }
 		local out = {}
@@ -1012,17 +1044,12 @@ function M.mount(
 		return out
 	end
 	local function line_keyed(wanted: string): number?
-		for _, p in entry.placed do
-			for line, value in p.piece.values do
-				if (key :: (any) -> string)(value) == wanted then
-					return p.line + line
-				end
-			end
-		end
-		return nil
+		return view:line_of(function(value: any): boolean
+			return (key :: (any) -> string)(value) == wanted
+		end)
 	end
 	local soon = false
-	local view: View = {
+	view = {
 		buffer = buffer,
 		state = state or {},
 		set = function(self: View, patch: { [string]: any })
@@ -1055,8 +1082,8 @@ function M.mount(
 			local seen: { [string]: Piece } = {}
 			local pieces = flatten(render(self.state), width_of(buffer), entry.cache, seen)
 			entry.cache = seen
-			if input and #pieces == 0 then
-				-- An empty line, for the input to come after.
+			if (input or above) and #pieces == 0 then
+				-- An empty line, for the input to come after or before.
 				pieces = { piece_of({ {} }) }
 			end
 			local first = #entry.placed == 0
@@ -1067,9 +1094,13 @@ function M.mount(
 					buffer:set_readonly_before(self:input_start())
 				elseif first then
 					-- The first drawing went in at the cursor, which it
-					-- pushed to the end.
+					-- pushed to the end: back to the top, or the input's end.
+					local pos = if above then buffer:line_end(0) else 0
 					for _, shown in buffer:views() do
-						shown:set_selection({ ranges = { { anchor = 0, head = 0 } }, primary = 1 })
+						shown:set_selection({
+							ranges = { { anchor = pos, head = pos } },
+							primary = 1,
+						})
 					end
 				end
 				if after then
@@ -1110,32 +1141,36 @@ function M.mount(
 		end,
 		spots = function(_self: View, tag: string): { { from: number, to: number } }
 			local out: { { from: number, to: number } } = {}
+			local start = base(entry, buffer)
 			for _, p in entry.placed do
 				local spots = p.piece.spots[tag]
 				if spots then
 					for _, spot in spots do
-						table.insert(out, { from = p.at + spot.from, to = p.at + spot.to })
+						local at = start + p.at
+						table.insert(out, { from = at + spot.from, to = at + spot.to })
 					end
 				end
 			end
 			return out
 		end,
 		each = function(_self: View, f: (line: number, value: any) -> ())
+			local first = if entry.above then 1 else 0
 			for _, p in entry.placed do
 				for line = 0, #p.piece.lines - 1 do
 					local value = p.piece.values[line]
 					if value ~= nil then
-						f(p.line + line, value)
+						f(first + p.line + line, value)
 					end
 				end
 			end
 		end,
 		line_of = function(_self: View, wanted: (value: any) -> boolean): number?
+			local first = if entry.above then 1 else 0
 			for _, p in entry.placed do
 				for line = 0, #p.piece.lines - 1 do
 					local value = p.piece.values[line]
 					if value ~= nil and wanted(value) then
-						return p.line + line
+						return first + p.line + line
 					end
 				end
 			end
@@ -1145,9 +1180,15 @@ function M.mount(
 			return value_of(entry, line)
 		end,
 		input_start = function(_self: View): number
+			if entry.above then
+				return 0
+			end
 			return math.min(end_of(entry.placed) + 1, buffer:len())
 		end,
 		input = function(self: View): string
+			if entry.above then
+				return buffer:slice(0, buffer:line_end(0))
+			end
 			return buffer:slice(self:input_start(), buffer:len())
 		end,
 	}
@@ -1159,6 +1200,7 @@ function M.mount(
 		cache = {},
 		ns = opts and opts.ns or "ui",
 		input = input,
+		above = above,
 	}
 	mounted[buffer:id()] = entry
 	if not (opts and opts.keys == false) then

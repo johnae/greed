@@ -427,3 +427,40 @@ test(
 		assert(view:value_on(1) == "b" and view:value_on(9) == nil)
 	end
 )
+
+test(
+	"with the input above, what's typed on the first line stays and the view goes under it",
+	function(t)
+		local buffer = greed.create_buffer("test-ui", "", {})
+		t:buffer("|")
+		greed.view():show(buffer)
+		local view = ui.mount(buffer, function(state)
+			local lines: { core.UiNode } = {}
+			for _, name in state.names do
+				table.insert(lines, ui.line({ { text = name, value = name, style = "keyword" } }))
+			end
+			return ui.column(lines)
+		end, { names = { "one", "two" } }, { input = true, above = true })
+		assert(text_of(buffer) == "\none\ntwo", text_of(buffer))
+		t:keys("i t w esc")
+		assert(view:input() == "tw", view:input())
+		view:set({ names = { "two" } })
+		assert(text_of(buffer) == "tw\ntwo", text_of(buffer))
+		assert(view:value_on(1) == "two" and view:value_on(0) == nil)
+		assert(view:line_of(function(name: string): boolean
+			return name == "two"
+		end) == 1)
+		-- Its marks are where it is now, after the typing.
+		local mark = buffer:decorations("ui")[1]
+		assert(mark and mark.from == 3 and mark.to == 6, mark and `{mark.from}-{mark.to}`)
+		t:keys("i o esc")
+		view:set({ names = { "two", "three" } })
+		assert(text_of(buffer) == "two\ntwo\nthree", text_of(buffer))
+		local spots = 0
+		for _, m in buffer:decorations("ui") do
+			spots += 1
+			assert(buffer:slice(m.from, m.to) == "two" or buffer:slice(m.from, m.to) == "three")
+		end
+		assert(spots == 2, `{spots} marks`)
+	end
+)
