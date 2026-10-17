@@ -63,6 +63,25 @@ pub(super) fn add_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             Ok(tree)
         })
     });
+    methods.add_method("undo_save", |lua, this, NoArgs| {
+        this.with_buffer(lua, |b| {
+            b.history()
+                .saved()
+                .map(|saved| serde_json::to_string(&saved).map_err(mlua::Error::external))
+                .transpose()
+        })
+    });
+    methods.add_method("undo_restore", |lua, this, json: String| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        let restored = serde_json::from_str::<crate::SavedHistory>(&json)
+            .map_err(|e| format!("it isn't an undo tree: {e}"))
+            .and_then(|saved| {
+                super::state_mut(lua)
+                    .editor
+                    .restore_history(this.buffer, &saved)
+            });
+        Ok((restored.is_ok(), restored.err()))
+    });
 }
 
 /// Which transactions `buffer:history` returns.

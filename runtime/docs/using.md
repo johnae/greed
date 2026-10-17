@@ -536,6 +536,15 @@ cursor's line's own number, and `absolute` goes back.
 | `.` | Repeat the last change at the selections, with what it typed (`3 .` with a new count) |
 | `esc` | Back to normal mode |
 
+Undo lasts across restarts: each time you save a file, its undo history
+is kept in Greed's cache folder, and when you open the file again, as it
+was saved, undo goes on past where it was opened. A file something else
+changed in between starts afresh. Since undo keeps deleted text, files the
+project ignores and files named like secrets (`.env*`, `*.pem`, `*.key`,
+`id_*`) aren't kept; the rest are readable only by you, go after 30 days
+without a save, and a history over 10 MB isn't kept. `:set undo-files
+false` turns it off.
+
 In insert mode, `tab` types a level of indent, `ctrl-w` (or
 `alt-backspace`) and `alt-d` delete a word back or forward, `ctrl-u` and
 `ctrl-k` delete to the start or end of the line, `ctrl-x` asks for

@@ -196,6 +196,10 @@ export type Buffer = {
 	text_before: (self: Buffer, id: number) -> string?,
 	--- The undo tree: every state the text has been in, from node 0 (as it was loaded) on, each with the step before it as `parent`; undo goes to the parent and redo to the last child. `current` is the node the text is at.
 	undo_tree: (self: Buffer) -> { nodes: { UndoNode }, current: number },
+	--- The undo tree as JSON, to keep it for after a restart; nil when nothing was done or the buffer keeps no undo history.
+	undo_save: (self: Buffer) -> string?,
+	--- Takes back an undo tree `undo_save` gave, for the text as it is now, as its current step: only while nothing was done since the buffer was loaded, and only if every step fits. Returns whether it did, and why not.
+	undo_restore: (self: Buffer, json: string) -> (boolean, string?),
 }
 
 --- A node in a buffer's syntax tree, from `buffer:tree()`, `buffer:node_at()` or

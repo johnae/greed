@@ -7,7 +7,7 @@ use greed_text::{Assoc, Author, ChangeSet, Rope, Selection, Transaction, TxId, T
 use smallvec::SmallVec;
 
 use crate::Error;
-use crate::history::{History, Step};
+use crate::history::{History, SavedHistory, Step};
 use crate::keymap::Key;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -536,6 +536,18 @@ impl Buffer {
 
     pub fn history(&self) -> &History {
         &self.history
+    }
+
+    /// Takes back an undo tree kept from before (`History::saved`), whose
+    /// current step is the text as it is now; only while nothing was done
+    /// since the buffer was loaded. The text stays as saved.
+    pub fn restore_history(&mut self, saved: &SavedHistory) -> Result<(), String> {
+        let unmodified = !self.is_modified();
+        self.history.restore(saved, self.text.len_bytes())?;
+        if unmodified {
+            self.saved_place = self.history.place();
+        }
+        Ok(())
     }
 
     /// Stops keeping undo history, for buffers whose edits nobody undoes,

@@ -148,6 +148,63 @@ fn undo_and_redo_restore_text_and_selection() {
 }
 
 #[test]
+fn an_undo_tree_saved_comes_back_on_the_same_text() {
+    let mut f = Fixture::new("hello");
+    f.edit(5, 5, " world");
+    f.edit(0, 5, "goodbye");
+    f.undo();
+    // A branch beside "goodbye world", which redo follows.
+    f.edit(0, 0, "oh ");
+    let saved = f.buffer.history().saved().expect("there are steps");
+    let json = serde_json::to_string(&saved).unwrap();
+
+    // The file read again after a restart.
+    let mut g = Fixture::new("oh hello world");
+    let back = serde_json::from_str(&json).unwrap();
+    g.buffer.restore_history(&back).unwrap();
+    assert!(!g.buffer.is_modified(), "the text is as saved");
+    assert!(g.undo());
+    assert_eq!(g.text(), "hello world");
+    assert_eq!(
+        g.selection.primary(),
+        Range::point(11),
+        "the selection before the step"
+    );
+    assert!(g.undo());
+    assert_eq!(g.text(), "hello");
+    assert!(!g.undo());
+    assert!(g.redo());
+    assert!(g.redo());
+    assert_eq!(g.text(), "oh hello world");
+    assert!(!g.buffer.is_modified(), "back where it was saved");
+}
+
+#[test]
+fn an_undo_tree_that_doesnt_fit_is_refused() {
+    let mut f = Fixture::new("hello");
+    f.edit(5, 5, " world");
+    let saved = f.buffer.history().saved().unwrap();
+    // Another text than the one it was saved with.
+    let mut other = Fixture::new("something else");
+    assert!(other.buffer.restore_history(&saved).is_err());
+    // Edited since it was loaded.
+    let mut edited = Fixture::new("hello world");
+    edited.edit(0, 0, "x");
+    assert!(edited.buffer.restore_history(&saved).is_err());
+    // A step whose changes were tampered with.
+    let mut broken = saved.clone();
+    broken.nodes[1].changes = vec![greed_core::SavedOp::Count(3)];
+    assert!(
+        Fixture::new("hello world")
+            .buffer
+            .restore_history(&broken)
+            .is_err()
+    );
+    // Nothing to save before anything was done.
+    assert!(Fixture::new("x").buffer.history().saved().is_none());
+}
+
+#[test]
 fn edit_after_undo_starts_a_branch_that_redo_follows() {
     let mut f = Fixture::new("");
     f.edit(0, 0, "a");

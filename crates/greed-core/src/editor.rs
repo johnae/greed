@@ -12,7 +12,9 @@ use greed_text::{
 use crate::filetypes::FileTypes;
 use crate::keymap::{Key, KeyCode, Keymap, Mods, Resolution};
 use crate::theme::Theme;
-use crate::{Buffer, BufferId, Error, GroupState, Mark, Reveal, TrackId, VirtualLine};
+use crate::{
+    Buffer, BufferId, Error, GroupState, Mark, Reveal, SavedHistory, TrackId, VirtualLine,
+};
 
 mod clients;
 mod layouts;
@@ -926,6 +928,19 @@ impl Editor {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.clear_history();
         }
+    }
+
+    /// Takes back an undo tree kept from before for `buffer` (see
+    /// [`Buffer::restore_history`]).
+    pub fn restore_history(
+        &mut self,
+        buffer: BufferId,
+        saved: &SavedHistory,
+    ) -> Result<(), String> {
+        self.buffers
+            .get_mut(&buffer)
+            .ok_or_else(|| "this buffer was closed".to_string())?
+            .restore_history(saved)
     }
 
     /// Keeps `buffer` open while nothing shows it, like a terminal you'll

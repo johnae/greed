@@ -6,9 +6,10 @@
 //! the tree. An edit kept out of undo (`skip`) is the exception: the undo
 //! steps are rebased over it, and the log starts again after it.
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use greed_text::{Assoc, Author, ChangeSet, Rope, Selection, Transaction, TxId};
+use greed_text::{Assoc, Author, ChangeSet, Operation, Range, Rope, Selection, Transaction, TxId};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
 pub struct History {
@@ -77,6 +78,99 @@ pub enum GroupState {
     Buried,
     /// The group was undone.
     Undone,
+}
+
+/// An undo tree as plain data, to keep it across restarts: what
+/// `History::saved` gives and `History::restore` takes back. Only the tree:
+/// the log of transactions starts again empty.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedHistory {
+    /// Node 0 is the root, the text before any of them.
+    pub nodes: Vec<SavedNode>,
+    /// The node the text is at.
+    pub current: usize,
+}
+
+/// One undo step of a `SavedHistory`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedNode {
+    pub parent: usize,
+    pub children: Vec<usize>,
+    pub changes: Vec<SavedOp>,
+    pub inverse: Vec<SavedOp>,
+    /// Each range as `[anchor, head]`, the primary first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<Vec<[usize; 2]>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<Vec<[usize; 2]>>,
+    /// Seconds since 1970.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time: Option<f64>,
+}
+
+/// An operation of a change set: a count to keep (positive) or delete
+/// (negative), or text to insert.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SavedOp {
+    Count(i64),
+    Insert(String),
+}
+
+fn save_changes(changes: &ChangeSet) -> Vec<SavedOp> {
+    changes
+        .ops()
+        .iter()
+        .map(|op| match op {
+            Operation::Retain(n) => SavedOp::Count(i64::try_from(*n).unwrap_or(i64::MAX)),
+            Operation::Delete(n) => SavedOp::Count(-i64::try_from(*n).unwrap_or(i64::MAX)),
+            Operation::Insert(text) => SavedOp::Insert(text.clone()),
+        })
+        .collect()
+}
+
+fn load_changes(ops: &[SavedOp]) -> Result<ChangeSet, String> {
+    let mut changes = ChangeSet::default();
+    for op in ops {
+        match op {
+            SavedOp::Count(0) => return Err("an empty operation".into()),
+            SavedOp::Count(n) => {
+                let count = usize::try_from(n.unsigned_abs()).map_err(|e| e.to_string())?;
+                if *n > 0 {
+                    changes.retain(count);
+                } else {
+                    changes.delete(count);
+                }
+            }
+            SavedOp::Insert(text) => changes.insert(text),
+        }
+    }
+    Ok(changes)
+}
+
+fn save_selection(selection: &Selection) -> Vec<[usize; 2]> {
+    let mut ranges: Vec<[usize; 2]> = selection
+        .ranges()
+        .iter()
+        .map(|r| [r.anchor, r.head])
+        .collect();
+    let primary = ranges.remove(selection.primary_index());
+    ranges.insert(0, primary);
+    ranges
+}
+
+/// A saved selection, `None` when it doesn't fit a text of `len` bytes.
+fn load_selection(ranges: &[[usize; 2]], len: usize) -> Option<Selection> {
+    if ranges.iter().flatten().any(|&pos| pos > len) {
+        return None;
+    }
+    Selection::new(
+        ranges
+            .iter()
+            .map(|&[anchor, head]| Range::new(anchor, head)),
+        0,
+    )
+    .ok()
 }
 
 /// A change set to apply for an undo or redo, and the selection to restore,
@@ -412,6 +506,116 @@ impl History {
     /// The node the text is at now.
     pub fn current(&self) -> usize {
         self.current
+    }
+
+    /// The undo tree as plain data, to keep it across restarts; `None`
+    /// when nothing is kept or nothing was done.
+    pub fn saved(&self) -> Option<SavedHistory> {
+        if !self.keep || self.nodes.len() < 2 {
+            return None;
+        }
+        let since = |time: SystemTime| time.duration_since(UNIX_EPOCH).ok();
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|node| SavedNode {
+                parent: node.parent,
+                children: node.children.clone(),
+                changes: save_changes(&node.changes),
+                inverse: save_changes(&node.inverse),
+                before: node.before.as_ref().map(save_selection),
+                after: node.after.as_ref().map(save_selection),
+                time: node.time.and_then(since).map(|d| d.as_secs_f64()),
+            })
+            .collect();
+        Some(SavedHistory {
+            nodes,
+            current: self.current,
+        })
+    }
+
+    /// Takes back an undo tree `saved` gave, for a text of `len` bytes, the
+    /// text at its current node. Only before anything was done, and only if
+    /// its steps fit together: each one's changes fit the text before it,
+    /// and its inverse takes them back. Who made each step isn't kept.
+    pub(crate) fn restore(&mut self, saved: &SavedHistory, len: usize) -> Result<(), String> {
+        if !self.keep {
+            return Err("this buffer keeps no undo history".into());
+        }
+        if self.nodes.len() > 1 {
+            return Err("the buffer was edited since it was loaded".into());
+        }
+        let count = saved.nodes.len();
+        if count < 2 || saved.current >= count {
+            return Err("there are no undo steps".into());
+        }
+        let mut changes = Vec::with_capacity(count);
+        for (at, node) in saved.nodes.iter().enumerate() {
+            // A step's parent comes before it, and lists it as a child.
+            if at > 0 && (node.parent >= at || !saved.nodes[node.parent].children.contains(&at)) {
+                return Err(format!("step {at} isn't in the tree"));
+            }
+            if node.children.iter().any(|&child| child >= count) {
+                return Err(format!("step {at} has a child that isn't there"));
+            }
+            changes.push((load_changes(&node.changes)?, load_changes(&node.inverse)?));
+        }
+        // How long the text is at each step: from the current one up to the
+        // root, then down to the others.
+        let mut lens: Vec<Option<usize>> = vec![None; count];
+        lens[saved.current] = Some(len);
+        let mut at = saved.current;
+        while at != 0 {
+            let (forward, _) = &changes[at];
+            if Some(forward.len_after()) != lens[at] {
+                return Err(format!("step {at} doesn't fit the text"));
+            }
+            let parent = saved.nodes[at].parent;
+            lens[parent] = Some(forward.len());
+            at = parent;
+        }
+        for at in 1..count {
+            let (forward, inverse) = &changes[at];
+            let before = lens[saved.nodes[at].parent].ok_or("a step with no text before it")?;
+            let after = forward.len_after();
+            let fits = forward.len() == before
+                && inverse.len() == after
+                && inverse.len_after() == before
+                && lens[at].is_none_or(|known| known == after);
+            if !fits {
+                return Err(format!("step {at} doesn't fit the steps around it"));
+            }
+            lens[at] = Some(after);
+        }
+        let mut nodes = Vec::with_capacity(count);
+        for (at, (node, (forward, inverse))) in saved.nodes.iter().zip(changes).enumerate() {
+            let before_len = lens[node.parent].unwrap_or(0);
+            let after_len = lens[at].unwrap_or(0);
+            nodes.push(Node {
+                stamp: self.next_stamp(),
+                parent: node.parent,
+                children: node.children.clone(),
+                changes: forward,
+                inverse,
+                before: node
+                    .before
+                    .as_deref()
+                    .and_then(|r| load_selection(r, before_len)),
+                after: node
+                    .after
+                    .as_deref()
+                    .and_then(|r| load_selection(r, after_len)),
+                group: None,
+                author: None,
+                time: node
+                    .time
+                    .filter(|t| t.is_finite() && *t >= 0.0)
+                    .map(|t| UNIX_EPOCH + Duration::from_secs_f64(t)),
+            });
+        }
+        self.nodes = nodes;
+        self.current = saved.current;
+        Ok(())
     }
 
     /// How to get from the current node to `target`: how many undos up to

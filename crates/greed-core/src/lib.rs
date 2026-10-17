@@ -63,7 +63,7 @@ pub use editor::{
     Notice, PEER_COLORS, Panel, PanelOptions, Project, ProjectId, Scroll, Side, SwitchTo, Tab,
     TabId, TabView, View, ViewId, file_path, parse_marked,
 };
-pub use history::{GroupState, History};
+pub use history::{GroupState, History, SavedHistory, SavedNode, SavedOp};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
