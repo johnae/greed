@@ -1,14 +1,18 @@
 -- Completion from the language server: a short pause while typing a word
--- (or after a ".") asks the server, and a menu at the cursor lists what
--- matches the word so far. tab or ctrl-n and shift-tab or ctrl-p move
+-- (or after a "." or "/") asks the server, and a menu at the cursor lists
+-- what matches the word so far. tab or ctrl-n and shift-tab or ctrl-p move
 -- through it, enter takes the current one, esc closes it; typing narrows
--- it. ctrl-space asks right away. completion-words fills the same menu
--- with words from open files instead, for Vim's ctrl-n and ctrl-p.
+-- it. ctrl-space asks right away. Words from open files come after what
+-- the server offers, once two letters are typed; completion-words offers
+-- them alone, for Vim's ctrl-n and ctrl-p. A path being typed, starting
+-- "./", "../", "~/" or "/", completes from its folder instead.
 --
 -- Sources ask before the server and say how their menu behaves: whether
 -- enter takes the first item or only one moved to (completion-enter),
 -- whether tab completes in place as a shell's does, and whether a menu
--- that opened by itself leaves up and down to the buffer.
+-- that opened by itself leaves up and down to the buffer. A source that
+-- adds (like the words) puts its items after the server's instead of
+-- deciding alone.
 --
 -- While the menu is open the editor is in a mode of its own that keeps
 -- every key of the mode you were typing in, so nothing else changes.
@@ -71,6 +75,9 @@ export type SourceOptions = {
 	--- while a menu that opened by itself hasn't been moved into with tab;
 	--- "menu" (the default) moves through it.
 	arrows: ("menu" | "after-tab")?,
+	--- Adds its items to the language server's, after them, rather than
+	--- deciding alone; the menu then behaves as the server's does.
+	adds: boolean?,
 }
 
 type Registered = { source: Source, options: SourceOptions }
@@ -79,8 +86,9 @@ local sources: { Registered } = {}
 
 --- Asks `source` what could go at the cursor before the language server is
 --- asked, in any buffer, a file or not: the first source to answer (even
---- with nothing) decides, and `options` say how its menu behaves. It goes
---- when the plugin that added it does.
+--- with nothing) decides, and `options` say how its menu behaves. With
+--- `adds`, it doesn't decide: what it offers goes after the server's
+--- items. It goes when the plugin that added it does.
 function M.source(source: Source, options: SourceOptions?)
 	greed.plugin.tie(core.registry.put(sources, { source = source, options = options or {} }))
 end
@@ -94,6 +102,8 @@ type Open = {
 	-- Every item the server sent, and the ones matching what's typed.
 	items: { Item },
 	matches: { number },
+	-- How many of the items come first, before what adding sources offer.
+	first: number?,
 	-- The highlighted match, 0 for none.
 	current: number,
 	-- Where the word being completed starts, following edits elsewhere,
@@ -292,18 +302,26 @@ local function render(o: Open)
 	o.float.view:configure({ width = longest + 3, height = buffer:line_count() + 2 })
 end
 
--- The items of `items` matching `typed`, best first.
-local function matching(items: { Item }, typed: string): { number }
+--- The indexes of `items` matching `typed`, best first; with `first`, the
+--- matches among the first that many items come before the rest, however
+--- well those match, as an adding source's come after the server's.
+function M.matching(items: { Item }, typed: string, first: number?): { number }
 	local labels = {}
 	for i, item in items do
 		labels[i] = item.label
 	end
-	return M.rank(typed, labels)
+	local ahead, after = {}, {}
+	for _, index in M.rank(typed, labels) do
+		table.insert(if first and index > first then after else ahead, index)
+	end
+	table.move(after, 1, #after, #ahead + 1, ahead)
+	return ahead
 end
+local matching = M.matching
 
 -- Narrows the items to what's typed now, closing the menu when nothing's left.
 local function refresh(o: Open)
-	o.matches = matching(o.items, o.buffer:slice(start_of(o), o.view:cursor()))
+	o.matches = matching(o.items, o.buffer:slice(start_of(o), o.view:cursor()), o.first)
 	o.current = if enter_mode(o.options) == "first" then 1 else 0
 	if #o.matches == 0 then
 		close()
@@ -380,12 +398,14 @@ end
 -- Opens the menu at the cursor in `view` with what of `items` matches the
 -- word being typed, asked for or not (`explicit`), as `options` say. With
 -- tab "insert", asking puts the only match in place at once, or what the
--- matches share. Returns whether anything matched.
+-- matches share. With `first`, the first that many items come before the
+-- rest. Returns whether anything matched.
 local function show(
 	view: greed.View,
 	items: { Item },
 	options: SourceOptions,
-	explicit: boolean
+	explicit: boolean,
+	first: number?
 ): boolean
 	local buffer = view:buffer()
 	if #items == 0 then
@@ -401,7 +421,7 @@ local function show(
 	end
 	if explicit and options.tab == "insert" then
 		local typed = buffer:slice(start, view:cursor())
-		local matches = matching(items, typed)
+		local matches = matching(items, typed, first)
 		if #matches == 0 then
 			return false
 		end
@@ -432,6 +452,7 @@ local function show(
 		float = float,
 		items = items,
 		matches = {},
+		first = first,
 		current = 0,
 		start = buffer:track(start, { gravity = "left" }),
 		mode = mode,
@@ -473,7 +494,12 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 		return buffer:slice(buffer:line_start(buffer:line_of(pos)), pos)
 	end
 	local typed, asked_at = before_cursor(), view:cursor()
+	local adding: { Registered } = {}
 	for _, registered in table.clone(sources) do
+		if registered.options.adds then
+			table.insert(adding, registered)
+			continue
+		end
 		local answered, items = pcall(registered.source, view, { explicit = explicit })
 		if answered and items then
 			local current = wanted == generation() or (mine() == nil and before_cursor() == typed)
@@ -491,25 +517,49 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 			return
 		end
 	end
-	if buffer:path() == nil then
+	-- What the adding sources offer, before the server's answer moves the
+	-- cursor on.
+	local added: { Item } = {}
+	for _, registered in adding do
+		local answered, items = pcall(registered.source, view, { explicit = explicit })
+		if answered and items then
+			table.move(items, 1, #items, #added + 1, added)
+		end
+	end
+	local items: { Item } = {}
+	if buffer:path() ~= nil then
+		-- Where the cursor is takes the server's encoding: a buffer with no
+		-- server fails there as much as at the request.
+		local ok, result = pcall(function()
+			return greed.lsp.request(buffer, "textDocument/completion", {
+				textDocument = { uri = greed.lsp.uri(buffer) },
+				position = greed.lsp.position(buffer, view:cursor()),
+			})
+		end)
+		if ok and result ~= nil then
+			items = items_from(result, buffer)
+		end
+	end
+	if wanted ~= generation() or greed.mode.get() ~= mode or not view:valid() then
 		return
 	end
-	-- Where the cursor is takes the server's encoding: a buffer with no
-	-- server fails there as much as at the request.
-	local ok, result = pcall(function()
-		return greed.lsp.request(buffer, "textDocument/completion", {
-			textDocument = { uri = greed.lsp.uri(buffer) },
-			position = greed.lsp.position(buffer, view:cursor()),
-		})
-	end)
-	if not ok or result == nil or wanted ~= generation() or greed.mode.get() ~= mode then
-		return
+	local first = #items
+	local offered: { [string]: boolean } = {}
+	for _, item in items do
+		offered[item.label] = true
 	end
-	show(view, items_from(result, buffer), { enter = "first" }, explicit)
+	for _, item in added do
+		if not offered[item.label] then
+			offered[item.label] = true
+			table.insert(items, item)
+		end
+	end
+	show(view, items, { enter = "first" }, explicit, first)
 end
 
--- Typing a word character or "." asks again once typing pauses; anything
--- else closes the menu, and so does typing after an item tab put in place.
+-- Typing a word character, "." or "/" asks again once typing pauses;
+-- anything else closes the menu, and so does typing after an item tab put
+-- in place. A "/" closes it too, then asks for what's in that folder.
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local view = greed.view()
 	if event.buffer ~= view:buffer() then
@@ -538,13 +588,15 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if open then
 		if in_word and pos > start_of(open) and not open.placed then
 			refresh(open)
-		else
-			close()
+			return
 		end
-		return
+		close()
+		if ch ~= "/" then
+			return
+		end
 	end
 	local delay = greed.option.get("completion-delay") :: number
-	if delay <= 0 or not (in_word or ch == ".") then
+	if delay <= 0 or not (in_word or ch == "." or ch == "/") then
 		return
 	end
 	greed.sleep(delay)
@@ -597,24 +649,31 @@ end
 
 -- At most this many words are offered.
 local WORDS = 200
+-- How many bytes of each buffer are looked through for words, either side
+-- of the cursor in the one typed in, so a huge file costs no more than a
+-- big one.
+local SCAN = 200000
 
 -- The words in open buffers that start with what's typed before the cursor
--- in `view`: this buffer's from the cursor on, then the rest of it, then
--- the other buffers'.
+-- in `view`: this buffer's from the cursor on, then before it, then the
+-- other buffers'.
 local function words(view: greed.View): { Item }
 	local buffer = view:buffer()
 	local pos = view:cursor()
 	local typed = buffer:slice(word_start(buffer, pos), pos)
-	local texts = { buffer:slice(pos, buffer:len()), buffer:slice(0, pos) }
+	local texts = {
+		buffer:slice(pos, math.min(buffer:len(), pos + SCAN)),
+		buffer:slice(math.max(0, pos - SCAN), pos),
+	}
 	for _, other in greed.buffers() do
-		if other ~= buffer then
-			table.insert(texts, other:text())
+		if other ~= buffer and other:kind() == "file" then
+			table.insert(texts, other:slice(0, math.min(other:len(), SCAN)))
 		end
 	end
 	local seen: { [string]: boolean } = {}
 	local found: { Item } = {}
 	for _, text in texts do
-		for word in string.gmatch(text, "[%w_\128-\255]+") do
+		for word in string.gmatch(text, "[%a_\128-\255][%w_\128-\255]*") do
 			if #word > #typed and not seen[word] and string.sub(word, 1, #typed) == typed then
 				seen[word] = true
 				table.insert(found, { label = word, text = word })
@@ -626,6 +685,68 @@ local function words(view: greed.View): { Item }
 	end
 	return found
 end
+
+-- The kinds of buffer words and paths are offered in by themselves: files,
+-- not prompts or a shell, whose sources have their own.
+local TEXT_KINDS = { file = true, multibuffer = true }
+
+-- Words come after what the server offers, once two letters are typed.
+M.source(function(view: greed.View, asked: Ask): { Item }?
+	local buffer = view:buffer()
+	if not TEXT_KINDS[buffer:kind()] then
+		return nil
+	end
+	local pos = view:cursor()
+	if not asked.explicit and pos - word_start(buffer, pos) < 2 then
+		return nil
+	end
+	return words(view)
+end, { adds = true })
+
+-- The path being typed before `pos` on its line, if it looks like one:
+-- starting "./", "../", "~/" or "/" (but not "//", a comment).
+local function typed_path(buffer: greed.Buffer, pos: number): string?
+	local line = buffer:slice(buffer:line_start(buffer:line_of(pos)), pos)
+	local path = string.match(line, "[%w_%.%-~/+@]*$") or ""
+	local looks = string.match(path, "^%.%.?/") or string.match(path, "^~/")
+	if looks or (string.match(path, "^/") and not string.match(path, "^//")) then
+		return path
+	end
+	return nil
+end
+
+-- A path being typed completes from its folder: the file's for "./" and
+-- "../", the home folder for "~/".
+M.source(function(view: greed.View): { Item }?
+	local buffer = view:buffer()
+	if not TEXT_KINDS[buffer:kind()] then
+		return nil
+	end
+	local pos = view:cursor()
+	local path = typed_path(buffer, pos)
+	if path == nil then
+		return nil
+	end
+	local folder, name = string.match(path, "^(.*/)([^/]*)$")
+	if folder == nil or name == nil then
+		return nil
+	end
+	local file = buffer:path()
+	local here = if file then string.match(file, "^(.*)/[^/]*$") else nil
+	local entries = greed.fs.list(
+		core.project.resolve(folder, here),
+		{ hidden = string.sub(name, 1, 1) == ".", ignored = true }
+	)
+	if entries == nil then
+		return nil
+	end
+	local items: { Item } = {}
+	for _, entry in entries do
+		local label = if entry.dir then entry.name .. "/" else entry.name
+		table.insert(items, { label = label, text = label, from = pos - #name })
+	end
+	return items
+end)
 
 -- completion-words and completion-words-back: Vim's ctrl-n and ctrl-p.
 for _, back in { false, true } do

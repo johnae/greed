@@ -1000,7 +1000,9 @@ greed.tab.set_layout({
   `tab = "insert"` makes `tab` complete in place as a shell does (the only
   match or what all matches start with at once, then each item in turn);
   and `arrows = "after-tab"` leaves `up` and `down` to the buffer while a
-  menu that opened by itself hasn't been moved into. The shell completes
+  menu that opened by itself hasn't been moved into. With `adds = true` a
+  source doesn't decide alone: what it offers goes after the language
+  server's items, as the words from open files do. The shell completes
   its prompt this way, with all three. A plugin that binds `tab`, `enter`
   or the arrows for typing in its own kind of buffer calls
   `completion.keys_over(kind)` so the menu keeps those keys while it's

@@ -951,9 +951,14 @@ A rename or code action that changes other files opens them in the
 background, unsaved, so you can look the change over (`space b`) and undo
 it before saving.
 
-Completions show in a menu at the cursor once typing pauses after a letter
-or a `.`. The menu narrows as you type: what starts with what you typed
-first, then what holds it, then looser matches.
+Completions show in a menu at the cursor once typing pauses after a letter,
+a `.` or a `/`. The menu narrows as you type: what starts with what you
+typed first, then what holds it, then looser matches. What the language
+server offers comes first, then words from your open files once you've
+typed two letters, so a file with no server still completes names you've
+used. A path you're typing, starting `./`, `../`, `~/` or `/`, completes
+from its folder instead (from the file's folder for `./`), and a `/` after
+a folder lists what's in it.
 
 | Keys | |
 |---|---|
