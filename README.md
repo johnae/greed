@@ -108,9 +108,7 @@ code before it loads.
 ## Install
 
 Each system has one file to download, holding a single `greed` binary.
-The links get the latest release; the
-[releases page](https://github.com/johnae/greed/releases/latest) has each
-version's, with its number in the name.
+The links get the latest [release](https://github.com/johnae/greed/releases/latest).
 
 | System | Download | |
 | --- | --- | --- |
@@ -145,8 +143,8 @@ brew install --cask johnae/greed/greed-app  # Greed.app, on macOS
 
 `brew upgrade` brings each new release.
 
-On NixOS, and anywhere with Nix, the flake has it with the window:
-`nix run github:johnae/greed`, or `.#static` for the static binary. Both
+On NixOS, and anywhere with Nix, the flake has it with gui support:
+`nix run github:johnae/greed`, or `.#static` for the static binary (only tui). Both
 are built for every release and for main, for x86_64 and arm64 Linux and
 Apple silicon macOS (the window build), and kept in a binary cache, so
 they download instead of building. `nix run` asks once whether to use
