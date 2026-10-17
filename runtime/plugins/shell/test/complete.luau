@@ -22,7 +22,7 @@ local function at_prompt(sh: Shell): string
 	return log.prompt_text(sh)
 end
 
-type Item = { label: string, text: string, detail: string?, badge: string?, from: number? }
+type Item = core.CompletionItem
 
 -- What completes `text` at `sh`'s prompt, by label.
 local function items_for(t: test.TestContext, sh: Shell, text: string): { [string]: Item }

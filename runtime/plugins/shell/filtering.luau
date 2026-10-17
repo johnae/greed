@@ -9,7 +9,7 @@ local state = require("./state")
 local tables = require("./tables")
 
 type Block = state.Block
-type Item = { label: string, detail: string?, badge: string?, text: string, from: number? }
+type Item = core.CompletionItem
 
 local M = {}
 

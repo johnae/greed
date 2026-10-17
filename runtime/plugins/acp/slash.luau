@@ -10,12 +10,13 @@
 -- so the box, the keys and the command line do the same.
 
 local greed = require("@greed")
+local core = require("@core")
 local session = require("./session")
 local native = require("./native")
 local transcript = require("./transcript")
 
 type Session = session.Session
-type Item = { label: string, detail: string?, badge: string?, text: string, from: number? }
+type Item = core.CompletionItem
 
 local M = {}
 

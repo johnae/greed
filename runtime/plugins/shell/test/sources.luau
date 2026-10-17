@@ -1,12 +1,13 @@
 local test = require("@greed/test")
 local greed = require("@greed")
+local core = require("@core")
 local shell = require("@shell")
 local completion = require("../complete")
 local shell_log = require("../log")
 local sources = require("../sources")
 
 type Shell = typeof(shell.open())
-type Item = { label: string, text: string, detail: string?, badge: string?, from: number? }
+type Item = core.CompletionItem
 
 -- How long an ask for completions may take: it starts programs, slow while
 -- every plugin's tests run at once.

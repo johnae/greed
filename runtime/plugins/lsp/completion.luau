@@ -45,12 +45,8 @@ local SHOWN = 10
 
 local M = {}
 
---- Something that could go at the cursor: `label` in the menu, `text` put
---- in place of what's typed from `from` (the start of the word typed, by
---- default) to the cursor. `detail` says what it is, dimmed after the
---- label, and `badge`, a word before the detail, whose it is, like a
---- shell's "greed" for its own commands.
-export type Item = { label: string, detail: string?, badge: string?, text: string, from: number? }
+--- Something that could go at the cursor (see `core.CompletionItem`).
+export type Item = core.CompletionItem
 
 --- How the menu was asked for: `explicit` when you asked (tab,
 --- ctrl-space), not by a pause in typing.

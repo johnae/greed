@@ -115,6 +115,19 @@ export type UiGridRow = ui.GridRow
 export type RecallWalk = recall.Walk
 --- A float being typed in, from `floats.typing`.
 export type TypingFloat = floats.Typing
+--- Something a completion menu offers, as the lsp plugin's menu and the
+--- sources that fill it (the shell's, an agent's box) all take it: `label`
+--- in the menu, `text` put in place of what's typed from `from` (the start
+--- of the word typed, by default) to the cursor. `detail` says what it is,
+--- dimmed after the label, and `badge`, a word before the detail, whose it
+--- is, like a shell's "greed" for its own commands.
+export type CompletionItem = {
+	label: string,
+	detail: string?,
+	badge: string?,
+	text: string,
+	from: number?,
+}
 
 -- Other plugins can use these with `require("@core")`.
 return {

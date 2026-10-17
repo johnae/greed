@@ -19,7 +19,7 @@ local aliases = require("./aliases")
 local kinds = require("./kinds")
 
 type Shell = state.Shell
-type Item = { label: string, detail: string?, badge: string?, text: string, from: number? }
+type Item = core.CompletionItem
 
 local M = {}
 
