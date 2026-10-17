@@ -15,6 +15,7 @@ local motions = require("./motions")
 local pairing = require("./pairs")
 local registers = require("./registers")
 local registry = require("./registry")
+local snippet = require("./snippet")
 local style = require("./style")
 local text = require("./text")
 local writable = require("./writable")
@@ -105,8 +106,12 @@ greed.command({
 
 greed.command({
 	name = "type-tab",
-	doc = "Indent the selected lines when a selection spans lines, otherwise type a level of indent",
+	doc = "Go to the next place of the snippet being filled in; otherwise indent the selected "
+		.. "lines when a selection spans lines, or type a level of indent",
 	run = function(ctx)
+		if snippet.move(ctx.view) then
+			return
+		end
 		local buffer = ctx.buffer
 		for _, range in ctx.view:selection().ranges do
 			local from, to = span(range)

@@ -376,8 +376,10 @@ fn tab_moves_through_completions_and_esc_closes_them_and_insert_mode() {
     assert_eq!(
         main_text(&h),
         "let x = bad; snip(x)",
-        "snippets go in as plain text"
+        "a snippet goes in with its places filled as written"
     );
+    // Its place is selected, to type over; tab goes on to its end.
+    h.press_keys("tab").unwrap();
 
     h.press_keys("space b").unwrap();
     pause_and_wait(&h);

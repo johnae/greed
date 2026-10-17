@@ -7,6 +7,7 @@ local indent = require("./indent")
 local motions = require("./motions")
 local pairing = require("./pairs")
 local registers = require("./registers")
+local snippet = require("./snippet")
 local style = require("./style")
 local text = require("./text")
 local writable = require("./writable")
@@ -95,6 +96,8 @@ greed.command({
 	run = function(ctx)
 		if ctx.char then
 			writable.cursor(ctx.view)
+			-- Typing over a snippet's place replaces its text.
+			snippet.clear_place(ctx.view)
 			if pairing.type(ctx.view, ctx.char, false) then
 				return
 			end
@@ -119,7 +122,7 @@ greed.command({
 -- Adds command `name`, which deletes from each cursor to where
 -- `target(buffer, head)` says, back or forward, for typing keys like ctrl-w;
 -- and when it deletes back, `beyond(buffer, head)` bytes after the cursor
--- too.
+-- too. A snippet's place still selected goes whole instead.
 local function delete_to_command(
 	name: string,
 	doc: string,
@@ -133,6 +136,9 @@ local function delete_to_command(
 		name = name,
 		doc = doc,
 		run = function(ctx)
+			if snippet.clear_place(ctx.view) then
+				return
+			end
 			ctx.buffer:edit(function(e)
 				for _, range in ctx.view:selection().ranges do
 					local head = range.head
@@ -182,9 +188,12 @@ delete_to_command(
 
 greed.command({
 	name = "insert-tab",
-	doc = "Insert a level of indent at each cursor",
+	doc = "Go to the next place of the snippet being filled in, or insert a level of indent at "
+		.. "each cursor",
 	run = function(ctx)
-		insert_at_heads(ctx, indent.unit(ctx.buffer))
+		if not snippet.move(ctx.view) then
+			insert_at_heads(ctx, indent.unit(ctx.buffer))
+		end
 	end,
 })
 
@@ -542,8 +551,12 @@ greed.command({
 
 greed.command({
 	name = "dedent",
-	doc = "Take one level of indent off the lines of each selection",
+	doc = "Take one level of indent off the lines of each selection; while typing in a snippet, "
+		.. "go back to its last place",
 	run = function(ctx)
+		if style.is_typing(greed.mode.get()) and snippet.move(ctx.view, true) then
+			return
+		end
 		local width = #indent.unit(ctx.buffer)
 		local buffer = ctx.buffer
 		buffer:edit(function(e)

@@ -984,6 +984,12 @@ These apply to every completion menu, the shell's included:
 In Vim's style, `ctrl-n` and `ctrl-p` in insert mode complete from the
 words in open files.
 
+Some completions are snippets, with places to fill in, like a function's
+arguments. Taking one selects its first place: typing replaces what's
+there, `tab` goes to the next place and `shift-tab` back, and a place used
+twice fills in both at once. The snippet ends at its last place, or when
+you leave insert mode.
+
 Typing `(` or `,` in a call shows the function's parameters above the
 cursor, the one you're on picked out, until the call closes or you leave
 insert mode. To ask for it with a key, bind `signature-help` in insert

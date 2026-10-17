@@ -187,14 +187,6 @@ local function word_start(buffer: greed.Buffer, pos: number): number
 	return at
 end
 
--- A snippet's text without its placeholders: "f(${1:x})$0" is "f(x)".
-local function plain(snippet: string): string
-	local text = string.gsub(snippet, "%${%d+:([^}]*)}", "%1")
-	text = string.gsub(text, "%${%d+}", "")
-	text = string.gsub(text, "%$%d+", "")
-	return text
-end
-
 -- The server's items in a form the menu uses.
 local function items_from(result: any, buffer: greed.Buffer): { Item }
 	local list = if result and result.items then result.items else result or {}
@@ -209,10 +201,13 @@ local function items_from(result: any, buffer: greed.Buffer): { Item }
 				from = greed.lsp.offset(buffer, range.start)
 			end
 		end
-		if item.insertTextFormat == 2 then
-			text = plain(text)
-		end
-		table.insert(out, { label = item.label, detail = item.detail, text = text, from = from })
+		table.insert(out, {
+			label = item.label,
+			detail = item.detail,
+			text = text,
+			from = from,
+			snippet = item.insertTextFormat == 2,
+		})
 	end
 	return out
 end
@@ -339,10 +334,11 @@ local function put(buffer: greed.Buffer, start: number, view: greed.View, text: 
 end
 
 -- What `typed` (from `start`) becomes with `item` in place: the item's
--- text from where it starts.
+-- text from where it starts, a snippet's as it reads once in.
 local function with_item(typed: string, start: number, item: Item): string
 	local offset = math.clamp((item.from or start) - start, 0, #typed)
-	return string.sub(typed, 1, offset) .. item.text
+	local text = if item.snippet then core.snippet.parse(item.text).text else item.text
+	return string.sub(typed, 1, offset) .. text
 end
 
 -- The longest start all of `texts` share.
@@ -856,8 +852,16 @@ greed.command({
 		end
 		local item = o.items[o.matches[o.current]]
 		local start = start_of(o)
-		local typed = o.buffer:slice(start, o.view:cursor())
+		local cursor = o.view:cursor()
+		local typed = o.buffer:slice(start, cursor)
 		close()
+		if item.snippet then
+			-- Its places to fill in, tab going from one to the next.
+			local from = math.clamp(item.from or start, start, cursor)
+			core.snippet.expand(o.view, from, cursor, item.text)
+			next_generation()
+			return
+		end
 		put(o.buffer, start, o.view, with_item(typed, start, item))
 	end,
 })

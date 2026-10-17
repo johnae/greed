@@ -34,6 +34,7 @@ local recall = require("@self/recall")
 require("@self/selections")
 local comment = require("@self/comment")
 local pairing = require("@self/pairs")
+local snippet = require("@self/snippet")
 local jumps = require("@self/jumps")
 local registers = require("@self/registers")
 require("@self/macro_commands")
@@ -76,6 +77,7 @@ greed.keymap.bind({ role = "typing" }, {
 	backspace = "delete-back",
 	delete = "delete-forward",
 	tab = "insert-tab",
+	["shift-tab"] = "dedent",
 	home = "line-start",
 	["end"] = "line-end",
 	["ctrl-w"] = "delete-word-back",
@@ -120,13 +122,15 @@ export type TypingFloat = floats.Typing
 --- in the menu, `text` put in place of what's typed from `from` (the start
 --- of the word typed, by default) to the cursor. `detail` says what it is,
 --- dimmed after the label, and `badge`, a word before the detail, whose it
---- is, like a shell's "greed" for its own commands.
+--- is, like a shell's "greed" for its own commands. With `snippet`, `text`
+--- is a snippet (snippet.luau), whose places tab goes to once it's in.
 export type CompletionItem = {
 	label: string,
 	detail: string?,
 	badge: string?,
 	text: string,
 	from: number?,
+	snippet: boolean?,
 }
 
 -- Other plugins can use these with `require("@core")`.
@@ -163,6 +167,8 @@ return {
 	comment = comment,
 	--- Brackets and quotes typed in pairs (pairs.luau).
 	pairs = pairing,
+	--- Snippets: text with places tab goes to (snippet.luau).
+	snippet = snippet,
 	jumps = jumps,
 	jump = jump,
 	hints = hints,
