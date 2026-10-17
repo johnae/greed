@@ -81,42 +81,52 @@ function M.scan(): { Reminder }
 	return out
 end
 
--- The reminders that went off, by key, as kept in the cache folder.
-local fired: { [string]: boolean }? = nil
+-- The reminders that went off, by key: those this session set off, and
+-- what the cache folder's record says, which every session here shares.
+local fired: { [string]: boolean } = {}
 
 local function record_file(): string?
 	local cache = greed.fs.dirs().cache
 	return if cache then `{cache}/notes-reminders` else nil
 end
 
+-- What went off, read again each time, so one another session set off
+-- doesn't go off here too.
 local function load_fired(): { [string]: boolean }
-	if fired == nil then
-		local loaded: { [string]: boolean } = {}
-		local file = record_file()
-		local text = if file then greed.fs.read(file) else nil
-		for _, key in string.split(text or "", "\n") do
-			if key ~= "" then
-				loaded[key] = true
-			end
+	local file = record_file()
+	local text = if file then greed.fs.read(file) else nil
+	for _, key in string.split(text or "", "\n") do
+		if key ~= "" then
+			fired[key] = true
 		end
-		fired = loaded
 	end
-	return fired :: { [string]: boolean }
+	return fired
 end
 
--- Keeps the reminders that went off and are still in the notes.
+-- Whether `key` is a reminder in a project's notes.
+local function in_project(key: string): boolean
+	return string.sub(key, 1, 8) == "project:"
+end
+
+-- Keeps the reminders that went off and are still in the notes, and those
+-- in projects' notes, which another session may be looking at.
 local function save_fired(reminders: { Reminder })
 	local file = record_file()
 	if file == nil then
 		return
 	end
 	local went = load_fired()
-	local keys = {}
+	local still: { [string]: boolean } = {}
 	for _, reminder in reminders do
-		if went[reminder.key] then
-			table.insert(keys, reminder.key)
+		still[reminder.key] = true
+	end
+	local keys = {}
+	for key in went do
+		if still[key] or in_project(key) then
+			table.insert(keys, key)
 		end
 	end
+	table.sort(keys)
 	greed.fs.write(file, table.concat(keys, "\n") .. "\n")
 end
 
@@ -249,6 +259,31 @@ end
 local counts = { today = 0, overdue = 0 }
 local last_day: string? = nil
 
+--- Whether the session `current` sets off reminders in your own notes,
+--- with the sessions `running` here: only the first of them by name does,
+--- so several sessions don't tell you twice. A project's notes remind in
+--- its own session. The editor not running as a session always does.
+function M.reminds_yours(current: string?, running: { string }): boolean
+	if current == nil then
+		return true
+	end
+	for _, name in running do
+		if name < current then
+			return false
+		end
+	end
+	return true
+end
+
+-- Whether this session sets off reminders in your own notes.
+local function yours_here(): boolean
+	local running = {}
+	for _, session in greed.session.list() do
+		table.insert(running, session.name)
+	end
+	return M.reminds_yours(greed.session.current(), running)
+end
+
 --- Looks for reminders that came due and haven't gone off, and tells you
 --- about them; counts what's due for the status line. Returns how many
 --- went off.
@@ -272,12 +307,14 @@ function M.check(): number
 	local reminders = M.scan()
 	local went = load_fired()
 	local now = notes.clock()
+	local yours = yours_here()
 	local due: { Reminder } = {}
 	-- A line with several reminders that went off since the last look
 	-- shows once, at its latest.
 	local lines: { [string]: number } = {}
 	for _, reminder in reminders do
-		if reminder.at <= now and not went[reminder.key] then
+		local here = yours or in_project(reminder.key)
+		if here and reminder.at <= now and not went[reminder.key] then
 			went[reminder.key] = true
 			local line = `{reminder.note}\t{reminder.line}`
 			local at = lines[line]

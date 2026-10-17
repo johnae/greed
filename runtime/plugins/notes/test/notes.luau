@@ -437,6 +437,25 @@ test(
 	end
 )
 
+test("a reminder another session set off doesn't go off here too", function(t)
+	greed.option.set("notes-remind-desktop", false)
+	local when = minute(-3600)
+	folder(t, { ["inbox.md"] = `- [ ] call the bank remind:{when}\n` })
+	-- What another session wrote after setting it off.
+	local record = `{greed.fs.dirs().cache}/notes-reminders`
+	greed.fs.write(record, `inbox\t{when}\tcall the bank\n`)
+	t:buffer("|x")
+	t:wait(61000)
+	assert(#t:notices() == 0, "it went off elsewhere")
+end)
+
+test("one session reminds you of your own notes; each project's, of its notes", function()
+	local reminders = require("../reminders")
+	assert(reminders.reminds_yours("a", { "a", "b" }), "the first by name")
+	assert(not reminders.reminds_yours("b", { "a", "b" }), "not the others")
+	assert(reminders.reminds_yours(nil, { "a" }), "not a session at all")
+end)
+
 test("a reminder with only a date goes off at notes-remind-time", function(t)
 	greed.option.set("notes-remind-desktop", false)
 	local now = os.date("*t") :: any
