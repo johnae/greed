@@ -19,6 +19,10 @@ says so.
 :style            pick one from a list
 ```
 
+Brackets and quotes come in pairs as you type in the helix and vscode
+styles, as in those editors, and not in vim's; `:set auto-pairs on` or
+`off` changes that for any style (see [Using Greed](using.md#editing)).
+
 The status line shows the style's name, dim, on the right; clicking it
 opens the same list. The mode on the left reads the way the style's
 editor says it: NORMAL, INSERT, SELECT in Helix's, VISUAL in Vim's.
@@ -232,6 +236,8 @@ require("@core").style.define({
 	labels = { mine = "normal", ["mine-insert"] = "insert" },
 	-- The keys that open the leader, where `space f` and the rest live.
 	leader = "space",
+	-- Type brackets and quotes in pairs, unless `auto-pairs` says otherwise.
+	pairs = true,
 })
 ```
 

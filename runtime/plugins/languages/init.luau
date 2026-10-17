@@ -24,6 +24,7 @@ local languages: { [string]: Language } = {}
 local function apply(name: string, language: Language)
 	greed.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
+	core.pairs.set(name, language.pairs)
 	indent.set(name, {
 		unit = if language.indent then string.rep(" ", language.indent) else "\t",
 		openers = language.indent_after,

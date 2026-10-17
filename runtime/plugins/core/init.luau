@@ -33,6 +33,7 @@ local ui = require("@self/ui")
 local recall = require("@self/recall")
 require("@self/selections")
 local comment = require("@self/comment")
+local pairing = require("@self/pairs")
 local jumps = require("@self/jumps")
 local registers = require("@self/registers")
 require("@self/macro_commands")
@@ -147,6 +148,8 @@ return {
 	--- Tags on commands, like "typing" (commands.luau).
 	commands = commands,
 	comment = comment,
+	--- Brackets and quotes typed in pairs (pairs.luau).
+	pairs = pairing,
 	jumps = jumps,
 	jump = jump,
 	hints = hints,

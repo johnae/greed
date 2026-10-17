@@ -5,6 +5,7 @@ local greed = require("@greed")
 local commands = require("./commands")
 local indent = require("./indent")
 local motions = require("./motions")
+local pairing = require("./pairs")
 local registers = require("./registers")
 local style = require("./style")
 local text = require("./text")
@@ -93,6 +94,10 @@ greed.command({
 	doc = "Insert the typed character at each cursor",
 	run = function(ctx)
 		if ctx.char then
+			writable.cursor(ctx.view)
+			if pairing.type(ctx.view, ctx.char, false) then
+				return
+			end
 			insert_at_heads(ctx, ctx.char)
 			-- A closing bracket at a line's start lines up with its block.
 			if string.match(ctx.char, "^[%)%]}]$") and indent.typed_first(ctx.view) then
@@ -112,22 +117,30 @@ greed.command({
 })
 
 -- Adds command `name`, which deletes from each cursor to where
--- `target(buffer, head)` says, back or forward, for typing keys like ctrl-w.
+-- `target(buffer, head)` says, back or forward, for typing keys like ctrl-w;
+-- and when it deletes back, `beyond(buffer, head)` bytes after the cursor
+-- too.
 local function delete_to_command(
 	name: string,
 	doc: string,
-	target: (greed.Buffer, number) -> number
+	target: (greed.Buffer, number) -> number,
+	beyond: ((greed.Buffer, number) -> number)?
 )
+	local also: (greed.Buffer, number) -> number = beyond or function()
+		return 0
+	end
 	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
 			ctx.buffer:edit(function(e)
 				for _, range in ctx.view:selection().ranges do
-					local at =
-						writable.back_to(ctx.buffer, target(ctx.buffer, range.head), range.head)
-					if at ~= range.head then
-						e:delete(math.min(at, range.head), math.max(at, range.head))
+					local head = range.head
+					local at = writable.back_to(ctx.buffer, target(ctx.buffer, head), head)
+					if at < head then
+						e:delete(at, head + also(ctx.buffer, head))
+					elseif at > head then
+						e:delete(head, at)
 					end
 				end
 			end)
@@ -135,7 +148,12 @@ local function delete_to_command(
 	})
 end
 
-delete_to_command("delete-back", "Delete the character before each cursor", text.before)
+delete_to_command(
+	"delete-back",
+	"Delete the character before each cursor, and the closer of an empty pair",
+	text.before,
+	pairing.closer_after
+)
 delete_to_command("delete-forward", "Delete the character after each cursor", text.after)
 delete_to_command(
 	"delete-word-back",

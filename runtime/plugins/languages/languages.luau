@@ -18,6 +18,9 @@ export type Language = {
 	reads_only: boolean?,
 	--- What starts a line comment.
 	comment: string?,
+	--- The brackets and quotes typed in pairs, closers by their openers;
+	--- left out, brackets, quotes and backticks.
+	pairs: { [string]: string }?,
 	--- Spaces per indent level; leave out to indent with tabs.
 	indent: number?,
 	--- How many columns apart tab stops are; the "tab-width" option if left
@@ -225,6 +228,8 @@ local languages: { [string]: Language } = {
 		servers = { { "rust-analyzer" } },
 		comment = "//",
 		indent = 4,
+		-- ' starts lifetimes and labels more often than a char.
+		pairs = { ["("] = ")", ["["] = "]", ["{"] = "}", ['"'] = '"' },
 	},
 	scala = {
 		formatter = { "scalafmt", "--stdin" },

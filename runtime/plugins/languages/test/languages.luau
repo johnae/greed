@@ -396,3 +396,10 @@ test(
 		assert(buffer:language() == "markdown", "unchanged")
 	end
 )
+
+test("Rust's pairs leave ' alone, for lifetimes", function(t)
+	t:buffer("|")
+	greed.view():buffer():set_language("rust")
+	t:keys("i ' (")
+	t:expect("'(|)")
+end)

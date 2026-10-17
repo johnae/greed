@@ -12,6 +12,7 @@ local greed = require("@greed")
 local commands = require("./commands")
 local indent = require("./indent")
 local motions = require("./motions")
+local pairing = require("./pairs")
 local registers = require("./registers")
 local registry = require("./registry")
 local style = require("./style")
@@ -63,7 +64,7 @@ local function erase(ctx: greed.Context, forward: boolean)
 				local from =
 					writable.back_to(ctx.buffer, text.before(ctx.buffer, range.head), range.head)
 				if from < range.head then
-					e:delete(from, range.head)
+					e:delete(from, range.head + pairing.closer_after(ctx.buffer, range.head))
 				end
 			end
 		end
@@ -75,6 +76,11 @@ greed.command({
 	doc = "Type the pressed character, replacing any selection",
 	run = function(ctx)
 		if ctx.char then
+			writable.cursor(ctx.view)
+			greed.history.start_group()
+			if pairing.type(ctx.view, ctx.char, true) then
+				return
+			end
 			type_text(ctx, ctx.char)
 			-- A closing bracket at a line's start lines up with its block.
 			if string.match(ctx.char, "^[%)%]}]$") and indent.typed_first(ctx.view) then
@@ -460,6 +466,8 @@ export type Style = {
 	leader: string?,
 	--- What the status line calls its mode; "edit" if left out.
 	label: string?,
+	--- Whether brackets and quotes are typed in pairs (see pairs.luau).
+	pairs: boolean?,
 }
 
 --- Adds a style without modes. Its one mode, named like the style, types
@@ -477,6 +485,7 @@ function M.define(spec: Style)
 		roles = { typing = mode },
 		labels = { [mode] = spec.label or "edit" },
 		leader = spec.leader,
+		pairs = spec.pairs,
 	})
 end
 

@@ -48,6 +48,9 @@ export type Style = {
 	--- The keys that open the leader in the style's mode, e.g. "space" or
 	--- "ctrl-space": the keys every plugin binds with `{ layer = "leader" }`.
 	leader: string?,
+	--- Whether brackets and quotes are typed in pairs, while the
+	--- `auto-pairs` option leaves it to the style (see pairs.luau).
+	pairs: boolean?,
 	--- Once the plugin it came from; ignored.
 	plugin: string?,
 }

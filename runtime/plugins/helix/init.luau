@@ -138,6 +138,7 @@ core.style.define({
 	roles = { command = "helix", typing = "helix-insert", selecting = "helix-select" },
 	labels = { helix = "normal", ["helix-insert"] = "insert", ["helix-select"] = "select" },
 	leader = "space",
+	pairs = true,
 })
 
 return {}

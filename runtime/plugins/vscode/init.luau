@@ -108,6 +108,11 @@ greed.on("option.changed", function(event: greed.OptionChanged)
 	end
 end)
 
-core.modeless.define({ name = "vscode", doc = "No modes, VS Code's keys", leader = "ctrl-space" })
+core.modeless.define({
+	name = "vscode",
+	doc = "No modes, VS Code's keys",
+	leader = "ctrl-space",
+	pairs = true,
+})
 
 return {}

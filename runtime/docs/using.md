@@ -585,6 +585,20 @@ require("@languages").set("nix", { indent = 4 })
 require("@languages").set("go", { tab_width = 8 })
 ```
 
+Brackets and quotes come in pairs as you type them in the helix and
+vscode styles: `(` brings its `)` with the cursor between, typing `)` next
+to one steps over it, and backspace between an empty pair deletes both. A
+pair only opens before a space, a closer or the line's end, and a quote not
+after a letter or digit, so `don't` stays as typed. In the vscode style, an
+opener typed over a selection goes around it. Vim's style leaves them alone,
+since `.` and macros replay what was typed. `:set auto-pairs on` (or `off`)
+says otherwise for any style, and `style` goes back to the style's way.
+Each language can have its own pairs; Rust's leave `'` out, for lifetimes:
+
+```luau
+require("@languages").set("lua", { pairs = { ["("] = ")", ["{"] = "}", ['"'] = '"' } })
+```
+
 A file gets its language from its name; `:language NAME` gives a buffer
 another one (`:setf` too, as in Vim), and `:language` alone says which it
 has. `:reindent-lines` indents the selected lines again, for code pasted in

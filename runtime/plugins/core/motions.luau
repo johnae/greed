@@ -697,9 +697,9 @@ end
 
 --- Where `replace_each` leaves a selection in its new text: around it;
 --- around it pointing the way the selection did, a cursor staying a cursor
---- at its start ("keep"); a cursor at its start or end; or a cursor this
---- many bytes into it.
-export type Place = "around" | "keep" | "start" | "end" | number
+--- at its start ("keep"); a cursor at its start or end; a cursor this
+--- many bytes into it; or a selection between two such offsets.
+export type Place = "around" | "keep" | "start" | "end" | number | { number }
 
 --- What `replace_each` puts in for one selection: `text` in place of
 --- `from`..`to` (in the text as it was; the selection by default), with
@@ -741,6 +741,9 @@ function M.replace_each(
 				selection.ranges[i] = point(start)
 			elseif where == "end" then
 				selection.ranges[i] = point(stop)
+			elseif type(where) == "table" then
+				local within = where :: { number }
+				selection.ranges[i] = { anchor = start + within[1], head = start + within[2] }
 			else
 				selection.ranges[i] = point(start + (where :: number))
 			end
