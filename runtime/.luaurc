@@ -44,6 +44,9 @@
 		"docs": "./plugins/docs",
 		"prometheus": "./plugins/prometheus",
 		"versions": "./plugins/versions",
-		"snippets": "./plugins/snippets"
+		"snippets": "./plugins/snippets",
+		"guides": "./plugins/guides",
+		"swatches": "./plugins/swatches",
+		"todo-comments": "./plugins/todo-comments"
 	}
 }

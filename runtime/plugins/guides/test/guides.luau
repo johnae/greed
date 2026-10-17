@@ -1,0 +1,45 @@
+local test = require("@greed/test")
+local greed = require("@greed")
+local guides = require("@guides")
+
+-- `text` in a buffer with no line numbers, the cursor on the first line,
+-- drawn: its rows.
+local function shown(t: test.TestContext, text: string): { string }
+	greed.option.set("indent", "    ")
+	t:buffer("|" .. text)
+	greed.view():buffer():set_line_numbers(false)
+	return t:draw(40, 8)
+end
+
+test("each level short of where a line's text starts gets a guide", function()
+	assert(table.concat(guides.guides(8, 4), ",") == "0,4")
+	assert(table.concat(guides.guides(9, 4), ",") == "0,4,8")
+	assert(#guides.guides(0, 4) == 0)
+end)
+
+test("guides show over the indent, and through blank lines in a block", function(t)
+	local rows = shown(t, "fn a() {\n    if x {\n        y\n\n    }\n}")
+	assert(rows[1] == "fn a() {", rows[1])
+	assert(rows[2] == "│   if x {", rows[2])
+	assert(rows[3] == "│   │   y", rows[3])
+	assert(rows[4] == "│", rows[4])
+	assert(rows[5] == "│   }", rows[5])
+end)
+
+test("tabs get a guide each", function(t)
+	t:buffer("|a\n\t\tb")
+	greed.view():buffer():set_line_numbers(false)
+	greed.view():buffer():set_tab_width(4)
+	greed.option.set("indent", "\t")
+	local rows = t:draw(40, 4)
+	assert(rows[2] == "│   │   b", rows[2])
+end)
+
+test("indent-guides off takes them away", function(t)
+	greed.option.set("indent-guides", false)
+	local rows = shown(t, "a\n    b")
+	assert(rows[2] == "    b", rows[2])
+	greed.option.set("indent-guides", true)
+	rows = t:draw(40, 8)
+	assert(rows[2] == "│   b", rows[2])
+end)

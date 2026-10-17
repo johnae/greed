@@ -123,6 +123,10 @@ return {
 	["ui.tree.open"] = { bg = "bright-black" },
 	["ui.tree.guide"] = { fg = "bright-black" },
 	["ui.tree.hover"] = { bg = "#282a2e" },
+	["ui.indent.guide"] = { fg = "#373b41" },
+	["comment.todo"] = { fg = "yellow", bold = true },
+	["comment.fixme"] = { fg = "red", bold = true },
+	["comment.note"] = { fg = "cyan", bold = true },
 
 	["diagnostic.error"] = { underline = "curl", underline_color = "red" },
 	["diagnostic.warning"] = { underline = "curl", underline_color = "yellow" },

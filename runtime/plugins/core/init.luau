@@ -178,6 +178,8 @@ return {
 	objects = objects,
 	syntax = syntax,
 	words = words,
+	--- Marks drawn on the lines in sight, as views scroll (visible.luau).
+	visible = require("@self/visible"),
 	--- Editing without modes, for styles like vscode (modeless.luau).
 	modeless = modeless,
 	--- Pasted text going in at the cursors (paste.luau).

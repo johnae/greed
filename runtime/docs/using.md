@@ -2615,6 +2615,26 @@ statusline.add_async("right", "change", {
 })
 ```
 
+### Indent guides, colors and TODO comments
+
+Files show a few things that aren't in the text, each with an option to
+turn it off:
+
+- `indent-guides`: a thin line at each level of indent, through blank
+  lines in a block too (style `ui.indent.guide`).
+- `color-swatches`: a square in its color in front of a color like
+  `#ff8800`, `#fa0` or `#ff880080`. A three-digit one needs a letter in it,
+  so an issue number like `#123` stays plain.
+- `todo-comments`: TODO, HACK and XXX picked out in comments in one color
+  (`comment.todo`), FIXME and BUG in another (`comment.fixme`), NOTE in a
+  third (`comment.note`). Only in comments, so a string saying "TODO"
+  stays as it is. `:todo-comments` lists them across the project.
+
+```luau
+require("@greed").option.set("indent-guides", false)
+require("@todo-comments").words.PERF = "comment.note"
+```
+
 ### Themes
 
 `:theme` lists the themes and tries each one as you move through the list.
