@@ -43,6 +43,7 @@
 		"data": "./plugins/data",
 		"docs": "./plugins/docs",
 		"prometheus": "./plugins/prometheus",
-		"versions": "./plugins/versions"
+		"versions": "./plugins/versions",
+		"snippets": "./plugins/snippets"
 	}
 }

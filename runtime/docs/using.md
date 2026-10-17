@@ -990,6 +990,30 @@ there, `tab` goes to the next place and `shift-tab` back, and a place used
 twice fills in both at once. The snippet ends at its last place, or when
 you leave insert mode.
 
+Your own snippets go in files in VS Code's format, so sets made for VS
+Code (like friendly-snippets) can be copied in as they are: one file per
+language in the `snippets` folder of your config, like
+`~/.config/greed/snippets/rust.json`, and a project's in
+`.greed/snippets/`. `all.json` is for every language, and a
+`.code-snippets` file may give each snippet a `scope`, like `"rust,go"`.
+
+```json
+{
+  "test": {
+    "prefix": "test",
+    "body": ["#[test]", "fn ${1:name}() {", "\t$0", "}"],
+    "description": "A test function"
+  }
+}
+```
+
+A snippet comes up in the completion menu as you type its prefix, after
+what the language server offers. `:snippet` picks one by name, and
+`:snippets-edit` opens the file for the language you're in, making it if
+it isn't there; saving it takes effect at once. In a body, `\t` is a level
+of the file's indent, and `$TM_FILENAME`, `$CURRENT_DATE` and VS Code's
+other variables work.
+
 Typing `(` or `,` in a call shows the function's parameters above the
 cursor, the one you're on picked out, until the call closes or you leave
 insert mode. To ask for it with a key, bind `signature-help` in insert

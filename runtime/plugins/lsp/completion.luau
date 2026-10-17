@@ -535,14 +535,17 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 	if wanted ~= generation() or greed.mode.get() ~= mode or not view:valid() then
 		return
 	end
+	-- What's offered twice, the same label putting in the same text, is
+	-- listed once; a snippet named like a keyword stays.
 	local first = #items
 	local offered: { [string]: boolean } = {}
 	for _, item in items do
-		offered[item.label] = true
+		offered[`{item.label}\0{item.text}`] = true
 	end
 	for _, item in added do
-		if not offered[item.label] then
-			offered[item.label] = true
+		local key = `{item.label}\0{item.text}`
+		if not offered[key] then
+			offered[key] = true
 			table.insert(items, item)
 		end
 	end
