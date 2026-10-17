@@ -1,9 +1,11 @@
 -- Projects: `space P` lists, in one picker, the projects open here, the
 -- sessions running on this machine, recent projects, and the projects your
--- sources find. enter goes to one: it switches to it if it's open or has a
--- session, and opens it in a session of its own if not. alt-enter opens it
--- in a new session even when one is running for it, and alt-w in another
--- window, this one staying where it is. A typed folder opens too.
+-- sources find, each saying what enter does with it. A project gets a
+-- session of its own: enter switches to one open here or to its session,
+-- and starts a session for one that has none. alt-o opens it here
+-- instead, in this session, for work across projects; alt-enter starts a
+-- new session even when one is running for it, and alt-w goes to it in
+-- another window, this one staying where it is. A typed folder opens too.
 --
 -- Sources are folders to look in and commands that print paths:
 --
@@ -195,24 +197,42 @@ local function items(): { picker.Item }
 		end
 		table.insert(list, { label = label, value = value })
 	end
+	-- Each says what enter does with it.
 	for _, p in greed.project.list() do
-		local label = core.project.tilde(p.root) .. if p.current then "  (shown)" else ""
+		local label = core.project.tilde(p.root)
+			.. if p.current then "  (shown)" else "  (open here)"
 		add(p.root, label, { project = p.id, root = p.root })
 	end
 	for _, s in greed.session.list() do
 		if not s.current then
 			local label =
-				`{if s.root then core.project.tilde(s.root) else s.name}  (session {s.name})`
+				`{if s.root then core.project.tilde(s.root) else s.name}  (goes to session {s.name})`
 			add(s.root, label, { session = s.name, root = s.root })
 		end
 	end
 	for _, root in core.project.recent() do
-		add(root, `{core.project.tilde(root)}  (recent)`, { path = root, root = root })
+		local label = `{core.project.tilde(root)}  (recent, starts a session)`
+		add(root, label, { path = root, root = root })
 	end
 	for _, f in found do
-		add(f.path, `{core.project.tilde(f.path)}  ({f.from})`, { path = f.path, root = f.path })
+		local label = `{core.project.tilde(f.path)}  ({f.from}, starts a session)`
+		add(f.path, label, { path = f.path, root = f.path })
 	end
 	return list
+end
+
+-- A picker key that does `go` with the chosen entry's project folder.
+local function with_root(
+	go: (root: string) -> ()
+): (items: { picker.Item }, current: picker.Item?) -> ()
+	return function(_, current)
+		local root = current and current.value.root
+		if root == nil then
+			greed.echo("that session doesn't say which project it's for")
+			return
+		end
+		go(root)
+	end
 end
 
 greed.command({
@@ -221,7 +241,7 @@ greed.command({
 		.. "your sources find; or type a folder to open",
 	run = function()
 		picker.pick(
-			"Projects (alt-enter: in a new session, alt-w: in a new window)",
+			"Projects (alt-o: open here, alt-enter: a new session, alt-w: another window)",
 			items(),
 			function(item)
 				if item.value.project then
@@ -249,14 +269,14 @@ greed.command({
 					greed.session.switch({ path = path })
 				end,
 				keys = {
-					["alt-enter"] = function(_, current)
-						local root = current and current.value.root
-						if root == nil then
-							greed.echo("that session doesn't say which project it's for")
-							return
-						end
+					-- In this session, beside what's open here, for work
+					-- across projects.
+					["alt-o"] = with_root(function(root)
+						core.project.open(root)
+					end),
+					["alt-enter"] = with_root(function(root)
 						greed.session.switch({ path = root, new = true })
-					end,
+					end),
 					-- This window stays on this project, and another shows that
 					-- one: in a terminal, it goes there as enter does.
 					["alt-w"] = function(_, current)

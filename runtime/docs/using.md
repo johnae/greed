@@ -262,8 +262,9 @@ and the file picker, project search and tree work within the shown one.
 
 | Keys | |
 |---|---|
-| `:project PATH` | Open the project `PATH` is in, or switch to it |
-| `space P` | Go to a project: one open here, another running session, a recent one, or one your sources find; type a folder path (`~/src/`) to list the folders in it, `tab` to go into one |
+| `:project PATH` | Open the project `PATH` is in here, in this session, or switch to it |
+| `space P` | Go to a project: one open here, another running session, a recent one, or one your sources find; each says what `enter` does with it. Type a folder path (`~/src/`) to list the folders in it, `tab` to go into one |
+| `alt-o` in `space P` | Open the project here, in this session, beside what's open |
 | `alt-enter` in `space P` | Open the project in a new session, even if one is running for it |
 | `alt-w` in `space P` | In a window, open the project in another window and keep this one; in a terminal, go to it as `enter` does |
 | `space C` or `:connect HOST` | Show a session on another machine here, as `greed ssh` does: pick from the hosts you connected to lately and those in `~/.ssh/config`, or type one |
@@ -274,11 +275,15 @@ and the file picker, project search and tree work within the shown one.
 | `:q` | In the last pane of the last tab, close the shown project and leave; on the last project, end the session unless something runs in it |
 | `:qa` | End the session and every project in it |
 
-A recent project or a folder typed into `space P` opens in its own session,
-starting it if it isn't running, like `greed FOLDER` from a terminal.
-`:project PATH` opens a project in this session instead. Like every
-`space` key here, `space P` is on the leader: in the vscode style, where
-space types, it's `ctrl-space P`.
+A project gets a session of its own by default. `enter` in `space P` goes
+to a project open here, or to the session running for it, and starts a
+session for a recent project or a folder you typed, like `greed FOLDER`
+from a terminal. Each entry says which: `(open here)`, `(goes to session
+greed)`, `(recent, starts a session)`. To work across projects in one
+session, like a library and the app using it with one buffer list and one
+grep, open the second one here with `alt-o` in `space P` or `:project
+PATH`. Like every `space` key here, `space P` is on the leader: in the
+vscode style, where space types, it's `ctrl-space P`.
 
 To find projects you haven't opened yet, give `space P` sources in your
 `init.luau`: folders to look in, and commands that print one path per line.
@@ -1844,7 +1849,9 @@ When a reminder comes due:
 Reminders that came due while Greed wasn't running show the next time it
 starts. Greed remembers which ones went off in its cache folder, so each
 goes off once. When several on one line went off while it wasn't running,
-the line shows once.
+the line shows once. With several sessions running, the reminders in your
+own notes go off in one of them, and a project's in that project's
+session, so none goes off twice.
 
 The status line says how many todos are due today, like `2 due today`, in a
 warning color when some are overdue (`1 overdue, 2 due today`). Click it to
