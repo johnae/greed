@@ -864,6 +864,53 @@ fn grep_finds_matching_lines_in_files_that_arent_ignored() {
 }
 
 #[test]
+fn scan_lists_files_with_their_sizes_and_times_and_reads_them_when_asked() {
+    let dir = plugin_dir(
+        "fs-scan",
+        &[
+            ("a.md", "# A\n"),
+            ("deep/b.md", "b\n"),
+            ("c.txt", "c\n"),
+            ("bin.md", "x\0"),
+            ("target/d.md", "ignored\n"),
+            (".gitignore", "target/\n"),
+        ],
+    );
+    let h = host("");
+    let scan = |args: &str| {
+        h.load_str(
+            "scan-test",
+            &format!(
+                "local greed = require('@greed')
+                 local DIR = {:?}
+                 greed.command {{ name = 'scan-test', run = function()
+                   local out = {{}}
+                   for _, f in greed.fs.scan({args}) do
+                     table.insert(out, `{{f.path}}:{{f.size}}:{{f.modified > 0}}:{{f.text or '-'}}`)
+                   end
+                   greed.echo(table.concat(out, ','))
+                 end }}",
+                dir.to_str().unwrap()
+            ),
+        )
+        .unwrap();
+        h.run(FIRST_CLIENT, "scan-test").unwrap();
+        h.settle().unwrap();
+        h.with_editor_mut(Editor::take_messages).join("")
+    };
+    assert_eq!(
+        scan("DIR, { ext = 'md' }"),
+        "a.md:4:true:-,bin.md:2:true:-,deep/b.md:2:true:-"
+    );
+    assert_eq!(
+        scan("DIR, { ext = 'md', read = true }"),
+        "a.md:4:true:# A\n,bin.md:2:true:-,deep/b.md:2:true:b\n"
+    );
+    assert!(scan("DIR, { ignored = true }").contains("target/d.md"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn files_can_be_written_with_their_folders_and_the_working_directory_read() {
     let dir = plugin_dir("fs-write", &[("a.txt", "")]);
     let h = host("");

@@ -127,6 +127,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     fs.set("dirs", lua.create_function(|lua, NoArgs| dirs(lua))?)?;
 
     fs.set("grep", grep_function(lua)?)?;
+    fs.set("scan", scan_function(lua)?)?;
     Ok(fs)
 }
 
@@ -240,20 +241,27 @@ fn grep_function(lua: &Lua) -> LuaResult<Function> {
 
 /// The directory and options from `greed.fs.grep`'s arguments.
 fn grep_args(dir: Option<UserPath>, opts: Option<&Table>) -> LuaResult<(String, GrepOptions)> {
-    let get =
-        |key: &str| -> LuaResult<Option<mlua::Value>> { opts.map_or(Ok(None), |o| o.get(key)) };
-    let flag = |key: &str| -> LuaResult<bool> {
-        Ok(get(key)?.and_then(|v| v.as_boolean()).unwrap_or(false))
-    };
     let options = GrepOptions {
-        hidden: flag("hidden")?,
-        ignored: flag("ignored")?,
-        limit: get("limit")?
+        hidden: opt_flag(opts, "hidden")?,
+        ignored: opt_flag(opts, "ignored")?,
+        limit: opt_value(opts, "limit")?
             .and_then(|v| v.as_usize())
             .unwrap_or(DEFAULT_GREP_LIMIT),
     };
     let dir = dir.map_or_else(|| ".".to_owned(), |UserPath(dir)| dir);
     Ok((dir, options))
+}
+
+/// Option `key` from an optional options table.
+fn opt_value(opts: Option<&Table>, key: &str) -> LuaResult<Option<Value>> {
+    opts.map_or(Ok(None), |o| o.get(key))
+}
+
+/// Option `key` from an optional options table: false unless it's true.
+fn opt_flag(opts: Option<&Table>, key: &str) -> LuaResult<bool> {
+    Ok(opt_value(opts, key)?
+        .and_then(|v| v.as_boolean())
+        .unwrap_or(false))
 }
 
 /// How many matching lines `greed.fs.grep` returns unless told otherwise.
@@ -275,6 +283,48 @@ pub(super) fn grep_to_lua(lua: &Lua, lines: Vec<LineMatch>) -> LuaResult<Table> 
         }
         entry.set("matches", matches)?;
         list.push(entry)?;
+    }
+    Ok(list)
+}
+
+fn scan_function(lua: &Lua) -> LuaResult<Function> {
+    let start = lua.create_function(|lua, (UserPath(dir), opts): (UserPath, Option<Table>)| {
+        let opts = opts.as_ref();
+        let options = search::ScanOptions {
+            hidden: opt_flag(opts, "hidden")?,
+            ignored: opt_flag(opts, "ignored")?,
+            ext: opt_value(opts, "ext")?
+                .and_then(|v| v.as_string().map(mlua::LuaString::to_string_lossy)),
+            read: opt_flag(opts, "read")?,
+        };
+        let secrets = super::secrets::file(lua);
+        Ok(jobs::start(
+            lua,
+            format!("greed.fs.scan {dir}"),
+            move || {
+                let root = Path::new(&dir);
+                let mut files = search::scan(root, &options);
+                if let Some(secrets) = &secrets {
+                    files.retain(|f| !super::approvals::same_file(&root.join(&f.path), secrets));
+                }
+                Output::Scan(files)
+            },
+        ))
+    })?;
+    jobs::waiting(lua, "greed.fs.scan", start)
+}
+
+pub(super) fn scan_to_lua(lua: &Lua, files: Vec<search::Scanned>) -> LuaResult<Table> {
+    let list = lua.create_table_with_capacity(files.len(), 0)?;
+    for file in files {
+        let entry = lua.create_table()?;
+        entry.set("path", file.path)?;
+        entry.set("size", file.size)?;
+        entry.set("modified", file.modified)?;
+        if let Some(text) = file.text {
+            entry.set("text", text)?;
+        }
+        list.raw_push(entry)?;
     }
     Ok(list)
 }

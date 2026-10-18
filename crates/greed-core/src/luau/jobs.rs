@@ -16,6 +16,7 @@ type LuaResult<T> = mlua::Result<T>;
 /// What a finished job produced.
 pub enum Output {
     Grep(Result<Vec<LineMatch>, BadPattern>),
+    Scan(Vec<crate::search::Scanned>),
     Check(super::plugin::Check),
     Http(Result<super::http::Fetched, String>),
     /// A stream's status and headers, for the command waiting on `token`.
@@ -38,10 +39,10 @@ pub enum Output {
     /// What another session on this machine said of itself, or why it
     /// didn't (`greed.session.status`).
     Status(Result<serde_json::Value, String>),
-    /// What a sikt program found in many texts (`rows_many`).
-    Sikt(super::sikt::Many),
     /// What a job on an index (`greed.index`) came back with.
     Index(Result<super::index::Done, greed_index::index::Trouble>),
+    /// What a sikt program found in many texts (`rows_many`).
+    Sikt(super::sikt::Many),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -226,6 +227,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::StreamChunk(id, chunk) => super::http::chunk_arrived(lua, id, chunk),
         Output::Grep(Ok(lines)) => tasks::deliver(lua, done.token, fs::grep_to_lua(lua, lines)?),
         Output::Grep(Err(err)) => tasks::deliver(lua, done.token, (Value::Nil, err.to_string())),
+        Output::Scan(files) => tasks::deliver(lua, done.token, fs::scan_to_lua(lua, files)?),
         Output::Check(check) => tasks::deliver(lua, done.token, super::plugin::to_lua(lua, check)?),
         Output::Secret(result) => {
             tasks::deliver(lua, done.token, super::secrets::to_lua(lua, result)?)

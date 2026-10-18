@@ -1714,7 +1714,12 @@ export type Fs = {
 		dir: string?,
 		opts: { hidden: boolean?, ignored: boolean?, limit: number? }?
 	) -> ({ GrepLine }?, string?),
+	--- The files under `dir`, sorted by path (from `dir`), each with its size and when it was last written (seconds since 1970), and its text with `read` (not for binary or very big files). Only files ending `.ext` with `ext`; hidden and ignored files are skipped unless asked for. It walks in the background and waits like greed.sleep, so an index of many files can see what changed without holding the editor up.
+	scan: (dir: string, opts: { ext: string?, read: boolean?, hidden: boolean?, ignored: boolean? }?) -> { ScannedFile },
 }
+
+--- A file `greed.fs.scan` found.
+export type ScannedFile = { path: string, size: number, modified: number, text: string? }
 
 --- A line `greed.fs.grep` found.
 export type GrepLine = {

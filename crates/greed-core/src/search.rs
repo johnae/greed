@@ -125,6 +125,92 @@ pub struct GrepOptions {
 /// Files bigger than this aren't searched.
 const MAX_GREP_FILE: u64 = 8 * 1024 * 1024;
 
+/// A walk over the files under `dir`, in parallel, leaving out hidden ones
+/// and those `.gitignore` and the like exclude unless told to keep them.
+fn walker(dir: &Path, hidden: bool, ignored: bool) -> ignore::WalkParallel {
+    ignore::WalkBuilder::new(dir)
+        .hidden(!hidden)
+        .git_ignore(!ignored)
+        .git_exclude(!ignored)
+        .git_global(!ignored)
+        .ignore(!ignored)
+        .parents(!ignored)
+        .require_git(false)
+        .build_parallel()
+}
+
+/// The file at `path` as text, unless it's binary or isn't UTF-8.
+fn text_of(path: &Path) -> Option<String> {
+    std::fs::read(path)
+        .ok()
+        .filter(|bytes| !bytes.contains(&0))
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+}
+
+/// A file [`scan`] found: its path from the folder scanned, its size, when
+/// it was last written (seconds since 1970) and, when asked for, its text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Scanned {
+    pub path: String,
+    pub size: u64,
+    pub modified: f64,
+    pub text: Option<String>,
+}
+
+/// What [`scan`] looks at and reads.
+#[derive(Debug, Clone, Default)]
+pub struct ScanOptions {
+    /// Look at hidden files too.
+    pub hidden: bool,
+    /// Look at files `.gitignore` and the like exclude too.
+    pub ignored: bool,
+    /// Only files with this extension, like "md".
+    pub ext: Option<String>,
+    /// Read each file's text too (not binary or very big ones).
+    pub read: bool,
+}
+
+/// The files under `dir`, sorted by path, with their sizes and when they
+/// were last written, and their text with `read`. Folders are walked in
+/// parallel.
+pub fn scan(dir: &Path, options: &ScanOptions) -> Vec<Scanned> {
+    let found = Mutex::new(Vec::new());
+    walker(dir, options.hidden, options.ignored).run(|| {
+        Box::new(|entry| {
+            let Ok(entry) = entry else {
+                return WalkState::Continue;
+            };
+            let wanted = entry.file_type().is_some_and(|t| t.is_file())
+                && options
+                    .ext
+                    .as_deref()
+                    .is_none_or(|ext| entry.path().extension().is_some_and(|e| e == ext));
+            let Some(meta) = entry.metadata().ok().filter(|_| wanted) else {
+                return WalkState::Continue;
+            };
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0.0, |d| d.as_secs_f64());
+            let text = (options.read && meta.len() <= MAX_GREP_FILE)
+                .then(|| text_of(entry.path()))
+                .flatten();
+            let path = entry.path().strip_prefix(dir).unwrap_or(entry.path());
+            found.lock().expect("no panics while held").push(Scanned {
+                path: path.to_string_lossy().into_owned(),
+                size: meta.len(),
+                modified,
+                text,
+            });
+            WalkState::Continue
+        })
+    });
+    let mut found = found.into_inner().expect("no panics while held");
+    found.sort_by(|a, b| a.path.cmp(&b.path));
+    found
+}
+
 /// The lines matching `pattern` in the text files under `dir`, sorted by
 /// path and line. Binary files, ones that aren't UTF-8 and very big ones
 /// are skipped. Files are searched in parallel.
@@ -132,44 +218,31 @@ pub fn grep(dir: &Path, pattern: &str, options: GrepOptions) -> Result<Vec<LineM
     let regex = compile(pattern)?;
     let found = Mutex::new(Vec::new());
     let count = AtomicUsize::new(0);
-    ignore::WalkBuilder::new(dir)
-        .hidden(!options.hidden)
-        .git_ignore(!options.ignored)
-        .git_exclude(!options.ignored)
-        .git_global(!options.ignored)
-        .ignore(!options.ignored)
-        .parents(!options.ignored)
-        .require_git(false)
-        .build_parallel()
-        .run(|| {
-            Box::new(|entry| {
-                if count.load(Ordering::Relaxed) >= options.limit {
-                    return WalkState::Quit;
-                }
-                let Ok(entry) = entry else {
-                    return WalkState::Continue;
-                };
-                let is_small_file = entry.file_type().is_some_and(|t| t.is_file())
-                    && entry.metadata().is_ok_and(|m| m.len() <= MAX_GREP_FILE);
-                if !is_small_file {
-                    return WalkState::Continue;
-                }
-                let Some(text) = std::fs::read(entry.path())
-                    .ok()
-                    .filter(|bytes| !bytes.contains(&0))
-                    .and_then(|bytes| String::from_utf8(bytes).ok())
-                else {
-                    return WalkState::Continue;
-                };
-                let path = entry.path().strip_prefix(dir).unwrap_or(entry.path());
-                let lines = grep_text(&regex, &path.to_string_lossy(), &text);
-                if !lines.is_empty() {
-                    count.fetch_add(lines.len(), Ordering::Relaxed);
-                    found.lock().expect("no panics while held").extend(lines);
-                }
-                WalkState::Continue
-            })
-        });
+    walker(dir, options.hidden, options.ignored).run(|| {
+        Box::new(|entry| {
+            if count.load(Ordering::Relaxed) >= options.limit {
+                return WalkState::Quit;
+            }
+            let Ok(entry) = entry else {
+                return WalkState::Continue;
+            };
+            let is_small_file = entry.file_type().is_some_and(|t| t.is_file())
+                && entry.metadata().is_ok_and(|m| m.len() <= MAX_GREP_FILE);
+            if !is_small_file {
+                return WalkState::Continue;
+            }
+            let Some(text) = text_of(entry.path()) else {
+                return WalkState::Continue;
+            };
+            let path = entry.path().strip_prefix(dir).unwrap_or(entry.path());
+            let lines = grep_text(&regex, &path.to_string_lossy(), &text);
+            if !lines.is_empty() {
+                count.fetch_add(lines.len(), Ordering::Relaxed);
+                found.lock().expect("no panics while held").extend(lines);
+            }
+            WalkState::Continue
+        })
+    });
     let mut found = found.into_inner().expect("no panics while held");
     found.sort_by(|a, b| (&a.path, a.line).cmp(&(&b.path, b.line)));
     found.truncate(options.limit);
