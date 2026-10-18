@@ -36,13 +36,9 @@ index.on_changed(function()
 	by_first = nil
 end)
 
--- Whether a note is one whose name means little in a sentence: a day's
--- note, a template, the inbox.
-local function quiet(name: string): boolean
-	local _, rest = notes.split(name)
-	return string.match(rest, "^daily/") ~= nil
-		or string.match(rest, "^templates/") ~= nil
-		or rest == "inbox"
+-- Note `name` without its place and folders: "projects/greed" is "greed".
+local function base_of(name: string): string
+	return string.match(name, "([^/:]+)$") or name
 end
 
 -- Whether `text` is worth looking for: three letters or more, and not a
@@ -68,8 +64,8 @@ local function called(): { [string]: { Called } }
 		end
 	end
 	for _, note in index.all() do
-		if not quiet(note.name) then
-			local base = string.match(note.name, "([^/:]+)$") or note.name
+		if not notes.routine(note.name) then
+			local base = base_of(note.name)
 			add(base, note.name, "name")
 			if string.lower(note.title) ~= string.lower(base) then
 				add(note.title, note.name, "title")
@@ -107,9 +103,8 @@ local function prose(text: string): string
 end
 
 --- The notes `text` (a line) mentions without linking them, in order and
---- not overlapping, leaving out headings, note `here` (the one it's in) and notes
---- whose names mean little in a sentence (days' notes, templates, the
---- inbox).
+--- not overlapping, leaving out headings, note `here` (the one it's in)
+--- and notes whose names mean little in a sentence (`notes.routine`).
 function M.in_line(text: string, here: string?): { Mention }
 	local out: { Mention } = {}
 	if not string.find(text, "%a") or string.match(text, "^#") then
@@ -241,12 +236,11 @@ end)
 function M.mentioning(name: string): { { note: string, line: number, text: string } }
 	index.ensure()
 	local note = index.note(name)
-	if note == nil or quiet(name) then
+	if note == nil or notes.routine(name) then
 		return {}
 	end
 	local words: { string } = {}
-	local base = string.match(name, "([^/:]+)$") or name
-	for _, text in { base, note.title, table.unpack(index.aliases(note)) } do
+	for _, text in { base_of(name), note.title, table.unpack(index.aliases(note)) } do
 		if worth(string.lower(text)) and not table.find(words, text) then
 			table.insert(words, text)
 		end

@@ -36,7 +36,7 @@ test("ticking a repeating todo brings it back for its next date", function(t)
 	local text = greed.fs.read(`{dir}/chores.md`) or ""
 	assert(
 		text
-			== `- [x] water plants every:day due:{day(0)} remind:{day(0)} 08:00\n`
+			== `- [x] water plants every:day due:{day(0)} remind:{day(0)} 08:00 done:{day(0)}\n`
 				.. `- [ ] water plants every:day due:{day(1)} remind:{day(1)} 08:00\n`
 				.. "- [ ] once\n",
 		text
@@ -57,7 +57,7 @@ test("space n x on a repeating todo ticks it and brings the next one", function(
 	local next = notes.dates.next(day(0), "monday")
 	assert(
 		buffer:text()
-			== `- [x] stretch every:monday due:{day(0)}\n- [ ] stretch every:monday due:{next}\n`,
+			== `- [x] stretch every:monday due:{day(0)} done:{day(0)}\n- [ ] stretch every:monday due:{next}\n`,
 		buffer:text()
 	)
 end)

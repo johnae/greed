@@ -107,7 +107,7 @@ test("space n x ticks a todo, unticks it, and makes a line a todo", function(t)
 	folder(t)
 	t:buffer("|- [ ] call\nplain\n- item")
 	t:keys("space n x")
-	t:expect("|- [x] call\nplain\n- item")
+	t:expect(`|- [x] call done:{require("@notes").today()}\nplain\n- item`)
 	t:keys("space n x")
 	t:expect("|- [ ] call\nplain\n- item")
 	t:keys("j space n x j space n x")
@@ -257,7 +257,7 @@ test("clicking a todo's box ticks it, and it stays a box", function(t)
 	local text = greed.view():buffer():text()
 	assert(string.sub(text, 1, 6) == "- [x] ", text)
 	local row = t:draw(50, 8)[1]
-	assert(row == "☑ call the bank", row)
+	assert(row == "☑ call the bank done today", row)
 end)
 
 test("enter on a todo's box ticks it", function(t)
@@ -266,7 +266,7 @@ test("enter on a todo's box ticks it", function(t)
 	t:keys("enter")
 	local text = greed.view():buffer():text()
 	assert(string.sub(text, 1, 6) == "- [x] ", text)
-	assert(t:draw(50, 8)[1] == "☑ call the bank")
+	assert(t:draw(50, 8)[1] == "☑ call the bank done today")
 end)
 
 test("without modes, markup shows once the cursor is inside it", function(t)
@@ -641,7 +641,7 @@ test("agents set reminders and change todos one at a time", function(t)
 	)
 	update(
 		{ due = "", remind = { "2026-10-08 08:00" }, done = true },
-		"- [x] call the bank about the loan remind:2026-10-08 08:00"
+		`- [x] call the bank about the loan remind:2026-10-08 08:00 done:{require("@notes").today()}`
 	)
 	update(
 		{ done = false, due = "2026-11-01" },

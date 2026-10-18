@@ -168,7 +168,7 @@ test("a repeating todo stops coming back after its until", function(t)
 	todos.update("a", 0, { done = true })
 	assert(
 		(greed.fs.read(`{dir}/a.md`))
-			== "- [x] rent every:month due:2026-11-01 until:2026-11-30 remind:09:00\n",
+			== `- [x] rent every:month due:2026-11-01 until:2026-11-30 remind:09:00 done:{notes.today()}\n`,
 		(greed.fs.read(`{dir}/a.md`))
 	)
 	local again = todos.again("rent every:week due:2026-11-01 remind:09:00 remind:2026-11-01 18:00")
@@ -220,4 +220,13 @@ test("new words for a repeating todo keep how it repeats", function(t)
 	todos.update("a", 0, { text = "stretch and breathe" })
 	local text = greed.fs.read(`{dir}/a.md`)
 	assert(text == "- [ ] stretch and breathe remind:10:30 every:weekday! from:2026-11-01\n", text)
+end)
+
+test("weeks are counted as ISO 8601 counts them", function()
+	local year, week, monday = dates.week("2026-10-18")
+	assert(year == 2026 and week == 42 and monday == "2026-10-12", `{year} {week} {monday}`)
+	local year2, week2, monday2 = dates.week("2027-01-01")
+	assert(year2 == 2026 and week2 == 53 and monday2 == "2026-12-28", `{year2} {week2} {monday2}`)
+	local year3, week3 = dates.week("2026-01-01")
+	assert(year3 == 2026 and week3 == 1, `{year3} {week3}`)
 end)

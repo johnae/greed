@@ -57,6 +57,8 @@ core.features.add("notes", notes.is_note)
 --- index.luau).
 export type Note = index.Note
 export type Node = index.Node
+--- A todo as the index knows it.
+export type Task = index.Task
 --- A heading or block to link to (see links.luau).
 export type Place = links.Place
 

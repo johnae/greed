@@ -8,6 +8,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local notes = require("@notes")
+local review = require("./review")
 local picker = require("@picker")
 
 local ui = core.ui
@@ -248,6 +249,122 @@ local function agenda_part(
 	)
 end
 
+-- A note's first words worth showing: its first line that isn't a heading,
+-- front matter or empty, without markup, cut to `cells`.
+local function excerpt(name: string, cells: number): string
+	local text = notes.read(name) or ""
+	local in_front = string.sub(text, 1, 4) == "---\n"
+	for n, line in string.split(text, "\n") do
+		if in_front then
+			in_front = not (n > 1 and line == "---")
+		elseif not string.match(line, "^#") and string.match(line, "%S") then
+			local plain = string.gsub(todos.plain(line), "^%s*[-*+] %[?.?%]?%s*", "") :: string
+			return core.text.clip(plain, cells)
+		end
+	end
+	return ""
+end
+
+-- A note to look at again today: one not changed for a month or more, a
+-- different one each day, other than those in `skip`.
+local function remembered(skip: { [string]: boolean }): notes.Note?
+	local before = notes.clock() - 30 * 86400
+	local old: { notes.Note } = {}
+	for _, note in index.all() do
+		if
+			note.modified > 0
+			and note.modified < before
+			and not notes.routine(note.name)
+			and not skip[note.name]
+		then
+			table.insert(old, note)
+		end
+	end
+	if #old == 0 then
+		return nil
+	end
+	table.sort(old, function(a: notes.Note, b: notes.Note): boolean
+		return a.name < b.name
+	end)
+	local day = math.floor(notes.clock() / 86400)
+	return old[day % #old + 1]
+end
+
+-- Something from before on the home: what it is, and the note.
+type Back = { label: string, name: string, title: string? }
+
+-- What the home brings back: the days' notes a week, a month and a year
+-- ago, todos that have waited long, and an old note, each opened with
+-- enter; and the weekly review.
+local function from_before(): core.UiNode
+	local today = notes.today()
+	local lines: { core.UiNode } = {}
+	local days = {
+		{ "A week ago", dates.add_days(today, -7) },
+		{ "A month ago", dates.add_months(today, -1) },
+		{ "A year ago", dates.add_months(today, -12) },
+	}
+	local back: { Back } = {}
+	for _, day in days do
+		local name = notes.daily(day[2])
+		if index.note(name) then
+			table.insert(back, { label = day[1], name = name })
+		end
+	end
+	local waiting = review.waiting(3)
+	local waiting_in: { [string]: boolean } = {}
+	for _, item in waiting do
+		waiting_in[item.note] = true
+	end
+	local old = remembered(waiting_in)
+	if old then
+		table.insert(back, { label = "Remember this?", name = old.name, title = old.title })
+	end
+	if #back > 0 then
+		table.insert(
+			lines,
+			ui.list(back, function(item: Back)
+				local title = if item.title then `{item.title}: ` else ""
+				return {
+					ui.span(`{item.label}  `, "ui.menu.doc"),
+					ui.span(title .. excerpt(item.name, 60)),
+				}
+			end, {
+				open = function(item: Back)
+					open(item.name)
+				end,
+			})
+		)
+	end
+	if #waiting > 0 then
+		table.insert(lines, ui.text("Waiting a while", "ui.menu.doc"))
+		table.insert(
+			lines,
+			ui.list(waiting, function(item: review.Item)
+				local task: Task =
+					{ note = item.note, line = item.line, text = item.text, due = "" }
+				local spans = task_line(task, nil)
+				table.insert(
+					spans,
+					ui.span(`  untouched for {review.untouched(item.note)}`, "comment")
+				)
+				return spans
+			end, {
+				open = function(item: review.Item)
+					open(item.note, item.line)
+				end,
+			})
+		)
+	end
+	table.insert(
+		lines,
+		ui.button("Review the week", function()
+			greed.run("hoard-review")
+		end)
+	)
+	return ui.box("From before", ui.column(lines))
+end
+
 --- Adds what was written in the home's box to today's note: each line
 --- starting `[]` (or `[ ]`, `- [ ]`) as a todo, read for when in plain words
 --- (`dates.read_words`); the rest as written, a single line as a list
@@ -315,6 +432,8 @@ function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 		table.insert(agenda_parts, ui.text("Nothing due this week.", "comment"))
 	end
 	table.insert(parts, ui.box("Agenda", ui.column(agenda_parts)))
+	table.insert(parts, ui.gap())
+	table.insert(parts, from_before())
 	table.insert(parts, ui.gap())
 
 	local inbox = waiting()

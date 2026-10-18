@@ -237,15 +237,19 @@ end
 
 --- A todo whose text (after its box) is `text` ticked off or not
 --- (`ticked`), having been `was`: whether its box is ticked, its text
---- then, and the next of a repeating todo that comes back under it. A
---- habit's box stays open: ticking it says it was done today, so it
---- comes up again on its next day.
+--- then, and the next of a repeating todo that comes back under it.
+--- Ticked off, it says the day it was done (`done:2026-10-18`); ticked
+--- again, it doesn't. A habit's box stays open: ticking it says it was
+--- done today, so it comes up again on its next day.
 function M.tick(text: string, was: boolean, ticked: boolean): (boolean, string, string?)
 	local _, habit = syntax.every(text)
+	local done = syntax.with_done(text, if ticked then notes.today() else nil)
 	if habit then
-		return false, syntax.with_done(text, if ticked then notes.today() else nil), nil
+		return false, done, nil
+	elseif ticked == was then
+		return ticked, text, nil
 	end
-	return ticked, text, if ticked and not was then M.again(text) else nil
+	return ticked, done, if ticked then M.again(text) else nil
 end
 
 --- The next of a repeating todo (`every:monday`), from its text as

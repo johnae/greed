@@ -100,6 +100,16 @@ function M.split(name: string): (Place, string)
 	return M.places()[1], name
 end
 
+--- Whether note `name` is one whose name means little among others or in
+--- a sentence: a day's note, a template, a weekly review, the inbox.
+function M.routine(name: string): boolean
+	local _, rest = M.split(name)
+	return string.match(rest, "^daily/") ~= nil
+		or string.match(rest, "^templates/") ~= nil
+		or string.match(rest, "^reviews/") ~= nil
+		or rest == "inbox"
+end
+
 -- `rest` in `place` as a note's full name.
 local function qualified(place: Place, rest: string): string
 	return if place.name == "" then rest else `{place.name}:{rest}`

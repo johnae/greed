@@ -66,6 +66,8 @@ by their title, the headings in them and open todos. Above that:
   box ticks a todo off; the words open its note; **when** (or `alt-d` on
   the line) moves it to today, tomorrow, the weekend, next week or no
   date, or to a day you type in plain words, like `friday` or `in 3 days`.
+- **From before** brings back what you'd otherwise forget (see "Looking
+  back" below).
 - **Inbox** opens the note todos are captured to from elsewhere, and
   **All todos** lists every open todo, soonest first.
 - **Recent notes** are the ones changed last.
@@ -211,6 +213,26 @@ without them it repeats until you change the line.
   on a line that says neither. Give a line as many as you like.
 - Notes from Obsidian's Tasks plugin repeat too: `🔁 every week on Monday`
   is `every:monday`, and `🛫 2026-11-01` is `from:`.
+
+## Looking back
+
+Notes are only worth keeping if they come back. The home's **From
+before** shows:
+
+- what you wrote a week, a month and a year ago, from those days' notes;
+- **Remember this?**: a note you haven't changed in a month or more, a
+  different one each day;
+- **Waiting a while**: todos without a date in notes untouched for three
+  weeks or more, with their box and **when**, to do, date or drop.
+
+**Review the week** (`ctrl-space n w`, `space n w` with Vim's or Helix's
+keys) writes a note for the week, `reviews/2026-W42`, and opens it: what
+you ticked off, what's overdue, what's coming in the next week, what has
+waited, the inbox, and the notes you wrote. It's written once a week, so
+what you add to it, under **Thoughts** or anywhere, stays.
+
+Ticking a todo off writes the day on it, `done:2026-10-18`, which is how
+the review knows; unticking takes it away.
 
 ## Adding from anywhere
 

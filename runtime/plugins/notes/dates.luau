@@ -164,6 +164,18 @@ function M.weekday(date: string): number
 	return if wday == 0 then 7 else wday
 end
 
+--- The week `date` is in, as ISO 8601 counts them: its year, its number
+--- (1 to 53), and its Monday.
+function M.week(date: string): (number, number, string)
+	local monday = M.add_days(date, 1 - M.weekday(date))
+	-- A week belongs to the year its Thursday is in.
+	local thursday = M.add_days(monday, 3)
+	local year = tonumber(string.sub(thursday, 1, 4)) :: number
+	local first = string.format("%04d-01-01", year)
+	local days = math.floor(((utc(thursday) or 0) - (utc(first) or 0)) / 86400 + 0.5)
+	return year, days // 7 + 1, monday
+end
+
 -- The weekday a word names (1 for Monday), as written in full or cut short
 -- to three letters.
 local function weekday_of(word: string): number?
