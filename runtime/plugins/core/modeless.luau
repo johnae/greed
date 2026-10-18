@@ -12,6 +12,7 @@ local greed = require("@greed")
 local commands = require("./commands")
 local indent = require("./indent")
 local motions = require("./motions")
+local outline = require("./outline")
 local pairing = require("./pairs")
 local registers = require("./registers")
 local registry = require("./registry")
@@ -107,9 +108,10 @@ greed.command({
 greed.command({
 	name = "type-tab",
 	doc = "Go to the next place of the snippet being filled in; otherwise indent the selected "
-		.. "lines when a selection spans lines, or type a level of indent",
+		.. "lines when a selection spans lines, or the list item the cursor starts with what's "
+		.. "under it, or type a level of indent",
 	run = function(ctx)
-		if snippet.move(ctx.view) then
+		if snippet.move(ctx.view) or outline.tab(ctx.view) then
 			return
 		end
 		local buffer = ctx.buffer
@@ -261,13 +263,19 @@ greed.command({
 	end,
 })
 
--- move-lines-up and move-lines-down: the lines the cursors are on swap
--- with the line above or below them, cursors and all.
+-- move-lines-up and move-lines-down: a list item or section the cursor is
+-- in (core.outline) swaps with the one beside it; otherwise the lines the
+-- cursors are on swap with the line above or below them, cursors and all.
 for _, down in { false, true } do
 	greed.command({
 		name = if down then "move-lines-down" else "move-lines-up",
-		doc = if down then "Move the cursors' lines down one" else "Move the cursors' lines up one",
+		doc = if down
+			then "Move the cursors' lines down one, or the list item or section the cursor is in past the next"
+			else "Move the cursors' lines up one, or the list item or section the cursor is in past the one before",
 		run = function(ctx)
+			if outline.move(ctx.view, down) then
+				return
+			end
 			local buffer = ctx.buffer
 			local selection = ctx.view:selection()
 			local blocks = line_blocks(buffer, selection)

@@ -20,14 +20,7 @@ end
 
 -- The innermost list item `line` is in that has lines under it.
 local function item(s: Structure, line: number): (number?, number)
-	local found: structure.Item? = nil
-	for _, each in s.items do
-		if each.line > line then
-			break
-		elseif each.last >= line and each.last > each.line then
-			found = each
-		end
-	end
+	local found = structure.item_around(s, line, true)
 	if found then
 		return found.line, found.last
 	end
@@ -37,20 +30,11 @@ end
 -- The section around `line`: its heading to the line before the next
 -- heading of the same level or higher.
 local function section(s: Structure, line: number): (number?, number)
-	local heading: structure.Heading? = nil
-	local after: structure.Heading? = nil
-	for _, each in s.headings do
-		if each.line <= line then
-			heading = each
-		elseif heading and each.level <= heading.level then
-			after = each
-			break
-		end
-	end
+	local heading = structure.heading_around(s, line)
 	if heading == nil then
 		return nil, line
 	end
-	local last = if after then after.line - 1 else #s.lines - 1
+	local last = structure.section_end(s, heading)
 	if last <= heading.last then
 		return nil, line
 	end

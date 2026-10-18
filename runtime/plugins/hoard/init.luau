@@ -151,13 +151,16 @@ end)
 
 greed.command({
 	name = "hoard-escape",
-	doc = "In Hoard: let go of the selection, or with nothing selected, go back to the home",
+	doc = "In Hoard: let go of the selection, or zoom out of a list item or section, or else go "
+		.. "back to the home",
 	run = function(ctx)
 		local ranges = ctx.view:selection().ranges
 		local selected = #ranges > 1 or ranges[1].anchor ~= ranges[1].head
 		local closing = menu_closed
 		menu_closed = false
-		if not M.here() or selected or closing or core.snippet.active(ctx.view) then
+		if M.here() and not selected and not closing and core.outline.zoomed(ctx.view) then
+			greed.run("zoom-out")
+		elseif not M.here() or selected or closing or core.snippet.active(ctx.view) then
 			greed.run("collapse")
 		else
 			home.show()

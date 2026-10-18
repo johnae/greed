@@ -52,6 +52,7 @@ local buttons = require("@self/buttons")
 local images = require("@self/images")
 local indent = require("@self/indent")
 local folds = require("@self/folds")
+local outline = require("@self/outline")
 local config = require("@self/config")
 local effects = require("@self/effects")
 require("@self/again")
@@ -129,6 +130,8 @@ export type QueryField = query.Field
 --- (search_box.luau).
 export type SearchBoxOptions = search_box.Options
 export type SearchBoxWord = search_box.Word
+--- Lines that go together, like a list item and those under it (outline.luau).
+export type OutlineUnit = outline.Unit
 --- Something a completion menu offers, as the lsp plugin's menu and the
 --- sources that fill it (the shell's, an agent's box) all take it: `label`
 --- in the menu, `text` put in place of what's typed from `from` (the start
@@ -168,6 +171,8 @@ return {
 	images = images,
 	indent = indent,
 	folds = folds,
+	--- Lines that go together, like a list item and those under it (outline.luau).
+	outline = outline,
 	--- The view keys after z (scroll.luau).
 	scroll = scroll,
 	--- The goto keys that aren't motions (goto.luau).

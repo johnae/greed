@@ -5,6 +5,7 @@ local greed = require("@greed")
 local commands = require("./commands")
 local indent = require("./indent")
 local motions = require("./motions")
+local outline = require("./outline")
 local pairing = require("./pairs")
 local registers = require("./registers")
 local snippet = require("./snippet")
@@ -188,10 +189,11 @@ delete_to_command(
 
 greed.command({
 	name = "insert-tab",
-	doc = "Go to the next place of the snippet being filled in, or insert a level of indent at "
-		.. "each cursor",
+	doc = "Go to the next place of the snippet being filled in; on a list item's first line, "
+		.. "indent it with what's under it (when there's one before it to go under); otherwise "
+		.. "insert a level of indent at each cursor",
 	run = function(ctx)
-		if not snippet.move(ctx.view) then
+		if not snippet.move(ctx.view) and not outline.tab(ctx.view) then
 			insert_at_heads(ctx, indent.unit(ctx.buffer))
 		end
 	end,
@@ -540,7 +542,7 @@ greed.command({
 		local unit = indent.unit(ctx.buffer)
 		local buffer = ctx.buffer
 		local starts = {}
-		for _, line in motions.selected_lines(ctx) do
+		for _, line in outline.lines(ctx.buffer, motions.selected_lines(ctx)) do
 			if buffer:line_end(line) > buffer:line_start(line) then
 				table.insert(starts, buffer:line_start(line))
 			end
@@ -560,7 +562,7 @@ greed.command({
 		local width = #indent.unit(ctx.buffer)
 		local buffer = ctx.buffer
 		buffer:edit(function(e)
-			for _, line in motions.selected_lines(ctx) do
+			for _, line in outline.lines(buffer, motions.selected_lines(ctx)) do
 				local start = buffer:line_start(line)
 				local lead = indent.of(buffer, line)
 				local take = 0

@@ -119,6 +119,20 @@ a list, and `- [ ]` a todo:
   tomorrow's date, due, remind, every, link, heading, table and tag. Pick
   one and fill in its places, `tab` going from one to the next.
 
+### Lists and sections as an outline
+
+A list item takes the items under it along, and a heading its section:
+
+- `tab` on an item's first line puts it under the item before, and
+  `shift-tab` takes it back out, with what's under it.
+- `alt-up` and `alt-down` move the item past the one beside it, or a
+  section past the one beside it, keeping the blank lines between.
+- `ctrl-space z` zooms in to the item or section the cursor is in and
+  shows only it, following it as you add to it; `ctrl-space Z` or `esc`
+  zooms out again. (`space z` and `space Z` with Vim's or Helix's keys.)
+- `ctrl-k ctrl-l` folds an item or a section under its first line, or
+  unfolds it (`tab` or `z a` with Vim's or Helix's keys).
+
 Hoard types as you'd expect: keys type, notes save on their own a moment
 after you stop typing, and `ctrl-z` undoes. That holds even if you use
 Vim's or Helix's keys in the rest of Greed; to have them in Hoard too:

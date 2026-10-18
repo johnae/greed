@@ -18,6 +18,7 @@
 local greed = require("@greed")
 local core = require("@core")
 require("@self/folds")
+require("@self/outline")
 local choices = require("@self/choices")
 local questions = require("@self/questions")
 local tables = require("@self/tables")

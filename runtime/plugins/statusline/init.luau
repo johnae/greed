@@ -229,6 +229,14 @@ M.add("left", "macro", function(ctx)
 	return pill(if text == ctx.message then nil else text, "ui.statusline.message")
 end)
 
+-- Zoomed in to a list item or section (core.outline); a click zooms out.
+M.add("left", "zoom", function(ctx)
+	if not core.outline.zoomed(ctx.view) then
+		return nil
+	end
+	return { text = "zoomed in", style = "ui.statusline.message", action = "zoom-out" }
+end)
+
 -- Counts of errors and warnings from the language server, if any.
 M.add("right", "problems", function(ctx)
 	local counts = { 0, 0 }

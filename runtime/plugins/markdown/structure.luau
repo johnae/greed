@@ -782,6 +782,44 @@ function M.forget(id: number)
 	cache[id] = nil
 end
 
+--- The innermost list item in `s` that 0-based `line` is in; with
+--- `nested`, the innermost one with lines under it.
+function M.item_around(s: Structure, line: number, nested: boolean?): Item?
+	local found: Item? = nil
+	for _, each in s.items do
+		if each.line > line then
+			break
+		elseif each.last >= line and (not nested or each.last > each.line) then
+			found = each
+		end
+	end
+	return found
+end
+
+--- The heading in `s` whose section 0-based `line` is in: the last one at
+--- or before it.
+function M.heading_around(s: Structure, line: number): Heading?
+	local found: Heading? = nil
+	for _, each in s.headings do
+		if each.line > line then
+			break
+		end
+		found = each
+	end
+	return found
+end
+
+--- The last line of heading `h`'s section in `s`: the line before the next
+--- heading of its level or higher, or the file's last.
+function M.section_end(s: Structure, h: Heading): number
+	for _, each in s.headings do
+		if each.line > h.line and each.level <= h.level then
+			return each.line - 1
+		end
+	end
+	return #s.lines - 1
+end
+
 -- What else, besides the changed lines themselves, is drawn again when
 -- they change: blocks spanning lines, whose look depends on all of them.
 -- A table's border goes on the line above it.
