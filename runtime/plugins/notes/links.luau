@@ -1,7 +1,7 @@
 -- Links between notes: [[note]] and [[note|what to show]]. In notes the
 -- brackets are hidden (except while typing on their line), `g d` follows a
--- link, and the notes linking to a note are listed at its end. Links in
--- code blocks are code.
+-- link, and the notes linking to a note, and mentioning it (mentions.luau),
+-- are listed at its end. Links in code blocks are code.
 
 local core = require("@core")
 local greed = require("@greed")
@@ -95,6 +95,20 @@ local embedded: { [number]: { [string]: Embedded } } = {}
 local embedding: { [number]: { [string]: boolean } } = {}
 
 local redraw: (buffer: greed.Buffer?) -> ()
+
+-- The notes mentioning each note without linking it, by buffer id, worked
+-- out away from drawing (mentions.luau).
+local shown_mentioned: { [number]: { string } } = {}
+
+--- Shows `names`, the notes mentioning the note in `buffer` without
+--- linking it, at its end under those linking to it.
+function M.show_mentioned(buffer: greed.Buffer, names: { string })
+	local was = shown_mentioned[buffer:id()] or {}
+	if table.concat(was, "\n") ~= table.concat(names, "\n") then
+		shown_mentioned[buffer:id()] = names
+		redraw(buffer)
+	end
+end
 
 local function embed_key(link: Link): string
 	return `{link.target}#{link.heading or ""}#{link.block or ""}`
@@ -244,13 +258,22 @@ redraw = markdown.conceal({
 				})
 			end
 		end
-		local backlinks = shown_backlinks[buffer:id()]
+		local backlinks = shown_backlinks[buffer:id()] or {}
+		local mentioned = shown_mentioned[buffer:id()] or {}
 		local count = #s.lines
-		if last == count - 1 and backlinks and #backlinks > 0 then
-			local lines: { greed.MarkLine } = { "", "Linked from:" }
-			for _, name in backlinks do
-				table.insert(lines, `  [[{name}]]`)
+		if last == count - 1 and (#backlinks > 0 or #mentioned > 0) then
+			local lines: { greed.MarkLine } = {}
+			local function list(title: string, names: { string })
+				if #names > 0 then
+					table.insert(lines, "")
+					table.insert(lines, title)
+					for _, name in names do
+						table.insert(lines, `  [[{name}]]`)
+					end
+				end
 			end
+			list("Linked from:", backlinks)
+			list("Mentioned in:", mentioned)
 			table.insert(marks, {
 				from = s.starts[count],
 				to = buffer:len(),

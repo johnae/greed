@@ -27,6 +27,7 @@ local core = require("@core")
 local greed = require("@greed")
 local notes = require("@self/notes")
 local links = require("@self/links")
+local mentions = require("@self/mentions")
 local todos = require("@self/todos")
 require("@self/tools")
 require("@self/objects")
@@ -69,6 +70,7 @@ local exported: typeof(notes) & {
 	syntax: typeof(syntax),
 	dates: typeof(dates),
 	links: typeof(links),
+	mentions: typeof(mentions),
 } = setmetatable(
 	{
 		index = index,
@@ -77,6 +79,7 @@ local exported: typeof(notes) & {
 		syntax = syntax,
 		dates = dates,
 		links = links,
+		mentions = mentions,
 	},
 	{
 		__index = notes,

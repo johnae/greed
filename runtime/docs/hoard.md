@@ -105,6 +105,13 @@ a list, and `- [ ]` a todo:
 - `[[Garden plans]]` links to another note; `F12` on it opens it, making
   it if it's new (`g d` with Vim's or Helix's keys). Each note lists the
   notes that link to it at its end.
+- You don't have to link while you write. When a line names another note
+  (its name, title or another name it goes by), like "talked to Anna
+  about the garden plans" with a note called Garden plans, the line says
+  so at its end: `↗ Garden plans`. `ctrl-.` (`space a` with Vim's or
+  Helix's keys), or a click on it, makes those words a link, kept as you
+  wrote them. Each note also lists the notes mentioning it without a
+  link, under "Mentioned in".
 - `#garden` tags a note, and a todo or line in it.
 - `/` at the start of a word opens a menu of these: todo, today's or
   tomorrow's date, due, remind, every, link, heading, table and tag. Pick

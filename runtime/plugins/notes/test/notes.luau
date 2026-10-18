@@ -91,11 +91,13 @@ test("a note lists the notes linking to it at its end", function(t)
 	local dir =
 		folder(t, { ["a.md"] = "about [[b]]\n", ["c.md"] = "[[b|bee]] too\n", ["b.md"] = "b\n" })
 	greed.open(dir .. "/b.md")
-	t:wait(10)
 	local lines = nil
-	for _, mark in greed.view():buffer():decorations("notes") do
-		lines = mark.lines or lines
-	end
+	t:wait_for(function()
+		for _, mark in greed.view():buffer():decorations("notes") do
+			lines = mark.lines or lines
+		end
+		return lines ~= nil
+	end)
 	assert(lines, "backlinks shown")
 	local text = table.concat(lines :: { string }, "\n")
 	assert(string.find(text, "[[a]]", 1, true) and string.find(text, "[[c]]", 1, true), text)
