@@ -191,3 +191,28 @@ test("without pairs typed, a picked link brings its own ]]", function(t)
 	t:keys("enter")
 	assert(buffer:line_text(0) == "[[Kitchen]]", buffer:line_text(0))
 end)
+
+test("Hoard types without modes, unless hoard-editing-style says to keep yours", function(t)
+	local style = greed.option.get("editing-style")
+	greed.option.set("hoard-language-servers", true)
+	greed.option.set("editing-style", "helix")
+	hoard.defaults()
+	assert(greed.option.get("editing-style") == "vscode", "modeless")
+	greed.option.set("editing-style", "helix")
+	greed.option.set("hoard-editing-style", "same")
+	hoard.defaults()
+	assert(greed.option.get("editing-style") == "helix", "kept")
+	greed.option.set("hoard-editing-style", "vscode")
+	greed.option.set("editing-style", style)
+end)
+
+test("notes in Hoard have no line numbers", function(t)
+	local dir = folder(t, { ["a.md"] = "a\n" })
+	local here = hoard.here
+	hoard.here = function()
+		return true
+	end
+	greed.open(`{dir}/a.md`)
+	hoard.here = here
+	assert(not greed.view():buffer():line_numbers(), "no numbers")
+end)

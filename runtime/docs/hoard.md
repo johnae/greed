@@ -85,8 +85,17 @@ a list, and `- [ ]` a todo:
   one and fill in its places, `tab` going from one to the next.
 
 Hoard types as you'd expect: keys type, notes save on their own a moment
-after you stop typing, and `ctrl-z` undoes. If you already use one of
-Greed's editing styles, set it in your config and Hoard uses it too.
+after you stop typing, and `ctrl-z` undoes. That holds even if you use
+Vim's or Helix's keys in the rest of Greed; to have them in Hoard too:
+
+```luau
+greed.option.set("hoard-editing-style", "same")
+```
+
+Notes have no line numbers, and Markdown's language servers don't run on
+them: harper-ls, for one, checks spelling and grammar as English, whatever
+language you write in. `greed.option.set("hoard-language-servers", true)`
+turns them on.
 
 ## Links, embeds and Obsidian
 

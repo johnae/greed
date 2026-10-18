@@ -3,8 +3,9 @@
 -- named hoard, which opens your notes folder on its home: search, adding a
 -- todo or a thought to today's note, today's note, the agenda with boxes
 -- to tick, the inbox and recent notes (home.luau). Editing there is
--- modeless, with VS Code's keys, and notes save on their own, unless
--- your config says otherwise.
+-- modeless, with VS Code's keys (`hoard-editing-style` changes that), notes
+-- save on their own and have no line numbers, and language servers leave
+-- them alone.
 --
 -- `:hoard` shows the home in any session; `space n h` too.
 
@@ -26,22 +27,48 @@ function M.here(): boolean
 	return greed.session.current() == M.SESSION
 end
 
--- What Hoard's session does unless your config says otherwise: it types as
--- soon as a key is pressed, as people who don't use an editor's modes
--- expect, and notes save on their own.
-local DEFAULTS: { [string]: greed.OptionValue } = {
-	["editing-style"] = "vscode",
-	["auto-save"] = true,
-}
+greed.option.define({
+	name = "hoard-editing-style",
+	doc = 'The editing style in Hoard: "vscode" types as soon as a key is pressed, without modes; '
+		.. '"same" keeps the one the rest of Greed uses',
+	default = "vscode",
+})
 
-local function defaults()
+greed.option.define({
+	name = "hoard-language-servers",
+	doc = "Run Markdown's language servers (spelling, grammar) on notes in Hoard",
+	default = false,
+})
+
+--- What Hoard's session does as it starts: it types as soon as a key is
+--- pressed, as people who don't use an editor's modes expect, notes save on
+--- their own unless your config says otherwise, and notes aren't checked by
+--- language servers, whose remarks about spelling in one language are
+--- noise in notes written in another.
+function M.defaults()
+	local style = greed.option.get("hoard-editing-style")
+	if style ~= "same" then
+		greed.option.set("editing-style", style)
+	end
 	for _, option in greed.option.list() do
-		local value = DEFAULTS[option.name]
-		if value ~= nil and option.set_by == nil then
-			greed.option.set(option.name, value)
+		if option.name == "auto-save" and option.set_by == nil then
+			greed.option.set("auto-save", true)
 		end
 	end
+	if
+		greed.option.get("hoard-language-servers") ~= true
+		and table.find(greed.plugin.list(), "languages")
+	then
+		require("@languages").set("markdown", { servers = {} })
+	end
 end
+
+-- Notes in Hoard are pages to read and write, without line numbers.
+greed.on("buffer.opened", function(event: greed.BufferChanged)
+	if M.here() and notes.is_note(event.buffer) then
+		event.buffer:set_line_numbers(false)
+	end
+end)
 
 --- Opens the notes folder as the project shown, making it if there isn't
 --- one, and shows the home there. Other projects this session started
@@ -112,7 +139,7 @@ greed.cli({
 
 greed.on("editor.started", function()
 	if M.here() then
-		defaults()
+		M.defaults()
 		M.open()
 	end
 end)
