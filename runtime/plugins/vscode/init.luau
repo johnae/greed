@@ -80,7 +80,7 @@ greed.keymap.bind("vscode", {
 	f2 = "rename",
 	f8 = "next-diagnostic",
 	["shift-f8"] = "prev-diagnostic",
-	["ctrl-."] = "code-action",
+	["ctrl-."] = "quick-fix",
 	["ctrl-O"] = "pick-outline",
 	["ctrl-t"] = "pick-workspace-symbol",
 	["ctrl-M"] = "pick-problem",

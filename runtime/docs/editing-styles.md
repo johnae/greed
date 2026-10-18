@@ -133,7 +133,7 @@ character, and `v` starts a visual mode for selecting by hand.
 | `y s` + a motion or object + a character, `d s` `c s`, `S` in visual mode | Surround, as vim-surround does: `ysiw)` wraps the word in brackets (`(` with spaces inside), `ds"` takes the quotes away, `cs"'` changes them, `yss` wraps the line |
 | `alt-o` `alt-i` | Select the syntax node around the cursor, growing it in visual mode, or shrink it back |
 | `alt-shift-right` `alt-shift-left` | Move the selected syntax node past the next or previous one |
-| `K`, `g r n` `g r a` `g r r` `g r i` `g r t`, `g O` | As in Neovim: hover, rename, code actions, references, implementations, type definition, symbols in the file |
+| `K`, `g r n` `g r a` `g r r` `g r i` `g r t`, `g O` | As in Neovim: hover, rename, fixes and code actions (and a plugin's, like linking a note a line mentions), references, implementations, type definition, symbols in the file |
 | `g s` | Label the words on screen and jump to the one you type |
 | `ctrl-n` | Select the word under the cursor, then add its next match each time, as vim-visual-multi does; `c` `d` `y` `i` `a` `I` `A` act on every selection, `ctrl-x` skips a match, `ctrl-p` drops the last; `esc` after typing keeps a cursor in each place, and `esc` then goes back to one |
 | `Z Z` `Z Q` | Save and close, close without saving; in a split, like `:wq` and `:q`, they close only that window |
@@ -192,7 +192,7 @@ there is one, and the keys are the ones VS Code and most editors use.
 | `f3` `shift-f3` | The next or previous match |
 | `ctrl-h` | Replace in the file: type what to find (its matches light up and are counted), `enter`, then what to put instead; `enter` replaces them all as one change |
 | `ctrl-g` | Go to a line: type its number |
-| `f12` `shift-f12` `f2` `ctrl-.` | Go to the definition, find references, rename, code actions |
+| `f12` `shift-f12` `f2` `ctrl-.` | Go to the definition, find references, rename, fixes and code actions (and a plugin's, like linking a note a line mentions) |
 | `f8` `shift-f8`, `ctrl-shift-m` | The next or previous problem, all problems |
 | `ctrl-shift-o` `ctrl-t` | Go to a symbol in the file, in the project |
 | `alt-left` `alt-right` | Back and forward through where you jumped from |

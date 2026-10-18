@@ -117,11 +117,15 @@ local function go_to(ctx: greed.Context, method: string)
 	common.open_at(path, range.start)
 end
 
--- What `hover` (space k) and `goto-definition` (g d) fall back on when no
--- plugin knows better. They say what they found or why they couldn't, so
--- they always answer.
+-- What `hover` (space k), `quick-fix` (ctrl-.) and `goto-definition` (g d)
+-- fall back on when no plugin knows better. They say what they found or why
+-- they couldn't, so they always answer.
 core.lookup.add("hover", function(ctx)
 	hover(ctx)
+	return true
+end, { fallback = true })
+core.lookup.add("fix", function()
+	greed.run("code-action")
 	return true
 end, { fallback = true })
 core.lookup.add("definition", function(ctx)

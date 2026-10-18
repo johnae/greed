@@ -786,7 +786,7 @@ test("K, grn, grr and the other Neovim language server keys are bound", function
 	assert(greed.keymap.resolve("K") == "hover")
 	assert(greed.keymap.resolve("g r n") == "rename")
 	assert(greed.keymap.resolve("g r r") == "goto-references")
-	assert(greed.keymap.resolve("g r a") == "code-action")
+	assert(greed.keymap.resolve("g r a") == "quick-fix")
 	assert(greed.keymap.resolve("g r i") == "goto-implementation")
 	assert(greed.keymap.resolve("g O") == "pick-outline")
 end)

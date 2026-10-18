@@ -1,5 +1,6 @@
--- Looking up the thing under the cursor: where it's defined (g d) and what
--- it is (space k). Plugins add a way to answer for what they know about,
+-- Looking up the thing under the cursor: where it's defined (g d), what it
+-- is (space k) and how to fix or change it (ctrl-. in the vscode style,
+-- g r a in vim's). Plugins add a way to answer for what they know about,
 -- like a note's [[link]] or a language server's symbols; the first that
 -- answers wins, and fallbacks, like the language server, go after the rest.
 --
@@ -16,7 +17,7 @@ local registry = require("./registry")
 
 local M = {}
 
-export type Kind = "definition" | "hover"
+export type Kind = "definition" | "hover" | "fix"
 
 --- Answers for the thing under the cursor, if it can, and says whether it
 --- did.
@@ -24,7 +25,7 @@ export type Answer = (ctx: greed.Context) -> boolean
 
 type Entry = { answer: Answer, fallback: boolean }
 
-local answers: { [Kind]: { Entry } } = { definition = {}, hover = {} }
+local answers: { [Kind]: { Entry } } = { definition = {}, hover = {}, fix = {} }
 
 --- Adds `answer` for `kind`, after those added before it. A `fallback` is
 --- asked only when nothing else answered. It goes when the plugin adding
@@ -59,6 +60,15 @@ greed.command({
 	doc = "Show what's under the cursor, and any problems there",
 	run = function(ctx)
 		look_up("hover", ctx, "nothing to show here")
+	end,
+})
+
+greed.command({
+	name = "quick-fix",
+	doc = "Fix or change what's under the cursor: what a plugin offers there, like linking a "
+		.. "note a line mentions, or else the language server's fixes and refactorings",
+	run = function(ctx)
+		look_up("fix", ctx, "nothing to fix here")
 	end,
 })
 

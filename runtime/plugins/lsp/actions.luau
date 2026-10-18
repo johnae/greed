@@ -191,7 +191,7 @@ greed.command({
 
 greed.keymap.bind({ layer = "leader" }, {
 	r = "rename",
-	a = "code-action",
+	a = "quick-fix",
 })
 
 return {}
