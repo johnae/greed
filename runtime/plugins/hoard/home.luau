@@ -25,11 +25,12 @@ M.RECENT = 8
 M.FOUND = 12
 
 -- A todo as the home shows it.
-type Task = { note: string, line: number, text: string, due: string }
+type Task = { note: string, line: number, text: string, due: string, every: string? }
 
 -- The open todos due up to `M.DAYS_AHEAD` days from now: those overdue,
 -- due today and coming, each soonest first. Today's also has the open
--- todos written in today's note without a date, so what you add shows up.
+-- todos written in today's note without a date, so what you add shows up,
+-- and habits on their days until done (see `todos.due_on`).
 local function agenda(): ({ Task }, { Task }, { Task })
 	local today = notes.today()
 	local daily = notes.daily()
@@ -38,15 +39,20 @@ local function agenda(): ({ Task }, { Task }, { Task })
 	for _, note in index.all() do
 		for _, node in note.nodes do
 			local task = node.task
-			local due = if task == nil or task.done
-				then nil
-				else task.due or (if note.name == daily then today else nil)
-			if task and due and due <= last then
+			if task == nil then
+				continue
+			end
+			local due = todos.due_on(task, today)
+			if due == nil and not task.done and not task.habit and note.name == daily then
+				due = today
+			end
+			if due and due <= last then
 				local item: Task = {
 					note = note.name,
 					line = node.line,
 					text = todos.plain(task.text),
 					due = due,
+					every = task.every,
 				}
 				table.insert(
 					if due < today then overdue elseif due == today then now else coming,
@@ -202,6 +208,9 @@ local function task_line(task: Task, when: string?): { core.UiSpan }
 		end
 	end
 	local spans = { tick, ui.span(task.text) }
+	if task.every then
+		table.insert(spans, ui.span(" ↻", "comment"))
+	end
 	if when then
 		local overdue = task.due < notes.today()
 		table.insert(spans, ui.span(`  {when}`, if overdue then "notes.overdue" else "notes.due"))
@@ -403,17 +412,19 @@ local function frame(buffer: greed.Buffer, view: core.UiView)
 	local width = core.text.width
 	local cells = if first > 0 then width(buffer:line_text(first - 1)) else ui.width(buffer)
 	local add = " Add to today, alt-enter "
-	-- The longest hint that fits beside the button.
+	-- Cells left for the hint and the rule, beside the corners and the button.
+	local room = cells - 4 - width(add)
+	-- The longest hint that fits.
 	local hint = ""
 	for _, said in
 		{ " [] makes a todo · ↑ goes to what's above, enter opens it ", " [] makes a todo ", "" }
 	do
-		if cells - 4 - width(said) - width(add) >= 1 then
+		if room - width(said) >= 1 then
 			hint = said
 			break
 		end
 	end
-	local rule = math.max(cells - 4 - width(hint) - width(add), 1)
+	local rule = math.max(room - width(hint), 1)
 	local bottom: greed.MarkLine = {
 		{ text = "╰─" .. hint .. string.rep("─", rule) },
 		{ text = add, style = "ui.button", action = "hoard-add" },

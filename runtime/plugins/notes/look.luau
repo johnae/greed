@@ -20,6 +20,7 @@ local markdown = require("@markdown")
 local notes = require("./notes")
 local todos = require("./todos")
 local dates = require("./dates")
+local syntax = require("./syntax")
 
 local M = {}
 
@@ -110,9 +111,30 @@ local function line_marks(s: markdown.Structure, n: number, out: { greed.Mark })
 		)
 	end
 	for _, reminder in todos.reminders(text) do
-		local date = dates.short(reminder.date)
-		local shown = if reminder.time then `{date} {reminder.time}` else date
+		local date, time = reminder.date, reminder.time
+		local shown = if date and time
+			then `{dates.short(date)} {time}`
+			elseif date then dates.short(date)
+			else time :: string
 		show(reminder.from - 1, reminder.to - 1, `{symbols.remind} {shown}`, "notes.remind")
+	end
+	-- How often it repeats, and from and until when, in words.
+	if string.find(text, "every:", 1, true) then
+		local from: any, every, bang, to: any = string.match(text, "()every:([%w,]+)(!?)()")
+		if from then
+			local said = `{symbols.every} {string.sub(dates.every_words(every :: string), 7)}`
+			show(from - 1, to - 1, if bang == "!" then `{said} (habit)` else said, "notes.remind")
+		end
+	end
+	for _, marker in syntax.DATED do
+		if string.find(text, marker .. ":", 1, true) then
+			for from: any, date, to: any in string.gmatch(text, `(){marker}:({syntax.DATE})()`) do
+				local day = if marker == "done" and dates.days(date) == 0
+					then "today"
+					else dates.short(date)
+				show(from - 1, to - 1, `{marker} {day}`, "notes.remind")
+			end
+		end
 	end
 	for _, rule in notes.look.rules do
 		local start = 1

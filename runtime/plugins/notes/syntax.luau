@@ -6,8 +6,10 @@
 local M = {}
 
 --- A reminder on a line: where it is (its start and the index after its
---- end) and when, with a time if it says one.
-export type Reminder = { from: number, to: number, date: string, time: string? }
+--- end) and when: a date, with a time if it says one, or a time alone,
+--- which goes off on the line's own days (its due date, each day it
+--- repeats on, or else every day).
+export type Reminder = { from: number, to: number, date: string?, time: string? }
 
 --- The todo on `line` (a line of text), if it is one.
 function M.parse(line: string): (boolean?, string?)
@@ -18,25 +20,103 @@ function M.parse(line: string): (boolean?, string?)
 	return box ~= " ", text
 end
 
+--- A date as markers write it, "2026-10-03", as a pattern.
+local DATE = "%d%d%d%d%-%d%d%-%d%d"
+M.DATE = DATE
+
+--- The markers a date follows besides `due:`: when a repeat starts and
+--- ends, and when a habit was last done ("from:2026-11-01").
+M.DATED = { "from", "until", "done" }
+
 --- When `text` says it's due ("due:2026-10-03", or the Tasks plugin's
 --- "📅 2026-10-03"), if it does.
 function M.due(text: string): string?
-	return string.match(text, "due:(%d%d%d%d%-%d%d%-%d%d)")
-		or string.match(text, "📅%s*(%d%d%d%d%-%d%d%-%d%d)")
+	return string.match(text, `due:({DATE})`) or string.match(text, `📅%s*({DATE})`)
 end
 
---- How often `text` says it repeats ("every:monday"), if it does: "day",
---- "weekday", "week", "month", "year" or a weekday's name.
-function M.every(text: string): string?
-	return string.match(text, "every:(%a+)")
+-- A repeat as the Tasks plugin writes it after 🔁 ("every week on Monday",
+-- "every 2 days"), as `every:` would.
+local function tasks_every(words: string): string?
+	local said = string.lower(words)
+	local n, unit = string.match(said, "^every (%d+) (%a+)")
+	if n and unit then
+		return `{n}{(string.gsub(unit, "s$", ""))}s`
+	end
+	local on = string.match(said, "^every week on (.*)$")
+	if on then
+		local names = {}
+		for name in string.gmatch(on, "%a+") do
+			if name ~= "and" and name ~= "when" and name ~= "done" then
+				table.insert(names, name)
+			end
+		end
+		return table.concat(names, ",")
+	end
+	return string.match(said, "^every (%a+)")
+end
+
+--- How often `text` says it repeats, and whether as a habit: "every:monday"
+--- (see `dates.Every`), "every:day!" for a habit, which comes up on each
+--- of its days whether or not the one before was done, or the Tasks
+--- plugin's "🔁 every week on Monday".
+function M.every(text: string): (string?, boolean)
+	local every, bang = string.match(text, "every:([%w,]+)(!?)")
+	if every then
+		return every, bang == "!"
+	end
+	-- Up to the next of the Tasks plugin's signs, which start with byte 240.
+	local tasks = string.match(text, "🔁%s*([^\240]*)")
+	if tasks then
+		return tasks_every((string.gsub(tasks, "%s+$", ""))), false
+	end
+	return nil, false
+end
+
+--- When `text` says a repeat starts ("from:2026-11-01", or the Tasks
+--- plugin's "🛫 2026-11-01"), if it does.
+function M.starts(text: string): string?
+	return string.match(text, `from:({DATE})`) or string.match(text, `🛫%s*({DATE})`)
+end
+
+--- When `text` says a repeat ends ("until:2027-06-30"), if it does: its
+--- last day.
+function M.ends(text: string): string?
+	return (string.match(text, `until:({DATE})`))
+end
+
+--- The day a habit (see `every`) was last done, "done:2026-10-18", if it
+--- says one.
+function M.done_on(text: string): string?
+	return (string.match(text, `done:({DATE})`))
+end
+
+--- `text` saying a habit was last done on `date`: changed where it says
+--- it, or added at the end; without a date, not saying it.
+function M.with_done(text: string, date: string?): string
+	local from: any, to: any = string.match(text, `()%s*done:{DATE}()`)
+	if from then
+		text = string.sub(text, 1, from - 1) .. string.sub(text, to)
+	end
+	if date == nil then
+		return text
+	end
+	local trimmed = string.gsub(text, "%s+$", "") :: string
+	return if trimmed == "" then `done:{date}` else `{trimmed} done:{date}`
 end
 
 --- Where the marker `kind` ("due" or "remind") is in `text`: its start,
 --- the index after its end, its date, and a reminder's time ("18:00" in
---- "remind:2026-10-06 18:00") if it has one.
+--- "remind:2026-10-06 18:00", or "remind:18:00", which has no date) if it
+--- has one.
 function M.marker(text: string, kind: "due" | "remind"): (number?, number?, string?, string?)
 	-- Position captures, `()`, give numbers.
-	local from: any, date, to: any = string.match(text, `(){kind}:(%d%d%d%d%-%d%d%-%d%d)()`)
+	local from: any, date, to: any = string.match(text, `(){kind}:({DATE})()`)
+	if kind == "remind" then
+		local at: any, time, after: any = string.match(text, "()remind:(%d%d?:%d%d)()")
+		if at and (from == nil or at < from) then
+			return at, after, nil, time
+		end
+	end
 	if from == nil then
 		return nil, nil, nil, nil
 	end
@@ -58,7 +138,7 @@ function M.reminders(text: string): { Reminder }
 	local start = 1
 	while true do
 		local from, to, date, time = M.marker(string.sub(text, start), "remind")
-		if from == nil or to == nil or date == nil then
+		if from == nil or to == nil then
 			return out
 		end
 		table.insert(
@@ -69,15 +149,13 @@ function M.reminders(text: string): { Reminder }
 	end
 end
 
---- When `text` says to remind you, each as "2026-10-06 18:00" or a date
---- alone.
+--- When `text` says to remind you, each as "2026-10-06 18:00", a date
+--- alone, or a time alone ("18:00").
 function M.reminds(text: string): { string }
 	local out = {}
 	for _, reminder in M.reminders(text) do
-		table.insert(
-			out,
-			if reminder.time then `{reminder.date} {reminder.time}` else reminder.date
-		)
+		local date, time = reminder.date, reminder.time
+		table.insert(out, if date and time then `{date} {time}` else (date or time) :: string)
 	end
 	return out
 end
@@ -126,20 +204,28 @@ end
 -- The signs the Tasks plugin (as in Obsidian) puts before dates.
 local TASKS_DATES = { "📅", "⏳", "🛫", "✅", "➕" }
 
---- `text` without its due, remind and every markers (and the Tasks
---- plugin's dates), as a todo reads.
+--- `text` without its markers (due, remind, every, from, until and done,
+--- and the Tasks plugin's dates and repeats), as a todo reads.
 function M.plain(text: string): string
 	local out = text
 	if string.find(text, "every:", 1, true) then
-		out = string.gsub(out, "%s*every:%a+", "") :: string
+		out = string.gsub(out, "%s*every:[%w,]+!?", "") :: string
+	end
+	for _, marker in M.DATED do
+		if string.find(out, marker .. ":", 1, true) then
+			out = string.gsub(out, `%s*{marker}:{DATE}`, "") :: string
+		end
 	end
 	if string.find(out, "due:", 1, true) or string.find(out, "remind:", 1, true) then
 		out = M.with_reminds(M.with_due(out, nil), {})
 	end
 	for _, sign in TASKS_DATES do
 		if string.find(out, sign, 1, true) then
-			out = string.gsub(out, `%s*{sign}%s*%d%d%d%d%-%d%d%-%d%d`, "") :: string
+			out = string.gsub(out, `%s*{sign}%s*{DATE}`, "") :: string
 		end
+	end
+	if string.find(out, "🔁", 1, true) then
+		out = string.gsub(out, "%s*🔁[^\240]*", "") :: string
 	end
 	return (string.gsub(out, "^%s+", ""))
 end

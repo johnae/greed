@@ -99,10 +99,9 @@ a list, and `- [ ]` a todo:
 ```
 
 - `due:` gives a todo a date, for the agenda, and `every:monday` makes it
-  repeat: ticking it off brings it back for the next Monday (`day`,
-  `weekday`, `week`, `month` and `year` work too).
-- `remind:` gives anything a reminder, with a time or for the morning. It
-  shows in Greed and on your desktop when it's due.
+  repeat (below).
+- `remind:` gives anything a reminder, with a time or for the morning, as
+  many as you like. It shows in Greed and on your desktop when it's due.
 - `[[Garden plans]]` links to another note; `F12` on it opens it, making
   it if it's new (`g d` with Vim's or Helix's keys). Each note lists the
   notes that link to it at its end.
@@ -170,10 +169,41 @@ words, and Greed writes the date for you:
 | `plan the trip next week` | due next Monday |
 | `movie tonight` | due today, reminder at 20:00 |
 | `water plants every monday` | due Monday, and every Monday after |
+| `water plants every monday and thursday at 18` | each Monday and Thursday, reminder at 18:00 |
 | `pay rent every month on the 1st` | due on the 1st, every month |
+| `backup every 2 weeks until december` | every other week, until the end of December |
+| `vitamins every day! at 8 and 20` | a habit: every day, reminders at 08:00 and 20:00 |
+| `stretch every weekday! at 10:30 from nov 2` | a habit on weekdays, from 2 November |
 
-Times can be `18:00`, `6pm` or `at 6`; a time alone is today's, or
-tomorrow's once it has gone by. The words are English for now.
+Times can be `18:00`, `6pm` or `at 6`, several with `and`; a time alone
+is today's, or tomorrow's once it has gone by. The words are English for
+now.
+
+## Repeats, habits and reminders
+
+A todo repeats with `every:` and how often: `day`, `weekday`, `week`,
+`month`, `year`, weekdays (`monday` or several, `mon,thu`), or a count
+(`2weeks`, `3days`). `from:` and `until:` say when it starts and stops;
+without them it repeats until you change the line.
+
+```markdown
+- [ ] pay rent every:month due:2026-11-01 remind:09:00 until:2027-06-30
+- [ ] vitamins every:day! remind:08:00 remind:20:00
+- stretch every:weekday remind:10:30 remind:15:00 from:2026-11-01
+```
+
+- A repeating todo is one thing to do at a time. Ticking it off brings the
+  next one back under it, due on its next date after the one it was due
+  on, so a missed one stays overdue until you catch up.
+- A habit, `every:` with a `!` after it, comes up on each of its days
+  whatever happened the day before. Ticking it says it's done for today
+  (`done:2026-10-18` on the line); the box stays, for its next day. A
+  habit is on the agenda each of its days until it's done.
+- A reminder with a time alone, `remind:10:30`, goes off on the line's
+  own days: a todo's due date, each day the line repeats on, or every day
+  on a line that says neither. Give a line as many as you like.
+- Notes from Obsidian's Tasks plugin repeat too: `🔁 every week on Monday`
+  is `every:monday`, and `🛫 2026-11-01` is `from:`.
 
 ## Adding from anywhere
 

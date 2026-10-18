@@ -328,6 +328,8 @@ export type Symbols = {
 	bullet: string,
 	due: string,
 	remind: string,
+	--- Before how often a line repeats.
+	every: string,
 }
 
 export type Rule = {
@@ -351,6 +353,7 @@ M.look = {
 		bullet = "•",
 		due = "📅",
 		remind = "⏰",
+		every = "↻",
 	} :: Symbols,
 	rules = {} :: { Rule },
 	-- Draws the notes again; look.luau sets it.

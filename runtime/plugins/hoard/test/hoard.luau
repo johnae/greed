@@ -441,3 +441,20 @@ test("a todo on the agenda is moved to another day, picked or in plain words", f
 		return greed.fs.read(`{dir}/a.md`) == "- [ ] pay rent\n"
 	end)
 end)
+
+test("a habit is on the agenda each of its days until it's ticked off", function(t)
+	local dir = folder(t, { ["habits.md"] = "- [ ] stretch every:day!\n" })
+	local buffer = show(t)
+	local function agenda(): string
+		return string.match(buffer:text(), "Agenda(.-)Recent notes") or ""
+	end
+	t:wait_for(function()
+		return string.find(agenda(), "stretch ↻", 1, true) ~= nil
+	end)
+	notes.todos.update("habits", 0, { done = true })
+	t:wait_for(function()
+		return not string.find(agenda(), "stretch", 1, true)
+	end)
+	local text = greed.fs.read(`{dir}/habits.md`) or ""
+	assert(string.find(text, `- [ ] stretch every:day! done:{notes.today()}`, 1, true), text)
+end)

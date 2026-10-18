@@ -57,11 +57,26 @@ function M.at(note: string, line: number, text: string): Todo?
 	}
 end
 
+--- When an open todo comes due as of `today`: its due date, or for a
+--- habit, today when it's one of its days (from its start to its end)
+--- and it wasn't done today. Nil for one that's done, or has neither.
+function M.due_on(task: index.Task, today: string): string?
+	if task.done then
+		return nil
+	elseif task.every and task.habit then
+		local on = task.done_on ~= today
+			and dates.on_days(today, task.every, task.starts, task.ends)
+		return if on then today else nil
+	end
+	return task.due
+end
+
 --- Every todo in the notes, in every place, open ones only unless `all`,
 --- soonest due first (undated last), then by note and line.
 function M.list(all: boolean?): { Todo }
 	index.ensure()
 	local out: { Todo } = {}
+	local today = notes.today()
 	for _, note in index.all() do
 		for _, node in note.nodes do
 			local task = node.task
@@ -71,7 +86,7 @@ function M.list(all: boolean?): { Todo }
 					line = node.line,
 					text = task.text,
 					done = task.done,
-					due = task.due,
+					due = if task.done then task.due else M.due_on(task, today),
 					reminds = table.clone(task.reminds),
 				})
 			end
@@ -123,9 +138,13 @@ function M.checked_date(date: string?): string?
 	return date
 end
 
--- `when` as a reminder writes it, "YYYY-MM-DD HH:MM" or a date alone; an
--- error if it isn't one.
+-- `when` as a reminder writes it, "YYYY-MM-DD HH:MM", a date alone or a
+-- time alone ("18:00", for the line's own days); an error if it isn't one.
 local function checked_remind(when: string): string
+	local hour, minute = string.match(when, "^(%d%d?):(%d%d)$")
+	if hour and (tonumber(hour) :: number) < 24 and (tonumber(minute) :: number) < 60 then
+		return when
+	end
 	local date, time = string.match(when, "^(%d%d%d%d%-%d%d%-%d%d)[ T](%d%d?:%d%d)$")
 	if date and time and dates.moment(date, time) then
 		return `{date} {time}`
@@ -133,8 +152,9 @@ local function checked_remind(when: string): string
 	return M.checked_date(when) :: string
 end
 
---- Each of `whens` as a reminder writes it ("2026-10-06 18:00", or a date
---- alone); one alone may come as a string. An error for one that isn't.
+--- Each of `whens` as a reminder writes it ("2026-10-06 18:00", a date
+--- alone or a time alone); one alone may come as a string. An error for
+--- one that isn't.
 function M.checked_reminds(whens: { string } | string): { string }
 	if type(whens) == "string" then
 		return { checked_remind(whens) }
@@ -185,6 +205,13 @@ function M.update(name: string, line: number, change: Change): string
 		if #M.reminders(text) == 0 then
 			text = M.with_reminds(text, M.reminds(rest))
 		end
+		-- And how it repeats, from and until when, and when a habit was done.
+		for _, pattern in { "every:[%w,]+!?", "from:%S+", "until:%S+", "done:%S+" } do
+			local marker = string.match(rest, pattern)
+			if marker and not string.match(text, pattern) then
+				text = `{(string.gsub(text, "%s+$", ""))} {marker}`
+			end
+		end
 	end
 	if change.due then
 		text = M.with_due(text, if change.due == "" then nil else M.checked_date(change.due))
@@ -193,18 +220,39 @@ function M.update(name: string, line: number, change: Change): string
 	if remind then
 		text = M.with_reminds(text, if remind == "" then {} else M.checked_reminds(remind))
 	end
-	local ticked = if change.done == nil then done else change.done
+	local box, written, again = M.tick(text, done, if change.done == nil then done else change.done)
 	local before = string.match(current, "^%s*[-*+] ") :: string
-	local changed = `{before}[{if ticked then "x" else " "}] {text}`
-	-- A repeating todo ticked off comes back under it, for its next date.
-	local again = if ticked and not done then M.again(text) else nil
+	local changed = `{before}[{if box then "x" else " "}] {written}`
 	notes.set_line(name, line, if again then `{changed}\n{before}[ ] {again}` else changed)
 	return changed
 end
 
+--- Whether a todo whose text (after its box) is `text`, with its box
+--- ticked or not (`ticked`), is done for now: ticked, or a habit (see
+--- `tick`) done today.
+function M.done_now(text: string, ticked: boolean): boolean
+	local _, habit = syntax.every(text)
+	return ticked or (habit and syntax.done_on(text) == notes.today())
+end
+
+--- A todo whose text (after its box) is `text` ticked off or not
+--- (`ticked`), having been `was`: whether its box is ticked, its text
+--- then, and the next of a repeating todo that comes back under it. A
+--- habit's box stays open: ticking it says it was done today, so it
+--- comes up again on its next day.
+function M.tick(text: string, was: boolean, ticked: boolean): (boolean, string, string?)
+	local _, habit = syntax.every(text)
+	if habit then
+		return false, syntax.with_done(text, if ticked then notes.today() else nil), nil
+	end
+	return ticked, text, if ticked and not was then M.again(text) else nil
+end
+
 --- The next of a repeating todo (`every:monday`), from its text as
 --- written after its box: due on its next date, its reminders on the day
---- it was due moved along with it. Nil for a todo that doesn't repeat.
+--- it was due moved along with it, and those that are a time alone kept.
+--- Nil for a todo that doesn't repeat, or whose next date is past its
+--- `until:`.
 function M.again(text: string): string?
 	local every = syntax.every(text)
 	if every == nil then
@@ -212,9 +260,15 @@ function M.again(text: string): string?
 	end
 	local due = M.due(text) or notes.today()
 	local next = dates.next(due, every)
+	local ends = syntax.ends(text)
+	if ends and next > ends then
+		return nil
+	end
 	local reminds = {}
 	for _, reminder in M.reminders(text) do
-		if reminder.date == due then
+		if reminder.date == nil then
+			table.insert(reminds, reminder.time :: string)
+		elseif reminder.date == due then
 			table.insert(reminds, if reminder.time then `{next} {reminder.time}` else next)
 		end
 	end
@@ -223,23 +277,51 @@ end
 
 --- Adds a todo written in plain words to note `name` (the inbox by
 --- default): "call the bank tomorrow 18:00" is due tomorrow with a
---- reminder at 18:00, "water plants every monday" repeats (see
---- `dates.read_words`). Returns what was added, in words.
+--- reminder at 18:00, "water plants every monday at 18" repeats with a
+--- reminder each time, "stretch every weekday! at 10:30 and 15:00 until
+--- december" is a habit (see `dates.read_words`). Returns what was added,
+--- in words.
 function M.capture(text: string, name: string?): string
 	local when = dates.read_words(text)
 	local words = if when.text == "" then text else when.text
-	local reminds = if when.date and when.time then { `{when.date} {when.time}` } else nil
-	M.add(if when.every then `{words} every:{when.every}` else words, name, when.date, reminds)
+	local markers = { words }
 	local said = { words }
-	if when.date then
-		table.insert(said, dates.due_words(when.date))
+	local every = when.every
+	if every then
+		table.insert(markers, `every:{every}{if when.habit then "!" else ""}`)
+		table.insert(
+			said,
+			`every {(string.gsub(every, ",", ", "))}{if when.habit then ", a habit" else ""}`
+		)
 	end
-	if when.time then
-		table.insert(said, `reminder at {when.time}`)
+	-- A habit has days rather than a due date; one that counts weeks or
+	-- months counts them from its first.
+	local from = when.from
+	if when.habit and every and from == nil and dates.counted(every) then
+		from = when.date
 	end
-	if when.every then
-		table.insert(said, `every {when.every}`)
+	if from then
+		table.insert(markers, `from:{from}`)
+		table.insert(said, `from {dates.day(from)}`)
 	end
+	local ends = when["until"]
+	if ends then
+		table.insert(markers, `until:{ends}`)
+		table.insert(said, `until {dates.day(ends)}`)
+	end
+	local due = if when.habit then nil else when.date
+	if due then
+		table.insert(said, 2, dates.due_words(due))
+	end
+	-- Reminders: at each time on the due date, or each day it repeats on.
+	local reminds = {}
+	for _, time in when.times do
+		table.insert(reminds, if every or due == nil then time else `{due} {time}`)
+	end
+	if #when.times > 0 then
+		table.insert(said, `reminder at {table.concat(when.times, " and ")}`)
+	end
+	M.add(table.concat(markers, " "), name, due, reminds)
 	return table.concat(said, ", ")
 end
 
@@ -260,10 +342,18 @@ greed.command({
 				local text = buffer:line_text(line)
 				local box_from = string.find(text, "%[[ xX]%]")
 				local done, after_box = M.parse(text)
-				if done ~= nil and box_from then
-					e:replace(start + box_from, start + box_from + 1, if done then " " else "x")
-					-- A repeating todo ticked off comes back under it.
-					local again = if not done and after_box then M.again(after_box) else nil
+				if done ~= nil and box_from and after_box then
+					-- A repeating todo ticked off comes back under it; a habit
+					-- says it was done today.
+					local was = M.done_now(after_box, done)
+					local box, written, again = M.tick(after_box, was, not was)
+					-- Only what changes is replaced, so cursors stay where they are.
+					if box ~= done then
+						e:replace(start + box_from, start + box_from + 1, if box then "x" else " ")
+					end
+					if written ~= after_box then
+						e:replace(start + #text - #after_box, start + #text, written)
+					end
 					if again then
 						local before = string.sub(text, 1, box_from - 1)
 						e:insert(start + #text, `\n{before}[ ] {again}`)

@@ -1868,6 +1868,11 @@ many reminders as you like, each going off at its own time:
 - [ ] pay the invoice due:2026-10-07 remind:2026-10-06 19:00 remind:2026-10-07 12:00
 ```
 
+A time alone, `remind:10:30`, goes off on the line's own days: a todo's
+due date, each day a repeating line (`every:weekday`) comes up, or every
+day. Repeats, habits and `from:`/`until:` are in
+[Hoard](hoard.md#repeats-habits-and-reminders).
+
 When a reminder comes due:
 
 - A notice opens at the top right and stays until you dismiss it with

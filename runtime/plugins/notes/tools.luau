@@ -11,6 +11,7 @@ agent.group(
 local notes = require("./notes")
 local links = require("./links")
 local todos = require("./todos")
+local dates = require("./dates")
 
 local object = agent.schema.object
 
@@ -151,7 +152,8 @@ agent.tool({
 local REMINDS = {
 	type = "array",
 	items = { type = "string" },
-	description = '"YYYY-MM-DD HH:MM" in local time, or a date alone for the morning',
+	description = '"YYYY-MM-DD HH:MM" in local time, a date alone for the morning, or "HH:MM" '
+		.. "alone for each of the line's days (each day it repeats on, or else every day)",
 }
 
 agent.tool({
@@ -159,18 +161,40 @@ agent.tool({
 	kind = "edit",
 	group = "notes",
 	description = "Add a todo to a note, optionally due on a date (YYYY-MM-DD) and with "
-		.. "reminders, as many as it needs. Left out, the note is the inbox: the project's "
-		.. '("project:inbox") when it keeps notes, otherwise the user\'s',
+		.. "reminders, as many as it needs. It can repeat: every is "
+		.. '"day", "weekday", "week", "month", "year", weekdays ("monday,thursday") or a '
+		.. 'count ("2weeks"); with habit it comes up on each of its days whether or not the '
+		.. "last was done, and from and until (YYYY-MM-DD) bound it. Left out, the note is "
+		.. "the inbox: the project's (\"project:inbox\") when it keeps notes, otherwise the user's",
 	input = object({
 		text = { type = "string" },
 		note = { type = "string" },
 		due = { type = "string" },
 		remind = REMINDS,
+		every = { type = "string" },
+		habit = { type = "boolean" },
+		from = { type = "string" },
+		["until"] = { type = "string" },
 	}, { "text" }),
 	run = function(args)
 		local note = writable(args.note or todos.inbox())
+		local text: string = args.text
+		if args.every then
+			if not dates.known(args.every) then
+				error(
+					`{args.every} isn't a repeat: day, weekday, week, month, year, weekdays, 2weeks`,
+					0
+				)
+			end
+			text ..= ` every:{args.every}{if args.habit then "!" else ""}`
+		end
+		for _, marker in { "from", "until" } do
+			if args[marker] then
+				text ..= ` {marker}:{todos.checked_date(args[marker])}`
+			end
+		end
 		todos.add(
-			args.text,
+			text,
 			note,
 			todos.checked_date(args.due),
 			todos.checked_reminds(args.remind or {})

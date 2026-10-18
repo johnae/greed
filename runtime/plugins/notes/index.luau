@@ -25,10 +25,20 @@ M.EVERY = 5000
 M.SLICE = 8
 
 --- A todo: ticked or not, its text as written after its box, when it's
---- due, its reminders (each "2026-10-06 18:00" or a date alone), and how
---- often it repeats.
-export type Task =
-	{ done: boolean, text: string, due: string?, reminds: { string }, every: string? }
+--- due, its reminders (each "2026-10-06 18:00", a date alone or a time
+--- alone), how often it repeats (`habit` when as a habit), from and until
+--- when, and the day a habit was last done.
+export type Task = {
+	done: boolean,
+	text: string,
+	due: string?,
+	reminds: { string },
+	every: string?,
+	habit: boolean,
+	starts: string?,
+	ends: string?,
+	done_on: string?,
+}
 
 --- A heading or a list item. `line` to `last` are its lines (0-based), a
 --- list item's including those under it; `text` its words without markup
@@ -57,8 +67,23 @@ export type Link = {
 	embed: boolean,
 }
 
---- A reminder on a line of a note (any line, a todo or not).
-export type Reminder = { line: number, text: string, date: string, time: string? }
+--- A reminder on a line of a note (any line, a todo or not): its date
+--- and time, or a time alone, and what the line says of when: whether
+--- it's a todo, its due date, how often it repeats (as a habit or not),
+--- from and until when, and when a habit was last done.
+export type Reminder = {
+	line: number,
+	text: string,
+	date: string?,
+	time: string?,
+	todo: boolean,
+	due: string?,
+	every: string?,
+	habit: boolean,
+	starts: string?,
+	ends: string?,
+	done_on: string?,
+}
 
 --- What the index knows of a note.
 export type Note = {
@@ -203,12 +228,17 @@ function M.parse(name: string, path: string, text: string): Note
 		}
 		local done, rest = syntax.parse(line)
 		if done ~= nil and rest then
+			local every, habit = syntax.every(rest)
 			node.task = {
 				done = done,
 				text = rest,
 				due = syntax.due(rest),
 				reminds = syntax.reminds(rest),
-				every = syntax.every(rest),
+				every = every,
+				habit = habit,
+				starts = syntax.starts(rest),
+				ends = syntax.ends(rest),
+				done_on = syntax.done_on(rest),
 			}
 		end
 		table.insert(nodes, node)
@@ -301,12 +331,20 @@ function M.parse(name: string, path: string, text: string): Note
 			local done, rest = syntax.parse(line)
 			if not done then
 				local words = syntax.plain(rest or (string.gsub(line, "^%s*[-*+] ", "")))
+				local every, habit = syntax.every(line)
 				for _, reminder in syntax.reminders(line) do
 					table.insert(note.reminders, {
 						line = n,
 						text = words,
 						date = reminder.date,
 						time = reminder.time,
+						todo = done ~= nil,
+						due = syntax.due(line),
+						every = every,
+						habit = habit,
+						starts = syntax.starts(line),
+						ends = syntax.ends(line),
+						done_on = syntax.done_on(line),
 					})
 				end
 			end

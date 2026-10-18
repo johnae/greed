@@ -48,17 +48,35 @@ export type Reminder = {
 	key: string,
 }
 
---- Every reminder in the notes, on lines that aren't ticked todos.
+--- The day a reminder that's a time alone (`remind:18:00`) goes off on, as
+--- of `today`: a todo's due date, when it has one and isn't a habit;
+--- otherwise today, when today is one of the line's days (how it repeats,
+--- from its start to its end; any day for a line that doesn't repeat) and
+--- it's not a habit done today. Nil when it doesn't go off.
+function M.day_of(reminder: index.Reminder, today: string): string?
+	if reminder.todo and not reminder.habit and reminder.due then
+		return reminder.due
+	end
+	if reminder.habit and reminder.done_on == today then
+		return nil
+	end
+	local on = dates.on_days(today, reminder.every, reminder.starts, reminder.ends)
+	return if on then today else nil
+end
+
+--- Every reminder in the notes, on lines that aren't ticked todos: those
+--- with a date, and today's of those that are a time alone.
 function M.scan(): { Reminder }
 	index.ensure()
 	local out: { Reminder } = {}
 	local default = greed.option.get("notes-remind-time") :: string
+	local today = dates.today()
 	for _, note in index.all() do
 		for _, reminder in note.reminders do
-			local date = reminder.date
+			local date = reminder.date or M.day_of(reminder, today)
 			local time = reminder.time or default
-			local at = dates.moment(date, time)
-			if at then
+			local at = if date then dates.moment(date, time) else nil
+			if date and at then
 				table.insert(out, {
 					note = note.name,
 					line = reminder.line,
@@ -292,7 +310,7 @@ function M.check(): number
 	for _, note in index.all() do
 		for _, node in note.nodes do
 			local task = node.task
-			local due = if task and not task.done then task.due else nil
+			local due = if task then todos.due_on(task, today_date) else nil
 			if due == today_date then
 				today += 1
 			elseif due and due < today_date then
@@ -397,7 +415,11 @@ function M.words_at(text: string, pos: number): string?
 	for _, reminder in todos.reminders(text) do
 		if reminder.from <= pos and pos < reminder.to then
 			local default = greed.option.get("notes-remind-time") :: string
-			return dates.remind_words(reminder.date, reminder.time or default)
+			local date = reminder.date
+			if date == nil then
+				return `remind at {reminder.time}, on each of its days`
+			end
+			return dates.remind_words(date, reminder.time or default)
 		end
 	end
 	return nil

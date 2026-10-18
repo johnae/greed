@@ -113,11 +113,7 @@ core.actions.action({
 	doc = "Mark it done, or not done again",
 	run = function(target)
 		local todo: Todo = target.value
-		local text = notes.read(todo.note) or ""
-		local line = string.split(text, "\n")[todo.line + 1] or ""
-		local box = if todo.done then "[ ]" else "[x]"
-		local ticked = string.gsub(line, "%[[ xX]%]", box, 1)
-		notes.set_line(todo.note, todo.line, ticked)
+		todos.update(todo.note, todo.line, { done = not todos.done_now(todo.text, todo.done) })
 	end,
 })
 
