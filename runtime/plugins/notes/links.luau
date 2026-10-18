@@ -9,6 +9,8 @@ local markdown = require("@markdown")
 local notes = require("./notes")
 local syntax = require("./syntax")
 local index = require("./index")
+local picker = require("@picker")
+local todos = require("./todos")
 
 --- A link in a buffer: where it is (bytes, end exclusive), where the part
 --- shown in its place is, the note it names (as written, without a
@@ -342,5 +344,67 @@ core.lookup.add("definition", function(ctx)
 	end
 	return false
 end)
+
+--- A place in a note to link to: a heading, or a block (a list item, or a
+--- line with a `^id` already).
+type Place = { note: string, line: number, heading: string?, id: string? }
+
+--- The link to `place` from note `from` (nil outside notes), giving the
+--- block an id at the end of its line when it has none yet.
+function M.link_to(place: Place, from: string?): string
+	local name = if place.note == from then "" else place.note
+	if place.heading then
+		return `[[{name}#{place.heading}]]`
+	end
+	local id = place.id
+	if id == nil then
+		local new = greed.hash.random(3)
+		local line = todos.line(place.note, place.line)
+		notes.set_line(place.note, place.line, `{(string.gsub(line, "%s+$", ""))} ^{new}`)
+		id = new
+	end
+	return `[[{name}#^{id}]]`
+end
+
+greed.command({
+	name = "notes-link",
+	doc = "Link to a heading, a list item or a block in a note, picked from all of them",
+	run = function(ctx)
+		index.ensure()
+		local path = ctx.buffer:path()
+		local here = if path and notes.is_note(ctx.buffer) then notes.name(path) else nil
+		local items = {}
+		local all = index.all()
+		table.sort(all, function(a, b)
+			return a.name < b.name
+		end)
+		for _, note in all do
+			local named: { [number]: boolean } = {}
+			for _, node in note.nodes do
+				named[node.line] = true
+				local place: Place = { note = note.name, line = node.line, id = node.id }
+				if node.kind == "heading" then
+					place.heading = node.text
+				end
+				local sign = if node.kind == "heading" then string.rep("#", node.level) else "-"
+				table.insert(items, { label = `{note.name}  {sign} {node.text}`, value = place })
+			end
+			for id, line in note.blocks do
+				if not named[line] then
+					local place: Place = { note = note.name, line = line, id = id }
+					table.insert(items, { label = `{note.name}  ^{id}`, value = place })
+				end
+			end
+		end
+		picker.pick("Link to", items, function(item)
+			local link = M.link_to(item.value, here)
+			local at = ctx.view:cursor()
+			ctx.buffer:edit(function(e)
+				e:insert(at, link)
+			end)
+			ctx.view:set_cursor(at + #link)
+		end)
+	end,
+})
 
 return M

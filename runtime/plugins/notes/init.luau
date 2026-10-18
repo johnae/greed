@@ -9,6 +9,7 @@
 --   space n t   jot a thought down in the inbox
 --   space n r   dismiss the reminders notice
 --   space n l   have Greed's agent link the inbox to your other notes
+--   space n k   link to a heading, list item or block in a note
 --   space k     on a due date or a reminder, say when it is in words
 --   g d         follow the [[link]] under the cursor (making the note)
 --   tab, z a    fold the section, list item or code block under the cursor,
@@ -46,6 +47,7 @@ greed.keymap.bind({ layer = "leader" }, {
 	["n f"] = "notes-find",
 	["n /"] = "notes-search",
 	["n x"] = "todo-toggle",
+	["n k"] = "notes-link",
 })
 
 core.features.add("notes", notes.is_note)

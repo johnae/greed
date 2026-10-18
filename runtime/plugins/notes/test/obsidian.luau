@@ -160,3 +160,43 @@ test("a long note's embed is cut short", function(t)
 	assert(#shown < 50, tostring(#shown))
 	assert(shown[#shown] == "│ …", shown[#shown])
 end)
+
+-- Runs :notes-link in note `name`, typing `query` in the picker and taking
+-- the best match; gives back the note's text.
+local function link(t: test.TestContext, dir: string, name: string, query: string): string
+	greed.open(`{dir}/{name}.md`)
+	local view = greed.view()
+	view:set_cursor(view:buffer():len())
+	t:run("notes-link", {})
+	t:keys(table.concat(string.split(query, ""), " "))
+	t:keys("enter")
+	return view:buffer():text()
+end
+
+test(":notes-link links to a heading, and to a block by its id", function(t)
+	local dir = vault(t)
+	local text = link(t, dir, "Tuesday", "Week 42 ## Plans")
+	assert(string.find(text, "[[Week 42#Plans]]", 1, true), text)
+	text = link(t, dir, "Tuesday", "key-point")
+	assert(string.find(text, "[[Week 42#^key-point]]", 1, true), text)
+end)
+
+test(":notes-link gives a list item an id when it has none", function(t)
+	local dir = vault(t)
+	local text = link(t, dir, "Tuesday", "call the bank")
+	local id = string.match(text, "%[%[Week 42#%^(%x+)%]%]")
+	assert(id, text)
+	local week = greed.fs.read(`{dir}/Week 42.md`) or ""
+	for _, buffer in greed.buffers() do
+		if buffer:path() == `{dir}/Week 42.md` then
+			week = buffer:text()
+		end
+	end
+	assert(string.find(week, `- [ ] call the bank 📅 2026-10-20 ^{id}\n`, 1, true), week)
+end)
+
+test(":notes-link in the note itself leaves out its name", function(t)
+	local dir = vault(t)
+	local text = link(t, dir, "Week 42", "Week 42 ## Plans")
+	assert(string.find(text, "[[#Plans]]", 1, true), text)
+end)
