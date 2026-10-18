@@ -76,10 +76,10 @@ you're on lit up, and `enter` opens or presses it. `down` past the last
 one, or `esc`, comes back to the box, and typing goes to the box from
 anywhere. With the mouse, click what you want.
 
-Away from the home, the status line at the bottom starts with `‹ Hoard`:
-click it to go back. `alt-left` goes back to where you were, as in a
-browser, and `alt-right` forward again. `ctrl-space n h` shows the home
-from anywhere in Hoard.
+From a note, `esc` goes back to the home (when something is selected,
+the first `esc` lets go of it). The status line at the bottom starts
+with `‹ Hoard`, which does the same when clicked. `alt-left` goes back to
+where you were before, as in a browser, and `alt-right` forward again.
 
 ## Writing notes
 

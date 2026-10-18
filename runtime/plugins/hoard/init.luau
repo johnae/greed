@@ -137,12 +137,43 @@ greed.command({
 
 greed.keymap.bind({ layer = "leader" }, { ["n h"] = "hoard", ["n H"] = "hoard-window" })
 
+-- Whether a completion menu was just closed with esc, which it passes on:
+-- that esc doesn't go home too.
+local menu_closed = false
+
+greed.on("command.run", function(event: greed.CommandRun)
+	if event.name == "completion-close" then
+		menu_closed = true
+	end
+end)
+
+greed.command({
+	name = "hoard-escape",
+	doc = "In Hoard: let go of the selection, or with nothing selected, go back to the home",
+	run = function(ctx)
+		local ranges = ctx.view:selection().ranges
+		local selected = #ranges > 1 or ranges[1].anchor ~= ranges[1].head
+		local closing = menu_closed
+		menu_closed = false
+		if not M.here() or selected or closing or core.snippet.active(ctx.view) then
+			greed.run("collapse")
+		else
+			home.show()
+		end
+	end,
+})
+
+-- esc in a note, as in the vscode style it lets go of the selection, and
+-- then goes home. The completion menu keeps its own (complete.luau).
+greed.keymap.bind({ style = "vscode", role = "typing", kind = "file" }, { esc = "hoard-escape" })
+
 -- Away from the home, the status line starts with the way back to it.
 require("@statusline").add("left", "hoard", function(ctx)
 	if not M.here() or home.is(ctx.buffer) then
 		return nil
 	end
-	return { text = "‹ Hoard", style = "ui.statusline.mode", action = "hoard" }
+	local key = if greed.option.get("editing-style") == "vscode" then "  esc" else ""
+	return { text = `‹ Hoard{key}`, style = "ui.statusline.mode", action = "hoard" }
 end, "mode")
 
 greed.cli({

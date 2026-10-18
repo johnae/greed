@@ -355,3 +355,42 @@ test("in the box, tab goes through a snippet's places before anything else", fun
 	assert(not require("@core").snippet.active(greed.view()), "at its end")
 	assert(greed.view():cursor() == buffer:len(), "still in the box")
 end)
+
+test("in Hoard, esc in a note lets go of a selection, and then goes home", function(t)
+	local dir = folder(t, { ["plans.md"] = "# Garden plans\n" })
+	local style = greed.option.get("editing-style")
+	greed.option.set("editing-style", "vscode")
+	local here = hoard.here
+	hoard.here = function()
+		return true
+	end
+	greed.open(`{dir}/plans.md`)
+	t:keys("shift-right esc")
+	local view = greed.view()
+	local range = view:selection().ranges[1]
+	local kept = view:buffer():path() == `{dir}/plans.md` and range.anchor == range.head
+	t:keys("esc")
+	local went = hoard.home.is(greed.view():buffer())
+	hoard.here = here
+	greed.option.set("editing-style", style)
+	assert(kept, "the first esc let go of the selection, in the note")
+	assert(went, "the second went home")
+end)
+
+test("in Hoard, esc with the / menu open only closes the menu", function(t)
+	local dir = folder(t, { ["plans.md"] = "\n" })
+	local style = greed.option.get("editing-style")
+	greed.option.set("editing-style", "vscode")
+	local here = hoard.here
+	hoard.here = function()
+		return true
+	end
+	greed.open(`{dir}/plans.md`)
+	t:keys("/")
+	t:run("completion-ask")
+	t:keys("esc")
+	local stayed = greed.view():buffer():path() == `{dir}/plans.md`
+	hoard.here = here
+	greed.option.set("editing-style", style)
+	assert(stayed, "still in the note")
+end)

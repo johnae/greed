@@ -200,6 +200,7 @@ local function attach()
 	completion.source(offered, { first = true })
 	completion.source(linked, { first = true })
 	completion.keys_over("hoard")
+	completion.keys_over("file")
 end
 
 if table.find(greed.plugin.list(), "lsp") then
