@@ -63,7 +63,9 @@ by their title, the headings in them and open todos. Above that:
 
 - **Agenda** lists what's overdue, due today and due in the next week.
   Today's part also has the todos you wrote today without a date. The
-  box ticks a todo off; the words open its note.
+  box ticks a todo off; the words open its note; **when** (or `alt-d` on
+  the line) moves it to today, tomorrow, the weekend, next week or no
+  date, or to a day you type in plain words, like `friday` or `in 3 days`.
 - **Inbox** opens the note todos are captured to from elsewhere, and
   **All todos** lists every open todo, soonest first.
 - **Recent notes** are the ones changed last.

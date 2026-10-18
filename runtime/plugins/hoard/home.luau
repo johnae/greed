@@ -8,6 +8,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local notes = require("@notes")
+local picker = require("@picker")
 
 local ui = core.ui
 local index = notes.index
@@ -152,7 +153,44 @@ local function open(name: string, line: number?)
 	end
 end
 
--- A line for a todo: its box to tick, its words, and when it's due.
+--- Asks when `task` is due, offering today, tomorrow, the weekend, next
+--- week and no date, or a day typed in plain words ("friday", "in 3
+--- days"), and moves it there.
+function M.schedule(task: Task)
+	local today = notes.today()
+	local items = {
+		{ label = "Today", value = today },
+		{ label = "Tomorrow", value = dates.add_days(today, 1) },
+		{ label = "This weekend", value = dates.next(today, "saturday") },
+		{ label = "Next week", value = dates.next(today, "monday") },
+		{ label = "No date", value = "" },
+	}
+	local function move(due: string)
+		local ok, err = pcall(function()
+			todos.update(task.note, task.line, { due = due })
+		end)
+		if not ok then
+			greed.echo(tostring(err))
+		elseif due ~= "" then
+			greed.echo(`{task.text}: {dates.due_words(due)}`)
+		end
+	end
+	picker.pick(`When is it due? ({task.text})`, items, function(item)
+		move(item.value)
+	end, {
+		fallback = function(typed: string)
+			local said = dates.read_words(typed)
+			if said.date then
+				move(said.date)
+			else
+				greed.echo(`not a day I know: {typed}`)
+			end
+		end,
+	})
+end
+
+-- A line for a todo: its box to tick, its words, when it's due, and a
+-- button to say when.
 local function task_line(task: Task, when: string?): { core.UiSpan }
 	local tick = ui.span("☐ ", "notes.todo")
 	tick.press = function()
@@ -168,6 +206,12 @@ local function task_line(task: Task, when: string?): { core.UiSpan }
 		local overdue = task.due < notes.today()
 		table.insert(spans, ui.span(`  {when}`, if overdue then "notes.overdue" else "notes.due"))
 	end
+	local later = ui.span(" when ", "ui.button")
+	later.press = function()
+		M.schedule(task)
+	end
+	table.insert(spans, ui.span("  "))
+	table.insert(spans, later)
 	return spans
 end
 
@@ -523,9 +567,32 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "hoard-schedule",
+	doc = "On the home: say when the todo on the agenda the cursor is on is due; in the box, "
+		.. "delete the next word as usual",
+	run = function(ctx)
+		local shown = home
+		if in_box(ctx.view) then
+			greed.run("delete-word-forward")
+			return
+		end
+		if shown == nil or shown.buffer ~= ctx.buffer then
+			return
+		end
+		local value = shown.view:value_on(ctx.buffer:line_of(ctx.view:cursor()))
+		if type(value) == "table" and type(value.due) == "string" and value.text then
+			M.schedule(value :: Task)
+		else
+			greed.echo("go to a todo on the agenda first")
+		end
+	end,
+})
+
 -- Moving about the home: tab and shift-tab, and the arrows, go between
--- what can be opened or pressed, enter opens it, and esc goes back to the
--- box. The completion menu keeps its own (complete.luau).
+-- what can be opened or pressed, enter opens it, alt-d says when a todo on
+-- the agenda is due, and esc goes back to the box. The completion menu
+-- keeps its own (complete.luau).
 greed.keymap.bind({ role = "typing", kind = "hoard" }, {
 	up = "hoard-up",
 	down = "hoard-down",
@@ -533,6 +600,7 @@ greed.keymap.bind({ role = "typing", kind = "hoard" }, {
 	["shift-tab"] = "hoard-tab-back",
 	enter = "hoard-enter",
 	esc = "hoard-box",
+	["alt-d"] = "hoard-schedule",
 })
 
 -- In every mode, as the agent's box has it; enter starts a new line.

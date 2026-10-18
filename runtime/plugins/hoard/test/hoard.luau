@@ -408,3 +408,36 @@ test("a todo added today without a date is on the agenda, not in the Today box",
 			and not string.find(today, "water the plants", 1, true)
 	end)
 end)
+
+test("a todo on the agenda is moved to another day, picked or in plain words", function(t)
+	local dir = folder(t, { ["a.md"] = `- [ ] pay rent due:{notes.today()}\n` })
+	local buffer = show(t)
+	local line = 0
+	t:wait_for(function()
+		for n = 0, buffer:line_count() - 1 do
+			if string.find(buffer:line_text(n), "pay rent", 1, true) then
+				line = n
+				return true
+			end
+		end
+		return false
+	end)
+	greed.view():set_cursor(buffer:line_start(line))
+	t:run("hoard-schedule")
+	t:keys("T o m o r r o w enter")
+	local tomorrow = notes.dates.add_days(notes.today(), 1)
+	t:wait_for(function()
+		return greed.fs.read(`{dir}/a.md`) == `- [ ] pay rent due:{tomorrow}\n`
+	end)
+	hoard.home.schedule({ note = "a", line = 0, text = "pay rent", due = tomorrow })
+	t:keys("i n space 3 space d a y s enter")
+	local later = notes.dates.add_days(notes.today(), 3)
+	t:wait_for(function()
+		return greed.fs.read(`{dir}/a.md`) == `- [ ] pay rent due:{later}\n`
+	end)
+	hoard.home.schedule({ note = "a", line = 0, text = "pay rent", due = later })
+	t:keys("N o space d a t e enter")
+	t:wait_for(function()
+		return greed.fs.read(`{dir}/a.md`) == "- [ ] pay rent\n"
+	end)
+end)
