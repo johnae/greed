@@ -196,8 +196,51 @@ function M.update(name: string, line: number, change: Change): string
 	local ticked = if change.done == nil then done else change.done
 	local before = string.match(current, "^%s*[-*+] ") :: string
 	local changed = `{before}[{if ticked then "x" else " "}] {text}`
-	notes.set_line(name, line, changed)
+	-- A repeating todo ticked off comes back under it, for its next date.
+	local again = if ticked and not done then M.again(text) else nil
+	notes.set_line(name, line, if again then `{changed}\n{before}[ ] {again}` else changed)
 	return changed
+end
+
+--- The next of a repeating todo (`every:monday`), from its text as
+--- written after its box: due on its next date, its reminders on the day
+--- it was due moved along with it. Nil for a todo that doesn't repeat.
+function M.again(text: string): string?
+	local every = syntax.every(text)
+	if every == nil then
+		return nil
+	end
+	local due = M.due(text) or notes.today()
+	local next = dates.next(due, every)
+	local reminds = {}
+	for _, reminder in M.reminders(text) do
+		if reminder.date == due then
+			table.insert(reminds, if reminder.time then `{next} {reminder.time}` else next)
+		end
+	end
+	return M.with_reminds(M.with_due(text, next), reminds)
+end
+
+--- Adds a todo written in plain words to note `name` (the inbox by
+--- default): "call the bank tomorrow 18:00" is due tomorrow with a
+--- reminder at 18:00, "water plants every monday" repeats (see
+--- `dates.read_words`). Returns what was added, in words.
+function M.capture(text: string, name: string?): string
+	local when = dates.read_words(text)
+	local words = if when.text == "" then text else when.text
+	local reminds = if when.date and when.time then { `{when.date} {when.time}` } else nil
+	M.add(if when.every then `{words} every:{when.every}` else words, name, when.date, reminds)
+	local said = { words }
+	if when.date then
+		table.insert(said, dates.due_words(when.date))
+	end
+	if when.time then
+		table.insert(said, `reminder at {when.time}`)
+	end
+	if when.every then
+		table.insert(said, `every {when.every}`)
+	end
+	return table.concat(said, ", ")
 end
 
 --- Opens note `name` with the cursor at the start of `line` (0-based).
@@ -216,9 +259,15 @@ greed.command({
 				local start = buffer:line_start(line)
 				local text = buffer:line_text(line)
 				local box_from = string.find(text, "%[[ xX]%]")
-				local done = M.parse(text)
+				local done, after_box = M.parse(text)
 				if done ~= nil and box_from then
 					e:replace(start + box_from, start + box_from + 1, if done then " " else "x")
+					-- A repeating todo ticked off comes back under it.
+					local again = if not done and after_box then M.again(after_box) else nil
+					if again then
+						local before = string.sub(text, 1, box_from - 1)
+						e:insert(start + #text, `\n{before}[ ] {again}`)
+					end
 				else
 					local indent = string.match(text, "^%s*") :: string
 					local rest = string.sub(text, #indent + 1)
@@ -251,23 +300,24 @@ greed.command({
 	end,
 })
 
--- A todo, as capture adds one.
-local function todo(text: string, name: string?)
-	M.add(text, name)
+-- A thought, as capture adds one.
+local function thought(text: string, name: string?): string?
+	M.add_thought(text, name)
+	return nil
 end
 
--- Adds `text` to note `inbox` with `add`, or asks for a `what` (a todo, a
--- thought) to add when there's no text.
+-- Adds `text` to note `inbox` with `add`, which may say what it added, or
+-- asks for a `what` (a todo, a thought) to add when there's no text.
 local function capture(
 	inbox: string,
 	what: string,
-	add: (text: string, name: string?) -> (),
+	add: (text: string, name: string?) -> string?,
 	text: string?
 )
 	local function take(typed: string)
 		if string.match(typed, "%S") then
-			add(typed, inbox)
-			greed.echo(`added to {inbox}`)
+			local said = add(typed, inbox)
+			greed.echo(if said then `{said}: added to {inbox}` else `added to {inbox}`)
 		end
 	end
 	if text then
@@ -289,7 +339,7 @@ greed.command({
 		},
 	},
 	run = function(ctx)
-		capture(M.inbox(), "todo", todo, ctx.values.text)
+		capture(M.inbox(), "todo", M.capture, ctx.values.text)
 	end,
 })
 
@@ -297,7 +347,7 @@ greed.command({
 	name = "notes-thought",
 	doc = "Jot a thought or an idea down in the inbox note, with today's date, from wherever you are",
 	run = function()
-		capture(M.inbox(), "thought", M.add_thought)
+		capture(M.inbox(), "thought", thought)
 	end,
 })
 
@@ -305,7 +355,7 @@ greed.command({
 	name = "notes-capture-mine",
 	doc = "Add a todo to your own inbox note, even in a project that keeps notes",
 	run = function()
-		capture("inbox", "todo", todo)
+		capture("inbox", "todo", M.capture)
 	end,
 })
 

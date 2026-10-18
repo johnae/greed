@@ -23,6 +23,12 @@ function M.due(text: string): string?
 	return string.match(text, "due:(%d%d%d%d%-%d%d%-%d%d)")
 end
 
+--- How often `text` says it repeats ("every:monday"), if it does: "day",
+--- "weekday", "week", "month", "year" or a weekday's name.
+function M.every(text: string): string?
+	return string.match(text, "every:(%a+)")
+end
+
 --- Where the marker `kind` ("due" or "remind") is in `text`: its start,
 --- the index after its end, its date, and a reminder's time ("18:00" in
 --- "remind:2026-10-06 18:00") if it has one.
@@ -115,11 +121,14 @@ function M.with_due(text: string, value: string?): string
 	return if trimmed == "" then marker else `{trimmed} {marker}`
 end
 
---- `text` without its due and remind markers, as a todo reads.
+--- `text` without its due, remind and every markers, as a todo reads.
 function M.plain(text: string): string
 	local out = text
-	if string.find(text, "due:", 1, true) or string.find(text, "remind:", 1, true) then
-		out = M.with_reminds(M.with_due(text, nil), {})
+	if string.find(text, "every:", 1, true) then
+		out = string.gsub(out, "%s*every:%a+", "") :: string
+	end
+	if string.find(out, "due:", 1, true) or string.find(out, "remind:", 1, true) then
+		out = M.with_reminds(M.with_due(out, nil), {})
 	end
 	return (string.gsub(out, "^%s+", ""))
 end

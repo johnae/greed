@@ -44,8 +44,9 @@ one with `enter` or a click.
 
 - **Search** finds notes by their title, the headings in them and open
   todos. Pick one to open it there.
-- **Add a todo** puts a todo in today's note; **Jot down** adds a line to
-  it, for anything that isn't a todo.
+- **Add a todo** puts a todo in today's note, and understands plain words
+  for when (below); **Jot down** adds a line to it, for anything that
+  isn't a todo.
 - **Today** shows today's note. Each day gets a note of its own, made the
   first time you write in it.
 - **Agenda** lists what's overdue, due today and due in the next week. The
@@ -70,7 +71,9 @@ a list, and `- [ ]` a todo:
 - the shed needs paint
 ```
 
-- `due:` gives a todo a date, for the agenda.
+- `due:` gives a todo a date, for the agenda, and `every:monday` makes it
+  repeat: ticking it off brings it back for the next Monday (`day`,
+  `weekday`, `week`, `month` and `year` work too).
 - `remind:` gives anything a reminder, with a time or for the morning. It
   shows in Greed and on your desktop when it's due.
 - `[[Garden plans]]` links to another note; `F12` on it opens it, making
@@ -81,6 +84,25 @@ a list, and `- [ ]` a todo:
 Hoard types as you'd expect: keys type, notes save on their own a moment
 after you stop typing, and `ctrl-z` undoes. If you already use one of
 Greed's editing styles, set it in your config and Hoard uses it too.
+
+## Saying when in plain words
+
+A todo you add on the home page or with `space n c` can say when in plain
+words, and Greed writes the date for you:
+
+| You type | It's |
+|---|---|
+| `call the bank tomorrow 18:00` | due tomorrow, with a reminder at 18:00 |
+| `dentist on friday at 9` | due Friday, reminder at 09:00 |
+| `renew passport in 3 weeks` | due in three weeks |
+| `party 31 dec`, `trip jan 5`, `report 2026-11-02` | due that day |
+| `plan the trip next week` | due next Monday |
+| `movie tonight` | due today, reminder at 20:00 |
+| `water plants every monday` | due Monday, and every Monday after |
+| `pay rent every month on the 1st` | due on the 1st, every month |
+
+Times can be `18:00`, `6pm` or `at 6`; a time alone is today's, or
+tomorrow's once it has gone by. The words are English for now.
 
 ## Where your notes are
 

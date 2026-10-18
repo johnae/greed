@@ -225,7 +225,7 @@ function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 			ui.field("Add a todo", "", function(text: string)
 				if string.match(text, "%S") then
 					notes.make_daily()
-					todos.add(text, notes.daily())
+					greed.echo(todos.capture(text, notes.daily()))
 				end
 			end),
 			ui.field("Jot down", "", function(text: string)

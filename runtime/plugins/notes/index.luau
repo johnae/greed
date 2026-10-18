@@ -25,8 +25,10 @@ M.EVERY = 5000
 M.SLICE = 8
 
 --- A todo: ticked or not, its text as written after its box, when it's
---- due, and its reminders (each "2026-10-06 18:00" or a date alone).
-export type Task = { done: boolean, text: string, due: string?, reminds: { string } }
+--- due, its reminders (each "2026-10-06 18:00" or a date alone), and how
+--- often it repeats.
+export type Task =
+	{ done: boolean, text: string, due: string?, reminds: { string }, every: string? }
 
 --- A heading or a list item. `line` to `last` are its lines (0-based), a
 --- list item's including those under it; `text` its words without markup
@@ -203,6 +205,7 @@ function M.parse(name: string, path: string, text: string): Note
 				text = rest,
 				due = syntax.due(rest),
 				reminds = syntax.reminds(rest),
+				every = syntax.every(rest),
 			}
 		end
 		table.insert(nodes, node)
