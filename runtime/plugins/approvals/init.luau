@@ -113,8 +113,8 @@ local function inside(path: string, dir: string?): boolean
 end
 
 --- Where the plugin in `dir` comes from, in words: Greed's own, your config,
---- the copy of it greed ssh brought, the data folder (plugins made in the
---- editor), or the project.
+--- the copy of it greed ssh brought, the data folder (plugins fetched from
+--- git, and those made in the editor), or the project.
 function M.origin(dir: string): string
 	local dirs = greed.fs.dirs()
 	local core = greed.plugin.dirs().core
@@ -123,6 +123,8 @@ function M.origin(dir: string): string
 		return "Greed's own"
 	elseif inside(dir, dirs.brought) then
 		return "your config, brought by greed ssh"
+	elseif inside(dir, dirs.data) and greed.fs.stat(`{dir}/.git`) then
+		return "fetched from git (data folder)"
 	elseif inside(dir, dirs.data) then
 		return "made in the editor (data folder)"
 	elseif inside(dir, dirs.config) then

@@ -48,6 +48,7 @@
 		"guides": "./plugins/guides",
 		"swatches": "./plugins/swatches",
 		"todo-comments": "./plugins/todo-comments",
-		"folders": "./plugins/folders"
+		"folders": "./plugins/folders",
+		"git-plugins": "./plugins/git-plugins"
 	}
 }

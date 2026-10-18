@@ -2430,6 +2430,24 @@ that appears there, or whose files change, loads by itself, asking you
 first if it wants something you haven't approved; `:plugin-reload NAME`
 loads one again by hand. [Writing plugins](plugins.md) has more.
 
+Plugins others share in git are named in your config, in `init.luau` or a
+file you require from it:
+
+```luau
+local plugins = require("@git-plugins")
+plugins.use("https://github.com/someone/greed-jump")
+plugins.use("https://github.com/someone/greed-todo", { ref = "v2", name = "todo" })
+```
+
+Naming one only records it, so starting never waits on the network: once
+Greed is up, what's missing is fetched in the background into the data
+folder (or now, with `:plugins-sync`) and loads like your own, asking for
+your approval if it wants capabilities. Each is pinned to a commit in
+`plugins.lock` next to your config, so another machine with the same
+config and lock file gets the same ones; commit it with your config.
+`:plugins-update` (or `:plugins-update NAME`) moves them to the latest of
+the branch or tag they follow, asking again if an update wants more.
+
 ### Where Greed keeps things, and profiles
 
 Greed keeps four folders: your config (`~/.config/greed`), data like saved
