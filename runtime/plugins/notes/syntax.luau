@@ -18,9 +18,11 @@ function M.parse(line: string): (boolean?, string?)
 	return box ~= " ", text
 end
 
---- When `text` says it's due ("due:2026-10-03"), if it does.
+--- When `text` says it's due ("due:2026-10-03", or the Tasks plugin's
+--- "📅 2026-10-03"), if it does.
 function M.due(text: string): string?
 	return string.match(text, "due:(%d%d%d%d%-%d%d%-%d%d)")
+		or string.match(text, "📅%s*(%d%d%d%d%-%d%d%-%d%d)")
 end
 
 --- How often `text` says it repeats ("every:monday"), if it does: "day",
@@ -121,7 +123,11 @@ function M.with_due(text: string, value: string?): string
 	return if trimmed == "" then marker else `{trimmed} {marker}`
 end
 
---- `text` without its due, remind and every markers, as a todo reads.
+-- The signs the Tasks plugin (as in Obsidian) puts before dates.
+local TASKS_DATES = { "📅", "⏳", "🛫", "✅", "➕" }
+
+--- `text` without its due, remind and every markers (and the Tasks
+--- plugin's dates), as a todo reads.
 function M.plain(text: string): string
 	local out = text
 	if string.find(text, "every:", 1, true) then
@@ -129,6 +135,11 @@ function M.plain(text: string): string
 	end
 	if string.find(out, "due:", 1, true) or string.find(out, "remind:", 1, true) then
 		out = M.with_reminds(M.with_due(out, nil), {})
+	end
+	for _, sign in TASKS_DATES do
+		if string.find(out, sign, 1, true) then
+			out = string.gsub(out, `%s*{sign}%s*%d%d%d%d%-%d%d%-%d%d`, "") :: string
+		end
 	end
 	return (string.gsub(out, "^%s+", ""))
 end

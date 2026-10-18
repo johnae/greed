@@ -11,9 +11,20 @@ local syntax = require("./syntax")
 local index = require("./index")
 
 --- A link in a buffer: where it is (bytes, end exclusive), where the part
---- shown in its place is, and the note it names (as written, without a
---- `#heading` or `#^block`).
-type Link = { from: number, to: number, target: string, text_from: number, text_to: number }
+--- shown in its place is, the note it names (as written, without a
+--- `#heading` or `#^block`), the heading or block in it, its line, and
+--- whether it embeds what it names (`![[...]]`).
+type Link = {
+	from: number,
+	to: number,
+	target: string,
+	text_from: number,
+	text_to: number,
+	heading: string?,
+	block: string?,
+	line: number,
+	embed: boolean,
+}
 
 local M = {}
 
@@ -33,6 +44,10 @@ local function links_in(s: markdown.Structure, first: number, last: number): { L
 				target = link.target,
 				text_from = base + link.shown_from,
 				text_to = base + link.shown_to,
+				heading = link.heading,
+				block = link.block,
+				line = n,
+				embed = link.embed,
 			})
 		end
 	end
@@ -158,12 +173,37 @@ function M.target_path(target: string, path: string?): string
 	return notes.path(notes.resolve(target, from))
 end
 
--- g d on a [[link]] opens the note it points at, making it if it's new.
+--- The note a link to `target`, in note `from` (nil outside notes), goes
+--- to: by its name, or else one of the notes' aliases (see
+--- `index.linked`); an empty target is `from` itself.
+function M.target(target: string, from: string?): string
+	if target == "" and from then
+		return from
+	end
+	index.ensure()
+	return index.linked(notes.resolve(target, from))
+end
+
+-- g d on a [[link]] opens the note it points at, at the heading or block
+-- it names, making the note if it's new. In Markdown outside the notes it
+-- opens the file beside it (`M.target_path`).
 core.lookup.add("definition", function(ctx)
 	local head = ctx.view:cursor()
 	for _, link in M.links(ctx.buffer) do
 		if link.from <= head and head < link.to then
-			core.file.open(M.target_path(link.target, ctx.buffer:path()))
+			local path = ctx.buffer:path()
+			if path and notes.place_of(path) == nil and not notes.named_place(link.target) then
+				core.file.open(M.target_path(link.target, path))
+				return true
+			end
+			local from = if path and notes.place_of(path) then notes.name(path) else nil
+			local name = M.target(link.target, from)
+			local line = index.line_of(name, link.heading, link.block)
+			if line then
+				core.file.open_at(notes.path(name), line)
+			else
+				core.file.open(notes.path(name))
+			end
 			return true
 		end
 	end

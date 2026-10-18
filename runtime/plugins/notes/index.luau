@@ -77,6 +77,8 @@ export type Note = {
 	nodes: { Node },
 	links: { Link },
 	reminders: { Reminder },
+	--- The line (0-based) each `^block-id` names.
+	blocks: { [string]: number },
 }
 
 -- A value from front matter: quotes taken off.
@@ -157,6 +159,7 @@ function M.parse(name: string, path: string, text: string): Note
 		nodes = {},
 		links = {},
 		reminders = {},
+		blocks = {},
 	}
 	for key, value in front do
 		if type(value) == "string" then
@@ -266,8 +269,16 @@ function M.parse(name: string, path: string, text: string): Note
 				end
 			end
 		end
-		if node and string.find(line, "^", 1, true) then
-			node.id = syntax.block_id(line)
+		if string.find(line, "^", 1, true) then
+			local id = syntax.block_id(line)
+			if id then
+				if node then
+					node.id = id
+				end
+				-- An id alone on its line names the block above it.
+				local alone = string.match(line, "^%s*%^[%w%-]+%s*$") ~= nil
+				note.blocks[id] = if alone and n > 0 then n - 1 else n
+			end
 		end
 		if string.find(line, "[[", 1, true) then
 			for _, link in syntax.links(line) do
@@ -312,11 +323,26 @@ function M.parse(name: string, path: string, text: string): Note
 end
 
 -- What's indexed: notes by name, and by path; which notes link to each
--- note, and which have each tag.
+-- note, which have each tag, and which go by each alias.
 local by_name: { [string]: Note } = {}
 local by_path: { [string]: string } = {}
 local linking: { [string]: { [string]: boolean } } = {}
+-- The same, by the name linked to in lower case, for aliases, which match
+-- in any case.
+local linking_any_case: { [string]: { [string]: boolean } } = {}
 local tagging: { [string]: { [string]: boolean } } = {}
+-- The notes going by each alias (`aliases:` in front matter), in lower
+-- case, by alias.
+local aliased: { [string]: string } = {}
+
+--- The aliases `note`'s front matter gives it.
+function M.aliases(note: Note): { string }
+	local aliases = note.front.aliases
+	if type(aliases) == "string" then
+		return { aliases }
+	end
+	return if aliases then aliases else {}
+end
 
 -- Listeners told the name of each note whose entry changed or went.
 local listeners: { (name: string) -> () } = {}
@@ -342,6 +368,15 @@ local function drop(name: string)
 		if from then
 			from[name] = nil
 		end
+		local any_case = linking_any_case[string.lower(link.target)]
+		if any_case then
+			any_case[name] = nil
+		end
+	end
+	for _, alias in M.aliases(old) do
+		if aliased[string.lower(alias)] == name then
+			aliased[string.lower(alias)] = nil
+		end
 	end
 	for tag in old.tags do
 		local named = tagging[tag]
@@ -360,6 +395,13 @@ local function put(note: Note)
 		local from = linking[link.target] or {}
 		linking[link.target] = from
 		from[note.name] = true
+		local lower = string.lower(link.target)
+		local any_case = linking_any_case[lower] or {}
+		linking_any_case[lower] = any_case
+		any_case[note.name] = true
+	end
+	for _, alias in M.aliases(note) do
+		aliased[string.lower(alias)] = note.name
 	end
 	for tag in note.tags do
 		local named = tagging[tag] or {}
@@ -564,16 +606,65 @@ function M.all(): { Note }
 	return out
 end
 
---- The names of the notes linking to note `name`, sorted.
+--- The names of the notes linking to note `name`, by its name or one of
+--- its aliases, sorted.
 function M.backlinks(name: string): { string }
+	local seen: { [string]: boolean } = {}
 	local out: { string } = {}
-	for from in linking[name] or {} :: { [string]: boolean } do
-		if from ~= name then
-			table.insert(out, from)
+	local function from_all(linked: { [string]: boolean }?)
+		for from in linked or {} :: { [string]: boolean } do
+			if from ~= name and not seen[from] then
+				seen[from] = true
+				table.insert(out, from)
+			end
+		end
+	end
+	from_all(linking[name])
+	local note = by_name[name]
+	if note then
+		-- A link to an alias names it as a note in the same place would,
+		-- in any case.
+		local place = string.match(name, "^([%w_-]+):")
+		for _, alias in M.aliases(note) do
+			from_all(linking_any_case[string.lower(if place then `{place}:{alias}` else alias)])
 		end
 	end
 	table.sort(out)
 	return out
+end
+
+--- The note a link to `target` goes to: the note of that name if there's
+--- one, else the one with that alias (any case), else `target` itself, a
+--- note to make.
+function M.linked(target: string): string
+	if by_name[target] then
+		return target
+	end
+	local place, rest = string.match(target, "^([%w_-]+):(.+)$")
+	local alias = aliased[string.lower(rest or target)]
+	if alias and (place == nil or string.sub(alias, 1, #place + 1) == `{place}:`) then
+		return alias
+	end
+	return target
+end
+
+--- The line (0-based) of the heading called `heading` (any case) or the
+--- block with id `block` in note `name`, if the index knows of one.
+function M.line_of(name: string, heading: string?, block: string?): number?
+	local note = by_name[name]
+	if note == nil then
+		return nil
+	end
+	if block then
+		return note.blocks[block]
+	end
+	local wanted = if heading then string.lower(heading) else nil
+	for _, node in note.nodes do
+		if wanted and node.kind == "heading" and string.lower(node.text) == wanted then
+			return node.line
+		end
+	end
+	return nil
 end
 
 --- The names of the notes with tag `tag` (without its `#`, any case), sorted.
