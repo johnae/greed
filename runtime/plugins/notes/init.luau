@@ -26,7 +26,7 @@
 local core = require("@core")
 local greed = require("@greed")
 local notes = require("@self/notes")
-require("@self/links")
+local links = require("@self/links")
 local todos = require("@self/todos")
 require("@self/tools")
 require("@self/objects")
@@ -56,8 +56,10 @@ core.features.add("notes", notes.is_note)
 --- index.luau).
 export type Note = index.Note
 export type Node = index.Node
+--- A heading or block to link to (see links.luau).
+export type Place = links.Place
 
--- What other plugins use: the notes, and with them the index, todos,
+-- What other plugins use: the notes, and with them the index, links, todos,
 -- dates, reminders and how notes read a line. Setting a field, like a
 -- test's `clock`, sets it on the notes themselves.
 local exported: typeof(notes) & {
@@ -66,8 +68,16 @@ local exported: typeof(notes) & {
 	reminders: typeof(reminders),
 	syntax: typeof(syntax),
 	dates: typeof(dates),
+	links: typeof(links),
 } = setmetatable(
-	{ index = index, todos = todos, reminders = reminders, syntax = syntax, dates = dates },
+	{
+		index = index,
+		todos = todos,
+		reminders = reminders,
+		syntax = syntax,
+		dates = dates,
+		links = links,
+	},
 	{
 		__index = notes,
 		__newindex = notes,

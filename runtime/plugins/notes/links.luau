@@ -354,22 +354,75 @@ core.lookup.add("definition", function(ctx)
 	return false
 end)
 
+--- How note `from` (nil outside notes) writes a link to note `name`: as
+--- short as still goes there.
+function M.written(name: string, from: string?): string
+	local _, rest = notes.split(name)
+	if rest ~= name and notes.resolve(rest, from) == name then
+		return rest
+	end
+	return name
+end
+
 --- A place in a note to link to: a heading, or a block (a list item, or a
---- line with a `^id` already).
-type Place = { note: string, line: number, heading: string?, id: string? }
+--- line with a `^id` already), with the sign it reads with in a list ("##",
+--- "-" or "^") and what it says.
+export type Place = {
+	note: string,
+	line: number,
+	heading: string?,
+	id: string?,
+	sign: string,
+	text: string,
+}
+
+--- The places in `note` to link to, in order: its headings and list
+--- items, then the other lines with ids.
+function M.places_in(note: index.Note): { Place }
+	local out: { Place } = {}
+	local named: { [number]: boolean } = {}
+	for _, node in note.nodes do
+		named[node.line] = true
+		local heading = node.kind == "heading"
+		table.insert(out, {
+			note = note.name,
+			line = node.line,
+			heading = if heading then node.text else nil,
+			id = node.id,
+			sign = if heading then string.rep("#", node.level) else "-",
+			text = node.text,
+		})
+	end
+	for id, line in note.blocks do
+		if not named[line] then
+			table.insert(out, { note = note.name, line = line, id = id, sign = "^", text = id })
+		end
+	end
+	return out
+end
+
+--- Puts block id `id` at the end of line `line` (0-based) of note `name`,
+--- so `[[name#^id]]` links to it.
+function M.give_id(name: string, line: number, id: string)
+	local text = todos.line(name, line)
+	notes.set_line(name, line, `{(string.gsub(text, "%s+$", ""))} ^{id}`)
+end
+
+--- A new block id, like Obsidian's: six letters and digits.
+function M.new_id(): string
+	return greed.hash.random(3)
+end
 
 --- The link to `place` from note `from` (nil outside notes), giving the
 --- block an id at the end of its line when it has none yet.
 function M.link_to(place: Place, from: string?): string
-	local name = if place.note == from then "" else place.note
+	local name = if place.note == from then "" else M.written(place.note, from)
 	if place.heading then
 		return `[[{name}#{place.heading}]]`
 	end
-	local id = place.id
-	if id == nil then
-		id = greed.hash.random(3)
-		local line = todos.line(place.note, place.line)
-		notes.set_line(place.note, place.line, `{(string.gsub(line, "%s+$", ""))} ^{id}`)
+	local id: string = place.id or M.new_id()
+	if place.id == nil then
+		M.give_id(place.note, place.line, id)
 	end
 	return `[[{name}#^{id}]]`
 end
@@ -387,21 +440,11 @@ greed.command({
 			return a.name < b.name
 		end)
 		for _, note in all do
-			local named: { [number]: boolean } = {}
-			for _, node in note.nodes do
-				named[node.line] = true
-				local place: Place = { note = note.name, line = node.line, id = node.id }
-				if node.kind == "heading" then
-					place.heading = node.text
-				end
-				local sign = if node.kind == "heading" then string.rep("#", node.level) else "-"
-				table.insert(items, { label = `{note.name}  {sign} {node.text}`, value = place })
-			end
-			for id, line in note.blocks do
-				if not named[line] then
-					local place: Place = { note = note.name, line = line, id = id }
-					table.insert(items, { label = `{note.name}  ^{id}`, value = place })
-				end
+			for _, place in M.places_in(note) do
+				table.insert(
+					items,
+					{ label = `{note.name}  {place.sign} {place.text}`, value = place }
+				)
 			end
 		end
 		picker.pick("Link to", items, function(item)
@@ -414,16 +457,6 @@ greed.command({
 		end)
 	end,
 })
-
---- How note `from` (nil outside notes) writes a link to note `name`: as
---- short as still goes there.
-function M.written(name: string, from: string?): string
-	local _, rest = notes.split(name)
-	if rest ~= name and notes.resolve(rest, from) == name then
-		return rest
-	end
-	return name
-end
 
 --- Changes the links to note `old` in every other note to go to `new`,
 --- after it was renamed, keeping their headings, blocks and shown text.

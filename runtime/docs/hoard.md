@@ -105,10 +105,13 @@ See [[Garden plans#Seeds]] for the list, and [[Garden plans#^fence|the fence]].
   current as the note changes. `![[note#Heading]]` shows that section and
   `![[note#^id]]` that line, with what's under it in a list. Long ones are
   cut short.
-- `ctrl-space n k` (`space n k` with Vim's or Helix's keys) picks a
-  heading, a list item or a block from all your notes and puts a link to
-  it where you are. A line without an id gets one at its end, like
-  `^3fa2c1`.
+- Typing `[[` lists your notes, and their other names, as you type, and
+  the closing `]]` comes along. After a note's name, `#` lists its
+  headings and `#^` its list items and lines. You don't write ids: a line
+  you link to gets one at its end, like `^3fa2c1`, when you pick it.
+- `ctrl-space n k` (`space n k` with Vim's or Helix's keys) does the same
+  from all your notes at once: pick a heading, a list item or a line and
+  the link goes where you are.
 - Renaming a note, or moving a folder of them (`:file-rename`, or from the
   file list), changes the links to them in your other notes.
 

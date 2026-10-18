@@ -138,3 +138,56 @@ test("/ in a note offers what a note holds, and puts in what's picked", function
 	t:keys("esc i a / b")
 	assert(greed.view():buffer():line_text(0) == "a/b", greed.view():buffer():line_text(0))
 end)
+
+-- A note to write in, beside notes with headings, items and an alias.
+local function linking(t: test.TestContext): greed.Buffer
+	local dir = folder(t, {
+		["Garden.md"] = "---\naliases: [yard]\n---\n# Garden\n\n## Seeds\n\n- buy tomatoes\n- water ^water\n",
+		["Kitchen.md"] = "# Kitchen\n",
+		["today.md"] = "\n",
+	})
+	notes.index.ensure()
+	greed.open(`{dir}/today.md`)
+	return greed.view():buffer()
+end
+
+test("[[ offers the notes and their aliases, and the closer comes along", function(t)
+	local buffer = linking(t)
+	t:keys("i [ [ g a r")
+	t:run("completion-ask")
+	t:keys("enter")
+	assert(buffer:line_text(0) == "[[Garden]]", buffer:line_text(0))
+	t:keys("esc o [ [ y a r")
+	t:run("completion-ask")
+	t:keys("enter")
+	assert(buffer:line_text(1) == "[[yard]]", buffer:line_text(1))
+end)
+
+test("[[note# offers its headings, and #^ its items, giving one an id", function(t)
+	local buffer = linking(t)
+	t:keys("i [ [ G a r d e n # s e")
+	t:run("completion-ask")
+	t:keys("enter")
+	assert(buffer:line_text(0) == "[[Garden#Seeds]]", buffer:line_text(0))
+	t:keys("esc o [ [ G a r d e n # ^ t o m")
+	t:run("completion-ask")
+	t:keys("enter")
+	local id = string.match(buffer:line_text(1), "^%[%[Garden#%^(%x+)%]%]$")
+	assert(id, buffer:line_text(1))
+	t:wait_for(function()
+		return string.find(notes.read("Garden") or "", `- buy tomatoes ^{id}\n`, 1, true) ~= nil
+	end)
+	t:keys("esc o [ [ G a r d e n # ^ w a t")
+	t:run("completion-ask")
+	t:keys("enter")
+	assert(buffer:line_text(2) == "[[Garden#^water]]", buffer:line_text(2))
+end)
+
+test("without pairs typed, a picked link brings its own ]]", function(t)
+	local buffer = linking(t)
+	greed.option.set("auto-pairs", "off")
+	t:keys("i [ [ K i t")
+	t:run("completion-ask")
+	t:keys("enter")
+	assert(buffer:line_text(0) == "[[Kitchen]]", buffer:line_text(0))
+end)
