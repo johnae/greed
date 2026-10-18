@@ -12,6 +12,7 @@ local greed = require("@greed")
 local core = require("@core")
 local notes = require("@notes")
 local home = require("@self/home")
+require("@self/slash")
 
 local M = {}
 

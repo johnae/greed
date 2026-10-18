@@ -80,6 +80,9 @@ a list, and `- [ ]` a todo:
   it if it's new (`g d` with Vim's or Helix's keys). Each note lists the
   notes that link to it at its end.
 - `#garden` tags a note, and a todo or line in it.
+- `/` at the start of a word opens a menu of these: todo, today's or
+  tomorrow's date, due, remind, every, link, heading, table and tag. Pick
+  one and fill in its places, `tab` going from one to the next.
 
 Hoard types as you'd expect: keys type, notes save on their own a moment
 after you stop typing, and `ctrl-z` undoes. If you already use one of
