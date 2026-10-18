@@ -73,7 +73,115 @@ end
 -- opened or saved.
 local shown_backlinks: { [number]: { string } } = {}
 
-local redraw = markdown.conceal({
+--- How many lines of a note an embed shows at most.
+M.EMBED_LINES = 30
+
+-- What each embed in a buffer shows, by buffer id and then by what it
+-- names, and whether it's still current; worked out away from drawing,
+-- which only reads it. A stale one shows until it's worked out again.
+type Embedded = { lines: { greed.MarkLine }, current: boolean }
+local embedded: { [number]: { [string]: Embedded } } = {}
+local embedding: { [number]: { [string]: boolean } } = {}
+
+local redraw: (buffer: greed.Buffer?) -> ()
+
+local function embed_key(link: Link): string
+	return `{link.target}#{link.heading or ""}#{link.block or ""}`
+end
+
+--- The lines an embed of `target` (a note's full name) shows: the note
+--- without its front matter, the section under heading `heading`, or the
+--- block `block` (with what's under it, for a list item), without block
+--- ids. Nil when there's no such note, heading or block.
+function M.embedded_lines(target: string, heading: string?, block: string?): { string }?
+	local text = notes.read(target)
+	if text == nil then
+		return nil
+	end
+	local lines = string.split(text, "\n")
+	if lines[#lines] == "" then
+		table.remove(lines)
+	end
+	local first, last = 0, #lines - 1
+	if heading or block then
+		local note = index.note(target)
+		local at = index.line_of(target, heading, block)
+		if note == nil or at == nil then
+			return nil
+		end
+		first, last = at, at
+		for _, node in note.nodes do
+			if node.line == at then
+				last = node.last
+				if node.kind == "heading" then
+					-- A heading's section goes on to the next heading of its level
+					-- or above.
+					last = #lines - 1
+					for _, other in note.nodes do
+						if other.kind == "heading" and other.line > at and other.level <= node.level then
+							last = other.line - 1
+							break
+						end
+					end
+				end
+			end
+		end
+	elseif lines[1] == "---" then
+		for i = 2, #lines do
+			if lines[i] == "---" then
+				first = i
+				break
+			end
+		end
+	end
+	local out: { string } = {}
+	for n = first, last do
+		if #out >= M.EMBED_LINES then
+			table.insert(out, "…")
+			break
+		end
+		local line = lines[n + 1]
+		if syntax.block_id(line) then
+			line = string.gsub(line, "%s*%^[%w%-]+%s*$", "") :: string
+		end
+		table.insert(out, line)
+	end
+	while #out > 0 and string.match(out[#out], "^%s*$") do
+		table.remove(out)
+	end
+	return out
+end
+
+-- Works out what `link`, an embed in `buffer` (note `from`), shows, and
+-- draws the buffer again with it.
+local function embed_later(buffer: greed.Buffer, link: Link, from: string?)
+	local id = buffer:id()
+	local key = embed_key(link)
+	local busy = embedding[id] or {}
+	embedding[id] = busy
+	if busy[key] then
+		return
+	end
+	busy[key] = true
+	greed.spawn(function()
+		local target = M.target(link.target, from)
+		local lines = M.embedded_lines(target, link.heading, link.block)
+		busy[key] = nil
+		if not buffer:valid() then
+			return
+		end
+		local shown: { greed.MarkLine } = {}
+		for _, line in lines or { `({target} isn't there to show)` } do
+			table.insert(shown, { { text = "│ ", style = "comment" }, { text = line } })
+		end
+		local cached = embedded[id] or {}
+		embedded[id] = cached
+		cached[key] = { lines = shown, current = true }
+		redraw(buffer)
+	end)
+end
+
+redraw = markdown.conceal({
 	ns = "notes",
 	wants = notes.is_note,
 	draw = function(
@@ -84,7 +192,19 @@ local redraw = markdown.conceal({
 	): { greed.Mark }
 		local marks: { greed.Mark } = {}
 		local conceal = greed.option.get("notes-conceal") == true
+		local cached = embedded[buffer:id()] or {}
+		local path = buffer:path()
+		local here = if path then notes.name(path) else nil
 		for _, link in links_in(s, first, last) do
+			if link.embed then
+				local shown = cached[embed_key(link)]
+				if shown then
+					table.insert(marks, { from = link.from, to = link.to, style = "comment", lines = shown.lines })
+				end
+				if shown == nil or not shown.current then
+					embed_later(buffer, link, here)
+				end
+			end
 			table.insert(marks, { from = link.text_from, to = link.text_to, style = "markup.link" })
 			if conceal then
 				table.insert(marks, {
@@ -121,11 +241,19 @@ local redraw = markdown.conceal({
 	end,
 })
 
+-- The embeds in `buffer` are worked out again as they're next drawn.
+local function stale(buffer: greed.Buffer)
+	for _, shown in embedded[buffer:id()] or {} do
+		shown.current = false
+	end
+end
+
 local function refresh(buffer: greed.Buffer)
 	if not notes.is_note(buffer) then
 		return
 	end
 	shown_backlinks[buffer:id()] = M.backlinks(notes.name(buffer:path() :: string))
+	stale(buffer)
 	redraw(buffer)
 end
 
@@ -137,9 +265,14 @@ greed.on("buffer.saved", function(event: greed.BufferChanged)
 	refresh(event.buffer)
 end)
 
--- A note linking here added or taken away, here or on disk, shows at once.
+-- A note linking here added or taken away, here or on disk, shows at once,
+-- and so does a change to an embedded note.
 index.on_changed(function()
 	for _, buffer in greed.buffers() do
+		if embedded[buffer:id()] and buffer:valid() then
+			stale(buffer)
+			redraw(buffer)
+		end
 		local shown = shown_backlinks[buffer:id()]
 		if shown and buffer:valid() and notes.is_note(buffer) then
 			local now = index.backlinks(notes.name(buffer:path() :: string))
