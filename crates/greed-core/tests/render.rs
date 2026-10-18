@@ -550,13 +550,37 @@ fn marks_add_text_that_isnt_in_the_buffer() {
     // The cursor counts the inserted text's width but can't land in it.
     assert_eq!(f.cursor, Some(Position { col: 16, row: 0 }));
 
-    // Text past the edge is cut off rather than wrapped.
+    // Text past the edge is cut off rather than wrapped, up to the last cell.
     let f = frame(&mut ed, 12, 6);
     assert!(
-        rows(&f).contains(&"2 foo() not".to_string()),
+        rows(&f).contains(&"2 foo() not ".to_string()),
         "{:?}",
         rows(&f)
     );
+}
+
+#[test]
+fn text_after_a_line_stays_put_with_the_cursor_on_its_end_and_reaches_the_edge() {
+    use greed_core::Mark;
+    // "1 ab", the line's end cell as the space, then 15 cells to the edge.
+    let bar = format!("{}│", " ".repeat(14));
+    for text in ["ab|\ncd", "ab\n|cd"] {
+        let mut ed = editor(text);
+        let buffer = ed.view(ed.focus()).buffer;
+        ed.decorate(
+            buffer,
+            "box",
+            vec![Mark {
+                range: 0..0,
+                style: "border".into(),
+                text: Some(bar.as_str().into()),
+                eol: true,
+                ..Mark::default()
+            }],
+        );
+        let f = frame(&mut ed, 20, 3);
+        assert_eq!(rows(&f)[0], format!("1 ab {bar}"), "cursor in {text:?}");
+    }
 }
 
 #[test]

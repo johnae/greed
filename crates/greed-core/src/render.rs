@@ -1053,7 +1053,8 @@ impl<M: Measure> Renderer<M> {
                 if line_numbers {
                     line_gutter.push(&mut row, (i == 0).then(|| number(line)));
                 }
-                let mut x = gutter;
+                // Whether the line's end cell is drawn: the cursor is on it.
+                let (mut x, mut drawn) = (gutter, false);
                 for cell in &cells {
                     let place = screen_position(area, x, rows.len());
                     if cursor_here(cell, (head, head_shown), &lines, cursor.is_some()) {
@@ -1079,13 +1080,15 @@ impl<M: Measure> Renderer<M> {
                         .and_then(|i| syntax.get(i)?.clone());
                     let cell_tags = cell_tags(view, cell, &cursors, &peers, capture, &styled);
                     if !(cell.end_of_line && cell_tags.is_empty()) {
+                        drawn = cell.end_of_line;
                         row.push_scaled(&cell.text, cell_tags, cell.scale);
                     }
                     x += cell.width;
                 }
                 if i == last {
-                    let eol = styled.iter().filter(on_line).filter(|m| m.eol);
-                    self.push_eol_text(&mut row, (view_id, area, rows.len()), x, eol);
+                    let gap = x - usize::from(cells.last().is_some_and(|c| c.end_of_line));
+                    let at = (view_id, area, rows.len());
+                    self.push_eol_text(&mut row, at, (gap, drawn), styled.iter().filter(on_line));
                 }
                 push_covering(&mut rows, row, row_height(&cells), text_rows);
             }
@@ -1106,21 +1109,23 @@ impl<M: Measure> Renderer<M> {
         Laid::new(rows, cursor, sized)
     }
 
-    /// Adds each mark's text after the end of a line that reaches column
-    /// `x`, a space before each, cut off at the edge rather than wrapped.
-    /// `at` is the view, its area and the row's index in it, for marks with
-    /// actions.
+    /// Adds each `eol` mark's text after the end of a line, a space before
+    /// each, the first's at column `gap`: the line's end cell, where the
+    /// cursor can sit, so the text stays put whether it's there or not.
+    /// With `drawn`, the row already has that cell, the cursor on it. The
+    /// text is cut off at the edge rather than wrapped. `at` is the view,
+    /// its area and the row's index in it, for marks with actions.
     fn push_eol_text<'a>(
         &self,
         row: &mut Row,
         at: (ViewId, Rect, usize),
-        x: usize,
+        (gap, mut drawn): (usize, bool),
         marks: impl Iterator<Item = &'a &'a Mark>,
     ) {
         let (view, area, row_index) = at;
-        let (left, mut room) = (area.x, usize::from(area.width).saturating_sub(x));
+        let (left, mut room) = (area.x, usize::from(area.width).saturating_sub(gap));
         let screen_row = area.y + u16::try_from(row_index).unwrap_or(u16::MAX);
-        for mark in marks {
+        for mark in marks.filter(|m| m.eol) {
             let Some(text) = &mark.text else { continue };
             let mut shown = String::new();
             let mut used = 0;
@@ -1135,20 +1140,20 @@ impl<M: Measure> Renderer<M> {
                 shown.push_str(g);
             }
             if !shown.is_empty() {
+                // The space goes in unstyled, so buttons side by side stay
+                // apart.
+                let (space, text) = shown.split_at(1);
+                if !std::mem::take(&mut drawn) {
+                    row.push(space, SmallVec::new());
+                }
                 if let Some(action) = &mark.action {
-                    // Past the row's text so far, which can end before the
-                    // cell past the end of the line, and the space in front.
                     let ends = u16::try_from(self.text_width(&row.text())).unwrap_or(u16::MAX);
                     let place = Position {
-                        col: left + ends + 1,
+                        col: left + ends,
                         row: screen_row,
                     };
                     self.record_action(view, place, used - 1, action, mark.range.start);
                 }
-                // The space goes in unstyled, so buttons side by side stay
-                // apart.
-                let (space, text) = shown.split_at(1);
-                row.push(space, SmallVec::new());
                 if !text.is_empty() {
                     row.push(text, smallvec![Tag::from(mark.style.clone())]);
                 }
