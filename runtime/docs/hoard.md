@@ -15,15 +15,6 @@ left it.
 ```text
 Hoard  Sunday 18 October
 
-Search: [      ]
-
-Add a todo: [      ]          Jot down: [      ]
-
-╭─ Today ──────────────────────────────────────╮
-│ met Anna about the garden                    │
-│  Open today's note                           │
-╰──────────────────────────────────────────────╯
-
 ╭─ Agenda ─────────────────────────────────────╮
 │ Overdue                                      │
 │ ☐ fix the fence  10 Oct                      │
@@ -35,25 +26,44 @@ Add a todo: [      ]          Jot down: [      ]
 
 Recent notes
   Garden plans  garden
+
+╭─ Today ──────────────────────────────────────╮
+│ met Anna about the garden                    │
+│  Open today's note                           │
+╰──────────────────────────────────────────────╯
+
+╭─ Write a thought, or search ─────────────────╮
+│ [] call the bank tomorrow 18:00              │
+│ the shed needs paint before winter           │
+╰─ [] makes a todo ── Add to today, alt-enter ─╯
 ```
 
 ## On the home page
 
-Move between the boxes and buttons with `tab` and `shift-tab`, and press
-one with `enter` or a click.
+The box at the bottom is where you write; the cursor is in it when Hoard
+opens. Write as much as you like (`enter` starts a new line), then
+`alt-enter` or `ctrl-enter` (or a click on **Add to today**) adds it to
+today's note:
 
-- **Search** finds notes by their title, the headings in them and open
-  todos. Pick one to open it there.
-- **Add a todo** puts a todo in today's note, and understands plain words
-  for when (below); **Jot down** adds a line to it, for anything that
-  isn't a todo.
-- **Today** shows today's note. Each day gets a note of its own, made the
-  first time you write in it.
+- A line starting `[]` becomes a todo, and understands plain words for
+  when (below): `[] call the bank tomorrow 18:00`.
+- Anything else goes in as you wrote it; a single line becomes a list item.
+- `/` and `[[` work as they do in notes (below).
+
+While what you write is one line, notes matching it show above the box:
+by their title, the headings in them and open todos. `tab` moves to them
+and `enter` opens one. Above that:
+
 - **Agenda** lists what's overdue, due today and due in the next week. The
   box ticks a todo off; the words open its note.
 - **Inbox** opens the note todos are captured to from elsewhere, and
   **All todos** lists every open todo, soonest first.
 - **Recent notes** are the ones changed last.
+- **Today** shows today's note. Each day gets a note of its own, made the
+  first time you write in it.
+
+`tab` and `shift-tab` move between everything you can press, and `enter`
+or a click presses it.
 
 Away from the home, the status line at the bottom starts with `‹ Hoard`:
 click it to go back. `alt-left` goes back to where you were, as in a

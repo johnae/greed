@@ -256,16 +256,20 @@ function M.row(
 	}
 end
 
+-- The top border of a box `inner` cells wide inside, with `title` on it.
+local function top_border(title: string, inner: number, border: string): Line
+	local head = if title == "" then "" else ` {title} `
+	local rest = string.rep("─", math.max(inner + 1 - width(head), 0))
+	return { { text = "╭─" .. head .. rest .. "╮", style = border } }
+end
+
 --- `child` in a box with `title` on its top border, drawn in `style`.
 function M.box(title: string, child: Node, style: string?): Node
 	local border = style or "markdown.table"
 	return {
 		lay = function(cells: number): { Line }
 			local inner = math.max(cells - 4, 1)
-			local head = if title == "" then "" else ` {title} `
-			local rest = string.rep("─", math.max(inner + 1 - width(head), 0))
-			local top = "╭─" .. head .. rest .. "╮"
-			local out: { Line } = { { { text = top, style = border } } }
+			local out: { Line } = { top_border(title, inner, border) }
 			for _, laid in child.lay(inner) do
 				local line = fit(laid, inner)
 				local row: Line = { { text = "│ ", style = border } }
@@ -283,6 +287,55 @@ function M.box(title: string, child: Node, style: string?): Node
 			return out
 		end,
 	}
+end
+
+--- The top border of a box with `title` on it, drawn in `style`, as the
+--- last line of a view whose input (see `M.mount`) is the box's inside,
+--- framed by `M.input_sides`.
+function M.box_top(title: string, style: string?): Node
+	local border = style or "markdown.table"
+	return {
+		lay = function(cells: number): { Line }
+			return { top_border(title, cells - 4, border) }
+		end,
+	}
+end
+
+--- Marks framing lines `first` (0-based) to the last of `buffer` as the
+--- inside of a box `cells` wide, as what's written in an agent's box or
+--- Hoard's: "│ " before each line and "│" after one short enough to
+--- have it, and with `bottom`, that line under the last. The marks are
+--- empty ranges, so `style` stays off what's written.
+function M.input_sides(
+	buffer: greed.Buffer,
+	first: number,
+	cells: number,
+	style: string,
+	bottom: greed.MarkLine?
+): { greed.Mark }
+	local marks: { greed.Mark } = {}
+	local count = buffer:line_count()
+	for line = first, count - 1 do
+		local from = buffer:line_start(line)
+		local to = if line + 1 < count then buffer:line_start(line + 1) - 1 else buffer:len()
+		table.insert(marks, { from = from, to = from, style = style, text = "│ " })
+		-- Text after a line's end is drawn a cell from it.
+		local pad = cells - 4 - width(buffer:slice(from, to))
+		if pad >= 0 then
+			table.insert(marks, {
+				from = from,
+				to = from,
+				style = style,
+				text = string.rep(" ", pad) .. "│",
+				eol = true,
+			})
+		end
+	end
+	if bottom then
+		local last = buffer:line_start(count - 1)
+		table.insert(marks, { from = last, to = last, style = style, lines = { bottom } })
+	end
+	return marks
 end
 
 --- A button: its label in the theme's `ui.button` (a badge in the window),

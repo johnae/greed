@@ -1,8 +1,9 @@
--- Hoard's home: what notes open to. A search over every note, boxes to add
--- a todo or jot something down in today's note, today's note itself, the
--- agenda (overdue, due today and in the next days, with boxes to tick),
--- what waits in the inbox and the notes you were in lately. It's drawn
--- from the notes' index, and drawn again as the notes change.
+-- Hoard's home: what notes open to. The agenda (overdue, due today and
+-- in the next days, with boxes to tick), what waits in the inbox, the notes
+-- you were in lately and today's note, and under them a box to write in:
+-- what's written there finds notes as it's written, and alt-enter adds it
+-- to today's note, a line starting [] as a todo. It's drawn from the
+-- notes' index, and drawn again as the notes change.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -189,7 +190,49 @@ local function agenda_part(
 	)
 end
 
---- What the home shows, for its state (`query`, what search found).
+--- Adds what was written in the home's box to today's note: each line
+--- starting `[]` (or `[ ]`, `- [ ]`) as a todo, read for when in plain words
+--- (`dates.read_words`); the rest as written, a single line as a list
+--- item. Returns what it did, in words, or nil for nothing written.
+function M.add(text: string): string?
+	local todo_lines: { string } = {}
+	local other: { string } = {}
+	for _, line in string.split(text, "\n") do
+		local rest = string.match(line, "^%s*[-*+]?%s*%[ ?%]%s*(.*)$")
+		if rest and string.match(rest, "%S") then
+			table.insert(todo_lines, rest)
+		else
+			table.insert(other, line)
+		end
+	end
+	while #other > 0 and not string.match(other[1], "%S") do
+		table.remove(other, 1)
+	end
+	while #other > 0 and not string.match(other[#other], "%S") do
+		table.remove(other)
+	end
+	if #todo_lines == 0 and #other == 0 then
+		return nil
+	end
+	notes.make_daily()
+	local today = notes.daily()
+	if #other == 1 and not string.match(other[1], "^%s*[-*+#>]") then
+		notes.append(today, `- {other[1]}`)
+	elseif #other > 0 then
+		notes.append(today, table.concat(other, "\n"))
+	end
+	local said: { string } = {}
+	for _, line in todo_lines do
+		table.insert(said, todos.capture(line, today))
+	end
+	if #said == 1 then
+		return `{said[1]}: added to today's note`
+	end
+	return if #said > 1 then `{#said} todos added to today's note` else "added to today's note"
+end
+
+--- What the home shows, for its state (`query`: what's written in its box,
+--- searched for as it's written).
 function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 	local parts: { core.UiNode } = {
 		ui.line({
@@ -197,62 +240,7 @@ function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 			ui.span(`  {os.date("%A %d %B", notes.clock())}`, "comment"),
 		}),
 		ui.gap(),
-		ui.field("Search", state.query or "", function(query: string)
-			view:set({ query = query, found = if query == "" then nil else M.search(query) })
-		end),
 	}
-	local found: { Found }? = state.found
-	if found then
-		if #found == 0 then
-			table.insert(parts, ui.text("  nothing found", "comment"))
-		end
-		table.insert(
-			parts,
-			ui.list(found, function(item: Found)
-				local where = if item.kind == "note" then "" else `  {item.note}`
-				return { ui.span(`  {item.label}`), ui.span(where, "comment") }
-			end, {
-				open = function(item: Found)
-					open(item.note, item.line)
-				end,
-			})
-		)
-	end
-	table.insert(parts, ui.gap())
-	table.insert(
-		parts,
-		ui.row({
-			ui.field("Add a todo", "", function(text: string)
-				if string.match(text, "%S") then
-					notes.make_daily()
-					greed.echo(todos.capture(text, notes.daily()))
-				end
-			end),
-			ui.field("Jot down", "", function(text: string)
-				if string.match(text, "%S") then
-					notes.make_daily()
-					notes.append(notes.daily(), `- {text}`)
-				end
-			end),
-		})
-	)
-	table.insert(parts, ui.gap())
-
-	local today_parts: { core.UiNode } = {}
-	for _, line in today_lines() do
-		table.insert(today_parts, ui.text(line))
-	end
-	if #today_parts == 0 then
-		table.insert(today_parts, ui.text("Nothing written today yet.", "comment"))
-	end
-	table.insert(
-		today_parts,
-		ui.button("Open today's note", function()
-			core.file.open(notes.make_daily())
-		end)
-	)
-	table.insert(parts, ui.box("Today", ui.column(today_parts)))
-	table.insert(parts, ui.gap())
 
 	local overdue, now, coming = agenda()
 	local agenda_parts: { core.UiNode } = {}
@@ -298,25 +286,89 @@ function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 			end,
 		})
 	)
+	table.insert(parts, ui.gap())
+
+	local today_parts: { core.UiNode } = {}
+	for _, line in today_lines() do
+		table.insert(today_parts, ui.text(line))
+	end
+	if #today_parts == 0 then
+		table.insert(today_parts, ui.text("Nothing written today yet.", "comment"))
+	end
+	table.insert(
+		today_parts,
+		ui.button("Open today's note", function()
+			core.file.open(notes.make_daily())
+		end)
+	)
+	table.insert(parts, ui.box("Today", ui.column(today_parts)))
+	table.insert(parts, ui.gap())
+
+	-- What's written in the box finds notes as it's written, right above it:
+	-- a line, as a search is typed, rather than a thought being written down.
+	local query: string = state.query or ""
+	local found = if string.match(query, "%S") and not string.find(query, "\n", 1, true)
+		then M.search(query)
+		else {}
+	if #found > 0 then
+		table.insert(parts, ui.text("Notes that match", "ui.menu.doc"))
+		table.insert(
+			parts,
+			ui.list(found, function(item: Found)
+				local where = if item.kind == "note" then "" else `  {item.note}`
+				return { ui.span(`  {item.label}`), ui.span(where, "comment") }
+			end, {
+				open = function(item: Found)
+					open(item.note, item.line)
+				end,
+			})
+		)
+		table.insert(parts, ui.gap())
+	end
+	table.insert(parts, ui.box_top("Write a thought, or search", "markdown.table"))
 	return ui.column(parts)
 end
 
 -- The home's buffer and its view, made once.
 local home: { buffer: greed.Buffer, view: core.UiView }? = nil
 
+-- Frames what's written after the home as a box (the home ends with its
+-- top), with what alt-enter does on its bottom; a click there does it.
+local function frame(buffer: greed.Buffer, view: core.UiView)
+	local cells = ui.width(buffer)
+	local start = view:input_start()
+	local hint = " [] makes a todo "
+	local add = " Add to today, alt-enter "
+	local rule = math.max(cells - 4 - #hint - #add, 1)
+	local bottom: greed.MarkLine = {
+		{ text = "╰─" .. hint .. string.rep("─", rule) },
+		{ text = add, style = "ui.button", action = "hoard-add" },
+		{ text = "─╯" },
+	}
+	local marks = ui.input_sides(buffer, buffer:line_of(start), cells, "markdown.table", bottom)
+	buffer:decorate("hoard-box", marks)
+end
+
 --- The home's buffer, made and drawn the first time; it's drawn again as
---- the notes change.
+--- the notes change. What's written after it is the box.
 function M.buffer(): greed.Buffer
 	local made = home
 	if made and made.buffer:valid() then
 		return made.buffer
 	end
-	local buffer = greed.create_buffer("hoard", "", { readonly = true })
+	local buffer = greed.create_buffer("hoard", "")
 	buffer:set_line_numbers(false)
 	local view: core.UiView
 	view = ui.mount(buffer, function(state)
 		return M.render(view, state)
-	end, { query = "" }, { ns = "hoard", draw = false })
+	end, { query = "" }, {
+		ns = "hoard",
+		input = true,
+		draw = false,
+		after = function(drawn: core.UiView)
+			frame(buffer, drawn)
+		end,
+	})
 	home = { buffer = buffer, view = view }
 	greed.spawn(function()
 		index.ensure()
@@ -330,13 +382,54 @@ function M.is(buffer: greed.Buffer): boolean
 	return home ~= nil and home.buffer == buffer
 end
 
---- Shows the home in `view`, the one you're in by default.
+--- Shows the home in `view`, the one you're in by default, ready to write
+--- in its box.
 function M.show(view: greed.View?)
 	local buffer = M.buffer()
 	local target = view or greed.view()
 	target:show(buffer)
-	target:set_cursor(0)
+	target:set_cursor(buffer:len())
 end
+
+greed.command({
+	name = "hoard-add",
+	doc = "Add what's written in the home's box to today's note: lines starting [] as todos",
+	run = function()
+		local shown = home
+		if shown == nil or not shown.buffer:valid() then
+			return
+		end
+		local view = shown.view
+		local said = M.add(view:input())
+		if said == nil then
+			return
+		end
+		local buffer = shown.buffer
+		buffer:edit(function(e)
+			e:replace(view:input_start(), buffer:len(), "")
+		end)
+		greed.echo(said)
+	end,
+})
+
+-- In every mode, as the agent's box has it; enter starts a new line.
+greed.keymap.bind({ kind = "hoard" }, {
+	["alt-enter"] = "hoard-add",
+	["ctrl-enter"] = "hoard-add",
+})
+
+-- What's written in the box is searched for as it's written, and the box
+-- grows around it.
+greed.on("buffer.changed", function(event: greed.BufferChanged)
+	local shown = home
+	if shown and shown.buffer == event.buffer then
+		local query = shown.view:input()
+		if query ~= shown.view.state.query then
+			shown.view:soon({ query = query })
+		end
+		frame(shown.buffer, shown.view)
+	end
+end)
 
 -- Going back to the home after it has gone, from a note opened there,
 -- shows it again.

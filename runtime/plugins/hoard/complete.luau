@@ -12,6 +12,12 @@
 local greed = require("@greed")
 local core = require("@core")
 local notes = require("@notes")
+local home = require("./home")
+
+-- Where notes are written: in notes, and in the box on the home.
+local function written_in(buffer: greed.Buffer): boolean
+	return notes.is_note(buffer) or home.is(buffer)
+end
 
 local M = {}
 
@@ -50,7 +56,7 @@ end
 -- starting a word in a note.
 local function offered(view: greed.View): { core.CompletionItem }?
 	local buffer = view:buffer()
-	if not notes.is_note(buffer) then
+	if not written_in(buffer) then
 		return nil
 	end
 	local pos = view:cursor()
@@ -98,7 +104,7 @@ local pending: { [string]: notes.Place } = {}
 -- Links offered at the cursor in `view`, as `[[` is typed in a note.
 local function linked(view: greed.View): { core.CompletionItem }?
 	local buffer = view:buffer()
-	if not notes.is_note(buffer) then
+	if not written_in(buffer) then
 		return nil
 	end
 	local typed, from, closed = typing_link(view)
@@ -108,7 +114,8 @@ local function linked(view: greed.View): { core.CompletionItem }?
 	local links = notes.links
 	local index = notes.index
 	index.ensure()
-	local here = notes.name(buffer:path() :: string)
+	local path = buffer:path()
+	local here = if path then notes.name(path) else nil
 	local close = if closed then "" else "]]"
 	local items: { core.CompletionItem } = {}
 	local name, anchor = string.match(typed, "^([^#]*)#(.*)$")
@@ -170,7 +177,7 @@ end
 -- menu puts the link in, and this sees it on the lines that changed.
 greed.on("buffer.changed", function(event: greed.BufferChanged)
 	local buffer = event.buffer
-	if next(pending) == nil or not notes.is_note(buffer) then
+	if next(pending) == nil or not written_in(buffer) then
 		return
 	end
 	local last_line = buffer:line_count() - 1

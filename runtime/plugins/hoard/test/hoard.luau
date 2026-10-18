@@ -99,23 +99,45 @@ test("a todo is ticked from the home, and leaves the agenda", function(t)
 	end)
 end)
 
-test("a todo added on the home goes to today's note", function(t)
+test("what's written in the home's box goes to today's note, [] lines as todos", function(t)
 	local dir = folder(t, {})
 	local buffer = show(t)
-	local line = 0
-	for n = 0, buffer:line_count() - 1 do
-		if string.find(buffer:line_text(n), "Add a todo", 1, true) then
-			line = n
-		end
-	end
-	local at = string.find(buffer:line_text(line), "[", 1, true) :: number
-	greed.view():set_cursor(buffer:line_start(line) + at - 1)
-	t:keys("enter")
-	t:keys("w a t e r space p l a n t s enter")
+	t:keys(
+		"i [ ] space w a t e r space p l a n t s space t o m o r r o w enter m e t space A n n a"
+	)
+	t:run("hoard-add")
 	local today = notes.daily()
+	local tomorrow = notes.dates.add_days(notes.today(), 1)
 	t:wait_for(function()
-		return string.find(greed.fs.read(`{dir}/{today}.md`) or "", "- [ ] water plants", 1, true)
-			~= nil
+		local text = greed.fs.read(`{dir}/{today}.md`) or ""
+		return string.find(text, `- [ ] water plants due:{tomorrow}`, 1, true) ~= nil
+			and string.find(text, "- met Anna", 1, true) ~= nil
+	end)
+	assert(
+		hoard.home.is(buffer) and string.sub(buffer:text(), -1) == "\n",
+		"the box is empty again"
+	)
+	local said = hoard.home.add("first line\nsecond line\n")
+	assert(said == "added to today's note", said)
+	t:wait_for(function()
+		return string.find(
+			greed.fs.read(`{dir}/{today}.md`) or "",
+			"\nfirst line\nsecond line\n",
+			1,
+			true
+		) ~= nil
+	end)
+	assert(hoard.home.add("  \n") == nil, "nothing written")
+end)
+
+test("what's written in the box finds notes as it's written", function(t)
+	folder(t, { ["plans.md"] = "# Garden plans\n" })
+	local buffer = show(t)
+	t:keys("i g a r d")
+	t:wait_for(function()
+		local text = buffer:text()
+		return string.find(text, "Notes that match", 1, true) ~= nil
+			and string.find(text, "Garden plans", 1, true) ~= nil
 	end)
 end)
 
@@ -257,4 +279,26 @@ test("away from the home, the status line leads back, and so does going back", f
 	assert(string.find(away, "‹ Hoard", 1, true), away)
 	assert(hoard.home.is(greed.view():buffer()), "back home")
 	assert(not string.find(back, "‹ Hoard", 1, true), back)
+end)
+
+test("the home's box has the / menu and links, as notes do", function(t)
+	local dir = folder(t, { ["plans.md"] = "# Garden plans\n" })
+	local buffer = show(t)
+	t:keys("i / t o")
+	t:run("completion-ask")
+	t:keys("enter")
+	t:keys("s e e d s space [ [ p l a")
+	t:run("completion-ask")
+	t:keys("enter")
+	local input = hoard.home.add(string.match(buffer:text(), "[^\n]*$") :: string)
+	assert(input and string.find(input, "seeds", 1, true), input)
+	local today = notes.daily()
+	t:wait_for(function()
+		return string.find(
+			greed.fs.read(`{dir}/{today}.md`) or "",
+			"- [ ] seeds [[plans]]",
+			1,
+			true
+		) ~= nil
+	end)
 end)

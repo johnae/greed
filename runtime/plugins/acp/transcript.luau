@@ -863,33 +863,13 @@ local function live(buffer: greed.Buffer, s: Session, now: number?)
 	drafts[id] = draft
 	bind(buffer, draft)
 	local cells = box_width(buffer)
-	local marks: { greed.Mark } = {}
-	local count = buffer:line_count()
-	for line = buffer:line_of(start) + 1, count - 1 do
-		local from = buffer:line_start(line)
-		local to = if line + 1 < count then buffer:line_start(line + 1) - 1 else buffer:len()
-		-- The marks are empty ranges, so their style stays off what you wrote.
-		table.insert(marks, { from = from, to = from, style = "agent.box", text = "│ " })
-		-- The right side, after a line short enough to have one. Text after
-		-- a line's end is drawn a cell from it.
-		local pad = cells - 4 - width(buffer:slice(from, to))
-		if pad >= 0 then
-			table.insert(marks, {
-				from = from,
-				to = from,
-				style = "agent.box",
-				text = string.rep(" ", pad) .. "│",
-				eol = true,
-			})
-		end
-	end
-	local last = buffer:line_start(count - 1)
-	table.insert(marks, {
-		from = last,
-		to = last,
-		style = "agent.box",
-		lines = { M.bottom(s, cells, now, question.hint(s, draft)) },
-	})
+	local marks = ui.input_sides(
+		buffer,
+		buffer:line_of(start) + 1,
+		cells,
+		"agent.box",
+		M.bottom(s, cells, now, question.hint(s, draft)) :: greed.MarkLine
+	)
 	if now then
 		local frame = spinner_frame(now)
 		local view = view_of(buffer)
