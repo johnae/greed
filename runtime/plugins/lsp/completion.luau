@@ -74,6 +74,9 @@ export type SourceOptions = {
 	--- Adds its items to the language server's, after them, rather than
 	--- deciding alone; the menu then behaves as the server's does.
 	adds: boolean?,
+	--- Is asked before the sources already there, as one for text a
+	--- general source would read otherwise (`/` in a note isn't a path).
+	first: boolean?,
 }
 
 type Registered = { source: Source, options: SourceOptions }
@@ -86,7 +89,13 @@ local sources: { Registered } = {}
 --- `adds`, it doesn't decide: what it offers goes after the server's
 --- items. It goes when the plugin that added it does.
 function M.source(source: Source, options: SourceOptions?)
-	greed.plugin.tie(core.registry.put(sources, { source = source, options = options or {} }))
+	local registered: Registered = { source = source, options = options or {} :: SourceOptions }
+	if registered.options.first then
+		table.insert(sources, 1, registered)
+		greed.plugin.tie(core.registry.remover(sources, registered))
+	else
+		greed.plugin.tie(core.registry.put(sources, registered))
+	end
 end
 
 type Open = {
