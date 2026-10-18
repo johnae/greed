@@ -1,0 +1,5 @@
+name = "hoard"
+requires = ["core", "notes"]
+# Shows your notes and today's things to do; notes are written through
+# the notes plugin.
+capabilities = ["fs.read", "fs.write"]

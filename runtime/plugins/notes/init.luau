@@ -34,6 +34,7 @@ local reminders = require("@self/reminders")
 require("@self/connect")
 local index = require("@self/index")
 local syntax = require("@self/syntax")
+local dates = require("@self/dates")
 
 greed.keymap.bind({ layer = "leader" }, {
 	["n r"] = "notes-reminders-dismiss",
@@ -49,16 +50,22 @@ greed.keymap.bind({ layer = "leader" }, {
 
 core.features.add("notes", notes.is_note)
 
+--- A note as the index knows it, and a heading or list item in it (see
+--- index.luau).
+export type Note = index.Note
+export type Node = index.Node
+
 -- What other plugins use: the notes, and with them the index, todos,
--- reminders and how notes read a line. Setting a field, like a test's
--- `clock`, sets it on the notes themselves.
+-- dates, reminders and how notes read a line. Setting a field, like a
+-- test's `clock`, sets it on the notes themselves.
 local exported: typeof(notes) & {
 	index: typeof(index),
 	todos: typeof(todos),
 	reminders: typeof(reminders),
 	syntax: typeof(syntax),
+	dates: typeof(dates),
 } = setmetatable(
-	{ index = index, todos = todos, reminders = reminders, syntax = syntax },
+	{ index = index, todos = todos, reminders = reminders, syntax = syntax, dates = dates },
 	{
 		__index = notes,
 		__newindex = notes,

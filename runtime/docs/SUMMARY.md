@@ -3,6 +3,7 @@
 [Greed](README.md)
 
 - [Using Greed](using.md)
+  - [Hoard: notes and todos](hoard.md)
   - [Several clients](clients.md)
   - [Sessions, machines and the hub](sessions.md)
   - [The shell](shell.md)

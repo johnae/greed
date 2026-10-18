@@ -1817,6 +1817,9 @@ blocks.runner("lua", blocks.program({ "lua", "-e" }))
 
 ## Notes
 
+[Hoard](hoard.md) (`greed notes`) shows your notes and todos on a home page
+for anyone to use; this section is about notes in the editor.
+
 Notes are Markdown files in a folder (`~/notes` unless you set
 `notes-folder`), so git or Syncthing can carry them between machines and to
 your phone. Link one to another with `[[name]]`, or `[[name|other words]]`
@@ -1824,6 +1827,7 @@ to show other words.
 
 | Keys | |
 |---|---|
+| `space n h` | Hoard's home: search, add a todo, today and the agenda ([Hoard](hoard.md)) |
 | `space n d` | Today's note, in `daily/` |
 | `space n c` | Add a todo to the inbox, from wherever you are: the project's when it keeps notes, otherwise yours (`:notes-capture-mine` always yours) |
 | `space n a` | The agenda: open todos from every note, soonest due first |

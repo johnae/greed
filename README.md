@@ -50,6 +50,9 @@ Also in Greed:
   tables, and tables read live from CSV, SQLite or PostgreSQL.
 - Snippets in VS Code's format: copy in VS Code snippet files, or sets like
   friendly-snippets, and they work as they are.
+- Hoard (`greed notes`): your notes and todos as plain Markdown files, on
+  a home page with search, today's note and an agenda, usable without
+  knowing an editor.
 
 ## Plugins in Luau
 

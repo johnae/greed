@@ -13,6 +13,7 @@
 		"projects": "./plugins/projects",
 		"multibuffer": "./plugins/multibuffer",
 		"notes": "./plugins/notes",
+		"hoard": "./plugins/hoard",
 		"theme": "./plugins/theme",
 		"hints": "./plugins/hints",
 		"statusline": "./plugins/statusline",
