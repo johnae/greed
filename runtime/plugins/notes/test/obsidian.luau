@@ -200,3 +200,51 @@ test(":notes-link in the note itself leaves out its name", function(t)
 	local text = link(t, dir, "Week 42", "Week 42 ## Plans")
 	assert(string.find(text, "[[#Plans]]", 1, true), text)
 end)
+
+-- Note `name`'s text once `wanted` is in it.
+local function once(t: test.TestContext, name: string, wanted: string): string
+	local text = ""
+	t:wait_for(function()
+		text = notes.read(name) or ""
+		return string.find(text, wanted, 1, true) ~= nil
+	end)
+	return text
+end
+
+test("renaming a note changes the links to it, but not those to its aliases", function(t)
+	local dir = vault(t)
+	greed.fs.write(`{dir}/Sunday.md`, "![[Week 42]] and [[Week 42]]\n")
+	notes.index.refresh()
+	greed.open(`{dir}/Week 42.md`)
+	t:run("file-rename", { "Week 43.md" })
+	local monday = once(t, "Monday", "Week 43#Plans")
+	assert(
+		monday == "Back to [[w42]], see [[Week 43#Plans]] and [[Week 43#^key-point|the point]].\n",
+		monday
+	)
+	local sunday = once(t, "Sunday", "Week 43")
+	assert(sunday == "![[Week 43]] and [[Week 43]]\n", sunday)
+	assert(notes.read("Tuesday") == "About [[This Week]].\n", "an alias stays")
+end)
+
+test("a link in an open note changes in its buffer", function(t)
+	local dir = vault(t)
+	greed.open(`{dir}/Monday.md`)
+	local buffer = greed.view():buffer()
+	require("@core").file.rename(`{dir}/Week 42.md`, `{dir}/Weekly.md`)
+	t:wait_for(function()
+		return string.find(buffer:text(), "[[Weekly#Plans]]", 1, true) ~= nil
+	end)
+	assert(greed.fs.read(`{dir}/Monday.md`) == buffer:text(), "and saved")
+end)
+
+test("moving a folder of notes changes the links into it", function(t)
+	local dir = vault(t)
+	greed.fs.mkdir(`{dir}/plans`)
+	greed.fs.write(`{dir}/plans/Trip.md`, "Pack.\n")
+	greed.fs.write(`{dir}/Sunday.md`, "See [[plans/Trip|the trip]].\n")
+	notes.index.refresh()
+	require("@core").file.rename(`{dir}/plans`, `{dir}/later`)
+	local sunday = once(t, "Sunday", "later/Trip")
+	assert(sunday == "See [[later/Trip|the trip]].\n", sunday)
+end)

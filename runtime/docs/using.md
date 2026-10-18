@@ -1838,7 +1838,8 @@ to show other words.
 | `space n r` | Dismiss the reminders notice (below) |
 | `space k` | On a due date or a reminder, say when it is in words ("tomorrow, 18:00, in 25 hours") |
 | `space n l` | Have Greed's agent connect the inbox (or the note you're in) to your other notes (below) |
-| `g d` | Follow the link under the cursor, making the note if it's new; in Markdown outside your notes, `[[name]]` is `name.md` beside the file |
+| `space n k` | Link to a heading, a list item or a block in any note, picked from all of them ([more](hoard.md#links-embeds-and-obsidian)) |
+| `g d` | Follow the link under the cursor, to the heading or block it names, making the note if it's new; in Markdown outside your notes, `[[name]]` is `name.md` beside the file |
 | `z a` | Fold the section under the cursor, or unfold it (any Markdown) |
 
 A todo is a list item with a box, `- [ ] call the bank`, and

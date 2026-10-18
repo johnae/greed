@@ -802,13 +802,14 @@ export type WriteOptions = {
 }
 
 -- What's told of each file or folder written, moved or removed here.
-local changed_listeners: { (path: string) -> () } = {}
+local changed_listeners: { (path: string, to: string?) -> () } = {}
 
 --- Calls `listener` with the full path of each file or folder `M.write`,
 --- `M.rename` (both ends) and `M.remove` changed, once it has, for what
 --- keeps something worked out from files, like the notes' index. It goes
---- when the plugin that added it does.
-function M.on_changed(listener: (path: string) -> ())
+--- when the plugin that added it does. For the old end of a rename, `to`
+--- is where it went.
+function M.on_changed(listener: (path: string, to: string?) -> ())
 	greed.plugin.tie(registry.put(changed_listeners, listener))
 end
 
@@ -880,7 +881,7 @@ function M.rename(from: string, to: string)
 	for _, move in moving do
 		move.buffer:save(move.path)
 	end
-	registry.tell(changed_listeners, from)
+	registry.tell(changed_listeners, from, to)
 	registry.tell(changed_listeners, to)
 end
 

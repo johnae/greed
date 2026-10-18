@@ -658,9 +658,12 @@ function M.line_of(name: string, heading: string?, block: string?): number?
 	if block then
 		return note.blocks[block]
 	end
-	local wanted = if heading then string.lower(heading) else nil
+	if heading == nil then
+		return nil
+	end
+	local wanted = string.lower(heading)
 	for _, node in note.nodes do
-		if wanted and node.kind == "heading" and string.lower(node.text) == wanted then
+		if node.kind == "heading" and string.lower(node.text) == wanted then
 			return node.line
 		end
 	end

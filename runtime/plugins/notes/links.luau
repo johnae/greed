@@ -14,8 +14,8 @@ local todos = require("./todos")
 
 --- A link in a buffer: where it is (bytes, end exclusive), where the part
 --- shown in its place is, the note it names (as written, without a
---- `#heading` or `#^block`), the heading or block in it, its line, and
---- whether it embeds what it names (`![[...]]`).
+--- `#heading` or `#^block`), the heading or block in it, and whether it
+--- embeds what it names (`![[...]]`).
 type Link = {
 	from: number,
 	to: number,
@@ -24,7 +24,6 @@ type Link = {
 	text_to: number,
 	heading: string?,
 	block: string?,
-	line: number,
 	embed: boolean,
 }
 
@@ -48,7 +47,6 @@ local function links_in(s: markdown.Structure, first: number, last: number): { L
 				text_to = base + link.shown_to,
 				heading = link.heading,
 				block = link.block,
-				line = n,
 				embed = link.embed,
 			})
 		end
@@ -69,6 +67,17 @@ end
 function M.backlinks(name: string): { string }
 	index.ensure()
 	return index.backlinks(name)
+end
+
+--- The note a link to `target`, in note `from` (nil outside notes), goes
+--- to: by its name, or else one of the notes' aliases (see
+--- `index.linked`); an empty target is `from` itself.
+function M.target(target: string, from: string?): string
+	if target == "" and from then
+		return from
+	end
+	index.ensure()
+	return index.linked(notes.resolve(target, from))
 end
 
 -- The backlinks shown under each note, by buffer id, worked out when it's
@@ -120,7 +129,11 @@ function M.embedded_lines(target: string, heading: string?, block: string?): { s
 					-- or above.
 					last = #lines - 1
 					for _, other in note.nodes do
-						if other.kind == "heading" and other.line > at and other.level <= node.level then
+						if
+							other.kind == "heading"
+							and other.line > at
+							and other.level <= node.level
+						then
 							last = other.line - 1
 							break
 						end
@@ -173,10 +186,13 @@ local function embed_later(buffer: greed.Buffer, link: Link, from: string?)
 			return
 		end
 		local shown: { greed.MarkLine } = {}
-		for _, line in lines or { `({target} isn't there to show)` } do
-			table.insert(shown, { { text = "│ ", style = "comment" }, { text = line } })
+		local said: { string } = lines or { `({target} isn't there to show)` }
+		for _, line in said do
+			local pieces: greed.MarkLine =
+				{ { text = "│ ", style = "comment" }, { text = line, style = "markup.quote" } }
+			table.insert(shown, pieces)
 		end
-		local cached = embedded[id] or {}
+		local cached: { [string]: Embedded } = embedded[id] or {}
 		embedded[id] = cached
 		cached[key] = { lines = shown, current = true }
 		redraw(buffer)
@@ -194,14 +210,17 @@ redraw = markdown.conceal({
 	): { greed.Mark }
 		local marks: { greed.Mark } = {}
 		local conceal = greed.option.get("notes-conceal") == true
-		local cached = embedded[buffer:id()] or {}
+		local cached: { [string]: Embedded } = embedded[buffer:id()] or {}
 		local path = buffer:path()
 		local here = if path then notes.name(path) else nil
 		for _, link in links_in(s, first, last) do
 			if link.embed then
 				local shown = cached[embed_key(link)]
 				if shown then
-					table.insert(marks, { from = link.from, to = link.to, style = "comment", lines = shown.lines })
+					table.insert(
+						marks,
+						{ from = link.from, to = link.to, style = "comment", lines = shown.lines }
+					)
 				end
 				if shown == nil or not shown.current then
 					embed_later(buffer, link, here)
@@ -245,7 +264,8 @@ redraw = markdown.conceal({
 
 -- The embeds in `buffer` are worked out again as they're next drawn.
 local function stale(buffer: greed.Buffer)
-	for _, shown in embedded[buffer:id()] or {} do
+	local cached: { [string]: Embedded } = embedded[buffer:id()] or {}
+	for _, shown in cached do
 		shown.current = false
 	end
 end
@@ -308,17 +328,6 @@ function M.target_path(target: string, path: string?): string
 	return notes.path(notes.resolve(target, from))
 end
 
---- The note a link to `target`, in note `from` (nil outside notes), goes
---- to: by its name, or else one of the notes' aliases (see
---- `index.linked`); an empty target is `from` itself.
-function M.target(target: string, from: string?): string
-	if target == "" and from then
-		return from
-	end
-	index.ensure()
-	return index.linked(notes.resolve(target, from))
-end
-
 -- g d on a [[link]] opens the note it points at, at the heading or block
 -- it names, making the note if it's new. In Markdown outside the notes it
 -- opens the file beside it (`M.target_path`).
@@ -358,10 +367,9 @@ function M.link_to(place: Place, from: string?): string
 	end
 	local id = place.id
 	if id == nil then
-		local new = greed.hash.random(3)
+		id = greed.hash.random(3)
 		local line = todos.line(place.note, place.line)
-		notes.set_line(place.note, place.line, `{(string.gsub(line, "%s+$", ""))} ^{new}`)
-		id = new
+		notes.set_line(place.note, place.line, `{(string.gsub(line, "%s+$", ""))} ^{id}`)
 	end
 	return `[[{name}#^{id}]]`
 end
@@ -375,7 +383,7 @@ greed.command({
 		local here = if path and notes.is_note(ctx.buffer) then notes.name(path) else nil
 		local items = {}
 		local all = index.all()
-		table.sort(all, function(a, b)
+		table.sort(all, function(a: index.Note, b: index.Note)
 			return a.name < b.name
 		end)
 		for _, note in all do
@@ -406,5 +414,82 @@ greed.command({
 		end)
 	end,
 })
+
+--- How note `from` (nil outside notes) writes a link to note `name`: as
+--- short as still goes there.
+function M.written(name: string, from: string?): string
+	local _, rest = notes.split(name)
+	if rest ~= name and notes.resolve(rest, from) == name then
+		return rest
+	end
+	return name
+end
+
+--- Changes the links to note `old` in every other note to go to `new`,
+--- after it was renamed, keeping their headings, blocks and shown text.
+--- Links to its aliases stay as they are.
+function M.relink(old: string, new: string)
+	index.ensure()
+	for _, from in index.backlinks(old) do
+		local text = notes.read(from)
+		if text == nil then
+			continue
+		end
+		local changes: { { from: number, to: number, text: string } } = {}
+		local base = 0
+		for _, line in string.split(text, "\n") do
+			if string.find(line, "[[", 1, true) then
+				for _, link in syntax.links(line) do
+					if link.target ~= "" and notes.resolve(link.target, from) == old then
+						-- The name's place: after the brackets (and `!`) and any space.
+						local start = string.find(line, link.target, link.from, true) :: number
+						table.insert(changes, {
+							from = base + start - 1,
+							to = base + start - 1 + #link.target,
+							text = M.written(new, from),
+						})
+					end
+				end
+			end
+			base += #line + 1
+		end
+		-- From the end, so the places before each change stay right.
+		for i = #changes, 1, -1 do
+			local change = changes[i]
+			core.file.write(notes.path(from), change.text, { from = change.from, to = change.to })
+		end
+	end
+end
+
+-- A note renamed (or a folder of them) takes the links to it along.
+core.file.on_changed(function(path: string, to: string?)
+	if to == nil or notes.place_of(path) == nil then
+		return
+	end
+	local moved: { { old: string, new: string } } = {}
+	local function move(from: string)
+		local new = to .. string.sub(from, #path + 1)
+		if string.match(new, "%.md$") and notes.place_of(new) then
+			table.insert(moved, { old = notes.name(from), new = notes.name(new) })
+		end
+	end
+	if string.match(path, "%.md$") then
+		-- The index has let go of it already.
+		move(path)
+	else
+		for _, note in index.all() do
+			if core.project.inside(note.path, path) then
+				move(note.path)
+			end
+		end
+	end
+	if #moved > 0 then
+		greed.spawn(function()
+			for _, move in moved do
+				M.relink(move.old, move.new)
+			end
+		end)
+	end
+end)
 
 return M

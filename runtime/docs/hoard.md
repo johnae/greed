@@ -88,6 +88,35 @@ Hoard types as you'd expect: keys type, notes save on their own a moment
 after you stop typing, and `ctrl-z` undoes. If you already use one of
 Greed's editing styles, set it in your config and Hoard uses it too.
 
+## Links, embeds and Obsidian
+
+Links can go to a place in a note as well as the note itself:
+
+```markdown
+See [[Garden plans#Seeds]] for the list, and [[Garden plans#^fence|the fence]].
+
+![[Garden plans#Seeds]]
+```
+
+- `[[note#Heading]]` goes to a heading, and `[[note#^id]]` to a line
+  ending in `^id`. `[[#Heading]]` is a heading in the same note.
+- `[[note|other words]]` shows the other words in its place.
+- `![[note]]` shows the note right there, under the line, and keeps it
+  current as the note changes. `![[note#Heading]]` shows that section and
+  `![[note#^id]]` that line, with what's under it in a list. Long ones are
+  cut short.
+- `ctrl-space n k` (`space n k` with Vim's or Helix's keys) picks a
+  heading, a list item or a block from all your notes and puts a link to
+  it where you are. A line without an id gets one at its end, like
+  `^3fa2c1`.
+- Renaming a note, or moving a folder of them (`:file-rename`, or from the
+  file list), changes the links to them in your other notes.
+
+A folder Obsidian writes works as it is: `aliases:` in a note's front
+matter (`aliases: [w42, this week]`) are other names links can use, in
+any case; `#tags`, `key:: value` fields and the Tasks plugin's dates
+(`📅 2026-10-20` is a due date) are read too. Canvas files aren't.
+
 ## Saying when in plain words
 
 A todo you add on the home page or with `space n c` can say when in plain
