@@ -9,6 +9,8 @@ local picker = require("@picker")
 local core = require("@core")
 local prompt = core.prompt
 local notes = require("./notes")
+local syntax = require("./syntax")
+local index = require("./index")
 
 type Found = notes.Found
 
@@ -22,120 +24,20 @@ export type Todo = {
 	reminds: { string },
 }
 
---- A reminder on a line: where it is (its start and the index after its
---- end) and when, with a time if it says one.
-export type Reminder = { from: number, to: number, date: string, time: string? }
+export type Reminder = syntax.Reminder
 
 local M = {}
 
---- The todo on `line` (a line of text), if it is one.
-function M.parse(line: string): (boolean?, string?)
-	local box, text = string.match(line, "^%s*[-*+] %[([ xX])%] (.*)$")
-	if box == nil then
-		return nil, nil
-	end
-	return box ~= " ", text
-end
-
---- When `text` says it's due ("due:2026-10-03"), if it does.
-function M.due(text: string): string?
-	return string.match(text, "due:(%d%d%d%d%-%d%d%-%d%d)")
-end
-
---- Where the marker `kind` ("due" or "remind") is in `text`: its start,
---- the index after its end, its date, and a reminder's time ("18:00" in
---- "remind:2026-10-06 18:00") if it has one.
-function M.marker(text: string, kind: "due" | "remind"): (number?, number?, string?, string?)
-	-- Position captures, `()`, give numbers.
-	local from: any, date, to: any = string.match(text, `(){kind}:(%d%d%d%d%-%d%d%-%d%d)()`)
-	if from == nil then
-		return nil, nil, nil, nil
-	end
-	if kind == "remind" then
-		local time, after: any = string.match(text, "^[ T](%d%d?:%d%d)()", to)
-		if time then
-			return from, after, date, time
-		end
-	end
-	return from, to, date, nil
-end
-
---- Every reminder in `text`, in the order they're written.
-function M.reminders(text: string): { Reminder }
-	local out: { Reminder } = {}
-	local start = 1
-	while true do
-		local from, to, date, time = M.marker(string.sub(text, start), "remind")
-		if from == nil or to == nil or date == nil then
-			return out
-		end
-		table.insert(
-			out,
-			{ from = start + from - 1, to = start + to - 1, date = date, time = time }
-		)
-		start += to - 1
-	end
-end
-
---- When `text` says to remind you, each as "2026-10-06 18:00" or a date
---- alone.
-function M.reminds(text: string): { string }
-	local out = {}
-	for _, reminder in M.reminders(text) do
-		table.insert(
-			out,
-			if reminder.time then `{reminder.date} {reminder.time}` else reminder.date
-		)
-	end
-	return out
-end
-
---- `text` reminding you at each of `reminds` ("2026-10-06 18:00" or a
---- date alone) and no other time: the reminders it has go, and these are
---- added at the end, once each.
-function M.with_reminds(text: string, reminds: { string }): string
-	local reminders = M.reminders(text)
-	for i = #reminders, 1, -1 do
-		local reminder = reminders[i]
-		local before = string.gsub(string.sub(text, 1, reminder.from - 1), " $", "") :: string
-		text = before .. string.sub(text, reminder.to)
-	end
-	local seen = {}
-	for _, when in reminds do
-		if not seen[when] then
-			seen[when] = true
-			local trimmed = string.gsub(text, "%s+$", "") :: string
-			text = if trimmed == "" then `remind:{when}` else `{trimmed} remind:{when}`
-		end
-	end
-	return text
-end
-
---- `text` with its due date set to `value` ("2026-10-06"): changed where
---- it is, or added at the end. Without a value the marker goes. A line can
---- have several reminders; `with_reminds` sets those.
-function M.with_due(text: string, value: string?): string
-	local from, to = M.marker(text, "due")
-	local marker = if value then `due:{value}` else ""
-	if from and to then
-		local before, after = string.sub(text, 1, from - 1), string.sub(text, to)
-		if value == nil then
-			before = string.gsub(before, " $", "") :: string
-		end
-		return before .. marker .. after
-	end
-	if value == nil then
-		return text
-	end
-	local trimmed = string.gsub(text, "%s+$", "") :: string
-	return if trimmed == "" then marker else `{trimmed} {marker}`
-end
-
---- `text` without its due and remind markers, as a todo reads.
-function M.plain(text: string): string
-	local out = M.with_reminds(M.with_due(text, nil), {})
-	return (string.gsub(out, "^%s+", ""))
-end
+-- Reading a todo's line, kept in syntax.luau with the rest of what notes
+-- say on a line.
+M.parse = syntax.parse
+M.due = syntax.due
+M.marker = syntax.marker
+M.reminders = syntax.reminders
+M.reminds = syntax.reminds
+M.with_reminds = syntax.with_reminds
+M.with_due = syntax.with_due
+M.plain = syntax.plain
 
 --- The todo on line `line` (0-based) of note `note`, whose text is
 --- `text`, if that line is one.
@@ -157,12 +59,21 @@ end
 --- Every todo in the notes, in every place, open ones only unless `all`,
 --- soonest due first (undated last), then by note and line.
 function M.list(all: boolean?): { Todo }
-	local found: { Found } = notes.grep_text("^\\s*[-*+] \\[[ xX]\\] ") or {}
+	index.ensure()
 	local out: { Todo } = {}
-	for _, line in found do
-		local todo = M.at(line.note, line.line, line.text)
-		if todo and (all or not todo.done) then
-			table.insert(out, todo)
+	for _, note in index.all() do
+		for _, node in note.nodes do
+			local task = node.task
+			if task and (all or not task.done) then
+				table.insert(out, {
+					note = note.name,
+					line = node.line,
+					text = task.text,
+					done = task.done,
+					due = task.due,
+					reminds = table.clone(task.reminds),
+				})
+			end
 		end
 	end
 	table.sort(out, function(a: Todo, b: Todo)

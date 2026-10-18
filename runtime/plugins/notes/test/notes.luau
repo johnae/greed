@@ -122,6 +122,9 @@ test("the agenda lists open todos from every note, soonest due first", function(
 	})
 	t:buffer("|x")
 	t:keys("space n a")
+	t:wait_for(function()
+		return string.find(greed.view():buffer():text(), "someday", 1, true) ~= nil
+	end)
 	local lines = string.split(greed.view():buffer():text(), "\n")
 	assert(string.find(lines[2], "soon", 1, true), lines[2])
 	assert(string.find(lines[3], "later", 1, true), lines[3])
@@ -504,7 +507,9 @@ test("saving a note with a reminder that's due shows it at once; clicking it ope
 		e:insert(buffer:len(), `- [ ] send the report remind:{minute(-120)}\n`)
 	end)
 	t:run("save")
-	assert(floating(t, "send the report"), "shown on save")
+	t:wait_for(function()
+		return floating(t, "send the report")
+	end)
 	t:draw(100, 20)
 	-- Its first line, at the top right, inside the border.
 	t:mouse("press", 97, 1)

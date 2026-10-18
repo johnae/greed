@@ -551,6 +551,93 @@ fn many_buffers() {
 }
 
 // ---------------------------------------------------------------------------
+// Notes
+
+/// A note as people write them, some 20 lines: front matter, a couple of
+/// headings and paragraphs, a few todos, links and tags.
+fn note_text(i: usize) -> String {
+    let mut text = format!(
+        "---\ntags: [area{}]\n---\n# Note {i}\n\nWhat this is about, with a link to [[note{}]] and #topic{}.\n\n",
+        i % 7,
+        (i + 1) % 5000,
+        i % 13
+    );
+    for section in 0..2 {
+        let _ = write!(
+            text,
+            "## Part {section}\n\nSome words about it, more than a few, the way notes go.\n\n"
+        );
+        for item in 0..3 {
+            let _ = write!(
+                text,
+                "- [ ] thing {item} for [[note{}]] due:2026-11-{:02}\n  - a detail\n",
+                (i + item) % 5000,
+                1 + item
+            );
+        }
+        text.push('\n');
+    }
+    text
+}
+
+/// Indexing 5,000 notes the first time: how long until it's done, and
+/// how long the editor was held up at most meanwhile (only holds of 50 ms
+/// and more are counted, so 0 means none).
+#[test]
+fn notes_index() {
+    budget(
+        "notes_index",
+        |found| {
+            let dir = Temp::new("notes");
+            for i in 0..5000 {
+                let sub = dir.join(format!("area{}", i % 20));
+                std::fs::create_dir_all(&sub).unwrap();
+                std::fs::write(sub.join(format!("note{i}.md")), note_text(i)).unwrap();
+            }
+            let mut driven = Driven::new(host("", None));
+            driven.frame();
+            driven.eval(&format!(
+                "local greed = require('@greed')
+                 greed.option.set('notes-folder', {:?})
+                 greed.command({{ name = 'index-now', run = function()
+                   require('@notes').index.ensure()
+                   indexed = #require('@notes').index.all()
+                 end }})",
+                dir.display().to_string()
+            ));
+            let ((), cpu, clock) = timed(|| {
+                driven.host.run(FIRST_CLIENT, "index-now").unwrap();
+                let deadline = Instant::now() + Duration::from_secs(120);
+                while driven.eval("return tostring(indexed)") == "nil" {
+                    assert!(Instant::now() < deadline, "the index didn't finish");
+                    driven.host.settle().unwrap();
+                    driven.frame();
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            });
+            assert_eq!(driven.eval("return tostring(indexed)"), "5000");
+            found.set("index_5000_clock_ms", ms(clock));
+            found.set("index_5000_cpu_ms", ms(cpu));
+            let held: f64 = driven
+                .eval(
+                    "local most = 0
+                     for _, stall in require('@greed').stalls() do
+                       if stall.plugin == 'notes' then most = math.max(most, stall.ms) end
+                     end
+                     return tostring(most)",
+                )
+                .parse()
+                .unwrap();
+            found.set("index_longest_hold_ms", held);
+        },
+        &[
+            ("index_5000_clock_ms", 10000.0, 26000.0),
+            ("index_longest_hold_ms", 60.0, 120.0),
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
 // A long session
 
 /// One round of what a session does all day: open a file, edit it and

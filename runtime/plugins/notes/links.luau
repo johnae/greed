@@ -7,7 +7,12 @@ local core = require("@core")
 local greed = require("@greed")
 local markdown = require("@markdown")
 local notes = require("./notes")
+local syntax = require("./syntax")
+local index = require("./index")
 
+--- A link in a buffer: where it is (bytes, end exclusive), where the part
+--- shown in its place is, and the note it names (as written, without a
+--- `#heading` or `#^block`).
 type Link = { from: number, to: number, target: string, text_from: number, text_to: number }
 
 local M = {}
@@ -20,23 +25,14 @@ local function links_in(s: markdown.Structure, first: number, last: number): { L
 		if s.code_at[n] or not string.find(text, "[[", 1, true) then
 			continue
 		end
-		local base = s.starts[n + 1]
-		for from, inside, to in string.gmatch(text, "()%[%[([^%]]+)%]%]()") do
-			local link_from = base + (from :: number) - 1
-			local link_to = base + (to :: number) - 1
-			local target, shown = string.match(inside :: string, "^([^|]+)|(.+)$")
-			local text_from = link_from + 2
-			if target and shown then
-				text_from += #target + 1
-			else
-				target = inside
-			end
+		local base = s.starts[n + 1] - 1
+		for _, link in syntax.links(text) do
 			table.insert(out, {
-				from = link_from,
-				to = link_to,
-				target = string.match(target :: string, "^%s*(.-)%s*$") :: string,
-				text_from = text_from,
-				text_to = link_to - 2,
+				from = base + link.from,
+				to = base + link.to,
+				target = link.target,
+				text_from = base + link.shown_from,
+				text_to = base + link.shown_to,
 			})
 		end
 	end
@@ -50,34 +46,12 @@ function M.links(buffer: greed.Buffer): { Link }
 	return links_in(s, 0, #s.lines - 1)
 end
 
-local function escape(text: string): string
-	return (string.gsub(text, "[%^%$%(%)%.%[%]%*%+%-%?{}|\\]", "\\%0"))
-end
-
 --- The names of the notes that link to note `name`: by its full name from
---- anywhere, or by its name in its place from a note there.
+--- anywhere, or by its name in its place from a note there. Waits for the
+--- index (see index.luau) the first time.
 function M.backlinks(name: string): { string }
-	local function linking(target: string): { notes.Found }
-		return notes.grep_text(`\\[\\[\\s*{escape(target)}\\s*(\\|[^\\]]*)?\\]\\]`) or {}
-	end
-	local place, rest = notes.split(name)
-	local found = linking(name)
-	if rest ~= name then
-		for _, line in linking(rest) do
-			if (notes.split(line.note)).name == place.name then
-				table.insert(found, line)
-			end
-		end
-	end
-	local seen, out = {}, {}
-	for _, line in found do
-		if line.note ~= name and not seen[line.note] then
-			seen[line.note] = true
-			table.insert(out, line.note)
-		end
-	end
-	table.sort(out)
-	return out
+	index.ensure()
+	return index.backlinks(name)
 end
 
 -- The backlinks shown under each note, by buffer id, worked out when it's
@@ -146,6 +120,20 @@ end)
 
 greed.on("buffer.saved", function(event: greed.BufferChanged)
 	refresh(event.buffer)
+end)
+
+-- A note linking here added or taken away, here or on disk, shows at once.
+index.on_changed(function()
+	for _, buffer in greed.buffers() do
+		local shown = shown_backlinks[buffer:id()]
+		if shown and buffer:valid() and notes.is_note(buffer) then
+			local now = index.backlinks(notes.name(buffer:path() :: string))
+			if table.concat(now, "\n") ~= table.concat(shown, "\n") then
+				shown_backlinks[buffer:id()] = now
+				redraw(buffer)
+			end
+		end
+	end
 end)
 
 greed.on("option.changed", function(event)

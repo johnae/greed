@@ -26,12 +26,14 @@ local core = require("@core")
 local greed = require("@greed")
 local notes = require("@self/notes")
 require("@self/links")
-require("@self/todos")
+local todos = require("@self/todos")
 require("@self/tools")
 require("@self/objects")
 require("@self/look")
-require("@self/reminders")
+local reminders = require("@self/reminders")
 require("@self/connect")
+local index = require("@self/index")
+local syntax = require("@self/syntax")
 
 greed.keymap.bind({ layer = "leader" }, {
 	["n r"] = "notes-reminders-dismiss",
@@ -47,4 +49,19 @@ greed.keymap.bind({ layer = "leader" }, {
 
 core.features.add("notes", notes.is_note)
 
-return notes
+-- What other plugins use: the notes, and with them the index, todos,
+-- reminders and how notes read a line. Setting a field, like a test's
+-- `clock`, sets it on the notes themselves.
+local exported: typeof(notes) & {
+	index: typeof(index),
+	todos: typeof(todos),
+	reminders: typeof(reminders),
+	syntax: typeof(syntax),
+} = setmetatable(
+	{ index = index, todos = todos, reminders = reminders, syntax = syntax },
+	{
+		__index = notes,
+		__newindex = notes,
+	}
+) :: any
+return exported

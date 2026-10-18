@@ -16,6 +16,7 @@ local core = require("@core")
 local statusline = require("@statusline")
 local notes = require("./notes")
 local todos = require("./todos")
+local index = require("./index")
 local dates = require("./dates")
 local look = require("./look")
 
@@ -49,28 +50,23 @@ export type Reminder = {
 
 --- Every reminder in the notes, on lines that aren't ticked todos.
 function M.scan(): { Reminder }
-	local found: { notes.Found } = notes.grep_text("remind:\\d{4}-\\d{2}-\\d{2}") or {}
+	index.ensure()
 	local out: { Reminder } = {}
 	local default = greed.option.get("notes-remind-time") :: string
-	for _, line in found do
-		local done, rest = todos.parse(line.text)
-		if done then
-			continue
-		end
-		local text = todos.plain(rest or (string.gsub(line.text, "^%s*[-*+] ", "")))
-		for _, reminder in todos.reminders(line.text) do
+	for _, note in index.all() do
+		for _, reminder in note.reminders do
 			local date = reminder.date
 			local time = reminder.time or default
 			local at = dates.moment(date, time)
 			if at then
 				table.insert(out, {
-					note = line.note,
-					line = line.line,
-					text = text,
+					note = note.name,
+					line = reminder.line,
+					text = reminder.text,
 					date = date,
 					time = time,
 					at = at,
-					key = `{line.note}\t{date} {time}\t{text}`,
+					key = `{note.name}\t{date} {time}\t{reminder.text}`,
 				})
 			end
 		end
@@ -288,13 +284,20 @@ end
 --- about them; counts what's due for the status line. Returns how many
 --- went off.
 function M.check(): number
+	-- Counted straight from the index: dates as notes write them sort as
+	-- they fall, so comparing them with today's is enough.
+	index.ensure()
+	local today_date = dates.today()
 	local today, overdue = 0, 0
-	for _, todo in todos.list() do
-		local days = if todo.due then dates.days(todo.due) else nil
-		if days == 0 then
-			today += 1
-		elseif days and days < 0 then
-			overdue += 1
+	for _, note in index.all() do
+		for _, node in note.nodes do
+			local task = node.task
+			local due = if task and not task.done then task.due else nil
+			if due == today_date then
+				today += 1
+			elseif due and due < today_date then
+				overdue += 1
+			end
 		end
 	end
 	counts.today, counts.overdue = today, overdue
