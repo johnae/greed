@@ -801,6 +801,17 @@ export type WriteOptions = {
 	load: boolean?,
 }
 
+-- What's told of each file or folder written, moved or removed here.
+local changed_listeners: { (path: string) -> () } = {}
+
+--- Calls `listener` with the full path of each file or folder `M.write`,
+--- `M.rename` (both ends) and `M.remove` changed, once it has, for what
+--- keeps something worked out from files, like the notes' index. It goes
+--- when the plugin that added it does.
+function M.on_changed(listener: (path: string) -> ())
+	greed.plugin.tie(registry.put(changed_listeners, listener))
+end
+
 --- Writes `text` to the file at `path`. An open file is changed through its
 --- buffer, so undo takes it back and its language server sees it, and
 --- saved; otherwise the file is written. Returns the buffer when it went
@@ -818,6 +829,7 @@ function M.write(path: string, text: string, opts: WriteOptions?): greed.Buffer?
 			e:replace(o.from or 0, o.to or open:len(), text)
 		end)
 		open:save()
+		registry.tell(changed_listeners, full)
 		return open
 	end
 	local new = text
@@ -834,6 +846,7 @@ function M.write(path: string, text: string, opts: WriteOptions?): greed.Buffer?
 	if not ok then
 		error(err, 0)
 	end
+	registry.tell(changed_listeners, full)
 	return nil
 end
 
@@ -867,6 +880,8 @@ function M.rename(from: string, to: string)
 	for _, move in moving do
 		move.buffer:save(move.path)
 	end
+	registry.tell(changed_listeners, from)
+	registry.tell(changed_listeners, to)
 end
 
 greed.option.define({
@@ -958,6 +973,7 @@ function M.remove(path: string): string?
 			M.close(buffer, true)
 		end
 	end
+	registry.tell(changed_listeners, path)
 	return trashed
 end
 
