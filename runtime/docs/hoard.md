@@ -104,6 +104,32 @@ words, and Greed writes the date for you:
 Times can be `18:00`, `6pm` or `at 6`; a time alone is today's, or
 tomorrow's once it has gone by. The words are English for now.
 
+## Adding from anywhere
+
+From any shell, without opening anything:
+
+```bash
+greed capture call the bank tomorrow 18:00
+greed capture --note the plumber comes at noon
+```
+
+The first adds a todo to today's note, read as above; `--note` adds a
+line that isn't a todo.
+
+## Today's note from a template
+
+Each day's note starts as `templates/daily.md` in your notes folder says,
+when there is one. `{{date}}` becomes the date (`2026-10-18`) and
+`{{day}}` the day in words (`Sunday 18 October`):
+
+```markdown
+# {{day}}
+
+## Plans
+
+## Notes
+```
+
 ## Where your notes are
 
 Your notes are plain text files (Markdown) in a folder, `~/notes` unless

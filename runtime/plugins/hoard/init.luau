@@ -89,6 +89,26 @@ greed.command({
 
 greed.keymap.bind({ layer = "leader" }, { ["n h"] = "hoard" })
 
+greed.cli({
+	name = "capture",
+	doc = "Add a todo to today's note from any shell, saying when in plain words, like: greed capture call the bank tomorrow 18:00; with --note, a line that isn't a todo",
+	usage = "[--note] TEXT",
+	run = function(args: { string }): string?
+		local plain = args[1] == "--note"
+		local text = table.concat(args, " ", if plain then 2 else 1)
+		if not string.match(text, "%S") then
+			error("say what to add, like: greed capture call the bank tomorrow 18:00", 0)
+		end
+		notes.make_daily()
+		local today = notes.daily()
+		if plain then
+			notes.append(today, `- {text}`)
+			return "added to today's note"
+		end
+		return `{notes.todos.capture(text, today)}: added to today's note`
+	end,
+})
+
 greed.on("editor.started", function()
 	if M.here() then
 		defaults()

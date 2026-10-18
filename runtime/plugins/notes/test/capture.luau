@@ -61,3 +61,15 @@ test("space n x on a repeating todo ticks it and brings the next one", function(
 		buffer:text()
 	)
 end)
+
+test("today's note starts from the daily template, with the date filled in", function(t)
+	local dir = folder(t, { ["templates/daily.md"] = "# {{date}}, {{day}}\n\n## Plans\n" })
+	local path = notes.make_daily()
+	local text = greed.fs.read(path) or ""
+	local day = os.date("%A %d %B", notes.clock())
+	assert(text == `# {notes.today()}, {day}\n\n## Plans\n`, text)
+	assert(path == `{dir}/daily/{notes.today()}.md`, path)
+	greed.fs.write(path, "changed\n")
+	notes.make_daily()
+	assert(greed.fs.read(path) == "changed\n", "an existing note is left as it is")
+end)

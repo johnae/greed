@@ -302,13 +302,20 @@ function M.daily(date: string?): string
 	return `daily/{date or M.today()}`
 end
 
---- Makes today's daily note if there isn't one yet, with the date as its
---- heading, and gives back its path.
+--- Makes today's daily note if there isn't one yet, and gives back its
+--- path. It starts as the note `templates/daily` says, with `{{date}}`
+--- ("2026-10-18") and `{{day}}` ("Sunday 18 October") filled in, or else
+--- with the date as its heading.
 function M.make_daily(): string
 	local today = M.today()
 	local path = M.path(M.daily(today))
 	if greed.fs.stat(path) == nil then
-		core.file.write(path, `# {today}\n\n`)
+		local template = M.read("templates/daily")
+		local day = os.date("%A %d %B", M.clock()) :: string
+		local text = if template
+			then string.gsub(string.gsub(template, "{{date}}", today), "{{day}}", day)
+			else `# {today}\n\n`
+		core.file.write(path, text)
 	end
 	return path
 end
