@@ -27,15 +27,19 @@ M.FOUND = 12
 type Task = { note: string, line: number, text: string, due: string }
 
 -- The open todos due up to `M.DAYS_AHEAD` days from now: those overdue,
--- due today and coming, each soonest first.
+-- due today and coming, each soonest first. Today's also has the open
+-- todos written in today's note without a date, so what you add shows up.
 local function agenda(): ({ Task }, { Task }, { Task })
 	local today = notes.today()
+	local daily = notes.daily()
 	local last = os.date("%Y-%m-%d", notes.clock() + M.DAYS_AHEAD * 86400) :: string
 	local overdue, now, coming = {}, {}, {}
 	for _, note in index.all() do
 		for _, node in note.nodes do
 			local task = node.task
-			local due = if task and not task.done then task.due else nil
+			local due = if task == nil or task.done
+				then nil
+				else task.due or (if note.name == daily then today else nil)
 			if task and due and due <= last then
 				local item: Task = {
 					note = note.name,
@@ -119,12 +123,13 @@ local function waiting(): number
 	return count
 end
 
--- Today's note, as lines to show: its text after the heading, a few lines.
+-- Today's note, as lines to show: its text after the heading, a few lines,
+-- without its todos (the agenda has them).
 local function today_lines(): { string }
 	local text = notes.read(notes.daily()) or ""
 	local out = {}
 	for _, line in string.split(text, "\n") do
-		if #out == 0 and (string.match(line, "^#") or line == "") then
+		if (#out == 0 and (string.match(line, "^#") or line == "")) or todos.parse(line) ~= nil then
 			continue
 		end
 		table.insert(out, line)
@@ -293,7 +298,20 @@ function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 		table.insert(today_parts, ui.text(line))
 	end
 	if #today_parts == 0 then
-		table.insert(today_parts, ui.text("Nothing written today yet.", "comment"))
+		local daily = index.note(notes.daily())
+		local has_todos = false
+		for _, node in (if daily then daily.nodes else {}) :: { notes.Node } do
+			has_todos = has_todos or node.task ~= nil
+		end
+		table.insert(
+			today_parts,
+			ui.text(
+				if has_todos
+					then "Only todos so far; they're in the agenda."
+					else "Nothing written today yet.",
+				"comment"
+			)
+		)
 	end
 	table.insert(
 		today_parts,
@@ -335,17 +353,29 @@ local home: { buffer: greed.Buffer, view: core.UiView }? = nil
 -- Frames what's written after the home as a box (the home ends with its
 -- top), with what alt-enter does on its bottom; a click there does it.
 local function frame(buffer: greed.Buffer, view: core.UiView)
-	local cells = ui.width(buffer)
 	local start = view:input_start()
-	local hint = " [] makes a todo · ↑ goes to what's above, enter opens it "
+	local first = buffer:line_of(start)
+	-- As wide as its top, however wide the view was when that was drawn.
+	local width = core.text.width
+	local cells = if first > 0 then width(buffer:line_text(first - 1)) else ui.width(buffer)
 	local add = " Add to today, alt-enter "
-	local rule = math.max(cells - 4 - core.text.width(hint) - core.text.width(add), 1)
+	-- The longest hint that fits beside the button.
+	local hint = ""
+	for _, said in
+		{ " [] makes a todo · ↑ goes to what's above, enter opens it ", " [] makes a todo ", "" }
+	do
+		if cells - 4 - width(said) - width(add) >= 1 then
+			hint = said
+			break
+		end
+	end
+	local rule = math.max(cells - 4 - width(hint) - width(add), 1)
 	local bottom: greed.MarkLine = {
 		{ text = "╰─" .. hint .. string.rep("─", rule) },
 		{ text = add, style = "ui.button", action = "hoard-add" },
 		{ text = "─╯" },
 	}
-	local marks = ui.input_sides(buffer, buffer:line_of(start), cells, "markdown.table", bottom)
+	local marks = ui.input_sides(buffer, first, cells, "markdown.table", bottom)
 	buffer:decorate("hoard-box", marks)
 end
 

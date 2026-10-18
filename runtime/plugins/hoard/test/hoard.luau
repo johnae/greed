@@ -394,3 +394,17 @@ test("in Hoard, esc with the / menu open only closes the menu", function(t)
 	greed.option.set("editing-style", style)
 	assert(stayed, "still in the note")
 end)
+
+test("a todo added today without a date is on the agenda, not in the Today box", function(t)
+	folder(t, {})
+	local buffer = show(t)
+	hoard.home.add("[] water the plants\nthe shed needs paint")
+	t:wait_for(function()
+		local text = buffer:text()
+		local agenda = string.match(text, "Agenda(.-)Recent notes") or ""
+		local today = string.match(text, "Today ─(.-)Open today") or ""
+		return string.find(agenda, "water the plants", 1, true) ~= nil
+			and string.find(today, "the shed needs paint", 1, true) ~= nil
+			and not string.find(today, "water the plants", 1, true)
+	end)
+end)

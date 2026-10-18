@@ -61,13 +61,15 @@ today's note:
 While what you write is one line, notes matching it show above the box:
 by their title, the headings in them and open todos. Above that:
 
-- **Agenda** lists what's overdue, due today and due in the next week. The
+- **Agenda** lists what's overdue, due today and due in the next week.
+  Today's part also has the todos you wrote today without a date. The
   box ticks a todo off; the words open its note.
 - **Inbox** opens the note todos are captured to from elsewhere, and
   **All todos** lists every open todo, soonest first.
 - **Recent notes** are the ones changed last.
-- **Today** shows today's note. Each day gets a note of its own, made the
-  first time you write in it.
+- **Today** shows what you wrote in today's note, its todos being in the
+  agenda. Each day gets a note of its own, made the first time you write
+  in it.
 
 To move about with the keyboard, `up` from the top of the box goes to the
 nearest thing above it, the best match while you search. `up` and `down`
