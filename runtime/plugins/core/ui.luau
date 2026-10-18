@@ -519,9 +519,10 @@ function M.matched(text: string, matched: { number }, style: string?, rest: stri
 end
 
 --- `items` one a line, each drawn as `spans(item)`, the item its line's
---- value. Pressing a line calls `open` with its item. The `current` one
---- (by index) is marked as a menu marks its selected row, for a list
---- whose cursor is somewhere else, like in a picker's query.
+--- value. Pressing a line calls `open` with its item, except on a span
+--- with a press of its own. The `current` one (by index) is marked as a
+--- menu marks its selected row, for a list whose cursor is somewhere
+--- else, like in a picker's query.
 function M.list<T>(
 	items: { T },
 	spans: (item: T) -> { Span },
@@ -534,7 +535,7 @@ function M.list<T>(
 		local parts = spans(item)
 		for _, span in parts do
 			span.value = item
-			if open then
+			if open and span.press == nil then
 				span.press = function()
 					open(item)
 				end
