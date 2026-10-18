@@ -16,7 +16,7 @@ end
 
 -- Shows the home and waits until it's drawn with the notes.
 local function show(t: test.TestContext): greed.Buffer
-	t:run("hoard")
+	hoard.home.show()
 	local buffer = greed.view():buffer()
 	t:wait_for(function()
 		return string.find(buffer:text(), "Recent notes", 1, true) ~= nil
@@ -301,4 +301,15 @@ test("the home's box has the / menu and links, as notes do", function(t)
 			true
 		) ~= nil
 	end)
+end)
+
+test(":hoard in Hoard shows its home", function(t)
+	folder(t, { ["plans.md"] = "# Garden plans\n" })
+	local here = hoard.here
+	hoard.here = function()
+		return true
+	end
+	t:run("hoard")
+	hoard.here = here
+	assert(hoard.home.is(greed.view():buffer()), "home")
 end)

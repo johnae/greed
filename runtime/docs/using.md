@@ -1827,7 +1827,7 @@ to show other words.
 
 | Keys | |
 |---|---|
-| `space n h` | Hoard's home: search, add a todo, today and the agenda ([Hoard](hoard.md)) |
+| `space n h` | Go to Hoard, your notes and today's things to do, in its own session (started if needed; `space B` comes back); `space n H` opens it in a window of its own ([Hoard](hoard.md)) |
 | `space n d` | Today's note, in `daily/` |
 | `space n c` | Add a todo to the inbox, from wherever you are: the project's when it keeps notes, otherwise yours (`:notes-capture-mine` always yours). It can say when in plain words, like `call the bank tomorrow 18:00` or `water plants every monday` ([more](hoard.md#saying-when-in-plain-words)) |
 | `space n a` | The agenda: open todos from every note, soonest due first |

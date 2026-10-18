@@ -12,6 +12,14 @@ greed --gui notes    # in a window
 Running it again comes back to the same Hoard, with everything as you
 left it.
 
+From Greed itself, `:hoard` (`space n h`) takes the window you're in to
+Hoard, starting it if needed, and `space B` brings you back.
+`:hoard-window` (`space n H`) opens Hoard in a window of its own instead,
+leaving this one as it is.
+
+Hoard has no modes, so `:` types; `ctrl-g` opens the command line and
+`ctrl-shift-p` the list of commands.
+
 ```text
 Hoard  Sunday 18 October
 
@@ -67,8 +75,8 @@ or a click presses it.
 
 Away from the home, the status line at the bottom starts with `‹ Hoard`:
 click it to go back. `alt-left` goes back to where you were, as in a
-browser, and `alt-right` forward again. `:hoard` shows the home from
-anywhere (`ctrl-space n h`, or `space n h` with Vim's or Helix's keys).
+browser, and `alt-right` forward again. `ctrl-space n h` shows the home
+from anywhere in Hoard.
 
 ## Writing notes
 

@@ -7,7 +7,8 @@
 -- save on their own and have no line numbers, and language servers leave
 -- them alone.
 --
--- `:hoard` shows the home in any session; `space n h` too.
+-- `:hoard` (`space n h`) goes to Hoard from any session, starting it if
+-- needed, and `:hoard-window` (`space n H`) opens it in a window of its own.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -107,15 +108,34 @@ function M.open()
 	home.show()
 end
 
+--- Goes to Hoard's session, starting it if needed: in this window, or
+--- (`window`) in a window of its own, a terminal going to it as without.
+--- In Hoard, shows its home.
+function M.go(window: boolean?)
+	if M.here() then
+		home.show()
+	else
+		greed.session.switch({ name = M.SESSION, window = window })
+	end
+end
+
 greed.command({
 	name = "hoard",
-	doc = "Show Hoard's home: search your notes, add a todo, today's note and the agenda",
+	doc = "Go to Hoard (your notes, todos and today), starting it if needed; in Hoard, its home",
 	run = function()
-		home.show()
+		M.go()
 	end,
 })
 
-greed.keymap.bind({ layer = "leader" }, { ["n h"] = "hoard" })
+greed.command({
+	name = "hoard-window",
+	doc = "Open Hoard in a window of its own, staying here; in a terminal, go to it",
+	run = function()
+		M.go(true)
+	end,
+})
+
+greed.keymap.bind({ layer = "leader" }, { ["n h"] = "hoard", ["n H"] = "hoard-window" })
 
 -- Away from the home, the status line starts with the way back to it.
 require("@statusline").add("left", "hoard", function(ctx)
