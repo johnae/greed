@@ -11,6 +11,7 @@ local prompt = core.prompt
 local notes = require("./notes")
 local syntax = require("./syntax")
 local index = require("./index")
+local dates = require("./dates")
 
 type Found = notes.Found
 
@@ -111,6 +112,92 @@ end
 --- today's date, for ideas that aren't things to do.
 function M.add_thought(text: string, name: string?)
 	notes.append(name or M.inbox(), `- {text} ({notes.today()})`)
+end
+
+--- `date` if it's a date as notes write them (YYYY-MM-DD); an error if it
+--- isn't.
+function M.checked_date(date: string?): string?
+	if date and dates.days(date) == nil then
+		error(`{date} isn't a date like 2026-10-06`, 0)
+	end
+	return date
+end
+
+-- `when` as a reminder writes it, "YYYY-MM-DD HH:MM" or a date alone; an
+-- error if it isn't one.
+local function checked_remind(when: string): string
+	local date, time = string.match(when, "^(%d%d%d%d%-%d%d%-%d%d)[ T](%d%d?:%d%d)$")
+	if date and time and dates.moment(date, time) then
+		return `{date} {time}`
+	end
+	return M.checked_date(when) :: string
+end
+
+--- Each of `whens` as a reminder writes it ("2026-10-06 18:00", or a date
+--- alone); one alone may come as a string. An error for one that isn't.
+function M.checked_reminds(whens: { string } | string): { string }
+	if type(whens) == "string" then
+		return { checked_remind(whens) }
+	end
+	local out = {}
+	for _, when in whens do
+		table.insert(out, checked_remind(when))
+	end
+	return out
+end
+
+--- Line `line` (0-based) of note `name`, which must be there.
+function M.line(name: string, line: number): string
+	local text = notes.read(name)
+	if text == nil then
+		error(`there's no note called {name}`, 0)
+	end
+	local lines = string.split(text, "\n")
+	local found = lines[line + 1]
+	if found == nil or line < 0 or (line + 1 == #lines and found == "") then
+		error(`{name} has no line {line + 1}`, 0)
+	end
+	return found
+end
+
+--- A change to a todo: its text (without its due date and reminders, which
+--- stay), its due date, its reminders (replacing the ones it has), or
+--- ticked or not. An empty `due` or `remind` takes them away.
+export type Change = { text: string?, due: string?, remind: ({ string } | string)?, done: boolean? }
+
+--- Changes the todo on line `line` (0-based) of note `name` as `change`
+--- says, checking its dates. Returns the line as it is now; an error when
+--- it isn't a todo.
+function M.update(name: string, line: number, change: Change): string
+	local current = M.line(name, line)
+	local done, rest = M.parse(current)
+	if done == nil or rest == nil then
+		error(`{name}:{line + 1} isn't a todo: {current}`, 0)
+	end
+	local text = rest
+	if change.text then
+		-- The markers it had stay, unless the new text has its own.
+		text = change.text
+		local due = M.due(rest)
+		if due and M.due(text) == nil then
+			text = M.with_due(text, due)
+		end
+		if #M.reminders(text) == 0 then
+			text = M.with_reminds(text, M.reminds(rest))
+		end
+	end
+	if change.due then
+		text = M.with_due(text, if change.due == "" then nil else M.checked_date(change.due))
+	end
+	local remind = change.remind
+	if remind then
+		text = M.with_reminds(text, if remind == "" then {} else M.checked_reminds(remind))
+	end
+	local ticked = if change.done == nil then done else change.done
+	local before = string.match(current, "^%s*[-*+] ") :: string
+	local changed = `{before}[{if ticked then "x" else " "}] {text}`
+	notes.set_line(name, line, changed)
+	return changed
 end
 
 --- Opens note `name` with the cursor at the start of `line` (0-based).
@@ -226,12 +313,7 @@ greed.command({
 	name = "notes-daily",
 	doc = "Open today's note, making it if there isn't one",
 	run = function()
-		local today = notes.today()
-		local path = notes.path(`daily/{today}`)
-		if greed.fs.stat(path) == nil then
-			greed.fs.write(path, `# {today}\n\n`)
-		end
-		core.file.open(path)
+		core.file.open(notes.make_daily())
 	end,
 })
 

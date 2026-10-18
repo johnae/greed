@@ -296,6 +296,23 @@ function M.today(): string
 	return os.date("%Y-%m-%d", M.clock()) :: string
 end
 
+--- The name of the daily note for `date` ("2026-10-01"; today by
+--- default): "daily/2026-10-01".
+function M.daily(date: string?): string
+	return `daily/{date or M.today()}`
+end
+
+--- Makes today's daily note if there isn't one yet, with the date as its
+--- heading, and gives back its path.
+function M.make_daily(): string
+	local today = M.today()
+	local path = M.path(M.daily(today))
+	if greed.fs.stat(path) == nil then
+		core.file.write(path, `# {today}\n\n`)
+	end
+	return path
+end
+
 export type Symbols = {
 	todo: string,
 	done: string,
