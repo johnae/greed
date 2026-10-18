@@ -1,0 +1,94 @@
+# Recent additions, one scene each: brackets that close themselves,
+# snippets, a folder edited as text, and Greed's agent writing a plugin
+# that is loaded once installed. The model is scripted in the demo profile.
+size 1280 800
+fps 30
+typing 0.03
+show-keys
+hide
+keys :
+type open src/worker.rs
+keys enter
+wait-for ATTEMPTS
+keys g e
+show
+wait 0.8
+
+caption Brackets and quotes close as you type
+keys o enter
+type let pairs = vec![(1, "one")];
+wait 1.2
+
+caption A snippet: tab goes to the next place to fill in
+keys enter enter
+type tst
+wait 1
+keys enter
+wait 0.8
+type retries
+keys tab
+type ATTEMPTS
+keys tab
+type 3
+wait 0.6
+keys tab esc
+wait 1.2
+
+caption A folder as text: change a name, save, confirm
+keys space -
+wait 1
+keys /
+type server
+keys enter
+wait 0.6
+keys c
+type api
+keys esc
+wait 0.8
+keys :
+type w
+keys enter
+wait 1.5
+keys y
+wait 1.5
+keys :
+type folder-undo
+keys enter
+wait 1
+
+caption Asked for a command, the agent writes a plugin and checks it
+keys space b
+type worker
+keys enter
+keys space i n
+type Greed
+keys enter
+type project
+keys enter
+wait 0.6
+type Add a command that upper-cases the line I'm on, on alt-u while typing.
+wait 0.4
+keys alt-enter
+wait-for Install upcase
+wait 0.6
+caption Installing it is up to you
+wait 2
+keys a
+wait-for Installed and loaded
+wait 1.2
+
+caption Loaded right away
+keys esc
+keys ctrl-w h
+keys /
+type let pairs
+keys enter
+keys i
+wait 0.6
+keys alt-u
+wait 1.2
+keys esc
+wait 0.6
+
+caption greed.rs
+wait 1.5

@@ -1,29 +1,62 @@
-# The front page's recording: a Rust file with the file tree, a terminal
-# beside it, and the file picker.
+# The front page's recording, about twenty seconds: editing with selections, a
+# shell whose output becomes a chart, and Greed's agent proposing an edit
+# you accept. The model is scripted in the demo profile; hero.png, the
+# poster, is the agent's answer.
 size 1280 800
+fps 30
+typing 0.025
+show-keys
 hide
 keys :
 type open src/worker.rs
 keys enter
 wait-for ATTEMPTS
-show
-wait 1
-keys space e
-wait 1.2
-keys alt-l
-wait 0.6
-keys alt-p d
-wait 1.5
-type bin/kubectl get pods
+keys /
+type fn connect
 keys enter
-wait 1.5
-keys ctrl-\
-keys alt-k
-wait 1
-shot hero
-keys space f
-wait 0.8
-type serv
+show
+wait 0.6
+
+caption Select every attempt in the function, then rename them together
+keys m i f
+wait 0.7
+keys s
+type \battempt\b
+keys enter
+wait 0.7
+keys c
+type try
+keys esc
 wait 1.2
+
+caption Command output as a table, filtered and charted
+keys :
+type shell
+keys enter
+wait-for ❯
+type printf 'NAME  CPU\napi   42\nworker 87\nweb   12\n' | columns | where CPU > 20 | chart CPU
 keys enter
 wait 2
+
+caption The agent proposes an edit; it's applied once you allow it
+keys esc
+keys space b
+type worker
+keys enter
+keys space i n
+type Greed
+keys enter
+type project
+keys enter
+type The worker pod keeps crashing. Why?
+keys alt-enter
+wait-for Allow
+wait 0.6
+keys enter
+wait-for Checked
+wait 1
+shot hero
+wait 0.5
+
+caption greed.rs
+wait 1.5

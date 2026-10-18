@@ -1,0 +1,7 @@
+{
+  "test": {
+    "prefix": "tst",
+    "body": ["#[test]", "fn ${1:name}() {", "\tassert_eq!(${2:left}, ${3:right});", "}"],
+    "description": "A test"
+  }
+}
