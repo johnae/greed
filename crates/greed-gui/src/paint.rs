@@ -7,10 +7,11 @@ use std::time::{Duration, Instant};
 
 use greed_core::delta::{FrameDelta, Latest};
 use greed_core::image::ImageId;
-use greed_core::render::{Frame, Rect, Role, Size, SurfaceId, grid};
+use greed_core::render::grid::{self, Cell};
+use greed_core::render::{Frame, Rect, Role, Size, SurfaceId};
 use greed_core::scene_image::{Colors, Drawer};
 use greed_core::server::{Input, Output};
-use greed_core::theme::Medium;
+use greed_core::theme::{Medium, Theme};
 
 use crate::color::Palette;
 use crate::draw::{self, Hovered, Instance, Scene};
@@ -104,6 +105,9 @@ pub(crate) struct Painter {
     /// What an input method is composing, drawn at the cursor until it's
     /// typed, and where its own cursor is in it (bytes).
     preedit: Option<(String, Option<usize>)>,
+    /// Lines drawn over the frame, centered near its bottom: a recording's
+    /// captions and the keys it pressed.
+    pub(crate) overlay: Vec<String>,
 }
 
 impl Painter {
@@ -131,6 +135,7 @@ impl Painter {
             hoverable: Vec::new(),
             hover: None,
             preedit: None,
+            overlay: Vec::new(),
         }
     }
 
@@ -347,6 +352,7 @@ impl Painter {
     pub(crate) fn paint(&mut self, gpu: &mut Gpu) -> Option<Scene> {
         let frame = self.screen.frame()?;
         let mut grid = grid::compose(frame, Medium::Gui);
+        overlay(&mut grid, &self.overlay, &frame.theme);
         // Scenes are drawn into images under the text: the cells there keep
         // only the scene's own text, its labels.
         let drawing = self
@@ -449,6 +455,29 @@ fn place_glides(
                 clip: area,
                 ..*q
             }));
+    }
+}
+
+/// Draws `lines` over `grid`, each centered, the last a row above the
+/// status line, as badges in the theme's button style. One cell a
+/// character, so the lines should keep to characters a cell wide.
+fn overlay(grid: &mut [Vec<Cell>], lines: &[String], theme: &Theme) {
+    let mut style = theme.style("ui.button", Medium::Gui);
+    style.bold = Some(true);
+    let rows = grid.len();
+    for (n, line) in lines.iter().rev().enumerate() {
+        let Some(row) = rows.checked_sub(3 + n).and_then(|y| grid.get_mut(y)) else {
+            break;
+        };
+        let text: Vec<char> = format!(" {line} ").chars().collect();
+        let start = row.len().saturating_sub(text.len()) / 2;
+        for (cell, c) in row.iter_mut().skip(start).zip(text) {
+            *cell = Cell {
+                text: c.to_string(),
+                style,
+                scale: 1,
+            };
+        }
     }
 }
 

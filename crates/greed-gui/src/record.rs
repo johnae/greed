@@ -10,8 +10,10 @@
 //! fps 30               frames a second
 //! typing 0.04          seconds between the keys `type` presses
 //! output media/shell   where the frames and screenshots go
+//! show-keys            show the keys each `keys` step presses, for a while
 //! hide                 stop recording frames, as while setting up
 //! show                 record them again
+//! caption Selections   a line over the screen until the next; bare, none
 //! keys esc space f     press keys, as keymaps name them
 //! type kubectl get pods  type text, a key at a time
 //! run shell            run a command
@@ -35,11 +37,15 @@ use crate::paint::{ATLAS_SIZE, Painter, Taken};
 /// How long `wait-for` waits before the recording fails.
 const WAIT_FOR: Duration = Duration::from_secs(10);
 
+/// How long the keys a step pressed stay on screen, with `show-keys`.
+const KEYS_SHOWN: Duration = Duration::from_millis(1500);
+
 /// One step of a script.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
     Hide,
     Show,
+    Caption(Option<String>),
     Keys(Vec<Key>),
     Type(String),
     Run(String),
@@ -55,6 +61,8 @@ pub struct Script {
     pub scale: f64,
     pub fps: u32,
     pub typing: Duration,
+    /// Whether the keys `keys` steps press are shown.
+    pub show_keys: bool,
     /// Where frames and screenshots go; beside the script when it doesn't
     /// say.
     pub output: Option<PathBuf>,
@@ -69,6 +77,7 @@ impl Script {
             scale: 1.0,
             fps: 30,
             typing: Duration::from_millis(40),
+            show_keys: false,
             output: None,
             steps: Vec::new(),
         };
@@ -130,8 +139,15 @@ impl Script {
                 self.output = Some(PathBuf::from(rest));
                 None
             }
+            "show-keys" => {
+                self.show_keys = true;
+                None
+            }
             "hide" => Some(Step::Hide),
             "show" => Some(Step::Show),
+            "caption" => Some(Step::Caption(
+                Some(rest.to_owned()).filter(|text| !text.is_empty()),
+            )),
             "keys" => Some(Step::Keys(
                 Key::parse_sequence(rest).map_err(|e| e.to_string())?,
             )),
@@ -250,9 +266,19 @@ struct Recorder<'a> {
     /// The last frame drawn, and whether the session changed it since.
     last: Option<PathBuf>,
     changed: bool,
+    /// The caption on screen, and the keys last pressed with when they go.
+    caption: Option<String>,
+    keys: Option<(String, Instant)>,
 }
 
 impl Recorder<'_> {
+    /// Puts the caption and the keys over the screen as they are now.
+    fn show_overlay(&mut self) {
+        let lines = [self.caption.as_ref(), self.keys.as_ref().map(|(k, _)| k)];
+        self.painter.overlay = lines.into_iter().flatten().cloned().collect();
+        self.changed = true;
+    }
+
     fn send(&self, message: Input) {
         let _ = self.input.send(message);
     }
@@ -282,6 +308,10 @@ impl Recorder<'_> {
     /// Takes the steps due at `now`, up to one that takes time. True once
     /// the script is done.
     fn advance(&mut self, now: Instant) -> Result<bool, Error> {
+        if self.keys.as_ref().is_some_and(|(_, until)| now >= *until) {
+            self.keys = None;
+            self.show_overlay();
+        }
         loop {
             match &mut self.doing {
                 Doing::Waiting(until) if now < *until => return Ok(false),
@@ -315,9 +345,18 @@ impl Recorder<'_> {
             match step {
                 Step::Hide => self.recording = false,
                 Step::Show => self.recording = true,
+                Step::Caption(text) => {
+                    self.caption.clone_from(text);
+                    self.show_overlay();
+                }
                 Step::Keys(keys) => {
                     for key in keys {
                         self.send(Input::Key(*key));
+                    }
+                    if self.script.show_keys {
+                        let names: Vec<String> = keys.iter().map(Key::to_string).collect();
+                        self.keys = Some((names.join(" "), now + KEYS_SHOWN));
+                        self.show_overlay();
                     }
                 }
                 Step::Type(text) => self.doing = Doing::Typing(text.chars().collect(), now),
@@ -417,6 +456,8 @@ pub fn record(
         written: 0,
         last: None,
         changed: true,
+        caption: None,
+        keys: None,
     };
     recorder.painter.set_scale(script.scale);
     recorder.send_size();
@@ -465,7 +506,8 @@ mod tests {
     fn a_script_reads_its_settings_and_steps_and_skips_comments() {
         let script = Script::parse(
             "# the shell\nsize 800 600\nscale 2\nfps 24\ntyping 0.1\noutput media/shell\n\n\
-             hide\nrun shell\nshow\ntype ls | chart # all of it\nkeys enter\n\
+             show-keys\nhide\nrun shell\nshow\ncaption Data, not text\ncaption\n\
+             type ls | chart # all of it\nkeys enter\n\
              wait 1.5\nwait-for Running\nshot pods\n",
         )
         .unwrap();
@@ -473,6 +515,7 @@ mod tests {
         assert_eq!(script.scale, 2.0);
         assert_eq!(script.fps, 24);
         assert_eq!(script.typing, Duration::from_millis(100));
+        assert!(script.show_keys);
         assert_eq!(script.output, Some(PathBuf::from("media/shell")));
         assert_eq!(
             script.steps,
@@ -480,6 +523,8 @@ mod tests {
                 Step::Hide,
                 Step::Run("shell".into()),
                 Step::Show,
+                Step::Caption(Some("Data, not text".into())),
+                Step::Caption(None),
                 Step::Type("ls | chart # all of it".into()),
                 Step::Keys(vec![Key::parse("enter").unwrap()]),
                 Step::Wait(Duration::from_millis(1500)),
