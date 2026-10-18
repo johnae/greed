@@ -199,6 +199,7 @@ local function attach()
 	local completion = require("@lsp").completion
 	completion.source(offered, { first = true })
 	completion.source(linked, { first = true })
+	completion.keys_over("hoard")
 end
 
 if table.find(greed.plugin.list(), "lsp") then

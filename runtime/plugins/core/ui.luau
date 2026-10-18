@@ -15,8 +15,9 @@
 -- A node lays itself out for a width as lines of spans. A span that does
 -- something when pressed (a button, a field, a row) is a widget: `enter`,
 -- `space` or a click presses it, and `tab` and `shift-tab` go from one to
--- the next. The cursor is the focus, so each client has its own. Redrawing
--- changes only the lines that changed, so cursors stay where they were.
+-- the next, the one the cursor is on highlighted. The cursor is the focus,
+-- so each client has its own. Redrawing changes only the lines that
+-- changed, so cursors stay where they were.
 
 local greed = require("@greed")
 local text_helpers = require("./text")
@@ -1417,6 +1418,30 @@ greed.command({
 		step(ctx, -1)
 	end,
 })
+
+-- The widget the cursor is on is highlighted, so it's plain which one
+-- `enter` presses.
+greed.on("selection.changed", function(event: greed.SelectionChanged)
+	local buffer = event.view:buffer()
+	local entry = mounted[buffer:id()]
+	if entry == nil then
+		return
+	end
+	local marks: { greed.Mark } = {}
+	for _, mark in buffer:marks_at(event.view:cursor()) do
+		if mark.action == "ui-press" then
+			-- A row's mark (a list's) is empty: the whole row lights up.
+			local from, to = mark.from, mark.to
+			if from == to then
+				local line = buffer:line_of(from)
+				from, to = buffer:line_start(line), buffer:line_end(line)
+			end
+			marks = { { from = from, to = to, style = "ui.menu.selected" } }
+			break
+		end
+	end
+	buffer:decorate(entry.ns .. "-focus", marks)
+end)
 
 -- A view resized is drawn for its new width at once; while it goes on
 -- resizing, as when its edge is dragged, it's drawn again at most every

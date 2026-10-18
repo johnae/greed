@@ -337,9 +337,9 @@ local home: { buffer: greed.Buffer, view: core.UiView }? = nil
 local function frame(buffer: greed.Buffer, view: core.UiView)
 	local cells = ui.width(buffer)
 	local start = view:input_start()
-	local hint = " [] makes a todo "
+	local hint = " [] makes a todo · ↑ goes to what's above, enter opens it "
 	local add = " Add to today, alt-enter "
-	local rule = math.max(cells - 4 - #hint - #add, 1)
+	local rule = math.max(cells - 4 - core.text.width(hint) - core.text.width(add), 1)
 	local bottom: greed.MarkLine = {
 		{ text = "╰─" .. hint .. string.rep("─", rule) },
 		{ text = add, style = "ui.button", action = "hoard-add" },
@@ -364,6 +364,7 @@ function M.buffer(): greed.Buffer
 	end, { query = "" }, {
 		ns = "hoard",
 		input = true,
+		keys = false,
 		draw = false,
 		after = function(drawn: core.UiView)
 			frame(buffer, drawn)
@@ -410,6 +411,98 @@ greed.command({
 		end)
 		greed.echo(said)
 	end,
+})
+
+-- Where the box starts in the home's buffer, and whether `view`'s cursor
+-- is in it.
+local function in_box(view: greed.View): (boolean, number)
+	local shown = home
+	local start = if shown then shown.view:input_start() else 0
+	return view:cursor() >= start, start
+end
+
+greed.command({
+	name = "hoard-up",
+	doc = "On the home: up a line in the box, from its first line to the nearest thing above to "
+		.. "open or press, and from there to the one before",
+	run = function(ctx)
+		local inside, start = in_box(ctx.view)
+		local buffer = ctx.buffer
+		if inside and buffer:line_of(ctx.view:cursor()) > buffer:line_of(start) then
+			greed.run("move-up")
+		else
+			greed.run("ui-prev")
+		end
+	end,
+})
+
+greed.command({
+	name = "hoard-down",
+	doc = "On the home: down a line in the box, or to the next thing to open or press, and past "
+		.. "the last back to the box",
+	run = function(ctx)
+		if in_box(ctx.view) then
+			greed.run("move-down")
+			return
+		end
+		local before = ctx.view:cursor()
+		greed.run("ui-next")
+		if ctx.view:cursor() <= before then
+			ctx.view:set_cursor(ctx.buffer:len())
+		end
+	end,
+})
+
+greed.command({
+	name = "hoard-box",
+	doc = "On the home: back to the end of the box to write in",
+	run = function(ctx)
+		ctx.view:set_cursor(ctx.buffer:len())
+	end,
+})
+
+-- The next place of a snippet being filled in in `view`, or else the next
+-- thing to open or press; with `back`, the one before.
+local function step(view: greed.View, back: boolean)
+	if not core.snippet.move(view, back) then
+		greed.run(if back then "ui-prev" else "ui-next")
+	end
+end
+
+greed.command({
+	name = "hoard-tab",
+	doc = "On the home: the next place of a snippet being filled in, or the next thing to open",
+	run = function(ctx)
+		step(ctx.view, false)
+	end,
+})
+
+greed.command({
+	name = "hoard-tab-back",
+	doc = "On the home: the place of a snippet before, or the thing to open before",
+	run = function(ctx)
+		step(ctx.view, true)
+	end,
+})
+
+greed.command({
+	name = "hoard-enter",
+	doc = "On the home: a new line in the box, or else open or press what the cursor is on",
+	run = function(ctx)
+		greed.run(if in_box(ctx.view) then "insert-newline" else "ui-press")
+	end,
+})
+
+-- Moving about the home: tab and shift-tab, and the arrows, go between
+-- what can be opened or pressed, enter opens it, and esc goes back to the
+-- box. The completion menu keeps its own (complete.luau).
+greed.keymap.bind({ role = "typing", kind = "hoard" }, {
+	up = "hoard-up",
+	down = "hoard-down",
+	tab = "hoard-tab",
+	["shift-tab"] = "hoard-tab-back",
+	enter = "hoard-enter",
+	esc = "hoard-box",
 })
 
 -- In every mode, as the agent's box has it; enter starts a new line.

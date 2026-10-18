@@ -59,8 +59,7 @@ today's note:
 - `/` and `[[` work as they do in notes (below).
 
 While what you write is one line, notes matching it show above the box:
-by their title, the headings in them and open todos. `tab` moves to them
-and `enter` opens one. Above that:
+by their title, the headings in them and open todos. Above that:
 
 - **Agenda** lists what's overdue, due today and due in the next week. The
   box ticks a todo off; the words open its note.
@@ -70,8 +69,12 @@ and `enter` opens one. Above that:
 - **Today** shows today's note. Each day gets a note of its own, made the
   first time you write in it.
 
-`tab` and `shift-tab` move between everything you can press, and `enter`
-or a click presses it.
+To move about with the keyboard, `up` from the top of the box goes to the
+nearest thing above it, the best match while you search. `up` and `down`
+(or `tab` and `shift-tab`) then go from one thing to the next, the one
+you're on lit up, and `enter` opens or presses it. `down` past the last
+one, or `esc`, comes back to the box, and typing goes to the box from
+anywhere. With the mouse, click what you want.
 
 Away from the home, the status line at the bottom starts with `‹ Hoard`:
 click it to go back. `alt-left` goes back to where you were, as in a
