@@ -325,6 +325,11 @@ function M.buffer(): greed.Buffer
 	return buffer
 end
 
+--- Whether `buffer` is the home.
+function M.is(buffer: greed.Buffer): boolean
+	return home ~= nil and home.buffer == buffer
+end
+
 --- Shows the home in `view`, the one you're in by default.
 function M.show(view: greed.View?)
 	local buffer = M.buffer()
@@ -332,6 +337,12 @@ function M.show(view: greed.View?)
 	target:show(buffer)
 	target:set_cursor(0)
 end
+
+-- Going back to the home after it has gone, from a note opened there,
+-- shows it again.
+core.jumps.reopen("hoard", function(view: greed.View)
+	M.show(view)
+end)
 
 -- The notes changed: the home shows them as they are now.
 index.on_changed(function()

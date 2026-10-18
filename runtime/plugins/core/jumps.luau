@@ -17,6 +17,8 @@ local registry = require("./registry")
 type Place = {
 	buffer: number,
 	path: string?,
+	-- The buffer's kind, to show one without a file again (`M.reopen`).
+	kind: string?,
 	-- Where the cursor was, kept up to date from `anchor` while it lasts.
 	pos: number,
 	anchor: greed.Anchor?,
@@ -26,7 +28,14 @@ type Place = {
 
 -- Where a view is, as last seen: also the cursor's line and the buffer's
 -- length, to tell a move from an edit.
-type Seen = { buffer: number, pos: number, top: number, line: number, len: number }
+type Seen = {
+	buffer: number,
+	kind: string,
+	pos: number,
+	top: number,
+	line: number,
+	len: number,
+}
 
 type History = {
 	places: { Place },
@@ -73,6 +82,10 @@ do
 	JUMPS[name] = true
 end
 
+-- How to show a buffer of each kind again once it's gone, by kind (see
+-- `M.reopen`).
+local reopens: { [string]: (view: greed.View) -> () } = {}
+
 local histories: { [number]: History } = {}
 local seen: { [number]: Seen } = {}
 
@@ -114,6 +127,7 @@ local function look(view: greed.View): Seen
 	local buffer, pos = view:buffer(), view:cursor()
 	return {
 		buffer = buffer:id(),
+		kind = buffer:kind(),
 		pos = pos,
 		top = view:scroll(),
 		line = buffer:line_of(pos),
@@ -124,12 +138,18 @@ end
 local function place_of(at: Seen): Place?
 	local buffer = find_buffer(at.buffer)
 	if buffer == nil then
+		-- One gone already that its kind shows again is still somewhere to
+		-- go back to.
+		if reopens[at.kind] then
+			return { buffer = at.buffer, kind = at.kind, pos = at.pos, offset = 0 }
+		end
 		return nil
 	end
 	local pos = math.min(at.pos, buffer:len())
 	return {
 		buffer = at.buffer,
 		path = buffer:path(),
+		kind = buffer:kind(),
 		pos = pos,
 		anchor = buffer:track(pos),
 		offset = math.max(buffer:line_of(pos) - at.top, 0),
@@ -171,10 +191,14 @@ local function go(view: greed.View, place: Place): boolean
 		end
 	else
 		local path = place.path
-		if path == nil then
+		local reopen = if place.kind then reopens[place.kind] else nil
+		if path then
+			file.open(path)
+		elseif reopen then
+			reopen(view)
+		else
 			return false
 		end
-		file.open(path)
 		place.buffer = view:buffer():id()
 	end
 	local buffer = view:buffer()
@@ -315,6 +339,13 @@ local M = {}
 --- Makes command `name` leave its starting place in the jumplist.
 function M.add(name: string)
 	greed.plugin.tie(registry.set(JUMPS, name, true))
+end
+
+--- Going back to a buffer of kind `kind` that has gone (as a page a plugin
+--- draws goes once nothing shows it) shows it again with `show(view)`,
+--- rather than skipping it.
+function M.reopen(kind: string, show: (view: greed.View) -> ())
+	greed.plugin.tie(registry.set(reopens, kind, show))
 end
 
 --- The places in the focused view's jumplist, newest first: each one's

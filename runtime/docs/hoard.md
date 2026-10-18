@@ -55,8 +55,10 @@ one with `enter` or a click.
   **All todos** lists every open todo, soonest first.
 - **Recent notes** are the ones changed last.
 
-`:hoard` shows the home again from anywhere (`ctrl-space n h`, or `space n h`
-with Vim's or Helix's keys).
+Away from the home, the status line at the bottom starts with `‹ Hoard`:
+click it to go back. `alt-left` goes back to where you were, as in a
+browser, and `alt-right` forward again. `:hoard` shows the home from
+anywhere (`ctrl-space n h`, or `space n h` with Vim's or Helix's keys).
 
 ## Writing notes
 

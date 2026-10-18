@@ -117,6 +117,14 @@ greed.command({
 
 greed.keymap.bind({ layer = "leader" }, { ["n h"] = "hoard" })
 
+-- Away from the home, the status line starts with the way back to it.
+require("@statusline").add("left", "hoard", function(ctx)
+	if not M.here() or home.is(ctx.buffer) then
+		return nil
+	end
+	return { text = "‹ Hoard", style = "ui.statusline.mode", action = "hoard" }
+end, "mode")
+
 greed.cli({
 	name = "capture",
 	doc = "Add a todo to today's note from any shell, saying when in plain words, like: greed capture call the bank tomorrow 18:00; with --note, a line that isn't a todo",

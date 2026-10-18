@@ -216,3 +216,45 @@ test("notes in Hoard have no line numbers", function(t)
 	hoard.here = here
 	assert(not greed.view():buffer():line_numbers(), "no numbers")
 end)
+
+test("away from the home, the status line leads back, and so does going back", function(t)
+	folder(t, { ["plans.md"] = "# Garden plans\n" })
+	local home = show(t)
+	local line = 0
+	for n = 0, home:line_count() - 1 do
+		if string.find(home:line_text(n), "Garden plans", 1, true) then
+			line = n
+		end
+	end
+	local at = string.find(home:line_text(line), "Garden", 1, true) :: number
+	greed.view():set_cursor(home:line_start(line) + at - 1)
+	t:keys("enter")
+	t:wait_for(function()
+		return greed.view():buffer() ~= home
+	end)
+	local here = hoard.here
+	hoard.here = function()
+		return true
+	end
+	local function status(): string
+		local view = greed.view()
+		local parts = require("@statusline").build({
+			view = view,
+			buffer = view:buffer(),
+			mode = greed.mode.get(),
+			width = 100,
+		})
+		local out = {}
+		for _, segment in parts.left :: { greed.StatusSegment } do
+			table.insert(out, if type(segment) == "string" then segment else segment.text)
+		end
+		return table.concat(out)
+	end
+	local away = status()
+	t:run("jump-back")
+	local back = status()
+	hoard.here = here
+	assert(string.find(away, "‹ Hoard", 1, true), away)
+	assert(hoard.home.is(greed.view():buffer()), "back home")
+	assert(not string.find(back, "‹ Hoard", 1, true), back)
+end)
