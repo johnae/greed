@@ -1,8 +1,10 @@
 -- A file tree in a side panel. `space e` opens it (or moves to it, or closes
 -- it if you're in it). In the tree: enter or l opens a file or folds a
 -- folder, h folds the folder you're in, r reads the disk again, q closes;
--- a makes a file (or a folder, ending in /), R renames, d deletes.
--- Hidden and ignored files are left out, like in the file picker.
+-- a makes a file (or a folder, ending in /), R renames, d deletes (to the
+-- trash, where there is one); e shows the folder on the cursor as a buffer
+-- to edit many names at once (the folders plugin). Hidden and ignored files
+-- are left out, like in the file picker.
 --
 -- It's only a plugin: to turn it off, `greed.plugin.unload("tree")` from your
 -- config.
@@ -366,6 +368,18 @@ greed.command({
 })
 
 greed.command({
+	name = "tree-edit",
+	doc = "Show the folder on the cursor, or the one its file is in, as a buffer to edit its files' names",
+	run = function()
+		local t = shown()
+		if t == nil then
+			return
+		end
+		core.file.open(folder_of(t, current(t)))
+	end,
+})
+
+greed.command({
 	name = "tree-delete",
 	doc = "Delete the file or folder on the cursor, after you press y",
 	run = function()
@@ -444,6 +458,7 @@ greed.keymap.bind({ kind = "tree" }, {
 	a = "tree-add",
 	R = "tree-rename",
 	d = "tree-delete",
+	e = "tree-edit",
 	q = "tree-close",
 })
 

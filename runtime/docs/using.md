@@ -758,6 +758,7 @@ directly.
 | `space j` | Pick a place from the jumplist |
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
 | `space e` | File tree in a side panel |
+| `space -` | This file's folder as text to edit: rename, make, move and delete files (see the file tree, below) |
 | `:w` `:w PATH` | Save, or save as; an untitled buffer asks where to save it |
 | `:wa` (`:write-all`) | Save every file with unsaved changes |
 | `:e PATH` | Open a file |
@@ -845,13 +846,28 @@ In the file tree:
 | `a` | Make a file in the folder under the cursor (end the name with `/` for a folder) |
 | `R` | Rename or move what's under the cursor, taking files you have open along |
 | `d` | Delete it, once you press `y` |
+| `e` | Show the folder under the cursor as a buffer to edit (below) |
 | `r` | Read the disk again |
 | `q` | Close the tree |
 
 Without the tree, `:file-rename NAME` renames the file you're in (a path
 moves it, from the project's root), and `:file-delete` deletes it once you
 press `y`. `:set tree-icons nerd` shows an icon by each name (see
-[Icons](#icons)).
+[Icons](#icons)). Deleting moves things to the trash where there is one on
+the same disk (`~/.Trash` on macOS, `~/.local/share/Trash` elsewhere), and
+deletes them for good otherwise; `:set trash false` always deletes.
+
+`space -` (or `:folder`) shows the folder of the file you're in as text, a
+line per file and folder, to change many at once with the keys you edit
+with: Helix's `s` and `c` rename every match, say. Edit a name to rename
+it; add a line to make a file, ending it in `/` for a folder (`a/b.txt`
+makes the folder too); delete a line to delete it. Cut a line in one
+folder's buffer and paste it in another's to move the file, or paste it
+while it's still in the first to copy it. `:w` lists what it will do and
+does it once you press `y`, for every folder buffer at once, and
+`:folder-undo` takes it all back. In a folder's buffer, `enter` opens the
+file or folder on the line and `-` goes up; opening a folder from the
+file picker or `:open` shows it this way too.
 
 When a file changes on disk, from another program or an agent, its buffer
 loads the change as an edit you can undo with `u`. A buffer with unsaved

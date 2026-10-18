@@ -47,6 +47,7 @@
 		"snippets": "./plugins/snippets",
 		"guides": "./plugins/guides",
 		"swatches": "./plugins/swatches",
-		"todo-comments": "./plugins/todo-comments"
+		"todo-comments": "./plugins/todo-comments",
+		"folders": "./plugins/folders"
 	}
 }

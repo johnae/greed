@@ -1,0 +1,3 @@
+name = "folders"
+requires = ["core"]
+capabilities = ["fs.read", "fs.write"]

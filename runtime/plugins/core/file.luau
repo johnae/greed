@@ -857,16 +857,88 @@ function M.rename(from: string, to: string)
 	end
 end
 
+greed.option.define({
+	name = "trash",
+	doc = "Deleting a file or folder moves it to the trash, where there is one on the same disk",
+	default = true,
+})
+
+-- `path` in a Trash Info file's Path line: bytes outside the safe ones
+-- percent-encoded.
+local function trash_path(path: string): string
+	return (
+		string.gsub(path, "[^%w%-%._~/]", function(c: string): string
+			return string.format("%%%02X", string.byte(c))
+		end)
+	)
+end
+
+--- Moves the file or folder at `path` to the trash: `~/.Trash` on macOS,
+--- the freedesktop trash (`Trash` beside Greed's data folder, so
+--- `~/.local/share/Trash` or under `XDG_DATA_HOME`, with a note of where it
+--- came from) elsewhere. Returns where it went, or nil and why not, as
+--- when the trash is on another disk.
+function M.trash(path: string): (string?, string?)
+	local dirs = greed.fs.dirs()
+	local home = dirs.home
+	if home == nil or home == "" then
+		return nil, "no home folder to keep a trash in"
+	end
+	local mac = greed.fs.stat(`{home}/.Trash`)
+	local files: string, info: string?
+	if mac and mac.kind == "dir" and greed.which("osascript") then
+		files, info = `{home}/.Trash`, nil
+	else
+		local share = if dirs.data then string.match(dirs.data, "^(.*)/[^/]+$") else nil
+		local trash = `{share or home .. "/.local/share"}/Trash`
+		files, info = `{trash}/files`, `{trash}/info`
+	end
+	greed.fs.mkdir(files)
+	if info then
+		greed.fs.mkdir(info)
+	end
+	-- A name nothing in the trash has yet.
+	local name = project.basename(path) or "deleted"
+	local taken, n = name, 1
+	local function used(as: string): boolean
+		return greed.fs.stat(`{files}/{as}`) ~= nil
+			or (info ~= nil and greed.fs.stat(`{info}/{as}.trashinfo`) ~= nil)
+	end
+	while used(taken) do
+		n += 1
+		taken = `{name}.{n}`
+	end
+	local note = if info then `{info}/{taken}.trashinfo` else nil
+	if note then
+		local when = os.date("%Y-%m-%dT%H:%M:%S") :: string
+		greed.fs.write(note, `[Trash Info]\nPath={trash_path(path)}\nDeletionDate={when}\n`)
+	end
+	local to = `{files}/{taken}`
+	local ok, err = greed.fs.rename(path, to)
+	if not ok then
+		if note then
+			greed.fs.remove(note)
+		end
+		return nil, err
+	end
+	return to, nil
+end
+
 --- Deletes the file or folder (and what's in it) at `path`, closing the
---- buffers showing what was there.
-function M.remove(path: string)
+--- buffers showing what was there. With the `trash` option on, it goes to
+--- the trash where it can (see `trash`); returns where it went there, or
+--- nil when it was deleted for good.
+function M.remove(path: string): string?
 	local info = greed.fs.stat(path)
 	if info == nil then
 		error(`there's nothing at {path}`, 0)
 	end
-	local ok, err = greed.fs.remove(path, { recursive = info.kind == "dir" })
-	if not ok then
-		error(err, 0)
+	local trashed = if greed.option.get("trash") == true then M.trash(path) else nil
+	if trashed == nil then
+		local ok, err = greed.fs.remove(path, { recursive = info.kind == "dir" })
+		if not ok then
+			error(err, 0)
+		end
 	end
 	for _, buffer in greed.buffers() do
 		local at = buffer:path()
@@ -874,6 +946,7 @@ function M.remove(path: string)
 			M.close(buffer, true)
 		end
 	end
+	return trashed
 end
 
 --- Asks to press y before deleting `path`, so only you can confirm it (keys
@@ -888,8 +961,12 @@ function M.confirm_remove(path: string): boolean
 		greed.echo("kept")
 		return false
 	end
-	M.remove(path)
-	greed.echo(`deleted {project.short(path)}`)
+	local trashed = M.remove(path)
+	greed.echo(
+		if trashed
+			then `moved {project.short(path)} to the trash`
+			else `deleted {project.short(path)}`
+	)
 	return true
 end
 
