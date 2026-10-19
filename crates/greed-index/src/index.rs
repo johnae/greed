@@ -4,7 +4,7 @@
 //! same rules as rows in memory ([`crate::query`]) decide, over the items
 //! SQL found, so an index and a list in memory can't disagree.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, params_from_iter, types::Value};
@@ -13,7 +13,10 @@ use crate::compare;
 use crate::query::{self, Answer, Flag, Kind, Node, Query, Row, Rows, Schema};
 
 /// The version of the tables; an index made by another is made again.
-const VERSION: &str = "1";
+const VERSION: &str = "2";
+
+/// How many candidates are loaded and checked at a time.
+const CHUNK: usize = 1000;
 
 const SELECT_ITEMS: &str = "SELECT id, key, parent, name, text FROM items";
 
@@ -32,9 +35,11 @@ CREATE TABLE IF NOT EXISTS item_values (
     item INTEGER NOT NULL,
     field TEXT NOT NULL,
     value TEXT NOT NULL,
-    lower TEXT NOT NULL
+    lower TEXT NOT NULL,
+    number REAL
 );
 CREATE INDEX IF NOT EXISTS values_field ON item_values (field, lower);
+CREATE INDEX IF NOT EXISTS values_number ON item_values (field, number);
 CREATE INDEX IF NOT EXISTS values_item ON item_values (item);
 CREATE TABLE IF NOT EXISTS item_flags (item INTEGER NOT NULL, flag TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS flags_flag ON item_flags (flag);
@@ -152,8 +157,8 @@ impl Index {
                 let field = field.to_lowercase();
                 for value in values {
                     tx.execute(
-                        "INSERT INTO item_values (item, field, value, lower) VALUES (?1, ?2, ?3, ?4)",
-                        (id, &field, value, value.to_lowercase()),
+                        "INSERT INTO item_values (item, field, value, lower, number) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        (id, &field, value, value.to_lowercase(), compare::number(value, false)),
                     )?;
                     tx.execute(
                         "INSERT INTO field_words (value, field, item) VALUES (?1, ?2, ?3)",
@@ -202,107 +207,162 @@ impl Index {
         let mut args: Vec<Value> = Vec::new();
         let narrowed = node.and_then(|n| narrow(n, schema, &mut args));
         let sql = format!(
-            "{SELECT_ITEMS} WHERE {} ORDER BY id",
+            "SELECT id FROM items WHERE {} ORDER BY id",
             narrowed.as_deref().unwrap_or("1")
         );
-        let mut loaded = Loaded::default();
-        {
+        let ids: Vec<i64> = {
             let mut statement = self.db.prepare(&sql)?;
-            let mut rows = statement.query(params_from_iter(args.iter()))?;
-            while let Some(row) = rows.next()? {
-                loaded.add(row)?;
+            let found = statement.query_map(params_from_iter(args.iter()), |r| r.get(0))?;
+            found.collect::<rusqlite::Result<_>>()?
+        };
+        // What the items are in, for `in:` and `under:`, and what they hold,
+        // for `has:`.
+        let up = node.is_some_and(|n| uses(n, &["in", "under"]));
+        let down = node.is_some_and(|n| uses(n, &["has"]));
+        let by: Vec<String> = view.sort.iter().map(|(f, _)| f.to_lowercase()).collect();
+        // A limit without a sort stops once enough have matched, unless some
+        // only might.
+        let early = if by.is_empty() { view.limit } else { None };
+        let mut matching: Vec<Match> = Vec::new();
+        let mut any_maybe = false;
+        for chunk in ids.chunks(CHUNK) {
+            let mut loaded = Loaded::default();
+            self.load(
+                &mut loaded,
+                &format!("id IN ({})", marks(chunk.len())),
+                chunk,
+            )?;
+            let wanted = loaded.ids.len();
+            if up {
+                self.load_up(&mut loaded)?;
+            }
+            if down {
+                self.load_down(&mut loaded, wanted)?;
+            }
+            self.load_values(&mut loaded)?;
+            let rows = Rows::new(std::mem::take(&mut loaded.rows));
+            for at in 0..wanted {
+                let answer = compiled
+                    .as_ref()
+                    .map_or(Answer::Yes, |q| q.answer(&rows, at));
+                if answer == Answer::No {
+                    continue;
+                }
+                let maybe = answer == Answer::Maybe;
+                any_maybe |= maybe;
+                matching.push(Match {
+                    key: loaded.keys[at].clone(),
+                    maybe,
+                    sort: by.iter().map(|f| first_value(&rows, at, f)).collect(),
+                });
+            }
+            if early.is_some_and(|limit| !any_maybe && matching.len() >= limit) {
+                break;
             }
         }
-        let wanted = loaded.ids.len();
-        if node.is_some_and(uses_places) {
-            self.load_around(&mut loaded)?;
-        }
-        self.load_values(&mut loaded)?;
-        let rows = Rows::new(std::mem::take(&mut loaded.rows));
-        let mut matching: Vec<(usize, bool)> = Vec::new();
-        for at in 0..wanted {
-            match compiled
-                .as_ref()
-                .map_or(Answer::Yes, |q| q.answer(&rows, at))
-            {
-                Answer::Yes => matching.push((at, false)),
-                Answer::Maybe => matching.push((at, true)),
-                Answer::No => {}
-            }
-        }
-        sort(&mut matching, &rows, schema, view);
-        let any_maybe = matching.iter().any(|(_, maybe)| *maybe);
+        sort(&mut matching, schema, view);
         if let Some(limit) = view.limit
             && !any_maybe
         {
             matching.truncate(limit);
         }
-        let key = |&(at, _): &(usize, bool)| loaded.keys[at].clone();
         Ok(Found {
-            keys: matching.iter().map(key).collect(),
             maybe: matching
                 .iter()
-                .filter(|(_, maybe)| *maybe)
-                .map(key)
+                .filter(|m| m.maybe)
+                .map(|m| m.key.clone())
                 .collect(),
+            keys: matching.into_iter().map(|m| m.key).collect(),
         })
     }
 
-    // Adds the items the loaded ones are in, all the way up, and those they
-    // hold, so `in:`, `under:` and `has:` can look at them.
-    fn load_around(&self, loaded: &mut Loaded) -> Result<(), Trouble> {
-        let mut statement = self.db.prepare(&format!("{SELECT_ITEMS} WHERE key = ?1"))?;
-        let mut at = 0;
-        while at < loaded.rows.len() {
-            if let Some(parent) = loaded.parents[at].clone()
-                && !loaded.by_key.contains_key(&parent)
-            {
-                let mut rows = statement.query([&parent])?;
-                if let Some(row) = rows.next()? {
-                    loaded.add(row)?;
-                }
-            }
-            at += 1;
-        }
-        let keys: Vec<String> = loaded.keys.clone();
-        let mut children = self
+    // Loads the items `condition` picks, with `args` for its marks.
+    fn load<T: rusqlite::ToSql>(
+        &self,
+        loaded: &mut Loaded,
+        condition: &str,
+        args: &[T],
+    ) -> Result<(), Trouble> {
+        let mut statement = self
             .db
-            .prepare(&format!("{SELECT_ITEMS} WHERE parent = ?1"))?;
-        for key in keys {
-            let mut rows = children.query([&key])?;
-            while let Some(row) = rows.next()? {
-                let child: String = row.get(1)?;
-                if !loaded.by_key.contains_key(&child) {
-                    loaded.add(row)?;
-                }
+            .prepare_cached(&format!("{SELECT_ITEMS} WHERE {condition} ORDER BY id"))?;
+        let mut rows = statement.query(params_from_iter(args.iter()))?;
+        while let Some(row) = rows.next()? {
+            let key: String = row.get(1)?;
+            if !loaded.by_key.contains_key(&key) {
+                loaded.add(row)?;
             }
+        }
+        Ok(())
+    }
+
+    // Adds the items the loaded ones are in, all the way up, so `in:` and
+    // `under:` can look at them.
+    fn load_up(&self, loaded: &mut Loaded) -> Result<(), Trouble> {
+        let mut from = 0;
+        loop {
+            let missing: BTreeSet<&String> = loaded.parents[from..]
+                .iter()
+                .flatten()
+                .filter(|p| !loaded.by_key.contains_key(*p))
+                .collect();
+            let missing: Vec<String> = missing.into_iter().cloned().collect();
+            from = loaded.rows.len();
+            if missing.is_empty() {
+                break;
+            }
+            for keys in missing.chunks(CHUNK) {
+                self.load(loaded, &format!("key IN ({})", marks(keys.len())), keys)?;
+            }
+        }
+        Ok(())
+    }
+
+    // Adds the items the first `wanted` loaded ones hold, so `has:` can look
+    // at them.
+    fn load_down(&self, loaded: &mut Loaded, wanted: usize) -> Result<(), Trouble> {
+        let keys = loaded.keys[..wanted].to_vec();
+        for keys in keys.chunks(CHUNK) {
+            self.load(loaded, &format!("parent IN ({})", marks(keys.len())), keys)?;
         }
         Ok(())
     }
 
     // Fills in the loaded items' fields, flags and the rows they're in.
     fn load_values(&self, loaded: &mut Loaded) -> Result<(), Trouble> {
-        let mut values = self
-            .db
-            .prepare("SELECT field, value FROM item_values WHERE item = ?1")?;
-        let mut flags = self
-            .db
-            .prepare("SELECT flag FROM item_flags WHERE item = ?1")?;
-        for at in 0..loaded.rows.len() {
-            let id = loaded.ids[at];
-            let mut rows = values.query([id])?;
+        let at: HashMap<i64, usize> = loaded
+            .ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (*id, i))
+            .collect();
+        for ids in loaded.ids.chunks(CHUNK) {
+            let marks = marks(ids.len());
+            let mut values = self.db.prepare_cached(&format!(
+                "SELECT item, field, value FROM item_values WHERE item IN ({marks})"
+            ))?;
+            let mut rows = values.query(params_from_iter(ids.iter()))?;
             while let Some(row) = rows.next()? {
-                let field: String = row.get(0)?;
-                let value: String = row.get(1)?;
-                loaded.rows[at].fields.entry(field).or_default().push(value);
+                let item: i64 = row.get(0)?;
+                let field: String = row.get(1)?;
+                let value: String = row.get(2)?;
+                loaded.rows[at[&item]]
+                    .fields
+                    .entry(field)
+                    .or_default()
+                    .push(value);
             }
-            let mut rows = flags.query([id])?;
+            let mut flags = self.db.prepare_cached(&format!(
+                "SELECT item, flag FROM item_flags WHERE item IN ({marks})"
+            ))?;
+            let mut rows = flags.query(params_from_iter(ids.iter()))?;
             while let Some(row) = rows.next()? {
-                loaded.rows[at].flags.push(row.get(0)?);
+                let item: i64 = row.get(0)?;
+                loaded.rows[at[&item]].flags.push(row.get(1)?);
             }
-            loaded.rows[at].parent = loaded.parents[at]
-                .as_ref()
-                .and_then(|p| loaded.by_key.get(p).copied());
+        }
+        for (row, parent) in loaded.rows.iter_mut().zip(&loaded.parents) {
+            row.parent = parent.as_ref().and_then(|p| loaded.by_key.get(p).copied());
         }
         Ok(())
     }
@@ -355,14 +415,11 @@ impl Loaded {
     }
 }
 
-// Whether `node` looks at where items are: `in:`, `under:` or `has:`.
-fn uses_places(node: &Node) -> bool {
-    let place = node.kind == "field"
-        && matches!(
-            node.field.as_deref().map(str::to_lowercase).as_deref(),
-            Some("in" | "under" | "has")
-        );
-    place || node.items.iter().any(uses_places)
+// Whether `node` uses any of the fields `names` (`in:`, `under:`, `has:`).
+fn uses(node: &Node, names: &[&str]) -> bool {
+    let field = node.field.as_deref().map(str::to_lowercase);
+    let used = node.kind == "field" && field.is_some_and(|f| names.contains(&f.as_str()));
+    used || node.items.iter().any(|item| uses(item, names))
 }
 
 // `text` as an FTS5 phrase: quoted, its quotes doubled, by prefix with `*`.
@@ -447,7 +504,15 @@ fn narrow_field(node: &Node, schema: &Schema, args: &mut Vec<Value>) -> Option<S
         "in" | "under" | "has" => None,
         _ => {
             let kind = *schema.fields.get(&name)?;
-            if node.regex.is_some() || !node.items.is_empty() || op == "!=" || op == "!~" {
+            // A range of text compares in Rust (`compare::order`).
+            let text_range = matches!(kind, Kind::Text | Kind::Exact)
+                && (node.low.is_some() || node.high.is_some());
+            if node.regex.is_some()
+                || !node.items.is_empty()
+                || op == "!="
+                || op == "!~"
+                || text_range
+            {
                 return None;
             }
             let (condition, values) = narrow_value(kind, node, op, value)?;
@@ -514,32 +579,81 @@ fn narrow_value(kind: Kind, node: &Node, op: &str, value: &str) -> Option<(Strin
                 _ => None,
             }
         }
-        // Numbers, sizes and levels compare in Rust (`compare`), not SQL.
-        Kind::Value => None,
+        // By the number each value was read as when written, as `compare`
+        // reads them when `want` isn't a duration. A value that isn't a
+        // number compares as a level or text, so it stays a candidate.
+        Kind::Value => {
+            let number = |text: &str| -> Option<Value> {
+                (!compare::is_duration(text))
+                    .then(|| compare::number(text, false))
+                    .flatten()
+                    .map(Value::Real)
+            };
+            if node.low.is_some() || node.high.is_some() {
+                let mut rest = Vec::new();
+                let mut values = Vec::new();
+                for (end, sign) in [(&node.low, ">="), (&node.high, "<=")] {
+                    if let Some(end) = end {
+                        values.push(number(end)?);
+                        rest.push(format!("(number {sign} ? OR number IS NULL)"));
+                    }
+                }
+                return Some((pick(&rest.join(" AND ")), values));
+            }
+            let sign = match op {
+                ":" | "=" => "=",
+                "<" | "<=" | ">" | ">=" => op,
+                _ => return None,
+            };
+            Some((
+                pick(&format!("(number {sign} ? OR number IS NULL)")),
+                vec![number(value)?],
+            ))
+        }
     }
 }
 
-// Sorts `matching` as `view` says, by each row's first value of a field.
-fn sort(matching: &mut [(usize, bool)], rows: &Rows, schema: &Schema, view: &View) {
+// A match, with the values it's sorted by.
+struct Match {
+    key: String,
+    maybe: bool,
+    sort: Vec<String>,
+}
+
+// Row `at`'s first value of `field`, or nothing.
+fn first_value(rows: &Rows, at: usize, field: &str) -> String {
+    rows.rows[at]
+        .fields
+        .get(field)
+        .and_then(|v| v.first())
+        .cloned()
+        .unwrap_or_default()
+}
+
+// `n` marks for SQL's values, "?, ?, ?".
+fn marks(n: usize) -> String {
+    vec!["?"; n].join(", ")
+}
+
+// Sorts `matching` as `view` says, by each match's first value of a field.
+fn sort(matching: &mut [Match], schema: &Schema, view: &View) {
     if view.sort.is_empty() {
         return;
     }
-    let by: Vec<(String, bool)> = view
+    let kinds: Vec<(Option<Kind>, bool)> = view
         .sort
         .iter()
-        .map(|(field, descending)| (field.to_lowercase(), *descending))
+        .map(|(field, descending)| {
+            (
+                schema.fields.get(&field.to_lowercase()).copied(),
+                *descending,
+            )
+        })
         .collect();
-    let first = |at: usize, field: &str| -> &str {
-        rows.rows[at]
-            .fields
-            .get(field)
-            .and_then(|v| v.first())
-            .map_or("", String::as_str)
-    };
-    matching.sort_by(|(a, _), (b, _)| {
-        for (field, descending) in &by {
-            let (x, y) = (first(*a, field), first(*b, field));
-            let order = match schema.fields.get(field) {
+    matching.sort_by(|a, b| {
+        for (i, (kind, descending)) in kinds.iter().enumerate() {
+            let (x, y) = (&a.sort[i], &b.sort[i]);
+            let order = match kind {
                 Some(Kind::Date) => x.cmp(y),
                 _ => compare::order(x, y, false),
             };
@@ -701,5 +815,62 @@ mod tests {
             .search(Some(&node), &Schema::default(), &View::default())
             .unwrap();
         assert_eq!(found.keys, ["a", "b"]);
+    }
+
+    #[test]
+    fn numbers_narrow_in_sql_but_values_that_arent_numbers_stay_candidates() {
+        let path = temp("numbers");
+        let mut index = Index::open(&path).unwrap();
+        let sized = |key: &str, size: &str, tag: &str| Item {
+            key: key.into(),
+            fields: HashMap::from([
+                ("size".to_string(), vec![size.to_string()]),
+                ("tag".to_string(), vec![tag.to_string()]),
+            ]),
+            ..Item::default()
+        };
+        index
+            .write(&[
+                sized("small", "3k", "apple"),
+                sized("big", "2M", "kiwi"),
+                sized("odd", "huge", "pear"),
+            ])
+            .unwrap();
+        let schema = Schema {
+            fields: HashMap::from([
+                ("size".to_string(), Kind::Value),
+                ("tag".to_string(), Kind::Exact),
+            ]),
+            ..Schema::default()
+        };
+        let field = |name: &str, op: &str, value: &str| Node {
+            kind: "field".into(),
+            field: Some(name.into()),
+            op: Some(op.into()),
+            value: Some(value.into()),
+            ..Node::default()
+        };
+        let found = |node: &Node| {
+            index
+                .search(Some(node), &schema, &View::default())
+                .unwrap()
+                .keys
+        };
+        assert_eq!(
+            found(&field("size", ">", "1M")),
+            ["big", "odd"],
+            "text sorts after numbers"
+        );
+        assert_eq!(found(&field("size", "<", "10k")), ["small"]);
+        let range = Node {
+            low: Some("b".into()),
+            high: Some("l".into()),
+            ..field("tag", ":", "")
+        };
+        assert_eq!(
+            found(&range),
+            ["big"],
+            "a range of tags isn't narrowed to nothing"
+        );
     }
 }

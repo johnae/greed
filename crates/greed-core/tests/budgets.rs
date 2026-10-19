@@ -1107,7 +1107,7 @@ mod index_budget {
         fields.insert("size".into(), vec![format!("{}k", (i * 37) % 500)]);
         fields.insert("date".into(), vec![date]);
         let mut flags = vec!["mail".to_string()];
-        if i % 3 == 0 {
+        if i.is_multiple_of(3) {
             flags.push("unread".into());
         }
         Item {
@@ -1204,8 +1204,8 @@ mod index_budget {
 }
 
 /// An index of 200,000 mail-like items: writing them, and the searches a
-/// mail client and an agent make, from a word found in one item to ones
-/// SQL can't narrow, which the matcher then checks one by one.
+/// mail client and an agent make, from a word in one item to two in nearly
+/// every one (where a limit stops early) and a size SQL narrows by number.
 #[test]
 fn index_of_many() {
     use index_budget::{and, days, field, view, word};
@@ -1247,11 +1247,7 @@ fn index_of_many() {
                     and(vec![word("invoice"), word("garden")]),
                     view("", Some(50)),
                 ),
-                (
-                    "size_not_narrowed",
-                    field("size", ">", "490k"),
-                    view("", None),
-                ),
+                ("size_over", field("size", ">", "490k"), view("", None)),
             ];
             for (name, node, shown) in &searches {
                 let (mut cpus, mut count) = (Vec::new(), 0);
@@ -1264,11 +1260,19 @@ fn index_of_many() {
                 assert!(count > 0, "{name} found nothing");
                 found.set(&format!("{name}_ms"), median(cpus));
             }
-            found.set(
-                "file_mb",
-                std::fs::metadata(&path).unwrap().len() as f64 / (1024.0 * 1024.0),
-            );
+            #[allow(clippy::cast_precision_loss)]
+            let mb = std::fs::metadata(&path).unwrap().len() as f64 / (1024.0 * 1024.0);
+            found.set("file_mb", mb);
         },
-        &[],
+        &[
+            ("write_ms_per_1000", 250.0, 300.0),
+            ("one_word_one_item_ms", 1.0, 1.0),
+            ("from_unread_latest_ms", 350.0, 600.0),
+            ("tag_in_a_month_ms", 300.0, 350.0),
+            ("inbox_unread_ms", 200.0, 300.0),
+            ("two_words_ms", 300.0, 400.0),
+            ("size_over_ms", 130.0, 220.0),
+            ("file_mb", 400.0, 400.0),
+        ],
     );
 }
