@@ -1062,3 +1062,213 @@ fn slow_status_line() {
         ],
     );
 }
+
+// ---------------------------------------------------------------------------
+// An index of many items
+
+mod index_budget {
+    use std::collections::HashMap;
+
+    use greed_index::index::{Index, Item, View};
+    use greed_index::query::{Flag, Kind, Node, Schema};
+
+    /// How many items the index holds: about a big mailbox.
+    pub const ITEMS: usize = 200_000;
+
+    const WORDS: [&str; 24] = [
+        "invoice", "meeting", "report", "garden", "travel", "budget", "review", "project",
+        "deploy", "release", "lunch", "coffee", "kitchen", "server", "update", "question",
+        "family", "weekend", "music", "ticket", "contract", "design", "photo", "receipt",
+    ];
+    const PEOPLE: [&str; 8] = ["anna", "bo", "carl", "dana", "erik", "fia", "gus", "hedda"];
+    const TAGS: [&str; 6] = ["work", "home", "money", "news", "travel", "family"];
+
+    /// Item `i` of a mailbox-like index: in one of 20 mailboxes, with text,
+    /// a sender, tags, a size, a date over five years and flags.
+    fn item(i: usize) -> Item {
+        let word = |n: usize| WORDS[(i * 7 + n * 13) % WORDS.len()];
+        let text = (0..30).map(word).collect::<Vec<_>>().join(" ") + &format!(" ref{i}");
+        let day = i % (5 * 365);
+        let date = format!(
+            "{:04}-{:02}-{:02}",
+            2022 + day / 365,
+            (day % 365) / 31 % 12 + 1,
+            day % 28 + 1
+        );
+        let mut fields = HashMap::new();
+        fields.insert(
+            "from".into(),
+            vec![format!("{} <{}@example.org>", PEOPLE[i % 8], PEOPLE[i % 8])],
+        );
+        fields.insert(
+            "tag".into(),
+            vec![TAGS[i % 6].into(), TAGS[(i / 6) % 6].into()],
+        );
+        fields.insert("size".into(), vec![format!("{}k", (i * 37) % 500)]);
+        fields.insert("date".into(), vec![date]);
+        let mut flags = vec!["mail".to_string()];
+        if i % 3 == 0 {
+            flags.push("unread".into());
+        }
+        Item {
+            key: format!("m{i}"),
+            parent: Some(format!("box{}", i % 20)),
+            text,
+            fields,
+            flags,
+            ..Item::default()
+        }
+    }
+
+    pub fn schema() -> Schema {
+        Schema {
+            fields: HashMap::from([
+                ("from".into(), Kind::Text),
+                ("tag".into(), Kind::Exact),
+                ("size".into(), Kind::Value),
+                ("date".into(), Kind::Date),
+            ]),
+            flags: HashMap::from([("mail".into(), Flag::Row), ("unread".into(), Flag::Row)]),
+            anywhere: false,
+        }
+    }
+
+    pub fn write(index: &mut Index) {
+        let boxes: Vec<Item> = (0..20)
+            .map(|b| Item {
+                key: format!("box{b}"),
+                name: Some(if b == 0 {
+                    "inbox".into()
+                } else {
+                    format!("box{b}")
+                }),
+                ..Item::default()
+            })
+            .collect();
+        index.write(&boxes).unwrap();
+        let mut batch = Vec::with_capacity(1000);
+        for i in 0..ITEMS {
+            batch.push(item(i));
+            if batch.len() == 1000 {
+                index.write(&batch).unwrap();
+                batch.clear();
+            }
+        }
+        index.write(&batch).unwrap();
+    }
+
+    pub fn word(text: &str) -> Node {
+        Node {
+            kind: "word".into(),
+            text: Some(text.into()),
+            ..Node::default()
+        }
+    }
+
+    pub fn field(name: &str, op: &str, value: &str) -> Node {
+        Node {
+            kind: "field".into(),
+            field: Some(name.into()),
+            op: Some(op.into()),
+            value: Some(value.into()),
+            ..Node::default()
+        }
+    }
+
+    pub fn days(name: &str, from: &str, to: &str) -> Node {
+        Node {
+            from: Some(from.into()),
+            to: Some(to.into()),
+            ..field(name, ":", "")
+        }
+    }
+
+    pub fn and(items: Vec<Node>) -> Node {
+        Node {
+            kind: "and".into(),
+            items,
+            ..Node::default()
+        }
+    }
+
+    pub fn view(sort: &str, limit: Option<usize>) -> View {
+        View {
+            sort: if sort.is_empty() {
+                Vec::new()
+            } else {
+                vec![(sort.trim_start_matches('-').into(), sort.starts_with('-'))]
+            },
+            limit,
+        }
+    }
+}
+
+/// An index of 200,000 mail-like items: writing them, and the searches a
+/// mail client and an agent make, from a word found in one item to ones
+/// SQL can't narrow, which the matcher then checks one by one.
+#[test]
+fn index_of_many() {
+    use index_budget::{and, days, field, view, word};
+    budget(
+        "index_of_many",
+        |found| {
+            let dir = Temp::new("index");
+            let path = dir.join("mail.db");
+            let mut index = greed_index::index::Index::open(&path).unwrap();
+            let ((), cpu, _) = timed(|| index_budget::write(&mut index));
+            found.set(
+                "write_ms_per_1000",
+                per(ms(cpu), index_budget::ITEMS / 1000),
+            );
+            let schema = index_budget::schema();
+            let in_inbox = || field("in", ":", "inbox");
+            let searches: Vec<(&str, greed_index::query::Node, greed_index::index::View)> = vec![
+                ("one_word_one_item", word("ref123456"), view("", None)),
+                (
+                    "from_unread_latest",
+                    and(vec![field("from", ":", "anna"), field("is", ":", "unread")]),
+                    view("-date", Some(50)),
+                ),
+                (
+                    "tag_in_a_month",
+                    and(vec![
+                        field("tag", ":", "money"),
+                        days("date", "2026-10-01", "2026-10-31"),
+                    ]),
+                    view("", None),
+                ),
+                (
+                    "inbox_unread",
+                    and(vec![in_inbox(), field("is", ":", "unread")]),
+                    view("-date", Some(50)),
+                ),
+                (
+                    "two_words",
+                    and(vec![word("invoice"), word("garden")]),
+                    view("", Some(50)),
+                ),
+                (
+                    "size_not_narrowed",
+                    field("size", ">", "490k"),
+                    view("", None),
+                ),
+            ];
+            for (name, node, shown) in &searches {
+                let (mut cpus, mut count) = (Vec::new(), 0);
+                for _ in 0..3 {
+                    let (keys, cpu, _) =
+                        timed(|| index.search(Some(node), &schema, shown).unwrap().keys.len());
+                    count = keys;
+                    cpus.push(ms(cpu));
+                }
+                assert!(count > 0, "{name} found nothing");
+                found.set(&format!("{name}_ms"), median(cpus));
+            }
+            found.set(
+                "file_mb",
+                std::fs::metadata(&path).unwrap().len() as f64 / (1024.0 * 1024.0),
+            );
+        },
+        &[],
+    );
+}
