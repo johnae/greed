@@ -7,6 +7,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_imap::extensions::idle::IdleResponse;
 use async_imap::imap_proto::NameAttribute;
 use async_imap::types::{Capability, Flag};
 use async_imap::{Client, Session};
@@ -223,6 +224,34 @@ impl Connection {
         self.session.logout().await?;
         Ok(())
     }
+
+    /// Whether the server can say when something changes (IDLE).
+    pub fn can_idle(&self) -> bool {
+        self.capabilities.iter().any(|c| c == "IDLE")
+    }
+
+    /// Waits in `mailbox` until the server says something changed there,
+    /// or for `most` without a word from it (keepalives count), giving
+    /// which. The connection is used up either way.
+    pub async fn idle(mut self, mailbox: &str, most: Duration) -> Result<Idled, Trouble> {
+        self.session.examine(mailbox).await?;
+        let mut handle = self.session.idle();
+        handle.init().await?;
+        let (waiting, _stop) = handle.wait_with_timeout(most);
+        Ok(match waiting.await? {
+            IdleResponse::NewData(_) => Idled::Changed,
+            IdleResponse::Timeout | IdleResponse::ManualInterrupt => Idled::Quiet,
+        })
+    }
+}
+
+/// How waiting in IDLE ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Idled {
+    /// The server said something changed.
+    Changed,
+    /// Nothing was heard for as long as it waited.
+    Quiet,
 }
 
 /// A mailbox opened to read.

@@ -12,8 +12,10 @@
 //! can't sync, and why).
 //!
 //! The sync goes in rounds of at most `HEADERS` headers and `BODIES` bodies
-//! a mailbox, so what's asked for never waits long; after a round with
-//! nothing left to do it waits until asked, or `QUIET`.
+//! a mailbox, so what's asked for never waits long. After a round with
+//! nothing left to do it waits in IDLE on each account's inbox, so new
+//! mail comes within seconds, until asked or for `QUIET`. An account that
+//! fails is tried again after a wait twice as long each time.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -39,8 +41,38 @@ const HEADERS: usize = 2000;
 /// The most bodies a round fetches a mailbox.
 const BODIES: usize = 200;
 
-/// How long it waits, with nothing left to do, before syncing again.
-const QUIET: Duration = Duration::from_secs(300);
+/// How long it waits, with nothing left to do, before syncing again: an
+/// account in IDLE wakes it sooner, as its mail changes.
+const QUIET: Duration = Duration::from_secs(20 * 60);
+
+/// How often an account whose server can't IDLE is synced.
+const POLL: Duration = Duration::from_secs(120);
+
+/// The longest a round may take before it counts as stuck, its server
+/// gone quiet in the middle of something.
+const STUCK: Duration = Duration::from_secs(10 * 60);
+
+/// How long to wait before trying again after something went wrong:
+/// twice as long each time it goes wrong again, up to five minutes.
+#[derive(Debug, Default)]
+struct Backoff {
+    failures: u32,
+}
+
+impl Backoff {
+    const FIRST: Duration = Duration::from_secs(2);
+    const MOST: Duration = Duration::from_secs(300);
+
+    fn next(&mut self) -> Duration {
+        let wait = Self::FIRST.saturating_mul(1 << self.failures.min(16));
+        self.failures += 1;
+        wait.min(Self::MOST)
+    }
+
+    fn reset(&mut self) {
+        self.failures = 0;
+    }
+}
 
 /// What `status` says of an account.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -169,15 +201,23 @@ fn handle(
     }
 }
 
-/// Syncs in rounds for as long as it runs, waiting when there's nothing
-/// left to do.
+/// Syncs in rounds for as long as it runs. With nothing left to do it
+/// waits: for an account's server to say something changed (IDLE), to
+/// be asked, or for `QUIET`. After something went wrong it waits longer
+/// each time before trying again.
 async fn keep_syncing(config: &Config, mut store: Store, mut index: Index, shared: &Shared) {
+    let mut backoff = Backoff::default();
     loop {
         let mut more = false;
+        let mut failed = false;
         for account in &config.accounts {
-            match round(account, &mut store, &mut index, shared).await {
+            let done = tokio::time::timeout(STUCK, round(account, &mut store, &mut index, shared))
+                .await
+                .unwrap_or_else(|_| Err("its server stopped answering".into()));
+            match done {
                 Ok(left) => more |= left,
                 Err(trouble) => {
+                    failed = true;
                     shared.notify(
                         "trouble",
                         &json!({ "account": account.name, "message": trouble }),
@@ -194,12 +234,46 @@ async fn keep_syncing(config: &Config, mut store: Store, mut index: Index, share
                 }
             }
         }
-        if !more {
+        if failed {
             tokio::select! {
                 () = shared.wake.notified() => {}
+                () = tokio::time::sleep(backoff.next()) => {}
+            }
+            continue;
+        }
+        backoff.reset();
+        if !more {
+            let changed = async {
+                if config.accounts.is_empty() {
+                    std::future::pending::<()>().await;
+                }
+                futures::future::select_all(config.accounts.iter().map(|a| Box::pin(watch(a))))
+                    .await;
+            };
+            tokio::select! {
+                () = shared.wake.notified() => {}
+                () = changed => {}
                 () = tokio::time::sleep(QUIET) => {}
             }
         }
+    }
+}
+
+/// Waits until `account`'s inbox changes, as its server says in IDLE, or
+/// for `POLL` when its server can't IDLE. A connection that breaks ends
+/// the wait a little later, so the next round finds out why.
+async fn watch(account: &Account) {
+    let Ok(connection) = Connection::to(account).await else {
+        tokio::time::sleep(POLL).await;
+        return;
+    };
+    if !connection.can_idle() {
+        let _ = connection.close().await;
+        tokio::time::sleep(POLL).await;
+        return;
+    }
+    if connection.idle("INBOX", QUIET).await.is_err() {
+        tokio::time::sleep(Backoff::FIRST).await;
     }
 }
 
@@ -307,4 +381,18 @@ async fn asked_for(
     indexing::catch_up(store, index).map_err(|e| e.0)?;
     shared.notify("changed", &json!({ "keys": keys }));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_failure_waits_twice_as_long_up_to_five_minutes() {
+        let mut backoff = Backoff::default();
+        let waits: Vec<u64> = (0..10).map(|_| backoff.next().as_secs()).collect();
+        assert_eq!(waits, [2, 4, 8, 16, 32, 64, 128, 256, 300, 300]);
+        backoff.reset();
+        assert_eq!(backoff.next().as_secs(), 2, "from the start once it works");
+    }
 }

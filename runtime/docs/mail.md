@@ -54,3 +54,9 @@ goes, and a message you open has its text fetched ahead of the rest. On
 Proton through Bridge, each message's text comes from Proton the first
 time it's asked for, which takes a while for a big mailbox; after that it
 stays here.
+
+Once everything is in, new mail shows within seconds: greed-mail waits
+on each account's inbox for the server to say something arrived (IMAP
+IDLE), and checks every two minutes on a server that can't. When an
+account can't be reached it tries again a little later each time, up to
+every five minutes.

@@ -511,3 +511,34 @@ fn serve_syncs_in_the_background_and_answers_the_client() {
         std::thread::sleep(Duration::from_millis(50));
     }
 }
+
+#[test]
+fn new_mail_comes_at_once_through_idle() {
+    let Some(dovecot) = Dovecot::start("idle") else {
+        return;
+    };
+    deliver(&dovecot, 1, false);
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    // Until it has nothing left to do and waits in IDLE.
+    let started = Instant::now();
+    loop {
+        let status = served.ask("status", &serde_json::json!({}));
+        if status["accounts"][0]["done"] == true {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(20), "{status}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    std::thread::sleep(Duration::from_millis(500));
+    deliver(&dovecot, 2, false);
+    let arrived = Instant::now();
+    served.wait_for("changed");
+    assert!(
+        arrived.elapsed() < Duration::from_secs(15),
+        "new mail took {:?}; without IDLE it waits twenty minutes",
+        arrived.elapsed()
+    );
+    let status = served.ask("status", &serde_json::json!({}));
+    assert_eq!(status["accounts"][0]["messages"], 2, "{status}");
+}
