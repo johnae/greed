@@ -475,3 +475,23 @@ test("search finds what notes say anywhere in them, and takes a query", function
 	assert(labels("is:overdue") == "call the bank", labels("is:overdue"))
 	assert(labels("winte") == "Garden plans", "the last word as it's typed")
 end)
+
+test(
+	"the first time, the home says where notes are and how to add to them, until put away",
+	function(t)
+		local dir = folder(t, { ["work.md"] = "# Work\n" })
+		assert(hoard.home.welcoming(), "a first start")
+		local text = show(t):text()
+		assert(string.find(text, "Welcome to Hoard", 1, true), text)
+		local shown = require("@core").project.tilde(dir)
+		assert(string.find(text, shown, 1, true), `where the notes are: {shown}`)
+		assert(string.find(text, "greed capture", 1, true), "how to add from a shell")
+		hoard.home.welcomed()
+		assert(not hoard.home.welcoming(), "put away")
+		assert(greed.fs.stat(`{greed.fs.dirs().data}/hoard/welcomed`), "for good")
+		local buffer = show(t)
+		t:wait_for(function()
+			return not string.find(buffer:text(), "Welcome to Hoard", 1, true)
+		end)
+	end
+)

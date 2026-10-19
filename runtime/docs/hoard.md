@@ -10,7 +10,8 @@ greed --gui notes    # in a window
 ```
 
 Running it again comes back to the same Hoard, with everything as you
-left it.
+left it. The first time, the home starts with where your notes are kept
+and how to add to them, until you press `Got it`.
 
 From Greed itself, `:hoard` (`space n h`) takes the window you're in to
 Hoard, starting it if needed, and `space B` brings you back.

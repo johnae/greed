@@ -424,6 +424,55 @@ function M.add(text: string): string?
 	return if #said > 1 then `{#said} todos added to today's note` else "added to today's note"
 end
 
+-- The file saying the first-run words were put away, in Greed's data
+-- folder; nil without one.
+local function welcomed_file(): string?
+	local data = greed.fs.dirs().data
+	return if data then `{data}/hoard/welcomed` else nil
+end
+
+-- Whether the first-run words were put away, read once.
+local welcomed: boolean? = nil
+
+--- Whether the home starts with the first-run words: until they're put
+--- away (`M.welcomed`).
+function M.welcoming(): boolean
+	if welcomed == nil then
+		local file = welcomed_file()
+		welcomed = file == nil or greed.fs.stat(file) ~= nil
+	end
+	return not welcomed
+end
+
+-- What Hoard is, where the notes are and how to add to them, for the
+-- first time it opens.
+local function welcome(): core.UiNode
+	local leader = core.style.current().leader or "space"
+	return ui.box(
+		"Welcome to Hoard",
+		ui.column({
+			ui.text(`Your notes are Markdown files in {core.project.tilde(notes.folder())}.`),
+			ui.text("Write in the box at the bottom: alt-enter adds it to today's note."),
+			ui.text(
+				"A line starting [] is a todo, and it can say when: [] call Anna tomorrow 18:00."
+			),
+			ui.text("What you type there also searches your notes."),
+			ui.text(
+				`From anywhere in Greed, {leader} n c adds a todo; from a shell, greed capture TEXT.`
+			),
+			ui.text("up and down go through what's here, enter opens it, esc comes back."),
+			ui.row({
+				ui.button("Got it", function()
+					M.welcomed()
+				end),
+				ui.button("Read more", function()
+					greed.run("docs", { args = { "hoard" } })
+				end),
+			}, { fit = true }),
+		})
+	)
+end
+
 --- What the home shows, for its state (`found`: what what's written in its
 --- box finds, searched for as it's written).
 function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
@@ -434,6 +483,10 @@ function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 		}),
 		ui.gap(),
 	}
+	if M.welcoming() then
+		table.insert(parts, welcome())
+		table.insert(parts, ui.gap())
+	end
 
 	local overdue, now, coming = agenda()
 	local agenda_parts: { core.UiNode } = {}
@@ -537,6 +590,18 @@ end
 
 -- The home's buffer and its view, made once.
 local home: { buffer: greed.Buffer, view: core.UiView }? = nil
+
+--- Puts the first-run words away, for good.
+function M.welcomed()
+	welcomed = true
+	local file = welcomed_file()
+	if file then
+		greed.fs.write(file, "")
+	end
+	if home then
+		home.view:redraw()
+	end
+end
 
 -- Frames what's written after the home as a box (the home ends with its
 -- top), with what alt-enter does on its bottom; a click there does it.
