@@ -28,6 +28,7 @@ local greed = require("@greed")
 local notes = require("@self/notes")
 local links = require("@self/links")
 local mentions = require("@self/mentions")
+local query = require("@self/query")
 local todos = require("@self/todos")
 require("@self/tools")
 require("@self/objects")
@@ -74,6 +75,7 @@ local exported: typeof(notes) & {
 	dates: typeof(dates),
 	links: typeof(links),
 	mentions: typeof(mentions),
+	query: typeof(query),
 	clock: () -> number,
 } = setmetatable(
 	{
@@ -84,6 +86,7 @@ local exported: typeof(notes) & {
 		dates = dates,
 		links = links,
 		mentions = mentions,
+		query = query,
 	},
 	{
 		__index = function(_, key: string): any

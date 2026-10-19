@@ -71,6 +71,21 @@ function M.due_on(task: index.Task, today: string): string?
 	return task.due
 end
 
+--- How long an open todo without a date sits in an unchanged note before
+--- it counts as waiting, in days.
+M.WAITING_DAYS = 21
+
+--- Whether `task`, in `note`, is waiting: open, without a date, not a
+--- habit, in a note unchanged for `M.WAITING_DAYS` days or more.
+function M.waiting(task: index.Task, note: index.Note): boolean
+	local before = dates.clock() - M.WAITING_DAYS * 86400
+	return not task.done
+		and task.due == nil
+		and not task.habit
+		and note.modified > 0
+		and note.modified < before
+end
+
 --- Every todo in the notes, in every place, open ones only unless `all`,
 --- soonest due first (undated last), then by note and line.
 function M.list(all: boolean?): { Todo }

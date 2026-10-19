@@ -15,10 +15,6 @@ local links = notes.links
 
 local M = {}
 
---- How long an open todo without a date sits in an unchanged note before
---- it counts as waiting, in days.
-M.WAITING_DAYS = 21
-
 --- A todo as a review lists it: its note and line, and its words.
 export type Item = { note: string, line: number, text: string, due: string? }
 
@@ -56,16 +52,10 @@ local function items(keep: (task: notes.Task, note: notes.Note) -> boolean): { I
 end
 
 --- Open todos without a date, not habits, in notes unchanged for
---- `M.WAITING_DAYS` days or more: the oldest notes first, at most `limit`.
+--- `todos.WAITING_DAYS` days or more (`todos.waiting`): the oldest notes
+--- first, at most `limit`.
 function M.waiting(limit: number?): { Item }
-	local before = notes.clock() - M.WAITING_DAYS * 86400
-	local found = items(function(task, note)
-		return not task.done
-			and task.due == nil
-			and not task.habit
-			and note.modified > 0
-			and note.modified < before
-	end)
+	local found = items(todos.waiting)
 	local changed: { [string]: number } = {}
 	for _, note in index.all() do
 		changed[note.name] = note.modified

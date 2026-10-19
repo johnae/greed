@@ -126,6 +126,7 @@ export type QueryNode = query.Node
 export type Query = query.Parsed
 export type QuerySource = query.Source
 export type QueryField = query.Field
+export type QueryProblem = query.Problem
 --- What a search box is opened with, and a word its `tab` offers
 --- (search_box.luau).
 export type SearchBoxOptions = search_box.Options

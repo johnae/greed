@@ -12,6 +12,7 @@ local notes = require("./notes")
 local links = require("./links")
 local todos = require("./todos")
 local dates = require("./dates")
+local query = require("./query")
 
 local object = agent.schema.object
 
@@ -110,6 +111,52 @@ agent.tool({
 			buffer:save()
 		end
 		return `the user accepted {decided.accepted} and rejected {decided.rejected} of the changes to {args.name}`
+	end,
+})
+
+agent.tool({
+	name = "notes_query",
+	group = "notes",
+	description = "Find notes, todos and headings with a query: words, field:value and is: flags, "
+		.. "a space meaning and, OR and -term (not), ( ) to group. Fields: title, note, tag, due, "
+		.. "done, starts, until, every, date, modified, and the notes' own key:: value fields. "
+		.. "Flags: is:note, is:todo, is:heading, is:open, is:done, is:overdue, is:today, "
+		.. "is:due-today, is:habit, is:recurring, is:waiting. Dates: due:..+7d (the next week), "
+		.. "date:2w.. (the last two weeks), due:today, done:this-week. in:NAME or in:(query) for "
+		.. "what's in a note, has:(query) for notes holding something; sort:due, limit:20. "
+		.. "Examples: `is:todo is:open due:..+7d sort:due`, `is:note tag:meeting date:2w..`, "
+		.. "`is:todo in:(tag:garden) -is:done`. A query with mistakes gives them back, each with "
+		.. "a hint",
+	input = object({ query = { type = "string" } }, { "query" }),
+	run = function(args)
+		local found, said = query.run(args.query)
+		if found == nil then
+			local problems = {}
+			for _, problem in said do
+				table.insert(problems, problem.message)
+			end
+			return { problems = greed.json.array(problems) }
+		end
+		local out = {}
+		for i, item in found do
+			if i > 200 then
+				break
+			end
+			local node = item.node
+			local task = if node then node.task else nil
+			table.insert(out, {
+				kind = item.kind,
+				note = item.note.name,
+				line = if node then node.line + 1 else nil,
+				text = if task
+					then todos.plain(task.text)
+					elseif node then node.text
+					else item.note.title,
+				due = if task then task.due else nil,
+				done = if task then task.done else nil,
+			})
+		end
+		return { found = greed.json.array(out), count = #found }
 	end,
 })
 
