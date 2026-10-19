@@ -82,6 +82,20 @@ test("code blocks, quotes, rules and bullets", function(t)
 	assert(rows[6] == "• item", rows[6])
 end)
 
+test("a callout shows its sign and title, its bar in its kind's colour", function(t)
+	local rows = shown(
+		t,
+		"> [!warning] Mind the step\n> it's steep\n\n> [!tip]\n> a hint\n\n> [!whatever]\n> odd"
+	)
+	assert(rows[1] == "▎ ! Mind the step", rows[1])
+	assert(rows[2] == "▎ it's steep", rows[2])
+	assert(rows[4] == "▎ ✱ Tip", rows[4])
+	assert(rows[7] == "▎ ℹ Whatever", rows[7])
+	local warned = styled("markdown.callout.warning")
+	assert(#warned == 4, `the bars, the sign and the title: {#warned}`)
+	assert(#styled("markdown.quote.bar") == 0, "no plain quote here")
+end)
+
 test("a code block's result looks a little apart from code", function(t)
 	shown(t, "```sh\nls\n```\n\n```result\na\n```")
 	assert(#styled("markdown.code.block") == 3, "the code block")

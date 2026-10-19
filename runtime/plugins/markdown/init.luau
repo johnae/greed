@@ -472,6 +472,66 @@ local function picture(
 	}
 end
 
+-- Obsidian's callouts, `> [!warning] Title` on a quote's first line: the
+-- kinds it knows, by the look each has, and each look's sign. A kind it
+-- doesn't know looks like a note.
+local CALLOUTS: { [string]: string } = {
+	note = "note",
+	abstract = "note",
+	summary = "note",
+	tldr = "note",
+	info = "note",
+	todo = "note",
+	tip = "tip",
+	hint = "tip",
+	important = "tip",
+	success = "success",
+	check = "success",
+	done = "success",
+	question = "question",
+	help = "question",
+	faq = "question",
+	warning = "warning",
+	caution = "warning",
+	attention = "warning",
+	failure = "danger",
+	fail = "danger",
+	missing = "danger",
+	danger = "danger",
+	error = "danger",
+	bug = "danger",
+	example = "example",
+	quote = "quote",
+	cite = "quote",
+}
+local CALLOUT_SIGNS: { [string]: string } = {
+	note = "ℹ",
+	tip = "✱",
+	success = "✓",
+	question = "?",
+	warning = "!",
+	danger = "✗",
+	example = "≡",
+	quote = "❝",
+}
+
+-- How the callout line `n` (0-based) is in looks, from the `[!kind]` on
+-- its quote's first line; nil in a plain quote or outside one.
+local function callout_of(s: Structure, n: number): string?
+	for k = n, math.max(n - 200, 0), -1 do
+		local text = s.lines[k + 1]
+		local after = string.match(text, "^%s*>%s?()")
+		if after == nil then
+			return nil
+		end
+		local kind = string.match(text, "^%[!([%w%-]+)%]", after)
+		if kind then
+			return CALLOUTS[string.lower(kind)] or "note"
+		end
+	end
+	return nil
+end
+
 -- The marks starting on lines `first` to `last` of `buffer`, whose
 -- structure is `s`, in the reading view if `read` is given.
 local function marks(
@@ -589,8 +649,26 @@ local function marks(
 			hide(line, 1, #text, string.rep("─", 40), "markdown.rule")
 			continue
 		elseif quote then
-			hide(line, bar :: number, (quote :: number) - 1, "▎ ", "markdown.quote.bar")
-			paint(line, quote :: number, #text, "markdown.quote")
+			local look = callout_of(s, n - 1)
+			local style = if look then `markdown.callout.{look}` else "markdown.quote.bar"
+			hide(line, bar :: number, (quote :: number) - 1, "▎ ", style)
+			local kind, title = string.match(text, "^%[!([%w%-]+)%][+-]?%s*()", quote :: number)
+			if look and kind and title then
+				-- Its sign, and its title or else its kind's name.
+				local named = if (title :: number) > #text
+					then string.upper(string.sub(kind, 1, 1)) .. string.lower(string.sub(kind, 2))
+					else ""
+				hide(
+					line,
+					quote :: number,
+					(title :: number) - 1,
+					`{CALLOUT_SIGNS[look]} {named}`,
+					style
+				)
+				paint(line, title :: number, #text, style)
+			else
+				paint(line, quote :: number, #text, "markdown.quote")
+			end
 		elseif item and not parts.bullets and string.find(item.bullet, "^[-*+]$") then
 			local bullet = item.from - at + 1
 			hide(line, bullet, bullet + 1, "• ", "markdown.bullet")

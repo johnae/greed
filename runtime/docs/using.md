@@ -1417,6 +1417,10 @@ Markdown files show as documents. The file stays plain Markdown.
   `# comment` there stays code.
 - Quotes get a bar, `---` a line, list bullets (`-`, `*` or `+`) dots, and
   tables aligned columns with borders.
+- Obsidian's callouts, a quote starting `> [!warning] Mind the step`,
+  show their sign and title (or their kind, `Warning`, without one), the
+  bar in their kind's colour: note and info, tip, success, question,
+  warning, danger and error, example and quote.
 
 While you type on a line (insert mode) it shows as written; otherwise
 markup shows as written once the cursor steps inside it. A field, a box or
