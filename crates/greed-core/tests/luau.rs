@@ -2072,10 +2072,10 @@ fn a_sikt_program_reads_rows_out_of_text_with_typed_values_and_where_they_are() 
                for _, c in p.captures do table.insert(caps, `{c.name}={c.type}`) end
                local swap = assert(greed.sikt.compile('find a: 1+ digit "-" b: 1+ digit replace "{b}-{a}"'))
                local across = assert(greed.sikt.compile('"a" newline "b"', { lines = false }))
-               return p:rows("disk:1K")[1].size, table.concat(caps, ','), swap:replace("1-2, 30-4"),
-                 #across:rows("a\nb")"#
+               return p:rows("disk:1K")[1].size, p:rows("disk:1K", { text = true })[1].size,
+                 table.concat(caps, ','), swap:replace("1-2, 30-4"), #across:rows("a\nb")"#
         ),
-        "1024\tkey=text,size=size\t2-1, 4-30\t1"
+        "1024\t1K\tkey=text,size=size\t2-1, 4-30\t1"
     );
 }
 

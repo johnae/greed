@@ -1165,10 +1165,10 @@ export type SiktProgram = {
 	warnings: { SiktProblem },
 	--- Its captures, each with its type ("text", "integer", "number", "size", "percent", "duration").
 	captures: { { name: string, type: string? } },
-	--- The matches in `text`, each a row of its captures; with `at`, also where each is. It runs on the editor's thread, so for a lot of text use `rows_many`. An error when matching gives up, on a pattern that takes too many steps.
-	rows: (self: SiktProgram, text: string, opts: { at: boolean? }?) -> ({ SiktRow }, { SiktPlace }?),
+	--- The matches in `text`, each a row of its captures; with `at`, also where each is; with `text`, every capture as the text it matched ("1.5G" rather than its bytes). It runs on the editor's thread, so for a lot of text use `rows_many`. An error when matching gives up, on a pattern that takes too many steps.
+	rows: (self: SiktProgram, text: string, opts: { at: boolean?, text: boolean? }?) -> ({ SiktRow }, { SiktPlace }?),
 	--- `rows` for each of `texts`, run on other threads and waited for like greed.sleep (commands, handlers, greed.spawn). The rows become Luau tables all at once when it's done, so give it a few hundred texts at a time.
-	rows_many: (self: SiktProgram, texts: { string }, opts: { at: boolean? }?) -> ({ { SiktRow } }, { { SiktPlace } }?),
+	rows_many: (self: SiktProgram, texts: { string }, opts: { at: boolean?, text: boolean? }?) -> ({ { SiktRow } }, { { SiktPlace } }?),
 	--- `text` with each match replaced as the program's `replace` says; unchanged without one.
 	replace: (self: SiktProgram, text: string) -> string,
 }

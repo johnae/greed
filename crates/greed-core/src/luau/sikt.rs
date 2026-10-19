@@ -123,12 +123,12 @@ fn program_to_lua(lua: &Lua, program: Arc<Program>) -> LuaResult<Table> {
         lua.create_function(
             move |lua, (_, text, opts): (Value, LuaString, Option<Table>)| {
                 let at = opt(opts.as_ref(), "at")?.unwrap_or(false);
+                let as_text = opt(opts.as_ref(), "text")?.unwrap_or(false);
                 let text = text.as_bytes();
                 let rows = lua.create_table()?;
                 let places = if at { Some(lua.create_table()?) } else { None };
                 let ran = each_match::<mlua::Error>(&run, &text, |m, line| {
-                    let captures = m.values().filter_map(|(name, value)| Some((name, value?)));
-                    rows.raw_push(row_to_lua(lua, captures)?)?;
+                    rows.raw_push(row_to_lua(lua, taken(&m, as_text))?)?;
                     if let Some(places) = &places {
                         places.raw_push(place(lua, m.range(), line)?)?;
                     }
@@ -146,10 +146,11 @@ fn program_to_lua(lua: &Lua, program: Arc<Program>) -> LuaResult<Table> {
     let start = lua.create_function(
         move |lua, (_, texts, opts): (Value, Vec<LuaString>, Option<Table>)| {
             let at = opt(opts.as_ref(), "at")?.unwrap_or(false);
+            let as_text = opt(opts.as_ref(), "text")?.unwrap_or(false);
             let texts: Vec<Vec<u8>> = texts.iter().map(|t| t.as_bytes().to_vec()).collect();
             let program = Arc::clone(&run);
             Ok(jobs::start(lua, "greed.sikt rows_many", move || {
-                Output::Sikt(rows_many(&program, &texts, at))
+                Output::Sikt(rows_many(&program, &texts, at, as_text))
             }))
         },
     )?;
@@ -221,6 +222,22 @@ fn each_match<E>(
     Ok(Ok(()))
 }
 
+/// The captures of `m` that took part: their values as the program types
+/// them, or with `as_text` each the text it matched.
+fn taken<'a>(
+    m: &Match<'a, [u8]>,
+    as_text: bool,
+) -> impl Iterator<Item = (&'a str, sikt::Value<'a, [u8]>)> {
+    m.values().filter_map(move |(name, value)| {
+        let value = value?;
+        Some(if as_text {
+            (name, sikt::Value::Text(m.get(name)?))
+        } else {
+            (name, value)
+        })
+    })
+}
+
 /// A match's row: each capture that matched, by its name.
 fn row_to_lua<'a, N: IntoLua>(
     lua: &Lua,
@@ -273,7 +290,7 @@ pub(super) struct Found {
 /// indexes in it stand for; or why matching gave up.
 pub(super) type Many = Result<(Vec<String>, Vec<Found>, bool), String>;
 
-fn rows_many(program: &Program, texts: &[Vec<u8>], at: bool) -> Many {
+fn rows_many(program: &Program, texts: &[Vec<u8>], at: bool, as_text: bool) -> Many {
     let names: Vec<String> = program
         .pattern()
         .capture_names()
@@ -291,12 +308,11 @@ fn rows_many(program: &Program, texts: &[Vec<u8>], at: bool) -> Many {
         };
         let ran = each_match::<std::convert::Infallible>(program, text, |m, line| {
             let mut row = Vec::new();
-            for (name, value) in m.values() {
+            for (name, value) in taken(&m, as_text) {
                 let kept = match value {
-                    Some(sikt::Value::Text(text)) => Kept::Text(text.to_vec()),
-                    Some(sikt::Value::Integer(n)) => Kept::Integer(n),
-                    Some(sikt::Value::Number(n)) => Kept::Number(n),
-                    None => continue,
+                    sikt::Value::Text(text) => Kept::Text(text.to_vec()),
+                    sikt::Value::Integer(n) => Kept::Integer(n),
+                    sikt::Value::Number(n) => Kept::Number(n),
                 };
                 row.push((index[name], kept));
             }
