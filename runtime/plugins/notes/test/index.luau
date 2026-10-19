@@ -251,3 +251,48 @@ test("notes read with sikt are the same as read line by line", function()
 		assert(found == nil, found)
 	end
 end)
+
+test("in a table, a link's bar is written \\| and still parts its name from its words", function()
+	local links = syntax.links("| [[List view\\|List]] | a [[Basic syntax#Lists\\|list]] |")
+	assert(links[1].target == "List view" and links[1].shown == "List", links[1].target)
+	assert(links[2].target == "Basic syntax" and links[2].heading == "Lists", links[2].target)
+end)
+
+test("links find notes as Obsidian does: by file name in any folder, in any case", function(t)
+	folder(t, {
+		["Bases/Layouts/Cards view.md"] = "# Cards view\n",
+		["Bases/Views.md"] = "See [[cards view]], [[Cards view.md]] and [[Bases/Layouts/Cards view]].\n",
+		["Work/Plan.md"] = "# Work plan\n",
+		["Home/Plan.md"] = "# Home plan\n",
+		["Work/Today.md"] = "- [[Plan]]\n",
+		["Elsewhere/Note.md"] = "- [[Plan]]\n",
+		["Elsewhere/Deep/Plan.md"] = "# Deep plan\n",
+		["Elsewhere/Ref.md"] = "[[deep/Plan]]\n",
+		["Movies/Blade Runner.md"] = '---\ncategories:\n  - "[[Movies]]"\n---\n',
+		["Movies.md"] = "# Movies\n",
+	})
+	index.ensure()
+	assert(index.linked("cards view") == "Bases/Layouts/Cards view", index.linked("cards view"))
+	assert(index.linked("Cards view.md") == "Bases/Layouts/Cards view")
+	assert(index.linked("nothing like it") == "nothing like it", "a note to make")
+	-- Several with that name: the one beside the link, else the nearest
+	-- the top (by name, when they're as near).
+	assert(index.linked("Plan", "Work/Today") == "Work/Plan", index.linked("Plan", "Work/Today"))
+	assert(
+		index.linked("Plan", "Elsewhere/Note") == "Home/Plan",
+		index.linked("Plan", "Elsewhere/Note")
+	)
+	local back = table.concat(index.backlinks("Bases/Layouts/Cards view"), ",")
+	assert(back == "Bases/Views", back)
+	assert(table.concat(index.backlinks("Work/Plan"), ",") == "Work/Today")
+	assert(table.concat(index.backlinks("Home/Plan"), ",") == "Elsewhere/Note")
+	-- Deeper than another of its name, it's found by the end of its path.
+	local deep = table.concat(index.backlinks("Elsewhere/Deep/Plan"), ",")
+	assert(deep == "Elsewhere/Ref", deep)
+	-- A link naming folders finds the note whose path ends that way.
+	assert(index.linked("deep/plan") == "Elsewhere/Deep/Plan", index.linked("deep/plan"))
+	assert(index.linked("Layouts/Cards view") == "Bases/Layouts/Cards view")
+	assert(index.linked("Other/Plan") == "Other/Plan", "no such ending: a note to make")
+	-- A link in front matter is a link too.
+	assert(table.concat(index.backlinks("Movies"), ",") == "Movies/Blade Runner")
+end)

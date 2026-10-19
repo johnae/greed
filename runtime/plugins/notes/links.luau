@@ -70,14 +70,14 @@ function M.backlinks(name: string): { string }
 end
 
 --- The note a link to `target`, in note `from` (nil outside notes), goes
---- to: by its name, or else one of the notes' aliases (see
---- `index.linked`); an empty target is `from` itself.
+--- to: by its name, its file name in any folder, or one of the notes'
+--- aliases (see `index.linked`); an empty target is `from` itself.
 function M.target(target: string, from: string?): string
 	if target == "" and from then
 		return from
 	end
 	index.ensure()
-	return index.linked(notes.resolve(target, from))
+	return index.linked(notes.resolve(target, from), from)
 end
 
 -- The backlinks shown under each note, by buffer id, worked out when it's

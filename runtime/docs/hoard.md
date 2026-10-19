@@ -179,10 +179,17 @@ See [[Garden plans#Seeds]] for the list, and [[Garden plans#^fence|the fence]].
 - Renaming a note, or moving a folder of them (`:file-rename`, or from the
   file list), changes the links to them in your other notes.
 
-A folder Obsidian writes works as it is: `aliases:` in a note's front
-matter (`aliases: [w42, this week]`) are other names links can use, in
-any case; `#tags`, `key:: value` fields and the Tasks plugin's dates
-(`📅 2026-10-20` is a due date) are read too. Canvas files aren't.
+A folder Obsidian writes works as it is. Links find notes as Obsidian
+finds them: `[[Cards view]]` goes to `Bases/Cards view.md` wherever it
+is, in any case and with or without `.md`, and `[[Layouts/Cards view]]`
+the note whose path ends that way; when several notes have that name, the
+one in the linking note's folder wins, then the one nearest the top. In a
+table, `[[note\|words]]` is a link with other words. Links in
+front matter (`categories: ["[[Movies]]"]`) count as links too.
+`aliases:` in a note's front matter (`aliases: [w42, this week]`) are
+other names links can use, in any case; `#tags`, `key:: value` fields and
+the Tasks plugin's dates (`📅 2026-10-20` is a due date) are read too.
+Canvas and Bases files aren't.
 
 ## Saying when in plain words
 

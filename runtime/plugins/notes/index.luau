@@ -464,6 +464,16 @@ function M.parse(name: string, path: string, text: string, found: Found?): Note
 			embed = found.embed,
 		})
 	end
+	-- Links in front matter (`categories: ["[[Movies]]"]`) are links too, as
+	-- Obsidian has them; nothing else there is read line by line.
+	for n = 1, (s.front or 1) - 1 do
+		local line = s.lines[n + 1]
+		if string.find(line, "[[", 1, true) then
+			for _, wiki in syntax.links(line) do
+				link(n, wiki)
+			end
+		end
+	end
 	for n = 0, #s.lines - 1 do
 		if s.code_at[n] or (s.front and n <= s.front) then
 			continue
@@ -570,6 +580,19 @@ local tagging: { [string]: { [string]: boolean } } = {}
 -- The notes going by each alias (`aliases:` in front matter), in lower
 -- case, by alias.
 local aliased: { [string]: string } = {}
+-- Each note's name in lower case, and the notes by their file's name
+-- alone (in lower case, after their place's), for links as Obsidian
+-- writes them: `[[cards view]]` for `Bases/Layouts/Cards view.md`.
+local named_any_case: { [string]: string } = {}
+local by_file_name: { [string]: { [string]: boolean } } = {}
+
+-- Note `name`'s file name without its folders, in lower case, after its
+-- place's name if it has one ("work:meeting").
+local function file_key(name: string): string
+	local place, rest = string.match(name, "^([%w_-]+):(.+)$")
+	local file = string.lower(string.match(rest or name, "([^/]+)$") or name)
+	return if place then `{place}:{file}` else file
+end
 
 --- The aliases `note`'s front matter gives it.
 function M.aliases(note: Note): { string }
@@ -599,6 +622,13 @@ local function drop(name: string)
 	if by_path[old.path] == name then
 		by_path[old.path] = nil
 	end
+	if named_any_case[string.lower(name)] == name then
+		named_any_case[string.lower(name)] = nil
+	end
+	local same_file = by_file_name[file_key(name)]
+	if same_file then
+		same_file[name] = nil
+	end
 	for _, link in old.links do
 		local from = linking[link.target]
 		if from then
@@ -627,6 +657,11 @@ local function put(note: Note)
 	drop(note.name)
 	by_name[note.name] = note
 	by_path[note.path] = note.name
+	named_any_case[string.lower(note.name)] = note.name
+	local key = file_key(note.name)
+	local same_file = by_file_name[key] or {}
+	by_file_name[key] = same_file
+	same_file[note.name] = true
 	for _, link in note.links do
 		local from = linking[link.target] or {}
 		linking[link.target] = from
@@ -1009,20 +1044,33 @@ end
 function M.backlinks(name: string): { string }
 	local seen: { [string]: boolean } = {}
 	local out: { string } = {}
-	local function from_all(linked: { [string]: boolean }?)
+	-- With `key`, only the notes where a link to `key` leads here.
+	local function from_all(linked: { [string]: boolean }?, key: string?)
 		for from in linked or {} :: { [string]: boolean } do
-			if from ~= name and not seen[from] then
+			if from ~= name and not seen[from] and (key == nil or M.linked(key, from) == name) then
 				seen[from] = true
 				table.insert(out, from)
 			end
 		end
 	end
 	from_all(linking[name])
+	-- Links naming it another way (in another case, with `.md`, or by the
+	-- end of its path, its file name alone included), each where it leads
+	-- here from the note it's in.
+	local place, path = string.match(name, "^([%w_-]+):(.+)$")
+	local lower = string.lower(path or name)
+	local at: number? = 0
+	while at do
+		local ending = string.sub(lower, at + 1)
+		local key = if place then `{string.lower(place)}:{ending}` else ending
+		from_all(linking_any_case[key], key)
+		from_all(linking_any_case[`{key}.md`], `{key}.md`)
+		at = string.find(lower, "/", at + 1, true)
+	end
 	local note = by_name[name]
 	if note then
 		-- A link to an alias names it as a note in the same place would,
 		-- in any case.
-		local place = string.match(name, "^([%w_-]+):")
 		for _, alias in M.aliases(note) do
 			from_all(linking_any_case[string.lower(if place then `{place}:{alias}` else alias)])
 		end
@@ -1031,19 +1079,64 @@ function M.backlinks(name: string): { string }
 	return out
 end
 
---- The note a link to `target` goes to: the note of that name if there's
---- one, else the one with that alias (any case), else `target` itself, a
---- note to make.
-function M.linked(target: string): string
-	if by_name[target] then
-		return target
+-- The folder note `name` is in ("work:Notes" for "work:Notes/Monday"),
+-- or its place's name for one at the top.
+local function folder_of(name: string): string
+	return string.match(name, "^(.*)/[^/]*$") or string.match(name, "^([%w_-]+):") or ""
+end
+
+--- The note a link to `target`, written in note `from`, goes to, as
+--- Obsidian finds it: the note of that name (a `.md` after it or not, in
+--- any case); else a note with that file name in any folder, whose path
+--- ends as the link's does when it names folders (one in `from`'s folder
+--- first, then the one nearest the top); else the one with that alias
+--- (any case); else `target` itself, a note to make.
+function M.linked(target: string, from: string?): string
+	local name = string.gsub(target, "%.[mM][dD]$", "") :: string
+	if by_name[name] then
+		return name
 	end
-	local place, rest = string.match(target, "^([%w_-]+):(.+)$")
-	local alias = aliased[string.lower(rest or target)]
+	local any_case = named_any_case[string.lower(name)]
+	if any_case then
+		return any_case
+	end
+	local place, rest = string.match(name, "^([%w_-]+):(.+)$")
+	local ending = `/{string.lower(rest or name)}`
+	local names_folders = not string.find(ending, "^/[^/]*$")
+	local here = if from then folder_of(from) else nil
+	local function rank(n: string): (boolean, number)
+		local _, depth = string.gsub(n, "/", "")
+		return folder_of(n) ~= here, depth
+	end
+	local best: string? = nil
+	for candidate in by_file_name[file_key(name)] or {} :: { [string]: boolean } do
+		if names_folders and string.sub(string.lower(candidate), -#ending) ~= ending then
+			continue
+		end
+		if best == nil then
+			best = candidate
+		else
+			local away, depth = rank(candidate)
+			local best_away, best_depth = rank(best)
+			if
+				(not away and best_away)
+				or (
+					away == best_away
+					and (depth < best_depth or (depth == best_depth and candidate < best))
+				)
+			then
+				best = candidate
+			end
+		end
+	end
+	if best then
+		return best
+	end
+	local alias = aliased[string.lower(rest or name)]
 	if alias and (place == nil or string.sub(alias, 1, #place + 1) == `{place}:`) then
 		return alias
 	end
-	return target
+	return name
 end
 
 --- The line (0-based) of the heading called `heading` (any case) or the

@@ -275,6 +275,8 @@ local function link_in(text: string, scan: string, from: number): WikiLink?
 	local shown_from = from + 2
 	if target and shown then
 		shown_from += #target + 1
+		-- In a table the bar is written `\|`, so as not to end a cell.
+		target = string.gsub(target, "\\$", "") :: string
 	else
 		target = inside
 	end
