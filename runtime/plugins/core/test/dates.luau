@@ -149,3 +149,42 @@ test("weeks are counted as ISO 8601 counts them", function()
 	local year3, week3 = dates.week("2026-01-01")
 	assert(year3 == 2026 and week3 == 1, `{year3} {week3}`)
 end)
+
+test("a date in a query covers its days: a day, a week, a month, a year", function()
+	on_a_wednesday(function()
+		local cases: { { any } } = {
+			{ "today", false, "2026-10-14", "2026-10-14" },
+			{ "yesterday", false, "2026-10-13", "2026-10-13" },
+			{ "tomorrow", false, "2026-10-15", "2026-10-15" },
+			{ "2026-10-20", false, "2026-10-20", "2026-10-20" },
+			{ "2026-02", false, "2026-02-01", "2026-02-28" },
+			{ "2025", false, "2025-01-01", "2025-12-31" },
+			{ "this week", false, "2026-10-12", "2026-10-18" },
+			{ "last week", false, "2026-10-05", "2026-10-11" },
+			{ "next month", false, "2026-11-01", "2026-11-30" },
+			{ "last year", false, "2025-01-01", "2025-12-31" },
+			{ "eow", false, "2026-10-18", "2026-10-18" },
+			{ "eom", false, "2026-10-31", "2026-10-31" },
+			{ "eoy", false, "2026-12-31", "2026-12-31" },
+			{ "2w", false, "2026-09-30", "2026-09-30" },
+			{ "2w", true, "2026-10-28", "2026-10-28" },
+			{ "+7d", false, "2026-10-21", "2026-10-21" },
+			{ "-3d", true, "2026-10-11", "2026-10-11" },
+			{ "1m", false, "2026-09-14", "2026-09-14" },
+			{ "monday", false, "2026-10-12", "2026-10-12" },
+			{ "monday", true, "2026-10-19", "2026-10-19" },
+			{ "wednesday", true, "2026-10-14", "2026-10-14" },
+			{ "december", false, "2025-12-01", "2025-12-31" },
+			{ "dec", true, "2026-12-01", "2026-12-31" },
+			{ "march", true, "2027-03-01", "2027-03-31" },
+		}
+		for _, case in cases do
+			local from, to = dates.span(case[1], case[2])
+			local got = `{from or "-"} {to or "-"}`
+			assert(got == `{case[3]} {case[4]}`, `{case[1]} ({case[2]}): {got}`)
+		end
+		for _, word in { "decade", "soon", "2026-13", "2026-02-30", "" } do
+			assert(dates.span(word) == nil, `{word} isn't a date`)
+		end
+	end)
+end)

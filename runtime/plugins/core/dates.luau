@@ -626,4 +626,120 @@ function M.read_words(text: string): When
 	}
 end
 
+local FULL_MONTHS = {
+	"january",
+	"february",
+	"march",
+	"april",
+	"may",
+	"june",
+	"july",
+	"august",
+	"september",
+	"october",
+	"november",
+	"december",
+}
+
+local SPAN_UNITS = { d = "day", w = "week", m = "month", y = "year" }
+
+-- The last day of the month `date` is in.
+local function month_end(date: string): string
+	return M.add_days(M.add_months(string.sub(date, 1, 8) .. "01", 1), -1)
+end
+
+--- The days a date in a query covers, its first and its last: a day
+--- ("today", "yesterday", "tomorrow", "2026-10-20"), a month ("2026-10",
+--- "october"), a year ("2026"), a week, month or year by name ("this week",
+--- "last month", "next year"), the end of this week, month or year ("eow",
+--- "eom", "eoy"), a weekday ("monday"), or a day some days, weeks, months
+--- or years off ("2w", "-3d", "+1m"). Without a sign, a distance, a
+--- weekday or a month is in the past, unless `ahead` (as for a due date).
+--- Nil for something that isn't a date.
+function M.span(text: string, ahead: boolean?): (string?, string?)
+	local word = string.lower(text)
+	local today = M.today()
+	local _, _, monday = M.week(today)
+	if word == "today" then
+		return today, today
+	elseif word == "yesterday" then
+		local day = M.add_days(today, -1)
+		return day, day
+	elseif word == "tomorrow" then
+		local day = M.add_days(today, 1)
+		return day, day
+	elseif string.match(word, "^%d%d%d%d%-%d%d%-%d%d$") then
+		-- A day os.time would roll over, like 30 February, isn't a date.
+		local at = utc(word)
+		if at == nil or os.date("!%Y-%m-%d", at) ~= word then
+			return nil, nil
+		end
+		return word, word
+	elseif string.match(word, "^%d%d%d%d%-%d%d$") then
+		local first = word .. "-01"
+		if utc(first) == nil then
+			return nil, nil
+		end
+		return first, month_end(first)
+	elseif string.match(word, "^%d%d%d%d$") then
+		return word .. "-01-01", word .. "-12-31"
+	elseif word == "eow" then
+		local sunday = M.add_days(monday, 6)
+		return sunday, sunday
+	elseif word == "eom" then
+		local last = month_end(today)
+		return last, last
+	elseif word == "eoy" then
+		local last = string.sub(today, 1, 4) .. "-12-31"
+		return last, last
+	end
+	local which, unit = string.match(word, "^(%a+) (%a+)$")
+	local by = if which == "this"
+		then 0
+		elseif which == "last" then -1
+		elseif which == "next" then 1
+		else nil
+	local starts: { [string]: string } = {
+		week = monday,
+		month = string.sub(today, 1, 8) .. "01",
+		year = string.sub(today, 1, 4) .. "-01-01",
+	}
+	if by and unit and starts[unit] then
+		local first = step(starts[unit], by, unit)
+		return first, M.add_days(step(first, 1, unit), -1)
+	end
+	local sign, n, letter = string.match(word, "^([+-]?)(%d+)([dwmy])$")
+	if n then
+		local back = if sign == "-" then true elseif sign == "+" then false else not ahead
+		local count = (tonumber(n) :: number) * (if back then -1 else 1)
+		local day = step(today, count, SPAN_UNITS[letter :: string])
+		return day, day
+	end
+	local weekday = weekday_of(word)
+	if weekday then
+		local day = if ahead
+			then next_weekday(today, weekday, true)
+			else M.add_days(today, -((M.weekday(today) - weekday) % 7))
+		return day, day
+	end
+	-- A month by its name or its first three letters, but no other word
+	-- starting like one ("decade" isn't December).
+	local month = month_of(word)
+	if month and #word > 3 and string.sub(FULL_MONTHS[month], 1, #word) ~= word then
+		month = nil
+	end
+	if month then
+		local year = tonumber(string.sub(today, 1, 4)) :: number
+		local this = tonumber(string.sub(today, 6, 7)) :: number
+		if ahead and month < this then
+			year += 1
+		elseif not ahead and month > this then
+			year -= 1
+		end
+		local first = string.format("%04d-%02d-01", year, month)
+		return first, month_end(first)
+	end
+	return nil, nil
+end
+
 return M
