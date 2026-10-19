@@ -26,7 +26,7 @@ pub enum Done {
 }
 
 // An item as Luau gives it: `key`, `parent` (the key of the item it's in),
-// `name`, `text`, `fields` and `flags`.
+// `name`, `text`, `fields`, `flags` and `words`.
 fn item(table: &Table) -> LuaResult<Item> {
     Ok(Item {
         key: table.get("key")?,
@@ -35,6 +35,7 @@ fn item(table: &Table) -> LuaResult<Item> {
         text: table.get::<Option<String>>("text")?.unwrap_or_default(),
         fields: fields(table)?,
         flags: flags(table)?,
+        words: table.get("words")?,
     })
 }
 

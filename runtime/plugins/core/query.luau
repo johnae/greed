@@ -1073,6 +1073,13 @@ function M.index_items(items: { any }, source: Source): { greed.IndexItem }
 	local key = source.key :: (item: any) -> string
 	local stored: { string } = source.stored or {}
 	local flags: { [string]: (item: any) -> boolean } = source.flags or {}
+	-- Only text fields are searched by word.
+	local words: { string } = {}
+	for name, field in source.fields do
+		if field.kind == "text" then
+			table.insert(words, name)
+		end
+	end
 	local out: { greed.IndexItem } = {}
 	for _, item in items do
 		local has: { string } = {}
@@ -1090,6 +1097,7 @@ function M.index_items(items: { any }, source: Source): { greed.IndexItem }
 			text = source.text(item),
 			fields = fields_of(item, source),
 			flags = has,
+			words = words,
 		})
 	end
 	return out

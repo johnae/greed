@@ -1632,8 +1632,8 @@ export type Query = {
 	fold: (text: string) -> string,
 }
 
---- An item for `index:write`: its `key`, unique in the index, the `parent` key of the item it's in, its `name` (for `in:NAME`), its `text` for words, its `fields`' values by name (a string or a list) and its `flags`.
-export type IndexItem = { key: string, parent: string?, name: string?, text: string?, fields: { [string]: string | { string } }?, flags: { string }? }
+--- An item for `index:write`: its `key`, unique in the index, the `parent` key of the item it's in, its `name` (for `in:NAME`), its `text` for words, its `fields`' values by name (a string or a list) and its `flags`. `words` names the fields searched by word (text fields); without it, every field is, which costs more to write.
+export type IndexItem = { key: string, parent: string?, name: string?, text: string?, fields: { [string]: string | { string } }?, flags: { string }?, words: { string }? }
 
 --- An index on SQLite, from `greed.index.open` or `greed.index.writer`, that queries `core.query` parsed run over. Its methods run on another thread and wait like greed.sleep, so only in commands, event handlers and greed.spawn.
 export type Index = {

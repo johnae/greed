@@ -73,7 +73,8 @@ impl From<query::Bad> for Trouble {
 
 /// An item to put in an index: its `key`, unique in it, the key of the
 /// item it's in, its name (for `in:NAME`), its text for words, its fields'
-/// values by name and its flags.
+/// values by name and its flags. `words` names the fields whose values are
+/// searched by word (text fields); without it, every field's are.
 #[derive(Debug, Clone, Default)]
 pub struct Item {
     pub key: String,
@@ -82,6 +83,7 @@ pub struct Item {
     pub text: String,
     pub fields: HashMap<String, Vec<String>>,
     pub flags: Vec<String>,
+    pub words: Option<Vec<String>>,
 }
 
 /// How results come back: sorted by fields (each descending or not), and
@@ -147,7 +149,8 @@ impl Index {
         let tx = self.db.transaction()?;
         for item in items {
             forget(&tx, &item.key)?;
-            tx.execute(
+            run(
+                &tx,
                 "INSERT INTO items (key, parent, name, folded, text) VALUES (?1, ?2, ?3, ?4, ?5)",
                 (
                     &item.key,
@@ -158,25 +161,41 @@ impl Index {
                 ),
             )?;
             let id = tx.last_insert_rowid();
-            tx.execute(
+            run(
+                &tx,
                 "INSERT INTO words (rowid, text) VALUES (?1, ?2)",
                 (id, &item.text),
             )?;
             for (field, values) in &item.fields {
                 let field = field.to_lowercase();
+                let worded = item
+                    .words
+                    .as_ref()
+                    .is_none_or(|words| words.iter().any(|name| name.eq_ignore_ascii_case(&field)));
                 for value in values {
-                    tx.execute(
+                    run(
+                        &tx,
                         "INSERT INTO item_values (item, field, value, lower, number) VALUES (?1, ?2, ?3, ?4, ?5)",
-                        (id, &field, value, query::fold(value), compare::number(value, false)),
+                        (
+                            id,
+                            &field,
+                            value,
+                            query::fold(value),
+                            compare::number(value, false),
+                        ),
                     )?;
-                    tx.execute(
-                        "INSERT INTO field_words (rowid, value, field, item) VALUES (?1, ?2, ?3, ?4)",
-                        (tx.last_insert_rowid(), value, &field, id),
-                    )?;
+                    if worded {
+                        run(
+                            &tx,
+                            "INSERT INTO field_words (rowid, value, field, item) VALUES (?1, ?2, ?3, ?4)",
+                            (tx.last_insert_rowid(), value, &field, id),
+                        )?;
+                    }
                 }
             }
             for flag in &item.flags {
-                tx.execute(
+                run(
+                    &tx,
                     "INSERT INTO item_flags (item, flag) VALUES (?1, ?2)",
                     (id, flag.to_lowercase()),
                 )?;
@@ -385,21 +404,29 @@ fn read_version(db: &Connection) -> rusqlite::Result<String> {
     })
 }
 
+// Runs `sql` with `params`, its statement prepared once and kept: writing
+// many items runs the same few statements many thousand times.
+fn run(db: &Connection, sql: &str, params: impl rusqlite::Params) -> rusqlite::Result<usize> {
+    db.prepare_cached(sql)?.execute(params)
+}
+
 // Takes the item with `key` out, with its values, flags and words.
 fn forget(tx: &rusqlite::Transaction, key: &str) -> Result<(), Trouble> {
     let id: Option<i64> = tx
-        .query_row("SELECT id FROM items WHERE key = ?1", [key], |r| r.get(0))
+        .prepare_cached("SELECT id FROM items WHERE key = ?1")?
+        .query_row([key], |r| r.get(0))
         .ok();
     if let Some(id) = id {
         // By rowid: field_words can't look up by item without reading all of it.
-        tx.execute(
+        run(
+            tx,
             "DELETE FROM field_words WHERE rowid IN (SELECT rowid FROM item_values WHERE item = ?1)",
             [id],
         )?;
-        tx.execute("DELETE FROM item_values WHERE item = ?1", [id])?;
-        tx.execute("DELETE FROM item_flags WHERE item = ?1", [id])?;
-        tx.execute("DELETE FROM words WHERE rowid = ?1", [id])?;
-        tx.execute("DELETE FROM items WHERE id = ?1", [id])?;
+        run(tx, "DELETE FROM item_values WHERE item = ?1", [id])?;
+        run(tx, "DELETE FROM item_flags WHERE item = ?1", [id])?;
+        run(tx, "DELETE FROM words WHERE rowid = ?1", [id])?;
+        run(tx, "DELETE FROM items WHERE id = ?1", [id])?;
     }
     Ok(())
 }
@@ -754,8 +781,13 @@ mod tests {
     fn a_fields_words_go_with_its_item() {
         let path = temp("field-words");
         let mut index = Index::open(&path).unwrap();
+        // Only the title is searched by word; the note's name is matched whole.
         let titled = |key: &str, title: &str| Item {
-            fields: HashMap::from([("title".to_string(), vec![title.to_string()])]),
+            fields: HashMap::from([
+                ("title".to_string(), vec![title.to_string()]),
+                ("note".to_string(), vec![format!("{key} garden")]),
+            ]),
+            words: Some(vec!["Title".to_string()]),
             ..item(key, "")
         };
         index
@@ -791,7 +823,7 @@ mod tests {
                 .unwrap()
         };
         assert_eq!(rows("field_words"), 1);
-        assert_eq!(rows("item_values"), 1);
+        assert_eq!(rows("item_values"), 2);
     }
 
     #[test]
