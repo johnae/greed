@@ -196,3 +196,9 @@ test("space m o opens the table in a float as text, a page at a time", function(
 	t:keys("q")
 	assert(not float:valid(), "q closes it")
 end)
+
+test("a table without rows says so, rather than drawing an empty one", function(t)
+	opened(t, { ["doc.md"] = "```csv\nname,age\n```\n" })
+	local rows = shows(t, "no rows")
+	assert(not string.find(rows, "│ name", 1, true), rows)
+end)

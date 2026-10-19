@@ -234,7 +234,7 @@ local function draw_block(buffer: greed.Buffer, s: Structure, code: Code, out: {
 			conceal = true,
 			reveal = "auto" :: "auto",
 		})
-	elseif t and #t.columns > 0 then
+	elseif t and #t.columns > 0 and (#t.rows > 0 or (ask.offset or 0) > 0) then
 		-- The top border over the closing fence, the rest under it.
 		local laid = M.node(t).lay(core.ui.width(buffer))
 		local top = table.remove(laid, 1) :: core.UiLine
