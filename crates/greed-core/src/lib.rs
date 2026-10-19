@@ -20,7 +20,7 @@ pub mod control;
 pub mod debug;
 pub mod delta;
 pub mod diff;
-pub mod dirs;
+pub use greed_dirs as dirs;
 pub mod dropped;
 mod editor;
 pub mod files;

@@ -1427,6 +1427,7 @@ dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",
  "gethostname",
+ "greed-dirs",
  "greed-index",
  "greed-text",
  "hayro",
@@ -1471,6 +1472,10 @@ dependencies = [
  "ureq",
  "url",
 ]
+
+[[package]]
+name = "greed-dirs"
+version = "0.2.1"
 
 [[package]]
 name = "greed-editor"
