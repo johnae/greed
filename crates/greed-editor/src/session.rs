@@ -35,7 +35,8 @@ pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
     let root = project::root_of(&target);
     // The session works from its project's root, so paths in it are short.
     std::env::set_current_dir(&root)?;
-    let file = target.is_file().then_some(target);
+    // A file that isn't there yet opens empty, to be written there.
+    let file = (path.is_some() && !target.is_dir()).then_some(target);
     let text = read(file.as_deref())?;
     let mut session = control::listen(name, Some(&root))?;
     // A session `greed ssh` started reaches your ssh agent through you.
@@ -340,7 +341,7 @@ fn attach_here(
         let Some(refused) = versions::other_version(&err) else {
             return Err(err);
         };
-        match settle(name, &refused)? {
+        match settle(name, &refused, open)? {
             Some(beside) => *name = beside,
             None => return Ok(None),
         }
@@ -448,8 +449,12 @@ fn where_to(
 /// Asks what to do about the session `name` here, which another version
 /// of greed runs (`refused` says which), and does it: the session to
 /// attach to then, or None to stop. Opening it with that version replaces
-/// this process.
-fn settle(name: &str, refused: &control::Refused) -> Result<Option<String>, Error> {
+/// this process, which asks it to open `open` too.
+fn settle(
+    name: &str,
+    refused: &control::Refused,
+    open: Option<&Path>,
+) -> Result<Option<String>, Error> {
     let stale = versions::here(name, refused);
     match versions::ask(&stale)? {
         Choice::End => {
@@ -468,15 +473,27 @@ fn settle(name: &str, refused: &control::Refused) -> Result<Option<String>, Erro
             let greed = stale
                 .greed
                 .ok_or("that version of greed isn't here any more")?;
-            let mut command = Command::new(greed);
-            command.args(["attach", name]);
-            if client::kind() == "gui" {
-                command.arg("--gui");
-            }
-            Err(command.exec().into())
+            Err(other_greed(&greed, name, open, client::kind() == "gui")
+                .exec()
+                .into())
         }
         Choice::Cancel => Ok(None),
     }
+}
+
+/// The command for `greed`, another version, to show session `name`,
+/// opening `open` there, in a window with `gui`.
+fn other_greed(greed: &Path, name: &str, open: Option<&Path>, gui: bool) -> Command {
+    let mut command = Command::new(greed);
+    // Every version takes `--session NAME FILE`; `attach` takes no file.
+    match open {
+        Some(open) => command.args(["--session", name]).arg(open),
+        None => command.args(["attach", name]),
+    };
+    if gui {
+        command.arg("--gui");
+    }
+    command
 }
 
 /// Waits until the session `name` has gone, as after it was told to quit.
@@ -1317,5 +1334,21 @@ mod tests {
             bridge_command("/opt/greed", &plain, None, false),
             "exec '/opt/greed' 'bridge'"
         );
+    }
+
+    #[test]
+    fn another_version_is_asked_to_open_the_file_too() {
+        let args = |open: Option<&str>, gui| -> Vec<String> {
+            other_greed(Path::new("/old/greed"), "app", open.map(Path::new), gui)
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect()
+        };
+        assert_eq!(
+            args(Some("/app/new.md"), false),
+            ["--session", "app", "/app/new.md"]
+        );
+        assert_eq!(args(None, false), ["attach", "app"]);
+        assert_eq!(args(None, true), ["attach", "app", "--gui"]);
     }
 }

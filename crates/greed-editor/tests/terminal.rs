@@ -86,6 +86,37 @@ fn greed_anywhere_in_a_project_joins_its_session_and_opens_the_file() {
 }
 
 #[test]
+fn greed_with_a_file_that_isnt_there_yet_opens_it_to_be_written() {
+    let Some(world) = World::new("new-file") else {
+        return;
+    };
+    let project = world.project("draft", &[("old.md", "old")]);
+    // A new session, then the one running.
+    for (i, file) in ["new.md", "second.md"].iter().enumerate() {
+        let mut steps = vec![];
+        if i == 0 {
+            steps.push(Step::Until("the session", running));
+        }
+        steps.extend([
+            Step::Pause(500),
+            Step::Keys("iwritten\x1b"),
+            Step::Pause(200),
+            Step::Keys(":w\r"),
+            Step::Pause(500),
+            Step::Keys(":detach\r"),
+        ]);
+        world.terminal(&project, file, &[], &steps);
+        assert_eq!(
+            std::fs::read_to_string(project.join(file)).ok().as_deref(),
+            Some("written"),
+            "{file}"
+        );
+    }
+    assert_eq!(world.sessions().lines().count(), 1, "{}", world.sessions());
+    world.eval("draft", "require('@greed').quit()");
+}
+
+#[test]
 fn the_terminal_follows_when_its_session_switches_to_another_project() {
     let Some(world) = World::new("switch") else {
         return;
