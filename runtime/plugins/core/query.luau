@@ -197,6 +197,70 @@ local function is_op(text: string): boolean
 	return text ~= ":" and table.find(OPS, text) ~= nil
 end
 
+--- A part of a query's text by what it is (`paint`): from and to, as
+--- `string.find` gives them, and its `kind`.
+export type Paint = { from: number, to: number, kind: string }
+
+--- The parts of `text` by what they are, for showing a query in colours,
+--- even half typed: "field" (a field's name), "operator" (`OR`, `AND`,
+--- `NOT`, `-` and a field's `:`, `=`, `<`…), "value", "word", "phrase",
+--- "regex", "paren" and "view" (`sort:due`, `limit:20`).
+function M.paint(text: string): { Paint }
+	local out: { Paint } = {}
+	local function add(from: number, to: number, kind: string)
+		if to >= from then
+			table.insert(out, { from = from, to = to, kind = kind })
+		end
+	end
+	local list = tokens(text, {})
+	-- What the tokens after a spaced field (`AGE < 1h`) are, by index.
+	local spaced: { [number]: string } = {}
+	for i, token in list do
+		local raw, from = token.text, token.from
+		if token.kind == "(" or token.kind == ")" then
+			add(from, token.to, "paren")
+		elseif token.kind == "string" then
+			add(from, token.to, "phrase")
+		elseif token.kind == "regex" then
+			add(from, token.to, "regex")
+		elseif spaced[i] then
+			add(from, token.to, spaced[i])
+		elseif raw == "OR" or raw == "AND" or raw == "NOT" or raw == "-" then
+			add(from, token.to, "operator")
+		else
+			if #raw > 1 and string.sub(raw, 1, 1) == "-" then
+				add(from, from, "operator")
+				raw, from = string.sub(raw, 2), from + 1
+			end
+			local field, op, value = split_field(raw)
+			if field and op and value then
+				if VIEW[field] and op == ":" then
+					add(from, token.to, "view")
+					continue
+				end
+				local value_at = from + #raw - #value
+				add(from, from + #field - 1, "field")
+				add(from + #field, value_at - 1, "operator")
+				local regex = #value > 1 and string.match(value, "^/.*/$") ~= nil
+				add(value_at, token.to, if regex then "regex" else "value")
+			else
+				local after, then_value = list[i + 1], list[i + 2]
+				local is_spaced = string.match(raw, "^[%w_][%w_%.%-]*$") ~= nil
+					and after ~= nil
+					and after.kind == "bare"
+					and is_op(after.text)
+					and then_value ~= nil
+					and then_value.kind ~= "("
+				if is_spaced then
+					spaced[i + 1], spaced[i + 2] = "operator", "value"
+				end
+				add(from, token.to, if is_spaced then "field" else "word")
+			end
+		end
+	end
+	return out
+end
+
 --- Parses `text` into a query. With `typing`, the text is still being
 --- typed: a word (or a field's value) at its very end matches by prefix,
 --- marked `live`, so results show as you type; ending it with a space,

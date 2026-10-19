@@ -152,6 +152,37 @@ test("while typing, the word at the end matches by prefix until it's settled", f
 	assert(not query.parse('"exact phr', { typing = true }).ok, "an open quote is still a mistake")
 end)
 
+test("paint says what each part of a query is, for showing it in colours", function()
+	-- Each part as `kind:text`, in order.
+	local function painted(text: string): string
+		local out: { string } = {}
+		for _, part in query.paint(text) do
+			table.insert(out, `{part.kind}:{string.sub(text, part.from, part.to)}`)
+		end
+		return table.concat(out, " ")
+	end
+	local cases = {
+		{ "invoice budget*", "word:invoice word:budget*" },
+		{ "from:anna", "field:from operator:: value:anna" },
+		{ 'from:"Joe B"', 'field:from operator:: phrase:"Joe B"' },
+		{ "created:>2026-01", "field:created operator::> value:2026-01" },
+		{ "-is:done", "operator:- field:is operator:: value:done" },
+		{ "a OR b NOT c", "word:a operator:OR word:b operator:NOT word:c" },
+		{ "- x", "operator:- word:x" },
+		{ "(a b)", "paren:( word:a word:b paren:)" },
+		{ "tag:(a OR b)", "field:tag operator:: paren:( word:a operator:OR word:b paren:)" },
+		{ "AGE < 1h", "field:AGE operator:< value:1h" },
+		{ 'msg ~ "time out"', 'field:msg operator:~ phrase:"time out"' },
+		{ "/^err/ subject:/x/", "regex:/^err/ field:subject operator:: regex:/x/" },
+		{ "sort:-due limit:5", "view:sort:-due view:limit:5" },
+		{ '"open', 'phrase:"open' },
+	}
+	for _, case in cases do
+		local got = painted(case[1])
+		assert(got == case[2], `{case[1]}: {got}`)
+	end
+end)
+
 test("what print writes parses back to the same thing", function()
 	local cases = {
 		'from:anna "two words" -is:done (a OR b) c',

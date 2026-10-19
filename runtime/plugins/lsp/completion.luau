@@ -959,4 +959,12 @@ end)
 greed.keymap.bind({ role = "typing" }, { ["ctrl-space"] = "completion-ask" })
 greed.keymap.bind({ style = "helix", role = "typing" }, { ["ctrl-x"] = "completion-ask" })
 
+-- What a search box (core.search_box) offers: its source's fields, flags
+-- and values, on tab.
+M.source(function(view: greed.View): { Item }?
+	return core.search_box.complete(view)
+end, { tab = "insert" })
+greed.keymap.bind({ kind = core.search_box.KIND }, { tab = "completion-ask" })
+M.keys_over(core.search_box.KIND)
+
 return M

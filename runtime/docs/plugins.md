@@ -2052,6 +2052,38 @@ local keys, maybe = query.search(index, parsed, source)
 on a flag that isn't stored, for the plugin to check. An index's methods
 work on another thread and wait like `greed.sleep`.
 
+### A search box
+
+`core.search_box.open` asks for a query the way every search in Greed does.
+It shows the query in colours as it's typed, with a dimmed `*` after the
+word at the end, since that word matches by prefix until a space settles it.
+Mistakes are underlined and said after the query, and the title says how many
+results there are. With none, it also says which term to leave out to find
+the most (`0 results · 12 without tag:home`). `tab` completes the source's
+fields and flags, and `values` after `field:`. `up` and `down` bring back
+queries submitted before in boxes with the same `history`.
+
+```luau
+core.search_box.open({
+	title = "Search tasks",
+	source = source,
+	history = "tasks",
+	values = function(field)
+		return if field == "tag" then { "garden", "home" } else {}
+	end,
+	count = function(parsed)
+		local found = query.run(parsed, tasks, source)
+		return if found then #found else nil
+	end,
+	on_change = function(text, parsed) end, -- show the results as it's typed
+	on_submit = function(text, parsed) end,
+})
+```
+
+With `regex = true`, a query starting with `/` is a regex for the rest, as
+the shell's filters take it, and `words` adds words of the plugin's own to
+what `tab` offers.
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

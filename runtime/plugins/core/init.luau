@@ -60,6 +60,7 @@ local words = require("@self/words")
 local paste = require("@self/paste")
 local floats = require("@self/floats")
 local query = require("@self/query")
+local search_box = require("@self/search_box")
 local modeless = require("@self/modeless")
 local lookup = require("@self/lookup")
 
@@ -124,6 +125,10 @@ export type QueryNode = query.Node
 export type Query = query.Parsed
 export type QuerySource = query.Source
 export type QueryField = query.Field
+--- What a search box is opened with, and a word its `tab` offers
+--- (search_box.luau).
+export type SearchBoxOptions = search_box.Options
+export type SearchBoxWord = search_box.Word
 --- Something a completion menu offers, as the lsp plugin's menu and the
 --- sources that fill it (the shell's, an agent's box) all take it: `label`
 --- in the menu, `text` put in place of what's typed from `from` (the start
@@ -210,6 +215,8 @@ return {
 	dates = require("@self/dates"),
 	--- The query language every search and filter speaks (query.luau).
 	query = query,
+	--- The box a query is typed in, the same everywhere (search_box.luau).
+	search_box = search_box,
 	--- The files you've been in, most recent first (recent.luau).
 	recent = require("@self/recent"),
 	--- Watching objects for changes, with a notification saying how (watch.luau).
