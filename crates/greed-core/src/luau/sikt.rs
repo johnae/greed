@@ -18,37 +18,57 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
     sikt.set(
         "compile",
         lua.create_function(|lua, (source, opts): (LuaString, Option<Table>)| {
-            let source = source.to_str()?.to_owned();
-            let opts = opts.as_ref();
-            let lines = opt(opts, "lines")?.unwrap_or(true);
-            let nocase = opt(opts, "nocase")?.unwrap_or(false);
-            let modules: HashMap<String, String> = opt(opts, "modules")?.unwrap_or_default();
-            let built = sikt::Pattern::builder()
-                .line_mode(lines)
-                .case_insensitive(nocase)
-                .import_with(move |name| {
-                    modules
-                        .get(name)
-                        .cloned()
-                        .ok_or_else(|| format!("there's no module {name:?} in `modules`"))
-                })
-                .build_program(&source);
-            match built {
+            match build(&source.to_str()?, opts.as_ref())? {
                 Ok(program) => program_to_lua(lua, Arc::new(program))?.into_lua_multi(lua),
                 Err(err) => {
-                    let problems = lua.create_table()?;
-                    problems.raw_push(problem(lua, err.message(), err.span(), err.help())?)?;
                     let why = format!(
                         "{} (at {} in the program)",
                         err.message(),
                         err.span().start + 1
                     );
-                    (Value::Nil, why, problems).into_lua_multi(lua)
+                    (Value::Nil, why).into_lua_multi(lua)
                 }
             }
         })?,
     )?;
+    sikt.set(
+        "check",
+        lua.create_function(|lua, (source, opts): (LuaString, Option<Table>)| {
+            let problems = lua.create_table()?;
+            match build(&source.to_str()?, opts.as_ref())? {
+                Ok(program) => {
+                    for warning in program.warnings() {
+                        problems.raw_push(warning_to_lua(lua, warning)?)?;
+                    }
+                }
+                Err(err) => {
+                    let mistake = problem(lua, err.message(), err.span(), err.help())?;
+                    mistake.set("warning", false)?;
+                    problems.raw_push(mistake)?;
+                }
+            }
+            Ok(problems)
+        })?,
+    )?;
     Ok(sikt)
+}
+
+/// `source` compiled as `opts` say: line by line unless `lines` is false,
+/// ignoring case with `nocase`, and `use "name"` reading `modules`.
+fn build(source: &str, opts: Option<&Table>) -> LuaResult<Result<Program, sikt::Error>> {
+    let lines = opt(opts, "lines")?.unwrap_or(true);
+    let nocase = opt(opts, "nocase")?.unwrap_or(false);
+    let modules: HashMap<String, String> = opt(opts, "modules")?.unwrap_or_default();
+    Ok(sikt::Pattern::builder()
+        .line_mode(lines)
+        .case_insensitive(nocase)
+        .import_with(move |name| {
+            modules
+                .get(name)
+                .cloned()
+                .ok_or_else(|| format!("there's no module {name:?} in `modules`"))
+        })
+        .build_program(source))
 }
 
 fn opt<T: FromLua>(opts: Option<&Table>, key: &str) -> LuaResult<Option<T>> {
@@ -73,17 +93,18 @@ fn problem(
     Ok(out)
 }
 
+fn warning_to_lua(lua: &Lua, warning: &sikt::Warning) -> LuaResult<Table> {
+    let out = problem(lua, warning.message(), warning.span(), warning.help())?;
+    out.set("warning", true)?;
+    Ok(out)
+}
+
 /// The table a plugin runs a compiled program through.
 fn program_to_lua(lua: &Lua, program: Arc<Program>) -> LuaResult<Table> {
     let out = lua.create_table()?;
     let warnings = lua.create_table()?;
     for warning in program.warnings() {
-        warnings.raw_push(problem(
-            lua,
-            warning.message(),
-            warning.span(),
-            warning.help(),
-        )?)?;
+        warnings.raw_push(warning_to_lua(lua, warning)?)?;
     }
     out.set("warnings", warnings)?;
     let captures = lua.create_table()?;

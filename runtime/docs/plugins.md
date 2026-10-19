@@ -1609,10 +1609,11 @@ for _, row in big:rows(ran.stdout) do
 end
 ```
 
-On a mistake, `compile` gives nil, the mistake in words, and a list of
-mistakes, each with its `message`, `at` (where in the program) and `help`,
-so a program someone typed can be shown with its mistake marked. Programs that work but probably don't do what was
-meant come with `warnings`.
+On a mistake, `compile` gives nil and the mistake in words. Programs that
+work but probably don't do what was meant come with `warnings`.
+`greed.sikt.check(source)` gives both, each with its `message`, `at` (where
+in the program), `help` and whether it's only a `warning`, so a program
+someone types can be shown with its mistakes marked.
 
 Each line is matched on its own unless `lines = false`. `rows(text, { at =
 true })` also gives where each match is (`from`, `to`, `line`). For a lot of

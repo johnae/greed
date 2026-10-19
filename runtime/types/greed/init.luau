@@ -1150,8 +1150,8 @@ export type Json = {
 	array: <T>(items: { T }?) -> { T },
 }
 
---- A mistake or a warning in a sikt program: its words, where it is in the program's text (`from` its first byte to just after its last), and what might help.
-export type SiktProblem = { message: string, at: { from: number, to: number }, help: string? }
+--- A mistake or a warning in a sikt program: its words, where it is in the program's text (`from` its first byte to just after its last), what might help, and whether it's only a warning.
+export type SiktProblem = { message: string, at: { from: number, to: number }, help: string?, warning: boolean }
 
 --- Where a sikt match is in its text: `from` its first byte to just after its last, on `line` (from 1) where it starts.
 export type SiktPlace = { from: number, to: number, line: number }
@@ -1175,8 +1175,10 @@ export type SiktProgram = {
 
 --- sikt: patterns that read like sentences (`year: 4 digit "-" month: 2 digit`), for reading structure out of text. The language: https://github.com/johnae/sikt/blob/main/docs/language.md
 export type Sikt = {
-	--- Compiles `source`, a sikt program, or gives nil, what's wrong in words and the mistakes with where they are. It matches each line on its own unless `lines` is false; `nocase` ignores case; `modules` holds rule files by name for `use "name"`.
-	compile: (source: string, opts: { lines: boolean?, nocase: boolean?, modules: { [string]: string }? }?) -> (SiktProgram?, string?, { SiktProblem }?),
+	--- Compiles `source`, a sikt program, or gives nil and what's wrong. It matches each line on its own unless `lines` is false; `nocase` ignores case; `modules` holds rule files by name for `use "name"`.
+	compile: (source: string, opts: { lines: boolean?, nocase: boolean?, modules: { [string]: string }? }?) -> (SiktProgram?, string?),
+	--- What's wrong with `source` (compiled as `compile` would) and what it probably doesn't mean, each with where it is: to mark them in a program as it's written.
+	check: (source: string, opts: { lines: boolean?, nocase: boolean?, modules: { [string]: string }? }?) -> { SiktProblem },
 }
 
 --- Needs the "control" capability (and `serve_ide` "net" too).

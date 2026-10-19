@@ -2054,12 +2054,14 @@ fn a_sikt_program_reads_rows_out_of_text_with_typed_values_and_where_they_are() 
     // A mistake says what and where; a warning comes with the program.
     assert_eq!(
         eval(
-            r#"local p, why, problems = greed.sikt.compile('year: 4 digts')
+            r#"local p, why = greed.sikt.compile('year: 4 digts')
+               local problems = greed.sikt.check('year: 4 digts')
                local warned = assert(greed.sikt.compile('0+ any "x"'))
+               local warnings = greed.sikt.check('0+ any "x"')
                return tostring(p), why, problems[1].message, problems[1].at.from, problems[1].at.to,
-                 #warned.warnings > 0"#
+                 problems[1].warning, #warned.warnings > 0, warnings[1].warning, #greed.sikt.check('"a"')"#
         ),
-        "nil\tunknown word `digts` (at 9 in the program)\tunknown word `digts`\t9\t14\ttrue"
+        "nil\tunknown word `digts` (at 9 in the program)\tunknown word `digts`\t9\t14\tfalse\ttrue\ttrue\t0"
     );
     // Rules from Luau, by name; captures and their types; replacing; and a
     // whole text at once rather than line by line.
