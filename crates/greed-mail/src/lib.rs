@@ -7,5 +7,7 @@ pub mod header;
 pub mod imap;
 pub mod indexing;
 pub mod names;
+pub mod reader;
+pub mod serve;
 pub mod store;
 pub mod sync;

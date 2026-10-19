@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::body::{self, Body};
 use crate::config::Provider;
 use crate::imap::{Imap, Mailbox, Opened, Role};
-use crate::store::{State, Store};
+use crate::store::{State, Store, Wanting};
 
 /// How many messages a fetch asks for.
 pub const BATCH: usize = 500;
@@ -210,22 +210,32 @@ pub async fn bodies<I: Imap>(
         if wanting.is_empty() {
             break;
         }
-        let mut uids: Vec<u32> = wanting.iter().map(|w| w.uid).collect();
-        uids.sort_unstable();
-        let raw: HashMap<u32, Vec<u8>> = imap.bodies(&uids, body::CAP).await?.into_iter().collect();
-        let found: Vec<(i64, Body)> = wanting
-            .iter()
-            .map(|w| {
-                let body = raw.get(&w.uid).map_or_else(Body::default, |raw| {
-                    Body::of(raw, usize::try_from(w.size).unwrap_or(usize::MAX))
-                });
-                (w.message, body)
-            })
-            .collect();
-        store.put_bodies(&found)?;
-        fetched += raw.len();
+        fetched += fetch_bodies(imap, store, &wanting).await?;
     }
     Ok(fetched)
+}
+
+/// Fetches the bodies of `wanting`, in the mailbox open in `imap`, into
+/// `store`; gives how many came.
+pub async fn fetch_bodies<I: Imap>(
+    imap: &mut I,
+    store: &mut Store,
+    wanting: &[Wanting],
+) -> Result<usize, Trouble> {
+    let mut uids: Vec<u32> = wanting.iter().map(|w| w.uid).collect();
+    uids.sort_unstable();
+    let raw: HashMap<u32, Vec<u8>> = imap.bodies(&uids, body::CAP).await?.into_iter().collect();
+    let found: Vec<(i64, Body)> = wanting
+        .iter()
+        .map(|w| {
+            let body = raw.get(&w.uid).map_or_else(Body::default, |raw| {
+                Body::of(raw, usize::try_from(w.size).unwrap_or(usize::MAX))
+            });
+            (w.message, body)
+        })
+        .collect();
+    store.put_bodies(&found)?;
+    Ok(raw.len())
 }
 
 /// The most bodies a fetch asks for: each can be up to `body::CAP`.

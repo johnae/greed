@@ -5,6 +5,7 @@
 //! ```text
 //! greed-mail check [ACCOUNT]    log in and say what each server can do
 //! greed-mail sync [ACCOUNT]     sync headers, flags and bodies into the store and index
+//! greed-mail serve [ACCOUNT]    keep syncing, and answer JSON-RPC (serve.rs)
 //! ```
 //!
 //! `--config FILE` reads accounts from FILE instead of Greed's `mail.toml`,
@@ -18,12 +19,12 @@ use std::time::Instant;
 use greed_index::index::Index;
 use greed_mail::config::{Account, Config};
 use greed_mail::imap::{Connection, Role};
-use greed_mail::indexing;
 use greed_mail::store::Store;
 use greed_mail::sync::{self, Options};
+use greed_mail::{indexing, serve};
 
 const USAGE: &str =
-    "usage: greed-mail [--config FILE] [--store DIR] [--limit N] (check | sync) [ACCOUNT]";
+    "usage: greed-mail [--config FILE] [--store DIR] [--limit N] (check | sync | serve) [ACCOUNT]";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -77,12 +78,19 @@ fn main() -> ExitCode {
     };
     let mut store = match command {
         "check" => None,
-        "sync" => {
+        "sync" | "serve" => {
             let dir = store_dir
                 .or_else(|| greed_dirs::dir(greed_dirs::Kind::Data).map(|dir| dir.join("mail")));
             let Some(dir) = dir else {
                 return fail("can't tell where Greed's data folder is: set HOME or GREED_DATA_DIR");
             };
+            if command == "serve" {
+                let accounts = accounts.into_iter().cloned().collect();
+                return match runtime.block_on(serve::serve(Config { accounts }, dir)) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => fail(&e),
+                };
+            }
             let store = match Store::open(&dir) {
                 Ok(store) => store,
                 Err(e) => return fail(&e.0),
@@ -117,19 +125,12 @@ fn fail(message: &str) -> ExitCode {
     ExitCode::FAILURE
 }
 
-async fn connect(account: &Account) -> Result<Connection, String> {
-    let password = account.password()?;
-    Connection::open(&account.imap(), account.user(), &password)
-        .await
-        .map_err(|e| e.0)
-}
-
 /// Logs in to `account` and says what its server can do and which
 /// mailboxes it has, with counts for those that have a role.
 async fn check(account: &Account) -> Result<(), String> {
     let at = account.imap();
     let started = Instant::now();
-    let mut connection = connect(account).await?;
+    let mut connection = Connection::to(account).await?;
     println!(
         "{}: {}:{} logged in in {} ms",
         account.name,
@@ -173,7 +174,7 @@ async fn sync_account(
     index: &mut Index,
     options: Options,
 ) -> Result<(), String> {
-    let mut connection = connect(account).await?;
+    let mut connection = Connection::to(account).await?;
     let id = store
         .account(&account.name, &account.address)
         .map_err(|e| e.0)?;

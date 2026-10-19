@@ -19,7 +19,7 @@ use tokio_rustls::TlsConnector;
 use tokio_rustls::rustls::ClientConfig;
 use tokio_rustls::rustls::pki_types::ServerName;
 
-use crate::config::{Endpoint, Tls};
+use crate::config::{Account, Endpoint, Tls};
 use crate::header::{FIELDS, Fetched};
 use crate::names;
 
@@ -130,6 +130,15 @@ pub struct Connection {
 }
 
 impl Connection {
+    /// Connects to `account`'s IMAP server and logs in, its password from
+    /// its command.
+    pub async fn to(account: &Account) -> Result<Connection, String> {
+        let password = account.password()?;
+        Connection::open(&account.imap(), account.user(), &password)
+            .await
+            .map_err(|e| e.0)
+    }
+
     /// Connects to `at` and logs in as `user`.
     pub async fn open(at: &Endpoint, user: &str, password: &str) -> Result<Connection, Trouble> {
         let opening = async {

@@ -422,6 +422,36 @@ impl Store {
             .optional()?)
     }
 
+    /// Where `account`'s message `identity` can be fetched from: a mailbox
+    /// it's in, All Mail before others, and its UID and size there.
+    pub fn place_of(
+        &self,
+        account: i64,
+        identity: &str,
+    ) -> Result<Option<(String, Wanting)>, Trouble> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT mailboxes.name, messages.id, places.uid, messages.size FROM messages
+                 JOIN places ON places.message = messages.id
+                 JOIN mailboxes ON mailboxes.id = places.mailbox
+                 WHERE messages.account = ?1 AND messages.identity = ?2
+                 ORDER BY mailboxes.role IS 'all' DESC LIMIT 1",
+                params![account, identity],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        Wanting {
+                            message: r.get(1)?,
+                            uid: r.get(2)?,
+                            size: r.get(3)?,
+                        },
+                    ))
+                },
+            )
+            .optional()?)
+    }
+
     /// Up to `most` messages in `mailbox` whose bodies aren't in yet,
     /// unread first, then newest.
     pub fn wanting(&self, mailbox: i64, most: usize) -> Result<Vec<Wanting>, Trouble> {

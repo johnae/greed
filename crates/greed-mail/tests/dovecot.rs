@@ -58,7 +58,12 @@ impl Dovecot {
 
     /// An account for user `anna`, whose password is "secret".
     fn account(&self) -> Config {
-        Config::parse(&format!(
+        Config::parse(&self.account_toml()).unwrap()
+    }
+
+    /// That account as `mail.toml` says it.
+    fn account_toml(&self) -> String {
+        format!(
             r#"
             [[account]]
             name = "test"
@@ -68,8 +73,7 @@ impl Dovecot {
             password = ["echo", "secret"]
             "#,
             self.port
-        ))
-        .unwrap()
+        )
     }
 }
 
@@ -365,4 +369,145 @@ fn a_wrong_password_says_who_couldnt_log_in() {
         };
         assert!(trouble.0.contains("logging in as anna"), "{trouble}");
     });
+}
+
+/// A `greed-mail serve` to talk to, line by line.
+struct Served {
+    child: Child,
+    input: std::process::ChildStdin,
+    lines: std::sync::mpsc::Receiver<String>,
+    next: u64,
+}
+
+impl Served {
+    fn start(dovecot: &Dovecot) -> Served {
+        let config = dovecot.dir.join("mail.toml");
+        std::fs::write(&config, dovecot.account_toml()).unwrap();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_greed-mail"))
+            .arg("--config")
+            .arg(&config)
+            .arg("--store")
+            .arg(dovecot.dir.join("store"))
+            .arg("serve")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let input = child.stdin.take().unwrap();
+        let output = child.stdout.take().unwrap();
+        let (send, lines) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            for line in std::io::BufReader::new(output)
+                .lines()
+                .map_while(Result::ok)
+            {
+                if send.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        Served {
+            child,
+            input,
+            lines,
+            next: 0,
+        }
+    }
+
+    /// The next message it sends, as JSON.
+    fn read(&self) -> serde_json::Value {
+        let line = self
+            .lines
+            .recv_timeout(Duration::from_secs(30))
+            .expect("greed-mail serve said nothing");
+        serde_json::from_str(&line).unwrap()
+    }
+
+    /// Waits for the notification `method`.
+    fn wait_for(&self, method: &str) -> serde_json::Value {
+        loop {
+            let message = self.read();
+            if message["method"] == method {
+                return message["params"].clone();
+            }
+        }
+    }
+
+    /// Asks `method` and gives the result, passing over notifications.
+    fn ask(&mut self, method: &str, params: &serde_json::Value) -> serde_json::Value {
+        use std::io::Write;
+        self.next += 1;
+        let request = serde_json::json!({
+            "jsonrpc": "2.0", "id": self.next, "method": method, "params": params,
+        });
+        writeln!(self.input, "{request}").unwrap();
+        loop {
+            let message = self.read();
+            if message["id"] == self.next {
+                assert!(message["error"].is_null(), "{message}");
+                return message["result"].clone();
+            }
+        }
+    }
+}
+
+#[test]
+fn serve_syncs_in_the_background_and_answers_the_client() {
+    use greed_index::index::{Index, View};
+    use greed_index::query::{Node, Schema};
+
+    let Some(dovecot) = Dovecot::start("serve") else {
+        return;
+    };
+    for n in 1..=3 {
+        deliver(&dovecot, n, n == 1);
+    }
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let path = served.ask("index", &serde_json::json!({}));
+    let index = Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
+    let word = Node {
+        kind: "word".into(),
+        text: Some("note".into()),
+        ..Node::default()
+    };
+    let keys = index
+        .search(Some(&word), &Schema::default(), &View::default())
+        .unwrap()
+        .keys;
+    assert_eq!(keys.len(), 3, "{keys:?}");
+    let summaries = served.ask("summaries", &serde_json::json!({ "keys": keys }));
+    let mut subjects: Vec<&str> = summaries
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["subject"].as_str().unwrap())
+        .collect();
+    subjects.sort_unstable();
+    assert_eq!(subjects, ["note 1", "note 2", "note 3"]);
+    let read = summaries
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s["unread"] == false)
+        .count();
+    assert_eq!(read, 1);
+    let thread = served.ask("thread", &serde_json::json!({ "key": keys[0] }));
+    let text = thread["messages"][0]["text"].as_str().unwrap_or("");
+    assert!(text.starts_with("body "), "{thread}");
+    let status = served.ask("status", &serde_json::json!({}));
+    assert_eq!(status["accounts"][0]["messages"], 3, "{status}");
+    drop(served.input);
+    let started = Instant::now();
+    loop {
+        if served.child.try_wait().unwrap().is_some() {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "it didn't stop when its input closed"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
