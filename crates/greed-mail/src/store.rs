@@ -20,10 +20,9 @@ use crate::imap::Change;
 
 /// The version of the tables; a store from another is refused rather than
 /// guessed at.
-const VERSION: &str = "1";
+const VERSION: &str = "2";
 
 const TABLES: &str = "
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
@@ -62,10 +61,14 @@ CREATE TABLE IF NOT EXISTS messages (
     headers BLOB,
     flags TEXT NOT NULL DEFAULT '',
     labels TEXT NOT NULL DEFAULT '',
+    -- What thread it's in: the Message-ID of the first message the
+    -- thread knows of.
+    thread TEXT,
     UNIQUE (account, identity)
 );
 CREATE INDEX IF NOT EXISTS messages_date ON messages (account, date);
 CREATE INDEX IF NOT EXISTS messages_message_id ON messages (message_id);
+CREATE INDEX IF NOT EXISTS messages_thread ON messages (account, thread);
 CREATE TABLE IF NOT EXISTS places (
     message INTEGER NOT NULL REFERENCES messages (id),
     mailbox INTEGER NOT NULL REFERENCES mailboxes (id),
@@ -163,13 +166,10 @@ impl Store {
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "synchronous", "NORMAL")?;
         db.pragma_update(None, "foreign_keys", "ON")?;
-        db.execute_batch(TABLES)?;
-        db.execute(
-            "ATTACH DATABASE ?1 AS bodies",
-            [dir.join("bodies.db").to_string_lossy()],
+        // The version first: another's tables may not take this one's.
+        db.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
         )?;
-        db.pragma_update(Some("bodies"), "journal_mode", "WAL")?;
-        db.execute_batch(BODIES)?;
         let version: Option<String> = db
             .query_row("SELECT value FROM meta WHERE key = 'version'", [], |r| {
                 r.get(0)
@@ -190,6 +190,13 @@ impl Store {
                 )));
             }
         }
+        db.execute_batch(TABLES)?;
+        db.execute(
+            "ATTACH DATABASE ?1 AS bodies",
+            [dir.join("bodies.db").to_string_lossy()],
+        )?;
+        db.pragma_update(Some("bodies"), "journal_mode", "WAL")?;
+        db.execute_batch(BODIES)?;
         Ok(Store { db, _lock: lock })
     }
 
@@ -430,6 +437,19 @@ impl Store {
         }))
     }
 
+    /// The thread of `account`'s message `identity`.
+    pub fn thread(&self, account: i64, identity: &str) -> Result<Option<String>, Trouble> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT thread FROM messages WHERE account = ?1 AND identity = ?2",
+                params![account, identity],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
     /// The UIDs of `mailbox`'s places, lowest first.
     pub fn uids(&self, mailbox: i64) -> Result<Vec<u32>, Trouble> {
         let mut statement = self
@@ -469,11 +489,59 @@ fn put_message(tx: &Transaction<'_>, account: i64, f: &Fetched) -> Result<i64, T
             f.labels.join("\n"),
         ],
     )?;
-    Ok(tx.query_row(
-        "SELECT id FROM messages WHERE account = ?1 AND identity = ?2",
+    let (id, thread): (i64, Option<String>) = tx.query_row(
+        "SELECT id, thread FROM messages WHERE account = ?1 AND identity = ?2",
         params![account, identity],
-        |r| r.get(0),
-    )?)
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    if thread.is_none() {
+        put_thread(tx, account, id, &header, &identity)?;
+    }
+    Ok(id)
+}
+
+/// Puts message `id`, new to the store, in its thread: that of the first
+/// message it refers to (its References' first, which is the thread's
+/// start, else what it replies to) when that's in, else one named by that
+/// message, or by itself when it refers to none. Messages that came first
+/// and named their thread by this one join its thread, as the first sync
+/// brings replies before what they reply to.
+fn put_thread(
+    tx: &Transaction<'_>,
+    account: i64,
+    id: i64,
+    header: &Header,
+    identity: &str,
+) -> Result<(), Trouble> {
+    let refers = header.references.first().or(header.in_reply_to.first());
+    let thread = match refers {
+        Some(refers) => tx
+            .query_row(
+                "SELECT thread FROM messages WHERE account = ?1 AND message_id = ?2
+                 AND thread IS NOT NULL LIMIT 1",
+                params![account, refers],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or_else(|| refers.clone()),
+        None => header
+            .message_id
+            .clone()
+            .unwrap_or_else(|| identity.to_string()),
+    };
+    tx.execute(
+        "UPDATE messages SET thread = ?2 WHERE id = ?1",
+        params![id, thread],
+    )?;
+    if let Some(own) = &header.message_id
+        && *own != thread
+    {
+        tx.execute(
+            "UPDATE messages SET thread = ?3 WHERE account = ?1 AND thread = ?2",
+            params![account, own, thread],
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -517,5 +585,71 @@ mod tests {
         store.put(account, all.id, &[message(90)], 90, 90).unwrap();
         assert_eq!(store.counts(account).unwrap(), (1, 2));
         assert_eq!(store.mailbox(account, "INBOX", None).unwrap().high, Some(5));
+    }
+
+    /// A message with Bridge id `id`, Message-ID `<id@x>`, referring to
+    /// `references` and replying to `reply_to`.
+    fn mail(uid: u32, id: &str, references: &[&str], reply_to: Option<&str>) -> Fetched {
+        let mut lines = vec![
+            format!("X-Pm-Internal-Id: {id}"),
+            format!("Message-ID: <{id}@x>"),
+        ];
+        if !references.is_empty() {
+            let refs: Vec<String> = references.iter().map(|r| format!("<{r}@x>")).collect();
+            lines.push(format!("References: {}", refs.join(" ")));
+        }
+        if let Some(parent) = reply_to {
+            lines.push(format!("In-Reply-To: <{parent}@x>"));
+        }
+        let raw = format!("{}\r\n\r\n", lines.join("\r\n"));
+        Fetched {
+            uid,
+            raw: raw.into_bytes(),
+            ..Fetched::default()
+        }
+    }
+
+    #[test]
+    fn replies_are_in_the_thread_of_what_they_reply_to_whichever_came_first() {
+        let dir = temp("threads");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", None).unwrap();
+        let thread = |store: &Store, id: &str| store.thread(account, &format!("pm:{id}")).unwrap();
+        // Newest first: a reply to a reply, then the reply, then the start.
+        store
+            .put(
+                account,
+                inbox.id,
+                &[mail(3, "c", &["a", "b"], Some("b"))],
+                3,
+                3,
+            )
+            .unwrap();
+        store
+            .put(account, inbox.id, &[mail(2, "b", &["a"], Some("a"))], 3, 2)
+            .unwrap();
+        store
+            .put(account, inbox.id, &[mail(1, "a", &[], None)], 3, 1)
+            .unwrap();
+        assert_eq!(thread(&store, "a").as_deref(), Some("a@x"));
+        assert_eq!(thread(&store, "b"), thread(&store, "a"));
+        assert_eq!(thread(&store, "c"), thread(&store, "a"));
+        // Only In-Reply-To, to one in the middle that came later.
+        store
+            .put(account, inbox.id, &[mail(5, "e", &[], Some("d"))], 5, 1)
+            .unwrap();
+        store
+            .put(account, inbox.id, &[mail(4, "d", &["a"], Some("c"))], 5, 1)
+            .unwrap();
+        assert_eq!(thread(&store, "e"), thread(&store, "a"), "pulled in by d");
+        store
+            .put(account, inbox.id, &[mail(6, "z", &[], None)], 6, 1)
+            .unwrap();
+        assert_eq!(
+            thread(&store, "z").as_deref(),
+            Some("z@x"),
+            "a thread of its own"
+        );
     }
 }
