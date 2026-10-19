@@ -282,9 +282,17 @@ local function scan(
 			return n
 		end
 		local text = lines[n + 1]
-		-- Most lines are prose: one starting with a letter, without a pipe,
-		-- only goes on with a paragraph.
-		if string.find(text, "^%s*%a") and not string.find(text, "|", 1, true) then
+		-- Most lines are prose or empty. One starting with a letter (in any
+		-- script) or a mark no block starts with, without a pipe, only goes
+		-- on with a paragraph; an empty one ends it.
+		if text == "" then
+			paragraph = nil
+			n += 1
+			continue
+		end
+		if
+			string.find(text, "^%s*[%a\128-\255%[!<(\"']") and not string.find(text, "|", 1, true)
+		then
 			paragraph = paragraph or n
 			n += 1
 			continue

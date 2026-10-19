@@ -30,16 +30,21 @@ function M.cells(text: string): { Cell }?
 	local pipes: { number } = {}
 	local code = false
 	local i = 1
-	while i <= #text do
-		local c = string.sub(text, i, i)
+	-- From one backslash, backtick or bar to the next: rows can be long.
+	while true do
+		local at = string.find(text, "[\\`|]", i)
+		if at == nil then
+			break
+		end
+		local c = string.sub(text, at, at)
 		if c == "\\" then
-			i += 1
+			at += 1
 		elseif c == "`" then
 			code = not code
-		elseif c == "|" and not code then
-			table.insert(pipes, i)
+		elseif not code then
+			table.insert(pipes, at)
 		end
-		i += 1
+		i = at + 1
 	end
 	if #pipes == 0 then
 		return nil
