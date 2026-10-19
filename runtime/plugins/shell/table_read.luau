@@ -877,8 +877,8 @@ local MAGIC = "[%^%$%%%*%+%?%[%(%.]"
 --- the shell's own look for a table: a program's name ("kubectl"), or a
 --- Luau pattern for the whole command line ("^helm list"). `parse` is a
 --- function, or a sikt program whose captures are the columns (see
---- `M.sikt`). The latest added is asked first. It goes when the plugin
---- that added it does.
+--- `M.sikt`), leaving output it finds nothing in to the shell. The latest
+--- added is asked first. It goes when the plugin that added it does.
 function M.parser(match: string, parse: Parser | string)
 	local read: Parser
 	if type(parse) == "string" then
@@ -887,7 +887,8 @@ function M.parser(match: string, parse: Parser | string)
 			error(`the parser for {match}: {why}`, 2)
 		end
 		read = function(text: string): any
-			return (M.sikt(text, parse))
+			local tbl = M.sikt(text, parse)
+			return if tbl and #tbl.rows > 0 then tbl else nil
 		end
 	else
 		read = parse

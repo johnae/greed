@@ -47,6 +47,8 @@ local history = require("@self/history")
 local data = require("@self/data")
 local ask = require("@self/ask")
 local tables = require("@self/tables")
+-- The commands the shell reads with sikt programs.
+require("@self/readers")
 local rows = require("@self/rows")
 local completion = require("@self/complete")
 local segments = require("@self/segments")

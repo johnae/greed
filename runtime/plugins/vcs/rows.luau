@@ -168,6 +168,25 @@ shell.parser("^git log", function(text: string): any
 	return if #rows > 0 then { columns = { "SHA", "SUBJECT" }, rows = rows, at = at } else nil
 end)
 
+-- `git branch`, with `-v` the commit each is on.
+shell.parser(
+	"^git branch",
+	[[line start mark: one of "*+ " " " name: ("(" until ")" ")" or 1+ none of " ")
+		optional (1+ space commit: 7+ hex " " subject: until text end)]]
+)
+
+-- `git remote -v`: each remote's address for fetching and for pushing.
+shell.parser(
+	"^git remote %-v",
+	[[line start name: until "\t" "\t" url: until " (" " (" use: until ")" ")"]]
+)
+
+-- `git stash list`.
+shell.parser(
+	"^git stash list",
+	[[line start stash: ("stash@{" until "}" "}") ": " on: until ": " ": " message: until text end]]
+)
+
 -- The symbols `jj log` marks a change's line with.
 local NODES = { "@", "○", "◆", "×", "◉", "◌", "●", "◇" }
 

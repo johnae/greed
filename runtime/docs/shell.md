@@ -699,13 +699,48 @@ works too: `buf:data.csv | from csv | where total > 100`. A program in a
 terminal prints tabs as spaces, so tab separated output reads best from a
 file, with `buf:`.
 
+### Commands read as tables
+
+These commands' output is read as a table though it has no header to go
+by, each line a row:
+
+| Command | Columns |
+|---|---|
+| `free` | kind, total, used, free, shared, cache, available |
+| `ss` | netid, state, recv, send, local, peer, process |
+| `ip -br addr` | name, state, addresses |
+| `ip -br link` | name, state, mac, flags |
+| `mount` | device, path, type, options |
+| `uptime` | time, up, users, load1, load5, load15 |
+| `ping` | host, seq, ttl, ms |
+| `cargo test` | name, result |
+| `go test -v` | result, name, took |
+| `who` | user, tty, since, from |
+| `env`, `printenv` | name, value |
+| `git branch` | mark, name, commit, subject |
+| `git remote -v` | name, url, use |
+| `git stash list` | stash, on, message |
+
+So `cargo test | where result = FAILED`, `ss -tlnp | where local ~ :5432`
+and `free -h | select kind,available` work as they do on any table.
+`git status`, `git log`, `jj st` and `jj log` are read too, their rows
+files, commits and changes you can act on.
+
 ### Parsers from plugins
 
 A plugin can read its commands' output as tables, ahead of the shell's
-own look ([Writing plugins](plugins.md#the-shell) has how). And when
-[jc](https://github.com/kellyjonbrazil/jc) is installed, output the shell
-found no table in, from a command jc knows (`ifconfig`, `dig`, `mount`,
-`uptime` and many more), gets jc's reading of it.
+own look and its own readers above ([Writing plugins](plugins.md#the-shell)
+has how); a sikt program in your config does the same for a command of
+yours:
+
+```luau
+-- `git (2.46.0) < 2.47.0`
+require("@shell").parser("^brew outdated", [[name: until " (" " (" have: until ")" ") < " latest: until text end]])
+```
+
+And when [jc](https://github.com/kellyjonbrazil/jc) is installed, output
+the shell found no table in, from a command jc knows (`ifconfig`, `dig`
+and many more), gets jc's reading of it.
 
 ## Watching a command
 

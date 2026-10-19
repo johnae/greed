@@ -259,3 +259,40 @@ test("this machine's git status lists changed files that stage for real", functi
 	local state = core.objects.inspect(staged)
 	assert(state.status == "added" and state.staged == "yes", state.status)
 end)
+
+test("git branch, remote -v and stash list are read as tables", function()
+	local tables = shell.tables
+	local branches = assert(
+		tables.parse(
+			"* (no branch) c484b81e fix: a\n  hoard       2107a4ed feat: b\n  main\n",
+			"git branch -v"
+		)
+	)
+	assert(
+		table.concat(branches.columns, ",") == "mark,name,commit,subject",
+		table.concat(branches.columns, ",")
+	)
+	assert(branches.rows[1].name == "(no branch)" and branches.rows[2].commit == "2107a4ed")
+	assert(branches.rows[3].name == "main" and branches.rows[3].commit == nil)
+	local remotes = assert(
+		tables.parse(
+			"origin\tgit@host:a/b.git (fetch)\norigin\tgit@host:a/b.git (push)\n",
+			"git remote -v"
+		)
+	)
+	assert(
+		remotes.rows[2].use == "push" and remotes.rows[1].url == "git@host:a/b.git",
+		remotes.rows[2].use
+	)
+	local stashes = assert(
+		tables.parse(
+			"stash@{0}: WIP on main: c484b81e fix\nstash@{1}: On hoard: notes\n",
+			"git stash list"
+		)
+	)
+	assert(
+		stashes.rows[2].stash == "stash@{1}" and stashes.rows[2].message == "notes",
+		stashes.rows[2].message
+	)
+	assert(tables.parse("", "git stash list") == nil, "nothing stashed is no table")
+end)

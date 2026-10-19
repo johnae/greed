@@ -529,23 +529,23 @@ test("parse reads text as a table with a sikt program, its values comparing", fu
 	assert(#kept.rows == 1 and kept.rows[1].k == "b", after.output)
 end)
 
--- A folder with `jc` and `uptime` programs that print what the real ones
+-- A folder with `jc` and `dig` programs that print what the real ones
 -- would, on PATH in front of the shell's.
 local function fake_jc(t: test.TestContext, sh: Shell)
 	local dir = t:tempdir({
 		["bin/jc"] = table.concat({
 			"#!/bin/sh",
 			'if [ "$1" = -a ]; then',
-			[[  echo '{"parsers": [{"name": "uptime", "argument": "--uptime", "magic_commands": ["uptime"]}]}']],
+			[[  echo '{"parsers": [{"name": "dig", "argument": "--dig", "magic_commands": ["dig"]}]}']],
 			"  exit 0",
 			"fi",
-			'[ "$1" = --uptime ] || exit 1',
+			'[ "$1" = --dig ] || exit 1',
 			"cat >/dev/null",
-			[[echo '{"time": "10:00:00", "uptime": "3 days", "users": 2}']],
+			[[echo '{"query_time": 12, "server": "1.1.1.1", "status": "NOERROR"}']],
 		}, "\n"),
-		["bin/uptime"] = "#!/bin/sh\necho ' 10:00:00 up 3 days,  2 users,  load average: 0.10, 0.20, 0.30'\n",
+		["bin/dig"] = "#!/bin/sh\necho ';; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 1'\n",
 	})
-	run(t, sh, `chmod +x {dir}/bin/jc {dir}/bin/uptime`)
+	run(t, sh, `chmod +x {dir}/bin/jc {dir}/bin/dig`)
 	local path = run(t, sh, [[printf %s "$PATH"]]).output
 	sh.env.PATH = `{dir}/bin:{path}`
 end
@@ -553,13 +553,16 @@ end
 test("jc, when it's installed, reads the commands it knows", function(t)
 	local sh = open(t, t:tempdir())
 	fake_jc(t, sh)
-	local up = run(t, sh, "uptime")
+	local up = run(t, sh, "dig example.org")
 	-- The status follows the table a moment later on a busy machine.
 	t:wait_for(function()
 		return up.table ~= nil and string.find(status(sh, up), "table · 1 row", 1, true) ~= nil
 	end)
 	local tbl = assert(up.table)
-	assert(columns(tbl) == "time,uptime,users" and tbl.rows[1].users == "2", columns(tbl))
+	assert(
+		columns(tbl) == "query_time,server,status" and tbl.rows[1].status == "NOERROR",
+		columns(tbl)
+	)
 	assert(string.find(status(sh, up), "table · 1 row", 1, true), status(sh, up))
 	-- Not a command it knows.
 	local other = run(t, sh, "echo hi")
