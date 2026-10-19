@@ -714,6 +714,7 @@ starting with `~` are in your home folder, as in a shell:
 ```luau
 greed.fs.write(path, text)                        -- creates its folders too
 greed.fs.write(path, text, { private = true })    -- readable only by you (0600)
+greed.fs.write(path, text, { background = true }) -- on another thread; waits like greed.sleep
 greed.fs.mkdir(dir)                               -- and the folders above it
 greed.fs.copy(from, to)
 greed.fs.rename(from, to)

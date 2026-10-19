@@ -133,29 +133,48 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
 /// The functions in `greed.fs` that change files.
 fn add_writes(lua: &Lua, fs: &Table) -> LuaResult<()> {
-    fs.set(
-        "write",
-        lua.create_function(
-            |lua, (UserPath(path), text, opts): (UserPath, mlua::LuaString, Option<Table>)| {
-                guard_write(lua, Path::new(&path))?;
-                let private = match opts {
-                    Some(opts) => opts.get::<Option<bool>>("private")?.unwrap_or(false),
-                    None => false,
-                };
-                let target = Path::new(&path);
-                let contents = |out: &mut dyn std::io::Write| out.write_all(&text.as_bytes());
-                let written = if private {
-                    crate::files::write_private(target, contents)
-                } else {
-                    create_parent(target).and_then(|()| crate::files::write(target, contents))
-                };
-                match written {
-                    Ok(()) => true.into_lua_multi(lua),
-                    Err(err) => failure(lua, format!("can't write {path}: {err}")),
-                }
-            },
-        )?,
+    let now = lua.create_function(
+        |lua, (UserPath(path), text, opts): (UserPath, mlua::LuaString, Option<Table>)| {
+            guard_write(lua, Path::new(&path))?;
+            let private = opt_flag(opts.as_ref(), "private")?;
+            match write_file(&path, &text.as_bytes(), private) {
+                Ok(()) => true.into_lua_multi(lua),
+                Err(err) => failure(lua, err),
+            }
+        },
     )?;
+    let start = lua.create_function(
+        |lua, (UserPath(path), text, opts): (UserPath, mlua::LuaString, Option<Table>)| {
+            guard_write(lua, Path::new(&path))?;
+            let private = opt_flag(opts.as_ref(), "private")?;
+            let bytes = text.as_bytes().to_vec();
+            Ok(jobs::start(
+                lua,
+                format!("greed.fs.write {path}"),
+                move || Output::Wrote(write_file(&path, &bytes, private)),
+            ))
+        },
+    )?;
+    // With `background`, the file is written (and waited on to reach the
+    // disk) on another thread, while the caller waits like greed.sleep.
+    let write: Function = lua
+        .load(
+            r"
+            local now, start = ...
+            return function(path, text, opts)
+                if type(opts) == 'table' and opts.background then
+                    if not coroutine.isyieldable() then
+                        error('greed.fs.write with background waits, so it only works in a command, an event handler or greed.spawn', 2)
+                    end
+                    return coroutine.yield(start(path, text, opts))
+                end
+                return now(path, text, opts)
+            end
+            ",
+        )
+        .set_name("=greed.fs.write")
+        .call((now, start))?;
+    fs.set("write", write)?;
 
     fs.set(
         "mkdir",
@@ -327,6 +346,19 @@ pub(super) fn scan_to_lua(lua: &Lua, files: Vec<search::Scanned>) -> LuaResult<T
         list.raw_push(entry)?;
     }
     Ok(list)
+}
+
+/// Writes `bytes` to the file at `path` whole (see [`crate::files::write`]),
+/// only yours to read when `private`.
+fn write_file(path: &str, bytes: &[u8], private: bool) -> Result<(), String> {
+    let target = Path::new(path);
+    let contents = |out: &mut dyn std::io::Write| out.write_all(bytes);
+    let written = if private {
+        crate::files::write_private(target, contents)
+    } else {
+        create_parent(target).and_then(|()| crate::files::write(target, contents))
+    };
+    written.map_err(|err| format!("can't write {path}: {err}"))
 }
 
 /// Fails if `path` is Greed's approvals or secrets file, which plugins

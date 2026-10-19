@@ -1684,7 +1684,10 @@ export type Fs = {
 	--- Replaces the file's contents with `text`, creating it and its folders
 	--- if needed. It's written whole or not at all. With `private`, only you
 	--- can read it (mode 0600), and folders made for it are only yours.
-	write: (path: string, text: string, opts: { private: boolean? }?) -> (boolean?, string?),
+	--- With `background`, it's written on another thread and the caller
+	--- waits like greed.sleep (commands, handlers, greed.spawn), so a slow
+	--- disk never holds the editor up.
+	write: (path: string, text: string, opts: { private: boolean?, background: boolean? }?) -> (boolean?, string?),
 	--- Makes the folder at `path` and any missing folders above it. Needs "fs.write".
 	mkdir: (path: string) -> (boolean?, string?),
 	--- Removes the file, link or empty folder at `path`; with `recursive`, a folder and everything in it. Nothing being there counts as removed. It refuses (an error) the root, your home folder, a path with `..` and a folder holding Greed's approvals or secrets. Needs "fs.write".

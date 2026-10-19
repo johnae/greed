@@ -39,6 +39,8 @@ pub enum Output {
     /// What another session on this machine said of itself, or why it
     /// didn't (`greed.session.status`).
     Status(Result<serde_json::Value, String>),
+    /// A file written in the background (`greed.fs.write`), or why not.
+    Wrote(Result<(), String>),
     /// What a job on an index (`greed.index`) came back with.
     Index(Result<super::index::Done, greed_index::index::Trouble>),
     /// What a sikt program found in many texts (`rows_many`).
@@ -241,7 +243,10 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Status(Ok(status)) => {
             tasks::deliver(lua, done.token, super::lsp::to_lua(lua, &status)?)
         }
-        Output::Status(Err(why)) => tasks::deliver(lua, done.token, (Value::Nil, why)),
+        Output::Status(Err(why)) | Output::Wrote(Err(why)) => {
+            tasks::deliver(lua, done.token, (Value::Nil, why))
+        }
+        Output::Wrote(Ok(())) => tasks::deliver(lua, done.token, true),
         Output::Sikt(many) => {
             let found = super::sikt::many_to_lua(lua, many)?;
             tasks::deliver(lua, done.token, found)

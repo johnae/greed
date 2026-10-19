@@ -929,6 +929,39 @@ fn files_can_be_written_with_their_folders_and_the_working_directory_read() {
 }
 
 #[test]
+fn a_file_written_in_the_background_is_waited_for() {
+    let dir = plugin_dir("fs-write-background", &[("a.txt", "")]);
+    let h = host("");
+    h.load_str(
+        "write-test",
+        &format!(
+            "local greed = require('@greed')
+             local DIR = {:?}
+             greed.command {{ name = 'write-test', run = function()
+               local ok = greed.fs.write(DIR .. '/new/x.txt', 'hi', {{ background = true }})
+               local _, err = greed.fs.write(DIR .. '/a.txt/x.txt', '', {{ background = true }})
+               greed.echo(`{{ok}} {{err ~= nil}} {{greed.fs.read(DIR .. '/new/x.txt')}}`)
+             end }}",
+            dir.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    h.run(FIRST_CLIENT, "write-test").unwrap();
+    h.settle().unwrap();
+    let said = h.with_editor_mut(Editor::take_messages).join("");
+    // Outside a command, it can't wait, and says so.
+    let outside = eval_in(
+        &h,
+        &dir,
+        "local ok, err = pcall(greed.fs.write, DIR .. '/b.txt', '', { background = true })
+         return tostring(ok) .. ' ' .. tostring(string.find(tostring(err), 'only works in', 1, true) ~= nil)",
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(said, "true true hi");
+    assert_eq!(outside, "false true");
+}
+
+#[test]
 fn a_private_file_is_only_yours_even_when_it_was_not_before() {
     use std::os::unix::fs::PermissionsExt;
     let dir = plugin_dir("fs-private", &[("open.txt", "")]);
