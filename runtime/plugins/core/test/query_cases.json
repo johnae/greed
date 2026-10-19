@@ -23,7 +23,9 @@
     { "id": "garden", "name": "garden", "text": "Garden plans", "flags": ["note"], "fields": { "tag": ["garden"], "date": "2026-10-10" } },
     { "id": "t1", "parent": "garden", "text": "water the tomatoes", "flags": ["todo"], "fields": { "due": "2026-10-16", "tag": ["garden"] } },
     { "id": "t2", "parent": "garden", "text": "buy seeds", "flags": ["todo", "done"], "fields": { "due": "2026-10-12", "tag": ["garden"] } },
-    { "id": "t3", "parent": "garden", "text": "plan the kitchen herbs", "flags": ["todo"], "fields": { "due": "2026-11-02", "tag": ["kitchen"] } }
+    { "id": "t3", "parent": "garden", "text": "plan the kitchen herbs", "flags": ["todo"], "fields": { "due": "2026-11-02", "tag": ["kitchen"] } },
+    { "id": "cafe", "name": "Café", "text": "Café Mänd: crème brûlée", "flags": ["note"], "fields": { "tag": ["Göteborg"], "from": "Zoë Ångström" } },
+    { "id": "c1", "parent": "cafe", "text": "book a table", "flags": ["note"], "fields": {} }
   ],
   "cases": [
     { "query": "invoice", "ids": ["m1", "a1"] },
@@ -75,6 +77,15 @@
     { "query": "is:todo sort:due", "ids": ["t2", "t1", "t3"] },
     { "query": "is:mail sort:-date", "ids": ["m1", "m2", "m3"] },
     { "query": "is:mail sort:size limit:2", "ids": ["m3", "m1"] },
+    { "query": "cafe", "ids": ["cafe"] },
+    { "query": "café", "ids": ["cafe"] },
+    { "query": "creme brulee mand", "ids": ["cafe"] },
+    { "query": "bru*", "ids": ["cafe"] },
+    { "query": "from:zoe from:angstrom", "ids": ["cafe"] },
+    { "query": "tag:goteborg", "ids": ["cafe"] },
+    { "query": "tag:GÖTEBORG", "ids": ["cafe"] },
+    { "query": "tag~gote", "ids": ["cafe"] },
+    { "query": "in:cafe", "ids": ["c1"] },
     { "query": "fom:anna", "problem": "did you mean from?" },
     { "query": "is:unred", "problem": "did you mean is:unread?" },
     { "query": "has:attachmnt", "problem": "did you mean has:attachment?" },

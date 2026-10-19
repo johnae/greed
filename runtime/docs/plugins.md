@@ -1997,7 +1997,8 @@ shell.action_command("service", "restart", "sudo systemctl restart {unit}", { do
 Greed has one query language for searching and filtering, and a plugin's
 own lists can speak it too: words, `field:value`, comparisons, `-` and
 `OR`, dates like `date:2w..` and `due:..eow`, `is:` flags, and `in:`,
-`under:` and `has:` for what sits where.
+`under:` and `has:` for what sits where. Words and values match without
+minding case or accents, so `cafe` finds `Café`.
 
 ```text
 from:anna is:unread date:2w..

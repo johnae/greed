@@ -13,7 +13,7 @@ use crate::compare;
 use crate::query::{self, Answer, Flag, Kind, Node, Query, Row, Rows, Schema};
 
 /// The version of the tables; an index made by another is made again.
-const VERSION: &str = "2";
+const VERSION: &str = "3";
 
 /// How many candidates are loaded and checked at a time.
 const CHUNK: usize = 1000;
@@ -27,10 +27,12 @@ CREATE TABLE IF NOT EXISTS items (
     key TEXT NOT NULL UNIQUE,
     parent TEXT,
     name TEXT,
+    -- The name folded (`query::fold`), for `in:NAME`.
+    folded TEXT,
     text TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS items_parent ON items (parent);
-CREATE INDEX IF NOT EXISTS items_name ON items (lower(name));
+CREATE INDEX IF NOT EXISTS items_name ON items (folded);
 CREATE TABLE IF NOT EXISTS item_values (
     item INTEGER NOT NULL,
     field TEXT NOT NULL,
@@ -145,8 +147,14 @@ impl Index {
         for item in items {
             forget(&tx, &item.key)?;
             tx.execute(
-                "INSERT INTO items (key, parent, name, text) VALUES (?1, ?2, ?3, ?4)",
-                (&item.key, &item.parent, &item.name, &item.text),
+                "INSERT INTO items (key, parent, name, folded, text) VALUES (?1, ?2, ?3, ?4, ?5)",
+                (
+                    &item.key,
+                    &item.parent,
+                    &item.name,
+                    item.name.as_deref().map(query::fold),
+                    &item.text,
+                ),
             )?;
             let id = tx.last_insert_rowid();
             tx.execute(
@@ -158,7 +166,7 @@ impl Index {
                 for value in values {
                     tx.execute(
                         "INSERT INTO item_values (item, field, value, lower, number) VALUES (?1, ?2, ?3, ?4, ?5)",
-                        (id, &field, value, value.to_lowercase(), compare::number(value, false)),
+                        (id, &field, value, query::fold(value), compare::number(value, false)),
                     )?;
                     tx.execute(
                         "INSERT INTO field_words (value, field, item) VALUES (?1, ?2, ?3)",
@@ -500,8 +508,8 @@ fn narrow_field(node: &Node, schema: &Schema, args: &mut Vec<Value>) -> Option<S
             ))
         }
         "in" if node.items.is_empty() => {
-            args.push(Value::Text(value.to_lowercase()));
-            Some("parent IN (SELECT key FROM items WHERE lower(name) = ?)".into())
+            args.push(Value::Text(query::fold(value)));
+            Some("parent IN (SELECT key FROM items WHERE folded = ?)".into())
         }
         "in" | "under" | "has" => None,
         _ => {
@@ -527,7 +535,7 @@ fn narrow_field(node: &Node, schema: &Schema, args: &mut Vec<Value>) -> Option<S
 
 // A condition on one field's values, after `field = ?`, and its values.
 fn narrow_value(kind: Kind, node: &Node, op: &str, value: &str) -> Option<(String, Vec<Value>)> {
-    let lower = value.to_lowercase();
+    let lower = query::fold(value);
     let pick =
         |rest: &str| format!("id IN (SELECT item FROM item_values WHERE field = ? AND {rest})");
     match kind {
@@ -714,11 +722,7 @@ mod tests {
         };
         assert_eq!(found(&index, "invoice"), ["a"]);
         assert_eq!(found(&index, "invo"), Vec::<String>::new(), "whole words");
-        assert_eq!(
-            found(&index, "cafe"),
-            Vec::<String>::new(),
-            "the rules decide: no folding yet"
-        );
+        assert_eq!(found(&index, "cafe"), ["b"], "accents folded");
         assert_eq!(found(&index, "café"), ["b"]);
         index.write(&[item("a", "Receipt")]).unwrap();
         assert_eq!(

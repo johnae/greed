@@ -11,6 +11,8 @@ use std::iter;
 
 use regex::Regex;
 use serde::Deserialize;
+use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 
 use crate::compare::{self, Op};
 
@@ -155,7 +157,7 @@ impl Query {
                 let found = if self.schema.case {
                     has_word(&rows.rows[at].text, word, node.prefix, self.schema.anywhere)
                 } else {
-                    let word = word.to_lowercase();
+                    let word = fold(word);
                     has_word(rows.text(at), &word, node.prefix, self.schema.anywhere)
                 };
                 Answer::from(found)
@@ -191,10 +193,7 @@ impl Query {
                 let have = row.fields.get(&name).map_or(&[][..], Vec::as_slice);
                 let op = node.op.as_deref().unwrap_or(":");
                 if have.is_empty() && row.plain && (op == ":" || op == "=") {
-                    let term = format!(
-                        "{name}{op}{}",
-                        node.value.as_deref().unwrap_or("").to_lowercase()
-                    );
+                    let term = format!("{name}{op}{}", fold(node.value.as_deref().unwrap_or("")));
                     return Answer::from(rows.text(at).contains(&term));
                 }
                 Answer::from(self.values_match(kind, node, have))
@@ -227,13 +226,13 @@ impl Query {
     fn placed(&self, node: &Node, rows: &Rows, at: usize, deep: bool) -> Answer {
         let ups = iter::successors(rows.rows[at].parent, |&parent| rows.rows[parent].parent)
             .take(if deep { usize::MAX } else { 1 });
+        let want = fold(node.value.as_deref().unwrap_or(""));
         any(ups.map(|parent| {
             if let Some(sub) = node.items.first() {
                 self.matches(sub, rows, parent)
             } else {
-                let want = node.value.as_deref().unwrap_or("");
                 let name = rows.rows[parent].name.as_deref();
-                Answer::from(name.is_some_and(|n| n.eq_ignore_ascii_case(want)))
+                Answer::from(name.is_some_and(|n| fold(n) == want))
             }
         }))
     }
@@ -331,8 +330,8 @@ fn passes(kind: Kind, node: &Node, have: &str, op: &str, want: &str) -> bool {
                 .is_some_and(|op| compare::passes(have, op, want, compare::is_duration(want)))
         }
         Kind::Text | Kind::Exact => {
-            let text = have.to_lowercase();
-            let wanted = want.to_lowercase();
+            let text = fold(have);
+            let wanted = fold(want);
             match op {
                 ":" if kind == Kind::Text => has_word(&text, &wanted, prefix, false),
                 ":" | "=" => {
@@ -369,7 +368,7 @@ fn within(kind: Kind, node: &Node, have: &[String]) -> bool {
     }
 }
 
-/// Whether `text` (in lower case) has `word` (in lower case): as a whole
+/// Whether `text` has `word`, both folded or both as they are: as a whole
 /// word, or one starting with it with `prefix`, or anywhere with
 /// `anywhere`. Where a word starts or ends with something that isn't a
 /// letter or digit ("c++"), that end matches wherever it is.
@@ -387,7 +386,20 @@ pub fn has_word(text: &str, word: &str, prefix: bool, anywhere: bool) -> bool {
     })
 }
 
-/// Rows to run a query over, with their text in lower case and the rows
+/// `text` as words and values compare when case doesn't matter: in lower
+/// case, with accents taken off, so `cafe` finds `Café`, as the index's
+/// words (FTS5's `remove_diacritics`) do.
+pub fn fold(text: &str) -> String {
+    if text.is_ascii() {
+        return text.to_ascii_lowercase();
+    }
+    text.nfd()
+        .filter(|&c| !is_combining_mark(c))
+        .collect::<String>()
+        .to_lowercase()
+}
+
+/// Rows to run a query over, with their text folded (`fold`) and the rows
 /// each holds, worked out once.
 pub struct Rows {
     pub rows: Vec<Row>,
@@ -397,7 +409,7 @@ pub struct Rows {
 
 impl Rows {
     pub fn new(rows: Vec<Row>) -> Rows {
-        let lower = rows.iter().map(|r| r.text.to_lowercase()).collect();
+        let lower = rows.iter().map(|r| fold(&r.text)).collect();
         let mut children = vec![Vec::new(); rows.len()];
         for (i, row) in rows.iter().enumerate() {
             if let Some(parent) = row.parent
@@ -451,6 +463,15 @@ pub fn run(query: Option<&Query>, rows: &Rows) -> (Vec<usize>, Vec<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folding_lowers_case_and_takes_accents_off() {
+        assert_eq!(fold("Café Mänd"), "cafe mand");
+        assert_eq!(fold("crème BRÛLÉE"), "creme brulee");
+        assert_eq!(fold("Zoë Ångström"), "zoe angstrom");
+        assert_eq!(fold("Plain ASCII"), "plain ascii");
+        assert_eq!(fold("日本"), "日本", "what has no accents stays");
+    }
 
     #[test]
     fn whole_words_prefixes_and_words_that_end_in_symbols() {
