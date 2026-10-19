@@ -21,6 +21,8 @@
     pkgs.bacon
     # CHANGELOG.md from the commits (cliff.toml)
     pkgs.git-cliff
+    # A real IMAP server for greed-mail's tests (crates/greed-mail/tests)
+    pkgs.dovecot
 
     # Luau: runtime/analyzer, language server, formatter
     pkgs.luau

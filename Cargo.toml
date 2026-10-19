@@ -12,6 +12,11 @@ license = "MPL-2.0"
 [workspace.dependencies]
 crossbeam-channel = "0.5"
 crossterm = "0.29"
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio", "compress"] }
+futures = "0.3"
+rustls-platform-verifier = "0.6"
+tokio = { version = "1", features = ["rt", "net", "time", "macros", "io-util", "process", "sync"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 greed-core = { path = "crates/greed-core" }
 greed-dirs = { path = "crates/greed-dirs" }
 greed-index = { path = "crates/greed-index" }
