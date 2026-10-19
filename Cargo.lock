@@ -1683,6 +1683,7 @@ dependencies = [
  "async-imap",
  "futures",
  "greed-dirs",
+ "greed-index",
  "mail-parser",
  "rusqlite",
  "rustls-platform-verifier",

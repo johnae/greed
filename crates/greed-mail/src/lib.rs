@@ -5,6 +5,7 @@ pub mod body;
 pub mod config;
 pub mod header;
 pub mod imap;
+pub mod indexing;
 pub mod names;
 pub mod store;
 pub mod sync;

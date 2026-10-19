@@ -20,7 +20,7 @@ use crate::imap::Change;
 
 /// The version of the tables; a store from another is refused rather than
 /// guessed at.
-const VERSION: &str = "2";
+const VERSION: &str = "3";
 
 const TABLES: &str = "
 CREATE TABLE IF NOT EXISTS accounts (
@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS messages (
     -- What thread it's in: the Message-ID of the first message the
     -- thread knows of.
     thread TEXT,
+    -- Whether the index has it as it is now: anything that changes it
+    -- clears this, and the index catches up.
+    indexed INTEGER NOT NULL DEFAULT 0,
     UNIQUE (account, identity)
 );
 CREATE INDEX IF NOT EXISTS messages_date ON messages (account, date);
@@ -76,6 +79,9 @@ CREATE TABLE IF NOT EXISTS places (
     PRIMARY KEY (mailbox, uid)
 );
 CREATE INDEX IF NOT EXISTS places_message ON places (message);
+CREATE INDEX IF NOT EXISTS messages_unindexed ON messages (indexed) WHERE indexed = 0;
+-- Keys the index still has of messages and threads that went.
+CREATE TABLE IF NOT EXISTS unindexed (key TEXT PRIMARY KEY);
 ";
 
 /// `bodies.db`: each message's text, its HTML packed with zstd and what's
@@ -102,6 +108,33 @@ pub struct Wanting {
     pub message: i64,
     pub uid: u32,
     pub size: u32,
+}
+
+/// A message as the index takes it, from what the store has of it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Indexable {
+    pub id: i64,
+    pub account: i64,
+    pub account_name: String,
+    /// The account's own address, so its mail can be told from others'.
+    pub address: String,
+    pub identity: String,
+    pub thread: Option<String>,
+    pub date: Option<String>,
+    pub from: String,
+    pub to: String,
+    pub cc: String,
+    pub subject: String,
+    pub list_id: Option<String>,
+    pub size: u32,
+    pub flags: String,
+    pub labels: String,
+    /// The mailboxes it's in, by name, and their roles.
+    pub places: Vec<(String, Option<String>)>,
+    /// Its body's text, once that's in.
+    pub text: Option<String>,
+    /// Whether something's attached.
+    pub attached: bool,
 }
 
 /// What went wrong with the store, in words.
@@ -257,7 +290,7 @@ impl Store {
         let mut updated = 0;
         for change in changes {
             updated += tx.execute(
-                "UPDATE messages SET flags = ?3, labels = coalesce(?4, labels)
+                "UPDATE messages SET flags = ?3, labels = coalesce(?4, labels), indexed = 0
                  WHERE id = (SELECT message FROM places WHERE mailbox = ?1 AND uid = ?2)
                  AND (flags != ?3 OR labels != coalesce(?4, labels))",
                 params![
@@ -278,15 +311,37 @@ impl Store {
         let tx = self.db.transaction()?;
         for uid in uids {
             tx.execute(
+                "UPDATE messages SET indexed = 0
+                 WHERE id = (SELECT message FROM places WHERE mailbox = ?1 AND uid = ?2)",
+                params![mailbox, uid],
+            )?;
+            tx.execute(
                 "DELETE FROM places WHERE mailbox = ?1 AND uid = ?2",
                 params![mailbox, uid],
             )?;
         }
+        // Those in no mailbox now go from the index too, and their threads
+        // when nothing's left in them.
+        let gone = "account = (SELECT account FROM mailboxes WHERE id = ?1)
+             AND NOT EXISTS (SELECT 1 FROM places WHERE places.message = messages.id)";
         tx.execute(
-            "DELETE FROM messages WHERE account = (SELECT account FROM mailboxes WHERE id = ?1)
-             AND NOT EXISTS (SELECT 1 FROM places WHERE places.message = messages.id)",
+            &format!(
+                "INSERT OR IGNORE INTO unindexed (key)
+                 SELECT 'm:' || account || ':' || identity FROM messages WHERE {gone}"
+            ),
             [mailbox],
         )?;
+        tx.execute(
+            &format!(
+                "INSERT OR IGNORE INTO unindexed (key)
+                 SELECT DISTINCT 't:' || account || ':' || thread FROM messages WHERE {gone}
+                 AND NOT EXISTS (SELECT 1 FROM messages AS other JOIN places
+                     ON places.message = other.id
+                     WHERE other.account = messages.account AND other.thread = messages.thread)"
+            ),
+            [mailbox],
+        )?;
+        tx.execute(&format!("DELETE FROM messages WHERE {gone}"), [mailbox])?;
         tx.execute(
             "DELETE FROM bodies.bodies WHERE message NOT IN (SELECT id FROM messages)",
             [],
@@ -301,6 +356,11 @@ impl Store {
     /// UIDs and match them by identity, so none is kept twice.
     pub fn restart(&mut self, mailbox: i64, uid_validity: u32) -> Result<(), Trouble> {
         let tx = self.db.transaction()?;
+        tx.execute(
+            "UPDATE messages SET indexed = 0
+             WHERE id IN (SELECT message FROM places WHERE mailbox = ?1)",
+            [mailbox],
+        )?;
         tx.execute("DELETE FROM places WHERE mailbox = ?1", [mailbox])?;
         tx.execute(
             "UPDATE mailboxes SET uidvalidity = ?2, high = NULL, low = NULL, highestmodseq = NULL
@@ -404,6 +464,7 @@ impl Store {
                  VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![message, body.text, html, attachments, body.complete],
             )?;
+            tx.execute("UPDATE messages SET indexed = 0 WHERE id = ?1", [message])?;
         }
         tx.commit()?;
         Ok(())
@@ -435,6 +496,100 @@ impl Store {
             attachments: serde_json::from_str(&attachments).unwrap_or_default(),
             complete,
         }))
+    }
+
+    /// Up to `most` messages the index doesn't have as they are now.
+    pub fn unindexed(&self, most: usize) -> Result<Vec<Indexable>, Trouble> {
+        let mut rows = self.db.prepare(
+            "SELECT messages.id, messages.account, accounts.name, accounts.address,
+                    messages.identity, messages.thread, messages.date, messages.sender,
+                    messages.recipients, messages.cc, messages.subject, messages.list_id,
+                    messages.size, messages.flags, messages.labels,
+                    bodies.text, coalesce(bodies.attachments, '[]') != '[]'
+             FROM messages JOIN accounts ON accounts.id = messages.account
+             LEFT JOIN bodies.bodies ON bodies.message = messages.id
+             WHERE messages.indexed = 0 LIMIT ?1",
+        )?;
+        let mut places = self.db.prepare(
+            "SELECT mailboxes.name, mailboxes.role FROM places
+             JOIN mailboxes ON mailboxes.id = places.mailbox WHERE places.message = ?1",
+        )?;
+        let most = i64::try_from(most).unwrap_or(i64::MAX);
+        let mut found: Vec<Indexable> = rows
+            .query_map([most], |r| {
+                Ok(Indexable {
+                    id: r.get(0)?,
+                    account: r.get(1)?,
+                    account_name: r.get(2)?,
+                    address: r.get(3)?,
+                    identity: r.get(4)?,
+                    thread: r.get(5)?,
+                    date: r.get(6)?,
+                    from: r.get(7)?,
+                    to: r.get(8)?,
+                    cc: r.get(9)?,
+                    subject: r.get(10)?,
+                    list_id: r.get(11)?,
+                    size: r.get(12)?,
+                    flags: r.get(13)?,
+                    labels: r.get(14)?,
+                    text: r.get(15)?,
+                    attached: r.get(16)?,
+                    places: Vec::new(),
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        for message in &mut found {
+            message.places = places
+                .query_map([message.id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<Result<_, _>>()?;
+        }
+        Ok(found)
+    }
+
+    /// Notes that the index has the messages `ids` as they are now.
+    pub fn indexed(&mut self, ids: &[i64]) -> Result<(), Trouble> {
+        let tx = self.db.transaction()?;
+        for id in ids {
+            tx.execute("UPDATE messages SET indexed = 1 WHERE id = ?1", [id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Up to `most` keys of messages and threads that went, which the
+    /// index still has.
+    pub fn removed(&self, most: usize) -> Result<Vec<String>, Trouble> {
+        let mut statement = self.db.prepare("SELECT key FROM unindexed LIMIT ?1")?;
+        let most = i64::try_from(most).unwrap_or(i64::MAX);
+        let keys = statement
+            .query_map([most], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(keys)
+    }
+
+    /// Notes that the index no longer has `keys`.
+    pub fn unlisted(&mut self, keys: &[String]) -> Result<(), Trouble> {
+        let tx = self.db.transaction()?;
+        for key in keys {
+            tx.execute("DELETE FROM unindexed WHERE key = ?1", [key])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The subject a thread goes by: its first message's.
+    pub fn thread_subject(&self, account: i64, thread: &str) -> Result<String, Trouble> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT subject FROM messages WHERE account = ?1 AND thread = ?2
+                 ORDER BY date LIMIT 1",
+                params![account, thread],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or_default())
     }
 
     /// The thread of `account`'s message `identity`.
@@ -470,7 +625,7 @@ fn put_message(tx: &Transaction<'_>, account: i64, f: &Fetched) -> Result<i64, T
         "INSERT INTO messages (account, identity, message_id, date, sender, recipients, cc,
              subject, in_reply_to, refs, list_id, size, headers, flags, labels)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-         ON CONFLICT (account, identity) DO UPDATE SET flags = ?14, labels = ?15",
+         ON CONFLICT (account, identity) DO UPDATE SET flags = ?14, labels = ?15, indexed = 0",
         params![
             account,
             identity,
@@ -537,7 +692,7 @@ fn put_thread(
         && *own != thread
     {
         tx.execute(
-            "UPDATE messages SET thread = ?3 WHERE account = ?1 AND thread = ?2",
+            "UPDATE messages SET thread = ?3, indexed = 0 WHERE account = ?1 AND thread = ?2",
             params![account, own, thread],
         )?;
     }

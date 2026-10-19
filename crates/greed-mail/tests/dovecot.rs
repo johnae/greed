@@ -266,6 +266,16 @@ fn a_mailbox_syncs_into_the_store_and_then_only_what_arrives() {
         connection.close().await.unwrap();
     });
     assert_eq!(store.counts(id).unwrap(), (12, 12));
+    let mut index = greed_index::index::Index::open(&dovecot.dir.join("index.db")).unwrap();
+    assert_eq!(
+        greed_mail::indexing::catch_up(&mut store, &mut index).unwrap(),
+        12
+    );
+    assert_eq!(
+        index.count().unwrap(),
+        24,
+        "each message, and its own thread"
+    );
     let inbox = store.mailbox(id, "INBOX", None).unwrap();
     let left: Vec<u32> = (1..=13).filter(|&uid| uid != 4).collect();
     assert_eq!(store.uids(inbox.id).unwrap(), left);
