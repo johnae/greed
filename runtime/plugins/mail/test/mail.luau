@@ -189,3 +189,24 @@ test("names and dates read as a list shows them", function()
 	)
 	assert(mail.when(core.dates.today() .. "T07:30:00+00:00") == "07:30")
 end)
+
+test("in the mail session the list and threads take the whole window, q goes back", function(t)
+	fake()
+	local here = mail.backend.here
+	mail.backend.here = function(): boolean
+		return true
+	end
+	t:buffer("|x")
+	local window = greed.view()
+	t:run("mail")
+	t:keys("esc")
+	assert(greed.view() == window, "the list is in the window, no float")
+	assert(window:buffer():kind() == "mail")
+	t:keys("enter")
+	assert(window:buffer():kind() == "mail-thread", window:buffer():kind())
+	t:keys("q")
+	assert(window:buffer():kind() == "mail", "back in the list")
+	t:keys("q")
+	assert(window:buffer():kind() == "mail", "the page stays")
+	mail.backend.here = here
+end)

@@ -381,6 +381,11 @@ struct Served {
 
 impl Served {
     fn start(dovecot: &Dovecot) -> Served {
+        Served::with(dovecot, &[])
+    }
+
+    /// One started with `options` too, like `--read`.
+    fn with(dovecot: &Dovecot, options: &[&str]) -> Served {
         let config = dovecot.dir.join("mail.toml");
         std::fs::write(&config, dovecot.account_toml()).unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_greed-mail"))
@@ -388,6 +393,7 @@ impl Served {
             .arg(&config)
             .arg("--store")
             .arg(dovecot.dir.join("store"))
+            .args(options)
             .arg("serve")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -541,4 +547,33 @@ fn new_mail_comes_at_once_through_idle() {
     );
     let status = served.ask("status", &serde_json::json!({}));
     assert_eq!(status["accounts"][0]["messages"], 2, "{status}");
+}
+
+#[test]
+fn another_session_reads_what_the_mail_session_syncs() {
+    let Some(dovecot) = Dovecot::start("read") else {
+        return;
+    };
+    deliver(&dovecot, 1, false);
+    let syncing = Served::start(&dovecot);
+    syncing.wait_for("changed");
+    let mut reading = Served::with(&dovecot, &["--read"]);
+    let path = reading.ask("index", &serde_json::json!({}));
+    let index =
+        greed_index::index::Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
+    let keys = index
+        .search(
+            None,
+            &greed_index::query::Schema::default(),
+            &greed_index::index::View::default(),
+        )
+        .unwrap()
+        .keys;
+    let message: Vec<String> = keys.into_iter().filter(|k| k.starts_with("m:")).collect();
+    let thread = reading.ask("thread", &serde_json::json!({ "key": message[0] }));
+    assert_eq!(thread["subject"], "note 1", "{thread}");
+    // It syncs nothing itself: the syncing one keeps the store.
+    let status = reading.ask("status", &serde_json::json!({}));
+    assert_eq!(status["accounts"], serde_json::json!([]), "{status}");
+    drop(syncing);
 }

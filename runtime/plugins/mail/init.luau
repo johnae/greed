@@ -1,9 +1,11 @@
--- Mail: your mail searched and read in Greed. `:mail` opens what a search
--- finds, newest first, with the search box over it (in:inbox to start);
--- `enter` reads a thread, `/` searches again, `r` syncs now, `q` closes.
--- greed-mail syncs the accounts in mail.toml and keeps the index this
--- searches (backend.luau); a search is the query language anywhere in
--- Greed: from:anna is:unread date:2w.. in:work invoice.
+-- Mail: your mail searched and read in Greed. In the mail session
+-- (`greed mail`) the page shows what a search finds, newest first, with
+-- the search box over it (in:inbox to start); elsewhere `:mail` opens the
+-- same list in a float for a quick look. `enter` reads a thread, `/`
+-- searches again, `r` syncs now, `q` goes back or closes. greed-mail
+-- syncs the accounts in mail.toml and keeps the index this searches
+-- (backend.luau); a search is the query language anywhere in Greed:
+-- from:anna is:unread date:2w.. in:work invoice.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -89,9 +91,12 @@ function M.who(from: string): string
 	return string.match(from, "^%s*(.-)%s*$") or from
 end
 
--- The list, while it's open.
+-- The list, while it's open: on the mail session's page, or in a float
+-- (`floating`) for a quick look anywhere else, `window` showing it.
 type Open = {
-	float: greed.View,
+	window: greed.View,
+	buffer: greed.Buffer,
+	floating: boolean,
 	view: core.UiView,
 	query: string,
 	rows: { Summary },
@@ -103,7 +108,7 @@ type Open = {
 local open: Open? = nil
 
 -- The thread being read, while it's open.
-local reading: { float: greed.View, key: string }? = nil
+local reading: { window: greed.View, buffer: greed.Buffer, key: string, floating: boolean }? = nil
 
 --- The messages `parsed` finds, newest first unless it sorts otherwise,
 --- or nil and why.
@@ -181,10 +186,12 @@ end
 -- Back in the list from the search box, the cursor on a message: the
 -- first, unless it was on one.
 local function back(o: Open)
-	o.float:focus()
-	local buffer = o.float:buffer()
-	if o.view:value_at(o.float:cursor()) == nil and buffer:line_count() > 2 then
-		o.float:set_cursor(buffer:line_start(2))
+	if not o.window:valid() then
+		return
+	end
+	o.window:focus()
+	if o.view:value_at(o.window:cursor()) == nil and o.buffer:line_count() > 2 then
+		o.window:set_cursor(o.buffer:line_start(2))
 	end
 end
 
@@ -217,23 +224,25 @@ function M.ask()
 	})
 end
 
---- Opens the list of what `query` (in:inbox to start) finds, and the
---- search box over it.
-function M.open(query: string?)
-	if open and open.float:valid() then
-		open.float:close()
-	end
+-- A list of what `query` finds, in `window` or a float of its own.
+local function list(query: string, window: greed.View?): Open
 	local buffer = greed.create_buffer("mail", "", { readonly = true })
 	buffer:set_line_numbers(false)
-	local float = greed.float(buffer, { title = "Mail", width = "90%", height = "80%" })
+	local shown = window or greed.float(buffer, { title = "Mail", width = "90%", height = "80%" })
+	if window then
+		-- The page's list stays while a thread is read in its place.
+		buffer:set_kept(true)
+		window:show(buffer)
+	end
 	local o: Open = {
-		float = float,
-		query = query or M.START,
+		window = shown,
+		buffer = buffer,
+		floating = window == nil,
+		query = query,
 		rows = {},
 		found = {},
 		view = nil :: any,
 	}
-	open = o
 	o.view = ui.mount(buffer, function()
 		return render(o)
 	end, {}, {
@@ -242,6 +251,31 @@ function M.open(query: string?)
 		end,
 	})
 	refresh(o)
+	return o
+end
+
+--- Opens a quick look at what `query` (in:inbox to start) finds in a
+--- float, and the search box over it.
+function M.open(query: string?)
+	if open and open.floating and open.window:valid() then
+		open.window:close()
+	end
+	open = list(query or M.START, nil)
+	M.ask()
+end
+
+--- Shows the mail on the page, in the mail session: the list kept from
+--- before, or a new one on in:inbox with the search box over it.
+function M.page()
+	local o = open
+	if o and not o.floating and o.buffer:valid() then
+		local here = greed.view()
+		here:show(o.buffer)
+		o.window = here
+		back(o)
+		return
+	end
+	open = list(M.START, greed.view())
 	M.ask()
 end
 
@@ -258,7 +292,12 @@ local function message_text(message: backend.Message): string
 	end
 	table.insert(lines, "")
 	if message.text == nil then
-		table.insert(lines, "(its text is on its way)")
+		table.insert(
+			lines,
+			if backend.here()
+				then "(its text is on its way)"
+				else "(its text isn't in yet: the mail session fetches it when you open it there)"
+		)
 	else
 		table.insert(lines, (string.gsub(message.text, "\r\n", "\n")))
 		if not message.complete then
@@ -281,32 +320,39 @@ function M.thread_text(thread: Thread): string
 	return table.concat(parts, "\n\n") .. "\n"
 end
 
---- Reads the thread `key` (a message's or a thread's) in a float.
+--- Reads the thread `key` (a message's or a thread's): where the list is,
+--- on the page, or in a float over a quick look.
 function M.read(key: string)
 	local thread, err = backend.get().thread(key)
 	if thread == nil then
 		greed.echo(err or "that mail is gone")
 		return
 	end
-	if reading and reading.float:valid() then
-		reading.float:close()
+	if reading and reading.floating and reading.window:valid() then
+		reading.window:close()
 	end
 	local buffer = greed.create_buffer("mail-thread", M.thread_text(thread), { readonly = true })
 	buffer:set_line_numbers(false)
-	local float = greed.float(buffer, { title = thread.subject, width = "90%", height = "90%" })
-	reading = { float = float, key = thread.key }
+	local o = open
+	local page = if o and not o.floating and o.window:valid() then o.window else nil
+	local window = page
+		or greed.float(buffer, { title = thread.subject, width = "90%", height = "90%" })
+	if page then
+		page:show(buffer)
+	end
+	reading = { window = window, buffer = buffer, key = thread.key, floating = page == nil }
 end
 
 backend.on_changed(function()
 	local o = open
-	if o and o.float:valid() then
+	if o and o.buffer:valid() then
 		refresh(o)
 	end
 	local r = reading
-	if r and r.float:valid() then
+	if r and r.buffer:valid() then
 		local thread = backend.get().thread(r.key)
 		if thread then
-			local buffer = r.float:buffer()
+			local buffer = r.buffer
 			buffer:edit(function(e)
 				e:replace(0, buffer:len(), M.thread_text(thread))
 			end)
@@ -314,11 +360,34 @@ backend.on_changed(function()
 	end
 end)
 
+-- In the mail session, the page is there from the start.
+greed.on("editor.started", function()
+	if backend.here() then
+		M.page()
+	end
+end)
+
 greed.command({
 	name = "mail",
-	doc = "Search and read your mail",
+	doc = "Search and read your mail: on the page in the mail session, a quick look elsewhere",
 	run = function()
-		M.open()
+		if backend.here() then
+			M.page()
+		else
+			M.open()
+		end
+	end,
+})
+
+greed.command({
+	name = "mail-session",
+	doc = "Go to the mail session, starting it if needed: it syncs your mail",
+	run = function()
+		if backend.here() then
+			M.page()
+		else
+			greed.session.switch({ name = backend.SESSION })
+		end
 	end,
 })
 
@@ -348,23 +417,29 @@ greed.command({
 	doc = "Sync your mail now",
 	run = function()
 		backend.get().sync()
-		greed.echo("syncing mail")
+		greed.echo(if backend.here() then "syncing mail" else "the mail session syncs your mail")
 	end,
 })
 
 greed.command({
 	name = "mail-close",
-	doc = "Close the mail list, or the thread being read",
+	doc = "Go back from a thread to the list, or close a quick look at mail",
 	run = function(ctx: greed.Context)
-		if ctx.buffer:kind() == "mail-thread" and reading then
-			reading.float:close()
+		local o = open
+		local r = reading
+		if ctx.buffer:kind() == "mail-thread" and r then
 			reading = nil
-			local o = open
-			if o and o.float:valid() then
-				o.float:focus()
+			if r.floating then
+				r.window:close()
+				if o and o.window:valid() then
+					o.window:focus()
+				end
+			elseif o and o.buffer:valid() then
+				r.window:show(o.buffer)
+				back(o)
 			end
-		elseif open then
-			open.float:close()
+		elseif o and o.floating then
+			o.window:close()
 			open = nil
 		end
 	end,

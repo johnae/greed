@@ -47,6 +47,15 @@ export type Backend = {
 	sync: () -> (),
 }
 
+--- The session `greed mail` starts, which syncs the mail; others read what
+--- it synced.
+M.SESSION = "mail"
+
+--- Whether this is the mail session.
+function M.here(): boolean
+	return greed.session.current() == M.SESSION
+end
+
 greed.option.define({
 	name = "mail-program",
 	doc = "The greed-mail program that syncs your mail: its name on PATH, or a path",
@@ -76,7 +85,10 @@ local function served(): (greed.RpcConnection?, string?)
 		return connection, nil
 	end
 	local program = tostring(greed.option.get("mail-program"))
-	local started, err = greed.rpc.start({ program, "serve" }, {
+	-- Only the mail session syncs; anywhere else greed-mail reads what it
+	-- synced.
+	local command = if M.here() then { program, "serve" } else { program, "--read", "serve" }
+	local started, err = greed.rpc.start(command, {
 		framing = "lines",
 		on_notify = function(method: string)
 			if method == "changed" then
@@ -100,7 +112,11 @@ local function ask(method: string, params: any): (any, string?)
 	end
 	local result, trouble = rpc:request(method, params)
 	if trouble then
-		return nil, `greed-mail: {trouble}`
+		-- Gone, it said why as it went.
+		local said = if rpc:alive()
+			then trouble
+			else string.match(rpc:stderr(), "greed%-mail: (.-)%s*$")
+		return nil, said or `greed-mail: {trouble}`
 	end
 	return result
 end

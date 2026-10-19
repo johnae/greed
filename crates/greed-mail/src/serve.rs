@@ -101,11 +101,23 @@ impl Shared {
 }
 
 /// Serves `config`'s accounts from the store in `dir` until its input
-/// closes.
-pub async fn serve(config: Config, dir: PathBuf) -> Result<(), String> {
-    let store = Store::open(&dir).map_err(|e| e.0)?;
-    let index = Index::open(&dir.join("index.db")).map_err(|e| e.0)?;
-    let reader = Reader::open(&dir).map_err(|e| e.0)?;
+/// closes. With `read`, it only answers, from what the store has: another
+/// greed-mail syncs it (the mail session's), so this one takes no lock and
+/// fetches nothing, and any number of them can run beside it.
+pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), String> {
+    let stores = if read {
+        None
+    } else {
+        let store = Store::open(&dir).map_err(|e| e.0)?;
+        let index = Index::open(&dir.join("index.db")).map_err(|e| e.0)?;
+        Some((store, index))
+    };
+    let reader = Reader::open(&dir).map_err(|_| {
+        format!(
+            "there's no mail in {} yet: `greed mail` starts the mail session, which syncs it",
+            dir.display()
+        )
+    })?;
     let (out, mut lines) = mpsc::unbounded_channel::<String>();
     let shared = Shared {
         out,
@@ -113,7 +125,7 @@ pub async fn serve(config: Config, dir: PathBuf) -> Result<(), String> {
         standing: RefCell::new(BTreeMap::new()),
         wake: Notify::new(),
     };
-    let writing = async {
+    let output = async {
         let mut stdout = tokio::io::stdout();
         while let Some(line) = lines.recv().await {
             let written = async {
@@ -127,11 +139,16 @@ pub async fn serve(config: Config, dir: PathBuf) -> Result<(), String> {
         }
     };
     let answering = answer(&reader, &dir, &shared);
-    let syncing = keep_syncing(&config, store, index, &shared);
+    let syncing = async {
+        match stores {
+            Some((store, index)) => keep_syncing(&config, store, index, &shared).await,
+            None => std::future::pending().await,
+        }
+    };
     tokio::select! {
         () = answering => {}
         () = syncing => {}
-        () = writing => {}
+        () = output => {}
     }
     Ok(())
 }

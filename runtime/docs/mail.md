@@ -1,8 +1,9 @@
 # Mail
 
-`:mail` searches your mail and reads it. It opens on your inbox, newest
-first, with the search box over it; what you type narrows the list as you
-type it, in the query language every search in Greed speaks:
+`greed mail` opens your mail in a session of its own, on a full page. It
+opens on your inbox, newest first, with the search box over it; what you
+type narrows the list as you type it, in the query language every search
+in Greed speaks:
 
 ```text
 in:inbox is:unread                 unread in the inbox
@@ -11,15 +12,20 @@ in:work -is:mine                   in the Work folder or label, not sent by you
 subject:"quarterly report" is:attachment
 ```
 
-In the list, `enter` reads the thread under the cursor, `/` searches
-again, `r` syncs now and `q` closes; `q` in a thread goes back to the
-list.
+In the list, `enter` reads the thread under the cursor in its place, `/`
+searches again and `r` syncs now; `q` in a thread goes back to the list.
+
+The mail session is the one that syncs. In any other session, `:mail`
+opens a quick look at the same mail in a float (`q` closes it), and
+`:mail-session` goes to the mail session, starting it if it isn't
+running. The quick look reads what the mail session has synced: a message
+whose text hasn't come in yet gets it once you open it there.
 
 ## Accounts
 
 A separate program, `greed-mail`, syncs your accounts into a store on
-this machine and keeps an index of them that Greed searches. Greed starts
-it when you first open `:mail` (the `mail-program` option names it, if it
+this machine and keeps an index of them that Greed searches. The mail
+session starts it (the `mail-program` option names it, if it
 isn't on your `PATH`). It reads the accounts from `mail.toml` in Greed's
 config folder:
 
