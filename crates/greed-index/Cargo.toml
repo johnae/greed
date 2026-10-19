@@ -1,0 +1,12 @@
+[package]
+name = "greed-index"
+description = "Greed's queries: running them over rows in memory and over indexes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

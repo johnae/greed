@@ -15,7 +15,7 @@
 
 mod buffer;
 pub mod child;
-pub mod compare;
+pub use greed_index::compare;
 pub mod control;
 pub mod debug;
 pub mod delta;

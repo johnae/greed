@@ -13,6 +13,7 @@ license = "MPL-2.0"
 crossbeam-channel = "0.5"
 crossterm = "0.29"
 greed-core = { path = "crates/greed-core" }
+greed-index = { path = "crates/greed-index" }
 greed-text = { path = "crates/greed-text" }
 ignore = "0.4"
 mlua = { version = "0.12", features = ["luau", "error-send", "serialize"] }
