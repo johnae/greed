@@ -108,7 +108,7 @@ local function days_of(note: index.Note): Days
 	local found: Days = {
 		at = note.modified,
 		modified = modified,
-		date = said_day or string.match(note.name, "daily/(%d%d%d%d%-%d%d%-%d%d)$") or modified,
+		date = said_day or notes.day_of(note.name) or modified,
 	}
 	days[note] = found
 	return found

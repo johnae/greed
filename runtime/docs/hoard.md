@@ -189,7 +189,10 @@ front matter (`categories: ["[[Movies]]"]`) count as links too.
 `aliases:` in a note's front matter (`aliases: [w42, this week]`) are
 other names links can use, in any case; `#tags`, `key:: value` fields and
 the Tasks plugin's dates (`📅 2026-10-20` is a due date) are read too.
-Canvas and Bases files aren't.
+Canvas and Bases files aren't. Today's note goes where Obsidian's daily
+notes are set to keep it (their folder, name and template, in
+`.obsidian/daily-notes.json`), and its templates folder is the one
+Obsidian uses.
 
 ## Saying when in plain words
 

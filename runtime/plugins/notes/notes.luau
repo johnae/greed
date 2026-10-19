@@ -100,12 +100,117 @@ function M.split(name: string): (Place, string)
 	return M.places()[1], name
 end
 
+-- What Obsidian's settings in the notes folder say, by file
+-- (`.obsidian/daily-notes.json`), read again every few seconds.
+local obsidian_read: { [string]: { at: number, folder: string, value: { [string]: any } } } = {}
+
+-- Obsidian's setting `key` in `.obsidian/FILE.json` of the notes folder,
+-- when it's text that says something.
+local function obsidian(file: string, key: string): string?
+	local folder = M.folder()
+	local known = obsidian_read[file]
+	if known == nil or known.folder ~= folder or os.clock() - known.at > 5 then
+		local text = greed.fs.read(`{folder}/.obsidian/{file}.json`)
+		local ok, value = pcall(greed.json.decode, text or "")
+		known = {
+			at = os.clock(),
+			folder = folder,
+			value = if ok and type(value) == "table" then value else {},
+		}
+		obsidian_read[file] = known
+	end
+	local value = known.value[key]
+	return if type(value) == "string" and string.match(value, "%S") then value else nil
+end
+
+-- A folder name as a setting gives it: without slashes at its ends.
+local function trimmed_folder(folder: string): string
+	return (string.gsub(string.gsub(folder, "^/+", ""), "/+$", ""))
+end
+
+--- The folder day notes go in: "daily", or the one Obsidian's daily notes
+--- are set to keep them in.
+function M.daily_folder(): string
+	local set = obsidian("daily-notes", "folder")
+	return if set then trimmed_folder(set) else "daily"
+end
+
+--- The folder templates are in: "templates", or Obsidian's.
+function M.templates_folder(): string
+	local set = obsidian("templates", "folder")
+	return if set then trimmed_folder(set) else "templates"
+end
+
+-- How day notes' names are written: Obsidian's format when it's the
+-- year, month and day once each with marks between (`YYYY-MM-DD`,
+-- `DD.MM.YYYY`), else "YYYY-MM-DD".
+local function day_format(): string
+	local set = obsidian("daily-notes", "format")
+	if set == nil then
+		return "YYYY-MM-DD"
+	end
+	local rest, count = string.gsub(set, "YYYY", "")
+	local _, months = string.gsub(rest, "MM", "")
+	local _, days = string.gsub(rest, "DD", "")
+	local marks = string.gsub(string.gsub(rest, "MM", ""), "DD", "")
+	return if count == 1
+			and months == 1
+			and days == 1
+			and not string.find(marks, "[%w%[]")
+		then set
+		else "YYYY-MM-DD"
+end
+
+-- The name of a day note in the day notes' folder, `date` ("2026-10-01")
+-- written as their format says.
+local function day_name(date: string): string
+	local y, m, d = string.match(date, "^(%d+)%-(%d+)%-(%d+)$")
+	local written = string.gsub(day_format(), "YYYY", y or date)
+	written = string.gsub(written, "MM", m or "")
+	written = string.gsub(written, "DD", d or "")
+	return `{M.daily_folder()}/{written}`
+end
+
+--- The day ("2026-10-01") note `name` is the day note of, if it's one.
+function M.day_of(name: string): string?
+	local _, rest = M.split(name)
+	local format = day_format()
+	local function escaped(text: string): string
+		return (string.gsub(text, "[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"))
+	end
+	local pattern = string.gsub(escaped(format), "YYYY", "(%%d%%d%%d%%d)")
+	pattern = string.gsub(string.gsub(pattern, "MM", "(%%d%%d)"), "DD", "(%%d%%d)")
+	local a, b, c = string.match(rest, `^{escaped(M.daily_folder())}/{pattern}$`)
+	if a == nil or b == nil or c == nil then
+		return nil
+	end
+	-- The year, month and day, in the order the format has them.
+	local function at(token: string): number
+		return (string.find(format, token, 1, true)) or 0
+	end
+	type Part = { at: number, part: string }
+	local order: { Part } = {
+		{ at = at("YYYY"), part = "y" },
+		{ at = at("MM"), part = "m" },
+		{ at = at("DD"), part = "d" },
+	}
+	table.sort(order, function(x: Part, y: Part): boolean
+		return x.at < y.at
+	end)
+	local got: { [string]: string } = {}
+	for i, value in { a, b, c } do
+		got[order[i].part] = value
+	end
+	return `{got.y}-{got.m}-{got.d}`
+end
+
 --- Whether note `name` is one whose name means little among others or in
 --- a sentence: a day's note, a template, a weekly review, the inbox.
 function M.routine(name: string): boolean
 	local _, rest = M.split(name)
-	return string.match(rest, "^daily/") ~= nil
-		or string.match(rest, "^templates/") ~= nil
+	local daily, templates = M.daily_folder(), M.templates_folder()
+	return string.sub(rest, 1, #daily + 1) == `{daily}/`
+		or string.sub(rest, 1, #templates + 1) == `{templates}/`
 		or string.match(rest, "^reviews/") ~= nil
 		or rest == "inbox"
 end
@@ -302,23 +407,40 @@ function M.today(): string
 end
 
 --- The name of the daily note for `date` ("2026-10-01"; today by
---- default): "daily/2026-10-01".
+--- default): "daily/2026-10-01", or as Obsidian's daily notes are set to
+--- name it (`Daily/2026-10-01`, see `M.daily_folder`).
 function M.daily(date: string?): string
-	return `daily/{date or M.today()}`
+	return day_name(date or M.today())
 end
 
 --- Makes today's daily note if there isn't one yet, and gives back its
---- path. It starts as the note `templates/daily` says, with `{{date}}`
---- ("2026-10-18") and `{{day}}` ("Sunday 18 October") filled in, or else
---- with the date as its heading.
+--- path. It starts as its template says (the note `templates/daily`, or
+--- the one Obsidian's daily notes are set to start from), with `{{date}}`
+--- ("2026-10-18"), `{{day}}` ("Sunday 18 October"), `{{title}}` (the
+--- note's name) and `{{time}}` filled in; or else with the date as its
+--- heading.
 function M.make_daily(): string
 	local today = M.today()
-	local path = M.path(M.daily(today))
+	local name = M.daily(today)
+	local path = M.path(name)
 	if greed.fs.stat(path) == nil then
-		local template = M.read("templates/daily")
-		local day = os.date("%A %d %B", core.dates.clock()) :: string
+		local template_name = obsidian("daily-notes", "template")
+		local template = M.read(
+			if template_name
+				then (string.gsub(trimmed_folder(template_name), "%.md$", ""))
+				else `{M.templates_folder()}/daily`
+		)
+		local clock = core.dates.clock()
+		local filled = {
+			["{{date}}"] = today,
+			["{{day}}"] = os.date("%A %d %B", clock) :: string,
+			["{{title}}"] = string.match(name, "([^/]+)$") or name,
+			["{{time}}"] = os.date("%H:%M", clock) :: string,
+		}
 		local text = if template
-			then string.gsub(string.gsub(template, "{{date}}", today), "{{day}}", day)
+			then (string.gsub(template, "{{%a+}}", function(found: string): string
+				return filled[found] or found
+			end))
 			else `# {today}\n\n`
 		core.file.write(path, text)
 	end

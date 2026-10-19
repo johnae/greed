@@ -775,3 +775,24 @@ test(":notes-capture TEXT adds it at once, and :notes-find NOTE opens that note"
 		tostring(err)
 	)
 end)
+
+test("a vault Obsidian keeps day notes as its settings say: folder, name and template", function(t)
+	local dir = folder(t, {
+		[".obsidian/daily-notes.json"] = '{"folder": "Journal/", "format": "DD.MM.YYYY", "template": "Tpl/Day"}',
+		[".obsidian/templates.json"] = '{"folder": "Tpl"}',
+		["Tpl/Day.md"] = "# {{title}}\n\nOn {{date}}.\n",
+	})
+	local notes = require("@notes")
+	local today = notes.today()
+	local y, m, d = string.match(today, "^(%d+)-(%d+)-(%d+)$")
+	local named = `{d}.{m}.{y}`
+	assert(notes.daily() == `Journal/{named}`, notes.daily())
+	assert(notes.day_of(`Journal/{named}`) == today, tostring(notes.day_of(`Journal/{named}`)))
+	assert(notes.day_of("Journal/notes") == nil and notes.day_of(`daily/{today}`) == nil)
+	local path = notes.make_daily()
+	assert(path == `{dir}/Journal/{named}.md`, path)
+	local text = greed.fs.read(path) or ""
+	assert(text == `# {named}\n\nOn {today}.\n`, text)
+	assert(notes.routine("Tpl/Day") and notes.routine(`Journal/{named}`), "routine notes")
+	assert(not notes.routine("Ideas"), "a note of your own")
+end)

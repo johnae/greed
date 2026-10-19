@@ -21,7 +21,9 @@ export type Item = { note: string, line: number, text: string, due: string? }
 -- Whether note `name` is one the review itself makes, or a template.
 local function own(name: string): boolean
 	local _, rest = notes.split(name)
-	return string.match(rest, "^reviews/") ~= nil or string.match(rest, "^templates/") ~= nil
+	local templates = notes.templates_folder()
+	return string.match(rest, "^reviews/") ~= nil
+		or string.sub(rest, 1, #templates + 1) == `{templates}/`
 end
 
 -- Every open or done todo, with its note, for what `keep` says yes to.
@@ -168,12 +170,11 @@ function M.text(date: string?): string
 	local to = (dates.moment(sunday, "23:59") or 0) + 60
 	local changed = {}
 	for _, note in index.all() do
-		local _, rest = notes.split(note.name)
 		if
 			note.modified >= from
 			and note.modified < to
 			and not own(note.name)
-			and not string.match(rest, "^daily/")
+			and notes.day_of(note.name) == nil
 		then
 			table.insert(changed, note.name)
 		end
