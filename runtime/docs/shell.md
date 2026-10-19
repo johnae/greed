@@ -674,9 +674,24 @@ from csv`:
 | `from csv\|tsv\|json` | CSV, tab separated values, or JSON or JSON lines |
 | `split SEP` | Each line cut at SEP into columns 1, 2, ... |
 | `lines` | A row for each line, in a column `line` |
+| `parse 'PROGRAM'` | A row for each match of a sikt program, its captures the columns |
 
 `columns -H` names the columns `1`, `2`, ..., as `split` does, and `from
 json` reads JSON lines too, an object on each line, as many logs are.
+
+`parse` reads any text you can describe with a
+[sikt](https://github.com/johnae/sikt/blob/main/docs/language.md) pattern,
+a line at a time: literal text in quotes, `name:` for a column, `until` for
+"up to". The cells keep the text as printed, and `where` and `sort` read
+sizes, durations and numbers in them as they do in any table:
+
+```text
+❯ $4 | parse 'time: until " " " " level: 1+ upper " " msg: until text end' | where level = ERROR
+❯ du -sh * | parse 'size: size 1+ space path: until text end' | sort size -r | first 5
+❯ git log --oneline | parse 'hash: 7+ hex " " subject: until text end' | where subject ~ fix
+```
+
+A mistake in the program says what's wrong and where.
 
 They make tables like any other, for `where`, `select` and `sort`:
 `$3 | split : | where 7 ~ zsh | select 1`. A buffer or the selection

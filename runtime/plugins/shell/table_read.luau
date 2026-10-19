@@ -818,6 +818,51 @@ function M.value_text(value: any): string
 	return as_text(value)
 end
 
+-- Sikt programs compiled, by their source.
+local compiled: { [string]: greed.SiktProgram } = {}
+
+-- The sikt program `source`, compiled once; nil and why when it has a
+-- mistake.
+local function compile(source: string): (greed.SiktProgram?, string?)
+	local known = compiled[source]
+	if known then
+		return known, nil
+	end
+	local program, why = greed.sikt.compile(source)
+	if program then
+		compiled[source] = program
+	end
+	return program, why
+end
+
+--- `text` read with the sikt program `source`: a row for each match, a
+--- column for each capture (in the program's order) holding the text it
+--- matched. Off the editor's thread where the caller can wait. Nil and why
+--- when the program has a mistake.
+function M.sikt(text: string, source: string): (Table?, string?)
+	local program, why = compile(source)
+	if program == nil then
+		return nil, why
+	end
+	local rows: { greed.SiktRow }, places: { greed.SiktPlace }
+	if coroutine.isyieldable() then
+		local all, where = program:rows_many({ text }, { at = true, text = true })
+		rows, places = all[1], (where :: { { greed.SiktPlace } })[1]
+	else
+		local found, where = program:rows(text, { at = true, text = true })
+		rows, places = found, where :: { greed.SiktPlace }
+	end
+	local columns: { string } = {}
+	for _, capture in program.captures do
+		table.insert(columns, capture.name)
+	end
+	local at: { number } = {}
+	for i, place in places do
+		at[i] = place.line
+	end
+	return { columns = columns, rows = rows :: any, at = at }, nil
+end
+
 --- Reads a command's output as a table: `text`, and the block it's from.
 --- It returns a table (`{ columns, rows }`), a list of objects as JSON
 --- has them, or nil to leave it to the shell.
@@ -830,10 +875,24 @@ local MAGIC = "[%^%$%%%*%+%?%[%(%.]"
 
 --- Reads the output of the commands `match` names with `parse`, ahead of
 --- the shell's own look for a table: a program's name ("kubectl"), or a
---- Luau pattern for the whole command line ("^helm list"). The latest
---- added is asked first. It goes when the plugin that added it does.
-function M.parser(match: string, parse: Parser)
-	greed.plugin.tie(core.registry.put(parsers, { match = match, parse = parse }))
+--- Luau pattern for the whole command line ("^helm list"). `parse` is a
+--- function, or a sikt program whose captures are the columns (see
+--- `M.sikt`). The latest added is asked first. It goes when the plugin
+--- that added it does.
+function M.parser(match: string, parse: Parser | string)
+	local read: Parser
+	if type(parse) == "string" then
+		local _, why = compile(parse)
+		if why then
+			error(`the parser for {match}: {why}`, 2)
+		end
+		read = function(text: string): any
+			return (M.sikt(text, parse))
+		end
+	else
+		read = parse
+	end
+	greed.plugin.tie(core.registry.put(parsers, { match = match, parse = read }))
 end
 
 --- Whether `command` is one `match` names: a program's name ("kubectl"),

@@ -1703,19 +1703,21 @@ changed: an edit costs what it changed, however long the buffer.
 
 `shell.parser(match, parse)` reads the output of the commands `match`
 names as tables, ahead of the shell's own look for one: a program's name,
-or a pattern for the command line. `parse(text, block)` returns a table,
-a list of objects as JSON has them, or nil to leave it to the shell.
+or a pattern for the command line. `parse` is a
+[sikt](#reading-text-with-sikt) program, whose captures are the columns,
+or a function: `parse(text, block)` returns a table, a list of objects as
+JSON has them, or nil to leave it to the shell.
 
 ```luau
 local shell = require("@shell")
 
 -- `terraform state list` prints one address a line.
-shell.parser("^terraform state list", function(text)
-	local rows = {}
-	for address in string.gmatch(text, "[^\n]+") do
-		table.insert(rows, { address = address, type = string.match(address, "^[%w_]+") or "" })
-	end
-	return rows
+shell.parser("^terraform state list", 'address: (type: until "." until text end)')
+
+-- A function, for output a pattern can't say.
+shell.parser("^mytool status", function(text)
+	local ok, found = pcall(greed.json.decode, text)
+	return if ok then found.items else nil
 end)
 ```
 

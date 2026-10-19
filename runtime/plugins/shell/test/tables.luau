@@ -488,6 +488,45 @@ test("a plugin's parser reads its command's output first", function(t)
 	local pods = run(t, sh, `printf '{PODS:gsub("\n", "\\n")}'`)
 	assert(pods.table and #pods.table.rows == 5, pods.output)
 	assert(run(t, sh, "echo other").table == nil)
+
+	-- A sikt program reads a command's lines, its captures the columns.
+	shell.parser("^echo sizes", 'name: 1+ letter "=" size: size')
+	local sizes = run(t, sh, "echo sizes a=1K b=2M c=3")
+	local sized = assert(sizes.table, "a table from sikt")
+	assert(columns(sized) == "name,size", columns(sized))
+	assert(cells(sized, "size") == "1K,2M,3", cells(sized, "size"))
+	local ok, err = pcall(function()
+		shell.parser("^echo bad", "year: 4 digts")
+	end)
+	assert(not ok and string.find(tostring(err), "digts", 1, true), tostring(err))
+end)
+
+test("parse reads text as a table with a sikt program, its values comparing", function(t)
+	local sh = open(t, t:tempdir())
+	local log = run(
+		t,
+		sh,
+		[[printf '12:00:01 WARN db slow 1840ms\n12:00:02 INFO api ok 12ms\n12:00:03 ERROR api timeout 30s\n']]
+	)
+	local program =
+		[['time: until " " " " level: 1+ upper " " part: until " " " " until " " " " took: duration']]
+	local slow = run(t, sh, `${log.number} | parse {program} | where took > 1s | select level,part`)
+	local tbl = assert(slow.table, slow.stderr)
+	assert(
+		#tbl.rows == 2 and tbl.rows[1].level == "WARN" and tbl.rows[2].part == "api",
+		slow.output
+	)
+	-- A mistake in the program says what and where.
+	local wrong = run(t, sh, `${log.number} | parse 'level: 1+ uper'`)
+	assert(wrong.status == "failed" and string.find(wrong.stderr, "uper", 1, true), wrong.stderr)
+	-- After a program, in one line.
+	local after = run(
+		t,
+		sh,
+		[[printf 'a=1\nb=22\n' | parse 'k: letter "=" v: integer' | where v > 5 | select k]]
+	)
+	local kept = assert(after.table, after.output .. after.stderr)
+	assert(#kept.rows == 1 and kept.rows[1].k == "b", after.output)
 end)
 
 -- A folder with `jc` and `uptime` programs that print what the real ones

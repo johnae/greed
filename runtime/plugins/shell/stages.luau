@@ -55,6 +55,11 @@ M.STAGES = {
 	{ name = "split", usage = "split SEP", doc = "Each line cut at SEP into columns 1, 2, ..." },
 	{ name = "lines", usage = "lines", doc = "A row for each line, in a column `line`" },
 	{
+		name = "parse",
+		usage = "parse 'PROGRAM'",
+		doc = "A row for each match of a sikt program, its captures the columns",
+	},
+	{
 		name = "get",
 		usage = "get PATH",
 		doc = "A field of JSON, like items or items.0.name (arrays count from 0)",
@@ -154,6 +159,12 @@ local function converter(word: string, rest: string): ((text: string) -> (Table?
 	elseif word == "lines" and rest == "" then
 		return function(text: string): (Table?, string)
 			return read.lines(text), ""
+		end
+	elseif word == "parse" and rest ~= "" then
+		local source = unquote(rest)
+		return function(text: string): (Table?, string)
+			local tbl, why = read.sikt(text, source)
+			return tbl, why or ""
 		end
 	end
 	return nil
@@ -618,6 +629,7 @@ local STARTERS: { [string]: boolean } = {
 	columns = true,
 	from = true,
 	lines = true,
+	parse = true,
 	filter = true,
 	map = true,
 	count = true,
