@@ -57,6 +57,7 @@ unicode-normalization = "0.1"
 unicode-segmentation = "1.13"
 unicode-width = "0.2"
 url = "2.5"
+zstd = "0.13"
 
 [workspace.lints.rust]
 # Denied, with one allowed spot: resetting signals in programs Greed starts

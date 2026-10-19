@@ -18,9 +18,11 @@ mail-parser.workspace = true
 rusqlite.workspace = true
 rustls-platform-verifier.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 tokio-rustls.workspace = true
 toml.workspace = true
+zstd.workspace = true
 
 [lints]
 workspace = true

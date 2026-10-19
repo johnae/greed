@@ -266,6 +266,14 @@ pub trait Imap {
         from: u32,
         to: u32,
     ) -> impl Future<Output = Result<Vec<u32>, Trouble>> + Send;
+
+    /// The first `cap` bytes of each message with `uids` (lowest first),
+    /// by UID; those gone since aren't there.
+    fn bodies(
+        &mut self,
+        uids: &[u32],
+        cap: u32,
+    ) -> impl Future<Output = Result<Vec<(u32, Vec<u8>)>, Trouble>> + Send;
 }
 
 impl Connection {
@@ -337,6 +345,25 @@ impl Imap for Connection {
         Ok(uids)
     }
 
+    async fn bodies(&mut self, uids: &[u32], cap: u32) -> Result<Vec<(u32, Vec<u8>)>, Trouble> {
+        if uids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let found: Vec<_> = self
+            .session
+            .uid_fetch(set(uids), format!("(UID BODY.PEEK[]<0.{cap}>)"))
+            .await?
+            .try_collect()
+            .await?;
+        Ok(found
+            .iter()
+            .filter_map(|f| {
+                let uid = f.uid.filter(|uid| uids.binary_search(uid).is_ok())?;
+                Some((uid, f.body()?.to_vec()))
+            })
+            .collect())
+    }
+
     async fn fetch(&mut self, from: u32, to: u32) -> Result<Vec<Fetched>, Trouble> {
         if from > to {
             return Ok(Vec::new());
@@ -372,6 +399,25 @@ impl Imap for Connection {
             })
             .collect())
     }
+}
+
+/// `uids` (lowest first) as an IMAP set, runs written as ranges: "1:3,7".
+fn set(uids: &[u32]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < uids.len() {
+        let start = uids[i];
+        while i + 1 < uids.len() && uids[i + 1] == uids[i] + 1 {
+            i += 1;
+        }
+        parts.push(if start == uids[i] {
+            start.to_string()
+        } else {
+            format!("{start}:{}", uids[i])
+        });
+        i += 1;
+    }
+    parts.join(",")
 }
 
 /// A fetch's Gmail labels, readable.
@@ -476,6 +522,12 @@ async fn encrypt(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uids_are_written_as_runs() {
+        assert_eq!(set(&[1, 2, 3, 7, 9, 10]), "1:3,7,9:10");
+        assert_eq!(set(&[5]), "5");
+    }
 
     #[test]
     fn changes_are_found_the_best_way_the_server_has() {

@@ -259,6 +259,10 @@ fn a_mailbox_syncs_into_the_store_and_then_only_what_arrives() {
         .await
         .unwrap();
         assert_eq!((after.fetched, after.changed, after.gone), (0, 1, 1));
+        let bodies = sync::bodies(&mut connection, &mut store, id, "INBOX", options)
+            .await
+            .unwrap();
+        assert_eq!(bodies, 12, "one for each message there");
         connection.close().await.unwrap();
     });
     assert_eq!(store.counts(id).unwrap(), (12, 12));

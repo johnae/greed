@@ -14,6 +14,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
+use crate::body::Body;
 use crate::header::{Fetched, Header};
 use crate::imap::Change;
 
@@ -73,6 +74,32 @@ CREATE TABLE IF NOT EXISTS places (
 );
 CREATE INDEX IF NOT EXISTS places_message ON places (message);
 ";
+
+/// `bodies.db`: each message's text, its HTML packed with zstd and what's
+/// attached, by its id in `mail.db`, apart so `mail.db` stays small.
+/// `complete` says the whole message was read.
+const BODIES: &str = "
+CREATE TABLE IF NOT EXISTS bodies.bodies (
+    message INTEGER PRIMARY KEY,
+    text TEXT,
+    html BLOB,
+    attachments TEXT NOT NULL DEFAULT '',
+    complete INTEGER NOT NULL
+);
+";
+
+/// A body as `bodies.db` has it: text, packed HTML, attachments as JSON,
+/// whether it's complete.
+type StoredBody = (Option<String>, Option<Vec<u8>>, String, bool);
+
+/// A message whose body isn't in yet: its id, and its UID and size in the
+/// mailbox it's fetched from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Wanting {
+    pub message: i64,
+    pub uid: u32,
+    pub size: u32,
+}
 
 /// What went wrong with the store, in words.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,6 +164,12 @@ impl Store {
         db.pragma_update(None, "synchronous", "NORMAL")?;
         db.pragma_update(None, "foreign_keys", "ON")?;
         db.execute_batch(TABLES)?;
+        db.execute(
+            "ATTACH DATABASE ?1 AS bodies",
+            [dir.join("bodies.db").to_string_lossy()],
+        )?;
+        db.pragma_update(Some("bodies"), "journal_mode", "WAL")?;
+        db.execute_batch(BODIES)?;
         let version: Option<String> = db
             .query_row("SELECT value FROM meta WHERE key = 'version'", [], |r| {
                 r.get(0)
@@ -175,11 +208,11 @@ impl Store {
     }
 
     /// Where the sync of `account`'s mailbox `name` is, the mailbox added
-    /// if it's new.
+    /// if it's new; its role kept as it was without one.
     pub fn mailbox(&self, account: i64, name: &str, role: Option<&str>) -> Result<State, Trouble> {
         self.db.execute(
             "INSERT INTO mailboxes (account, name, role) VALUES (?1, ?2, ?3)
-             ON CONFLICT (account, name) DO UPDATE SET role = ?3",
+             ON CONFLICT (account, name) DO UPDATE SET role = coalesce(?3, role)",
             params![account, name, role],
         )?;
         Ok(self.db.query_row(
@@ -246,6 +279,10 @@ impl Store {
             "DELETE FROM messages WHERE account = (SELECT account FROM mailboxes WHERE id = ?1)
              AND NOT EXISTS (SELECT 1 FROM places WHERE places.message = messages.id)",
             [mailbox],
+        )?;
+        tx.execute(
+            "DELETE FROM bodies.bodies WHERE message NOT IN (SELECT id FROM messages)",
+            [],
         )?;
         tx.commit()?;
         Ok(())
@@ -316,6 +353,81 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?)
+    }
+
+    /// Up to `most` messages in `mailbox` whose bodies aren't in yet,
+    /// unread first, then newest.
+    pub fn wanting(&self, mailbox: i64, most: usize) -> Result<Vec<Wanting>, Trouble> {
+        let mut statement = self.db.prepare(
+            "SELECT messages.id, places.uid, messages.size FROM places
+             JOIN messages ON messages.id = places.message
+             LEFT JOIN bodies.bodies ON bodies.message = messages.id
+             WHERE places.mailbox = ?1 AND bodies.message IS NULL
+             ORDER BY instr(messages.flags, '\\Seen') > 0, messages.date DESC
+             LIMIT ?2",
+        )?;
+        let most = i64::try_from(most).unwrap_or(i64::MAX);
+        let wanting = statement
+            .query_map(params![mailbox, most], |r| {
+                Ok(Wanting {
+                    message: r.get(0)?,
+                    uid: r.get(1)?,
+                    size: r.get(2)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(wanting)
+    }
+
+    /// Puts each message's body in, by its id.
+    pub fn put_bodies(&mut self, bodies: &[(i64, Body)]) -> Result<(), Trouble> {
+        let tx = self.db.transaction()?;
+        for (message, body) in bodies {
+            let attachments =
+                serde_json::to_string(&body.attachments).map_err(|e| Trouble(e.to_string()))?;
+            // HTML is most of what a body weighs, and packs well.
+            let html = body
+                .html
+                .as_ref()
+                .map(|html| zstd::encode_all(html.as_bytes(), 3))
+                .transpose()
+                .map_err(|e| Trouble(format!("packing a body: {e}")))?;
+            tx.execute(
+                "INSERT OR REPLACE INTO bodies.bodies (message, text, html, attachments, complete)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![message, body.text, html, attachments, body.complete],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The body of `account`'s message `identity`, once it's in.
+    pub fn body(&self, account: i64, identity: &str) -> Result<Option<Body>, Trouble> {
+        let found: Option<StoredBody> = self
+            .db
+            .query_row(
+                "SELECT text, html, attachments, complete FROM bodies.bodies
+                 JOIN messages ON messages.id = bodies.message
+                 WHERE messages.account = ?1 AND messages.identity = ?2",
+                params![account, identity],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+        let Some((text, html, attachments, complete)) = found else {
+            return Ok(None);
+        };
+        let html = html
+            .map(|packed| zstd::decode_all(packed.as_slice()))
+            .transpose()
+            .map_err(|e| Trouble(format!("unpacking a body: {e}")))?
+            .map(|html| String::from_utf8_lossy(&html).into_owned());
+        Ok(Some(Body {
+            text,
+            html,
+            attachments: serde_json::from_str(&attachments).unwrap_or_default(),
+            complete,
+        }))
     }
 
     /// The UIDs of `mailbox`'s places, lowest first.

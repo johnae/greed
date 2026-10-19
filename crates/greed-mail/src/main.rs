@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! greed-mail check [ACCOUNT]    log in and say what each server can do
-//! greed-mail sync [ACCOUNT]     sync the headers into the store
+//! greed-mail sync [ACCOUNT]     sync headers, flags and bodies into the store
 //! ```
 //!
 //! `--config FILE` reads accounts from FILE instead of Greed's `mail.toml`,
@@ -159,8 +159,8 @@ async fn check(account: &Account) -> Result<(), String> {
     connection.close().await.map_err(|e| e.0)
 }
 
-/// Syncs the headers of `account`'s mailboxes into `store`, saying how
-/// many came and how fast.
+/// Syncs `account`'s mailboxes into `store`, headers then bodies, saying
+/// how many came and how fast.
 async fn sync_account(
     account: &Account,
     store: &mut Store,
@@ -198,6 +198,18 @@ async fn sync_account(
             synced.gone,
             if synced.done { "" } else { ", more to come" },
         );
+        let started = Instant::now();
+        let bodies = sync::bodies(&mut connection, store, id, &mailbox.name, options)
+            .await
+            .map_err(|e| format!("{}: {e}", mailbox.name))?;
+        if bodies > 0 {
+            println!(
+                "{} {}: {bodies} bodies in {:.1} s",
+                account.name,
+                mailbox.name,
+                started.elapsed().as_secs_f64()
+            );
+        }
     }
     let (messages, places) = store.counts(id).map_err(|e| e.0)?;
     println!("{}: {messages} messages in {places} places", account.name);

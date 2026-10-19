@@ -4,8 +4,9 @@
 //! so stopping at any point (a crash, a lost connection, a limit) and
 //! starting again goes on from there, fetching at most one batch twice.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
+use crate::body::{self, Body};
 use crate::config::Provider;
 use crate::imap::{Imap, Mailbox, Opened, Role};
 use crate::store::{State, Store};
@@ -189,6 +190,47 @@ async fn refresh<I: Imap>(
     Ok(())
 }
 
+/// Fetches the bodies of the messages in `account`'s mailbox `name` that
+/// don't have theirs in yet, unread first, then newest, up to
+/// `options.limit` of them; gives how many came. A message gone before its
+/// body came gets an empty one, as there's nothing to fetch, and goes at
+/// the next sync.
+pub async fn bodies<I: Imap>(
+    imap: &mut I,
+    store: &mut Store,
+    account: i64,
+    name: &str,
+    options: Options,
+) -> Result<usize, Trouble> {
+    let state = store.mailbox(account, name, None)?;
+    imap.open(name).await?;
+    let mut fetched = 0;
+    while options.limit.is_none_or(|limit| fetched < limit) {
+        let wanting = store.wanting(state.id, options.batch.clamp(1, BODY_BATCH))?;
+        if wanting.is_empty() {
+            break;
+        }
+        let mut uids: Vec<u32> = wanting.iter().map(|w| w.uid).collect();
+        uids.sort_unstable();
+        let raw: HashMap<u32, Vec<u8>> = imap.bodies(&uids, body::CAP).await?.into_iter().collect();
+        let found: Vec<(i64, Body)> = wanting
+            .iter()
+            .map(|w| {
+                let body = raw.get(&w.uid).map_or_else(Body::default, |raw| {
+                    Body::of(raw, usize::try_from(w.size).unwrap_or(usize::MAX))
+                });
+                (w.message, body)
+            })
+            .collect();
+        store.put_bodies(&found)?;
+        fetched += raw.len();
+    }
+    Ok(fetched)
+}
+
+/// The most bodies a fetch asks for: each can be up to `body::CAP`.
+const BODY_BATCH: usize = 50;
+
 /// How many UIDs a fetch spans, so it brings about a batch: UIDs are
 /// sparse where messages went, so a range wider than the batch can hold
 /// fewer messages. It widens where they're sparse and narrows where they
@@ -249,6 +291,15 @@ mod tests {
         changed_at: BTreeMap<u32, u64>,
         /// How many times the UIDs were listed.
         listings: usize,
+        /// The UIDs each fetch of bodies asked for.
+        asked: Vec<Vec<u32>>,
+    }
+
+    /// A message the fake holds, whole: its header, then a line of text.
+    fn whole(f: &Fetched) -> Vec<u8> {
+        let mut raw = f.raw.clone();
+        raw.extend(format!("text of {}\r\n", f.uid).bytes());
+        raw
     }
 
     impl Fake {
@@ -266,14 +317,15 @@ mod tests {
         /// Adds a message whose Bridge id is `id`.
         fn add(&mut self, uid: u32, id: &str) {
             let raw = format!("Subject: {id}\r\nX-Pm-Internal-Id: {id}\r\n\r\n");
-            self.messages.insert(
+            let mut fetched = Fetched {
                 uid,
-                Fetched {
-                    uid,
-                    raw: raw.into_bytes(),
-                    ..Fetched::default()
-                },
-            );
+                raw: raw.into_bytes(),
+                // Newer the higher the UID.
+                arrived: Some(format!("2026-10-{:02}T00:00:00+00:00", uid % 28 + 1)),
+                ..Fetched::default()
+            };
+            fetched.size = u32::try_from(whole(&fetched).len()).unwrap();
+            self.messages.insert(uid, fetched);
             self.touch(uid);
         }
 
@@ -351,6 +403,23 @@ mod tests {
                 .messages
                 .range(from..=to)
                 .map(|(uid, _)| *uid)
+                .collect()))
+        }
+
+        fn bodies(
+            &mut self,
+            uids: &[u32],
+            cap: u32,
+        ) -> impl Future<Output = Result<Vec<(u32, Vec<u8>)>, imap::Trouble>> {
+            self.asked.push(uids.to_vec());
+            let cap = usize::try_from(cap).unwrap();
+            ready(Ok(uids
+                .iter()
+                .filter_map(|uid| {
+                    let mut raw = whole(self.messages.get(uid)?);
+                    raw.truncate(cap);
+                    Some((*uid, raw))
+                })
                 .collect()))
         }
     }
@@ -640,5 +709,71 @@ mod tests {
         .unwrap();
         assert_eq!(store.counts(account).unwrap(), (2, 2));
         assert_eq!(flags_of(&store, account, "m2"), None);
+    }
+
+    fn bodies_of(fake: &mut Fake, store: &mut Store, account: i64, options: Options) -> usize {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(bodies(fake, store, account, "INBOX", options))
+            .unwrap()
+    }
+
+    #[test]
+    fn bodies_come_unread_first_then_newest_and_once() {
+        let (mut store, account) = store("bodies");
+        let mut fake = Fake::with(1, 1..=6);
+        fake.flag(5, &["\\Seen"], &[]);
+        fake.flag(6, &["\\Seen"], &[]);
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        let first = Options {
+            batch: 4,
+            limit: Some(1),
+        };
+        assert_eq!(
+            bodies_of(&mut fake, &mut store, account, first),
+            4,
+            "a whole batch"
+        );
+        assert_eq!(
+            fake.asked,
+            [vec![1, 2, 3, 4]],
+            "the unread ones, before read 5 and 6"
+        );
+        let body = store.body(account, "pm:m3").unwrap().unwrap();
+        assert_eq!(body.text.as_deref(), Some("text of 3\r\n"));
+        assert!(body.complete);
+        assert_eq!(
+            bodies_of(&mut fake, &mut store, account, Options::default()),
+            2,
+            "then the rest"
+        );
+        assert_eq!(
+            bodies_of(&mut fake, &mut store, account, Options::default()),
+            0,
+            "once"
+        );
+    }
+
+    #[test]
+    fn a_message_gone_before_its_body_came_isnt_asked_for_again() {
+        let (mut store, account) = store("bodies-gone");
+        let mut fake = Fake::with(1, 1..=3);
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        fake.remove(2);
+        assert_eq!(
+            bodies_of(&mut fake, &mut store, account, Options::default()),
+            2
+        );
+        assert_eq!(
+            bodies_of(&mut fake, &mut store, account, Options::default()),
+            0
+        );
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!(
+            store.body(account, "pm:m2").unwrap(),
+            None,
+            "gone with its message"
+        );
     }
 }
