@@ -167,3 +167,87 @@ test("a note being typed in is indexed from its buffer", function(t)
 	end)
 	assert(index.backlinks("f")[1] == "e")
 end)
+
+-- Where `a` and `b` first differ, or nil when they're the same.
+local function difference(a: any, b: any, path: string): string?
+	if type(a) ~= "table" or type(b) ~= "table" then
+		return if a == b then nil else `{path}: {tostring(a)} ~= {tostring(b)}`
+	end
+	for key, value in a do
+		local found = difference(value, b[key], `{path}.{key}`)
+		if found then
+			return found
+		end
+	end
+	for key, value in b do
+		if a[key] == nil then
+			return `{path}.{key}: nil ~= {tostring(value)}`
+		end
+	end
+	return nil
+end
+
+test("notes read with sikt are the same as read line by line", function()
+	-- Pieces of lines, common and odd, put together every way below.
+	local pieces = {
+		"buy seeds",
+		"due:2026-11-01",
+		"due:2026-11-01 due:2026-12-01",
+		"overdue:2026-11-02",
+		"from:2026-01-01  until:2026-02-01",
+		"every:mon,tue!",
+		"every:day",
+		"done:2026-10-18",
+		"#garden",
+		"#2026",
+		"#a/b-c_d.",
+		"word#nottag",
+		"[[shop]]",
+		"![[photo.png]]",
+		"[[note#Heading|shown]]",
+		"[[a [[b]]",
+		"[[]] [[c]]",
+		"[[x #inner]]",
+		"#due:2026-11-03",
+		"every:due:2026-11-04",
+		"`#code [[code]] due:2026-01-01`",
+		"key:: value",
+		"[kind:: thing]",
+		"^block-1",
+		"remind:2026-10-06 18:00",
+		"remind:9:30",
+		"📅 2026-11-05",
+		"🔁 every week on Monday",
+		"  ",
+	}
+	local starts = { "- [ ] ", "- [x] ", "  * [X] ", "- [ ]  ", "1. ", "- ", "## ", "", "> - [ ] " }
+	local lines = {}
+	for _, start in starts do
+		for i, a in pieces do
+			for j, b in pieces do
+				if (i + j) % 3 == 0 or i == 1 then
+					table.insert(lines, `{start}{a} {b}`)
+				end
+			end
+		end
+	end
+	-- Notes of a few dozen lines, with headings, front matter and code.
+	local texts = { "---\ntags: [x]\ntitle: T\n---\n# Front\n- [ ] after due:2026-01-01" }
+	for first = 1, #lines, 40 do
+		local chunk = table.move(lines, first, math.min(first + 39, #lines), 1, {})
+		table.insert(chunk, 1, "# Note")
+		table.insert(chunk, 10, "```\n- [ ] in code #nottag\n```")
+		table.insert(chunk, 20, "Title\n===")
+		table.insert(texts, table.concat(chunk, "\n") .. "\n")
+	end
+	-- Each read alone, and read many at once.
+	local many = index.read(texts)
+	for i, text in texts do
+		index.SIKT = false
+		local slowly = index.parse(`n{i}`, `/x/n{i}.md`, text)
+		index.SIKT = true
+		local found = difference(slowly, index.parse(`n{i}`, `/x/n{i}.md`, text), `note {i}`)
+			or difference(slowly, index.parse(`n{i}`, `/x/n{i}.md`, text, many[i]), `read {i}`)
+		assert(found == nil, found)
+	end
+end)

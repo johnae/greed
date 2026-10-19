@@ -24,6 +24,9 @@ M.EVERY = 5000
 --- go on.
 M.SLICE = 8
 
+--- How many notes are handed to sikt at once when many are read.
+M.READ_BATCH = 250
+
 --- A todo: ticked or not, its text as written after its box, when it's
 --- due, its reminders (each "2026-10-06 18:00", a date alone or a time
 --- alone), how often it repeats (`habit` when as a habit), from and until
@@ -162,9 +165,168 @@ local function item_text(line: string): string
 	return syntax.plain(rest)
 end
 
---- What the note `name` at `path` holds, from its text.
-function M.parse(name: string, path: string, text: string): Note
+-- What the index reads on each line, as sikt finds it: a todo's box, where
+-- a link starts, tags, dated markers and repeats. A line with something
+-- rarer on it (inline code, fields, block ids, reminders, the Tasks
+-- plugin's signs) is `slow`, and read with `syntax` as before; so is every
+-- line when `M.SIKT` is off. Both readings give the same notes, which the
+-- tests check.
+local LINES = [==[
+let date = 4 digit "-" 2 digit "-" 2 digit
+let tagged = 1+ none of (space ".,;:!?()[]{}\"'`~@$%^&*=+<>|\\#")
+let repeat = 1+ one of ("a".."z" "A".."Z" digit ",")
+# A tag or a repeat going on into a colon may hide a marker in it.
+let rare = "`" or "::" or "^" or "remind:" or "📅" or "🔁" or "🛫" or "⏳" or "✅" or "➕"
+    or "#" tagged ":" or "every:" repeat ":"
+let box = line start 0+ space one of "-*+" " [" box: one of " xX" "] "
+let link = embed: optional "!" "[["
+let tag = (line start or after space) "#" tag: tagged
+let dated = marker: ("due" or "from" or "until" or "done") ":" day: date
+let every = "every:" every: repeat habit: optional "!"
+find slow: rare or box or link or tag or dated or every
+]==]
+local lines_read = assert(greed.sikt.compile(LINES))
+
+--- Whether lines are read with sikt. Off, every line is read in Luau, as
+--- the tests do to compare.
+M.SIKT = true
+
+--- What sikt found in a note's text (`rows` and their `places`), to hand
+--- `M.parse` when many notes are read at once (see `M.read`).
+export type Found = { rows: { greed.SiktRow }, places: { greed.SiktPlace } }
+
+-- A find on one line: its row, and where it is in the line, from its
+-- first byte to just after its last (1-based).
+type Find = { row: greed.SiktRow, from: number, to: number }
+
+--- What sikt finds in each of `texts`, read on other threads; waits like
+--- greed.sleep.
+function M.read(texts: { string }): { Found }
+	local rows, places = lines_read:rows_many(texts, { at = true })
+	local out: { Found } = {}
+	for i, found in rows do
+		table.insert(out, { rows = found, places = (places :: { { greed.SiktPlace } })[i] })
+	end
+	return out
+end
+
+-- Where the words of a list item's line start, as `item_text` reads them.
+local function item_start(line: string): number
+	return string.match(line, "^%s*[-*+]%s+%[[ xX]%]%s+()")
+		or string.match(line, "^%s*[-*+]%s+()")
+		or string.match(line, "^%s*%d+[.)]%s+()")
+		or 1
+end
+
+-- `item_text` of a line with nothing rare on it, from what sikt found on
+-- it: from `start` on, without its repeats and dated markers, each with
+-- the space before it (only one space for the first due date, as
+-- `syntax.plain` takes it out).
+local function item_text_from(line: string, start: number, finds: { Find }): string
+	local cuts: { { number } } = {}
+	local due = false
+	for _, find in finds do
+		local marker = find.row.marker
+		if find.from < start or not (find.row.every or marker) then
+			continue
+		end
+		local from = find.from
+		if marker == "due" then
+			if due then
+				continue
+			end
+			due = true
+			if from > start and string.sub(line, from - 1, from - 1) == " " then
+				from -= 1
+			end
+		else
+			while from > start and string.find(line, "^%s", from - 1) do
+				from -= 1
+			end
+		end
+		table.insert(cuts, { from, find.to })
+	end
+	if #cuts == 0 then
+		return (string.gsub(string.sub(line, start), "^%s+", ""))
+	end
+	table.sort(cuts, function(a: { number }, b: { number }): boolean
+		return a[1] < b[1]
+	end)
+	local parts: { string } = {}
+	local at = start
+	for _, cut in cuts do
+		table.insert(parts, string.sub(line, at, cut[1] - 1))
+		at = cut[2]
+	end
+	table.insert(parts, string.sub(line, at))
+	return (string.gsub(table.concat(parts), "^%s+", ""))
+end
+
+-- The todo on a line with nothing rare on it, from what sikt found there,
+-- as `syntax` reads it.
+local function task_from(line: string, finds: { Find }): Task?
+	local box: Find? = nil
+	local days: { [string]: string } = {}
+	local every: greed.SiktRow? = nil
+	for _, find in finds do
+		local row = find.row
+		if row.box then
+			box = find
+		elseif row.marker then
+			local marker = row.marker :: string
+			days[marker] = days[marker] or row.day :: string
+		elseif row.every and every == nil then
+			every = row
+		end
+	end
+	if box == nil then
+		return nil
+	end
+	return {
+		done = box.row.box ~= " ",
+		text = string.sub(line, box.to),
+		due = days.due,
+		reminds = {},
+		every = if every then every.every :: string else nil,
+		habit = every ~= nil and every.habit == "!",
+		starts = days.from,
+		ends = days["until"],
+		done_on = days.done,
+	}
+end
+
+--- What the note `name` at `path` holds, from its text; `found` is what
+--- sikt found in it, when it was read with other notes (`M.read`).
+function M.parse(name: string, path: string, text: string, found: Found?): Note
 	local s = markdown.structure(text)
+	-- What sikt found, by line (0-based), and the lines to read with
+	-- `syntax` instead.
+	local finds: { [number]: { Find } } = {}
+	local slow: { [number]: boolean } = {}
+	if M.SIKT then
+		local seen: Found
+		if found then
+			seen = found
+		else
+			local rows, places = lines_read:rows(text, { at = true })
+			seen = { rows = rows, places = places :: { greed.SiktPlace } }
+		end
+		for i, row in seen.rows do
+			local place = seen.places[i]
+			local n = place.line - 1
+			if row.slow then
+				slow[n] = true
+			else
+				local start = s.starts[n + 1]
+				local list = finds[n] or {}
+				finds[n] = list
+				table.insert(list, { row = row, from = place.from - start, to = place.to - start })
+			end
+		end
+	end
+	local function fast(n: number): boolean
+		return M.SIKT and not slow[n]
+	end
 	local front_lines: { string } = {}
 	if s.front then
 		for n = 1, s.front - 1 do
@@ -221,25 +383,32 @@ function M.parse(name: string, path: string, text: string): Note
 			kind = "item" :: "item",
 			line = item.line,
 			last = item.last,
-			text = item_text(line),
+			text = "",
 			level = item.indent,
 			tags = {},
 			fields = {},
 		}
-		local done, rest = syntax.parse(line)
-		if done ~= nil and rest then
-			local every, habit = syntax.every(rest)
-			node.task = {
-				done = done,
-				text = rest,
-				due = syntax.due(rest),
-				reminds = syntax.reminds(rest),
-				every = every,
-				habit = habit,
-				starts = syntax.starts(rest),
-				ends = syntax.ends(rest),
-				done_on = syntax.done_on(rest),
-			}
+		if fast(item.line) then
+			local here = finds[item.line] or {}
+			node.text = item_text_from(line, item_start(line), here)
+			node.task = task_from(line, here)
+		else
+			node.text = item_text(line)
+			local done, rest = syntax.parse(line)
+			if done ~= nil and rest then
+				local every, habit = syntax.every(rest)
+				node.task = {
+					done = done,
+					text = rest,
+					due = syntax.due(rest),
+					reminds = syntax.reminds(rest),
+					every = every,
+					habit = habit,
+					starts = syntax.starts(rest),
+					ends = syntax.ends(rest),
+					done_on = syntax.done_on(rest),
+				}
+			end
 		end
 		table.insert(nodes, node)
 	end
@@ -274,19 +443,60 @@ function M.parse(name: string, path: string, text: string): Note
 
 	-- Whether the note is one of yours, not in another place.
 	local own = not string.find(name, ":", 1, true)
+	local function tag(node: Node?, found: string)
+		note.tags[string.lower(found)] = true
+		if node then
+			table.insert(node.tags, found)
+		end
+	end
+	local function link(n: number, found: syntax.WikiLink)
+		local target = found.target
+		table.insert(note.links, {
+			line = n,
+			-- Between your own notes a name is the note's, as
+			-- `notes.resolve` says, without looking up places.
+			target = if target == ""
+				then name
+				elseif own and not string.find(target, ":", 1, true) then target
+				else notes.resolve(target, name),
+			heading = found.heading,
+			block = found.block,
+			embed = found.embed,
+		})
+	end
 	for n = 0, #s.lines - 1 do
 		if s.code_at[n] or (s.front and n <= s.front) then
 			continue
 		end
 		local line = s.lines[n + 1]
 		local node = node_at[n]
+		if fast(n) then
+			-- Links as `syntax.links` reads them: each from a `[[` past the
+			-- end of the one before.
+			local reached = 0
+			local here: { Find } = finds[n] or {}
+			for _, find in here do
+				local row = find.row
+				if row.tag then
+					local word = row.tag :: string
+					if string.find(word, "%D") then
+						tag(node, word)
+					end
+				elseif row.embed then
+					local at = find.from + #(row.embed :: string)
+					local wiki = if at >= reached then syntax.link_at(line, at) else nil
+					if wiki then
+						reached = wiki.to
+						link(n, wiki)
+					end
+				end
+			end
+			continue
+		end
 		-- Most lines hold none of these: look for each only where it can be.
 		if string.find(line, "#", 1, true) then
-			for _, tag in syntax.tags(line) do
-				note.tags[string.lower(tag)] = true
-				if node then
-					table.insert(node.tags, tag)
-				end
+			for _, word in syntax.tags(line) do
+				tag(node, word)
 			end
 		end
 		if string.find(line, "::", 1, true) then
@@ -311,20 +521,8 @@ function M.parse(name: string, path: string, text: string): Note
 			end
 		end
 		if string.find(line, "[[", 1, true) then
-			for _, link in syntax.links(line) do
-				local target = link.target
-				table.insert(note.links, {
-					line = n,
-					-- Between your own notes a name is the note's, as
-					-- `notes.resolve` says, without looking up places.
-					target = if target == ""
-						then name
-						elseif own and not string.find(target, ":", 1, true) then target
-						else notes.resolve(target, name),
-					heading = link.heading,
-					block = link.block,
-					embed = link.embed,
-				})
+			for _, wiki in syntax.links(line) do
+				link(n, wiki)
 			end
 		end
 		if string.find(line, "remind:", 1, true) then
@@ -483,6 +681,8 @@ local function refresh(first: boolean)
 	local looking_in = places_key()
 	local seen: { [string]: boolean } = {}
 	local changed: { string } = {}
+	-- The notes to read again: their names, paths and files.
+	local stale: { { name: string, path: string, file: greed.ScannedFile } } = {}
 	slice_start = os.clock()
 	for _, place in notes.places() do
 		if greed.fs.stat(place.folder) == nil then
@@ -494,22 +694,36 @@ local function refresh(first: boolean)
 			local name = notes.name(path)
 			local known = by_name[name]
 			if
-				M.editing(path)
-				or (
+				not M.editing(path)
+				and not (
 					known
 					and known.path == path
 					and known.modified == file.modified
 					and known.size == file.size
 				)
 			then
-				continue
+				table.insert(stale, { name = name, path = path, file = file })
 			end
-			local text = file.text or greed.fs.read(path)
-			if text then
-				local note = M.parse(name, path, text)
-				note.modified, note.size = file.modified, file.size
+		end
+	end
+	-- Many at once go to sikt together, a batch at a time (see `M.read`).
+	for first_of = 1, #stale, M.READ_BATCH do
+		local batch =
+			table.move(stale, first_of, math.min(first_of + M.READ_BATCH - 1, #stale), 1, {})
+		local texts: { string } = {}
+		local read: { boolean } = {}
+		for i, entry in batch do
+			local text = entry.file.text or greed.fs.read(entry.path)
+			texts[i], read[i] = text or "", text ~= nil
+		end
+		local found = if M.SIKT and #batch > 1 then M.read(texts) else nil
+		for i, entry in batch do
+			if read[i] then
+				local note =
+					M.parse(entry.name, entry.path, texts[i], if found then found[i] else nil)
+				note.modified, note.size = entry.file.modified, entry.file.size
 				put(note)
-				table.insert(changed, name)
+				table.insert(changed, entry.name)
 			end
 			M.breathe()
 		end

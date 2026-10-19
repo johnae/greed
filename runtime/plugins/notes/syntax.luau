@@ -263,31 +263,48 @@ local function trim(text: string): string
 	return string.match(text, "^%s*(.-)%s*$") :: string
 end
 
+-- The link whose `[[` is at `from` in `text`, matched in `scan` (`text`
+-- with its inline code blanked), or nil when there's none there.
+local function link_in(text: string, scan: string, from: number): WikiLink?
+	local inside: any, to: any = string.match(scan, "^%[%[([^%]]+)%]%]()", from)
+	if inside == nil then
+		return nil
+	end
+	local embed = from > 1 and string.sub(text, from - 1, from - 1) == "!"
+	local target, shown = string.match(inside, "^([^|]*)|(.*)$")
+	local shown_from = from + 2
+	if target and shown then
+		shown_from += #target + 1
+	else
+		target = inside
+	end
+	local name, anchor = string.match(target :: string, "^([^#]*)#(.*)$")
+	local block = if anchor then string.match(anchor, "^%^([%w%-]+)$") else nil
+	return {
+		from = if embed then from - 1 else from,
+		to = to,
+		target = trim(name or target :: string),
+		heading = if anchor and not block then trim(anchor) else nil,
+		block = block,
+		shown = shown,
+		shown_from = shown_from,
+		shown_to = to - 2,
+		embed = embed,
+	}
+end
+
+--- The `[[link]]` whose `[[` is at `from` on a line without inline code,
+--- or nil when there's none there.
+function M.link_at(text: string, from: number): WikiLink?
+	return link_in(text, text, from)
+end
+
 --- The `[[links]]` and `![[embeds]]` on a line, outside inline code.
 function M.links(text: string): { WikiLink }
 	local out: { WikiLink } = {}
-	for from: any, inside: any, to: any in string.gmatch(without_code(text), "()%[%[([^%]]+)%]%]()") do
-		local embed = from > 1 and string.sub(text, from - 1, from - 1) == "!"
-		local target, shown = string.match(inside, "^([^|]*)|(.*)$")
-		local shown_from = from + 2
-		if target and shown then
-			shown_from += #target + 1
-		else
-			target = inside
-		end
-		local name, anchor = string.match(target :: string, "^([^#]*)#(.*)$")
-		local block = if anchor then string.match(anchor, "^%^([%w%-]+)$") else nil
-		table.insert(out, {
-			from = if embed then from - 1 else from,
-			to = to,
-			target = trim(name or target :: string),
-			heading = if anchor and not block then trim(anchor) else nil,
-			block = block,
-			shown = shown,
-			shown_from = shown_from,
-			shown_to = to - 2,
-			embed = embed,
-		})
+	local scan = without_code(text)
+	for from: any in string.gmatch(scan, "()%[%[[^%]]+%]%]") do
+		table.insert(out, link_in(text, scan, from) :: WikiLink)
 	end
 	return out
 end
