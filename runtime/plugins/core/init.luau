@@ -122,6 +122,8 @@ export type TypingFloat = floats.Typing
 --- A part of a query, and a whole one parsed (query.luau).
 export type QueryNode = query.Node
 export type Query = query.Parsed
+export type QuerySource = query.Source
+export type QueryField = query.Field
 --- Something a completion menu offers, as the lsp plugin's menu and the
 --- sources that fill it (the shell's, an agent's box) all take it: `label`
 --- in the menu, `text` put in place of what's typed from `from` (the start

@@ -162,3 +162,93 @@ test("what print writes parses back to the same thing", function()
 		assert(once == twice, `{text}: {once} then {twice}`)
 	end
 end)
+
+-- The cases every engine must agree on (query_cases.json), as items in
+-- memory: each with its text, fields, flags, and the item it's in.
+test("the shared cases: what every engine running a query must agree on", function()
+	local greed = require("@greed")
+	local dates = core.dates
+	local text = greed.fs.read(`{greed.plugin.dirs().core}/test/query_cases.json`)
+	local cases = greed.json.decode(text :: string)
+	local by_id: { [string]: any } = {}
+	for _, item in cases.items do
+		by_id[item.id] = item
+	end
+	local fields: { [string]: core.QueryField } = {}
+	for name, field in cases.fields do
+		fields[name] = {
+			kind = field.kind,
+			ahead = field.ahead,
+			get = function(item: any): any
+				return item.fields[name]
+			end,
+		}
+	end
+	local flags: { [string]: (item: any) -> boolean } = {}
+	for _, flag in cases.flags do
+		flags[flag] = function(item: any): boolean
+			return table.find(item.flags, flag) ~= nil
+		end
+	end
+	local source: core.QuerySource = {
+		fields = fields,
+		flags = flags,
+		text = function(item: any): string
+			return item.text
+		end,
+		parent = function(item: any): any
+			return item.parent and by_id[item.parent]
+		end,
+		children = function(item: any): { any }
+			local out = {}
+			for _, other in cases.items do
+				if other.parent == item.id then
+					table.insert(out, other)
+				end
+			end
+			return out
+		end,
+		named = function(item: any, name: string): boolean
+			return item.name ~= nil and string.lower(item.name) == string.lower(name)
+		end,
+	}
+	local y, m, d = string.match(cases.today, "^(%d+)-(%d+)-(%d+)$")
+	local clock = dates.clock
+	dates.clock = function(): number
+		return os.time(
+			{ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 } :: any
+		)
+	end
+	local ok, err = pcall(function()
+		for _, case in cases.cases do
+			local parsed = query.parse(case.query)
+			local problems = query.check(parsed, source)
+			for _, p in parsed.problems do
+				if not p.hint then
+					table.insert(problems, p)
+				end
+			end
+			if case.problem then
+				local said: { string } = {}
+				for _, p in problems do
+					table.insert(said, p.message)
+				end
+				local all = table.concat(said, "; ")
+				assert(
+					string.find(all, case.problem, 1, true),
+					`{case.query}: wanted "{case.problem}", got "{all}"`
+				)
+			else
+				assert(#problems == 0, `{case.query}: {problems[1] and problems[1].message}`)
+				local ids: { string } = {}
+				for _, item in query.run(parsed, cases.items, source) do
+					table.insert(ids, item.id)
+				end
+				local got, want = table.concat(ids, " "), table.concat(case.ids, " ")
+				assert(got == want, `{case.query}: wanted [{want}], got [{got}]`)
+			end
+		end
+	end)
+	dates.clock = clock
+	assert(ok, tostring(err))
+end)
