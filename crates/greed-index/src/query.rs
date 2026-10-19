@@ -75,6 +75,9 @@ pub struct Schema {
     pub loose: bool,
     /// Words mind case, as a search typed with a capital letter can.
     pub case: bool,
+    /// The field holding the places a row is in besides its parent, as a
+    /// mail is in each of its labels: `in:NAME` matches its values too.
+    pub places: Option<String>,
 }
 
 /// A row to match: its text for words, its fields' values, the flags it
@@ -222,11 +225,20 @@ impl Query {
     }
 
     /// Whether row `at` is in (or with `deep`, under) what `node` names or
-    /// matches.
+    /// matches: its parent, or by name one of its own places.
     fn placed(&self, node: &Node, rows: &Rows, at: usize, deep: bool) -> Answer {
         let ups = iter::successors(rows.rows[at].parent, |&parent| rows.rows[parent].parent)
             .take(if deep { usize::MAX } else { 1 });
         let want = fold(node.value.as_deref().unwrap_or(""));
+        if node.items.is_empty()
+            && let Some(field) = &self.schema.places
+            && rows.rows[at]
+                .fields
+                .get(&field.to_lowercase())
+                .is_some_and(|places| places.iter().any(|p| fold(p) == want))
+        {
+            return Answer::Yes;
+        }
         any(ups.map(|parent| {
             if let Some(sub) = node.items.first() {
                 self.matches(sub, rows, parent)

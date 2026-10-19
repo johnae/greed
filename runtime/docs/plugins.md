@@ -2037,6 +2037,11 @@ local found = query.run(parsed, tasks, source) -- the tasks that match, sorted a
 `print(parsed)` writes a query back in its one form. `core.dates.span`
 reads a date the way queries do ("last week", "2w", "eom").
 
+An item can be in several places at once, as a mail is in each of its
+labels. Name the field that holds them in the source (`places = "label"`),
+and `in:inbox` finds the items with "inbox" there as well as those whose
+parent is named so.
+
 For many items, or items kept between sessions, put them in an index:
 `greed.index.writer(path)` makes or opens one to write, and
 `greed.index.open(path)` reads one another program writes. Give the source

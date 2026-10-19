@@ -251,9 +251,14 @@ test("the shared cases: what every engine running a query must agree on", functi
 				if item.name then
 					table.insert(out, item.name)
 				end
+				local places: { string } = item.fields[cases.places] or {}
+				for _, place in places do
+					table.insert(out, place)
+				end
 			end
 			return out
 		end,
+		places = cases.places,
 		key = function(item: any): string
 			return item.id
 		end,

@@ -508,8 +508,17 @@ fn narrow_field(node: &Node, schema: &Schema, args: &mut Vec<Value>) -> Option<S
             ))
         }
         "in" if node.items.is_empty() => {
-            args.push(Value::Text(query::fold(value)));
-            Some("parent IN (SELECT key FROM items WHERE folded = ?)".into())
+            let parent = "parent IN (SELECT key FROM items WHERE folded = ?)";
+            let folded = query::fold(value);
+            args.push(Value::Text(folded.clone()));
+            let Some(places) = &schema.places else {
+                return Some(parent.into());
+            };
+            args.push(Value::Text(places.to_lowercase()));
+            args.push(Value::Text(folded));
+            Some(format!(
+                "({parent} OR id IN (SELECT item FROM item_values WHERE field = ? AND lower = ?))"
+            ))
         }
         "in" | "under" | "has" => None,
         _ => {

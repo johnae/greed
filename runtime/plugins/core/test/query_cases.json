@@ -8,8 +8,10 @@
     "size": { "kind": "value" },
     "level": { "kind": "value" },
     "date": { "kind": "date" },
-    "due": { "kind": "date", "ahead": true }
+    "due": { "kind": "date", "ahead": true },
+    "label": { "kind": "exact" }
   },
+  "places": "label",
   "flags": ["mail", "note", "todo", "unread", "done", "attachment"],
   "items": [
     { "id": "inbox", "name": "inbox", "text": "", "flags": [], "fields": {} },
@@ -17,7 +19,7 @@
       "fields": { "from": "Anna Berg <anna@acme.example>", "subject": "Invoice due", "size": "12k", "date": "2026-10-13T09:00:00Z", "tag": ["work", "money"] } },
     { "id": "a1", "parent": "m1", "text": "invoice-41.pdf", "flags": ["attachment"], "fields": { "size": "2M" } },
     { "id": "m2", "parent": "inbox", "text": "This week's news: gardens, kitchens and C++ tips", "flags": ["mail"],
-      "fields": { "from": "news@list.example", "subject": "Weekly news", "size": "40k", "date": "2026-10-01T09:00:00Z", "tag": ["news"] } },
+      "fields": { "from": "news@list.example", "subject": "Weekly news", "size": "40k", "date": "2026-10-01T09:00:00Z", "tag": ["news"], "label": ["Starred", "Inbox"] } },
     { "id": "m3", "parent": "inbox", "text": "Receipt for your order or else", "flags": ["mail", "unread"],
       "fields": { "from": "noreply@shop.example", "subject": "Your receipt", "size": "3k", "date": "2026-09-20T09:00:00Z", "level": "info" } },
     { "id": "garden", "name": "garden", "text": "Garden plans", "flags": ["note"], "fields": { "tag": ["garden"], "date": "2026-10-10" } },
@@ -86,6 +88,9 @@
     { "query": "tag:GÖTEBORG", "ids": ["cafe"] },
     { "query": "tag~gote", "ids": ["cafe"] },
     { "query": "in:cafe", "ids": ["c1"] },
+    { "query": "in:starred", "ids": ["m2"] },
+    { "query": "under:starred", "ids": ["m2"] },
+    { "query": "in:Starred OR in:garden", "ids": ["m2", "t1", "t2", "t3"] },
     { "query": "fom:anna", "problem": "did you mean from?" },
     { "query": "is:unred", "problem": "did you mean is:unread?" },
     { "query": "has:attachmnt", "problem": "did you mean has:attachment?" },

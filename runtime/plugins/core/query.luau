@@ -731,7 +731,10 @@ export type Field = {
 --- for `in:NAME`). Words match whole words, or with `words` "anywhere",
 --- anywhere in the text, as the shell's filters do. `names` lists the
 --- names there are to look in, to say when `in:` names none of them and
---- for a search box to complete.
+--- for a search box to complete. An item in several places at once, as a
+--- mail is in each of its labels, says them in the field `places` names:
+--- `in:inbox` then matches an item with "inbox" there, as well as one
+--- whose parent is named so.
 ---
 --- A source kept in an index (`index_items`, `search`) also says each
 --- item's `key`, and which of its flags are `stored` in the index; the
@@ -746,6 +749,7 @@ export type Source = {
 	children: ((item: any) -> { any })?,
 	name: ((item: any) -> string?)?,
 	names: (() -> { string })?,
+	places: string?,
 	key: ((item: any) -> string)?,
 	stored: { string }?,
 }
@@ -888,7 +892,7 @@ function M.check(parsed: Parsed, source: Source): { Problem }
 		elseif PLACES[name] then
 			if
 				(name == "has" and source.children == nil)
-				or (name ~= "has" and source.parent == nil)
+				or (name ~= "has" and source.parent == nil and source.places == nil)
 			then
 				problem(`{name}: needs items that sit in others, and these don't`, node.at)
 			end
@@ -1054,7 +1058,12 @@ local function schema_of(source: Source, indexed: boolean): greed.QuerySchema
 	for name in all do
 		flags[name] = if not indexed or stored[name] then "row" else "computed"
 	end
-	return { fields = kinds, flags = flags, anywhere = source.words == "anywhere" }
+	return {
+		fields = kinds,
+		flags = flags,
+		anywhere = source.words == "anywhere",
+		places = source.places,
+	}
 end
 
 --- `items` as they go in an index (`index:write`): each with its key, the

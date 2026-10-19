@@ -1621,8 +1621,8 @@ export type Compare = {
 --- A row for `greed.query.run`: its `text` for words, its `fields`' values by name (a string or a list), the `flags` it has, its `name` (for `in:NAME`) and the row it's in (`parent`, its index in the list).
 export type QueryRow = { text: string?, fields: { [string]: string | { string } }?, flags: { string }?, name: string?, parent: number? }
 
---- What a query's fields and flags mean, for `greed.query.run`: each field's kind by name ("text", "exact", "value" or "date"), each flag's by name ("row", kept on the rows, or "computed", worked out by the source, so rows that depend on it are a maybe), whether words match `anywhere` in the text rather than as whole words, whether fields it doesn't name are `loose` (any field compares as a value, from each row's own), and whether words mind `case`.
-export type QuerySchema = { fields: { [string]: string }?, flags: { [string]: string }?, anywhere: boolean?, loose: boolean?, case: boolean? }
+--- What a query's fields and flags mean, for `greed.query.run`: each field's kind by name ("text", "exact", "value" or "date"), each flag's by name ("row", kept on the rows, or "computed", worked out by the source, so rows that depend on it are a maybe), whether words match `anywhere` in the text rather than as whole words, whether fields it doesn't name are `loose` (any field compares as a value, from each row's own), whether words mind `case`, and the field holding the `places` a row is in besides its parent (a mail's labels), which `in:NAME` matches too.
+export type QuerySchema = { fields: { [string]: string }?, flags: { [string]: string }?, anywhere: boolean?, loose: boolean?, case: boolean?, places: string? }
 
 --- Running a query `core.query` parsed, with its dates read into the days they cover (`from` and `to` on a date field's term).
 export type Query = {
