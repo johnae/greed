@@ -580,9 +580,65 @@ fn note_text(i: usize) -> String {
     text
 }
 
+/// Runs command `name` and drives `driven` until it sets global `done`:
+/// what it set, and how long that took on the clock.
+fn run_until(driven: &mut Driven, name: &str, done: &str) -> (String, f64) {
+    driven.eval(&format!("{done} = nil"));
+    let ((), _, clock) = timed(|| {
+        driven.host.run(FIRST_CLIENT, name).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(120);
+        while driven.eval(&format!("return tostring({done})")) == "nil" {
+            assert!(Instant::now() < deadline, "{name} didn't finish");
+            driven.host.settle().unwrap();
+            driven.frame();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    });
+    (driven.eval(&format!("return tostring({done})")), ms(clock))
+}
+
+/// The longest the notes plugin held the editor up in `driven`.
+fn notes_held(driven: &mut Driven) -> f64 {
+    driven
+        .eval(
+            "local most = 0
+             for _, stall in require('@greed').stalls() do
+               if stall.plugin == 'notes' then most = math.max(most, stall.ms) end
+             end
+             return tostring(most)",
+        )
+        .parse()
+        .unwrap()
+}
+
+/// A session over the notes in `dir`, with commands that index them
+/// (`index-now`, setting `indexed`) and search them (`search-now`, for
+/// global `word`, setting `searched`).
+fn notes_session(dir: &Path) -> Driven {
+    let mut driven = Driven::new(host("", None));
+    driven.frame();
+    driven.eval(&format!(
+        "local greed = require('@greed')
+         greed.option.set('notes-folder', {:?})
+         require('@notes').index.SAVE_AFTER = 0
+         word = 'note'
+         greed.command({{ name = 'index-now', run = function()
+           require('@notes').index.ensure()
+           indexed = #require('@notes').index.all()
+         end }})
+         greed.command({{ name = 'search-now', run = function()
+           searched = #(require('@notes').query.search(word, 10) or {{}})
+         end }})",
+        dir.display().to_string()
+    ));
+    driven
+}
+
 /// Indexing 5,000 notes the first time: how long until it's done, and
 /// how long the editor was held up at most meanwhile (only holds of 50 ms
-/// and more are counted, so 0 means none).
+/// and more are counted, so 0 means none). Then searching their words, the
+/// first time and after; and a second session, which starts from what the
+/// first saved and reads only the note changed since.
 #[test]
 fn notes_index() {
     budget(
@@ -594,83 +650,58 @@ fn notes_index() {
                 std::fs::create_dir_all(&sub).unwrap();
                 std::fs::write(sub.join(format!("note{i}.md")), note_text(i)).unwrap();
             }
-            let mut driven = Driven::new(host("", None));
-            driven.frame();
-            driven.eval(&format!(
-                "local greed = require('@greed')
-                 greed.option.set('notes-folder', {:?})
-                 greed.command({{ name = 'index-now', run = function()
-                   require('@notes').index.ensure()
-                   indexed = #require('@notes').index.all()
-                 end }})",
-                dir.display().to_string()
-            ));
-            let ((), cpu, clock) = timed(|| {
-                driven.host.run(FIRST_CLIENT, "index-now").unwrap();
-                let deadline = Instant::now() + Duration::from_secs(120);
-                while driven.eval("return tostring(indexed)") == "nil" {
-                    assert!(Instant::now() < deadline, "the index didn't finish");
-                    driven.host.settle().unwrap();
-                    driven.frame();
-                    std::thread::sleep(Duration::from_millis(1));
-                }
-            });
-            assert_eq!(driven.eval("return tostring(indexed)"), "5000");
-            found.set("index_5000_clock_ms", ms(clock));
-            found.set("index_5000_cpu_ms", ms(cpu));
-            let held: f64 = driven
-                .eval(
-                    "local most = 0
-                     for _, stall in require('@greed').stalls() do
-                       if stall.plugin == 'notes' then most = math.max(most, stall.ms) end
-                     end
-                     return tostring(most)",
-                )
-                .parse()
-                .unwrap();
-            found.set("index_longest_hold_ms", held);
+            let mut driven = notes_session(&dir);
+            let (indexed, clock) = run_until(&mut driven, "index-now", "indexed");
+            assert_eq!(indexed, "5000");
+            found.set("index_5000_clock_ms", clock);
+            found.set("index_longest_hold_ms", notes_held(&mut driven));
 
             // Searching the notes' words: the first search writes the index
             // of everything they say, the next only reads it.
-            driven.eval(
-                "local greed = require('@greed')
-                 greed.command({ name = 'search-now', run = function()
-                   searched = #(require('@notes').query.search('note', 10) or {})
-                 end })",
-            );
             for (name, key) in [
                 ("first", "search_first_5000_clock_ms"),
                 ("next", "search_next_5000_clock_ms"),
             ] {
-                driven.eval("searched = nil");
-                let ((), _, clock) = timed(|| {
-                    driven.host.run(FIRST_CLIENT, "search-now").unwrap();
-                    let deadline = Instant::now() + Duration::from_secs(120);
-                    while driven.eval("return tostring(searched)") == "nil" {
-                        assert!(Instant::now() < deadline, "the {name} search didn't finish");
-                        driven.host.settle().unwrap();
-                        driven.frame();
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
-                });
-                assert_eq!(
-                    driven.eval("return tostring(searched)"),
-                    "10",
-                    "the {name} search"
-                );
-                found.set(key, ms(clock));
+                let (searched, clock) = run_until(&mut driven, "search-now", "searched");
+                assert_eq!(searched, "10", "the {name} search");
+                found.set(key, clock);
             }
-            let held: f64 = driven
-                .eval(
-                    "local most = 0
-                     for _, stall in require('@greed').stalls() do
-                       if stall.plugin == 'notes' then most = math.max(most, stall.ms) end
-                     end
-                     return tostring(most)",
-                )
-                .parse()
-                .unwrap();
-            found.set("search_longest_hold_ms", held);
+            found.set("search_longest_hold_ms", notes_held(&mut driven));
+
+            // Both indexes are saved a moment after they're written.
+            let cache = greed_core::dirs::dir(greed_core::dirs::Kind::Cache).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(60);
+            let saved = |file: &str| {
+                std::fs::read_dir(cache.join("notes"))
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .any(|entry| entry.path().join(file).exists())
+            };
+            while !(saved("words-50.json") && saved("notes-50.json")) {
+                assert!(Instant::now() < deadline, "the indexes weren't saved");
+                driven.host.settle().unwrap();
+                driven.frame();
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            drop(driven);
+
+            // The next session: one note changed while none was running.
+            std::fs::write(
+                dir.join("area3/note3.md"),
+                "# Note 3\n\nNow about a walrus.\n",
+            )
+            .unwrap();
+            let mut driven = notes_session(&dir);
+            let (indexed, clock) = run_until(&mut driven, "index-now", "indexed");
+            assert_eq!(indexed, "5000");
+            found.set("index_again_5000_clock_ms", clock);
+            let (searched, clock) = run_until(&mut driven, "search-now", "searched");
+            assert_eq!(searched, "10");
+            found.set("search_again_5000_clock_ms", clock);
+            driven.eval("word = 'walrus'");
+            let (searched, _) = run_until(&mut driven, "search-now", "searched");
+            assert_eq!(searched, "1", "the changed note is read again");
         },
         &[
             ("index_5000_clock_ms", 10000.0, 26000.0),
@@ -678,6 +709,8 @@ fn notes_index() {
             ("search_first_5000_clock_ms", 15000.0, 40000.0),
             ("search_next_5000_clock_ms", 250.0, 800.0),
             ("search_longest_hold_ms", 60.0, 120.0),
+            ("index_again_5000_clock_ms", 1500.0, 4000.0),
+            ("search_again_5000_clock_ms", 1000.0, 4000.0),
         ],
     );
 }

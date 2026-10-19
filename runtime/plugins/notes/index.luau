@@ -459,8 +459,8 @@ function M.breathe()
 	end
 end
 
--- The buffer a note at `path` is open in, while it's being edited there.
-local function editing(path: string): greed.Buffer?
+--- The buffer a note at `path` is open in, while it's being edited there.
+function M.editing(path: string): greed.Buffer?
 	local buffer = greed.buffer_for(path)
 	return if buffer and buffer:valid() and buffer:modified() then buffer else nil
 end
@@ -494,7 +494,7 @@ local function refresh(first: boolean)
 			local name = notes.name(path)
 			local known = by_name[name]
 			if
-				editing(path)
+				M.editing(path)
 				or (
 					known
 					and known.path == path
@@ -515,7 +515,7 @@ local function refresh(first: boolean)
 		end
 	end
 	for name, note in table.clone(by_name) do
-		if not seen[note.path] and not editing(note.path) then
+		if not seen[note.path] and not M.editing(note.path) then
 			drop(name)
 			table.insert(changed, name)
 		end
@@ -547,6 +547,148 @@ local function look(first: boolean)
 		error(err, 0)
 	end
 end
+
+--- What a saved index is good for: this build of Greed, reading notes the
+--- way this format says. Bump it when what `M.parse` gives changes, so a
+--- saved index from before is read afresh rather than trusted.
+M.SAVED_FORMAT = 1
+
+--- How many entries go in each file of something saved (see `M.save`).
+M.SAVED_CHUNK = 100
+
+--- The folder what's worked out from these notes is kept in between
+--- sessions: one in Greed's cache folder for each set of places notes are
+--- in. Nil without a cache folder.
+function M.cache_dir(): string?
+	local cache = greed.fs.dirs().cache
+	if cache == nil then
+		return nil
+	end
+	return `{cache}/notes/{string.sub(greed.hash.sha256(places_key()), 1, 16)}`
+end
+
+-- What a save is stamped with: this build of Greed and `M.SAVED_FORMAT`.
+local function stamp(): string
+	return `{greed.session.build()} {M.SAVED_FORMAT}`
+end
+
+--- Saves `entries`, worked out from the notes, as `name` in `M.cache_dir()`
+--- for a later session to `M.load`: in files of `M.SAVED_CHUNK` entries,
+--- letting the editor go on between them. Waits like greed.sleep. False
+--- and why when it can't be written.
+function M.save(name: string, entries: { any }): (boolean, string?)
+	local dir = M.cache_dir()
+	if dir == nil then
+		return false, "no cache folder"
+	end
+	-- Every file of one save says which, so files left from a save that
+	-- stopped halfway aren't read with another's.
+	local id = `{stamp()} {os.time()} {os.clock()}`
+	local parts = math.max(math.ceil(#entries / M.SAVED_CHUNK), 1)
+	for part = 1, parts do
+		local chunk = table.move(
+			entries,
+			(part - 1) * M.SAVED_CHUNK + 1,
+			math.min(part * M.SAVED_CHUNK, #entries),
+			1,
+			{}
+		)
+		local ok, err = greed.fs.write(
+			`{dir}/{name}-{part}.json`,
+			greed.json.encode({ id = id, parts = parts, entries = greed.json.array(chunk) }),
+			{ background = true }
+		)
+		if not ok then
+			return false, err
+		end
+		M.breathe()
+	end
+	return true, nil
+end
+
+--- The entries saved as `name` by `M.save`, in a session of this build of
+--- Greed; nil when there are none, or they can't be read. Waits like
+--- greed.sleep.
+function M.load(name: string): { any }?
+	local dir = M.cache_dir()
+	if dir == nil then
+		return nil
+	end
+	local prefix = `{stamp()} `
+	local loaded: { any } = {}
+	local id: string? = nil
+	local parts = 1
+	local part = 1
+	while part <= parts do
+		local text = greed.fs.read(`{dir}/{name}-{part}.json`)
+		local saved = if text then greed.json.decode(text) else nil
+		if
+			type(saved) ~= "table"
+			or type(saved.id) ~= "string"
+			or string.sub(saved.id, 1, #prefix) ~= prefix
+			or (id ~= nil and saved.id ~= id)
+			or type(saved.entries) ~= "table"
+		then
+			return nil
+		end
+		id = saved.id
+		parts = tonumber(saved.parts) or 1
+		table.move(saved.entries, 1, #saved.entries, #loaded + 1, loaded)
+		part += 1
+		M.breathe()
+	end
+	return loaded
+end
+
+-- Loads the notes as an earlier session saved them, so the first look
+-- parses only those whose file changed since. False when there's nothing
+-- saved for this build.
+local function load_saved(): boolean
+	local loaded = M.load("notes")
+	if loaded == nil then
+		return false
+	end
+	for _, note in loaded do
+		put(note)
+		M.breathe()
+	end
+	return #loaded > 0
+end
+
+-- Whether a save is waiting to happen.
+local saving = false
+
+-- Saves the notes as they are now, a moment after they change, for the
+-- next session to start from. Notes being edited are left out: what their
+-- buffers say isn't on disk yet, so they're read again next time.
+local function save_later()
+	if saving then
+		return
+	end
+	saving = true
+	greed.spawn(function()
+		greed.sleep(M.SAVE_AFTER)
+		saving = false
+		local names: { string } = {}
+		for name, note in by_name do
+			if not M.editing(note.path) then
+				table.insert(names, name)
+			end
+		end
+		table.sort(names)
+		local saved: { Note } = {}
+		for _, name in names do
+			table.insert(saved, by_name[name])
+		end
+		local ok, err = M.save("notes", saved)
+		if not ok then
+			greed.echo(`notes: saving the index: {err}`)
+		end
+	end)
+end
+
+--- How long after the notes change the index is saved, in milliseconds.
+M.SAVE_AFTER = 5000
 
 -- Reads the note at `path` again, as Greed just changed it: from its
 -- buffer while it's being edited, or from disk; gone when it's gone.
@@ -586,7 +728,9 @@ function M.ensure()
 		return
 	end
 	building = true
-	look(true)
+	-- What an earlier session saved, then only what changed since; or
+	-- everything, read in the background, the first time.
+	look(not load_saved())
 	-- What was saved while the first look read the notes may have been
 	-- read as it was before.
 	for path in saved_while_building do
@@ -778,6 +922,11 @@ greed.on("buffer.closed", function(event: greed.BufferClosed)
 	if known then
 		known.modified = -1
 	end
+end)
+
+-- What changes is saved for the next session (see `save_later`).
+M.on_changed(function()
+	save_later()
 end)
 
 return M

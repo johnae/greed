@@ -333,6 +333,7 @@ local function keyed(): { [string]: Item }
 	end
 	local out: { [string]: Item } = {}
 	for _, item in M.items() do
+		index.breathe()
 		out[key_of(item)] = item
 	end
 	made_keys = out
@@ -381,31 +382,78 @@ end
 --- How many items go to the index in one write.
 M.BATCH = 2000
 
--- The index of the notes' words: the file, the index once opened, the
--- notes changed since it was last written, and the keys each note put in.
+-- The index of the notes' words: the folder it's in, the index once opened,
+-- the notes changed since it was last written, the keys each note put in,
+-- and whether saving them is waiting to happen.
 local kept: {
-	path: string?,
+	dir: string?,
 	index: greed.Index?,
 	built: boolean,
 	writing: boolean,
+	saving: boolean,
 	changed: { [string]: boolean },
 	keys: { [string]: { string } },
 } =
-	{ built = false, writing = false, changed = {}, keys = {} }
+	{ built = false, writing = false, saving = false, changed = {}, keys = {} }
 
--- Where the index of these notes lives: Greed's cache folder, a file for
--- each set of places notes are in.
-local function index_path(): string?
-	local cache = greed.fs.dirs().cache
-	if cache == nil then
-		return nil
+-- What the index was written from, saved beside it for the next session:
+-- each note's name, its file as it was read, and the keys it put in.
+type Saved = { name: string, modified: number, size: number, keys: { string } }
+
+-- Saves what the index holds a moment after it's written, like the notes'
+-- own index (`index.SAVE_AFTER`). Notes being edited are saved as unread,
+-- as their files don't say what the index does yet.
+local function save_later()
+	if kept.saving then
+		return
 	end
-	local folders = {}
-	for _, place in notes.places() do
-		table.insert(folders, `{place.name}={place.folder}`)
+	kept.saving = true
+	greed.spawn(function()
+		greed.sleep(index.SAVE_AFTER)
+		kept.saving = false
+		local saved: { Saved } = {}
+		for name, keys in kept.keys do
+			index.breathe()
+			local note = index.note(name)
+			if note then
+				table.insert(saved, {
+					name = name,
+					modified = if index.editing(note.path) then -1 else note.modified,
+					size = note.size,
+					keys = keys,
+				})
+			end
+		end
+		local ok, err = index.save("words", saved)
+		if not ok then
+			greed.echo(`notes index: saving: {err}`)
+		end
+	end)
+end
+
+-- The names of the notes to write to an index that holds what `saved`
+-- says: those new or changed since, and those gone. What's unchanged
+-- keeps its keys.
+local function changed_since(saved: { Saved }, notes_now: { [string]: Item }): { [string]: boolean }
+	local names: { [string]: boolean } = {}
+	for name in notes_now do
+		names[name] = true
 	end
-	local id = string.sub(greed.hash.sha256(table.concat(folders, "\n")), 1, 16)
-	return `{cache}/notes/{id}.db`
+	for _, was in saved do
+		kept.keys[was.name] = was.keys
+		local item = notes_now[was.name]
+		if
+			item
+			and was.modified ~= -1
+			and item.note.modified == was.modified
+			and item.note.size == was.size
+		then
+			names[was.name] = nil
+		else
+			names[was.name] = true
+		end
+	end
+	return names
 end
 
 -- A note's item and its todos and headings as the index keeps them, and
@@ -425,18 +473,27 @@ end
 -- note as notes change; nil where there's no cache folder. Waits like
 -- greed.sleep.
 local function index_now(): greed.Index?
-	local path = index_path()
-	if path == nil then
+	local dir = index.cache_dir()
+	if dir == nil then
 		return nil
 	end
-	if kept.path ~= path then
-		kept.path, kept.index, kept.built, kept.changed, kept.keys = path, nil, false, {}, {}
+	if kept.dir ~= dir then
+		kept.dir, kept.index, kept.built, kept.changed, kept.keys = dir, nil, false, {}, {}
 	end
 	while kept.writing do
 		greed.sleep(10)
 	end
+	local path = `{dir}/words.db`
+	-- What an earlier session left, if it's for this build and the index
+	-- it describes is still there.
+	local saved = if kept.built then nil else index.load("words") :: { Saved }?
 	local db = kept.index
 	if db == nil then
+		if saved == nil then
+			for _, file in { path, `{path}-wal`, `{path}-shm` } do
+				greed.fs.remove(file)
+			end
+		end
 		local opened, err = greed.index.writer(path)
 		if opened == nil then
 			greed.echo(`notes index: {err}`)
@@ -446,6 +503,9 @@ local function index_now(): greed.Index?
 		kept.index = opened
 	end
 	local writing: greed.Index = db :: greed.Index
+	if saved and (writing:count() or 0) == 0 then
+		saved = nil
+	end
 	kept.writing = true
 	local ok, err = pcall(function()
 		local source = M.source()
@@ -455,11 +515,14 @@ local function index_now(): greed.Index?
 				notes_now[item.note.name] = item
 			end
 		end
-		-- The first time, everything, over what another session left there,
-		-- read in the background; then what changed since.
+		-- The first time, what changed since the last session saved the
+		-- index, or else everything, read in the background; then what
+		-- changed since.
 		local texts: { [string]: string } = {}
 		local names: { [string]: boolean } = kept.changed
-		if not kept.built then
+		if saved then
+			names = changed_since(saved, notes_now)
+		elseif not kept.built then
 			names = {}
 			for name in notes_now do
 				names[name] = true
@@ -503,6 +566,9 @@ local function index_now(): greed.Index?
 		for first = 1, #fresh, M.BATCH do
 			writing:write(table.move(fresh, first, math.min(first + M.BATCH - 1, #fresh), 1, {}))
 			index.breathe()
+		end
+		if not kept.built or next(names) then
+			save_later()
 		end
 		kept.built = true
 	end)
