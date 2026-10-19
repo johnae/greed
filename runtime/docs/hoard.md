@@ -289,9 +289,11 @@ The query is the one Greed searches with everywhere: words, `field:value`,
 - Todos: `is:open`, `is:done`, `is:overdue`, `is:today` (as the agenda's
   Today has it), `is:due-today`, `is:habit`, `is:recurring`, `is:waiting`.
 - Fields: `title`, `note`, `tag` (a todo has its note's tags too), `due`,
-  `done`, `starts`, `until`, `every`, `date` (a day's note's day, or when
-  a note last changed), `modified`, and your own `key:: value` fields and
-  front matter.
+  `done`, `starts`, `until`, `every`, `date` (front matter's `date:`, a
+  day's note's day, or when a note last changed), `modified`, and your own
+  `key:: value` fields and front matter. A list in front matter matches
+  each of its values, and a link by its note's name: `genre:sci-fi` finds
+  `genre: ["[[Sci-fi]]", Noir]`.
 - Where: `in:NAME` or `in:(query)` for what's in a note, `has:(query)` for
   notes holding something.
 - `sort:due`, `sort:-date` (newest first) and `limit:20` say how to list

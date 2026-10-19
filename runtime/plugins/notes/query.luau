@@ -8,10 +8,11 @@
 --
 -- Fields: `title`, `note` (its name), `tag` (a todo has its note's too),
 -- `due`, `done` (the day it was done), `starts` and `until` (a repeat's),
--- `every`, `date` (a day's note's day, or when a note last changed),
--- `modified`, and every `key:: value` field and front matter key in the
--- notes. Flags: what an item is (`note`, `todo`, `heading`), `done` and
--- `open`, and what depends on today: `overdue`, `today` (due today, or
+-- `every`, `date` (front matter's `date:`, a day's note's day, or when a
+-- note last changed), `modified`, and every `key:: value` field and front
+-- matter key in the notes (a list's each value, a link as its note).
+-- Flags: what an item is (`note`, `todo`, `heading`), `done` and `open`,
+-- and what depends on today: `overdue`, `today` (due today, or
 -- written in today's note without a date, as the agenda has it),
 -- `due-today`, `habit`, `recurring` and `waiting`. A `notes` block in a
 -- note shows what its query finds (below).
@@ -92,17 +93,22 @@ type Days = { at: number, modified: string?, date: string? }
 local days: { [index.Note]: Days } = setmetatable({}, { __mode = "k" }) :: any
 
 -- The day a note last changed (nil when that isn't known), and the day
--- it's about: a day's note's day, otherwise the day it last changed.
+-- it's about: the `date:` its front matter says, a day's note's day, or
+-- otherwise the day it last changed.
 local function days_of(note: index.Note): Days
 	local known = days[note]
 	if known and known.at == note.modified then
 		return known
 	end
 	local modified = if note.modified > 0 then os.date("%Y-%m-%d", note.modified) :: string else nil
+	local said = note.front.date
+	local said_day = if type(said) == "string"
+		then string.match(said, "^%d%d%d%d%-%d%d%-%d%d")
+		else nil
 	local found: Days = {
 		at = note.modified,
 		modified = modified,
-		date = string.match(note.name, "daily/(%d%d%d%d%-%d%d%-%d%d)$") or modified,
+		date = said_day or string.match(note.name, "daily/(%d%d%d%d%-%d%d%-%d%d)$") or modified,
 	}
 	days[note] = found
 	return found
@@ -290,27 +296,52 @@ end
 -- for today only), so they're worked out as a query runs.
 local STORED = { "note", "todo", "heading", "habit", "recurring" }
 
+-- A field's value as a query reads it: a link (`"[[Steph Ango]]"`, as
+-- Obsidian's properties have them) as the note it names.
+local function plain_value(value: string): string
+	return string.match(value, "^%[%[([^%]|#]*)") or value
+end
+
 --- The source a query runs over notes with: the fields above, and the
---- `key:: value` fields and front matter keys the notes have now.
+--- `key:: value` fields and front matter keys the notes have now, a list
+--- in front matter (`genre: ["[[Sci-fi]]", ...]`) as each of its values.
 function M.source(): core.QuerySource
 	local cached = made_source
 	if cached then
 		return cached
 	end
 	local fields = table.clone(FIELDS)
+	local function add(name: string)
+		if fields[name] ~= nil then
+			return
+		end
+		fields[name] = {
+			kind = "text",
+			get = function(item: Item): string | { string } | nil
+				local node = item.node
+				local own = if node then node.fields[name] else nil
+				local value = own or item.note.fields[name]
+				if value then
+					return plain_value(value)
+				end
+				local list = item.note.front[name]
+				if type(list) ~= "table" then
+					return nil
+				end
+				local out: { string } = {}
+				for _, each in list do
+					table.insert(out, plain_value(each))
+				end
+				return out
+			end,
+		}
+	end
 	for _, note in index.all() do
 		for key in note.fields do
-			local name = string.lower(key)
-			if fields[name] == nil then
-				fields[name] = {
-					kind = "text",
-					get = function(item: Item)
-						local node = item.node
-						local own = if node then node.fields[name] else nil
-						return own or item.note.fields[name]
-					end,
-				}
-			end
+			add(string.lower(key))
+		end
+		for key in note.front do
+			add(key)
 		end
 	end
 	local source: core.QuerySource = {

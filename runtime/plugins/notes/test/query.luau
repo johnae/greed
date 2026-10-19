@@ -188,3 +188,19 @@ test("a todo in a notes block is ticked from its row, and the note opened", func
 	end)
 	assert(not float:valid(), "the table closed")
 end)
+
+test("front matter's lists and links are fields, and its date is the note's", function(t)
+	local dir = t:tempdir({
+		["Blade Runner.md"] = '---\ngenre:\n  - "[[Sci-fi]]"\n  - Noir\ndirector: "[[Ridley Scott]]"\nyear: 1982\n---\n',
+		["Meeting.md"] = "---\ndate: 2023-09-12\npeople: [Steph, Ann]\n---\n",
+		["Other.md"] = "# Other\n",
+	})
+	greed.option.set("notes-folder", dir)
+	greed.option.set("notes-project-folder", `{dir}/.no-project-notes`)
+	notes.index.ensure()
+	assert(found("is:note genre:sci-fi") == "Blade Runner", found("is:note genre:sci-fi"))
+	assert(found("is:note genre:noir") == "Blade Runner")
+	assert(found("is:note director:ridley") == "Blade Runner", found("is:note director:ridley"))
+	assert(found("is:note people:ann") == "Meeting")
+	assert(found("is:note date:2023-09-12") == "Meeting", found("is:note date:2023-09-12"))
+end)
