@@ -2,7 +2,8 @@
 -- (`greed mail`) the page shows what a search finds, newest first, with
 -- the search box over it (in:inbox to start); elsewhere `:mail` opens the
 -- same list in a float for a quick look. `enter` reads a thread, `/`
--- searches again, `r` syncs now, `q` goes back or closes. greed-mail
+-- searches again, `r` syncs now, `q` goes back or closes; `u` marks read
+-- or unread, `s` flags, `e` archives and `d` trashes. greed-mail
 -- syncs the accounts in mail.toml and keeps the index this searches
 -- (backend.luau); a search is the query language anywhere in Greed:
 -- from:anna is:unread date:2w.. in:work invoice.
@@ -108,7 +109,8 @@ type Open = {
 local open: Open? = nil
 
 -- The thread being read, while it's open.
-local reading: { window: greed.View, buffer: greed.Buffer, key: string, floating: boolean }? = nil
+local reading: { window: greed.View, buffer: greed.Buffer, thread: Thread, floating: boolean }? =
+	nil
 
 --- The messages `parsed` finds, newest first unless it sorts otherwise,
 --- or nil and why.
@@ -321,7 +323,8 @@ function M.thread_text(thread: Thread): string
 end
 
 --- Reads the thread `key` (a message's or a thread's): where the list is,
---- on the page, or in a float over a quick look.
+--- on the page, or in a float over a quick look. In the mail session,
+--- reading it marks it read.
 function M.read(key: string)
 	local thread, err = backend.get().thread(key)
 	if thread == nil then
@@ -340,7 +343,20 @@ function M.read(key: string)
 	if page then
 		page:show(buffer)
 	end
-	reading = { window = window, buffer = buffer, key = thread.key, floating = page == nil }
+	reading = { window = window, buffer = buffer, thread = thread, floating = page == nil }
+	if backend.here() and M.any(thread, "unread") then
+		backend.get().act({ thread.key }, "read")
+	end
+end
+
+--- Whether any message in `thread` is `flag` (unread, flagged).
+function M.any(thread: Thread, flag: "unread" | "flagged"): boolean
+	for _, message in thread.messages do
+		if message[flag] then
+			return true
+		end
+	end
+	return false
 end
 
 backend.on_changed(function()
@@ -350,8 +366,9 @@ backend.on_changed(function()
 	end
 	local r = reading
 	if r and r.buffer:valid() then
-		local thread = backend.get().thread(r.key)
+		local thread = backend.get().thread(r.thread.key)
 		if thread then
+			r.thread = thread
 			local buffer = r.buffer
 			buffer:edit(function(e)
 				e:replace(0, buffer:len(), M.thread_text(thread))
@@ -359,6 +376,66 @@ backend.on_changed(function()
 		end
 	end
 end)
+
+-- From the thread in `ctx` back to the list, or out of a quick look.
+local function leave(ctx: greed.Context)
+	local o = open
+	local r = reading
+	if ctx.buffer:kind() == "mail-thread" and r then
+		reading = nil
+		if r.floating then
+			r.window:close()
+			if o and o.window:valid() then
+				o.window:focus()
+			end
+		elseif o and o.buffer:valid() then
+			r.window:show(o.buffer)
+			back(o)
+		end
+	elseif o and o.floating then
+		o.window:close()
+		open = nil
+	end
+end
+
+-- What a change in `ctx` is made on: the thread being read, or the
+-- message under the cursor in the list; and whether any of it is unread
+-- and flagged.
+local function chosen(ctx: greed.Context): ({ string }?, boolean, boolean)
+	local r = reading
+	if ctx.buffer:kind() == "mail-thread" and r then
+		return { r.thread.key }, M.any(r.thread, "unread"), M.any(r.thread, "flagged")
+	end
+	local o = open
+	local row: Summary? = if o then o.view:value_at(ctx.view:cursor()) else nil
+	if row == nil then
+		return nil, false, false
+	end
+	return { row.key }, row.unread, row.flagged
+end
+
+-- Makes `action` on what's chosen in `ctx`, `which` picking it from
+-- whether that's unread and flagged; a thread archived or trashed is
+-- left for the list.
+local function acting(
+	which: (unread: boolean, flagged: boolean) -> string
+): (ctx: greed.Context) -> ()
+	return function(ctx: greed.Context)
+		local keys, unread, flagged = chosen(ctx)
+		if keys == nil then
+			return
+		end
+		local action = which(unread, flagged)
+		local _, err = backend.get().act(keys, action)
+		if err then
+			greed.echo(err)
+		elseif
+			(action == "archive" or action == "trash") and ctx.buffer:kind() == "mail-thread"
+		then
+			leave(ctx)
+		end
+	end
+end
 
 -- In the mail session, the page is there from the start.
 greed.on("editor.started", function()
@@ -424,37 +501,58 @@ greed.command({
 greed.command({
 	name = "mail-close",
 	doc = "Go back from a thread to the list, or close a quick look at mail",
-	run = function(ctx: greed.Context)
-		local o = open
-		local r = reading
-		if ctx.buffer:kind() == "mail-thread" and r then
-			reading = nil
-			if r.floating then
-				r.window:close()
-				if o and o.window:valid() then
-					o.window:focus()
-				end
-			elseif o and o.buffer:valid() then
-				r.window:show(o.buffer)
-				back(o)
-			end
-		elseif o and o.floating then
-			o.window:close()
-			open = nil
-		end
-	end,
+	run = leave,
 })
 
+greed.command({
+	name = "mail-toggle-read",
+	doc = "Mark the message (or the thread being read) read, or unread if it's read",
+	run = acting(function(unread: boolean): string
+		return if unread then "read" else "unread"
+	end),
+})
+
+greed.command({
+	name = "mail-toggle-flag",
+	doc = "Flag the message (or the thread being read), or take its flag off",
+	run = acting(function(_, flagged: boolean): string
+		return if flagged then "unflag" else "flag"
+	end),
+})
+
+greed.command({
+	name = "mail-archive",
+	doc = "Move the message (or the thread being read) to the archive",
+	run = acting(function(): string
+		return "archive"
+	end),
+})
+
+greed.command({
+	name = "mail-trash",
+	doc = "Move the message (or the thread being read) to the trash; in the trash, delete it for good",
+	run = acting(function(): string
+		return "trash"
+	end),
+})
+
+-- What a list and a thread both do to their mail.
+local ACTIONS = {
+	u = "mail-toggle-read",
+	s = "mail-toggle-flag",
+	e = "mail-archive",
+	d = "mail-trash",
+	["#"] = "mail-trash",
+	q = "mail-close",
+	esc = "mail-close",
+}
+
+greed.keymap.bind({ kind = "mail" }, ACTIONS)
 greed.keymap.bind({ kind = "mail" }, {
 	enter = "mail-read",
 	["/"] = "mail-search",
 	r = "mail-sync",
-	q = "mail-close",
-	esc = "mail-close",
 })
-greed.keymap.bind({ kind = "mail-thread" }, {
-	q = "mail-close",
-	esc = "mail-close",
-})
+greed.keymap.bind({ kind = "mail-thread" }, ACTIONS)
 
 return M

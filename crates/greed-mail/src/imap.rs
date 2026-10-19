@@ -439,6 +439,100 @@ impl Imap for Connection {
     }
 }
 
+/// What a server said to a change: done, or refused and why.
+pub type Answer = Result<(), String>;
+
+/// Changing what's on a server, as changes made here are sent: a
+/// [`Connection`], or a fake one in tests. A refusal is an [`Answer`];
+/// [`Trouble`] is for a connection that broke.
+pub trait Changing {
+    /// Opens `mailbox` to change, giving its UIDVALIDITY, or why it can't.
+    fn select(
+        &mut self,
+        mailbox: &str,
+    ) -> impl Future<Output = Result<Result<u32, String>, Trouble>> + Send;
+
+    /// Sets (`on`) or clears `flag` on `uids` in the open mailbox.
+    fn flag(
+        &mut self,
+        uids: &[u32],
+        flag: &str,
+        on: bool,
+    ) -> impl Future<Output = Result<Answer, Trouble>> + Send;
+
+    /// Moves `uids` from the open mailbox to `to`.
+    fn move_to(
+        &mut self,
+        uids: &[u32],
+        to: &str,
+    ) -> impl Future<Output = Result<Answer, Trouble>> + Send;
+
+    /// Deletes `uids` in the open mailbox for good, and nothing else.
+    fn expunge(&mut self, uids: &[u32]) -> impl Future<Output = Result<Answer, Trouble>> + Send;
+}
+
+/// What came of a command that changes something: a refusal is an
+/// answer, anything else trouble.
+fn answer<T>(result: Result<T, async_imap::error::Error>) -> Result<Answer, Trouble> {
+    use async_imap::error::Error;
+    match result {
+        Ok(_) => Ok(Ok(())),
+        Err(Error::No(why) | Error::Bad(why)) => Ok(Err(why)),
+        Err(other) => Err(other.into()),
+    }
+}
+
+impl Connection {
+    async fn store(&mut self, uids: &[u32], change: &str) -> Result<Answer, Trouble> {
+        let stored = async {
+            let fetched = self.session.uid_store(set(uids), change).await?;
+            fetched.try_collect::<Vec<_>>().await
+        };
+        answer(stored.await)
+    }
+}
+
+impl Changing for Connection {
+    async fn select(&mut self, mailbox: &str) -> Result<Result<u32, String>, Trouble> {
+        use async_imap::error::Error;
+        match self.session.select(mailbox).await {
+            Ok(found) => Ok(found
+                .uid_validity
+                .ok_or_else(|| format!("{mailbox} has no UIDVALIDITY"))),
+            Err(Error::No(why) | Error::Bad(why)) => Ok(Err(why)),
+            Err(other) => Err(other.into()),
+        }
+    }
+
+    async fn flag(&mut self, uids: &[u32], flag: &str, on: bool) -> Result<Answer, Trouble> {
+        let sign = if on { '+' } else { '-' };
+        self.store(uids, &format!("{sign}FLAGS.SILENT ({flag})"))
+            .await
+    }
+
+    async fn move_to(&mut self, uids: &[u32], to: &str) -> Result<Answer, Trouble> {
+        if self.capabilities.iter().any(|c| c == "MOVE") {
+            return answer(self.session.uid_mv(set(uids), to).await);
+        }
+        // Without MOVE: a copy there, then deleted here.
+        if let Err(why) = answer(self.session.uid_copy(set(uids), to).await)? {
+            return Ok(Err(why));
+        }
+        self.expunge(uids).await
+    }
+
+    async fn expunge(&mut self, uids: &[u32]) -> Result<Answer, Trouble> {
+        if let Err(why) = self.store(uids, "+FLAGS.SILENT (\\Deleted)").await? {
+            return Ok(Err(why));
+        }
+        let expunged = async {
+            let gone = self.session.uid_expunge(set(uids)).await?;
+            gone.try_collect::<Vec<_>>().await
+        };
+        answer(expunged.await)
+    }
+}
+
 /// `uids` (lowest first) as an IMAP set, runs written as ranges: "1:3,7".
 fn set(uids: &[u32]) -> String {
     let mut parts: Vec<String> = Vec::new();

@@ -82,7 +82,28 @@ CREATE INDEX IF NOT EXISTS places_message ON places (message);
 CREATE INDEX IF NOT EXISTS messages_unindexed ON messages (indexed) WHERE indexed = 0;
 -- Keys the index still has of messages and threads that went.
 CREATE TABLE IF NOT EXISTS unindexed (key TEXT PRIMARY KEY);
+-- Changes made here that the server doesn't have yet, one for each place
+-- they're made in, sent at the start of the next round: `op` is `+` or
+-- `-` with `arg` a flag, `move` with `arg` the mailbox it goes to, or
+-- `expunge`. `uidvalidity` is the mailbox's when it was made: under
+-- another, `uid` means nothing. A message moved has a place in the
+-- mailbox it goes to at once, by the UID `-id`, until the sync finds it
+-- there under its real one.
+CREATE TABLE IF NOT EXISTS pending (
+    id INTEGER PRIMARY KEY,
+    message INTEGER NOT NULL,
+    mailbox INTEGER NOT NULL REFERENCES mailboxes (id),
+    uid INTEGER NOT NULL,
+    uidvalidity INTEGER,
+    op TEXT NOT NULL,
+    arg TEXT NOT NULL DEFAULT ''
+);
 ";
+
+/// Whether `messages`' row has flags changed here that aren't sent yet:
+/// what the server says of its flags until then is from before.
+const FLAGGING: &str = "EXISTS (SELECT 1 FROM pending
+    WHERE pending.message = messages.id AND pending.op IN ('+', '-'))";
 
 /// `bodies.db`: each message's text, its HTML packed with zstd and what's
 /// attached, by its id in `mail.db`, apart so `mail.db` stays small.
@@ -153,6 +174,51 @@ impl From<rusqlite::Error> for Trouble {
     }
 }
 
+/// A change to a message, made in the store at once and on its server in
+/// the next round.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    /// Sets (`on`) or clears a flag, like `\Seen`.
+    Flag { flag: String, on: bool },
+    /// Moves it to the mailbox named `to`, out of every folder it's in.
+    Move { to: String },
+    /// Moves it to the archive.
+    Archive,
+    /// Moves it to the trash, or deletes it for good when it's there.
+    Trash,
+}
+
+/// A change made here, as it's sent: what to do with the message at
+/// `uid` in `mailbox`, `op` and `arg` as in the `pending` table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pending {
+    pub id: i64,
+    pub mailbox: String,
+    pub uid: u32,
+    /// The mailbox's UIDVALIDITY when it was made.
+    pub uid_validity: Option<u32>,
+    pub op: String,
+    pub arg: String,
+}
+
+/// A place of a message, as an action needs it.
+struct Place {
+    mailbox: i64,
+    /// Below 0 for a move made here that the sync hasn't found yet.
+    uid: i64,
+    uid_validity: Option<u32>,
+    name: String,
+    role: Option<String>,
+}
+
+impl Place {
+    /// Whether the message is filed here, as in a folder: not All Mail,
+    /// which holds everything, nor a Bridge label.
+    fn folder(&self) -> bool {
+        self.uid > 0 && self.role.as_deref() != Some("all") && !self.name.starts_with("Labels/")
+    }
+}
+
 /// Where a mailbox's sync is.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct State {
@@ -167,7 +233,8 @@ pub struct State {
 /// An open store, held by this process until it's dropped.
 pub struct Store {
     db: Connection,
-    _lock: File,
+    /// Held while it's open, so no other greed-mail syncs it.
+    lock: File,
 }
 
 impl Store {
@@ -195,10 +262,7 @@ impl Store {
         lock.set_len(0)
             .and_then(|()| write!(lock, "{}", std::process::id()))
             .map_err(|e| Trouble(format!("couldn't write {}: {e}", lock_path.display())))?;
-        let db = Connection::open(dir.join("mail.db"))?;
-        db.pragma_update(None, "journal_mode", "WAL")?;
-        db.pragma_update(None, "synchronous", "NORMAL")?;
-        db.pragma_update(None, "foreign_keys", "ON")?;
+        let db = connect(dir)?;
         // The version first: another's tables may not take this one's.
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
@@ -224,13 +288,22 @@ impl Store {
             }
         }
         db.execute_batch(TABLES)?;
-        db.execute(
-            "ATTACH DATABASE ?1 AS bodies",
-            [dir.join("bodies.db").to_string_lossy()],
-        )?;
-        db.pragma_update(Some("bodies"), "journal_mode", "WAL")?;
         db.execute_batch(BODIES)?;
-        Ok(Store { db, _lock: lock })
+        Ok(Store { db, lock })
+    }
+
+    /// The same store (in `dir`) again, for another part of this greed-mail
+    /// to change while this one waits on a server: their changes go one
+    /// after the other, never at once.
+    pub fn beside(&self, dir: &Path) -> Result<Store, Trouble> {
+        let lock = self
+            .lock
+            .try_clone()
+            .map_err(|e| Trouble(format!("couldn't share the store's lock: {e}")))?;
+        Ok(Store {
+            db: connect(dir)?,
+            lock,
+        })
     }
 
     /// The id of the account `name`, added if it's new.
@@ -284,15 +357,19 @@ impl Store {
     }
 
     /// Puts the flags (and labels, when given) of `changes` on the
-    /// messages at those UIDs in `mailbox`; gives how many changed.
+    /// messages at those UIDs in `mailbox`; gives how many changed. Flags
+    /// changed here and not sent yet stay as they are.
     pub fn set_flags(&mut self, mailbox: i64, changes: &[Change]) -> Result<usize, Trouble> {
         let tx = self.db.transaction()?;
         let mut updated = 0;
         for change in changes {
             updated += tx.execute(
-                "UPDATE messages SET flags = ?3, labels = coalesce(?4, labels), indexed = 0
-                 WHERE id = (SELECT message FROM places WHERE mailbox = ?1 AND uid = ?2)
-                 AND (flags != ?3 OR labels != coalesce(?4, labels))",
+                &format!(
+                    "UPDATE messages SET flags = CASE WHEN {FLAGGING} THEN flags ELSE ?3 END,
+                     labels = coalesce(?4, labels), indexed = 0
+                     WHERE id = (SELECT message FROM places WHERE mailbox = ?1 AND uid = ?2)
+                     AND ((flags != ?3 AND NOT {FLAGGING}) OR labels != coalesce(?4, labels))"
+                ),
                 params![
                     mailbox,
                     change.uid,
@@ -320,32 +397,12 @@ impl Store {
                 params![mailbox, uid],
             )?;
         }
-        // Those in no mailbox now go from the index too, and their threads
-        // when nothing's left in them.
-        let gone = "account = (SELECT account FROM mailboxes WHERE id = ?1)
-             AND NOT EXISTS (SELECT 1 FROM places WHERE places.message = messages.id)";
-        tx.execute(
-            &format!(
-                "INSERT OR IGNORE INTO unindexed (key)
-                 SELECT 'm:' || account || ':' || identity FROM messages WHERE {gone}"
-            ),
+        let account: i64 = tx.query_row(
+            "SELECT account FROM mailboxes WHERE id = ?1",
             [mailbox],
+            |r| r.get(0),
         )?;
-        tx.execute(
-            &format!(
-                "INSERT OR IGNORE INTO unindexed (key)
-                 SELECT DISTINCT 't:' || account || ':' || thread FROM messages WHERE {gone}
-                 AND NOT EXISTS (SELECT 1 FROM messages AS other JOIN places
-                     ON places.message = other.id
-                     WHERE other.account = messages.account AND other.thread = messages.thread)"
-            ),
-            [mailbox],
-        )?;
-        tx.execute(&format!("DELETE FROM messages WHERE {gone}"), [mailbox])?;
-        tx.execute(
-            "DELETE FROM bodies.bodies WHERE message NOT IN (SELECT id FROM messages)",
-            [],
-        )?;
+        drop_placeless(&tx, account)?;
         tx.commit()?;
         Ok(())
     }
@@ -388,6 +445,11 @@ impl Store {
                 "INSERT INTO places (message, mailbox, uid) VALUES (?1, ?2, ?3)
                  ON CONFLICT (mailbox, uid) DO UPDATE SET message = ?1",
                 params![id, mailbox, f.uid],
+            )?;
+            // Moved here from this end, it's found under its real UID.
+            tx.execute(
+                "DELETE FROM places WHERE message = ?1 AND mailbox = ?2 AND uid < 0",
+                params![id, mailbox],
             )?;
         }
         tx.execute(
@@ -435,7 +497,7 @@ impl Store {
                 "SELECT mailboxes.name, messages.id, places.uid, messages.size FROM messages
                  JOIN places ON places.message = messages.id
                  JOIN mailboxes ON mailboxes.id = places.mailbox
-                 WHERE messages.account = ?1 AND messages.identity = ?2
+                 WHERE messages.account = ?1 AND messages.identity = ?2 AND places.uid > 0
                  ORDER BY mailboxes.role IS 'all' DESC LIMIT 1",
                 params![account, identity],
                 |r| {
@@ -460,6 +522,7 @@ impl Store {
              JOIN messages ON messages.id = places.message
              LEFT JOIN bodies.bodies ON bodies.message = messages.id
              WHERE places.mailbox = ?1 AND bodies.message IS NULL
+             AND places.uid > 0
              ORDER BY instr(messages.flags, '\\Seen') > 0, messages.date DESC
              LIMIT ?2",
         )?;
@@ -639,12 +702,351 @@ impl Store {
     pub fn uids(&self, mailbox: i64) -> Result<Vec<u32>, Trouble> {
         let mut statement = self
             .db
-            .prepare("SELECT uid FROM places WHERE mailbox = ?1 ORDER BY uid")?;
+            .prepare("SELECT uid FROM places WHERE mailbox = ?1 AND uid > 0 ORDER BY uid")?;
         let uids = statement
             .query_map([mailbox], |r| r.get(0))?
             .collect::<Result<_, _>>()?;
         Ok(uids)
     }
+
+    /// The ids of the messages `key` names: a message's
+    /// (`m:ACCOUNT:IDENTITY`), or every one in a thread's
+    /// (`t:ACCOUNT:THREAD`).
+    pub fn messages_of(&self, key: &str) -> Result<Vec<i64>, Trouble> {
+        let mut parts = key.splitn(3, ':');
+        let (Some(kind), Some(account), Some(name)) = (parts.next(), parts.next(), parts.next())
+        else {
+            return Ok(Vec::new());
+        };
+        let column = match kind {
+            "m" => "identity",
+            "t" => "thread",
+            _ => return Ok(Vec::new()),
+        };
+        let mut statement = self.db.prepare(&format!(
+            "SELECT id FROM messages WHERE account = ?1 AND {column} = ?2 ORDER BY date"
+        ))?;
+        let ids = statement
+            .query_map(params![account, name], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        Ok(ids)
+    }
+
+    /// Makes `action` on message `id` here, and queues it to be made on
+    /// its server; gives whether anything changed.
+    pub fn act(&mut self, id: i64, action: &Action) -> Result<bool, Trouble> {
+        let tx = self.db.transaction()?;
+        let Some((account, flags)): Option<(i64, String)> = tx
+            .query_row(
+                "SELECT account, flags FROM messages WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+        else {
+            return Ok(false);
+        };
+        let places = places_of(&tx, id)?;
+        let changed = match action {
+            Action::Flag { flag, on } => flag_here(&tx, id, &flags, &places, flag, *on)?,
+            Action::Move { to } => {
+                let to = mailbox_where(&tx, account, "name", to)?
+                    .ok_or_else(|| Trouble(format!("there's no mailbox {to}")))?;
+                move_here(&tx, id, &places, &to)?
+            }
+            Action::Archive => {
+                let to = mailbox_where(&tx, account, "role", "archive")?
+                    .ok_or_else(|| Trouble("there's no archive to move it to".into()))?;
+                move_here(&tx, id, &places, &to)?
+            }
+            Action::Trash => {
+                let trash = mailbox_where(&tx, account, "role", "trash")?
+                    .ok_or_else(|| Trouble("there's no trash to move it to".into()))?;
+                if places.iter().any(|p| p.mailbox == trash.0 && p.uid > 0) {
+                    expunge_here(&tx, id, account, &places, trash.0)?
+                } else {
+                    move_here(&tx, id, &places, &trash)?
+                }
+            }
+        };
+        tx.commit()?;
+        Ok(changed)
+    }
+
+    /// What `account` changed here that its server doesn't have yet, in
+    /// the order it was done.
+    pub fn pending(&self, account: i64) -> Result<Vec<Pending>, Trouble> {
+        let mut statement = self.db.prepare(
+            "SELECT pending.id, mailboxes.name, pending.uid, pending.uidvalidity, pending.op,
+                 pending.arg
+             FROM pending JOIN mailboxes ON mailboxes.id = pending.mailbox
+             WHERE mailboxes.account = ?1 ORDER BY pending.id",
+        )?;
+        let pending = statement
+            .query_map([account], |r| {
+                Ok(Pending {
+                    id: r.get(0)?,
+                    mailbox: r.get(1)?,
+                    uid: r.get(2)?,
+                    uid_validity: r.get(3)?,
+                    op: r.get(4)?,
+                    arg: r.get(5)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(pending)
+    }
+
+    /// Notes that the server has the changes `ids`.
+    pub fn sent(&mut self, ids: &[i64]) -> Result<(), Trouble> {
+        let tx = self.db.transaction()?;
+        for id in ids {
+            tx.execute("DELETE FROM pending WHERE id = ?1", [id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Takes back the changes `ids`, which the server refused or which
+    /// came too late (the mailbox's UIDs started over): a flag is as it
+    /// was, a message moved or deleted is back where it was, unless
+    /// `forsaken`, when its old place means nothing now.
+    pub fn take_back(&mut self, ids: &[i64], forsaken: bool) -> Result<(), Trouble> {
+        let tx = self.db.transaction()?;
+        for id in ids {
+            let Some((message, mailbox, uid, op, arg)): Option<(i64, i64, u32, String, String)> =
+                tx.query_row(
+                    "SELECT message, mailbox, uid, op, arg FROM pending WHERE id = ?1",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                )
+                .optional()?
+            else {
+                continue;
+            };
+            tx.execute("DELETE FROM pending WHERE id = ?1", [id])?;
+            tx.execute("UPDATE messages SET indexed = 0 WHERE id = ?1", [message])?;
+            match op.as_str() {
+                "+" | "-" => {
+                    let flags: String =
+                        tx.query_row("SELECT flags FROM messages WHERE id = ?1", [message], |r| {
+                            r.get(0)
+                        })?;
+                    let flags = with_flag(&flags, &arg, op == "-");
+                    tx.execute(
+                        "UPDATE messages SET flags = ?2 WHERE id = ?1",
+                        params![message, flags],
+                    )?;
+                }
+                _ => {
+                    tx.execute(
+                        "DELETE FROM places WHERE message = ?1 AND uid < 0",
+                        [message],
+                    )?;
+                    if !forsaken {
+                        tx.execute(
+                            "INSERT OR IGNORE INTO places (message, mailbox, uid)
+                             VALUES (?1, ?2, ?3)",
+                            params![message, mailbox, uid],
+                        )?;
+                    }
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+/// A connection to the store in `dir`, `bodies.db` attached.
+fn connect(dir: &Path) -> Result<Connection, Trouble> {
+    let db = Connection::open(dir.join("mail.db"))?;
+    db.pragma_update(None, "journal_mode", "WAL")?;
+    db.pragma_update(None, "synchronous", "NORMAL")?;
+    db.pragma_update(None, "foreign_keys", "ON")?;
+    db.busy_timeout(std::time::Duration::from_secs(5))?;
+    db.execute(
+        "ATTACH DATABASE ?1 AS bodies",
+        [dir.join("bodies.db").to_string_lossy()],
+    )?;
+    db.pragma_update(Some("bodies"), "journal_mode", "WAL")?;
+    Ok(db)
+}
+
+/// Takes out `account`'s messages that are in no mailbox now, from the
+/// index too, and their threads when nothing's left in them.
+fn drop_placeless(tx: &Transaction<'_>, account: i64) -> Result<(), Trouble> {
+    let gone = "account = ?1
+         AND NOT EXISTS (SELECT 1 FROM places WHERE places.message = messages.id)";
+    tx.execute(
+        &format!(
+            "INSERT OR IGNORE INTO unindexed (key)
+             SELECT 'm:' || account || ':' || identity FROM messages WHERE {gone}"
+        ),
+        [account],
+    )?;
+    tx.execute(
+        &format!(
+            "INSERT OR IGNORE INTO unindexed (key)
+             SELECT DISTINCT 't:' || account || ':' || thread FROM messages WHERE {gone}
+             AND NOT EXISTS (SELECT 1 FROM messages AS other JOIN places
+                 ON places.message = other.id
+                 WHERE other.account = messages.account AND other.thread = messages.thread)"
+        ),
+        [account],
+    )?;
+    tx.execute(&format!("DELETE FROM messages WHERE {gone}"), [account])?;
+    tx.execute(
+        "DELETE FROM bodies.bodies WHERE message NOT IN (SELECT id FROM messages)",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Message `id`'s places, those it's moving to included.
+fn places_of(tx: &Transaction<'_>, id: i64) -> Result<Vec<Place>, Trouble> {
+    let mut statement = tx.prepare(
+        "SELECT places.mailbox, places.uid, mailboxes.uidvalidity, mailboxes.name, mailboxes.role
+         FROM places JOIN mailboxes ON mailboxes.id = places.mailbox
+         WHERE places.message = ?1",
+    )?;
+    let places = statement
+        .query_map([id], |r| {
+            Ok(Place {
+                mailbox: r.get(0)?,
+                uid: r.get(1)?,
+                uid_validity: r.get(2)?,
+                name: r.get(3)?,
+                role: r.get(4)?,
+            })
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(places)
+}
+
+/// The id and name of `account`'s mailbox whose `column` (name or role)
+/// is `value`.
+fn mailbox_where(
+    tx: &Transaction<'_>,
+    account: i64,
+    column: &str,
+    value: &str,
+) -> Result<Option<(i64, String)>, Trouble> {
+    Ok(tx
+        .query_row(
+            &format!("SELECT id, name FROM mailboxes WHERE account = ?1 AND {column} = ?2"),
+            params![account, value],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?)
+}
+
+/// `flags` (as the store keeps them, apart by spaces) with `flag` set
+/// (`on`) or cleared.
+fn with_flag(flags: &str, flag: &str, on: bool) -> String {
+    let mut list: Vec<&str> = flags.split_whitespace().filter(|f| *f != flag).collect();
+    if on {
+        list.push(flag);
+    }
+    list.join(" ")
+}
+
+/// Queues a change for message `id` in `place`, giving its id.
+fn queue(
+    tx: &Transaction<'_>,
+    id: i64,
+    place: &Place,
+    op: &str,
+    arg: &str,
+) -> Result<i64, Trouble> {
+    tx.execute(
+        "INSERT INTO pending (message, mailbox, uid, uidvalidity, op, arg)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, place.mailbox, place.uid, place.uid_validity, op, arg],
+    )?;
+    Ok(tx.last_insert_rowid())
+}
+
+/// Sets or clears `flag` on message `id` (whose flags are `flags`) here
+/// and, queued, in each of its places; a change to the same flag still
+/// waiting gives way to this one.
+fn flag_here(
+    tx: &Transaction<'_>,
+    id: i64,
+    flags: &str,
+    places: &[Place],
+    flag: &str,
+    on: bool,
+) -> Result<bool, Trouble> {
+    if flags.split_whitespace().any(|f| f == flag) == on {
+        return Ok(false);
+    }
+    tx.execute(
+        "UPDATE messages SET flags = ?2, indexed = 0 WHERE id = ?1",
+        params![id, with_flag(flags, flag, on)],
+    )?;
+    tx.execute(
+        "DELETE FROM pending WHERE message = ?1 AND op IN ('+', '-') AND arg = ?2",
+        params![id, flag],
+    )?;
+    for place in places.iter().filter(|p| p.uid > 0) {
+        queue(tx, id, place, if on { "+" } else { "-" }, flag)?;
+    }
+    Ok(true)
+}
+
+/// Moves message `id` out of each folder it's in to mailbox `to` (its id
+/// and name), where it has a place at once.
+fn move_here(
+    tx: &Transaction<'_>,
+    id: i64,
+    places: &[Place],
+    to: &(i64, String),
+) -> Result<bool, Trouble> {
+    let from: Vec<&Place> = places
+        .iter()
+        .filter(|p| p.folder() && p.mailbox != to.0)
+        .collect();
+    if from.is_empty() {
+        return Ok(false);
+    }
+    let mut last = 0;
+    for place in from {
+        last = queue(tx, id, place, "move", &to.1)?;
+        tx.execute(
+            "DELETE FROM places WHERE mailbox = ?1 AND uid = ?2",
+            params![place.mailbox, place.uid],
+        )?;
+    }
+    if !places.iter().any(|p| p.mailbox == to.0) {
+        tx.execute(
+            "INSERT INTO places (message, mailbox, uid) VALUES (?1, ?2, ?3)",
+            params![id, to.0, -last],
+        )?;
+    }
+    tx.execute("UPDATE messages SET indexed = 0 WHERE id = ?1", [id])?;
+    Ok(true)
+}
+
+/// Deletes message `id` for good from mailbox `trash`; once it's in no
+/// mailbox, it's gone here.
+fn expunge_here(
+    tx: &Transaction<'_>,
+    id: i64,
+    account: i64,
+    places: &[Place],
+    trash: i64,
+) -> Result<bool, Trouble> {
+    for place in places.iter().filter(|p| p.mailbox == trash && p.uid > 0) {
+        queue(tx, id, place, "expunge", "")?;
+        tx.execute(
+            "DELETE FROM places WHERE mailbox = ?1 AND uid = ?2",
+            params![place.mailbox, place.uid],
+        )?;
+    }
+    tx.execute("UPDATE messages SET indexed = 0 WHERE id = ?1", [id])?;
+    drop_placeless(tx, account)?;
+    Ok(true)
 }
 
 /// Puts one message in, or updates the one with its identity; gives its id.
@@ -652,10 +1054,13 @@ fn put_message(tx: &Transaction<'_>, account: i64, f: &Fetched) -> Result<i64, T
     let header = Header::of(f);
     let identity = header.identity(f);
     tx.execute(
-        "INSERT INTO messages (account, identity, message_id, date, sender, recipients, cc,
-             subject, in_reply_to, refs, list_id, size, headers, flags, labels)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
-         ON CONFLICT (account, identity) DO UPDATE SET flags = ?14, labels = ?15, indexed = 0",
+        &format!(
+            "INSERT INTO messages (account, identity, message_id, date, sender, recipients, cc,
+                 subject, in_reply_to, refs, list_id, size, headers, flags, labels)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             ON CONFLICT (account, identity) DO UPDATE SET
+                 flags = CASE WHEN {FLAGGING} THEN flags ELSE ?14 END, labels = ?15, indexed = 0"
+        ),
         params![
             account,
             identity,
@@ -835,6 +1240,168 @@ mod tests {
             thread(&store, "z").as_deref(),
             Some("z@x"),
             "a thread of its own"
+        );
+    }
+
+    /// The places of message `id`, as (mailbox, UID), sorted.
+    fn places(store: &Store, id: i64) -> Vec<(i64, i64)> {
+        let mut statement = store
+            .db
+            .prepare("SELECT mailbox, uid FROM places WHERE message = ?1 ORDER BY mailbox, uid")
+            .unwrap();
+        statement
+            .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    fn flags_of(store: &Store, id: i64) -> String {
+        store
+            .db
+            .query_row("SELECT flags FROM messages WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .unwrap()
+    }
+
+    fn seen(on: bool) -> Action {
+        Action::Flag {
+            flag: "\\Seen".into(),
+            on,
+        }
+    }
+
+    #[test]
+    fn a_flag_changes_here_at_once_and_waits_for_the_server() {
+        let dir = temp("flag");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let all = store.mailbox(account, "All Mail", Some("all")).unwrap();
+        store
+            .put(account, all.id, &[mail(9, "a", &[], None)], 9, 9)
+            .unwrap();
+        store
+            .put(account, inbox.id, &[mail(1, "a", &[], None)], 1, 1)
+            .unwrap();
+        let id = store.messages_of(&format!("m:{account}:pm:a")).unwrap()[0];
+        assert!(store.act(id, &seen(true)).unwrap());
+        assert!(!store.act(id, &seen(true)).unwrap(), "already read");
+        assert_eq!(flags_of(&store, id), "\\Seen");
+        let pending = store.pending(account).unwrap();
+        assert_eq!(pending.len(), 2, "one for each place: {pending:?}");
+        assert!(pending.iter().all(|p| p.op == "+" && p.arg == "\\Seen"));
+        // The server, not told yet, still says unread.
+        let unread = Change {
+            uid: 1,
+            flags: Vec::new(),
+            labels: None,
+        };
+        store.set_flags(inbox.id, &[unread]).unwrap();
+        assert_eq!(flags_of(&store, id), "\\Seen", "what's waiting stays");
+        // Unread again before it went: only the last one goes.
+        store.act(id, &seen(false)).unwrap();
+        let pending = store.pending(account).unwrap();
+        assert_eq!(pending.len(), 2, "{pending:?}");
+        assert!(pending.iter().all(|p| p.op == "-"));
+        let ids: Vec<i64> = pending.iter().map(|p| p.id).collect();
+        store.take_back(&ids, false).unwrap();
+        assert_eq!(flags_of(&store, id), "\\Seen", "refused: as it was");
+        assert!(store.pending(account).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_message_moved_is_there_at_once_and_found_there_under_its_uid() {
+        let dir = temp("move");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let archive = store.mailbox(account, "Archive", Some("archive")).unwrap();
+        let label = store.mailbox(account, "Labels/Work", None).unwrap();
+        store
+            .put(account, inbox.id, &[mail(1, "a", &[], None)], 1, 1)
+            .unwrap();
+        store
+            .put(account, label.id, &[mail(4, "a", &[], None)], 4, 4)
+            .unwrap();
+        let id = store.messages_of(&format!("m:{account}:pm:a")).unwrap()[0];
+        assert!(store.act(id, &Action::Archive).unwrap());
+        let pending = store.pending(account).unwrap();
+        assert_eq!(pending.len(), 1, "labels stay: {pending:?}");
+        assert_eq!((pending[0].mailbox.as_str(), pending[0].uid), ("INBOX", 1));
+        assert_eq!(
+            (pending[0].op.as_str(), pending[0].arg.as_str()),
+            ("move", "Archive")
+        );
+        assert_eq!(
+            places(&store, id),
+            [(archive.id, -pending[0].id), (label.id, 4)],
+            "in the archive already, by no UID yet"
+        );
+        assert!(store.uids(archive.id).unwrap().is_empty());
+        assert!(store.uids(inbox.id).unwrap().is_empty());
+        store.sent(&[pending[0].id]).unwrap();
+        store
+            .put(account, archive.id, &[mail(7, "a", &[], None)], 7, 7)
+            .unwrap();
+        assert_eq!(places(&store, id), [(archive.id, 7), (label.id, 4)]);
+        // Back to the inbox, refused: where it was again.
+        store.act(id, &Action::Move { to: "INBOX".into() }).unwrap();
+        let back: Vec<i64> = store
+            .pending(account)
+            .unwrap()
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        store.take_back(&back, false).unwrap();
+        assert_eq!(places(&store, id), [(archive.id, 7), (label.id, 4)]);
+        let Err(trouble) = store.act(
+            id,
+            &Action::Move {
+                to: "Nowhere".into(),
+            },
+        ) else {
+            panic!("moved to no mailbox");
+        };
+        assert_eq!(trouble.0, "there's no mailbox Nowhere");
+    }
+
+    #[test]
+    fn trash_twice_deletes_for_good() {
+        let dir = temp("trash");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let trash = store.mailbox(account, "Trash", Some("trash")).unwrap();
+        store
+            .put(account, inbox.id, &[mail(1, "a", &[], None)], 1, 1)
+            .unwrap();
+        let id = store.messages_of(&format!("t:{account}:a@x")).unwrap()[0];
+        store.act(id, &Action::Trash).unwrap();
+        let ids: Vec<i64> = store
+            .pending(account)
+            .unwrap()
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        store.sent(&ids).unwrap();
+        store
+            .put(account, trash.id, &[mail(3, "a", &[], None)], 3, 3)
+            .unwrap();
+        assert_eq!(places(&store, id), [(trash.id, 3)]);
+        store.act(id, &Action::Trash).unwrap();
+        let pending = store.pending(account).unwrap();
+        assert_eq!((pending[0].op.as_str(), pending[0].uid), ("expunge", 3));
+        assert!(
+            store
+                .messages_of(&format!("m:{account}:pm:a"))
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            store.removed(10).unwrap(),
+            [format!("m:{account}:pm:a"), format!("t:{account}:a@x")]
         );
     }
 }

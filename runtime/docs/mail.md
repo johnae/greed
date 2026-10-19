@@ -14,12 +14,27 @@ subject:"quarterly report" is:attachment
 
 In the list, `enter` reads the thread under the cursor in its place, `/`
 searches again and `r` syncs now; `q` in a thread goes back to the list.
+Reading a thread marks it read.
+
+These work on the message under the cursor, or in a thread on all of it:
+
+| Key       | Does                                                    |
+| --------- | ------------------------------------------------------- |
+| `u`       | marks it read, or unread when it's read                 |
+| `s`       | flags it, or takes the flag off                         |
+| `e`       | moves it to the archive                                 |
+| `d`, `#`  | moves it to the trash; in the trash, deletes it for good |
+
+A change shows at once and goes to the server within seconds. If the
+server refuses it (a folder that went, say), it's taken back and Greed
+says why.
 
 The mail session is the one that syncs. In any other session, `:mail`
 opens a quick look at the same mail in a float (`q` closes it), and
 `:mail-session` goes to the mail session, starting it if it isn't
-running. The quick look reads what the mail session has synced: a message
-whose text hasn't come in yet gets it once you open it there.
+running. The quick look reads what the mail session has synced, and
+changes nothing: a message whose text hasn't come in yet gets it once you
+open it there, and marking, archiving and deleting are done there too.
 
 ## Accounts
 

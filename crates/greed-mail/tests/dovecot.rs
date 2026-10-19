@@ -163,6 +163,10 @@ namespace inbox {{
     special_use = \Trash
     auto = create
   }}
+  mailbox Archive {{
+    special_use = \Archive
+    auto = create
+  }}
 }}
 "
     )
@@ -344,6 +348,7 @@ fn logs_in_and_lists_mailboxes_with_their_roles() {
         assert_eq!(
             roles,
             [
+                ("Archive".into(), Some(Role::Archive)),
                 ("INBOX".into(), Some(Role::Inbox)),
                 ("Sent".into(), Some(Role::Sent)),
                 ("Trash".into(), Some(Role::Trash)),
@@ -576,4 +581,95 @@ fn another_session_reads_what_the_mail_session_syncs() {
     let status = reading.ask("status", &serde_json::json!({}));
     assert_eq!(status["accounts"], serde_json::json!([]), "{status}");
     drop(syncing);
+}
+
+/// The names of the message files in `anna`'s `folder` (INBOX for "").
+fn files(dovecot: &Dovecot, folder: &str) -> Vec<String> {
+    let mut maildir = dovecot.dir.join("home/anna/Maildir");
+    if !folder.is_empty() {
+        maildir = maildir.join(format!(".{folder}"));
+    }
+    let mut names = Vec::new();
+    for sub in ["cur", "new"] {
+        for entry in std::fs::read_dir(maildir.join(sub)).into_iter().flatten() {
+            names.push(entry.unwrap().file_name().to_string_lossy().into_owned());
+        }
+    }
+    names
+}
+
+/// Waits until `done` holds, saying `what` if it doesn't in time.
+fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let started = Instant::now();
+    while !done() {
+        assert!(started.elapsed() < Duration::from_secs(20), "{what}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[test]
+fn mail_marked_moved_and_deleted_here_is_so_on_the_server() {
+    let Some(dovecot) = Dovecot::start("act") else {
+        return;
+    };
+    deliver(&dovecot, 1, false);
+    deliver(&dovecot, 2, false);
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let path = served.ask("index", &serde_json::json!({}));
+    let index =
+        greed_index::index::Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
+    let keys: Vec<String> = index
+        .search(
+            None,
+            &greed_index::query::Schema::default(),
+            &greed_index::index::View::default(),
+        )
+        .unwrap()
+        .keys
+        .into_iter()
+        .filter(|k| k.starts_with("m:"))
+        .collect();
+    let summaries = served.ask("summaries", &serde_json::json!({ "keys": keys }));
+    let key = |subject: &str| -> String {
+        let found = summaries.as_array().unwrap().iter();
+        let mut found = found.filter(|s| s["subject"] == subject);
+        found.next().unwrap()["key"].as_str().unwrap().to_string()
+    };
+    let (one, two) = (key("note 1"), key("note 2"));
+    assert_eq!(act(&mut served, "read", &one), 1);
+    assert_eq!(act(&mut served, "read", &one), 0, "read already");
+    let shown = served.ask("summaries", &serde_json::json!({ "keys": [one] }));
+    assert_eq!(shown[0]["unread"], false, "read here at once: {shown}");
+    wait_until("read on the server", || {
+        files(&dovecot, "")
+            .iter()
+            .any(|f| f.contains("M1P1") && f.ends_with('S'))
+    });
+    assert_eq!(act(&mut served, "archive", &two), 1);
+    wait_until("in the archive on the server", || {
+        files(&dovecot, "Archive").len() == 1 && files(&dovecot, "").len() == 1
+    });
+    act(&mut served, "trash", &two);
+    wait_until("in the trash", || files(&dovecot, "Trash").len() == 1);
+    // The sync finds it in the trash under its UID there; then it can go
+    // for good.
+    wait_until("found in the trash", || {
+        let thread = served.ask("thread", &serde_json::json!({ "key": two }));
+        !thread.is_null() && {
+            let status = served.ask("status", &serde_json::json!({}));
+            status["accounts"][0]["done"] == true
+        }
+    });
+    assert_eq!(act(&mut served, "trash", &two), 1);
+    wait_until("gone for good", || files(&dovecot, "Trash").is_empty());
+    let thread = served.ask("thread", &serde_json::json!({ "key": two }));
+    assert!(thread.is_null(), "gone here too: {thread}");
+}
+
+/// Asks `served` to make `action` on the message `key`, giving how many
+/// it changed.
+fn act(served: &mut Served, action: &str, key: &str) -> serde_json::Value {
+    let params = serde_json::json!({ "action": action, "keys": [key] });
+    served.ask("act", &params)["changed"].clone()
 }

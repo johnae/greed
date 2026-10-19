@@ -4,12 +4,16 @@
 //!
 //! Requests: `status` (each account, how much is in, what went wrong),
 //! `index` (where `index.db` is, for `greed.index.open`), `sync` (sync now),
-//! `summaries` (`keys` the index found, as a list shows them) and `thread`
+//! `summaries` (`keys` the index found, as a list shows them), `thread`
 //! (a thread by its key or one of its messages', with their text; bodies
-//! not in yet come ahead of everything else, then `changed` says so).
+//! not in yet come ahead of everything else, then `changed` says so) and
+//! `act` (`action` on the messages `keys` name: read, unread, flag,
+//! unflag, archive, trash, or move `to` a mailbox; made here at once and
+//! sent to the server in the next round, which starts right away).
 //! Notifications: `changed` (the index changed: search again), `progress`
-//! (an account's mailbox synced some) and `trouble` (an account that
-//! can't sync, and why).
+//! (an account's mailbox synced some), `trouble` (an account that can't
+//! sync, and why) and `refused` (a change its server refused, taken back
+//! here, and why).
 //!
 //! The sync goes in rounds of at most `HEADERS` headers and `BODIES` bodies
 //! a mailbox, so what's asked for never waits long. After a round with
@@ -31,8 +35,9 @@ use tokio::sync::{Notify, mpsc};
 use crate::config::{Account, Config};
 use crate::imap::{Connection, Imap};
 use crate::indexing;
+use crate::pending;
 use crate::reader::Reader;
-use crate::store::{Store, Wanting};
+use crate::store::{Action, Store, Wanting};
 use crate::sync::{self, Options};
 
 /// The most headers a round fetches a mailbox.
@@ -105,12 +110,16 @@ impl Shared {
 /// greed-mail syncs it (the mail session's), so this one takes no lock and
 /// fetches nothing, and any number of them can run beside it.
 pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), String> {
-    let stores = if read {
-        None
+    let open_index = || Index::open(&dir.join("index.db")).map_err(|e| e.0);
+    let (stores, writer) = if read {
+        (None, None)
     } else {
         let store = Store::open(&dir).map_err(|e| e.0)?;
-        let index = Index::open(&dir.join("index.db")).map_err(|e| e.0)?;
-        Some((store, index))
+        // Changes asked for are made with a store and index of their own,
+        // as the sync holds its own while it waits on a server.
+        let beside = store.beside(&dir).map_err(|e| e.0)?;
+        let writer = RefCell::new((beside, open_index()?));
+        (Some((store, open_index()?)), Some(writer))
     };
     let reader = Reader::open(&dir).map_err(|_| {
         format!(
@@ -138,7 +147,7 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
             }
         }
     };
-    let answering = answer(&reader, &dir, &shared);
+    let answering = answer(&reader, writer.as_ref(), &dir, &shared);
     let syncing = async {
         match stores {
             Some((store, index)) => keep_syncing(&config, store, index, &shared).await,
@@ -154,7 +163,7 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
 }
 
 /// Answers each request on the input until it closes.
-async fn answer(reader: &Reader, dir: &Path, shared: &Shared) {
+async fn answer(reader: &Reader, writer: Option<&Writer>, dir: &Path, shared: &Shared) {
     let mut input = BufReader::new(tokio::io::stdin()).lines();
     while let Ok(Some(line)) = input.next_line().await {
         let Ok(request) = serde_json::from_str::<Value>(&line) else {
@@ -164,7 +173,7 @@ async fn answer(reader: &Reader, dir: &Path, shared: &Shared) {
             continue;
         };
         let method = request["method"].as_str().unwrap_or("");
-        let reply = match handle(method, &request["params"], reader, dir, shared) {
+        let reply = match handle(method, &request["params"], reader, writer, dir, shared) {
             Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
             Err(message) => json!({
                 "jsonrpc": "2.0",
@@ -176,11 +185,16 @@ async fn answer(reader: &Reader, dir: &Path, shared: &Shared) {
     }
 }
 
+/// What changes are made with: a store and an index, the mail session's
+/// only.
+type Writer = RefCell<(Store, Index)>;
+
 /// The result of request `method`, or why there's none.
 fn handle(
     method: &str,
     params: &Value,
     reader: &Reader,
+    writer: Option<&Writer>,
     dir: &Path,
     shared: &Shared,
 ) -> Result<Value, String> {
@@ -214,8 +228,55 @@ fn handle(
             }
             serde_json::to_value(thread).map_err(|e| e.to_string())
         }
+        "act" => {
+            let writer =
+                writer.ok_or("mail is changed in the mail session; here it's only read")?;
+            let keys: Vec<String> = serde_json::from_value(params["keys"].clone())
+                .map_err(|_| "act takes keys, a list of messages' or threads' keys".to_string())?;
+            let action = action(params)?;
+            let (store, index) = &mut *writer.borrow_mut();
+            let mut changed = 0;
+            for key in &keys {
+                for id in store.messages_of(key).map_err(|e| e.0)? {
+                    changed += usize::from(store.act(id, &action).map_err(|e| e.0)?);
+                }
+            }
+            if changed > 0 {
+                indexing::catch_up(store, index).map_err(|e| e.0)?;
+                shared.notify("changed", &json!({}));
+                shared.wake.notify_one();
+            }
+            Ok(json!({ "changed": changed }))
+        }
         _ => Err(format!("no method {method}")),
     }
+}
+
+/// The action an `act` request asks for.
+fn action(params: &Value) -> Result<Action, String> {
+    let flag = |flag: &str, on: bool| Action::Flag {
+        flag: flag.into(),
+        on,
+    };
+    Ok(match params["action"].as_str().unwrap_or("") {
+        "read" => flag("\\Seen", true),
+        "unread" => flag("\\Seen", false),
+        "flag" => flag("\\Flagged", true),
+        "unflag" => flag("\\Flagged", false),
+        "archive" => Action::Archive,
+        "trash" => Action::Trash,
+        "move" => Action::Move {
+            to: params["to"]
+                .as_str()
+                .ok_or("move takes to, the mailbox to move it to")?
+                .into(),
+        },
+        other => {
+            return Err(format!(
+                "no action {other:?}: read, unread, flag, unflag, archive, trash or move"
+            ));
+        }
+    })
 }
 
 /// Syncs in rounds for as long as it runs. With nothing left to do it
@@ -318,6 +379,7 @@ async fn round(
     let mailboxes = connection.mailboxes().await.map_err(|e| e.0)?;
     let mut more = false;
     for mailbox in sync::chosen(account.provider, &mailboxes) {
+        send_changes(&mut connection, store, index, account, id, shared).await?;
         asked_for(&mut connection, store, index, id, shared).await?;
         let synced = sync::mailbox(
             &mut connection,
@@ -361,6 +423,33 @@ async fn round(
     );
     let _ = connection.close().await;
     Ok(more)
+}
+
+/// Sends what was changed here in `account` (store id `id`) to its
+/// server, saying what it refused.
+async fn send_changes(
+    connection: &mut Connection,
+    store: &mut Store,
+    index: &mut Index,
+    account: &Account,
+    id: i64,
+    shared: &Shared,
+) -> Result<(), String> {
+    let sent = pending::send(connection, store, id)
+        .await
+        .map_err(|e| e.0)?;
+    if sent.refused.is_empty() {
+        return Ok(());
+    }
+    for why in &sent.refused {
+        shared.notify(
+            "refused",
+            &json!({ "account": account.name, "message": why }),
+        );
+    }
+    indexing::catch_up(store, index).map_err(|e| e.0)?;
+    shared.notify("changed", &json!({}));
+    Ok(())
 }
 
 /// Fetches the bodies asked for of account `id`'s messages, from where

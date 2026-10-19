@@ -47,8 +47,14 @@ local MAIL: { Fake } = {
 	},
 }
 
--- An index of MAIL in memory: the query run by greed.query.run, sorted
--- newest first as the list asks.
+-- The mail as it is now, a fresh copy of MAIL for each test (`fake`).
+local now: { Fake } = {}
+
+-- What was asked of the fake, as "action key".
+local acted: { string } = {}
+
+-- An index of the mail now, in memory: the query run by
+-- greed.query.run, sorted newest first as the list asks.
 local index = {
 	search = function(
 		_,
@@ -57,7 +63,7 @@ local index = {
 		view: any
 	): ({ string }?, { string }?, string?)
 		local rows: { greed.QueryRow } = {}
-		for _, m in MAIL do
+		for _, m in now do
 			local fields: { [string]: string | { string } } =
 				{ from = m.from, subject = m.subject, date = m.date, tag = m.tags }
 			table.insert(rows, { text = `{m.subject}\n{m.text}`, fields = fields, flags = m.flags })
@@ -66,7 +72,7 @@ local index = {
 		local found: { number } = matched or {}
 		local hits: { Fake } = {}
 		for _, i in found do
-			table.insert(hits, MAIL[i])
+			table.insert(hits, now[i])
 		end
 		local by = view.sort[1]
 		table.sort(hits, function(a: Fake, b: Fake): boolean
@@ -91,19 +97,60 @@ local function summary(m: Fake): any
 		subject = m.subject,
 		date = m.date,
 		unread = table.find(m.flags, "unread") ~= nil,
-		flagged = false,
+		flagged = table.find(m.flags, "flagged") ~= nil,
 	}
 end
 
+-- Sets (`on`) or clears `flag` on `m`.
+local function flag(m: Fake, name: string, on: boolean)
+	local i = table.find(m.flags, name)
+	if on and i == nil then
+		table.insert(m.flags, name)
+	elseif not on and i then
+		table.remove(m.flags, i)
+	end
+end
+
+-- What the fake does for each action greed-mail takes.
+local ACTIONS: { [string]: (m: Fake) -> () } = {
+	read = function(m)
+		flag(m, "unread", false)
+	end,
+	unread = function(m)
+		flag(m, "unread", true)
+	end,
+	flag = function(m)
+		flag(m, "flagged", true)
+	end,
+	unflag = function(m)
+		flag(m, "flagged", false)
+	end,
+	archive = function(m)
+		m.tags = { "Archive" }
+	end,
+	trash = function(m)
+		m.tags = { "Trash" }
+	end,
+}
+
 local function fake()
-	mail.backend.use({
+	now = {}
+	for _, m in MAIL do
+		local copy = table.clone(m)
+		copy.flags = table.clone(m.flags)
+		copy.tags = table.clone(m.tags)
+		table.insert(now, copy)
+	end
+	acted = {}
+	local changed: () -> () = function() end
+	changed = mail.backend.use({
 		index = function(): (any, string?)
 			return index
 		end,
 		summaries = function(keys: { string }): (any, string?)
 			local out = {}
 			for _, key in keys do
-				for _, m in MAIL do
+				for _, m in now do
 					if m.key == key then
 						table.insert(out, summary(m))
 					end
@@ -112,7 +159,7 @@ local function fake()
 			return out
 		end,
 		thread = function(key: string): (any, string?)
-			for _, m in MAIL do
+			for _, m in now do
 				if m.key == key or m.thread == key then
 					local message = summary(m)
 					message.to = "anna@example.com"
@@ -126,7 +173,30 @@ local function fake()
 			return nil
 		end,
 		sync = function() end,
+		act = function(keys: { string }, action: string): (number?, string?)
+			for _, key in keys do
+				table.insert(acted, `{action} {key}`)
+				for _, m in now do
+					if m.key == key or m.thread == key then
+						ACTIONS[action](m)
+					end
+				end
+			end
+			changed()
+			return #keys, nil
+		end,
 	})
+end
+
+-- As in the mail session, for `body`.
+local function in_the_mail_session(body: () -> ())
+	local here = mail.backend.here
+	mail.backend.here = function(): boolean
+		return true
+	end
+	local ok, err: any = pcall(body)
+	mail.backend.here = here
+	assert(ok, tostring(err))
 end
 
 local function subjects(): { string }
@@ -192,21 +262,71 @@ end)
 
 test("in the mail session the list and threads take the whole window, q goes back", function(t)
 	fake()
-	local here = mail.backend.here
-	mail.backend.here = function(): boolean
-		return true
-	end
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc")
+		assert(greed.view() == window, "the list is in the window, no float")
+		assert(window:buffer():kind() == "mail")
+		t:keys("enter")
+		assert(window:buffer():kind() == "mail-thread", window:buffer():kind())
+		t:keys("q")
+		assert(window:buffer():kind() == "mail", "back in the list")
+		t:keys("q")
+		assert(window:buffer():kind() == "mail", "the page stays")
+	end)
+end)
+
+test("reading a thread in the mail session marks it read", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		t:run("mail")
+		t:keys("esc j enter")
+		assert(table.concat(acted, ", ") == "read t:1:a", table.concat(acted, ", "))
+		t:keys("q")
+		assert(mail.shown()[2].unread == false, "the list says so")
+	end)
+end)
+
+test("a quick look reads without marking read", function(t)
+	fake()
 	t:buffer("|x")
-	local window = greed.view()
 	t:run("mail")
-	t:keys("esc")
-	assert(greed.view() == window, "the list is in the window, no float")
-	assert(window:buffer():kind() == "mail")
-	t:keys("enter")
-	assert(window:buffer():kind() == "mail-thread", window:buffer():kind())
-	t:keys("q")
-	assert(window:buffer():kind() == "mail", "back in the list")
-	t:keys("q")
-	assert(window:buffer():kind() == "mail", "the page stays")
-	mail.backend.here = here
+	t:keys("esc j enter")
+	assert(#acted == 0, table.concat(acted, ", "))
+end)
+
+test("u, s, e and d change the message under the cursor", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		t:run("mail")
+		t:keys("esc u")
+		assert(mail.shown()[1].unread, "Invoice 41 unread now")
+		t:keys("u s")
+		assert(not mail.shown()[1].unread and mail.shown()[1].flagged)
+		t:keys("e")
+		assert(table.concat(subjects(), ", ") == "Garden plans", "archived: out of the inbox")
+		t:keys("d")
+		assert(#mail.shown() == 0, "trashed")
+		assert(
+			table.concat(acted, ", ")
+				== "unread m:1:b, read m:1:b, flag m:1:b, archive m:1:b, trash m:1:a",
+			table.concat(acted, ", ")
+		)
+	end)
+end)
+
+test("archiving the thread being read goes back to the list", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc enter e")
+		assert(window:buffer():kind() == "mail", "back in the list")
+		assert(table.concat(subjects(), ", ") == "Garden plans")
+	end)
 end)

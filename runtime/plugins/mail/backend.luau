@@ -45,6 +45,10 @@ export type Backend = {
 	thread: (key: string) -> (Thread?, string?),
 	--- Syncs now.
 	sync: () -> (),
+	--- Makes `action` (read, unread, flag, unflag, archive or trash) on
+	--- the messages and threads `keys` name; gives how many it changed,
+	--- or nil and why.
+	act: (keys: { string }, action: string) -> (number?, string?),
 }
 
 --- The session `greed mail` starts, which syncs the mail; others read what
@@ -90,9 +94,11 @@ local function served(): (greed.RpcConnection?, string?)
 	local command = if M.here() then { program, "serve" } else { program, "--read", "serve" }
 	local started, err = greed.rpc.start(command, {
 		framing = "lines",
-		on_notify = function(method: string)
+		on_notify = function(method: string, params: any)
 			if method == "changed" then
 				changed()
+			elseif method == "refused" then
+				greed.echo(`{params.account} refused a change: {params.message}`)
 			end
 		end,
 	})
@@ -143,6 +149,13 @@ M.served = {
 	end,
 	sync = function()
 		ask("sync", {})
+	end,
+	act = function(keys: { string }, action: string): (number?, string?)
+		local done, err = ask("act", { keys = keys, action = action })
+		if done == nil then
+			return nil, err
+		end
+		return done.changed, nil
 	end,
 } :: Backend
 
