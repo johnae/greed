@@ -11,8 +11,9 @@
 -- it got wrong and where; `print` writes a tree back in its one canonical
 -- form. What a field means is up to the source that runs the query (a
 -- `Source`): `check` says what a query asks of it that it hasn't, and `run`
--- runs it over items in memory. Indexes run the same tree in Rust, and
--- test/query_cases.json holds what both must agree on.
+-- runs it over items, through `greed.query.run` in Rust (greed-index),
+-- which indexes will use too; test/query_cases.json holds what every way
+-- of running a query must agree on.
 
 local greed = require("@greed")
 local dates = require("./dates")
@@ -35,6 +36,9 @@ export type At = { from: number, to: number }
 --- - "regex": `text`, a pattern, matched against the text.
 --- - "and", "or": `items`, all of them or any.
 --- - "not": `items[1]`, which mustn't match.
+---
+--- A date field's term run by `greed.query.run` also has the days its
+--- value covers, `from` and `to`, which `run` reads before it's run.
 export type Node = {
 	kind: string,
 	at: At,
@@ -49,6 +53,8 @@ export type Node = {
 	high: string?,
 	regex: string?,
 	items: { Node }?,
+	from: string?,
+	to: string?,
 }
 
 --- How results are shown, from `sort:`, `limit:`, `group:` and `show:`.
@@ -652,8 +658,8 @@ export type Field = {
 
 --- What a query runs over: the items' `fields` by name (in lower case),
 --- their `flags` for `is:`, their `text` for words, and where they sit, for
---- `in:`, `under:` and `has:` (`parent`, `children`, and whether an item is
---- `named` something). Words match whole words, or with `words` "anywhere",
+--- `in:`, `under:` and `has:` (`parent`, `children`, and an item's `name`,
+--- for `in:NAME`). Words match whole words, or with `words` "anywhere",
 --- anywhere in the text, as the shell's filters do.
 export type Source = {
 	fields: { [string]: Field },
@@ -662,7 +668,7 @@ export type Source = {
 	words: string?,
 	parent: ((item: any) -> any)?,
 	children: ((item: any) -> { any })?,
-	named: ((item: any, name: string) -> boolean)?,
+	name: ((item: any) -> string?)?,
 }
 
 -- Fields every source understands, beside its own.
@@ -680,16 +686,6 @@ local function flags_named(source: Source, node: Node): { (item: any) -> boolean
 		end
 	end
 	return out
-end
-
--- Whether `item` is any of the flags `node` names.
-local function flagged(source: Source, node: Node, item: any): boolean
-	for _, test in flags_named(source, node) do
-		if test(item) then
-			return true
-		end
-	end
-	return false
 end
 
 -- How many edits apart `a` and `b` are, or `most` + 1 when their lengths
@@ -829,31 +825,6 @@ function M.check(parsed: Parsed, source: Source): { Problem }
 	end
 	return problems
 end
-
--- `word` in lower case as a Lua pattern, matching itself.
-local function literal(word: string): string
-	return (string.gsub(word, "[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"))
-end
-
--- Whether `text` (in lower case) has `word` (in lower case): as a whole
--- word, or one starting with it with `prefix`, or anywhere with
--- `anywhere`. Where a word starts or ends with something that isn't a
--- letter or digit ("c++"), that end matches wherever it is.
-local function has_word(text: string, word: string, prefix: boolean?, anywhere: boolean?): boolean
-	if anywhere or word == "" then
-		return string.find(text, word, 1, true) ~= nil
-	end
-	local head = if string.match(word, "^%w") then "%f[%w]" else ""
-	local tail = if prefix or not string.match(word, "%w$") then "" else "%f[%W]"
-	return string.find(text, head .. literal(word) .. tail) ~= nil
-end
-
--- Whether the regex `pattern` matches anywhere in `text`.
-local function finds(text: string, pattern: string): boolean
-	local found = greed.text.matches(text, pattern, 1)
-	return found ~= nil and #found > 0
-end
-
 -- An item's values for `field`, as a list.
 local function values_of(field: Field, item: any): { string }
 	local got = field.get(item)
@@ -865,225 +836,120 @@ local function values_of(field: Field, item: any): { string }
 	return got :: { string }
 end
 
--- Whether one value passes `op` against `want`, as `field`'s kind says.
-local function passes(
-	field: Field,
-	have: string,
-	op: string,
-	want: string,
-	prefix: boolean?
-): boolean
-	local kind = field.kind
-	if kind == "date" then
-		local day = string.sub(have, 1, 10)
-		local from, to = dates.span(want, field.ahead)
-		if from == nil or to == nil then
-			return false
-		elseif op == ":" or op == "=" then
-			return day >= from and day <= to
-		elseif op == "<" then
-			return day < from
-		elseif op == "<=" then
-			return day <= to
-		elseif op == ">" then
-			return day > to
-		elseif op == ">=" then
-			return day >= from
+-- `node` with each date read into the days it covers (`from` and `to`),
+-- as `greed.query.run` takes it: a range from the first day of where it
+-- starts to the last of where it ends.
+local function bind(node: Node, source: Source): Node
+	local out: Node = table.clone(node)
+	if node.items then
+		local items: { Node } = {}
+		for i, item in node.items :: { Node } do
+			items[i] = bind(item, source)
 		end
-		return false
-	elseif kind == "value" then
-		return greed.compare.test(have, if op == ":" then "=" else op, want)
+		out.items = items
 	end
-	local text, wanted = string.lower(have), string.lower(want)
-	if op == ":" and kind == "text" then
-		return has_word(text, wanted, prefix)
-	elseif op == ":" or op == "=" then
-		return if prefix then string.sub(text, 1, #wanted) == wanted else text == wanted
-	elseif op == "~" then
-		return string.find(text, wanted, 1, true) ~= nil
+	local field = if node.kind == "field"
+		then source.fields[string.lower(node.field :: string)]
+		else nil
+	if field and field.kind == "date" then
+		if node.low or node.high then
+			if node.low then
+				out.from = dates.span(node.low, field.ahead)
+			end
+			if node.high then
+				local _, to = dates.span(node.high, field.ahead)
+				out.to = to
+			end
+		elseif node.value then
+			out.from, out.to = dates.span(node.value, field.ahead)
+		end
 	end
-	return greed.compare.test(have, op, want)
+	return out
 end
 
-local function in_range(field: Field, have: string, low: string?, high: string?): boolean
-	if field.kind == "date" then
-		local day = string.sub(have, 1, 10)
-		-- From the first day of where it starts to the last of where it ends.
-		if low then
-			local from = dates.span(low, field.ahead)
-			if from == nil or day < from then
-				return false
+-- `items` as rows for `greed.query.run`, their flags worked out, and after
+-- them the rows they sit in, all the way up, and those they hold, so
+-- `in:`, `under:` and `has:` can look at them.
+local function rows_of(items: { any }, source: Source): { greed.QueryRow }
+	local rows: { greed.QueryRow } = {}
+	local index: { [any]: number } = {}
+	local flags: { [string]: (item: any) -> boolean } = source.flags or {}
+	local function add(item: any): number
+		local known = index[item]
+		if known then
+			return known
+		end
+		local fields: { [string]: string | { string } } = {}
+		for name, field in source.fields do
+			fields[name] = values_of(field, item)
+		end
+		local has: { string } = {}
+		for name, test in flags do
+			if test(item) then
+				table.insert(has, name)
 			end
 		end
-		if high then
-			local _, to = dates.span(high, field.ahead)
-			if to == nil or day > to then
-				return false
+		table.insert(rows, {
+			text = source.text(item),
+			fields = fields,
+			flags = has,
+			name = if source.name then source.name(item) else nil,
+		})
+		index[item] = #rows
+		return #rows
+	end
+	for _, item in items do
+		add(item)
+	end
+	for at = 1, #items do
+		local item = items[at]
+		local below = at
+		local up = if source.parent then source.parent(item) else nil
+		while up ~= nil do
+			local seen = index[up] ~= nil
+			local above = add(up)
+			rows[below].parent = above
+			-- One seen already has its own way up, or will.
+			if seen then
+				break
 			end
+			below = above
+			up = (source.parent :: (any) -> any)(up)
 		end
-		return true
-	end
-	return (low == nil or greed.compare.order(have, low) >= 0)
-		and (high == nil or greed.compare.order(have, high) <= 0)
-end
-
--- Whether any of `have`, values of `field`, passes `op` against `want`.
-local function any_passes(
-	field: Field,
-	have: { string },
-	op: string,
-	want: string,
-	prefix: boolean?
-): boolean
-	for _, value in have do
-		if passes(field, value, op, want, prefix) then
-			return true
-		end
-	end
-	return false
-end
-
--- Whether `have`, the values of `field`, match `node` with its words read
--- as that field's values: the inside of `tag:(garden OR kitchen)`, where
--- `tag:(work money)` wants both.
-local function within(field: Field, node: Node, have: { string }): boolean
-	if node.kind == "word" then
-		return any_passes(field, have, ":", node.text :: string, node.prefix)
-	elseif node.kind == "and" or node.kind == "or" then
-		local all = node.kind == "and"
-		for _, item in node.items :: { Node } do
-			if within(field, item, have) ~= all then
-				return not all
-			end
-		end
-		return all
-	elseif node.kind == "not" then
-		return not within(field, (node.items :: { Node })[1], have)
-	end
-	return false
-end
-
--- Whether `field`'s values pass the field term `node`. A negative test
--- (`!=`, `!~`) passes when none of them is what it says, and when there
--- are none.
-local function field_matches(field: Field, node: Node, item: any): boolean
-	local have = values_of(field, item)
-	local op = node.op :: string
-	if op == "!=" or op == "!~" then
-		return not any_passes(
-			field,
-			have,
-			if op == "!=" then "=" else "~",
-			node.value :: string,
-			node.prefix
-		)
-	elseif node.items then
-		return within(field, (node.items :: { Node })[1], have)
-	end
-	for _, value in have do
-		local ok
-		if node.regex then
-			ok = finds(value, node.regex :: string)
-		elseif node.low or node.high then
-			ok = in_range(field, value, node.low, node.high)
-		else
-			ok = passes(field, value, op, node.value :: string, node.prefix)
-		end
-		if ok then
-			return true
-		end
-	end
-	return false
-end
-
-local matches: (node: Node, item: any, source: Source) -> boolean
-
--- Whether `item` is in, or under, what `node` names or matches.
-local function placed(node: Node, item: any, source: Source, deep: boolean): boolean
-	local parent = source.parent
-	if parent == nil then
-		return false
-	end
-	local up = parent(item)
-	while up ~= nil do
-		local ok
-		if node.items then
-			ok = matches((node.items :: { Node })[1], up, source)
-		else
-			ok = source.named ~= nil and source.named(up, node.value :: string)
-		end
-		if ok or not deep then
-			return ok
-		end
-		up = parent(up)
-	end
-	return false
-end
-
-function matches(node: Node, item: any, source: Source): boolean
-	local kind = node.kind
-	if kind == "and" then
-		for _, inner in node.items :: { Node } do
-			if not matches(inner, item, source) then
-				return false
-			end
-		end
-		return true
-	elseif kind == "or" then
-		for _, inner in node.items :: { Node } do
-			if matches(inner, item, source) then
-				return true
-			end
-		end
-		return false
-	elseif kind == "not" then
-		return not matches((node.items :: { Node })[1], item, source)
-	elseif kind == "word" then
-		return has_word(
-			string.lower(source.text(item)),
-			string.lower(node.text :: string),
-			node.prefix,
-			source.words == "anywhere"
-		)
-	elseif kind == "regex" then
-		return finds(source.text(item), node.text :: string)
-	end
-	local name = string.lower(node.field :: string)
-	if name == "is" then
-		return flagged(source, node, item)
-	elseif name == "in" or name == "under" then
-		return placed(node, item, source, name == "under")
-	elseif name == "has" then
-		-- A child matching the subquery, or one that is what's named
-		-- (`has:attachment` is a child that is:attachment).
 		local children: { any } = if source.children then source.children(item) else {}
 		for _, child in children do
-			local ok = if node.items
-				then matches((node.items :: { Node })[1], child, source)
-				else flagged(source, node, child)
-			if ok then
-				return true
-			end
+			rows[add(child)].parent = at
 		end
-		return false
 	end
-	local field = source.fields[name]
-	return field ~= nil and field_matches(field, node, item)
-end
-
---- Whether `item` matches `parsed` (everything matches an empty query).
-function M.matches(parsed: Parsed, item: any, source: Source): boolean
-	return parsed.query == nil or matches(parsed.query :: Node, item, source)
+	return rows
 end
 
 --- The items of `items` that match `parsed`, sorted and cut to its limit as
---- its view says. Check it first (`check`): a query with problems matches
---- what it can.
-function M.run(parsed: Parsed, items: { any }, source: Source): { any }
+--- its view says, run by `greed.query.run`; nil and why when it can't run.
+--- Check it first (`check`): a query with problems matches what it can.
+function M.run(parsed: Parsed, items: { any }, source: Source): ({ any }?, string?)
+	-- Every flag is worked out for the rows (`rows_of`), so none is a maybe.
+	local kinds: { [string]: string } = {}
+	for name, field in source.fields do
+		kinds[name] = field.kind
+	end
+	local flags: { [string]: string } = {}
+	local all: { [string]: (item: any) -> boolean } = source.flags or {}
+	for name in all do
+		flags[name] = "row"
+	end
+	local query: Node? = if parsed.query then bind(parsed.query, source) else nil
+	local schema: greed.QuerySchema =
+		{ fields = kinds, flags = flags, anywhere = source.words == "anywhere" }
+	local found, _, err = greed.query.run(query, rows_of(items, source), schema)
+	if found == nil then
+		return nil, err
+	end
 	local out: { any } = {}
-	for _, item in items do
-		if M.matches(parsed, item, source) then
-			table.insert(out, item)
+	for _, at in found do
+		-- Only the items asked about, not the rows they sit in.
+		if at <= #items then
+			table.insert(out, items[at])
 		end
 	end
 	local keys = parsed.view.sort
@@ -1107,9 +973,9 @@ function M.run(parsed: Parsed, items: { any }, source: Source): { any }
 	local limit = parsed.view.limit
 	if limit and #out > limit then
 		local cut: { any } = table.move(out, 1, limit, 1, {})
-		return cut
+		return cut, nil
 	end
-	return out
+	return out, nil
 end
 
 return M

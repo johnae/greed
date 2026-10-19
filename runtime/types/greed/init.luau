@@ -1618,6 +1618,18 @@ export type Compare = {
 	find: (text: string) -> (number?, number?, string?),
 }
 
+--- A row for `greed.query.run`: its `text` for words, its `fields`' values by name (a string or a list), the `flags` it has, its `name` (for `in:NAME`) and the row it's in (`parent`, its index in the list).
+export type QueryRow = { text: string?, fields: { [string]: string | { string } }?, flags: { string }?, name: string?, parent: number? }
+
+--- What a query's fields and flags mean, for `greed.query.run`: each field's kind by name ("text", "exact", "value" or "date"), each flag's by name ("row", kept on the rows, or "computed", worked out by the source, so rows that depend on it are a maybe), and whether words match `anywhere` in the text rather than as whole words.
+export type QuerySchema = { fields: { [string]: string }?, flags: { [string]: string }?, anywhere: boolean? }
+
+--- Running a query `core.query` parsed, with its dates read into the days they cover (`from` and `to` on a date field's term).
+export type Query = {
+	--- The rows of `rows` that match `query` (all of them, for nil), by their index and in their order, and those of them that only might, where it depends on a computed flag. Nil and why for a query that can't run, like a regex that doesn't compile.
+	run: (query: any, rows: { QueryRow }, schema: QuerySchema) -> ({ number }?, { number }?, string?),
+}
+
 --- A match of a regex in some text, from `greed.text.matches`.
 export type TextMatch = { from: number, to: number, text: string, groups: { string | false } }
 
@@ -2037,6 +2049,7 @@ export type Greed = {
 	fs: Fs,
 	hash: Hash,
 	compare: Compare,
+	query: Query,
 	text: Text,
 	control: Control,
 	json: Json,

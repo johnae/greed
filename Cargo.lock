@@ -1503,6 +1503,10 @@ dependencies = [
 [[package]]
 name = "greed-index"
 version = "0.2.1"
+dependencies = [
+ "regex",
+ "serde",
+]
 
 [[package]]
 name = "greed-text"

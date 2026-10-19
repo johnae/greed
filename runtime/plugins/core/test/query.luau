@@ -208,8 +208,8 @@ test("the shared cases: what every engine running a query must agree on", functi
 			end
 			return out
 		end,
-		named = function(item: any, name: string): boolean
-			return item.name ~= nil and string.lower(item.name) == string.lower(name)
+		name = function(item: any): string?
+			return item.name
 		end,
 	}
 	local y, m, d = string.match(cases.today, "^(%d+)-(%d+)-(%d+)$")
@@ -241,7 +241,9 @@ test("the shared cases: what every engine running a query must agree on", functi
 			else
 				assert(#problems == 0, `{case.query}: {problems[1] and problems[1].message}`)
 				local ids: { string } = {}
-				for _, item in query.run(parsed, cases.items, source) do
+				local found, why = query.run(parsed, cases.items, source)
+				assert(found, `{case.query}: {why}`)
+				for _, item in found do
 					table.insert(ids, item.id)
 				end
 				local got, want = table.concat(ids, " "), table.concat(case.ids, " ")

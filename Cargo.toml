@@ -19,6 +19,7 @@ ignore = "0.4"
 mlua = { version = "0.12", features = ["luau", "error-send", "serialize"] }
 nucleo-matcher = "0.3"
 proptest = "1.11"
+regex = "1"
 regex-cursor = { version = "0.1", features = ["ropey"] }
 ropey = { version = "1.6", default-features = false, features = ["simd", "cr_lines"] }
 serde = { version = "1", features = ["derive", "rc"] }

@@ -31,6 +31,7 @@ mod pdf;
 mod plugin;
 mod process;
 mod projects;
+mod query;
 mod requests;
 mod rpc;
 mod scenes;
