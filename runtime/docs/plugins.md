@@ -1125,12 +1125,15 @@ greed.tab.set_layout({
   data plugin draws its tables under a block.
 - `require("@core").data` is where tables of data come from: one shape,
   `{ columns = { { name, kind? } }, rows = { { [name] = value } } }`, and
-  sources by name. `data.source({ name, doc, runs?, read, watch? })` adds
-  one: `read(ask)` gives the table for an ask (`args`, `body`, `values` to
-  bind as parameters, `dir`, `limit`, `offset`), and may wait. A source
-  that `runs` a program or reaches a service is let run per file as code
-  blocks are. `data.read(name, ask)` reads one, and a Markdown block named
-  after a source shows its table (the data plugin).
+  sources by name. `data.source({ name, doc, runs?, read, watch?, actions? })`
+  adds one: `read(ask)` gives the table for an ask (`args`, `body`,
+  `values` to bind as parameters, `dir`, `limit`, `offset`), and may wait.
+  A source that `runs` a program or reaches a service is let run per file
+  as code blocks are. `actions`, each `{ name, run(row), close? }`, are
+  offered as buttons under a row when it's opened from the table; a row
+  can carry values besides its columns for them to use. `data.read(name,
+  ask)` reads one, and a Markdown block named after a source shows its
+  table (the data plugin).
 
 ## Clients
 

@@ -47,14 +47,22 @@ export type Ask = {
 --- there's none. `watch`, if given, calls `changed` when the table may be
 --- different (its file changed) and gives back what stops watching.
 --- `runs` says it runs programs or reaches a service, so what asks for it
---- in a file asks you first, as a code block does.
+--- in a file asks you first, as a code block does. `actions` are what can
+--- be done with a row, offered under it when it's opened: each `run` gets
+--- the row (with any values it carries besides its columns) and may say
+--- what it did.
 export type Source = {
 	name: string,
 	doc: string?,
 	runs: boolean?,
 	read: (ask: Ask) -> (Table?, string?),
 	watch: ((ask: Ask, changed: () -> ()) -> () -> ())?,
+	actions: { Action }?,
 }
+
+--- Something that can be done with a row of a source's table; with
+--- `close`, the table showing it closes, as for going somewhere else.
+export type Action = { name: string, run: (row: { [string]: any }) -> string?, close: boolean? }
 
 local sources: { Source } = {}
 

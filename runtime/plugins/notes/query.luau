@@ -648,18 +648,55 @@ function M.search(
 end
 
 -- What a block of notes' items shows: whether it's done (for a todo), its
--- words, its due date and its note.
+-- words, its due date and its note; and, for its actions, the line it's
+-- on and whether it's a todo that's done.
 local function row_of(item: Item): { [string]: any }
 	local node = item.node
 	local task = if node then node.task else nil
 	local due = if task then FIELDS.due.get(item) else nil
+	local done = task ~= nil and todos.done_now(task.text, task.done)
 	return {
-		[""] = if task then (if todos.done_now(task.text, task.done) then "☑" else "☐") else "",
+		[""] = if task then (if done then "☑" else "☐") else "",
 		what = M.label(item),
 		due = if type(due) == "string" then dates.short(due) else nil,
 		note = item.note.name,
+		line = if node then node.line else nil,
+		todo = task ~= nil,
+		done = done,
 	}
 end
+
+-- What can be done with a row of a block of notes: tick a todo off (or
+-- tick it again), and open the note where it is. The data plugin runs
+-- them, so they're notes' own doing (`greed.vouch`): ticking only changes
+-- a todo's box, and fails on a line that isn't one.
+local ACTIONS: { core.DataAction } = {
+	{
+		name = "Tick or untick",
+		run = function(row: { [string]: any }): string?
+			if not row.todo then
+				return "only a todo has a box to tick"
+			end
+			local change: todos.Change = { done = not row.done }
+			greed.vouch(todos.update, row.note, row.line, change)
+			return if row.done then `{row.what}: not done` else `{row.what}: done`
+		end,
+	},
+	{
+		name = "Open",
+		close = true,
+		run = function(row: { [string]: any }): string?
+			greed.vouch(function()
+				if row.line then
+					todos.open_at(row.note, row.line)
+				else
+					core.file.open(notes.path(row.note))
+				end
+			end)
+			return nil
+		end,
+	},
+}
 
 -- Those watching what a block of notes shows, told when the notes change.
 local watching: { () -> () } = {}
@@ -706,6 +743,7 @@ core.data.source({
 	watch = function(_, changed: () -> ()): () -> ()
 		return core.registry.put(watching, changed)
 	end,
+	actions = ACTIONS,
 })
 
 return M

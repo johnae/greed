@@ -18,6 +18,9 @@ local PAGE = 50
 
 local KIND = "data-table"
 
+-- A row's record, opened from the table.
+local ROW = "data-row"
+
 --- Opens the data block `code` of `buffer` in a float, reading its table
 --- a page at a time.
 function M.open(buffer: greed.Buffer, code: any)
@@ -33,7 +36,7 @@ function M.open(buffer: greed.Buffer, code: any)
 	float_buffer:set_line_numbers(false)
 	local what = ask.args.path or ask.args.db
 	local title = if what then `{code.lang} · {what}` else code.lang
-	greed.float(float_buffer, { title = title, width = "90%", height = "70%" })
+	local table_view = greed.float(float_buffer, { title = title, width = "90%", height = "70%" })
 	local view: core.UiView
 	local function read()
 		view:set({ status = "reading" })
@@ -45,6 +48,54 @@ function M.open(buffer: greed.Buffer, code: any)
 	local function turn(by: number)
 		ask.offset = math.max((ask.offset or 0) + by * limit, 0)
 		read()
+	end
+	-- A row's record, with what the source can do with it as buttons;
+	-- doing one that leaves the table open reads it again.
+	local function show_row(t: core.DataTable, row: { [string]: any })
+		local lines: { string } = {}
+		for _, column in t.columns do
+			table.insert(lines, `{column.name}: {core.data.show(row[column.name])}`)
+		end
+		local actions: { core.DataAction } = source.actions or {}
+		if #actions == 0 then
+			core.floats.show_text("Row", table.concat(lines, "\n"), { kind = ROW })
+			return
+		end
+		local record = greed.create_buffer(ROW, "", { readonly = true })
+		record:set_line_numbers(false)
+		local shown = greed.float(record, { title = "Row", width = "60%", height = "40%" })
+		ui.mount(record, function()
+			local parts: { core.UiNode } = {}
+			for _, line in lines do
+				table.insert(parts, ui.text(line))
+			end
+			local buttons: { core.UiNode } = {}
+			for _, action in actions do
+				table.insert(
+					buttons,
+					ui.button(action.name, function()
+						greed.spawn(function()
+							if shown:valid() then
+								shown:close()
+							end
+							if action.close and table_view:valid() then
+								table_view:close()
+							end
+							local ok, said = pcall(action.run, row)
+							if not ok or said then
+								greed.echo(tostring(said))
+							end
+							if not action.close then
+								read()
+							end
+						end)
+					end)
+				)
+			end
+			table.insert(parts, ui.gap())
+			table.insert(parts, ui.row(buttons, { gap = 2, fit = true }))
+			return ui.column(parts)
+		end, {})
 	end
 	view = ui.mount(float_buffer, function(state)
 		local parts: { core.UiNode } = {}
@@ -69,11 +120,7 @@ function M.open(buffer: greed.Buffer, code: any)
 			table.insert(
 				parts,
 				document.node(t, function(row: { [string]: any })
-					local lines: { string } = {}
-					for _, column in t.columns do
-						table.insert(lines, `{column.name}: {core.data.show(row[column.name])}`)
-					end
-					core.floats.show_text("Row", table.concat(lines, "\n"), { kind = "data-row" })
+					show_row(t, row)
 				end)
 			)
 		else
@@ -121,14 +168,16 @@ greed.command({
 
 greed.command({
 	name = "data-close",
-	doc = "Close the float showing a data block's table",
+	doc = "Close the float showing a data block's table, or a row of it",
 	run = function(ctx)
-		if ctx.buffer:kind() == KIND then
+		local kind = ctx.buffer:kind()
+		if kind == KIND or kind == ROW then
 			ctx.view:close()
 		end
 	end,
 })
 
 greed.keymap.bind({ kind = KIND }, { q = "data-close", esc = "data-close" })
+greed.keymap.bind({ kind = ROW }, { q = "data-close", esc = "data-close" })
 
 return M

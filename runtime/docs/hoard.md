@@ -288,6 +288,10 @@ The query is the one Greed searches with everywhere: words, `field:value`,
 - `sort:due`, `sort:-date` (newest first) and `limit:20` say how to list
   them.
 
+To tick a todo the block lists, open its table (`enter` on its top
+border, or `:data-open` on the block) and `enter` on the todo: `Tick or
+untick` ticks it in its note, and `Open` goes to it.
+
 A query with a mistake says what's wrong where its results would be. The
 agent can ask the same questions (`notes_query`), so "what's overdue in my
 garden notes?" gets the same answer.

@@ -127,3 +127,64 @@ test("a notes block in a note shows what its query finds, and keeps up", functio
 		return string.find(shown(), "fix the sink", 1, true) ~= nil
 	end)
 end)
+
+test("a todo in a notes block is ticked from its row, and the note opened", function(t)
+	vault(t)
+	local dir = greed.option.get("notes-folder") :: string
+	greed.fs.write(`{dir}/agenda.md`, "# Soon\n\n```notes\nis:overdue\n```\n")
+	notes.index.refresh()
+	greed.open(`{dir}/agenda.md`)
+	local view = greed.view()
+	t:wait_for(function()
+		local found = false
+		for _, mark in view:buffer():decorations("data-blocks") do
+			found = found or string.find(tostring(mark.text), "1 row", 1, true) ~= nil
+		end
+		return found
+	end)
+	local at = assert((string.find(view:buffer():text(), "```notes", 1, true))) - 1
+	view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+	t:keys("space m o")
+	local float = greed.view()
+	local shown = float:buffer()
+	t:wait_for(function()
+		return string.find(shown:slice(0, shown:len()), "fix the tap", 1, true) ~= nil
+	end)
+	local row = assert((string.find(shown:slice(0, shown:len()), "fix the tap", 1, true))) - 1
+	float:set_selection({ ranges = { { anchor = row, head = row } }, primary = 1 })
+	t:keys("enter")
+	local record = greed.view():buffer()
+	local text = record:slice(0, record:len())
+	local tick = assert(string.find(text, "Tick or untick", 1, true), text) - 1
+	greed.view():set_selection({ ranges = { { anchor = tick, head = tick } }, primary = 1 })
+	t:keys("enter")
+	t:wait_for(function()
+		return string.find(greed.fs.read(`{dir}/kitchen.md`) or "", "- [x] fix the tap", 1, true)
+			~= nil
+	end)
+	-- Open, on another row: the floats close and the note is where it is.
+	greed.fs.write(
+		`{dir}/kitchen.md`,
+		`- [ ] call the plumber due:{notes.dates.add_days(notes.today(), -1)}\n`
+	)
+	notes.index.refresh()
+	local again_button = assert((string.find(shown:slice(0, shown:len()), "Read again", 1, true)))
+		- 1
+	float:set_selection({ ranges = { { anchor = again_button, head = again_button } }, primary = 1 })
+	t:keys("enter")
+	t:wait_for(function()
+		return string.find(shown:slice(0, shown:len()), "call the plumber", 1, true) ~= nil
+	end)
+	local again = assert((string.find(shown:slice(0, shown:len()), "call the plumber", 1, true)))
+		- 1
+	float:set_selection({ ranges = { { anchor = again, head = again } }, primary = 1 })
+	t:keys("enter")
+	local second = greed.view():buffer()
+	local open = assert((string.find(second:slice(0, second:len()), "Open", 1, true))) - 1
+	greed.view():set_selection({ ranges = { { anchor = open, head = open } }, primary = 1 })
+	t:keys("enter")
+	t:wait_for(function()
+		return greed.view():buffer():path() == `{dir}/kitchen.md`
+	end)
+	assert(not float:valid(), "the table closed")
+end)

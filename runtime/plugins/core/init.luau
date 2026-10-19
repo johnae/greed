@@ -110,6 +110,7 @@ export type FormulaScope = formula.Scope
 export type DataTable = data.Table
 export type DataColumn = data.Column
 export type DataSource = data.Source
+export type DataAction = data.Action
 export type DataAsk = data.Ask
 --- A view of a plugin's interface and what it's made of (ui.luau).
 export type UiView = ui.View
