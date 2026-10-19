@@ -40,6 +40,7 @@
 		"hub": "./plugins/hub",
 		"kubernetes": "./plugins/kubernetes",
 		"board": "./plugins/board",
+		"mail": "./plugins/mail",
 		"scene": "./plugins/scene",
 		"chart": "./plugins/chart",
 		"data": "./plugins/data",

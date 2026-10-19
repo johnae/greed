@@ -9,6 +9,7 @@
   - [The shell](shell.md)
   - [Boards](boards.md)
   - [Charts](charts.md)
+  - [Mail](mail.md)
 - [Editing styles](editing-styles.md)
 - [Keys](keys.md)
 - [Highlighting](highlighting.md)

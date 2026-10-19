@@ -1,0 +1,5 @@
+name = "mail"
+requires = ["core"]
+# It runs greed-mail, which syncs your mail (proc), and reads the index it
+# keeps of it (fs.read).
+capabilities = ["proc", "fs.read"]
