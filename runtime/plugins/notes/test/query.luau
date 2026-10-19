@@ -91,3 +91,39 @@ test("a query with a mistake says so, and agents get the same", function(t)
 	local wrong = run_tool({ query = "dew:today" })
 	assert(#wrong.problems > 0, "problems back")
 end)
+
+test("a notes block in a note shows what its query finds, and keeps up", function(t)
+	vault(t)
+	local dir = greed.option.get("notes-folder") :: string
+	greed.fs.write(`{dir}/agenda.md`, "# Soon\n\n```notes\nis:todo is:open is:overdue\n```\n")
+	notes.index.refresh()
+	greed.open(`{dir}/agenda.md`)
+	local buffer = greed.view():buffer()
+	local function shown(): string
+		local out = {}
+		for _, mark in buffer:decorations("data-blocks") do
+			local lines: { greed.MarkLine } = mark.lines or {}
+			for _, line in lines do
+				if type(line) == "string" then
+					table.insert(out, line)
+				else
+					for _, piece in line do
+						table.insert(out, piece.text)
+					end
+				end
+			end
+		end
+		return table.concat(out, " ")
+	end
+	t:wait_for(function()
+		return string.find(shown(), "fix the tap", 1, true) ~= nil
+	end)
+	greed.fs.write(
+		`{dir}/kitchen.md`,
+		`- [ ] fix the sink due:{notes.dates.add_days(notes.today(), -2)}\n`
+	)
+	notes.index.refresh()
+	t:wait_for(function()
+		return string.find(shown(), "fix the sink", 1, true) ~= nil
+	end)
+end)

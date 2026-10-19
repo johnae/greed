@@ -248,6 +248,46 @@ what you add to it, under **Thoughts** or anywhere, stays.
 Ticking a todo off writes the day on it, `done:2026-10-18`, which is how
 the review knows; unticking takes it away.
 
+## Lists that keep themselves: queries
+
+A `notes` block in any note lists what its query finds, and keeps it
+current as your notes change:
+
+````markdown
+```notes
+is:todo is:open due:..+7d sort:due
+```
+````
+
+The query is the one Greed searches with everywhere: words, `field:value`,
+`-` for not, `OR` for either, and `( )` to group.
+
+| You write | It finds |
+|---|---|
+| `is:todo is:open due:..+7d sort:due` | what's due in the next week, soonest first |
+| `is:overdue OR is:waiting` | what's late, and what has waited a long time |
+| `is:todo in:(tag:garden) -is:done` | open todos in notes tagged garden |
+| `is:note tag:meeting date:2w..` | meetings in the last two weeks |
+| `is:note has:(is:todo is:open)` | notes with something still to do |
+| `is:habit` | your habits |
+| `done:this-week` | what you ticked off this week |
+
+- What: `is:note`, `is:todo`, `is:heading`.
+- Todos: `is:open`, `is:done`, `is:overdue`, `is:today` (as the agenda's
+  Today has it), `is:due-today`, `is:habit`, `is:recurring`, `is:waiting`.
+- Fields: `title`, `note`, `tag` (a todo has its note's tags too), `due`,
+  `done`, `starts`, `until`, `every`, `date` (a day's note's day, or when
+  a note last changed), `modified`, and your own `key:: value` fields and
+  front matter.
+- Where: `in:NAME` or `in:(query)` for what's in a note, `has:(query)` for
+  notes holding something.
+- `sort:due`, `sort:-date` (newest first) and `limit:20` say how to list
+  them.
+
+A query with a mistake says what's wrong where its results would be. The
+agent can ask the same questions (`notes_query`), so "what's overdue in my
+garden notes?" gets the same answer.
+
 ## Adding from anywhere
 
 From any shell, without opening anything:

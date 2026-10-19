@@ -13,7 +13,8 @@
 -- notes. Flags: what an item is (`note`, `todo`, `heading`), `done` and
 -- `open`, and what depends on today: `overdue`, `today` (due today, or
 -- written in today's note without a date, as the agenda has it),
--- `due-today`, `habit`, `recurring` and `waiting`.
+-- `due-today`, `habit`, `recurring` and `waiting`. A `notes` block in a
+-- note shows what its query finds (below).
 
 local core = require("@core")
 local notes = require("./notes")
@@ -310,5 +311,66 @@ function M.run(text: string): ({ Item }?, { core.QueryProblem })
 	end
 	return found, hints
 end
+
+-- What a block of notes' items shows: whether it's done (for a todo), its
+-- words, its due date and its note.
+local function row_of(item: Item): { [string]: any }
+	local node = item.node
+	local task = if node then node.task else nil
+	local due = if task then FIELDS.due.get(item) else nil
+	return {
+		[""] = if task then (if todos.done_now(task.text, task.done) then "☑" else "☐") else "",
+		what = if task then todos.plain(task.text) elseif node then node.text else item.note.title,
+		due = if type(due) == "string" then dates.short(due) else nil,
+		note = item.note.name,
+	}
+end
+
+-- Those watching what a block of notes shows, told when the notes change.
+local watching: { () -> () } = {}
+
+index.on_changed(function()
+	for _, changed in table.clone(watching) do
+		changed()
+	end
+end)
+
+-- A Markdown block of notes, its query the block's text, shows what it
+-- finds, as the data plugin draws a table, and again as the notes change:
+--
+--     ```notes
+--     is:todo is:open due:..+7d sort:due
+--     ```
+core.data.source({
+	name = "notes",
+	doc = "Your notes, todos and headings a query finds, like is:todo is:open due:..+7d",
+	read = function(ask: core.DataAsk): (core.DataTable?, string?)
+		local text = string.gsub(ask.body, "%s+", " ")
+		local found, problems = M.run(text)
+		if found == nil then
+			return nil, if problems[1] then problems[1].message else "the query couldn't run"
+		end
+		local from = (ask.offset or 0) + 1
+		local last = if ask.limit then math.min(#found, from + ask.limit - 1) else #found
+		local rows = {}
+		for i = from, last do
+			table.insert(rows, row_of(found[i]))
+		end
+		return {
+			columns = {
+				{ name = "" },
+				{ name = "what" },
+				{ name = "due" },
+				{ name = "note" },
+			},
+			rows = rows,
+			more = last < #found,
+		},
+			nil
+	end,
+	watch = function(_, changed: () -> ()): () -> ()
+		return core.registry.put(watching, changed)
+	end,
+})
 
 return M
