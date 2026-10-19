@@ -13,7 +13,7 @@ use crate::compare;
 use crate::query::{self, Answer, Flag, Kind, Node, Query, Row, Rows, Schema};
 
 /// The version of the tables; an index made by another is made again.
-const VERSION: &str = "3";
+const VERSION: &str = "4";
 
 /// How many candidates are loaded and checked at a time.
 const CHUNK: usize = 1000;
@@ -49,6 +49,7 @@ CREATE INDEX IF NOT EXISTS flags_item ON item_flags (item);
 CREATE VIRTUAL TABLE IF NOT EXISTS words USING fts5 (
     text, tokenize = 'unicode61 remove_diacritics 2'
 );
+-- Each value's words, under the rowid of its row in item_values.
 CREATE VIRTUAL TABLE IF NOT EXISTS field_words USING fts5 (
     value, field UNINDEXED, item UNINDEXED, tokenize = 'unicode61 remove_diacritics 2'
 );
@@ -169,8 +170,8 @@ impl Index {
                         (id, &field, value, query::fold(value), compare::number(value, false)),
                     )?;
                     tx.execute(
-                        "INSERT INTO field_words (value, field, item) VALUES (?1, ?2, ?3)",
-                        (value, &field, id),
+                        "INSERT INTO field_words (rowid, value, field, item) VALUES (?1, ?2, ?3, ?4)",
+                        (tx.last_insert_rowid(), value, &field, id),
                     )?;
                 }
             }
@@ -390,9 +391,13 @@ fn forget(tx: &rusqlite::Transaction, key: &str) -> Result<(), Trouble> {
         .query_row("SELECT id FROM items WHERE key = ?1", [key], |r| r.get(0))
         .ok();
     if let Some(id) = id {
+        // By rowid: field_words can't look up by item without reading all of it.
+        tx.execute(
+            "DELETE FROM field_words WHERE rowid IN (SELECT rowid FROM item_values WHERE item = ?1)",
+            [id],
+        )?;
         tx.execute("DELETE FROM item_values WHERE item = ?1", [id])?;
         tx.execute("DELETE FROM item_flags WHERE item = ?1", [id])?;
-        tx.execute("DELETE FROM field_words WHERE item = ?1", [id])?;
         tx.execute("DELETE FROM words WHERE rowid = ?1", [id])?;
         tx.execute("DELETE FROM items WHERE id = ?1", [id])?;
     }
@@ -743,6 +748,50 @@ mod tests {
         assert_eq!(index.count().unwrap(), 2);
         index.remove(&["a".into()]).unwrap();
         assert_eq!(index.count().unwrap(), 1);
+    }
+
+    #[test]
+    fn a_fields_words_go_with_its_item() {
+        let path = temp("field-words");
+        let mut index = Index::open(&path).unwrap();
+        let titled = |key: &str, title: &str| Item {
+            fields: HashMap::from([("title".to_string(), vec![title.to_string()])]),
+            ..item(key, "")
+        };
+        index
+            .write(&[titled("a", "Garden plans"), titled("b", "Garden tools")])
+            .unwrap();
+        let schema = Schema {
+            fields: HashMap::from([("title".to_string(), Kind::Text)]),
+            ..Schema::default()
+        };
+        let found = |index: &Index, title: &str| {
+            let node = Node {
+                kind: "field".into(),
+                field: Some("title".into()),
+                op: Some(":".into()),
+                value: Some(title.into()),
+                ..Node::default()
+            };
+            index
+                .search(Some(&node), &schema, &View::default())
+                .unwrap()
+                .keys
+        };
+        assert_eq!(found(&index, "garden"), ["a", "b"]);
+        index.write(&[titled("a", "Kitchen plans")]).unwrap();
+        assert_eq!(found(&index, "garden"), ["b"], "a's old title is gone");
+        assert_eq!(found(&index, "kitchen"), ["a"]);
+        index.remove(&["b".into()]).unwrap();
+        assert_eq!(found(&index, "garden"), Vec::<String>::new());
+        let rows = |table: &str| -> i64 {
+            index
+                .db
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(rows("field_words"), 1);
+        assert_eq!(rows("item_values"), 1);
     }
 
     #[test]
