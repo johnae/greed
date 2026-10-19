@@ -15,12 +15,14 @@ local core = require("@core")
 local notes = require("@notes")
 local home = require("@self/home")
 local review = require("@self/review")
+local agenda = require("@self/agenda")
 require("@self/complete")
 
 local M = {}
 
 M.home = home
 M.review = review
+M.agenda = agenda
 
 --- The session `greed notes` starts.
 M.SESSION = "hoard"

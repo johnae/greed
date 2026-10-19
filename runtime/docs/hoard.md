@@ -72,7 +72,9 @@ that:
   date, or to a day you type in plain words, like `friday` or `in 3 days`.
 - **From before** brings back what you'd otherwise forget (see "Looking
   back" below).
-- **Inbox** opens the note todos are captured to from elsewhere, and
+- **Inbox** opens the note todos are captured to from elsewhere,
+  **Agenda note** opens a note of queries for what's due (made the first
+  time, then yours to change; see "Lists that keep themselves" below), and
   **All todos** lists every open todo, soonest first.
 - **Recent notes** are the ones changed last.
 - **Today** shows what you wrote in today's note, its todos being in the

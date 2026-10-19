@@ -495,3 +495,25 @@ test(
 		end)
 	end
 )
+
+test(
+	"the agenda note is made the first time, its blocks queries that run, and then it's yours",
+	function(t)
+		local dir = folder(t, { ["work.md"] = `# Work\n- [ ] pay rent due:{day(-1)}\n` })
+		hoard.agenda.open()
+		local path = `{dir}/agenda.md`
+		assert(greed.view():buffer():path() == path, greed.view():buffer():path())
+		local text = assert(greed.fs.read(path))
+		local count = 0
+		for query in string.gmatch(text, "```notes\n(.-)\n```") do
+			count += 1
+			local items, problems = notes.query.run(query)
+			assert(items, `{query}: {if problems[1] then problems[1].message else "?"}`)
+		end
+		assert(count == 5, tostring(count))
+		-- Changed, it stays as you made it.
+		greed.fs.write(path, "# Mine\n")
+		hoard.agenda.open()
+		assert(greed.fs.read(path) == "# Mine\n", "kept")
+	end
+)

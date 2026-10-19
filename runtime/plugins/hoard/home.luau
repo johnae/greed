@@ -9,6 +9,7 @@ local greed = require("@greed")
 local core = require("@core")
 local notes = require("@notes")
 local review = require("./review")
+local agenda_note = require("./agenda")
 local picker = require("@picker")
 
 local ui = core.ui
@@ -513,6 +514,9 @@ function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 		ui.row({
 			ui.button(if inbox == 1 then "Inbox: 1 todo" else `Inbox: {inbox} todos`, function()
 				open(todos.inbox())
+			end),
+			ui.button("Agenda note", function()
+				agenda_note.open()
 			end),
 			ui.button("All todos", function()
 				greed.run("notes-agenda")
