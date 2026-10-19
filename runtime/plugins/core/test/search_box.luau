@@ -33,6 +33,12 @@ local SOURCE: core.QuerySource = {
 	text = function(m: Mail): string
 		return m.text
 	end,
+	parent = function(): any
+		return nil
+	end,
+	names = function(): { string }
+		return { "Inbox", "Göteborg" }
+	end,
 }
 
 -- Opens a box over MAIL, counting its results; gives what's submitted.
@@ -125,6 +131,22 @@ test("tab completes fields, flags and a field's values", function(t)
 	assert(greed.view():buffer():text() == "from:bob", greed.view():buffer():text())
 	t:keys("space - u n r tab")
 	assert(greed.view():buffer():text() == "from:bob -is:unread", greed.view():buffer():text())
+end)
+
+test("tab after in: completes the names there are, and a name that isn't one says so", function(t)
+	open(t)
+	t:keys("i n : g o t tab")
+	assert(greed.view():buffer():text() == "in:Göteborg", greed.view():buffer():text())
+	t:keys("esc")
+	open(t)
+	t:keys("i n : n o w h e r e space")
+	local said: string? = nil
+	for _, mark in marks() do
+		if mark.eol then
+			said = mark.text
+		end
+	end
+	assert(said and string.find(said, "nothing here is named nowhere", 1, true), tostring(said))
 end)
 
 test("up brings back queries submitted in boxes of the same history", function(t)

@@ -729,7 +729,9 @@ export type Field = {
 --- their `flags` for `is:`, their `text` for words, and where they sit, for
 --- `in:`, `under:` and `has:` (`parent`, `children`, and an item's `name`,
 --- for `in:NAME`). Words match whole words, or with `words` "anywhere",
---- anywhere in the text, as the shell's filters do.
+--- anywhere in the text, as the shell's filters do. `names` lists the
+--- names there are to look in, to say when `in:` names none of them and
+--- for a search box to complete.
 ---
 --- A source kept in an index (`index_items`, `search`) also says each
 --- item's `key`, and which of its flags are `stored` in the index; the
@@ -743,6 +745,7 @@ export type Source = {
 	parent: ((item: any) -> any)?,
 	children: ((item: any) -> { any })?,
 	name: ((item: any) -> string?)?,
+	names: (() -> { string })?,
 	key: ((item: any) -> string)?,
 	stored: { string }?,
 }
@@ -824,6 +827,31 @@ function M.check(parsed: Parsed, source: Source): { Problem }
 			problem(`{text} isn't a date; try today, 2w, monday, 2026-10 or this week`, at)
 		end
 	end
+	-- Says so when `in:` or `under:` (`place`) names nothing the source
+	-- has, as names compare: without minding case or accents, and while
+	-- it's typed, by its start.
+	local function named(place: string, node: Node)
+		local want = greed.query.fold(node.value :: string)
+		local names: { string } = (source.names :: () -> { string })()
+		local folded: { string } = {}
+		local named_as: { [string]: string } = {}
+		for _, name in names do
+			local have = greed.query.fold(name)
+			if have == want or (node.live and string.sub(have, 1, #want) == want) then
+				return
+			end
+			table.insert(folded, have)
+			named_as[have] = name
+		end
+		local near = closest(want, folded)
+		near = if near then named_as[near] else nil
+		problem(
+			if near
+				then `nothing here is named {node.value}; did you mean {place}:{near}?`
+				else `nothing here is named {node.value}`,
+			node.at
+		)
+	end
 	local function regex_ok(pattern: string, at: At)
 		local _, err = greed.text.matches("", pattern, 1)
 		if err then
@@ -863,6 +891,9 @@ function M.check(parsed: Parsed, source: Source): { Problem }
 				or (name ~= "has" and source.parent == nil)
 			then
 				problem(`{name}: needs items that sit in others, and these don't`, node.at)
+			end
+			if name ~= "has" and node.items == nil and node.value and source.names then
+				named(name, node)
 			end
 			if node.items then
 				walk((node.items :: { Node })[1])

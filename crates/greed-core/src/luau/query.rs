@@ -96,5 +96,9 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             },
         )?,
     )?;
+    module.set(
+        "fold",
+        lua.create_function(|_, text: String| Ok(query::fold(&text)))?,
+    )?;
     Ok(module)
 }

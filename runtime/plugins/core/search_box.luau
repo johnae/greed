@@ -389,9 +389,14 @@ function M.complete(view: greed.View): { Item }?
 	local field, op = string.match(typed, "^([%w_][%w_%.%-]*)([:=~<>!]+)")
 	if field and op then
 		local name = string.lower(field)
+		local names = source and source.names
 		if name == "is" or name == "has" then
 			for flag in flags do
 				offer(`{field}{op}{flag}`, "flag")
+			end
+		elseif (name == "in" or name == "under") and names then
+			for _, place in names() do
+				offer(`{field}{op}{written(place)}`, "place")
 			end
 		elseif options.values then
 			for _, value in options.values(name) do
@@ -422,10 +427,10 @@ function M.complete(view: greed.View): { Item }?
 	table.sort(items, function(a: Item, b: Item): boolean
 		return a.label < b.label
 	end)
-	local lower = string.lower(typed)
+	local folded = greed.query.fold(typed)
 	local holding: { Item } = {}
 	for _, item in items do
-		if string.find(string.lower(item.label), lower, 1, true) then
+		if string.find(greed.query.fold(item.label), folded, 1, true) then
 			table.insert(holding, item)
 		end
 	end

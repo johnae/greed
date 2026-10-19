@@ -1628,6 +1628,8 @@ export type QuerySchema = { fields: { [string]: string }?, flags: { [string]: st
 export type Query = {
 	--- The rows of `rows` that match `query` (all of them, for nil), by their index and in their order, and those of them that only might, where it depends on a computed flag. Nil and why for a query that can't run, like a regex that doesn't compile.
 	run: (query: any, rows: { QueryRow }, schema: QuerySchema) -> ({ number }?, { number }?, string?),
+	--- `text` as queries compare words and values when case doesn't matter: in lower case, with accents taken off ("Café" as "cafe").
+	fold: (text: string) -> string,
 }
 
 --- An item for `index:write`: its `key`, unique in the index, the `parent` key of the item it's in, its `name` (for `in:NAME`), its `text` for words, its `fields`' values by name (a string or a list) and its `flags`.

@@ -2061,8 +2061,10 @@ word at the end, since that word matches by prefix until a space settles it.
 Mistakes are underlined and said after the query, and the title says how many
 results there are. With none, it also says which term to leave out to find
 the most (`0 results · 12 without tag:home`). `tab` completes the source's
-fields and flags, and `values` after `field:`. `up` and `down` bring back
-queries submitted before in boxes with the same `history`.
+fields and flags, its `names` after `in:`, and `values` after `field:`. `up`
+and `down` bring back queries submitted before in boxes with the same
+`history`. A source with `names` also gets an error when `in:` names
+nothing there ("nothing here is named garen; did you mean in:garden?").
 
 ```luau
 core.search_box.open({

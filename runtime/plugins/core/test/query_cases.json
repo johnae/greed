@@ -91,6 +91,8 @@
     { "query": "has:attachmnt", "problem": "did you mean has:attachment?" },
     { "query": "date:someday", "problem": "someday isn't a date" },
     { "query": "/(unclosed/", "problem": "a regex that doesn't work" },
-    { "query": "sort:colour", "problem": "can't sort by colour" }
+    { "query": "sort:colour", "problem": "can't sort by colour" },
+    { "query": "in:garen", "problem": "did you mean in:garden?" },
+    { "query": "under:nowhere", "problem": "nothing here is named nowhere" }
   ]
 }

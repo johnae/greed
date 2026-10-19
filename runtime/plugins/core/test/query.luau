@@ -245,6 +245,15 @@ test("the shared cases: what every engine running a query must agree on", functi
 		name = function(item: any): string?
 			return item.name
 		end,
+		names = function(): { string }
+			local out: { string } = {}
+			for _, item in cases.items do
+				if item.name then
+					table.insert(out, item.name)
+				end
+			end
+			return out
+		end,
 		key = function(item: any): string
 			return item.id
 		end,
