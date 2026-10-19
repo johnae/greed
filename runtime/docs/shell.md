@@ -450,6 +450,8 @@ type:
 
 - Several words keep the lines with all of them, in any case
   (`shell-filter-search-case` changes that).
+- `-word` leaves out the lines with it, `error OR warn` keeps lines with
+  either (`OR` in capitals), and `"connection refused"` is a phrase.
 - A filter that starts with `/` is a regex (`/^error|warn`).
 - `enter` keeps the filter. `esc`, while typing it or after in normal mode
   on the block, shows every line again; `space S` also undoes a sort.

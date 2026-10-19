@@ -1129,7 +1129,7 @@ mod index_budget {
                 ("date".into(), Kind::Date),
             ]),
             flags: HashMap::from([("mail".into(), Flag::Row), ("unread".into(), Flag::Row)]),
-            anywhere: false,
+            ..Schema::default()
         }
     }
 

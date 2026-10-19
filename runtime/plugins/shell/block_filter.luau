@@ -8,6 +8,7 @@ local peek = require("./peek")
 local rows = require("./rows")
 local filtering = require("./filtering")
 local navigate = require("./navigate")
+local query = require("./query")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -40,32 +41,46 @@ local function to_output(shell: Shell, block: Block, view: greed.View)
 end
 
 -- How many of the lines `view`, narrowed to a block, shows past its first
--- `skip` the filter `pattern` (a regex with `regex`) keeps, as "12 of 340
+-- `skip` the filter `pattern` keeps, read as `opts` say, as "12 of 340
 -- lines": what it matches, without the line the cursor keeps in sight.
-local function kept_in(view: greed.View, skip: number, pattern: string, regex: boolean): string?
+local function kept_in(
+	view: greed.View,
+	skip: number,
+	pattern: string,
+	opts: { [string]: any }
+): string?
 	local first, last = view:narrowed()
 	if first == nil or last == nil then
 		return nil
 	end
 	local from = first + skip
 	local ok, kept = pcall(function()
-		return view:buffer():kept_lines(pattern, { regex = regex, from = from, to = last })
+		local asked = table.clone(opts)
+		asked.from, asked.to = from, last
+		return view:buffer():kept_lines(pattern, asked)
 	end)
 	return if ok then `{#kept} of {last - from + 1} lines` else nil
 end
 
 -- Filters what `view`, showing `block` in a float or a pane, shows of it as
--- what's typed says: lines with every word of it, or starting with `/` a
+-- what's typed says (see query.luau): a query, or starting with `/` a
 -- regex. Its command, and a table's header, stay.
 local function filter_view(view: greed.View, block: Block)
 	local skip = if block.table and block.table.header ~= false then 2 else 1
-	local pattern, regex = view:filter() or "", false
+	local pattern = view:filter() or ""
+	local opts: { [string]: any } = query.options(query.read(pattern)) or {}
 	local function set(text: string)
-		regex = string.sub(text, 1, 1) == "/"
-		pattern = if regex then string.sub(text, 2) else text
-		-- Half a regex, as it's typed, filters nothing yet.
+		local filter = query.read(text)
+		-- Half a regex or a quote, as it's typed, filters nothing yet.
+		local read = query.options(filter)
+		if read == nil then
+			return
+		end
+		pattern, opts = filter.regex or text, read
 		pcall(function()
-			view:set_filter(pattern, { regex = regex, skip = skip })
+			local asked = table.clone(opts)
+			asked.skip = skip
+			view:set_filter(pattern, asked)
 		end)
 	end
 	filtering.prompt(block, {
@@ -77,7 +92,7 @@ local function filter_view(view: greed.View, block: Block)
 			view:set_filter(nil)
 		end,
 		kept = function(): string?
-			return if view:filter() then kept_in(view, skip, pattern, regex) else nil
+			return if view:filter() then kept_in(view, skip, pattern, opts) else nil
 		end,
 	})
 end

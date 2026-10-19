@@ -8,6 +8,7 @@ local core = require("@core")
 local state = require("./state")
 local log = require("./log")
 local tables = require("./tables")
+local query = require("./query")
 
 type Shell = state.Shell
 type Block = state.Block
@@ -76,26 +77,16 @@ local function row_texts(block: Block, before: { Line }): { string }
 	return table.move(drawn_lines, 2, #drawn_lines, 1, texts)
 end
 
--- Whether `word` is a `.a.b` section of indented text.
-local function is_section(word: string): boolean
-	return string.find(word, "^%.[^.]") ~= nil
-end
-
--- Whether `filter` has a `.a.b` section word in it.
+-- Whether `filter` keeps a `.a.b` section of indented text.
 local function sectioned(filter: string): boolean
-	for word in string.gmatch(filter, "%S+") do
-		if is_section(word) then
-			return true
-		end
-	end
-	return false
+	return query.read(filter).section ~= ""
 end
 
--- The indexes of `texts` that `filter` keeps: every word of it in them,
--- or with a leading `/` a match of the regex after it, minding case as
--- `shell-filter-search-case` says. With a `key=value` or `.a.b` word, as a
--- view's filter reads them: fields of JSON lines, sections of YAML. Nil for
--- a regex that isn't one (yet, while it's typed).
+-- The indexes of `texts` that `filter` keeps, as a view's filter reads it
+-- (query.luau): words anywhere in them, fields of JSON lines, sections of
+-- YAML; or with a leading `/` a match of the regex after it, minding case
+-- as `shell-filter-search-case` says. Nil for a filter that can't run yet,
+-- like half a regex or a quote while it's typed.
 local function keep(texts: { string }, filter: string): { number }?
 	local kept: { number } = {}
 	if string.sub(filter, 1, 1) == "/" then
@@ -120,36 +111,17 @@ local function keep(texts: { string }, filter: string): { number }?
 		end
 		return kept
 	end
-	local words: { string } = {}
-	local structured = false
-	for word in string.gmatch(filter, "%S+") do
-		table.insert(words, word)
-		-- `key=value`, `level>=warn`, `took>500`, `level!=debug`.
-		structured = structured or is_section(word) or string.find(word, "^[^=!<>]+[=!<>]") ~= nil
+	local opts = query.options(query.read(filter))
+	if opts == nil then
+		return nil
 	end
-	if structured then
-		-- Fields of JSON lines and sections of YAML, as a view's filter reads them.
-		local buffer = greed.create_buffer("shell-filter", table.concat(texts, "\n"))
-		for _, line in buffer:kept_lines(filter) do
-			if texts[line + 1] then
-				table.insert(kept, line + 1)
-			end
-		end
-		buffer:close()
-		return kept
-	end
-	for i, text in texts do
-		local all = true
-		for _, word in words do
-			if not tables.has(text, word) then
-				all = false
-				break
-			end
-		end
-		if all then
-			table.insert(kept, i)
+	local buffer = greed.create_buffer("shell-filter", table.concat(texts, "\n"))
+	for _, line in buffer:kept_lines(filter, opts) do
+		if texts[line + 1] then
+			table.insert(kept, line + 1)
 		end
 	end
+	buffer:close()
 	return kept
 end
 

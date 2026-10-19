@@ -64,6 +64,7 @@ fn row(table: &Table) -> LuaResult<Row> {
         flags: flags(table)?,
         name: table.get("name")?,
         parent: parent.and_then(|p| p.checked_sub(1)),
+        ..Row::default()
     })
 }
 
@@ -81,7 +82,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
                         .map(|table| row(&table?))
                         .collect::<LuaResult<_>>()?,
                 );
-                let compiled = match node.as_ref().map(|n| Query::new(n, &schema)).transpose() {
+                let compiled = match node.map(|n| Query::new(n, schema)).transpose() {
                     Ok(q) => q,
                     Err(query::Bad(why)) => {
                         return (Value::Nil, Value::Nil, why).into_lua_multi(lua);

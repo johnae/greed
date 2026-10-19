@@ -445,16 +445,14 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
             let filter = match text.filter(|t| !t.trim().is_empty()) {
                 None => None,
                 Some(text) => {
-                    let (regex, skip) = match &opts {
-                        Some(o) => (
-                            o.get::<Option<bool>>("regex")?.unwrap_or(false),
-                            o.get::<Option<usize>>("skip")?.unwrap_or(0),
-                        ),
-                        None => (false, 0),
+                    let skip = match &opts {
+                        Some(o) => o.get::<Option<usize>>("skip")?.unwrap_or(0),
+                        None => 0,
                     };
+                    let keep = keep_of(lua, &text, opts.as_ref())?;
                     Some(
-                        crate::line_filter::LineFilter::new(&text, regex, skip)
-                            .map_err(|err| mlua::Error::runtime(format!("not a regex: {err}")))?,
+                        crate::line_filter::LineFilter::new(&text, keep, skip)
+                            .map_err(mlua::Error::runtime)?,
                     )
                 }
             };
@@ -701,16 +699,16 @@ fn add_filter_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method(
         "kept_lines",
         |lua, this, (filter, opts): (String, Option<mlua::Table>)| {
-            let (regex, from, to) = match &opts {
+            let (from, to) = match &opts {
                 Some(o) => (
-                    o.get::<Option<bool>>("regex")?.unwrap_or(false),
                     o.get::<Option<usize>>("from")?,
                     o.get::<Option<usize>>("to")?,
                 ),
-                None => (false, None, None),
+                None => (None, None),
             };
-            let filter = crate::line_filter::LineFilter::new(&filter, regex, 0)
-                .map_err(|err| mlua::Error::runtime(err.to_string()))?;
+            let keep = keep_of(lua, &filter, opts.as_ref())?;
+            let filter = crate::line_filter::LineFilter::new(&filter, keep, 0)
+                .map_err(mlua::Error::runtime)?;
             this.with_text(lua, |text| {
                 let all = text.len_lines();
                 let lines = from.unwrap_or(0).min(all)..to.map_or(all, |to| (to + 1).min(all));
@@ -1453,4 +1451,57 @@ fn sentence_at(text: &Rope, pos: usize) -> (usize, usize) {
         }
     }
     found
+}
+
+/// What a line filter keeps, from `set_filter`'s and `kept_lines`' options:
+/// `text` as a regex with `regex`, else the `query` `core.query` parsed of
+/// it and the `section` (keys between dots) it keeps.
+fn keep_of(
+    lua: &Lua,
+    text: &str,
+    opts: Option<&mlua::Table>,
+) -> LuaResult<crate::line_filter::Keep> {
+    let get = |key: &str| -> LuaResult<Value> { opts.map_or(Ok(Value::Nil), |o| o.get(key)) };
+    if get("regex")?.as_boolean().unwrap_or(false) {
+        return Ok(crate::line_filter::Keep::Regex(text.to_owned()));
+    }
+    let section = match get("section")? {
+        Value::String(s) => s.to_str()?.to_string(),
+        _ => String::new(),
+    };
+    // Given no query and no section, every word of the text, as a plain
+    // filter is.
+    let query = super::query::node(lua, get("query")?)?;
+    let query = if query.is_none() && section.is_empty() {
+        words(text)
+    } else {
+        query
+    };
+    Ok(crate::line_filter::Keep::Query(
+        query.map(Box::new),
+        section,
+        get("case")?.as_boolean().unwrap_or(false),
+    ))
+}
+
+// A query of each word of `text`, all of them needed; none for no words.
+fn words(text: &str) -> Option<greed_index::query::Node> {
+    use greed_index::query::Node;
+    let mut items: Vec<Node> = text
+        .split_whitespace()
+        .map(|word| Node {
+            kind: "word".into(),
+            text: Some(word.into()),
+            ..Node::default()
+        })
+        .collect();
+    match items.len() {
+        0 => None,
+        1 => items.pop(),
+        _ => Some(Node {
+            kind: "and".into(),
+            items,
+            ..Node::default()
+        }),
+    }
 }

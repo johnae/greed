@@ -182,8 +182,8 @@ export type Buffer = {
 	--- Every match of the regex `pattern` between `from` and `to` (default:
 	--- the whole buffer), or nil and the error for a bad pattern.
 	find_all: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { from: number, to: number } }?, string?),
-	--- The lines (0-based) a view's filter of `filter` keeps of the buffer, as `View.set_filter` reads it: words, `key=value` fields and `.a.b` sections, or with `regex` a regex; of lines `from` to `to` (inclusive) only, with them.
-	kept_lines: (self: Buffer, filter: string, opts: { regex: boolean?, from: number?, to: number? }?) -> { number },
+	--- The lines (0-based) a view's filter of `filter` keeps of the buffer, with the same options as `View.set_filter`; of lines `from` to `to` (inclusive) only, with them.
+	kept_lines: (self: Buffer, filter: string, opts: { regex: boolean?, query: any?, section: string?, case: boolean?, from: number?, to: number? }?) -> { number },
 	--- Like `find_all`, but each match is the whole match's range followed by
 	--- each group's, false for a group that took no part.
 	find_groups: (self: Buffer, pattern: string, from: number?, to: number?) -> ({ { { from: number, to: number } | false } }?, string?),
@@ -341,8 +341,8 @@ export type View = {
 	narrow: (self: View, from: number?, to: number?) -> (),
 	--- The first and last line it's narrowed to, or nil when it shows all of its buffer.
 	narrowed: (self: View) -> (number?, number?),
-	--- Shows only the lines with every word of `text` in them, without minding case, or with `regex` those it matches, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. A word `key=value` looks in a line of JSON or logfmt for `value` in field `key` (a dotted path, through arrays), and for the word itself in other lines; `key>=value`, `>`, `<`, `<=` compare (log levels in their order, numbers as numbers) and `key!=value` keeps lines without it. A word `.a.b` keeps the section of indented text (YAML, indented JSON) under keys a and b, with the keys above what shows. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.
-	set_filter: (self: View, text: string?, opts: { regex: boolean?, skip: number? }?) -> (),
+	--- Shows only the lines a filter keeps, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. `text` is what was typed, given back by `filter()`; with `regex` it's a regex. Otherwise the lines `query` matches, a query `core.query` parsed (as the shell's filters read one: query.luau there): its words anywhere in a line (minding case with `case`), its fields those of a line of JSON (dotted paths, through arrays) or logfmt, compared as `greed.compare` does, and `key=value` found in the text of other lines; without a query, every word of `text`. A `section` ("status.conditions") keeps the indented text (YAML, indented JSON) under those keys, with the keys above what shows. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.
+	set_filter: (self: View, text: string?, opts: { regex: boolean?, query: any?, section: string?, case: boolean?, skip: number? }?) -> (),
 	--- What `set_filter` was given, while it filters.
 	filter: (self: View) -> string?,
 	--- How many columns the lines that don't wrap (a mark's `nowrap`) are scrolled to the left.
@@ -1621,8 +1621,8 @@ export type Compare = {
 --- A row for `greed.query.run`: its `text` for words, its `fields`' values by name (a string or a list), the `flags` it has, its `name` (for `in:NAME`) and the row it's in (`parent`, its index in the list).
 export type QueryRow = { text: string?, fields: { [string]: string | { string } }?, flags: { string }?, name: string?, parent: number? }
 
---- What a query's fields and flags mean, for `greed.query.run`: each field's kind by name ("text", "exact", "value" or "date"), each flag's by name ("row", kept on the rows, or "computed", worked out by the source, so rows that depend on it are a maybe), and whether words match `anywhere` in the text rather than as whole words.
-export type QuerySchema = { fields: { [string]: string }?, flags: { [string]: string }?, anywhere: boolean? }
+--- What a query's fields and flags mean, for `greed.query.run`: each field's kind by name ("text", "exact", "value" or "date"), each flag's by name ("row", kept on the rows, or "computed", worked out by the source, so rows that depend on it are a maybe), whether words match `anywhere` in the text rather than as whole words, whether fields it doesn't name are `loose` (any field compares as a value, from each row's own), and whether words mind `case`.
+export type QuerySchema = { fields: { [string]: string }?, flags: { [string]: string }?, anywhere: boolean?, loose: boolean?, case: boolean? }
 
 --- Running a query `core.query` parsed, with its dates read into the days they cover (`from` and `to` on a date field's term).
 export type Query = {

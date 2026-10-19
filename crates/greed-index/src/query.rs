@@ -68,6 +68,11 @@ pub struct Schema {
     /// Words match anywhere in the text, as the shell's filters do, rather
     /// than as whole words.
     pub anywhere: bool,
+    /// Fields not in `fields` compare as values, from each row's own (a log
+    /// line's JSON or logfmt), as the shell's filters take any field.
+    pub loose: bool,
+    /// Words mind case, as a search typed with a capital letter can.
+    pub case: bool,
 }
 
 /// A row to match: its text for words, its fields' values, the flags it
@@ -80,6 +85,9 @@ pub struct Row {
     pub flags: Vec<String>,
     pub name: Option<String>,
     pub parent: Option<usize>,
+    /// A plain line, with no fields of its own: a loose field it hasn't
+    /// matches when its text has the term in it, `key=value` as written.
+    pub plain: bool,
 }
 
 /// Whether a row matches.
@@ -110,18 +118,18 @@ impl Answer {
 pub struct Bad(pub String);
 
 /// A query ready to run over rows: its regexes compiled once.
-pub struct Query<'a> {
-    node: &'a Node,
-    schema: &'a Schema,
+pub struct Query {
+    node: Node,
+    schema: Schema,
     regexes: HashMap<String, Regex>,
 }
 
-impl<'a> Query<'a> {
+impl Query {
     /// `node` ready to run as `schema` says; `Bad` for a regex that
     /// doesn't compile.
-    pub fn new(node: &'a Node, schema: &'a Schema) -> Result<Query<'a>, Bad> {
+    pub fn new(node: Node, schema: Schema) -> Result<Query, Bad> {
         let mut regexes = HashMap::new();
-        compile(node, &mut regexes)?;
+        compile(&node, &mut regexes)?;
         Ok(Query {
             node,
             schema,
@@ -131,7 +139,7 @@ impl<'a> Query<'a> {
 
     /// Whether row `at` of `rows` matches.
     pub fn answer(&self, rows: &Rows, at: usize) -> Answer {
-        self.matches(self.node, rows, at)
+        self.matches(&self.node, rows, at)
     }
 
     fn matches(&self, node: &Node, rows: &Rows, at: usize) -> Answer {
@@ -143,9 +151,14 @@ impl<'a> Query<'a> {
                 .first()
                 .map_or(Answer::No, |item| self.matches(item, rows, at).not()),
             "word" => {
-                let text = rows.text(at);
-                let word = node.text.as_deref().unwrap_or("").to_lowercase();
-                Answer::from(has_word(text, &word, node.prefix, self.schema.anywhere))
+                let word = node.text.as_deref().unwrap_or("");
+                let found = if self.schema.case {
+                    has_word(&rows.rows[at].text, word, node.prefix, self.schema.anywhere)
+                } else {
+                    let word = word.to_lowercase();
+                    has_word(rows.text(at), &word, node.prefix, self.schema.anywhere)
+                };
+                Answer::from(found)
             }
             "regex" => {
                 let regex = node.text.as_deref().and_then(|p| self.regexes.get(p));
@@ -168,16 +181,24 @@ impl<'a> Query<'a> {
                     None => self.flagged(node, rows, child),
                 }))
             }
-            _ => match self.schema.fields.get(&name) {
-                Some(&kind) => {
-                    let have = rows.rows[at]
-                        .fields
-                        .get(&name)
-                        .map_or(&[][..], Vec::as_slice);
-                    Answer::from(self.values_match(kind, node, have))
+            _ => {
+                let kind = match self.schema.fields.get(&name) {
+                    Some(&kind) => kind,
+                    None if self.schema.loose => Kind::Value,
+                    None => return Answer::No,
+                };
+                let row = &rows.rows[at];
+                let have = row.fields.get(&name).map_or(&[][..], Vec::as_slice);
+                let op = node.op.as_deref().unwrap_or(":");
+                if have.is_empty() && row.plain && (op == ":" || op == "=") {
+                    let term = format!(
+                        "{name}{op}{}",
+                        node.value.as_deref().unwrap_or("").to_lowercase()
+                    );
+                    return Answer::from(rows.text(at).contains(&term));
                 }
-                None => Answer::No,
-            },
+                Answer::from(self.values_match(kind, node, have))
+            }
         }
     }
 
@@ -479,7 +500,11 @@ mod tests {
             items: vec![flag("overdue")],
             ..Node::default()
         };
-        let answer = |node: &Node| Query::new(node, &schema).unwrap().answer(&rows, 0);
+        let answer = |node: &Node| {
+            Query::new(node.clone(), schema.clone())
+                .unwrap()
+                .answer(&rows, 0)
+        };
         assert_eq!(answer(&and), Answer::Maybe);
         assert_eq!(answer(&or), Answer::Yes, "rent decides it");
         assert_eq!(answer(&not), Answer::Maybe);
@@ -494,7 +519,7 @@ mod tests {
             ..Node::default()
         };
         let schema = Schema::default();
-        let Err(Bad(why)) = Query::new(&node, &schema) else {
+        let Err(Bad(why)) = Query::new(node, schema) else {
             panic!("it compiled");
         };
         assert!(why.starts_with("a regex that doesn't work"), "{why}");

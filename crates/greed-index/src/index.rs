@@ -203,7 +203,9 @@ impl Index {
         schema: &Schema,
         view: &View,
     ) -> Result<Found, Trouble> {
-        let compiled = node.map(|n| Query::new(n, schema)).transpose()?;
+        let compiled = node
+            .map(|n| Query::new(n.clone(), schema.clone()))
+            .transpose()?;
         let mut args: Vec<Value> = Vec::new();
         let narrowed = node.and_then(|n| narrow(n, schema, &mut args));
         let sql = format!(

@@ -1,42 +1,50 @@
 //! What a view keeps of the lines it shows, as a float filtering a log.
 //!
-//! A filter is words, each of which a line must have in it, without minding
-//! case, or else a regex. Among the words, `key=value` keeps a line of JSON
-//! (a log as JSON lines) or logfmt whose field `key`, a dotted path like
-//! `HelmRelease.name`, is `value`; other lines must have `key=value` in
-//! their text. `msg~timeout` has it in it, and `level>=warn`, `took>500ms`
-//! and `level!=debug` compare as a table's `where` does
-//! ([`compare`](crate::compare)). A word starting with `.`,
-//! like `.status.conditions`, keeps the section of nested text under those
-//! keys (YAML, indented JSON, what `kubectl describe` prints) and the keys
-//! above it; the last key matches by its start, so `.status.cond` keeps the
-//! same while it's typed.
+//! A filter is a query `core.query` parsed (see [`greed_index::query`]),
+//! or a regex. Its words are found anywhere in a line, without minding
+//! case; its fields are those of a line of JSON (a log as JSON lines, by a
+//! dotted path like `HelmRelease.name`, through arrays) or of logfmt, and
+//! compare as a table's `where` does ([`compare`](crate::compare)): on
+//! other lines `key=value` is found in the text as it's written. A section,
+//! like `.status.conditions`, keeps what's under those keys in nested text
+//! (YAML, indented JSON, what `kubectl describe` prints) and the keys above
+//! it; the last key matches by its start, so `.status.cond` keeps the same
+//! while it's typed.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::sync::{Mutex, PoisonError};
 
+use greed_index::query::{Answer, Node, Query, Row, Rows, Schema};
 use greed_text::{Rope, line_content};
 use regex_cursor::Input;
 use regex_cursor::engines::meta::Regex;
 use serde_json::Value;
 
-use crate::compare::{self, Op};
 use crate::nested;
-use crate::search::{BadPattern, compile};
+use crate::search::compile;
 
 /// How many lines' verdicts a filter keeps before starting over.
 const REMEMBERED: usize = 200_000;
 
-#[derive(Debug)]
+/// What a filter keeps: lines a regex matches, or those a query does, in
+/// the section under some keys.
+pub enum Keep {
+    Regex(String),
+    /// The query (none keeps every line of the section), the section, its
+    /// keys between dots (`status.conditions`), empty for all of the text,
+    /// and whether its words mind case.
+    Query(Option<Box<Node>>, String, bool),
+}
+
 pub struct LineFilter {
+    /// What was typed, as `view:filter()` gives it back.
     pub text: String,
     /// Its first `skip` lines always show, as a block's command does.
     pub skip: usize,
     regex: Option<Regex>,
-    words: Vec<String>,
-    fields: Vec<Field>,
+    query: Option<Query>,
     /// The keys of the section it keeps, lowercase.
     section: Vec<String>,
     /// Whether each line it has seen shows, by a hash of its text, so a log
@@ -44,42 +52,12 @@ pub struct LineFilter {
     verdicts: Mutex<HashMap<u64, bool>>,
 }
 
-/// A field word, lowercase: `level=warn`, `took>500ms`, `msg~timeout`,
-/// compared as [`compare`] does.
-#[derive(Debug)]
-struct Field {
-    path: Vec<String>,
-    op: Op,
-    value: String,
-    /// The word itself, for lines that aren't JSON or logfmt.
-    word: String,
-    /// Whether the value is a duration, so `12m` is minutes.
-    durations: bool,
-}
-
-impl Field {
-    /// The field `word` is, if it's one: a key, an operator, a value.
-    fn parse(word: &str) -> Option<Self> {
-        let (at, op, len) = Op::find(word).filter(|(at, ..)| *at > 0)?;
-        let value = &word[at + len..];
-        Some(Self {
-            path: keys(&word[..at]),
-            op,
-            value: value.to_owned(),
-            word: word.to_owned(),
-            durations: compare::is_duration(value),
-        })
-    }
-
-    /// The test a value must pass for the line to have the field as asked,
-    /// and whether the line must have none that do instead: `!=` and `!~`
-    /// keep lines whose field doesn't match, or that have no such field.
-    fn positive(&self) -> (Op, bool) {
-        match self.op {
-            Op::Ne => (Op::Eq, true),
-            Op::Lacks => (Op::Has, true),
-            op => (op, false),
-        }
+impl std::fmt::Debug for LineFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LineFilter")
+            .field("text", &self.text)
+            .field("skip", &self.skip)
+            .finish_non_exhaustive()
     }
 }
 
@@ -92,29 +70,34 @@ struct Place {
 }
 
 impl LineFilter {
-    /// A filter of `text`, a regex with `regex`; fails on a regex that isn't
-    /// one.
-    pub fn new(text: &str, regex: bool, skip: usize) -> Result<Self, BadPattern> {
+    /// A filter of `text`, as typed, keeping what `keep` says; fails on a
+    /// regex or a query that can't run, saying why.
+    pub fn new(text: &str, keep: Keep, skip: usize) -> Result<Self, String> {
         let mut filter = Self {
             text: text.to_owned(),
             skip,
             regex: None,
-            words: Vec::new(),
-            fields: Vec::new(),
+            query: None,
             section: Vec::new(),
             verdicts: Mutex::new(HashMap::new()),
         };
-        if regex {
-            filter.regex = Some(compile(text)?);
-            return Ok(filter);
-        }
-        for word in text.split_whitespace().map(str::to_lowercase) {
-            if let Some(path) = word.strip_prefix('.').filter(|p| !p.is_empty()) {
-                filter.section = keys(path);
-            } else if let Some(field) = Field::parse(&word) {
-                filter.fields.push(field);
-            } else {
-                filter.words.push(word);
+        match keep {
+            Keep::Regex(pattern) => {
+                filter.regex =
+                    Some(compile(&pattern).map_err(|err| format!("not a regex: {err}"))?);
+            }
+            Keep::Query(node, section, case) => {
+                let schema = Schema {
+                    anywhere: true,
+                    loose: true,
+                    case,
+                    ..Schema::default()
+                };
+                filter.query = node
+                    .map(|n| Query::new(*n, schema))
+                    .transpose()
+                    .map_err(|bad| bad.0)?;
+                filter.section = keys(&section.to_lowercase());
             }
         }
         Ok(filter)
@@ -151,14 +134,14 @@ impl LineFilter {
         runs
     }
 
-    /// Whether `line` has every word in it, or the regex matches it.
+    /// Whether `line` matches the query, or the regex.
     pub fn keeps(&self, line: &str) -> bool {
         if let Some(regex) = &self.regex {
             return regex.find_iter(Input::new(line)).next().is_some();
         }
-        if self.words.is_empty() && self.fields.is_empty() {
+        let Some(query) = &self.query else {
             return true;
-        }
+        };
         let mut hasher = std::hash::DefaultHasher::new();
         line.hash(&mut hasher);
         let hash = hasher.finish();
@@ -166,40 +149,13 @@ impl LineFilter {
         if let Some(kept) = verdicts.get(&hash) {
             return *kept;
         }
-        let kept = self.reads(line);
+        let rows = Rows::new(vec![row(line)]);
+        let kept = query.answer(&rows, 0) != Answer::No;
         if verdicts.len() >= REMEMBERED {
             verdicts.clear();
         }
         verdicts.insert(hash, kept);
         kept
-    }
-
-    fn reads(&self, line: &str) -> bool {
-        let lower = line.to_lowercase();
-        if !self.words.iter().all(|word| lower.contains(word.as_str())) {
-            return false;
-        }
-        if self.fields.is_empty() {
-            return true;
-        }
-        let json = if line.trim_start().starts_with('{') {
-            serde_json::from_str::<Value>(line).ok()
-        } else {
-            None
-        };
-        self.fields.iter().all(|field| {
-            let (op, negated) = field.positive();
-            let passes = |have: &str| compare::passes(have, op, &field.value, field.durations);
-            let found = match &json {
-                Some(value) => holds(value, &field.path, &passes),
-                None => match text_field(&lower, &field.path.join(".")) {
-                    Some(have) => passes(&have),
-                    // Not a `key=value` line: the word in its text will do.
-                    None => op == Op::Eq && lower.contains(field.word.as_str()),
-                },
-            };
-            found != negated
-        })
     }
 
     /// Where each of `lines` is, from how far each is indented under the
@@ -265,57 +221,122 @@ fn content(text: &Rope, line: usize) -> String {
     line_content(text, line).to_string()
 }
 
-/// Whether `value` has a field at `path` (by name, in any case, through
-/// any item of an array on the way) whose text `passes`.
-fn holds(value: &Value, path: &[String], passes: &dyn Fn(&str) -> bool) -> bool {
-    let Some((first, rest)) = path.split_first() else {
-        return match value {
-            Value::String(text) => passes(text),
-            Value::Number(_) | Value::Bool(_) | Value::Null => passes(&value.to_string()),
-            // Only `key=` with nothing after it: the field is there.
-            Value::Array(_) | Value::Object(_) => passes(""),
-        };
+/// `line` as a row to match: its fields those of its JSON, by dotted paths
+/// in lower case, or of its logfmt (`key=value`, the value in quotes or up
+/// to the next space); a line that isn't JSON is plain, so `key=value`
+/// is found in its text where it has no such field.
+fn row(line: &str) -> Row {
+    let mut fields = HashMap::new();
+    let json = if line.trim_start().starts_with('{') {
+        serde_json::from_str::<Value>(line).ok()
+    } else {
+        None
     };
-    match value {
-        Value::Object(fields) => fields
-            .iter()
-            .filter(|(key, _)| key.to_lowercase() == *first)
-            .any(|(_, field)| holds(field, rest, passes)),
-        Value::Array(items) => items.iter().any(|item| holds(item, path, passes)),
-        Value::String(_) | Value::Number(_) | Value::Bool(_) | Value::Null => false,
+    if let Some(value) = &json {
+        flatten(value, "", &mut fields);
+    } else {
+        logfmt(line, &mut fields);
+    }
+    Row {
+        text: line.to_owned(),
+        fields,
+        plain: json.is_none(),
+        ..Row::default()
     }
 }
 
-/// The value of field `key` in `line`, logfmt, lowercase: `key=value` at
-/// its start or after a space, the value in quotes or up to the next space.
-fn text_field(line: &str, key: &str) -> Option<String> {
-    let needle = format!("{key}=");
-    let mut from = 0;
-    while let Some(found) = line[from..].find(&needle) {
-        let at = from + found;
-        from = at + needle.len();
-        if at > 0 && !line[..at].ends_with(char::is_whitespace) {
-            continue;
+// The fields of `value` under `path`, each by its dotted path in lower
+// case, through any item of an array.
+fn flatten(value: &Value, path: &str, fields: &mut HashMap<String, Vec<String>>) {
+    let mut put = |text: String| fields.entry(path.to_owned()).or_default().push(text);
+    match value {
+        Value::Object(map) => {
+            for (key, inner) in map {
+                let key = key.to_lowercase();
+                let path = if path.is_empty() {
+                    key
+                } else {
+                    format!("{path}.{key}")
+                };
+                flatten(inner, &path, fields);
+            }
         }
-        let rest = &line[from..];
-        return Some(match rest.strip_prefix('"') {
-            Some(quoted) => quoted.split('"').next().unwrap_or_default().to_owned(),
-            None => rest
-                .split_whitespace()
-                .next()
-                .unwrap_or_default()
-                .to_owned(),
-        });
+        Value::Array(items) => {
+            for item in items {
+                flatten(item, path, fields);
+            }
+        }
+        Value::String(text) => put(text.clone()),
+        Value::Number(_) | Value::Bool(_) | Value::Null => put(value.to_string()),
     }
-    None
+}
+
+// The logfmt fields of `line`: `key=value` at its start or after a space.
+fn logfmt(line: &str, fields: &mut HashMap<String, Vec<String>>) {
+    let mut rest = line;
+    while let Some(eq) = rest.find('=') {
+        let key = rest[..eq].rsplit(char::is_whitespace).next().unwrap_or("");
+        let after = &rest[eq + 1..];
+        let (value, next) = if let Some(quoted) = after.strip_prefix('"') {
+            let end = quoted.find('"').unwrap_or(quoted.len());
+            (&quoted[..end], &quoted[(end + 1).min(quoted.len())..])
+        } else {
+            let end = after.find(char::is_whitespace).unwrap_or(after.len());
+            (&after[..end], &after[end..])
+        };
+        if !key.is_empty() {
+            fields
+                .entry(key.to_lowercase())
+                .or_default()
+                .push(value.to_owned());
+        }
+        rest = next;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compare::Op;
+
+    // What `core.query` parses the simple filters here into: words, fields
+    // (`key=value` and the like), and a word starting with `.` the section.
+    fn keep(filter: &str) -> Keep {
+        let mut items = Vec::new();
+        let mut section = String::new();
+        for word in filter.split_whitespace() {
+            if let Some(path) = word.strip_prefix('.') {
+                section = path.to_owned();
+            } else if let Some((at, op, len)) = Op::find(word).filter(|(at, ..)| *at > 0) {
+                items.push(Node {
+                    kind: "field".into(),
+                    field: Some(word[..at].into()),
+                    op: Some(op.sign().into()),
+                    value: Some(word[at + len..].into()),
+                    ..Node::default()
+                });
+            } else {
+                items.push(Node {
+                    kind: "word".into(),
+                    text: Some(word.into()),
+                    ..Node::default()
+                });
+            }
+        }
+        let node = match items.len() {
+            0 => None,
+            1 => items.pop(),
+            _ => Some(Node {
+                kind: "and".into(),
+                items,
+                ..Node::default()
+            }),
+        };
+        Keep::Query(node.map(Box::new), section, false)
+    }
 
     fn kept(filter: &str, text: &str) -> Vec<String> {
-        let filter = LineFilter::new(filter, false, 0).unwrap();
+        let filter = LineFilter::new(filter, keep(filter), 0).unwrap();
         let rope = Rope::from(text);
         let hidden = filter.hidden(&rope, 0..rope.len_lines(), &[]);
         (0..rope.len_lines())
@@ -461,7 +482,7 @@ Volumes:
 
     #[test]
     fn the_first_lines_and_cursor_lines_always_show() {
-        let filter = LineFilter::new("x", false, 1).unwrap();
+        let filter = LineFilter::new("x", keep("x"), 1).unwrap();
         let rope = Rope::from("cmd\na\nb\nx\n");
         assert_eq!(
             filter.hidden(&rope, 0..rope.len_lines(), &[2]),
