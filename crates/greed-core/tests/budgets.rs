@@ -629,10 +629,55 @@ fn notes_index() {
                 .parse()
                 .unwrap();
             found.set("index_longest_hold_ms", held);
+
+            // Searching the notes' words: the first search writes the index
+            // of everything they say, the next only reads it.
+            driven.eval(
+                "local greed = require('@greed')
+                 greed.command({ name = 'search-now', run = function()
+                   searched = #(require('@notes').query.search('note', 10) or {})
+                 end })",
+            );
+            for (name, key) in [
+                ("first", "search_first_5000_clock_ms"),
+                ("next", "search_next_5000_clock_ms"),
+            ] {
+                driven.eval("searched = nil");
+                let ((), _, clock) = timed(|| {
+                    driven.host.run(FIRST_CLIENT, "search-now").unwrap();
+                    let deadline = Instant::now() + Duration::from_secs(120);
+                    while driven.eval("return tostring(searched)") == "nil" {
+                        assert!(Instant::now() < deadline, "the {name} search didn't finish");
+                        driven.host.settle().unwrap();
+                        driven.frame();
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                });
+                assert_eq!(
+                    driven.eval("return tostring(searched)"),
+                    "10",
+                    "the {name} search"
+                );
+                found.set(key, ms(clock));
+            }
+            let held: f64 = driven
+                .eval(
+                    "local most = 0
+                     for _, stall in require('@greed').stalls() do
+                       if stall.plugin == 'notes' then most = math.max(most, stall.ms) end
+                     end
+                     return tostring(most)",
+                )
+                .parse()
+                .unwrap();
+            found.set("search_longest_hold_ms", held);
         },
         &[
             ("index_5000_clock_ms", 10000.0, 26000.0),
             ("index_longest_hold_ms", 60.0, 120.0),
+            ("search_first_5000_clock_ms", 15000.0, 40000.0),
+            ("search_next_5000_clock_ms", 250.0, 800.0),
+            ("search_longest_hold_ms", 60.0, 120.0),
         ],
     );
 }

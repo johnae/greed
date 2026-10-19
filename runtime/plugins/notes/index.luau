@@ -448,9 +448,11 @@ local function put(note: Note)
 	end
 end
 
--- Lets the editor go on when parsing has had its slice.
 local slice_start = os.clock()
-local function breathe()
+--- Lets the editor go on when work on the notes has had its slice (`M.SLICE`
+--- milliseconds), for long loops over them, here and in plugins reading
+--- them. Waits like greed.sleep.
+function M.breathe()
 	if (os.clock() - slice_start) * 1000 >= M.SLICE then
 		greed.sleep(1)
 		slice_start = os.clock()
@@ -509,7 +511,7 @@ local function refresh(first: boolean)
 				put(note)
 				table.insert(changed, name)
 			end
-			breathe()
+			M.breathe()
 		end
 	end
 	for name, note in table.clone(by_name) do

@@ -40,11 +40,16 @@ export type Item = {
 	children: { Item },
 }
 
--- The items, made again after the notes change.
+-- The items, the source with the notes' own fields, and the items by
+-- their key, each made again after the notes change.
 local made: { Item }? = nil
+local made_source: core.QuerySource? = nil
+local made_keys: { [string]: Item }? = nil
 
 index.on_changed(function()
 	made = nil
+	made_source = nil
+	made_keys = nil
 end)
 
 --- Every note, todo and heading as items (see the top of this file).
@@ -56,6 +61,7 @@ function M.items(): { Item }
 	index.ensure()
 	local out: { Item } = {}
 	for _, note in index.all() do
+		index.breathe()
 		local item: Item = { kind = "note", note = note, children = {} }
 		table.insert(out, item)
 		for _, node in note.nodes do
@@ -279,6 +285,10 @@ local STORED = { "note", "todo", "heading", "habit", "recurring" }
 --- The source a query runs over notes with: the fields above, and the
 --- `key:: value` fields and front matter keys the notes have now.
 function M.source(): core.QuerySource
+	local cached = made_source
+	if cached then
+		return cached
+	end
 	local fields = table.clone(FIELDS)
 	for _, note in index.all() do
 		for key in note.fields do
@@ -295,7 +305,7 @@ function M.source(): core.QuerySource
 			end
 		end
 	end
-	return {
+	local source: core.QuerySource = {
 		fields = fields,
 		flags = FLAGS,
 		text = text_of,
@@ -311,6 +321,22 @@ function M.source(): core.QuerySource
 			return if item.kind == "note" then item.note.name else nil
 		end,
 	}
+	made_source = source
+	return source
+end
+
+-- The items by their key in the index.
+local function keyed(): { [string]: Item }
+	local cached = made_keys
+	if cached then
+		return cached
+	end
+	local out: { [string]: Item } = {}
+	for _, item in M.items() do
+		out[key_of(item)] = item
+	end
+	made_keys = out
+	return out
 end
 
 -- Parses and checks `text` against the notes' source: the query, the
@@ -351,6 +377,9 @@ function M.run(text: string): ({ Item }?, { core.QueryProblem })
 	end
 	return found, hints
 end
+
+--- How many items go to the index in one write.
+M.BATCH = 2000
 
 -- The index of the notes' words: the file, the index once opened, the
 -- notes changed since it was last written, and the keys each note put in.
@@ -452,6 +481,7 @@ local function index_now(): greed.Index?
 		local gone: { string } = {}
 		local fresh: { greed.IndexItem } = {}
 		for name in names do
+			index.breathe()
 			for _, key in kept.keys[name] or {} :: { string } do
 				table.insert(gone, key)
 			end
@@ -469,8 +499,10 @@ local function index_now(): greed.Index?
 		if #gone > 0 then
 			writing:remove(gone)
 		end
-		if #fresh > 0 then
-			writing:write(fresh)
+		-- In batches, so handing them over never holds the editor up long.
+		for first = 1, #fresh, M.BATCH do
+			writing:write(table.move(fresh, first, math.min(first + M.BATCH - 1, #fresh), 1, {}))
+			index.breathe()
 		end
 		kept.built = true
 	end)
@@ -506,10 +538,7 @@ function M.search(
 	if keys == nil then
 		return nil, whole(text, err or "the search couldn't run")
 	end
-	local by_key: { [string]: Item } = {}
-	for _, item in M.items() do
-		by_key[key_of(item)] = item
-	end
+	local by_key = keyed()
 	-- Those that only might match are checked here, where today is known.
 	local ruled_out: { [string]: boolean } = {}
 	if maybe and #maybe > 0 then
