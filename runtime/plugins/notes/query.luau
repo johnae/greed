@@ -86,15 +86,26 @@ function M.items(): { Item }
 	return out
 end
 
--- The day a note last changed, nil when that isn't known.
-local function modified_of(note: index.Note): string?
-	return if note.modified > 0 then os.date("%Y-%m-%d", note.modified) :: string else nil
-end
+-- Each note's days, as worked out for its `modified` time: its todos and
+-- headings ask for them too, tens of thousands of times in a big index.
+type Days = { at: number, modified: string?, date: string? }
+local days: { [index.Note]: Days } = setmetatable({}, { __mode = "k" }) :: any
 
--- The day a note is about: a day's note's day, otherwise the day it last
--- changed.
-local function date_of(note: index.Note): string?
-	return string.match(note.name, "daily/(%d%d%d%d%-%d%d%-%d%d)$") or modified_of(note)
+-- The day a note last changed (nil when that isn't known), and the day
+-- it's about: a day's note's day, otherwise the day it last changed.
+local function days_of(note: index.Note): Days
+	local known = days[note]
+	if known and known.at == note.modified then
+		return known
+	end
+	local modified = if note.modified > 0 then os.date("%Y-%m-%d", note.modified) :: string else nil
+	local found: Days = {
+		at = note.modified,
+		modified = modified,
+		date = string.match(note.name, "daily/(%d%d%d%d%-%d%d%-%d%d)$") or modified,
+	}
+	days[note] = found
+	return found
 end
 
 -- A todo's or heading's own tags and its note's; a note's own.
@@ -179,13 +190,13 @@ local FIELDS: { [string]: core.QueryField } = {
 	date = {
 		kind = "date",
 		get = function(item: Item)
-			return date_of(item.note)
+			return days_of(item.note).date
 		end,
 	},
 	modified = {
 		kind = "date",
 		get = function(item: Item)
-			return modified_of(item.note)
+			return days_of(item.note).modified
 		end,
 	},
 }
@@ -244,15 +255,12 @@ local FLAGS: { [string]: (item: any) -> boolean } = {
 	end,
 }
 
---- What an item is called where it's listed: a todo's plain words, a
---- heading's words, a note's title.
+--- What an item is called where it's listed: a todo's plain words (as the
+--- index read them, without dates and markers), a heading's words, a
+--- note's title.
 function M.label(item: Item): string
 	local node = item.node
-	if node == nil then
-		return item.note.title
-	end
-	local task = node.task
-	return if task then todos.plain(task.text) else node.text
+	return if node then node.text else item.note.title
 end
 
 -- The words of an item: a note's title and what's in it (all of it, going

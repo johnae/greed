@@ -19,9 +19,18 @@ function M.set_clock(clock: (() -> number)?)
 	end
 end
 
+-- The second `today` last read the date for, and the date then: queries
+-- ask for it once per item, tens of thousands of times.
+local today_at: number? = nil
+local today_was = ""
+
 --- Today's date: "2026-10-01".
 function M.today(): string
-	return os.date("%Y-%m-%d", M.clock()) :: string
+	local now = M.clock()
+	if now ~= today_at then
+		today_at, today_was = now, os.date("%Y-%m-%d", now) :: string
+	end
+	return today_was
 end
 
 -- A "YYYY-MM-DD" date at an "HH:MM" time (noon without one) in seconds, as
