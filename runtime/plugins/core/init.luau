@@ -59,6 +59,7 @@ local commands = require("@self/commands")
 local words = require("@self/words")
 local paste = require("@self/paste")
 local floats = require("@self/floats")
+local query = require("@self/query")
 local modeless = require("@self/modeless")
 local lookup = require("@self/lookup")
 
@@ -118,6 +119,9 @@ export type UiGridRow = ui.GridRow
 export type RecallWalk = recall.Walk
 --- A float being typed in, from `floats.typing`.
 export type TypingFloat = floats.Typing
+--- A part of a query, and a whole one parsed (query.luau).
+export type QueryNode = query.Node
+export type Query = query.Parsed
 --- Something a completion menu offers, as the lsp plugin's menu and the
 --- sources that fill it (the shell's, an agent's box) all take it: `label`
 --- in the menu, `text` put in place of what's typed from `from` (the start
@@ -202,6 +206,8 @@ return {
 	--- Dates: moving them on, repeats, and reading them in plain words
 	--- (dates.luau).
 	dates = require("@self/dates"),
+	--- The query language every search and filter speaks (query.luau).
+	query = query,
 	--- The files you've been in, most recent first (recent.luau).
 	recent = require("@self/recent"),
 	--- Watching objects for changes, with a notification saying how (watch.luau).
