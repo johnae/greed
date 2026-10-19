@@ -164,6 +164,95 @@ namespace inbox {{
     )
 }
 
+/// Puts a message in `anna`'s INBOX the way a delivery would, read when
+/// `seen`.
+fn deliver(dovecot: &Dovecot, n: u32, seen: bool) {
+    let maildir = dovecot.dir.join("home/anna/Maildir");
+    for sub in ["cur", "new", "tmp"] {
+        std::fs::create_dir_all(maildir.join(sub)).unwrap();
+    }
+    let message = format!(
+        "From: Zoë <zoe@example.com>\r\nTo: anna@localhost\r\nSubject: note {n}\r\n\
+         Date: Sun, 19 Oct 2026 10:{n:02}:00 +0200\r\nMessage-ID: <{n}@example.com>\r\n\r\nbody {n}\r\n"
+    );
+    let (sub, flags) = if seen { ("cur", ":2,S") } else { ("new", "") };
+    std::fs::write(
+        maildir
+            .join(sub)
+            .join(format!("17600{n:05}.M{n}P1.test{flags}")),
+        message,
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_mailbox_syncs_into_the_store_and_then_only_what_arrives() {
+    use greed_mail::store::Store;
+    use greed_mail::sync::{self, Options, Synced};
+
+    let Some(dovecot) = Dovecot::start("sync") else {
+        return;
+    };
+    for n in 1..=12 {
+        deliver(&dovecot, n, n % 2 == 0);
+    }
+    let config = dovecot.account();
+    let account = &config.accounts[0];
+    let mut store = Store::open(&dovecot.dir.join("store")).unwrap();
+    let id = store.account(&account.name, &account.address).unwrap();
+    let options = Options {
+        batch: 5,
+        limit: None,
+    };
+    run(async {
+        let mut connection = Connection::open(&account.imap(), account.user(), "secret")
+            .await
+            .unwrap();
+        let first = sync::mailbox(
+            &mut connection,
+            &mut store,
+            id,
+            "INBOX",
+            Some(Role::Inbox),
+            options,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            first,
+            Synced {
+                fetched: 12,
+                done: true
+            }
+        );
+        deliver(&dovecot, 13, false);
+        let next = sync::mailbox(
+            &mut connection,
+            &mut store,
+            id,
+            "INBOX",
+            Some(Role::Inbox),
+            options,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            next,
+            Synced {
+                fetched: 1,
+                done: true
+            }
+        );
+        connection.close().await.unwrap();
+    });
+    assert_eq!(store.counts(id).unwrap(), (13, 13));
+    let inbox = store.mailbox(id, "INBOX", None).unwrap();
+    assert_eq!(
+        store.uids(inbox.id).unwrap(),
+        (1..=13).collect::<Vec<u32>>()
+    );
+}
+
 fn run<F: Future>(future: F) -> F::Output {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()

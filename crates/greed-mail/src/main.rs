@@ -4,7 +4,12 @@
 //!
 //! ```text
 //! greed-mail check [ACCOUNT]    log in and say what each server can do
+//! greed-mail sync [ACCOUNT]     sync the headers into the store
 //! ```
+//!
+//! `--config FILE` reads accounts from FILE instead of Greed's `mail.toml`,
+//! `--store DIR` keeps the store in DIR instead of Greed's data folder, and
+//! `--limit N` stops a sync after about N messages a mailbox.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -12,19 +17,33 @@ use std::time::Instant;
 
 use greed_mail::config::{Account, Config};
 use greed_mail::imap::{Connection, Role};
+use greed_mail::store::Store;
+use greed_mail::sync::{self, Options};
 
-const USAGE: &str = "usage: greed-mail [--config FILE] check [ACCOUNT]";
+const USAGE: &str =
+    "usage: greed-mail [--config FILE] [--store DIR] [--limit N] (check | sync) [ACCOUNT]";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut path: Option<PathBuf> = None;
+    let mut store_dir: Option<PathBuf> = None;
+    let mut options = Options::default();
     let mut rest = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--config" => match args.next() {
-                Some(file) => path = Some(file.into()),
-                None => return fail(USAGE),
-            },
+            "--config" | "--store" | "--limit" => {
+                let Some(value) = args.next() else {
+                    return fail(USAGE);
+                };
+                match arg.as_str() {
+                    "--config" => path = Some(value.into()),
+                    "--store" => store_dir = Some(value.into()),
+                    _ => match value.parse() {
+                        Ok(n) => options.limit = Some(n),
+                        Err(_) => return fail("--limit takes a number of messages"),
+                    },
+                }
+            }
             "-h" | "--help" | "help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
@@ -39,10 +58,10 @@ fn main() -> ExitCode {
         Ok(config) => config,
         Err(e) => return fail(&e),
     };
-    let accounts: Vec<&Account> = match rest.as_slice() {
-        [command] if command == "check" => config.accounts.iter().collect(),
-        [command, name] if command == "check" => match config.account(name) {
-            Some(account) => vec![account],
+    let (command, accounts): (&str, Vec<&Account>) = match rest.as_slice() {
+        [command] => (command, config.accounts.iter().collect()),
+        [command, name] => match config.account(name) {
+            Some(account) => (command, vec![account]),
             None => return fail(&format!("no account called {name} in {}", path.display())),
         },
         _ => return fail(USAGE),
@@ -54,9 +73,28 @@ fn main() -> ExitCode {
         Ok(runtime) => runtime,
         Err(e) => return fail(&format!("couldn't start: {e}")),
     };
+    let mut store = match command {
+        "check" => None,
+        "sync" => {
+            let dir = store_dir
+                .or_else(|| greed_dirs::dir(greed_dirs::Kind::Data).map(|dir| dir.join("mail")));
+            let Some(dir) = dir else {
+                return fail("can't tell where Greed's data folder is: set HOME or GREED_DATA_DIR");
+            };
+            match Store::open(&dir) {
+                Ok(store) => Some(store),
+                Err(e) => return fail(&e.0),
+            }
+        }
+        _ => return fail(USAGE),
+    };
     let mut failed = false;
     for account in accounts {
-        if let Err(e) = runtime.block_on(check(account)) {
+        let done = match &mut store {
+            Some(store) => runtime.block_on(sync_account(account, store, options)),
+            None => runtime.block_on(check(account)),
+        };
+        if let Err(e) = done {
             eprintln!("{}: {e}", account.name);
             failed = true;
         }
@@ -73,15 +111,19 @@ fn fail(message: &str) -> ExitCode {
     ExitCode::FAILURE
 }
 
+async fn connect(account: &Account) -> Result<Connection, String> {
+    let password = account.password()?;
+    Connection::open(&account.imap(), account.user(), &password)
+        .await
+        .map_err(|e| e.0)
+}
+
 /// Logs in to `account` and says what its server can do and which
 /// mailboxes it has, with counts for those that have a role.
 async fn check(account: &Account) -> Result<(), String> {
     let at = account.imap();
-    let password = account.password()?;
     let started = Instant::now();
-    let mut connection = Connection::open(&at, account.user(), &password)
-        .await
-        .map_err(|e| e.0)?;
+    let mut connection = connect(account).await?;
     println!(
         "{}: {}:{} logged in in {} ms",
         account.name,
@@ -114,5 +156,48 @@ async fn check(account: &Account) -> Result<(), String> {
             status.unseen.map_or("?".into(), |u| u.to_string()),
         );
     }
+    connection.close().await.map_err(|e| e.0)
+}
+
+/// Syncs the headers of `account`'s mailboxes into `store`, saying how
+/// many came and how fast.
+async fn sync_account(
+    account: &Account,
+    store: &mut Store,
+    options: Options,
+) -> Result<(), String> {
+    let mut connection = connect(account).await?;
+    let id = store
+        .account(&account.name, &account.address)
+        .map_err(|e| e.0)?;
+    let mailboxes = connection.mailboxes().await.map_err(|e| e.0)?;
+    for mailbox in sync::chosen(account.provider, &mailboxes) {
+        let started = Instant::now();
+        let synced = sync::mailbox(
+            &mut connection,
+            store,
+            id,
+            &mailbox.name,
+            mailbox.role,
+            options,
+        )
+        .await
+        .map_err(|e| format!("{}: {e}", mailbox.name))?;
+        let seconds = started.elapsed().as_secs_f64();
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a message count, shown as a rate"
+        )]
+        let rate = synced.fetched as f64 / seconds.max(0.001);
+        println!(
+            "{} {}: {} fetched in {seconds:.1} s ({rate:.0} a second){}",
+            account.name,
+            mailbox.name,
+            synced.fetched,
+            if synced.done { "" } else { ", more to come" },
+        );
+    }
+    let (messages, places) = store.counts(id).map_err(|e| e.0)?;
+    println!("{}: {messages} messages in {places} places", account.name);
     connection.close().await.map_err(|e| e.0)
 }

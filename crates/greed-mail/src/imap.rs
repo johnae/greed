@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_imap::imap_proto::NameAttribute;
-use async_imap::types::Capability;
+use async_imap::types::{Capability, Flag};
 use async_imap::{Client, Session};
 use futures::TryStreamExt;
 use rustls_platform_verifier::ConfigVerifierExt;
@@ -20,6 +20,7 @@ use tokio_rustls::rustls::ClientConfig;
 use tokio_rustls::rustls::pki_types::ServerName;
 
 use crate::config::{Endpoint, Tls};
+use crate::header::{FIELDS, Fetched};
 
 /// How long connecting and logging in may take.
 const CONNECTING: Duration = Duration::from_secs(30);
@@ -205,6 +206,100 @@ impl Connection {
     pub async fn close(mut self) -> Result<(), Trouble> {
         self.session.logout().await?;
         Ok(())
+    }
+}
+
+/// A mailbox opened to read.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Opened {
+    pub uid_validity: u32,
+    /// The UID the next message will get: every one now is below it.
+    pub uid_next: u32,
+    pub messages: u32,
+}
+
+/// What syncing needs from a server: a [`Connection`], or a fake one in
+/// tests. Nothing here changes what's on the server: mailboxes are opened
+/// read-only, and fetching a message doesn't mark it read.
+pub trait Imap {
+    /// Opens `mailbox` to read, closing the one open before.
+    fn open(&mut self, mailbox: &str) -> impl Future<Output = Result<Opened, Trouble>> + Send;
+
+    /// What the first fetch knows of the messages in the open mailbox with
+    /// UIDs from `from` to `to`, both included; UIDs no message has are
+    /// left out, so a range can be wider than what's in it.
+    fn fetch(
+        &mut self,
+        from: u32,
+        to: u32,
+    ) -> impl Future<Output = Result<Vec<Fetched>, Trouble>> + Send;
+}
+
+impl Imap for Connection {
+    async fn open(&mut self, mailbox: &str) -> Result<Opened, Trouble> {
+        let found = self.session.examine(mailbox).await?;
+        let (Some(uid_validity), Some(uid_next)) = (found.uid_validity, found.uid_next) else {
+            return Err(Trouble(format!(
+                "{mailbox} has no UIDVALIDITY or UIDNEXT, so it can't be synced"
+            )));
+        };
+        Ok(Opened {
+            uid_validity,
+            uid_next,
+            messages: found.exists,
+        })
+    }
+
+    async fn fetch(&mut self, from: u32, to: u32) -> Result<Vec<Fetched>, Trouble> {
+        if from > to {
+            return Ok(Vec::new());
+        }
+        let gmail = if self.capabilities.iter().any(|c| c == "X-GM-EXT-1") {
+            " X-GM-MSGID X-GM-LABELS"
+        } else {
+            ""
+        };
+        let query = format!(
+            "(UID FLAGS INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER.FIELDS ({FIELDS})]{gmail})"
+        );
+        let found: Vec<_> = self
+            .session
+            .uid_fetch(format!("{from}:{to}"), query)
+            .await?
+            .try_collect()
+            .await?;
+        Ok(found
+            .iter()
+            .filter_map(|f| {
+                // A range past the last UID gives the last message anyway.
+                let uid = f.uid.filter(|uid| (from..=to).contains(uid))?;
+                Some(Fetched {
+                    uid,
+                    flags: f.flags().map(|flag| flag_name(&flag)).collect(),
+                    arrived: f.internal_date().map(|d| d.to_rfc3339()),
+                    size: f.size.unwrap_or(0),
+                    raw: f.header().map(<[u8]>::to_vec).unwrap_or_default(),
+                    gmail_id: f.gmail_msg_id().copied(),
+                    labels: f
+                        .gmail_labels()
+                        .map(|labels| labels.iter().map(ToString::to_string).collect())
+                        .unwrap_or_default(),
+                })
+            })
+            .collect())
+    }
+}
+
+fn flag_name(flag: &Flag<'_>) -> String {
+    match flag {
+        Flag::Seen => "\\Seen".into(),
+        Flag::Answered => "\\Answered".into(),
+        Flag::Flagged => "\\Flagged".into(),
+        Flag::Deleted => "\\Deleted".into(),
+        Flag::Draft => "\\Draft".into(),
+        Flag::Recent => "\\Recent".into(),
+        Flag::MayCreate => "\\*".into(),
+        Flag::Custom(name) => name.to_string(),
     }
 }
 
