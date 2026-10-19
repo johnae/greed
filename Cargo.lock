@@ -63,7 +63,7 @@ dependencies = [
  "bitflags 2.13.2",
  "log",
  "regex-automata",
- "unicode-width",
+ "unicode-width 0.2.2",
  "vte",
 ]
 
@@ -463,7 +463,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width",
+ "unicode-width 0.2.2",
 ]
 
 [[package]]
@@ -1430,6 +1430,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sikt",
  "similar",
  "smallvec",
  "stats_alloc",
@@ -1453,7 +1454,7 @@ dependencies = [
  "tree-sitter-yaml",
  "tungstenite",
  "unicode-segmentation",
- "unicode-width",
+ "unicode-width 0.2.2",
  "ureq",
  "url",
 ]
@@ -1474,7 +1475,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "unicode-segmentation",
- "unicode-width",
+ "unicode-width 0.2.2",
  "ureq",
 ]
 
@@ -1493,7 +1494,7 @@ dependencies = [
  "png 0.18.1",
  "pollster",
  "smallvec",
- "unicode-width",
+ "unicode-width 0.2.2",
  "wgpu",
  "winit",
 ]
@@ -2122,6 +2123,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "miette"
+version = "7.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7"
+dependencies = [
+ "cfg-if",
+ "miette-derive",
+ "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miette-derive"
+version = "7.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db5b29714e950dbb20d5e6f74f9dcec4edbcc1067bb7f8ed198c097b8c1a818b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -3656,6 +3679,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sikt"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "857a7d5b546447f33cbaf81c35fbd6c89ecf6326ca6e50030e4d451933eaaf8f"
+dependencies = [
+ "memchr",
+ "miette",
+ "smallvec",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3739,9 +3774,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.16.2"
+version = "1.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9395f0f0eee849a9b707b2f06bb92a6a422090e2123bb2ef8e87a0e61892a8e"
+checksum = "5b3dc8af474f516a851ff4bd12db780f948b9250ad37211e4eec0bccea54e01b"
 dependencies = [
  "serde",
 ]
@@ -4323,6 +4358,12 @@ name = "unicode-segmentation"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
+
+[[package]]
+name = "unicode-width"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
 name = "unicode-width"

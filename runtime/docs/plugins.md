@@ -1593,6 +1593,45 @@ printed there lately, and `conn:close()` stops it. A request on a closed or
 exited connection returns `nil` and why. The connection is your plugin's
 and goes with it.
 
+### Reading text with sikt
+
+`greed.sikt` reads structure out of text, like a program's output or the
+lines of a note, with [sikt](https://github.com/johnae/sikt/blob/main/docs/language.md)
+patterns. A pattern reads like a sentence: literal text is quoted, `name:`
+captures, and `integer`, `size` or `duration` captures come back as
+numbers. Compile a program once and run it as often as you like:
+
+```luau
+-- du -h prints a size, a tab and a path a line.
+local big = assert(greed.sikt.compile('find used: size 1+ space path: until text end where used > 1G'))
+for _, row in big:rows(ran.stdout) do
+	greed.echo(`{row.path}: {row.used} bytes`)
+end
+```
+
+On a mistake, `compile` gives nil, the mistake in words, and a list of
+mistakes, each with its `message`, `at` (where in the program) and `help`,
+so a program someone typed can be shown with its mistake marked. Programs that work but probably don't do what was
+meant come with `warnings`.
+
+Each line is matched on its own unless `lines = false`. `rows(text, { at =
+true })` also gives where each match is (`from`, `to`, `line`). For a lot of
+text, `rows_many(texts)` runs over a list of texts on other threads and
+waits like `greed.sleep`. Its rows become Luau tables all at once when it's
+done, so give it a few hundred texts at a time. `replace(text)` rewrites the matches as the
+program's `replace` says. Rules can live in Luau and be used by name:
+
+```luau
+local notes = assert(greed.sikt.compile('use "notes" find link or tag', {
+	modules = {
+		notes = [[
+			let link = "[[" target: until "]]" "]]"
+			let tag = not after wordchar "#" tag: 1+ wordchar
+		]],
+	},
+}))
+```
+
 ### The shell
 
 `require("@shell")` is the [shell](shell.md): `shell.run(sh, line)` runs

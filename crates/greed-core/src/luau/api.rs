@@ -677,6 +677,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     )?;
     greed.set("control", super::requests::module(lua, owner)?)?;
     greed.set("json", super::json::module(lua)?)?;
+    greed.set("sikt", super::sikt::module(lua)?)?;
     greed.set("project", super::projects::module(lua)?)?;
     greed.set("tab", super::tabs::module(lua, owner)?)?;
     greed.set("session", super::sessions::module(lua)?)?;

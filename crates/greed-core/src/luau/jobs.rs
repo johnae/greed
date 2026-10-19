@@ -38,6 +38,8 @@ pub enum Output {
     /// What another session on this machine said of itself, or why it
     /// didn't (`greed.session.status`).
     Status(Result<serde_json::Value, String>),
+    /// What a sikt program found in many texts (`rows_many`).
+    Sikt(super::sikt::Many),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -236,6 +238,10 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
             tasks::deliver(lua, done.token, super::lsp::to_lua(lua, &status)?)
         }
         Output::Status(Err(why)) => tasks::deliver(lua, done.token, (Value::Nil, why)),
+        Output::Sikt(many) => {
+            let found = super::sikt::many_to_lua(lua, many)?;
+            tasks::deliver(lua, done.token, found)
+        }
         Output::ClipboardImage(png) => {
             let png = png.map(|bytes| lua.create_string(bytes)).transpose()?;
             tasks::deliver(lua, done.token, png)

@@ -2031,6 +2031,77 @@ fn plugins_search_buffers_with_regexes() {
 }
 
 #[test]
+fn a_sikt_program_reads_rows_out_of_text_with_typed_values_and_where_they_are() {
+    let h = host("");
+    let eval = |code: &str| {
+        h.eval(&format!("local greed = require('@greed')\n{code}"))
+            .unwrap()
+    };
+    // Each match is a row of its captures; numbers come as numbers, and a
+    // capture that didn't take part is missing. `at` says where each is.
+    assert_eq!(
+        eval(
+            r#"local p = assert(greed.sikt.compile('find name: 1+ letter "=" (n: integer or word: 1+ letter) where name is not "skip"'))
+               local rows, at = p:rows("a=1 b=x\nskip=2 c=30", { at = true })
+               local out = {}
+               for i, row in rows do
+                 table.insert(out, `{row.name}:{row.n or row.word}:{type(row.n)}@{at[i].line}:{at[i].from}-{at[i].to}`)
+               end
+               return table.concat(out, ' ')"#
+        ),
+        "a:1:number@1:1-4 b:x:nil@1:5-8 c:30:number@2:16-20"
+    );
+    // A mistake says what and where; a warning comes with the program.
+    assert_eq!(
+        eval(
+            r#"local p, why, problems = greed.sikt.compile('year: 4 digts')
+               local warned = assert(greed.sikt.compile('0+ any "x"'))
+               return tostring(p), why, problems[1].message, problems[1].at.from, problems[1].at.to,
+                 #warned.warnings > 0"#
+        ),
+        "nil\tunknown word `digts` (at 9 in the program)\tunknown word `digts`\t9\t14\ttrue"
+    );
+    // Rules from Luau, by name; captures and their types; replacing; and a
+    // whole text at once rather than line by line.
+    assert_eq!(
+        eval(
+            r#"local p = assert(greed.sikt.compile('use "kv" find kv', { modules = { kv = 'let kv = key: 1+ letter ":" size: size' } }))
+               local caps = {}
+               for _, c in p.captures do table.insert(caps, `{c.name}={c.type}`) end
+               local swap = assert(greed.sikt.compile('find a: 1+ digit "-" b: 1+ digit replace "{b}-{a}"'))
+               local across = assert(greed.sikt.compile('"a" newline "b"', { lines = false }))
+               return p:rows("disk:1K")[1].size, table.concat(caps, ','), swap:replace("1-2, 30-4"),
+                 #across:rows("a\nb")"#
+        ),
+        "1024\tkey=text,size=size\t2-1, 4-30\t1"
+    );
+}
+
+#[test]
+fn sikt_reads_many_texts_on_other_threads() {
+    let h = host("");
+    h.load_str(
+        "sikt-test",
+        r##"local greed = require('@greed')
+           greed.command { name = 'sikt-test', run = function()
+             local p = assert(greed.sikt.compile('"#" tag: 1+ letter'))
+             local texts = {}
+             for i = 1, 100 do texts[i] = `note {i} #a\n#b{if i % 2 == 0 then ' #even' else ''}` end
+             local all, at = p:rows_many(texts, { at = true })
+             local plain = p:rows_many({})
+             greed.echo(`{#all} {#all[1]} {#all[2]} {all[2][3].tag} {at[2][2].line} {#plain}`)
+           end }"##,
+    )
+    .unwrap();
+    h.run(FIRST_CLIENT, "sikt-test").unwrap();
+    h.settle().unwrap();
+    assert_eq!(
+        h.with_editor_mut(Editor::take_messages).join(""),
+        "100 2 3 even 2 0"
+    );
+}
+
+#[test]
 fn json_round_trips_and_empty_tables_are_objects_unless_marked() {
     let h = host("");
     let eval = |code: &str| {

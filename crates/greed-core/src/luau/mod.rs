@@ -36,6 +36,7 @@ mod rpc;
 mod scenes;
 mod secrets;
 mod sessions;
+mod sikt;
 mod ssh_agent;
 mod stalls;
 mod syntax;

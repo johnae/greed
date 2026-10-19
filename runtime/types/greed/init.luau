@@ -1150,6 +1150,35 @@ export type Json = {
 	array: <T>(items: { T }?) -> { T },
 }
 
+--- A mistake or a warning in a sikt program: its words, where it is in the program's text (`from` its first byte to just after its last), and what might help.
+export type SiktProblem = { message: string, at: { from: number, to: number }, help: string? }
+
+--- Where a sikt match is in its text: `from` its first byte to just after its last, on `line` (from 1) where it starts.
+export type SiktPlace = { from: number, to: number, line: number }
+
+--- A match of a sikt program: its captures by name. `integer`, `number`, `size` (bytes), `percent` and `duration` (seconds) captures are numbers, the rest text; a capture that didn't take part is missing.
+export type SiktRow = { [string]: string | number }
+
+--- A compiled sikt program, to run as often as needed.
+export type SiktProgram = {
+	--- What the program probably doesn't mean, like a part that can never match.
+	warnings: { SiktProblem },
+	--- Its captures, each with its type ("text", "integer", "number", "size", "percent", "duration").
+	captures: { { name: string, type: string? } },
+	--- The matches in `text`, each a row of its captures; with `at`, also where each is. It runs on the editor's thread, so for a lot of text use `rows_many`. An error when matching gives up, on a pattern that takes too many steps.
+	rows: (self: SiktProgram, text: string, opts: { at: boolean? }?) -> ({ SiktRow }, { SiktPlace }?),
+	--- `rows` for each of `texts`, run on other threads and waited for like greed.sleep (commands, handlers, greed.spawn). The rows become Luau tables all at once when it's done, so give it a few hundred texts at a time.
+	rows_many: (self: SiktProgram, texts: { string }, opts: { at: boolean? }?) -> ({ { SiktRow } }, { { SiktPlace } }?),
+	--- `text` with each match replaced as the program's `replace` says; unchanged without one.
+	replace: (self: SiktProgram, text: string) -> string,
+}
+
+--- sikt: patterns that read like sentences (`year: 4 digit "-" month: 2 digit`), for reading structure out of text. The language: https://github.com/johnae/sikt/blob/main/docs/language.md
+export type Sikt = {
+	--- Compiles `source`, a sikt program, or gives nil, what's wrong in words and the mistakes with where they are. It matches each line on its own unless `lines` is false; `nocase` ignores case; `modules` holds rule files by name for `use "name"`.
+	compile: (source: string, opts: { lines: boolean?, nocase: boolean?, modules: { [string]: string }? }?) -> (SiktProgram?, string?, { SiktProblem }?),
+}
+
 --- Needs the "control" capability (and `serve_ide` "net" too).
 export type Control = {
 	--- Answers request `id` with `result`, or with an error `message`. Every
@@ -2009,6 +2038,7 @@ export type Greed = {
 	text: Text,
 	control: Control,
 	json: Json,
+	sikt: Sikt,
 	project: Projects,
 	tab: Tabs,
 	session: Sessions,
