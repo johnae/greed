@@ -2171,6 +2171,15 @@ fn json_round_trips_and_empty_tables_are_objects_unless_marked() {
         eval("local v, err = greed.json.decode('{') return v, err ~= nil"),
         "nil\ttrue"
     );
+    // A number comes back as it went, to the last bit, like a file's
+    // modified time kept to compare with the next look at it.
+    assert_eq!(
+        eval(
+            "local t = 1792436698.7460175
+             return greed.json.decode(greed.json.encode({ t = t })).t == t"
+        ),
+        "true"
+    );
     // JSON can't hold bytes that aren't UTF-8, like half a character cut
     // off or a program's binary output: they become U+FFFD, in values and
     // keys, however deep.
