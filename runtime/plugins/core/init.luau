@@ -199,6 +199,9 @@ return {
 	atomic = require("@self/atomic"),
 	--- Times and durations as Greed writes and reads them (time.luau).
 	time = require("@self/time"),
+	--- Dates: moving them on, repeats, and reading them in plain words
+	--- (dates.luau).
+	dates = require("@self/dates"),
 	--- The files you've been in, most recent first (recent.luau).
 	recent = require("@self/recent"),
 	--- Watching objects for changes, with a notification saying how (watch.luau).
