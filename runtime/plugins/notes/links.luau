@@ -154,14 +154,28 @@ greed.on("option.changed", function(event)
 	end
 end)
 
+--- The file a link to `target` in the file at `path` opens: a note, or
+--- for Markdown outside every place, the file beside it, unless the link
+--- names a place.
+function M.target_path(target: string, path: string?): string
+	local from: string? = nil
+	if path then
+		if notes.place_of(path) then
+			from = notes.name(path)
+		elseif not notes.named_place(target) then
+			local file = if string.match(target, "%.md$") then target else target .. ".md"
+			return core.project.resolve(file, string.match(path, "^(.*)/"))
+		end
+	end
+	return notes.path(notes.resolve(target, from))
+end
+
 -- g d on a [[link]] opens the note it points at, making it if it's new.
 core.lookup.add("definition", function(ctx)
 	local head = ctx.view:cursor()
 	for _, link in M.links(ctx.buffer) do
 		if link.from <= head and head < link.to then
-			local path = ctx.buffer:path()
-			local from = if path and notes.is_note(ctx.buffer) then notes.name(path) else nil
-			core.file.open(notes.path(notes.resolve(link.target, from)))
+			core.file.open(M.target_path(link.target, ctx.buffer:path()))
 			return true
 		end
 	end

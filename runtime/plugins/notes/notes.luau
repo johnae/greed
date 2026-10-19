@@ -205,12 +205,18 @@ function M.grep(pattern: string): ({ Found }?, string?)
 	return out, nil
 end
 
+--- The place a link's `target` names before its colon, as "work:plan"
+--- names "work"; nil when it names none that exists.
+function M.named_place(target: string): Place?
+	local place_name = string.match(target, "^([%w_-]+):")
+	return if place_name then M.place(place_name) else nil
+end
+
 --- Where a link to `target` in note `from` goes: a name with a place goes
 --- there; one without goes to `from`'s place when the note is there (or
 --- isn't anywhere), and otherwise to yours.
 function M.resolve(target: string, from: string?): string
-	local place_name = string.match(target, "^([%w_-]+):")
-	if place_name and M.place(place_name) then
+	if M.named_place(target) then
 		return target
 	end
 	local from_place = if from then (M.split(from)) else M.places()[1]

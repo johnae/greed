@@ -61,6 +61,32 @@ test("g d follows a link, making the note; elsewhere it goes to the definition",
 	assert(string.find(messages[#messages], "language server", 1, true), messages[#messages])
 end)
 
+test("g d on a link in Markdown outside the notes opens the file beside it", function(t)
+	local dir = folder(t)
+	local elsewhere = t:tempdir({ ["games/story.md"] = "see [[ideas]]\n[[more/plot]]\n" })
+	for _, everywhere in { false, true } do
+		greed.option.set("notes-everywhere", everywhere)
+		greed.open(elsewhere .. "/games/story.md")
+		t:keys("g g w w g d")
+		local path = greed.view():buffer():path()
+		assert(path == elsewhere .. "/games/ideas.md", `{everywhere}: {path}`)
+		greed.open(elsewhere .. "/games/story.md")
+		t:keys("g g j g d")
+		path = greed.view():buffer():path()
+		assert(path == elsewhere .. "/games/more/plot.md", `{everywhere}: {path}`)
+	end
+	greed.option.set("notes-everywhere", false)
+	assert(greed.fs.stat(dir .. "/ideas.md") == nil, "nothing made in the notes folder")
+
+	local work = t:tempdir()
+	require("@notes").add_place("work", work)
+	greed.fs.write(elsewhere .. "/games/work.md", "[[work:plan]]\n")
+	greed.open(elsewhere .. "/games/work.md")
+	t:keys("g g g d")
+	local path = greed.view():buffer():path()
+	assert(path == work .. "/plan.md", `a link naming a place goes there: {path}`)
+end)
+
 test("a note lists the notes linking to it at its end", function(t)
 	local dir =
 		folder(t, { ["a.md"] = "about [[b]]\n", ["c.md"] = "[[b|bee]] too\n", ["b.md"] = "b\n" })
