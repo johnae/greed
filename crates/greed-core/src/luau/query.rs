@@ -25,9 +25,9 @@ fn values(value: Value) -> LuaResult<Vec<String>> {
     })
 }
 
-// A row as Luau gives it: `text`, `fields` (by name, a string or a list),
-// `flags` (a list), `name`, and `parent`, the 1-based index of its row.
-fn row(table: &Table) -> LuaResult<Row> {
+// The `fields` of a row or an index's item as Luau gives them: by name, a
+// string or a list.
+pub(super) fn fields(table: &Table) -> LuaResult<HashMap<String, Vec<String>>> {
     let mut fields = HashMap::new();
     if let Some(given) = table.get::<Option<Table>>("fields")? {
         for pair in given.pairs::<String, Value>() {
@@ -35,15 +35,33 @@ fn row(table: &Table) -> LuaResult<Row> {
             fields.insert(name.to_lowercase(), values(value)?);
         }
     }
-    let flags = match table.get::<Option<Table>>("flags")? {
-        Some(list) => list.sequence_values::<String>().collect::<LuaResult<_>>()?,
-        None => Vec::new(),
-    };
+    Ok(fields)
+}
+
+// The `flags` of a row or an index's item as Luau gives them: a list.
+pub(super) fn flags(table: &Table) -> LuaResult<Vec<String>> {
+    match table.get::<Option<Table>>("flags")? {
+        Some(list) => list.sequence_values::<String>().collect(),
+        None => Ok(Vec::new()),
+    }
+}
+
+// A query `core.query` parsed, or nil for one every row matches.
+pub(super) fn node(lua: &Lua, tree: Value) -> LuaResult<Option<Node>> {
+    match tree {
+        Value::Nil => Ok(None),
+        tree => lua.from_value(tree).map(Some),
+    }
+}
+
+// A row as Luau gives it: `text`, `fields`, `flags`, `name`, and `parent`,
+// the 1-based index of its row.
+fn row(table: &Table) -> LuaResult<Row> {
     let parent: Option<usize> = table.get("parent")?;
     Ok(Row {
         text: table.get::<Option<String>>("text")?.unwrap_or_default(),
-        fields,
-        flags,
+        fields: fields(table)?,
+        flags: flags(table)?,
         name: table.get("name")?,
         parent: parent.and_then(|p| p.checked_sub(1)),
     })
@@ -55,10 +73,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         "run",
         lua.create_function(
             |lua, (tree, given, schema): (Value, Table, Value)| -> LuaResult<MultiValue> {
-                let node: Option<Node> = match tree {
-                    Value::Nil => None,
-                    tree => Some(lua.from_value(tree)?),
-                };
+                let node = node(lua, tree)?;
                 let schema: Schema = lua.from_value(schema)?;
                 let rows = Rows::new(
                     given

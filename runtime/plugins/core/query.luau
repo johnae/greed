@@ -661,6 +661,11 @@ export type Field = {
 --- `in:`, `under:` and `has:` (`parent`, `children`, and an item's `name`,
 --- for `in:NAME`). Words match whole words, or with `words` "anywhere",
 --- anywhere in the text, as the shell's filters do.
+---
+--- A source kept in an index (`index_items`, `search`) also says each
+--- item's `key`, and which of its flags are `stored` in the index; the
+--- others are worked out when a query runs, so what depends on them comes
+--- back as a maybe.
 export type Source = {
 	fields: { [string]: Field },
 	flags: { [string]: (item: any) -> boolean }?,
@@ -669,6 +674,8 @@ export type Source = {
 	parent: ((item: any) -> any)?,
 	children: ((item: any) -> { any })?,
 	name: ((item: any) -> string?)?,
+	key: ((item: any) -> string)?,
+	stored: { string }?,
 }
 
 -- Fields every source understands, beside its own.
@@ -867,6 +874,15 @@ local function bind(node: Node, source: Source): Node
 	return out
 end
 
+-- `item`'s values of each of `source`'s fields, by name.
+local function fields_of(item: any, source: Source): { [string]: string | { string } }
+	local fields: { [string]: string | { string } } = {}
+	for name, field in source.fields do
+		fields[name] = values_of(field, item)
+	end
+	return fields
+end
+
 -- `items` as rows for `greed.query.run`, their flags worked out, and after
 -- them the rows they sit in, all the way up, and those they hold, so
 -- `in:`, `under:` and `has:` can look at them.
@@ -879,10 +895,6 @@ local function rows_of(items: { any }, source: Source): { greed.QueryRow }
 		if known then
 			return known
 		end
-		local fields: { [string]: string | { string } } = {}
-		for name, field in source.fields do
-			fields[name] = values_of(field, item)
-		end
 		local has: { string } = {}
 		for name, test in flags do
 			if test(item) then
@@ -891,7 +903,7 @@ local function rows_of(items: { any }, source: Source): { greed.QueryRow }
 		end
 		table.insert(rows, {
 			text = source.text(item),
-			fields = fields,
+			fields = fields_of(item, source),
 			flags = has,
 			name = if source.name then source.name(item) else nil,
 		})
@@ -924,24 +936,80 @@ local function rows_of(items: { any }, source: Source): { greed.QueryRow }
 	return rows
 end
 
+-- What `source`'s fields and flags mean, as greed.query and greed.index
+-- take it. With `indexed`, only its `stored` flags are on the rows; the
+-- others are worked out when a query runs.
+local function schema_of(source: Source, indexed: boolean): greed.QuerySchema
+	local kinds: { [string]: string } = {}
+	for name, field in source.fields do
+		kinds[name] = field.kind
+	end
+	local stored: { [string]: boolean } = {}
+	local names: { string } = source.stored or {}
+	for _, name in names do
+		stored[name] = true
+	end
+	local flags: { [string]: string } = {}
+	local all: { [string]: (item: any) -> boolean } = source.flags or {}
+	for name in all do
+		flags[name] = if not indexed or stored[name] then "row" else "computed"
+	end
+	return { fields = kinds, flags = flags, anywhere = source.words == "anywhere" }
+end
+
+--- `items` as they go in an index (`index:write`): each with its key, the
+--- key of the item it's in, its name, text, fields and stored flags, as
+--- `source` says.
+function M.index_items(items: { any }, source: Source): { greed.IndexItem }
+	local key = source.key :: (item: any) -> string
+	local stored: { string } = source.stored or {}
+	local flags: { [string]: (item: any) -> boolean } = source.flags or {}
+	local out: { greed.IndexItem } = {}
+	for _, item in items do
+		local has: { string } = {}
+		for _, name in stored do
+			local test = flags[name]
+			if test and test(item) then
+				table.insert(has, name)
+			end
+		end
+		local parent = if source.parent then source.parent(item) else nil
+		table.insert(out, {
+			key = key(item),
+			parent = if parent ~= nil then key(parent) else nil,
+			name = if source.name then source.name(item) else nil,
+			text = source.text(item),
+			fields = fields_of(item, source),
+			flags = has,
+		})
+	end
+	return out
+end
+
+--- The keys of the items in `index` that match `parsed`, sorted and cut to
+--- its limit as its view says, and of those the ones that only might,
+--- where it depends on a flag `source` works out (`stored` says which
+--- aren't); nil and why when it can't run. It waits like greed.sleep.
+function M.search(
+	index: greed.Index,
+	parsed: Parsed,
+	source: Source
+): ({ string }?, { string }?, string?)
+	local query: Node? = if parsed.query then bind(parsed.query, source) else nil
+	return index:search(
+		query,
+		schema_of(source, true),
+		{ sort = parsed.view.sort, limit = parsed.view.limit }
+	)
+end
+
 --- The items of `items` that match `parsed`, sorted and cut to its limit as
 --- its view says, run by `greed.query.run`; nil and why when it can't run.
 --- Check it first (`check`): a query with problems matches what it can.
 function M.run(parsed: Parsed, items: { any }, source: Source): ({ any }?, string?)
 	-- Every flag is worked out for the rows (`rows_of`), so none is a maybe.
-	local kinds: { [string]: string } = {}
-	for name, field in source.fields do
-		kinds[name] = field.kind
-	end
-	local flags: { [string]: string } = {}
-	local all: { [string]: (item: any) -> boolean } = source.flags or {}
-	for name in all do
-		flags[name] = "row"
-	end
 	local query: Node? = if parsed.query then bind(parsed.query, source) else nil
-	local schema: greed.QuerySchema =
-		{ fields = kinds, flags = flags, anywhere = source.words == "anywhere" }
-	local found, _, err = greed.query.run(query, rows_of(items, source), schema)
+	local found, _, err = greed.query.run(query, rows_of(items, source), schema_of(source, false))
 	if found == nil then
 		return nil, err
 	end

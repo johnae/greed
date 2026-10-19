@@ -71,6 +71,8 @@ const GATED: &[(&str, &str)] = &[
     ("lsp.restart", "proc"),
     ("lsp.trust", "proc"),
     ("fs.read", "fs.read"),
+    ("index.open", "fs.read"),
+    ("index.writer", "fs.write"),
     ("fs.read_bytes", "fs.read"),
     ("fs.list", "fs.read"),
     ("fs.stat", "fs.read"),

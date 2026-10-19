@@ -1992,6 +1992,66 @@ shell.action_command("service", "status", "systemctl status {unit}", { doc = "Ho
 shell.action_command("service", "restart", "sudo systemctl restart {unit}", { doc = "Restart it", danger = true })
 ```
 
+## Queries and indexes
+
+Greed has one query language for searching and filtering, and a plugin's
+own lists can speak it too: words, `field:value`, comparisons, `-` and
+`OR`, dates like `date:2w..` and `due:..eow`, `is:` flags, and `in:`,
+`under:` and `has:` for what sits where.
+
+```text
+from:anna is:unread date:2w..
+is:todo -is:done due:..+7d in:(tag:garden) sort:due
+```
+
+`require("@core").query` reads one and runs it. A source says what its
+items' fields are (`"text"` by words, `"exact"` as whole values,
+`"value"` compared as `greed.compare` does, `"date"`), which flags `is:`
+knows, and where items sit:
+
+```luau
+local core = require("@core")
+local query = core.query
+
+local tasks = {
+	{ title = "water the plants", due = "2026-10-16", done = false },
+	{ title = "buy seeds", due = "2026-10-12", done = true },
+}
+
+local source: core.QuerySource = {
+	fields = {
+		title = { kind = "text", get = function(t) return t.title end },
+		due = { kind = "date", ahead = true, get = function(t) return t.due end },
+	},
+	flags = { done = function(t) return t.done end },
+	text = function(t) return t.title end,
+}
+
+local parsed = query.parse("plants -is:done due:..eow")
+local problems = query.check(parsed, source) -- fields and flags it hasn't, bad dates
+local found = query.run(parsed, tasks, source) -- the tasks that match, sorted as asked
+```
+
+`parse` gives the problems with where they are in the text (`at`), and
+`print(parsed)` writes a query back in its one form. `core.dates.span`
+reads a date the way queries do ("last week", "2w", "eom").
+
+For many items, or items kept between sessions, put them in an index:
+`greed.index.writer(path)` makes or opens one to write, and
+`greed.index.open(path)` reads one another program writes. Give the source
+a `key` for each item and say which flags are `stored`; the rest are
+worked out when a query runs.
+
+```luau
+local index = greed.index.writer(dir .. "/tasks.db")
+index:write(query.index_items(tasks, source))
+local keys, maybe = query.search(index, parsed, source)
+```
+
+`search` gives the matching items' keys; `maybe` holds those that depend
+on a flag that isn't stored, for the plugin to check. An index's methods
+work on another thread and wait like `greed.sleep`.
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

@@ -163,9 +163,9 @@ test("what print writes parses back to the same thing", function()
 	end
 end)
 
--- The cases every engine must agree on (query_cases.json), as items in
--- memory: each with its text, fields, flags, and the item it's in.
-test("the shared cases: what every engine running a query must agree on", function()
+-- The cases every engine must agree on (query_cases.json): each runs over
+-- the items in memory, and over an index of them.
+test("the shared cases: what every engine running a query must agree on", function(t)
 	local greed = require("@greed")
 	local dates = core.dates
 	local text = greed.fs.read(`{greed.plugin.dirs().core}/test/query_cases.json`)
@@ -211,7 +211,13 @@ test("the shared cases: what every engine running a query must agree on", functi
 		name = function(item: any): string?
 			return item.name
 		end,
+		key = function(item: any): string
+			return item.id
+		end,
+		stored = cases.flags,
 	}
+	local index = greed.index.writer(t:tempdir() .. "/cases.db") :: greed.Index
+	assert(index:write(query.index_items(cases.items, source)))
 	local y, m, d = string.match(cases.today, "^(%d+)-(%d+)-(%d+)$")
 	local clock = dates.clock
 	dates.clock = function(): number
@@ -248,6 +254,13 @@ test("the shared cases: what every engine running a query must agree on", functi
 				end
 				local got, want = table.concat(ids, " "), table.concat(case.ids, " ")
 				assert(got == want, `{case.query}: wanted [{want}], got [{got}]`)
+				local keys, _, wrong = query.search(index, parsed, source)
+				assert(keys, `{case.query} in an index: {wrong}`)
+				local indexed = table.concat(keys, " ")
+				assert(
+					indexed == want,
+					`{case.query} in an index: wanted [{want}], got [{indexed}]`
+				)
 			end
 		end
 	end)

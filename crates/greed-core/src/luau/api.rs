@@ -671,6 +671,7 @@ fn submodules(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<()> {
     greed.set("hash", super::hash::module(lua)?)?;
     greed.set("compare", super::compare::module(lua)?)?;
     greed.set("query", super::query::module(lua)?)?;
+    greed.set("index", super::index::module(lua)?)?;
     greed.set("text", super::text::module(lua)?)?;
     greed.set(
         "hostname",

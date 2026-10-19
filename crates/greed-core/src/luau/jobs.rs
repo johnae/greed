@@ -40,6 +40,8 @@ pub enum Output {
     Status(Result<serde_json::Value, String>),
     /// What a sikt program found in many texts (`rows_many`).
     Sikt(super::sikt::Many),
+    /// What a job on an index (`greed.index`) came back with.
+    Index(Result<super::index::Done, greed_index::index::Trouble>),
 }
 
 /// A finished job, to pass to [`crate::luau::Host::finish_job`].
@@ -245,6 +247,9 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::ClipboardImage(png) => {
             let png = png.map(|bytes| lua.create_string(bytes)).transpose()?;
             tasks::deliver(lua, done.token, png)
+        }
+        Output::Index(done_with) => {
+            tasks::deliver(lua, done.token, super::index::to_lua(lua, done_with)?)
         }
     }
 }

@@ -1630,6 +1630,29 @@ export type Query = {
 	run: (query: any, rows: { QueryRow }, schema: QuerySchema) -> ({ number }?, { number }?, string?),
 }
 
+--- An item for `index:write`: its `key`, unique in the index, the `parent` key of the item it's in, its `name` (for `in:NAME`), its `text` for words, its `fields`' values by name (a string or a list) and its `flags`.
+export type IndexItem = { key: string, parent: string?, name: string?, text: string?, fields: { [string]: string | { string } }?, flags: { string }? }
+
+--- An index on SQLite, from `greed.index.open` or `greed.index.writer`, that queries `core.query` parsed run over. Its methods run on another thread and wait like greed.sleep, so only in commands, event handlers and greed.spawn.
+export type Index = {
+	--- The keys of the items matching `query` (every item, for nil), as `schema` says what its fields and flags mean, sorted and cut as `view` says; and of those, the ones that only might match, where it depends on a computed flag (then nothing is cut). Nil and why for a query that can't run.
+	search: (self: Index, query: any, schema: QuerySchema, view: { sort: { { field: string, descending: boolean } }?, limit: number? }?) -> ({ string }?, { string }?, string?),
+	--- Puts `items` in, in one go, each in place of the one with its key; an index from `open` can't be written. True, or nil and why.
+	write: (self: Index, items: { IndexItem }) -> (boolean?, string?),
+	--- Takes the items with `keys` out. True, or nil and why.
+	remove: (self: Index, keys: { string }) -> (boolean?, string?),
+	--- How many items it holds, or nil and why.
+	count: (self: Index) -> (number?, string?),
+}
+
+--- Indexes on SQLite: one file that one program writes and any number read.
+export type IndexModule = {
+	--- The index at `path` to read, while another program may write it; nil and why, as when it isn't there. Needs "fs.read".
+	open: (path: string) -> (Index?, string?),
+	--- The index at `path` to write, made if it isn't there, and made again when another Greed's version of it is there. Needs "fs.write".
+	writer: (path: string) -> (Index?, string?),
+}
+
 --- A match of a regex in some text, from `greed.text.matches`.
 export type TextMatch = { from: number, to: number, text: string, groups: { string | false } }
 
@@ -2050,6 +2073,7 @@ export type Greed = {
 	hash: Hash,
 	compare: Compare,
 	query: Query,
+	index: IndexModule,
 	text: Text,
 	control: Control,
 	json: Json,

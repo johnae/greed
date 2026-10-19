@@ -202,7 +202,7 @@ impl Index {
         let mut args: Vec<Value> = Vec::new();
         let narrowed = node.and_then(|n| narrow(n, schema, &mut args));
         let sql = format!(
-            "{SELECT_ITEMS} WHERE {}",
+            "{SELECT_ITEMS} WHERE {} ORDER BY id",
             narrowed.as_deref().unwrap_or("1")
         );
         let mut loaded = Loaded::default();

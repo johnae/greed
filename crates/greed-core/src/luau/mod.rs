@@ -21,6 +21,7 @@ pub(crate) mod hash;
 mod history;
 mod http;
 mod images;
+mod index;
 mod jobs;
 mod json;
 mod languages;
