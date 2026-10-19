@@ -11,7 +11,8 @@ history, language servers.
 Each project gets its own session, named after its folder. `greed` anywhere
 in a project attaches to that session (opening the file you named), or
 starts it. A slow plugin or a crash in one project's session leaves the
-others alone.
+others alone. How sessions keep track of each other, here and on other
+machines, is in [Sessions, machines and the hub](sessions.md).
 
 | Command | What it does |
 |---|---|

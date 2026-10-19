@@ -942,7 +942,8 @@ status line adds them to its count (`◆ 1 waiting for you in greed-2`), and
 One session follows the others for all of them: the first by name among
 those of the same greed build, or the one the `hub-session` option names.
 When it ends, the next takes over. The others follow only it, so there is
-one connection per session however many run.
+one connection per session however many run. [Sessions, machines and
+the hub](sessions.md) explains how this works.
 
 When an agent starts waiting for you in any session here, each machine
 you're attached from gets one desktop notification, whichever session its

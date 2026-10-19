@@ -4,6 +4,7 @@
 
 - [Using Greed](using.md)
   - [Several clients](clients.md)
+  - [Sessions, machines and the hub](sessions.md)
   - [The shell](shell.md)
   - [Boards](boards.md)
   - [Charts](charts.md)
