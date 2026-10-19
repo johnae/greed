@@ -10,6 +10,15 @@ M.clock = function(): number
 	return os.time()
 end
 
+--- Makes `clock` the time now for everything reading dates, or with nil the
+--- real time again: for a test, or a demo, to try another day. Other
+--- plugins can't set `M.clock` themselves; core's module is theirs to read.
+function M.set_clock(clock: (() -> number)?)
+	M.clock = clock or function(): number
+		return os.time()
+	end
+end
+
 --- Today's date: "2026-10-01".
 function M.today(): string
 	return os.date("%Y-%m-%d", M.clock()) :: string

@@ -327,7 +327,7 @@ function M.check(): number
 	last_day = day
 	local reminders = M.scan()
 	local went = load_fired()
-	local now = notes.clock()
+	local now = dates.clock()
 	local yours = yours_here()
 	local due: { Reminder } = {}
 	-- A line with several reminders that went off since the last look
@@ -383,7 +383,7 @@ end
 -- Once a minute, on the minute, so an 18:00 reminder goes off at 18:00.
 greed.spawn(function()
 	while true do
-		greed.sleep((60 - notes.clock() % 60) * 1000)
+		greed.sleep((60 - dates.clock() % 60) * 1000)
 		check()
 	end
 end)

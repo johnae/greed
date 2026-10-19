@@ -296,14 +296,9 @@ function M.set_line(name: string, line: number, text: string)
 	core.file.write(path, text, { from = from, to = from + #lines[line + 1] })
 end
 
---- The time now, in seconds. Tests set a clock of their own.
-M.clock = function(): number
-	return os.time()
-end
-
 --- Today's date, as notes write it: "2026-10-01".
 function M.today(): string
-	return os.date("%Y-%m-%d", M.clock()) :: string
+	return core.dates.today()
 end
 
 --- The name of the daily note for `date` ("2026-10-01"; today by
@@ -321,7 +316,7 @@ function M.make_daily(): string
 	local path = M.path(M.daily(today))
 	if greed.fs.stat(path) == nil then
 		local template = M.read("templates/daily")
-		local day = os.date("%A %d %B", M.clock()) :: string
+		local day = os.date("%A %d %B", core.dates.clock()) :: string
 		local text = if template
 			then string.gsub(string.gsub(template, "{{date}}", today), "{{day}}", day)
 			else `# {today}\n\n`

@@ -63,8 +63,9 @@ export type Task = index.Task
 export type Place = links.Place
 
 -- What other plugins use: the notes, and with them the index, links, todos,
--- dates, reminders and how notes read a line. Setting a field, like a
--- test's `clock`, sets it on the notes themselves.
+-- dates, reminders and how notes read a line. Setting a field sets it on
+-- the notes themselves, except `clock`, the time now, which is
+-- core.dates' (a test sets it to try another day).
 local exported: typeof(notes) & {
 	index: typeof(index),
 	todos: typeof(todos),
@@ -73,6 +74,7 @@ local exported: typeof(notes) & {
 	dates: typeof(dates),
 	links: typeof(links),
 	mentions: typeof(mentions),
+	clock: () -> number,
 } = setmetatable(
 	{
 		index = index,
@@ -84,8 +86,16 @@ local exported: typeof(notes) & {
 		mentions = mentions,
 	},
 	{
-		__index = notes,
-		__newindex = notes,
+		__index = function(_, key: string): any
+			return if key == "clock" then core.dates.clock else (notes :: any)[key]
+		end,
+		__newindex = function(_, key: string, value: any)
+			if key == "clock" then
+				core.dates.set_clock(value)
+			else
+				(notes :: any)[key] = value
+			end
+		end,
 	}
 ) :: any
 return exported
