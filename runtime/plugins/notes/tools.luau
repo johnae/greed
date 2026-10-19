@@ -148,10 +148,7 @@ agent.tool({
 				kind = item.kind,
 				note = item.note.name,
 				line = if node then node.line + 1 else nil,
-				text = if task
-					then todos.plain(task.text)
-					elseif node then node.text
-					else item.note.title,
+				text = query.label(item),
 				due = if task then task.due else nil,
 				done = if task then task.done else nil,
 			})

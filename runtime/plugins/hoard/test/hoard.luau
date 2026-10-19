@@ -458,3 +458,20 @@ test("a habit is on the agenda each of its days until it's ticked off", function
 	local text = greed.fs.read(`{dir}/habits.md`) or ""
 	assert(string.find(text, `- [ ] stretch every:day! done:{notes.today()}`, 1, true), text)
 end)
+
+test("search finds what notes say anywhere in them, and takes a query", function(t)
+	folder(t, {
+		["plans.md"] = "# Garden plans\n\nThe shed needs paint before winter.\n",
+		["late.md"] = `- [ ] call the bank due:{notes.dates.add_days(notes.today(), -1)}\n`,
+	})
+	local function labels(query: string): string
+		local out = {}
+		for _, found in hoard.home.search(query) do
+			table.insert(out, found.label)
+		end
+		return table.concat(out, ",")
+	end
+	assert(labels("paint") == "Garden plans", labels("paint"))
+	assert(labels("is:overdue") == "call the bank", labels("is:overdue"))
+	assert(labels("winte") == "Garden plans", "the last word as it's typed")
+end)

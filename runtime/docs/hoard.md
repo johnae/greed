@@ -58,8 +58,11 @@ today's note:
 - Anything else goes in as you wrote it; a single line becomes a list item.
 - `/` and `[[` work as they do in notes (below).
 
-While what you write is one line, notes matching it show above the box:
-by their title, the headings in them and open todos. Above that:
+While what you write is one line, what matches it shows above the box:
+notes with those words anywhere in them, headings and todos, the last
+word matching as you type it. It takes a query too, like `is:overdue` or
+`tag:garden is:todo` (see "Lists that keep themselves" below). Above
+that:
 
 - **Agenda** lists what's overdue, due today and due in the next week.
   Today's part also has the todos you wrote today without a date. The

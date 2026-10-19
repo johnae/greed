@@ -77,9 +77,27 @@ end
 --- Something search found: what it shows, where it is, and what it is.
 export type Found = { label: string, note: string, line: number?, kind: string }
 
---- What `query` finds in the notes: their titles, headings and open
---- todos, best first, at most `M.FOUND`.
+--- What `query` finds in the notes, best first, at most `M.FOUND`: what
+--- they say, word for word, and their fields and flags, as the query
+--- language reads it (the last word matching as it's typed); while it isn't
+--- a query that runs (`due:` half typed), their titles, headings and open
+--- todos by `query` as a fuzzy match. Searching waits like greed.sleep.
 function M.search(query: string): { Found }
+	local items = notes.query.search(query, M.FOUND, true)
+	if items then
+		local out: { Found } = {}
+		for _, item in items do
+			local node = item.node
+			local found: Found = {
+				label = notes.query.label(item),
+				note = item.note.name,
+				line = if node then node.line else nil,
+				kind = item.kind :: string,
+			}
+			table.insert(out, found)
+		end
+		return out
+	end
 	local candidates: { Found } = {}
 	local labels: { string } = {}
 	local function add(found: Found)
@@ -406,8 +424,8 @@ function M.add(text: string): string?
 	return if #said > 1 then `{#said} todos added to today's note` else "added to today's note"
 end
 
---- What the home shows, for its state (`query`: what's written in its box,
---- searched for as it's written).
+--- What the home shows, for its state (`found`: what what's written in its
+--- box finds, searched for as it's written).
 function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 	local parts: { core.UiNode } = {
 		ui.line({
@@ -494,12 +512,10 @@ function M.render(view: core.UiView, state: { [string]: any }): core.UiNode
 	table.insert(parts, ui.box("Today", ui.column(today_parts)))
 	table.insert(parts, ui.gap())
 
-	-- What's written in the box finds notes as it's written, right above it:
-	-- a line, as a search is typed, rather than a thought being written down.
-	local query: string = state.query or ""
-	local found = if string.match(query, "%S") and not string.find(query, "\n", 1, true)
-		then M.search(query)
-		else {}
+	-- What's written in the box finds notes as it's written, right above it
+	-- (searched away from drawing, below): a line, as a search is typed,
+	-- rather than a thought being written down.
+	local found: { Found } = state.found or {}
 	if #found > 0 then
 		table.insert(parts, ui.text("Notes that match", "ui.menu.doc"))
 		table.insert(
@@ -746,7 +762,19 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 	if shown and shown.buffer == event.buffer then
 		local query = shown.view:input()
 		if query ~= shown.view.state.query then
-			shown.view:soon({ query = query })
+			local view = shown.view
+			view:soon({ query = query })
+			if string.match(query, "%S") and not string.find(query, "\n", 1, true) then
+				greed.spawn(function()
+					local found = M.search(query)
+					-- What's been written since has a search of its own.
+					if view:input() == query then
+						view:soon({ found = found })
+					end
+				end)
+			else
+				view:soon({ found = {} })
+			end
 		end
 		frame(shown.buffer, shown.view)
 	end

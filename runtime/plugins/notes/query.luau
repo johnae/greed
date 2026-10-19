@@ -16,6 +16,7 @@
 -- `due-today`, `habit`, `recurring` and `waiting`. A `notes` block in a
 -- note shows what its query finds (below).
 
+local greed = require("@greed")
 local core = require("@core")
 local notes = require("./notes")
 local index = require("./index")
@@ -33,6 +34,8 @@ export type Item = {
 	node: index.Node?,
 	--- The note's item, for a todo or heading.
 	parent: Item?,
+	--- A note's whole text, while it's put in the index.
+	body: string?,
 	--- A note's todos and headings.
 	children: { Item },
 }
@@ -77,14 +80,15 @@ function M.items(): { Item }
 	return out
 end
 
+-- The day a note last changed, nil when that isn't known.
+local function modified_of(note: index.Note): string?
+	return if note.modified > 0 then os.date("%Y-%m-%d", note.modified) :: string else nil
+end
+
 -- The day a note is about: a day's note's day, otherwise the day it last
 -- changed.
 local function date_of(note: index.Note): string?
-	local day = string.match(note.name, "daily/(%d%d%d%d%-%d%d%-%d%d)$")
-	if day then
-		return day
-	end
-	return if note.modified > 0 then os.date("%Y-%m-%d", note.modified) :: string else nil
+	return string.match(note.name, "daily/(%d%d%d%d%-%d%d%-%d%d)$") or modified_of(note)
 end
 
 -- A todo's or heading's own tags and its note's; a note's own.
@@ -175,8 +179,7 @@ local FIELDS: { [string]: core.QueryField } = {
 	modified = {
 		kind = "date",
 		get = function(item: Item)
-			local modified = item.note.modified
-			return if modified > 0 then os.date("%Y-%m-%d", modified) :: string else nil
+			return modified_of(item.note)
 		end,
 	},
 }
@@ -217,7 +220,7 @@ local FLAGS: { [string]: (item: any) -> boolean } = {
 		if task == nil or task.done then
 			return false
 		end
-		local due = todos.due_on(task, dates.today())
+		local due = due_today(item)
 		return due == dates.today()
 			or (due == nil and not task.habit and item.note.name == notes.daily())
 	end,
@@ -235,13 +238,25 @@ local FLAGS: { [string]: (item: any) -> boolean } = {
 	end,
 }
 
--- The words of an item: a note's title and what's in it, a todo's or a
--- heading's own words.
-local function text_of(item: Item): string
+--- What an item is called where it's listed: a todo's plain words, a
+--- heading's words, a note's title.
+function M.label(item: Item): string
 	local node = item.node
-	if node then
-		local task = node.task
-		return if task then todos.plain(task.text) else node.text
+	if node == nil then
+		return item.note.title
+	end
+	local task = node.task
+	return if task then todos.plain(task.text) else node.text
+end
+
+-- The words of an item: a note's title and what's in it (all of it, going
+-- in the index), a todo's or a heading's own words.
+local function text_of(item: Item): string
+	if item.node then
+		return M.label(item)
+	end
+	if item.body then
+		return `{item.note.title}\n{item.body}`
 	end
 	local parts = { item.note.title }
 	for _, child in item.note.nodes do
@@ -249,6 +264,17 @@ local function text_of(item: Item): string
 	end
 	return table.concat(parts, "\n")
 end
+
+-- What an item goes by in the index: its note's name, and the line of a
+-- todo or heading in it.
+local function key_of(item: Item): string
+	local node = item.node
+	return if node then `{item.note.name}#{node.line}` else item.note.name
+end
+
+-- The flags kept in the index; the others depend on today (a habit is done
+-- for today only), so they're worked out as a query runs.
+local STORED = { "note", "todo", "heading", "habit", "recurring" }
 
 --- The source a query runs over notes with: the fields above, and the
 --- `key:: value` fields and front matter keys the notes have now.
@@ -279,17 +305,21 @@ function M.source(): core.QuerySource
 		children = function(item: Item)
 			return item.children
 		end,
+		key = key_of,
+		stored = STORED,
 		name = function(item: Item)
 			return if item.kind == "note" then item.note.name else nil
 		end,
 	}
 end
 
---- Runs `text` over the notes: the items it finds, in the order it asks
---- for, and its hints; or nil and its problems, each with where it is in
---- the text.
-function M.run(text: string): ({ Item }?, { core.QueryProblem })
-	local parsed = query.parse(text)
+-- Parses and checks `text` against the notes' source: the query, the
+-- source, its hints and its mistakes.
+local function parse(
+	text: string,
+	typing: boolean?
+): (core.Query, core.QuerySource, { core.QueryProblem }, { core.QueryProblem })
+	local parsed = query.parse(text, { typing = typing })
 	local source = M.source()
 	local said = table.clone(parsed.problems)
 	local checked = query.check(parsed, source)
@@ -299,17 +329,219 @@ function M.run(text: string): ({ Item }?, { core.QueryProblem })
 	for _, problem in said do
 		table.insert(if problem.hint then hints else wrong, problem)
 	end
+	return parsed, source, hints, wrong
+end
+
+-- A problem with the whole of `text`.
+local function whole(text: string, message: string): { core.QueryProblem }
+	return { { message = message, at = { from = 1, to = #text + 1 } } }
+end
+
+--- Runs `text` over the notes: the items it finds, in the order it asks
+--- for, and its hints; or nil and its problems, each with where it is in
+--- the text.
+function M.run(text: string): ({ Item }?, { core.QueryProblem })
+	local parsed, source, hints, wrong = parse(text)
 	if #wrong > 0 then
 		return nil, wrong
 	end
 	local found, err = query.run(parsed, M.items(), source)
 	if found == nil then
-		return nil,
-			{
-				{ message = err or "the query couldn't run", at = { from = 1, to = #text + 1 } } :: any,
-			}
+		return nil, whole(text, err or "the query couldn't run")
 	end
 	return found, hints
+end
+
+-- The index of the notes' words: the file, the index once opened, the
+-- notes changed since it was last written, and the keys each note put in.
+local kept: {
+	path: string?,
+	index: greed.Index?,
+	built: boolean,
+	writing: boolean,
+	changed: { [string]: boolean },
+	keys: { [string]: { string } },
+} =
+	{ built = false, writing = false, changed = {}, keys = {} }
+
+-- Where the index of these notes lives: Greed's cache folder, a file for
+-- each set of places notes are in.
+local function index_path(): string?
+	local cache = greed.fs.dirs().cache
+	if cache == nil then
+		return nil
+	end
+	local folders = {}
+	for _, place in notes.places() do
+		table.insert(folders, `{place.name}={place.folder}`)
+	end
+	local id = string.sub(greed.hash.sha256(table.concat(folders, "\n")), 1, 16)
+	return `{cache}/notes/{id}.db`
+end
+
+-- A note's item and its todos and headings as the index keeps them, and
+-- their keys; `text` is the note's, when it's read already.
+local function index_items(item: Item, source: core.QuerySource, text: string?): { greed.IndexItem }
+	local list = { item }
+	for _, child in item.children do
+		table.insert(list, child)
+	end
+	item.body = text or notes.read(item.note.name)
+	local written = query.index_items(list, source)
+	item.body = nil
+	return written
+end
+
+-- The index, written whole the first time in a session and then note by
+-- note as notes change; nil where there's no cache folder. Waits like
+-- greed.sleep.
+local function index_now(): greed.Index?
+	local path = index_path()
+	if path == nil then
+		return nil
+	end
+	if kept.path ~= path then
+		kept.path, kept.index, kept.built, kept.changed, kept.keys = path, nil, false, {}, {}
+	end
+	while kept.writing do
+		greed.sleep(10)
+	end
+	local db = kept.index
+	if db == nil then
+		local opened, err = greed.index.writer(path)
+		if opened == nil then
+			greed.echo(`notes index: {err}`)
+			return nil
+		end
+		db = opened
+		kept.index = opened
+	end
+	local writing: greed.Index = db :: greed.Index
+	kept.writing = true
+	local ok, err = pcall(function()
+		local source = M.source()
+		local notes_now: { [string]: Item } = {}
+		for _, item in M.items() do
+			if item.kind == "note" then
+				notes_now[item.note.name] = item
+			end
+		end
+		-- The first time, everything, over what another session left there,
+		-- read in the background; then what changed since.
+		local texts: { [string]: string } = {}
+		local names: { [string]: boolean } = kept.changed
+		if not kept.built then
+			names = {}
+			for name in notes_now do
+				names[name] = true
+			end
+			for _, place in notes.places() do
+				if greed.fs.stat(place.folder) then
+					for _, file in greed.fs.scan(place.folder, { ext = "md", read = true }) do
+						local path = `{place.folder}/{file.path}`
+						-- An open note's buffer may say more than its file.
+						if file.text and greed.buffer_for(path) == nil then
+							texts[notes.name(path)] = file.text
+						end
+					end
+				end
+			end
+		end
+		kept.changed = {}
+		-- What changed goes out, and in again as it is now, in one go each.
+		local gone: { string } = {}
+		local fresh: { greed.IndexItem } = {}
+		for name in names do
+			for _, key in kept.keys[name] or {} :: { string } do
+				table.insert(gone, key)
+			end
+			kept.keys[name] = nil
+			local item = notes_now[name]
+			if item then
+				local keys = {}
+				for _, written in index_items(item, source, texts[name]) do
+					table.insert(fresh, written)
+					table.insert(keys, written.key)
+				end
+				kept.keys[name] = keys
+			end
+		end
+		if #gone > 0 then
+			writing:remove(gone)
+		end
+		if #fresh > 0 then
+			writing:write(fresh)
+		end
+		kept.built = true
+	end)
+	kept.writing = false
+	if not ok then
+		greed.echo(`notes index: {err}`)
+	end
+	return db
+end
+
+index.on_changed(function(name: string)
+	kept.changed[name] = true
+end)
+
+--- Searches the notes' words and fields with `text` (a query, typed so
+--- far when `typing`): the items it finds, best first, at most `limit`;
+--- or nil and its problems. It reads the index of the notes, writing it
+--- first if it isn't yet, so it waits like greed.sleep.
+function M.search(
+	text: string,
+	limit: number?,
+	typing: boolean?
+): ({ Item }?, { core.QueryProblem })
+	local parsed, source, _, wrong = parse(text, typing)
+	if #wrong > 0 then
+		return nil, wrong
+	end
+	local index = index_now()
+	if index == nil then
+		return M.run(text)
+	end
+	local keys, maybe, err = query.search(index, parsed, source)
+	if keys == nil then
+		return nil, whole(text, err or "the search couldn't run")
+	end
+	local by_key: { [string]: Item } = {}
+	for _, item in M.items() do
+		by_key[key_of(item)] = item
+	end
+	-- Those that only might match are checked here, where today is known.
+	local ruled_out: { [string]: boolean } = {}
+	if maybe and #maybe > 0 then
+		local candidates = {}
+		for _, key in maybe do
+			local item = by_key[key]
+			if item then
+				table.insert(candidates, item)
+			end
+		end
+		local matched: { [string]: boolean } = {}
+		local sure: { any } = query.run(parsed, candidates, source) or {}
+		for _, item in sure do
+			matched[key_of(item)] = true
+		end
+		for _, key in maybe do
+			if not matched[key] then
+				ruled_out[key] = true
+			end
+		end
+	end
+	local out: { Item } = {}
+	for _, key in keys do
+		local item = by_key[key]
+		if item and not ruled_out[key] then
+			table.insert(out, item)
+			if limit and #out >= limit then
+				break
+			end
+		end
+	end
+	return out, {}
 end
 
 -- What a block of notes' items shows: whether it's done (for a todo), its
@@ -320,7 +552,7 @@ local function row_of(item: Item): { [string]: any }
 	local due = if task then FIELDS.due.get(item) else nil
 	return {
 		[""] = if task then (if todos.done_now(task.text, task.done) then "☑" else "☐") else "",
-		what = if task then todos.plain(task.text) elseif node then node.text else item.note.title,
+		what = M.label(item),
 		due = if type(due) == "string" then dates.short(due) else nil,
 		note = item.note.name,
 	}
