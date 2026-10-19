@@ -8,6 +8,7 @@ license.workspace = true
 
 [dependencies]
 regex.workspace = true
+rusqlite.workspace = true
 serde.workspace = true
 
 [lints]
