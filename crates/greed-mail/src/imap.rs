@@ -21,6 +21,7 @@ use tokio_rustls::rustls::pki_types::ServerName;
 
 use crate::config::{Endpoint, Tls};
 use crate::header::{FIELDS, Fetched};
+use crate::names;
 
 /// How long connecting and logging in may take.
 const CONNECTING: Duration = Duration::from_secs(30);
@@ -138,6 +139,12 @@ impl Connection {
                 .await
                 .map_err(|(e, _)| Trouble(format!("logging in as {user}: {e}")))?;
             let capabilities = capabilities(&mut session).await?;
+            // Then opening a mailbox says its HIGHESTMODSEQ, and a fetch
+            // can ask what changed since one.
+            let has = |name: &str| capabilities.iter().any(|c| c == name);
+            if has("CONDSTORE") && has("ENABLE") {
+                session.run_command_and_check_ok("ENABLE CONDSTORE").await?;
+            }
             Ok(Connection {
                 session,
                 capabilities,
@@ -154,7 +161,7 @@ impl Connection {
     }
 
     /// How changes are found on this server.
-    pub fn changes(&self) -> Changes {
+    pub fn tracking(&self) -> Changes {
         Changes::of(&self.capabilities)
     }
 
@@ -187,7 +194,7 @@ impl Connection {
     /// How many messages `mailbox` holds, and where its UIDs and changes
     /// are, without opening it.
     pub async fn status(&mut self, mailbox: &str) -> Result<Status, Trouble> {
-        let items = if self.changes() == Changes::Plain {
+        let items = if self.tracking() == Changes::Plain {
             "(MESSAGES UNSEEN UIDVALIDITY UIDNEXT)"
         } else {
             "(MESSAGES UNSEEN UIDVALIDITY UIDNEXT HIGHESTMODSEQ)"
@@ -216,6 +223,16 @@ pub struct Opened {
     /// The UID the next message will get: every one now is below it.
     pub uid_next: u32,
     pub messages: u32,
+    /// Where its changes are, on a server with CONDSTORE.
+    pub highest_modseq: Option<u64>,
+}
+
+/// A message's flags as they are now, and on Gmail its labels.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Change {
+    pub uid: u32,
+    pub flags: Vec<String>,
+    pub labels: Option<Vec<String>>,
 }
 
 /// What syncing needs from a server: a [`Connection`], or a fake one in
@@ -233,6 +250,28 @@ pub trait Imap {
         from: u32,
         to: u32,
     ) -> impl Future<Output = Result<Vec<Fetched>, Trouble>> + Send;
+
+    /// The flags (and labels) of the messages from `from` to `to`: those
+    /// changed since the mod-sequence `since`, or every one without it.
+    fn changes(
+        &mut self,
+        from: u32,
+        to: u32,
+        since: Option<u64>,
+    ) -> impl Future<Output = Result<Vec<Change>, Trouble>> + Send;
+
+    /// The UIDs of the messages from `from` to `to`, lowest first.
+    fn uids(
+        &mut self,
+        from: u32,
+        to: u32,
+    ) -> impl Future<Output = Result<Vec<u32>, Trouble>> + Send;
+}
+
+impl Connection {
+    fn gmail(&self) -> bool {
+        self.capabilities.iter().any(|c| c == "X-GM-EXT-1")
+    }
 }
 
 impl Imap for Connection {
@@ -247,14 +286,62 @@ impl Imap for Connection {
             uid_validity,
             uid_next,
             messages: found.exists,
+            highest_modseq: found.highest_modseq,
         })
+    }
+
+    async fn changes(
+        &mut self,
+        from: u32,
+        to: u32,
+        since: Option<u64>,
+    ) -> Result<Vec<Change>, Trouble> {
+        if from > to {
+            return Ok(Vec::new());
+        }
+        let gmail = self.gmail();
+        let labels = if gmail { " X-GM-LABELS" } else { "" };
+        let since = since.map_or(String::new(), |since| format!(" (CHANGEDSINCE {since})"));
+        let found: Vec<_> = self
+            .session
+            .uid_fetch(
+                format!("{from}:{to}"),
+                format!("(UID FLAGS{labels}){since}"),
+            )
+            .await?
+            .try_collect()
+            .await?;
+        Ok(found
+            .iter()
+            .filter_map(|f| {
+                let uid = f.uid.filter(|uid| (from..=to).contains(uid))?;
+                Some(Change {
+                    uid,
+                    flags: f.flags().map(|flag| flag_name(&flag)).collect(),
+                    labels: gmail.then(|| labels_of(f)),
+                })
+            })
+            .collect())
+    }
+
+    async fn uids(&mut self, from: u32, to: u32) -> Result<Vec<u32>, Trouble> {
+        if from > to {
+            return Ok(Vec::new());
+        }
+        let found = self.session.uid_search(format!("UID {from}:{to}")).await?;
+        let mut uids: Vec<u32> = found
+            .into_iter()
+            .filter(|uid| (from..=to).contains(uid))
+            .collect();
+        uids.sort_unstable();
+        Ok(uids)
     }
 
     async fn fetch(&mut self, from: u32, to: u32) -> Result<Vec<Fetched>, Trouble> {
         if from > to {
             return Ok(Vec::new());
         }
-        let gmail = if self.capabilities.iter().any(|c| c == "X-GM-EXT-1") {
+        let gmail = if self.gmail() {
             " X-GM-MSGID X-GM-LABELS"
         } else {
             ""
@@ -280,14 +367,19 @@ impl Imap for Connection {
                     size: f.size.unwrap_or(0),
                     raw: f.header().map(<[u8]>::to_vec).unwrap_or_default(),
                     gmail_id: f.gmail_msg_id().copied(),
-                    labels: f
-                        .gmail_labels()
-                        .map(|labels| labels.iter().map(ToString::to_string).collect())
-                        .unwrap_or_default(),
+                    labels: labels_of(f),
                 })
             })
             .collect())
     }
+}
+
+/// A fetch's Gmail labels, readable.
+fn labels_of(fetch: &async_imap::types::Fetch) -> Vec<String> {
+    fetch
+        .gmail_labels()
+        .map(|labels| labels.iter().map(|l| names::label(l)).collect())
+        .unwrap_or_default()
 }
 
 fn flag_name(flag: &Flag<'_>) -> String {

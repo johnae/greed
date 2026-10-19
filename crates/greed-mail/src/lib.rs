@@ -4,5 +4,6 @@
 pub mod config;
 pub mod header;
 pub mod imap;
+pub mod names;
 pub mod store;
 pub mod sync;

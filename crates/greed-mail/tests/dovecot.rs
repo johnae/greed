@@ -222,7 +222,8 @@ fn a_mailbox_syncs_into_the_store_and_then_only_what_arrives() {
             first,
             Synced {
                 fetched: 12,
-                done: true
+                done: true,
+                ..Synced::default()
             }
         );
         deliver(&dovecot, 13, false);
@@ -240,17 +241,56 @@ fn a_mailbox_syncs_into_the_store_and_then_only_what_arrives() {
             next,
             Synced {
                 fetched: 1,
-                done: true
+                done: true,
+                ..Synced::default()
             }
         );
+        // Read on another device, and one deleted there.
+        maildir(&dovecot, 3, Some("S"));
+        maildir(&dovecot, 4, None);
+        let after = sync::mailbox(
+            &mut connection,
+            &mut store,
+            id,
+            "INBOX",
+            Some(Role::Inbox),
+            options,
+        )
+        .await
+        .unwrap();
+        assert_eq!((after.fetched, after.changed, after.gone), (0, 1, 1));
         connection.close().await.unwrap();
     });
-    assert_eq!(store.counts(id).unwrap(), (13, 13));
+    assert_eq!(store.counts(id).unwrap(), (12, 12));
     let inbox = store.mailbox(id, "INBOX", None).unwrap();
-    assert_eq!(
-        store.uids(inbox.id).unwrap(),
-        (1..=13).collect::<Vec<u32>>()
-    );
+    let left: Vec<u32> = (1..=13).filter(|&uid| uid != 4).collect();
+    assert_eq!(store.uids(inbox.id).unwrap(), left);
+}
+
+/// Changes message `n` in `anna`'s maildir as another client would: gives
+/// it the maildir flags `flags` ("S" read), or deletes it without.
+fn maildir(dovecot: &Dovecot, n: u32, flags: Option<&str>) {
+    let maildir = dovecot.dir.join("home/anna/Maildir");
+    let prefix = format!("17600{n:05}.");
+    let file = ["cur", "new"]
+        .iter()
+        .flat_map(|sub| std::fs::read_dir(maildir.join(sub)).unwrap())
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&prefix)
+        })
+        .unwrap();
+    match flags {
+        Some(flags) => {
+            let name = file.file_name().unwrap().to_string_lossy().to_string();
+            let base = name.split(':').next().unwrap();
+            std::fs::rename(&file, maildir.join("cur").join(format!("{base}:2,{flags}"))).unwrap();
+        }
+        None => std::fs::remove_file(&file).unwrap(),
+    }
 }
 
 fn run<F: Future>(future: F) -> F::Output {
@@ -273,7 +313,7 @@ fn logs_in_and_lists_mailboxes_with_their_roles() {
         let mut connection = Connection::open(&account.imap(), account.user(), &password)
             .await
             .unwrap();
-        assert_eq!(connection.changes(), Changes::Qresync);
+        assert_eq!(connection.tracking(), Changes::Qresync);
         assert!(connection.capabilities().iter().any(|c| c == "IDLE"));
         let mut roles: Vec<(String, Option<Role>)> = connection
             .mailboxes()

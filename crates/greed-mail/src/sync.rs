@@ -4,9 +4,11 @@
 //! so stopping at any point (a crash, a lost connection, a limit) and
 //! starting again goes on from there, fetching at most one batch twice.
 
+use std::collections::HashSet;
+
 use crate::config::Provider;
-use crate::imap::{Imap, Mailbox, Role};
-use crate::store::Store;
+use crate::imap::{Imap, Mailbox, Opened, Role};
+use crate::store::{State, Store};
 
 /// How many messages a fetch asks for.
 pub const BATCH: usize = 500;
@@ -33,6 +35,10 @@ impl Default for Options {
 pub struct Synced {
     /// Messages fetched.
     pub fetched: usize,
+    /// Messages whose flags (or labels) changed.
+    pub changed: usize,
+    /// Messages gone from the mailbox.
+    pub gone: usize,
     /// Whether every message in it is in the store now.
     pub done: bool,
 }
@@ -59,16 +65,18 @@ impl From<crate::store::Trouble> for Trouble {
     }
 }
 
-/// The mailboxes of `mailboxes` that are synced: on Gmail and Bridge All
-/// Mail, which holds every message once (labels say where else each is);
-/// elsewhere every one that holds messages.
+/// The mailboxes of `mailboxes` that are synced. On Gmail, All Mail: it
+/// holds every message once, and each message's labels say where else it
+/// is. Elsewhere every one that holds messages, All Mail first where
+/// there is one (Bridge), so the others find their messages in already and
+/// only add where they are.
 pub fn chosen(provider: Option<Provider>, mailboxes: &[Mailbox]) -> Vec<&Mailbox> {
-    let selectable = mailboxes.iter().filter(|m| m.selectable);
-    if provider.is_some() {
-        selectable.filter(|m| m.role == Some(Role::All)).collect()
-    } else {
-        selectable.collect()
+    let mut chosen: Vec<&Mailbox> = mailboxes.iter().filter(|m| m.selectable).collect();
+    if provider == Some(Provider::Gmail) {
+        chosen.retain(|m| m.role == Some(Role::All));
     }
+    chosen.sort_by_key(|m| m.role != Some(Role::All));
+    chosen
 }
 
 /// Syncs the headers of `account`'s mailbox `name` from `imap` into
@@ -90,12 +98,16 @@ pub async fn mailbox<I: Imap>(
     }
     let top = opened.uid_next.saturating_sub(1);
     // Before the first sync, nothing is in: the top is where it starts.
+    // Its flags are as they are now, so changes made while it goes on are
+    // found once it's done.
     let (mut high, mut low) = if let (Some(high), Some(low)) = (state.high, state.low) {
         (high, low)
     } else {
         store.put(account, state.id, &[], top, top + 1)?;
+        store.set_modseq(state.id, opened.highest_modseq)?;
         (top, top + 1)
     };
+    let was_done = low <= 1;
     let mut synced = Synced::default();
     let full = |synced: &Synced| options.limit.is_some_and(|limit| synced.fetched >= limit);
     let mut window = Window::new(options.batch);
@@ -114,6 +126,11 @@ pub async fn mailbox<I: Imap>(
         synced.fetched += fetched.len();
     }
 
+    // What changed and went among those that were in.
+    if was_done {
+        refresh(imap, store, &state, &opened, high, &mut synced).await?;
+    }
+
     // The first sync going down, newest first.
     while low > 1 {
         if full(&synced) {
@@ -128,6 +145,48 @@ pub async fn mailbox<I: Imap>(
     }
     synced.done = true;
     Ok(synced)
+}
+
+/// Brings the flags of the messages up to `high` in the store up to date,
+/// and takes out those gone from the mailbox. With CONDSTORE, only flags
+/// changed since the last time come, and the UIDs are listed only when the
+/// mailbox holds fewer messages than the store has in it; without, every
+/// message's flags come, which lists every UID too.
+async fn refresh<I: Imap>(
+    imap: &mut I,
+    store: &mut Store,
+    state: &State,
+    opened: &Opened,
+    high: u32,
+    synced: &mut Synced,
+) -> Result<(), Trouble> {
+    let local = store.uids(state.id)?;
+    let listed = if let (Some(now), Some(since)) = (opened.highest_modseq, state.modseq) {
+        if now != since {
+            let changes = imap.changes(1, high, Some(since)).await?;
+            synced.changed += store.set_flags(state.id, &changes)?;
+        }
+        if local.len() == usize::try_from(opened.messages).unwrap_or(usize::MAX) {
+            None
+        } else {
+            Some(imap.uids(1, high).await?)
+        }
+    } else {
+        let changes = imap.changes(1, high, None).await?;
+        synced.changed += store.set_flags(state.id, &changes)?;
+        Some(changes.iter().map(|c| c.uid).collect())
+    };
+    if let Some(listed) = listed {
+        let listed: HashSet<u32> = listed.into_iter().collect();
+        let gone: Vec<u32> = local
+            .into_iter()
+            .filter(|uid| !listed.contains(uid))
+            .collect();
+        store.forget(state.id, &gone)?;
+        synced.gone += gone.len();
+    }
+    store.set_modseq(state.id, opened.highest_modseq)?;
+    Ok(())
 }
 
 /// How many UIDs a fetch spans, so it brings about a batch: UIDs are
@@ -175,6 +234,8 @@ mod tests {
     use crate::imap::{self, Opened};
 
     /// A server holding one mailbox, in memory, that can be told to fail.
+    /// With `condstore`, every change gets the next mod-sequence, as a
+    /// server with CONDSTORE gives them.
     #[derive(Default)]
     struct Fake {
         uid_validity: u32,
@@ -182,6 +243,12 @@ mod tests {
         /// The fetch (counting from 1) that fails, as a dropped connection.
         fail_on: Option<usize>,
         fetches: usize,
+        condstore: bool,
+        modseq: u64,
+        /// The mod-sequence each message last changed at.
+        changed_at: BTreeMap<u32, u64>,
+        /// How many times the UIDs were listed.
+        listings: usize,
     }
 
     impl Fake {
@@ -207,6 +274,26 @@ mod tests {
                     ..Fetched::default()
                 },
             );
+            self.touch(uid);
+        }
+
+        fn touch(&mut self, uid: u32) {
+            self.modseq += 1;
+            self.changed_at.insert(uid, self.modseq);
+        }
+
+        /// Gives the message at `uid` `flags` (and on Gmail `labels`).
+        fn flag(&mut self, uid: u32, flags: &[&str], labels: &[&str]) {
+            let message = self.messages.get_mut(&uid).unwrap();
+            message.flags = flags.iter().map(ToString::to_string).collect();
+            message.labels = labels.iter().map(ToString::to_string).collect();
+            self.touch(uid);
+        }
+
+        fn remove(&mut self, uid: u32) {
+            self.messages.remove(&uid);
+            self.changed_at.remove(&uid);
+            self.modseq += 1;
         }
     }
 
@@ -216,6 +303,7 @@ mod tests {
                 uid_validity: self.uid_validity,
                 uid_next: self.messages.keys().last().map_or(1, |uid| uid + 1),
                 messages: u32::try_from(self.messages.len()).unwrap(),
+                highest_modseq: self.condstore.then_some(self.modseq),
             }))
         }
 
@@ -234,6 +322,37 @@ mod tests {
                 .map(|(_, f)| f.clone())
                 .collect()))
         }
+
+        fn changes(
+            &mut self,
+            from: u32,
+            to: u32,
+            since: Option<u64>,
+        ) -> impl Future<Output = Result<Vec<imap::Change>, imap::Trouble>> {
+            ready(Ok(self
+                .messages
+                .range(from..=to)
+                .filter(|(uid, _)| since.is_none_or(|since| self.changed_at[uid] > since))
+                .map(|(uid, f)| imap::Change {
+                    uid: *uid,
+                    flags: f.flags.clone(),
+                    labels: (!f.labels.is_empty()).then(|| f.labels.clone()),
+                })
+                .collect()))
+        }
+
+        fn uids(
+            &mut self,
+            from: u32,
+            to: u32,
+        ) -> impl Future<Output = Result<Vec<u32>, imap::Trouble>> {
+            self.listings += 1;
+            ready(Ok(self
+                .messages
+                .range(from..=to)
+                .map(|(uid, _)| *uid)
+                .collect()))
+        }
     }
 
     fn store(name: &str) -> (Store, i64) {
@@ -250,17 +369,26 @@ mod tests {
         account: i64,
         options: Options,
     ) -> Result<Synced, Trouble> {
+        sync_in(fake, store, account, "INBOX", options)
+    }
+
+    fn sync_in(
+        fake: &mut Fake,
+        store: &mut Store,
+        account: i64,
+        name: &str,
+        options: Options,
+    ) -> Result<Synced, Trouble> {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap()
-            .block_on(mailbox(
-                fake,
-                store,
-                account,
-                "INBOX",
-                Some(Role::Inbox),
-                options,
-            ))
+            .block_on(mailbox(fake, store, account, name, None, options))
+    }
+
+    /// The flags and labels the store has for the message with Bridge id
+    /// `id`.
+    fn flags_of(store: &Store, account: i64, id: &str) -> Option<(String, String)> {
+        store.flags(account, &format!("pm:{id}")).unwrap()
     }
 
     fn batches_of(batch: usize) -> Options {
@@ -268,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn gmail_and_bridge_sync_all_mail_and_others_every_folder() {
+    fn gmail_syncs_all_mail_and_others_every_folder_all_mail_first() {
         let mailbox = |name: &str, role: Option<Role>, selectable: bool| Mailbox {
             name: name.into(),
             role,
@@ -288,9 +416,10 @@ mod tests {
             ["[Gmail]/All Mail"]
         );
         assert_eq!(
-            names(chosen(None, &mailboxes)),
-            ["INBOX", "[Gmail]/All Mail", "Work"]
+            names(chosen(Some(Provider::ProtonBridge), &mailboxes)),
+            ["[Gmail]/All Mail", "INBOX", "Work"]
         );
+        assert_eq!(names(chosen(None, &mailboxes)).len(), 3);
     }
 
     #[test]
@@ -302,7 +431,8 @@ mod tests {
             synced,
             Synced {
                 fetched: 7,
-                done: true
+                done: true,
+                ..Synced::default()
             }
         );
         assert!(fake.fetches >= 3, "in batches");
@@ -323,7 +453,8 @@ mod tests {
             synced,
             Synced {
                 fetched: 1,
-                done: true
+                done: true,
+                ..Synced::default()
             }
         );
         let again = sync(&mut fake, &mut store, account, Options::default()).unwrap();
@@ -359,7 +490,8 @@ mod tests {
             first,
             Synced {
                 fetched: 8,
-                done: false
+                done: false,
+                ..Synced::default()
             }
         );
         let rest = sync(&mut fake, &mut store, account, limited).unwrap();
@@ -367,7 +499,8 @@ mod tests {
             rest,
             Synced {
                 fetched: 2,
-                done: true
+                done: true,
+                ..Synced::default()
             }
         );
         assert_eq!(store.counts(account).unwrap(), (10, 10));
@@ -401,9 +534,111 @@ mod tests {
             synced,
             Synced {
                 fetched: 3,
-                done: true
+                done: true,
+                ..Synced::default()
             }
         );
         assert!(fake.fetches < 200, "{} fetches", fake.fetches);
+    }
+
+    #[test]
+    fn with_condstore_only_what_changed_since_comes_and_nothing_is_listed() {
+        let (mut store, account) = store("condstore");
+        let mut fake = Fake::with(1, 1..=5);
+        fake.condstore = true;
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        fake.flag(2, &["\\Seen"], &[]);
+        fake.flag(4, &["\\Seen", "\\Flagged"], &[]);
+        let synced = sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!((synced.changed, synced.gone), (2, 0));
+        assert_eq!(flags_of(&store, account, "m2").unwrap().0, "\\Seen");
+        assert_eq!(
+            flags_of(&store, account, "m4").unwrap().0,
+            "\\Seen \\Flagged"
+        );
+        assert_eq!(fake.listings, 0, "the counts agree, so nothing went");
+        let again = sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!(again.changed, 0, "nothing since");
+    }
+
+    #[test]
+    fn with_condstore_what_went_is_found_when_the_counts_disagree() {
+        let (mut store, account) = store("condstore-gone");
+        let mut fake = Fake::with(1, 1..=5);
+        fake.condstore = true;
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        fake.remove(3);
+        let synced = sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!(synced.gone, 1);
+        assert_eq!(fake.listings, 1);
+        assert_eq!(
+            store.counts(account).unwrap(),
+            (4, 4),
+            "the message went too"
+        );
+        assert_eq!(flags_of(&store, account, "m3"), None);
+    }
+
+    #[test]
+    fn without_condstore_every_flag_comes_and_lists_what_went() {
+        let (mut store, account) = store("plain");
+        let mut fake = Fake::with(1, 1..=4);
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        fake.flag(1, &["\\Seen"], &[]);
+        fake.remove(2);
+        let synced = sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!((synced.changed, synced.gone), (1, 1));
+        assert_eq!(fake.listings, 0, "the flags list the UIDs");
+        assert_eq!(store.counts(account).unwrap(), (3, 3));
+    }
+
+    #[test]
+    fn gmail_labels_change_with_the_flags() {
+        let (mut store, account) = store("labels");
+        let mut fake = Fake::with(1, 1..=2);
+        fake.condstore = true;
+        fake.flag(1, &[], &["\\Inbox", "Work"]);
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!(flags_of(&store, account, "m1").unwrap().1, "\\Inbox\nWork");
+        fake.flag(1, &["\\Seen"], &["Work"]);
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!(
+            flags_of(&store, account, "m1").unwrap(),
+            ("\\Seen".into(), "Work".into()),
+            "archived: no longer in the inbox"
+        );
+    }
+
+    #[test]
+    fn a_message_in_two_mailboxes_goes_only_when_its_gone_from_both() {
+        let (mut store, account) = store("two");
+        let mut all = Fake::with(1, 1..=3);
+        let mut inbox = Fake::with(1, []);
+        inbox.add(7, "m2");
+        sync_in(
+            &mut all,
+            &mut store,
+            account,
+            "All Mail",
+            Options::default(),
+        )
+        .unwrap();
+        sync_in(&mut inbox, &mut store, account, "INBOX", Options::default()).unwrap();
+        assert_eq!(store.counts(account).unwrap(), (3, 4), "m2 is in both");
+        inbox.remove(7);
+        let synced = sync_in(&mut inbox, &mut store, account, "INBOX", Options::default()).unwrap();
+        assert_eq!(synced.gone, 1);
+        assert_eq!(store.counts(account).unwrap(), (3, 3), "still in All Mail");
+        all.remove(2);
+        sync_in(
+            &mut all,
+            &mut store,
+            account,
+            "All Mail",
+            Options::default(),
+        )
+        .unwrap();
+        assert_eq!(store.counts(account).unwrap(), (2, 2));
+        assert_eq!(flags_of(&store, account, "m2"), None);
     }
 }

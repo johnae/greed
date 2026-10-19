@@ -137,7 +137,7 @@ async fn check(account: &Account) -> Result<(), String> {
             smtp.host, smtp.port, smtp.tls
         );
     }
-    println!("  changes: {:?}", connection.changes());
+    println!("  changes: {:?}", connection.tracking());
     println!("  can: {}", connection.capabilities().join(" "));
     let mailboxes = connection.mailboxes().await.map_err(|e| e.0)?;
     println!("  mailboxes: {}", mailboxes.len());
@@ -190,10 +190,12 @@ async fn sync_account(
         )]
         let rate = synced.fetched as f64 / seconds.max(0.001);
         println!(
-            "{} {}: {} fetched in {seconds:.1} s ({rate:.0} a second){}",
+            "{} {}: {} fetched in {seconds:.1} s ({rate:.0} a second), {} changed, {} gone{}",
             account.name,
             mailbox.name,
             synced.fetched,
+            synced.changed,
+            synced.gone,
             if synced.done { "" } else { ", more to come" },
         );
     }

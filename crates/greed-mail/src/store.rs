@@ -15,6 +15,7 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::header::{Fetched, Header};
+use crate::imap::Change;
 
 /// The version of the tables; a store from another is refused rather than
 /// guessed at.
@@ -96,6 +97,8 @@ pub struct State {
     pub uid_validity: Option<u32>,
     pub high: Option<u32>,
     pub low: Option<u32>,
+    /// The mailbox's HIGHESTMODSEQ when its flags were last known.
+    pub modseq: Option<u64>,
 }
 
 /// An open store, held by this process until it's dropped.
@@ -180,7 +183,8 @@ impl Store {
             params![account, name, role],
         )?;
         Ok(self.db.query_row(
-            "SELECT id, uidvalidity, high, low FROM mailboxes WHERE account = ?1 AND name = ?2",
+            "SELECT id, uidvalidity, high, low, highestmodseq FROM mailboxes
+             WHERE account = ?1 AND name = ?2",
             params![account, name],
             |r| {
                 Ok(State {
@@ -188,9 +192,63 @@ impl Store {
                     uid_validity: r.get(1)?,
                     high: r.get(2)?,
                     low: r.get(3)?,
+                    modseq: r
+                        .get::<_, Option<i64>>(4)?
+                        .and_then(|m| u64::try_from(m).ok()),
                 })
             },
         )?)
+    }
+
+    /// Keeps `modseq` as the HIGHESTMODSEQ `mailbox`'s flags are known at.
+    pub fn set_modseq(&self, mailbox: i64, modseq: Option<u64>) -> Result<(), Trouble> {
+        let modseq = modseq.and_then(|m| i64::try_from(m).ok());
+        self.db.execute(
+            "UPDATE mailboxes SET highestmodseq = ?2 WHERE id = ?1",
+            params![mailbox, modseq],
+        )?;
+        Ok(())
+    }
+
+    /// Puts the flags (and labels, when given) of `changes` on the
+    /// messages at those UIDs in `mailbox`; gives how many changed.
+    pub fn set_flags(&mut self, mailbox: i64, changes: &[Change]) -> Result<usize, Trouble> {
+        let tx = self.db.transaction()?;
+        let mut updated = 0;
+        for change in changes {
+            updated += tx.execute(
+                "UPDATE messages SET flags = ?3, labels = coalesce(?4, labels)
+                 WHERE id = (SELECT message FROM places WHERE mailbox = ?1 AND uid = ?2)
+                 AND (flags != ?3 OR labels != coalesce(?4, labels))",
+                params![
+                    mailbox,
+                    change.uid,
+                    change.flags.join(" "),
+                    change.labels.as_ref().map(|labels| labels.join("\n")),
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(updated)
+    }
+
+    /// Takes `uids`, gone from `mailbox` on the server, out of it; a
+    /// message that's then in no mailbox goes.
+    pub fn forget(&mut self, mailbox: i64, uids: &[u32]) -> Result<(), Trouble> {
+        let tx = self.db.transaction()?;
+        for uid in uids {
+            tx.execute(
+                "DELETE FROM places WHERE mailbox = ?1 AND uid = ?2",
+                params![mailbox, uid],
+            )?;
+        }
+        tx.execute(
+            "DELETE FROM messages WHERE account = (SELECT account FROM mailboxes WHERE id = ?1)
+             AND NOT EXISTS (SELECT 1 FROM places WHERE places.message = messages.id)",
+            [mailbox],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Starts a mailbox's sync again under `uid_validity`: its UIDs from
@@ -201,7 +259,8 @@ impl Store {
         let tx = self.db.transaction()?;
         tx.execute("DELETE FROM places WHERE mailbox = ?1", [mailbox])?;
         tx.execute(
-            "UPDATE mailboxes SET uidvalidity = ?2, high = NULL, low = NULL WHERE id = ?1",
+            "UPDATE mailboxes SET uidvalidity = ?2, high = NULL, low = NULL, highestmodseq = NULL
+             WHERE id = ?1",
             params![mailbox, uid_validity],
         )?;
         tx.commit()?;
@@ -244,6 +303,19 @@ impl Store {
             [account],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?)
+    }
+
+    /// The flags and labels of `account`'s message `identity`, if it has
+    /// one by that identity.
+    pub fn flags(&self, account: i64, identity: &str) -> Result<Option<(String, String)>, Trouble> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT flags, labels FROM messages WHERE account = ?1 AND identity = ?2",
+                params![account, identity],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
     }
 
     /// The UIDs of `mailbox`'s places, lowest first.
