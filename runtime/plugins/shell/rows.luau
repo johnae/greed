@@ -157,7 +157,7 @@ function M.set(shell: Shell, block: Block, filter: string, sort: string?, desc: 
 	if tbl and not sectioned(filter) then
 		local found = if string.sub(filter, 1, 1) == "/"
 			then keep(row_texts(block, before), filter)
-			else tables.filter(tbl, filter)
+			else tables.query(tbl, filter)
 		if found == nil then
 			return
 		end

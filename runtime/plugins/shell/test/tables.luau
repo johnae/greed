@@ -808,11 +808,15 @@ end)
 
 test("a filter ignores case unless shell-filter-search-case says otherwise", function()
 	local tables = shell.tables
-	assert(tables.has("Running", "running") and tables.has("running", "Running"))
+	local fruit = assert(tables.columns("NAME\nApple\napple\n", true))
+	local function kept(filter: string): number
+		return #tables.filter(fruit, filter)
+	end
+	assert(kept("apple") == 2 and kept("Apple") == 2, "in any case")
 	greed.option.set("shell-filter-search-case", "default")
-	assert(not tables.has("running", "Running"), "as search-case says: smart")
+	assert(kept("Apple") == 1 and kept("apple") == 2, "as search-case says: smart")
 	greed.option.set("shell-filter-search-case", "match")
-	assert(not tables.has("Running", "running"))
+	assert(kept("apple") == 1)
 	greed.option.set("shell-filter-search-case", "ignore")
 end)
 
@@ -1021,13 +1025,23 @@ test("a stage taking text reads its words, a first line without numbers as the h
 	assert(seen.ctx.block == "b", "it gets what it runs for")
 end)
 
-test("a where condition splits at its first operator, wherever that is in the list", function()
+test("a where condition splits at its first operator, and can be several", function()
 	local pods = assert(tables.detect(PODS, "kubectl get pods"))
-	local condition = assert((tables.condition(pods, "NAME=a<b")))
-	assert(condition.column == "NAME" and condition.op == "=", condition.op)
-	assert(condition.value == "a<b", condition.value)
-	local at_most = assert((tables.condition(pods, "RESTARTS<=2")))
-	assert(at_most.op == "<=" and at_most.value == "2", at_most.op)
+	local function names(text: string): string
+		local made, why = tables.where(pods, text)
+		assert(made, why)
+		local out: { string } = {}
+		for _, row in made.rows do
+			table.insert(out, row.NAME)
+		end
+		return table.concat(out, ",")
+	end
+	assert(names("NAME=a<b") == "", "the value is a<b")
+	assert(names("RESTARTS<=2") == "api-7d9f8b6c5-2xkqz,redis-0,db-migrate-x7k2p")
+	assert(names("STATUS = Completed OR RESTARTS > 5") == "worker-5c6b7d8f9-abcde,db-migrate-x7k2p")
+	assert(names("STATUS=Running -NAME~api") == "redis-0")
+	local _, why = tables.where(pods, "COLOUR=red")
+	assert(why and string.find(why, "no column COLOUR", 1, true), why)
 end)
 
 test("a filter's field values are cut whole characters short", function()

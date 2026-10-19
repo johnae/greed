@@ -4,6 +4,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local read = require("./table_read")
+local filters = require("./query")
 
 type Table = read.Table
 
@@ -12,7 +13,6 @@ core.search.kind("shell-filter", "ignore", "filtering a shell block with /")
 local M = {}
 
 local as_text, is_object = read.value_text, read.is_object
-local trim, unquote = core.text.trim, core.text.unquote
 
 --- The indexes of all of `tbl`'s rows, in order.
 function M.all(tbl: Table): { number }
@@ -106,79 +106,74 @@ function M.no_column(tbl: Table, name: string): string
 	return `no column {name}; there's {table.concat(tbl.columns, ", ")}`
 end
 
---- The comparisons `where` and a filter know.
+--- The comparisons `where` and a filter know, for completing them.
 M.OPS = { "!=", "<=", ">=", "!~", "=", "~", "<", ">" }
 
---- A condition: `COLUMN op VALUE`, read from text like "STATUS=Running" or
---- `AGE < 1h`, with quotes around the value taken off.
-export type Condition = { column: string, op: string, value: string }
-
---- `text` read as a condition on a column of `tbl`, or nil and why not.
-function M.condition(tbl: Table, text: string): (Condition?, string?)
-	local at, stop, op = greed.compare.find(text)
-	if at == nil or stop == nil or op == nil then
-		return nil, "where COLUMN = VALUE (or !=, ~, !~, <, >, <=, >=)"
-	end
-	local name = trim(string.sub(text, 1, at - 1))
-	local column = M.column(tbl, name)
-	if column == nil then
-		return nil, M.no_column(tbl, name)
-	end
-	local value = unquote(trim(string.sub(text, stop + 1)))
-	return { column = column, op = op, value = value }, nil
-end
-
---- The rows (indexes) of `tbl` that pass `condition`, from `rows` (all by
---- default).
-function M.matching(tbl: Table, condition: Condition, rows: { number }?): { number }
-	-- "1h" says the column holds durations, even when every age in it is in
-	-- minutes.
-	local durations = M.durations(tbl, condition.column)
-		or greed.compare.is_duration(condition.value)
-	local out: { number } = {}
-	for _, i in rows or M.all(tbl) do
-		local cell = tbl.rows[i][condition.column] or ""
-		if greed.compare.test(cell, condition.op, condition.value, durations) then
-			table.insert(out, i)
+-- `node` with each field it names the column of `tbl` it is (`status` is
+-- STATUS, `container_id` is CONTAINER ID, `status.phase` a field of JSON
+-- in a column); nil and why for one that names none.
+local function to_columns(tbl: Table, node: core.QueryNode): (core.QueryNode?, string?)
+	local out: core.QueryNode = table.clone(node)
+	if node.kind == "field" then
+		local column = M.column(tbl, node.field :: string)
+		if column == nil then
+			return nil, M.no_column(tbl, node.field :: string)
 		end
+		out.field = column
 	end
-	return out
-end
-
---- Whether `text` has `word` in it, as a filter typed in a block looks:
---- minding case as `shell-filter-search-case` says.
-function M.has(text: string, word: string): boolean
-	local case = core.search.case("shell-filter")
-	if case == "match" or (case == "smart" and string.find(word, "%u")) then
-		return string.find(text, word, 1, true) ~= nil
-	end
-	return string.find(string.lower(text), string.lower(word), 1, true) ~= nil
-end
-
---- The rows (indexes) of `tbl` a filter typed in a block keeps: each word
---- of `text` is a condition on a column (`STATUS=Running`, `NAME~api`,
---- `RESTARTS>0`), or else text some cell of the row has in it, minding
---- case as `shell-filter-search-case` says. A row has to pass them all.
-function M.filter(tbl: Table, text: string): { number }
-	local rows = M.all(tbl)
-	for word in string.gmatch(text, "%S+") do
-		local condition = M.condition(tbl, word)
-		if condition then
-			rows = M.matching(tbl, condition, rows)
-		else
-			local kept: { number } = {}
-			for _, i in rows do
-				for _, column in tbl.columns do
-					if M.has(tbl.rows[i][column] or "", word) then
-						table.insert(kept, i)
-						break
-					end
-				end
+	if node.items then
+		local items: { core.QueryNode } = {}
+		for i, item in node.items :: { core.QueryNode } do
+			local inner, why = to_columns(tbl, item)
+			if inner == nil then
+				return nil, why
 			end
-			rows = kept
+			items[i] = inner
 		end
+		out.items = items
 	end
-	return rows
+	return out, nil
+end
+
+--- The rows (indexes) of `tbl` that `text` keeps, read as the shell's
+--- filters read it (query.luau): conditions on columns (`STATUS=Running`,
+--- `NAME~api`, `RESTARTS>0`, `AGE<1h`), compared as `greed.compare` does,
+--- and words some cell of the row has in it, minding case as
+--- `shell-filter-search-case` says; nil and why for a filter that can't
+--- run, like a column it hasn't or a quote not closed yet.
+function M.query(tbl: Table, text: string): ({ number }?, string?)
+	local filter = filters.read(text)
+	if filter.problem then
+		return nil, filter.problem
+	end
+	local tree: core.QueryNode? = nil
+	if filter.query then
+		local named, why = to_columns(tbl, filter.query)
+		if named == nil then
+			return nil, why
+		end
+		tree = named
+	end
+	local rows: { greed.QueryRow } = {}
+	for i, row in tbl.rows do
+		local cells: { string } = {}
+		local fields: { [string]: string | { string } } = {}
+		for column, cell in row do
+			fields[string.lower(column)] = cell
+			table.insert(cells, cell)
+		end
+		rows[i] = { text = table.concat(cells, "\n"), fields = fields }
+	end
+	-- Every column compares as a value, those inside JSON cells too.
+	local schema: greed.QuerySchema = { loose = true, anywhere = true, case = filter.case }
+	local found, _, why = greed.query.run(tree, rows, schema)
+	return found, why
+end
+
+--- The rows (indexes) of `tbl` a filter typed in a block keeps (see
+--- `query`); none for one that can't run.
+function M.filter(tbl: Table, text: string): { number }
+	return M.query(tbl, text) or {}
 end
 
 --- `rows` (indexes into `tbl`'s) sorted by `column`, from the least, or the
@@ -211,13 +206,14 @@ local function subset(tbl: Table, rows: { number }, columns: { string }?): Table
 	return { columns = table.clone(keep), rows = out }
 end
 
---- The rows of `tbl` passing `COLUMN op VALUE`, as a new table.
+--- The rows of `tbl` a query keeps (see `query`), as a new table:
+--- `STATUS=Running`, `AGE < 1h`, `RESTARTS>0 OR NAME~api`.
 function M.where(tbl: Table, text: string): (Table?, string?)
-	local condition, why = M.condition(tbl, text)
-	if condition == nil then
+	local rows, why = M.query(tbl, text)
+	if rows == nil then
 		return nil, why
 	end
-	return subset(tbl, M.matching(tbl, condition)), nil
+	return subset(tbl, rows), nil
 end
 
 --- `tbl` with only the columns `text` names ("NAME,AGE" or "NAME AGE"),

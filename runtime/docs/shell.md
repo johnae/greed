@@ -548,7 +548,7 @@ Running`:
 
 | | |
 |---|---|
-| `where COL OP VALUE` | The rows passing a test: = != ~ !~ < > <= >= |
+| `where COL OP VALUE` | The rows passing tests: = != ~ !~ < > <= >=, with OR and - |
 | `select COL,...` | Only those columns, in that order |
 | `sort COL [-r]` | Sorted by a column, from the greatest with -r |
 

@@ -25,7 +25,7 @@ M.STAGES = {
 	{
 		name = "where",
 		usage = "where COL OP VALUE",
-		doc = "The rows passing a test: = != ~ !~ < > <= >=",
+		doc = "The rows passing tests: = != ~ !~ < > <= >=, with OR and -",
 		args = "condition",
 	},
 	{

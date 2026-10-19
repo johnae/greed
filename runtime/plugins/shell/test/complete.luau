@@ -337,7 +337,7 @@ test("after $3 |, the stages, the columns of the table, comparisons and cells co
 		names(stages)
 	)
 	assert(
-		stages.where.detail == "The rows passing a test: = != ~ !~ < > <= >=",
+		stages.where.detail == "The rows passing tests: = != ~ !~ < > <= >=, with OR and -",
 		tostring(stages.where.detail)
 	)
 	assert(stages.cat and stages.cat.badge == nil, "programs too")

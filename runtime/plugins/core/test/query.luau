@@ -81,6 +81,9 @@ end)
 test("spaces around an operator are allowed, as where takes them", function()
 	check({
 		{ "AGE < 1h", "AGE<1h" },
+		-- A numbered column, as `split` makes; `10:30` is a word.
+		{ "7 ~ zsh", "7~zsh" },
+		{ "10:30", "10:30" },
 		{ 'STATUS = "Crash Loop"', 'STATUS="Crash Loop"' },
 	})
 end)

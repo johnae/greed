@@ -159,13 +159,18 @@ local function tokens(text: string, problems: { Problem }): { Token }
 end
 
 -- `text` split as `field`, operator and the rest when it starts with a
--- field name and an operator ("from:anna", "size>1M", "due:<=eow").
+-- field name and an operator ("from:anna", "size>1M", "due:<=eow"). A name
+-- starting with a digit, like a numbered column's (`7~zsh`), takes a
+-- comparison, not `:`, so `10:30` stays a word.
 local function split_field(text: string): (string?, string?, string?)
-	local field = string.match(text, "^[%a_][%w_%.%-]*")
+	local field = string.match(text, "^[%w_][%w_%.%-]*")
 	if field == nil then
 		return nil, nil, nil
 	end
 	local rest = string.sub(text, #field + 1)
+	if string.match(field, "^%d") and string.sub(rest, 1, 1) == ":" then
+		return nil, nil, nil
+	end
 	for _, op in OPS do
 		if string.sub(rest, 1, #op) == op then
 			local value = string.sub(rest, #op + 1)
@@ -306,7 +311,7 @@ function M.parse(text: string, opts: { typing: boolean? }?): Parsed
 		local raw = token.text
 		local field, op, value = split_field(raw)
 		-- `AGE < 1h`, with spaces around the operator, as `where` takes it.
-		if field == nil and string.match(raw, "^[%a_][%w_%.%-]*$") then
+		if field == nil and string.match(raw, "^[%w_][%w_%.%-]*$") then
 			local spaced = list[pos]
 			local after = list[pos + 1]
 			if
