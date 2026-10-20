@@ -263,6 +263,12 @@ M.served = {
 		end
 		local index, trouble = greed.index.open(found.path)
 		opened = index
+		-- Made by an older greed-mail: the mail session's makes it again.
+		if index == nil and string.find(trouble or "", "another Greed", 1, true) then
+			trouble = if M.here()
+				then "your mail is being indexed again for this version of Greed: it shows once that's done"
+				else "your mail isn't indexed for this version of Greed yet: :mail-session starts the mail session, which does it"
+		end
 		return index, trouble
 	end,
 	summaries = function(keys: { string }): ({ Summary }?, string?)
