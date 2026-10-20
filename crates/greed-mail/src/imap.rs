@@ -363,7 +363,7 @@ impl Imap for Connection {
                 let uid = f.uid.filter(|uid| (from..=to).contains(uid))?;
                 Some(Change {
                     uid,
-                    flags: f.flags().map(|flag| flag_name(&flag)).collect(),
+                    flags: f.flags().filter_map(|flag| flag_name(&flag)).collect(),
                     labels: gmail.then(|| labels_of(f)),
                 })
             })
@@ -432,7 +432,7 @@ impl Imap for Connection {
                 let uid = f.uid.filter(|uid| (from..=to).contains(uid))?;
                 Some(Fetched {
                     uid,
-                    flags: f.flags().map(|flag| flag_name(&flag)).collect(),
+                    flags: f.flags().filter_map(|flag| flag_name(&flag)).collect(),
                     arrived: f.internal_date().map(|d| d.to_rfc3339()),
                     size: f.size.unwrap_or(0),
                     raw: f.header().map(<[u8]>::to_vec).unwrap_or_default(),
@@ -608,17 +608,20 @@ fn labels_of(fetch: &async_imap::types::Fetch) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn flag_name(flag: &Flag<'_>) -> String {
-    match flag {
+/// A message's flag as the store keeps it, or None for one that says
+/// nothing of the message: `\Recent` is only whether this connection is
+/// the first to see it, and Bridge gives it in some mailboxes and not
+/// others, so kept it would change every sync.
+fn flag_name(flag: &Flag<'_>) -> Option<String> {
+    Some(match flag {
         Flag::Seen => "\\Seen".into(),
         Flag::Answered => "\\Answered".into(),
         Flag::Flagged => "\\Flagged".into(),
         Flag::Deleted => "\\Deleted".into(),
         Flag::Draft => "\\Draft".into(),
-        Flag::Recent => "\\Recent".into(),
-        Flag::MayCreate => "\\*".into(),
+        Flag::Recent | Flag::MayCreate => return None,
         Flag::Custom(name) => name.to_string(),
-    }
+    })
 }
 
 fn role_of(attribute: &NameAttribute<'_>) -> Option<Role> {
@@ -702,6 +705,16 @@ async fn encrypt(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_is_never_kept_as_a_flag() {
+        assert_eq!(flag_name(&Flag::Recent), None);
+        assert_eq!(flag_name(&Flag::Seen).as_deref(), Some("\\Seen"));
+        assert_eq!(
+            flag_name(&Flag::Custom("$Forwarded".into())).as_deref(),
+            Some("$Forwarded")
+        );
+    }
 
     #[test]
     fn uids_are_written_as_runs() {
