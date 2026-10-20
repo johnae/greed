@@ -21,6 +21,9 @@ use crate::store::{Indexable, Store, Trouble};
 /// The field the index keeps a message's places in, for `in:`.
 pub const PLACES: &str = "tag";
 
+/// The fields searched by word: the text ones.
+const WORDED: [&str; 4] = ["from", "to", "cc", "subject"];
+
 /// How many messages are written to the index at a time.
 const BATCH: usize = 500;
 
@@ -119,6 +122,7 @@ fn item(m: &Indexable) -> Item {
         text,
         fields,
         flags,
+        words: Some(WORDED.iter().map(ToString::to_string).collect()),
     }
 }
 
