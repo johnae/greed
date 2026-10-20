@@ -283,7 +283,13 @@ local function render(o: Open): core.UiNode
 	for _, row in o.rows do
 		table.insert(rows, {
 			cells = {
-				{ ui.span(if row.unread then "●" else " ", "function") },
+				{
+					ui.span(if row.unread then "●" else " ", "function"),
+					ui.span(
+						if row.flagged then "⚑" else " ",
+						if row.flagged then "constant" else nil
+					),
+				},
 				{ ui.span(M.when(row.date), "comment") },
 				{
 					ui.span(
