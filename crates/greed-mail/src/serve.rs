@@ -577,10 +577,7 @@ fn tagging(
 /// A request's `keys`. Luau writes an empty list as `{}`, so that's an
 /// empty list too.
 fn keys(params: &Value) -> Option<Vec<String>> {
-    match &params["keys"] {
-        Value::Object(empty) if empty.is_empty() => Some(Vec::new()),
-        keys => serde_json::from_value(keys.clone()).ok(),
-    }
+    crate::json::list(&params["keys"]).ok()
 }
 
 /// A `render` request: the message `key`'s HTML laid out `width` cells

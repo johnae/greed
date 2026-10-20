@@ -35,6 +35,7 @@ pub struct Draft {
     /// The key of the message it answers.
     pub replying: Option<String>,
     /// The files it carries, by path (`~` for your home folder).
+    #[serde(deserialize_with = "crate::json::list")]
     pub attach: Vec<String>,
     /// An answer to an invite it carries (`invite::reply`), sent beside the
     /// text. Only greed-mail sets it, never a draft from the client.
@@ -448,6 +449,12 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(given.calendar, None, "a client can't make one");
+        let unattached: Draft = serde_json::from_value(serde_json::json!({
+            "to": "x@example.com",
+            "attach": {},
+        }))
+        .unwrap();
+        assert!(unattached.attach.is_empty(), "Luau's empty table");
     }
 
     #[test]

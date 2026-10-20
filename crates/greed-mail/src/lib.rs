@@ -10,6 +10,7 @@ pub mod html;
 pub mod imap;
 pub mod indexing;
 pub mod invite;
+pub mod json;
 pub mod names;
 pub mod pending;
 pub mod reader;
