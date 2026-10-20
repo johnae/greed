@@ -138,6 +138,8 @@ local reading: {
 	-- Read as its text, rather than laid out from its HTML.
 	plain: boolean,
 	view: core.UiView,
+	-- Which messages are opened and quotes unfolded.
+	shown: Shown,
 }? =
 	nil
 
@@ -476,21 +478,24 @@ local STYLES: { [string]: string } = {
 local laid: { [string]: backend.Rendered } = {}
 
 -- The lines `message`'s HTML reads as, `cells` wide, its links pressed to
--- open; nil when it has none.
-local function html_lines(message: backend.Message, cells: number): { core.UiNode }?
+-- open, and what each says; nil when it has none.
+local function html_lines(message: backend.Message, cells: number): ({ core.UiNode }?, { string })
 	if not message.html then
-		return nil
+		return nil, {}
 	end
 	local at = `{message.key} {cells}`
 	local rendered = laid[at] or backend.get().render(message.key, cells)
 	if rendered == nil then
-		return nil
+		return nil, {}
 	end
 	laid[at] = rendered
 	local nodes: { core.UiNode } = {}
+	local texts: { string } = {}
 	for _, line in rendered.lines do
 		local spans: { core.UiSpan } = {}
+		local said: { string } = {}
 		for _, span in line do
+			table.insert(said, span.text)
 			local target = if span.link then rendered.links[span.link + 1] else nil
 			table.insert(spans, {
 				text = span.text,
@@ -504,17 +509,21 @@ local function html_lines(message: backend.Message, cells: number): { core.UiNod
 			})
 		end
 		table.insert(nodes, ui.line(spans))
+		table.insert(texts, table.concat(said))
 	end
-	return nodes
+	return nodes, texts
 end
 
--- The lines of `message`'s text, its quoted lines dimmed.
-local function text_lines(text: string): { core.UiNode }
+-- The lines of `message`'s text, its quoted lines dimmed, and what each
+-- says.
+local function text_lines(text: string): ({ core.UiNode }, { string })
 	local nodes: { core.UiNode } = {}
+	local texts: { string } = {}
 	for line in string.gmatch(string.gsub(text, "\r\n", "\n") .. "\n", "(.-)\n") do
 		table.insert(nodes, ui.text(line, if string.sub(line, 1, 1) == ">" then "comment" else nil))
+		table.insert(texts, line)
 	end
-	return nodes
+	return nodes, texts
 end
 
 -- A header line: its name dimmed, then its value.
@@ -625,9 +634,127 @@ local function invite_node(message: backend.Message, invite: backend.Invite): co
 	return ui.box("Invite", ui.column(lines))
 end
 
+--- What of a thread shows: the messages opened and the quotes unfolded,
+--- by key, or `all` of it; `changed` draws it again once pressed.
+export type Shown = {
+	messages: { [string]: boolean },
+	quotes: { [string]: boolean },
+	all: boolean,
+	changed: () -> (),
+}
+
+-- How many quoted lines in a row fold away.
+local FOLDED = 4
+
+local function quoted(text: string): boolean
+	return string.match(text, "^%s*>") ~= nil
+end
+
+local function blank(text: string): boolean
+	return string.match(text, "^%s*$") ~= nil
+end
+
+--- The runs of quoted lines among `texts` that fold away, as `from` and
+--- `to` (1-based, both in): at least `FOLDED` lines starting with `>`, the
+--- blank lines between them, and the line saying who wrote it ("On ...,
+--- Anna wrote:") just before.
+function M.quoted_runs(texts: { string }): { { from: number, to: number } }
+	local runs: { { from: number, to: number } } = {}
+	local i = 1
+	while i <= #texts do
+		if quoted(texts[i]) then
+			local from, to, count = i, i, 0
+			local j = i
+			while j <= #texts and (quoted(texts[j]) or blank(texts[j])) do
+				if quoted(texts[j]) then
+					to = j
+					count += 1
+				end
+				j += 1
+			end
+			if count >= FOLDED then
+				-- Who wrote it, with a blank line between or not.
+				local before = from - 1
+				while before >= 1 and blank(texts[before]) do
+					before -= 1
+				end
+				if before >= 1 and string.match(texts[before], ":%s*$") then
+					from = before
+				end
+				table.insert(runs, { from = from, to = to })
+			end
+			i = to + 1
+		else
+			i += 1
+		end
+	end
+	return runs
+end
+
+-- `nodes` (a line each, `texts` what they say) with their quoted runs
+-- folded into a line to press, unless `shown` unfolds them; `key` is the
+-- message's.
+local function folded(
+	nodes: { core.UiNode },
+	texts: { string },
+	key: string,
+	shown: Shown
+): { core.UiNode }
+	if shown.all then
+		return nodes
+	end
+	local out: { core.UiNode } = {}
+	local rest = 1
+	for n, run in M.quoted_runs(texts) do
+		local id = `{key} {n}`
+		table.move(nodes, rest, run.from - 1, #out + 1, out)
+		if shown.quotes[id] then
+			table.move(nodes, run.from, run.to, #out + 1, out)
+		else
+			table.insert(
+				out,
+				ui.line({
+					{
+						text = `··· {run.to - run.from + 1} lines quoted`,
+						style = "comment",
+						press = function()
+							shown.quotes[id] = true
+							shown.changed()
+						end,
+					},
+				})
+			)
+		end
+		rest = run.to + 1
+	end
+	table.move(nodes, rest, #nodes, #out + 1, out)
+	return out
+end
+
+-- A message read before, as one line to press: who, when, how it starts.
+local function closed_node(message: backend.Message, shown: Shown): core.UiNode
+	local start = string.match(message.text or "", "^%s*([^\r\n]*)") or ""
+	return ui.line({
+		{
+			text = `▸ {M.who(message.from)}  {M.when(message.date)}  `,
+			style = "markup.bold",
+			press = function()
+				shown.messages[message.key] = true
+				shown.changed()
+			end,
+		},
+		{ text = start, style = "comment" },
+	})
+end
+
 -- A message as it's read, `cells` wide: who, when, to whom, then what it
--- says, from its HTML unless `plain`.
-local function message_node(message: backend.Message, cells: number, plain: boolean): core.UiNode
+-- says, from its HTML unless `plain`, its quotes folded as `shown` says.
+local function message_node(
+	message: backend.Message,
+	cells: number,
+	plain: boolean,
+	shown: Shown
+): core.UiNode
 	local day, time = string.match(message.date or "", "^(%d+%-%d+%-%d+)T(%d+:%d+)")
 	local date = if day then `{day} {time}` else (message.date or "")
 	local parts: { core.UiNode } = {
@@ -661,13 +788,18 @@ local function message_node(message: backend.Message, cells: number, plain: bool
 		table.insert(parts, invite_node(message, invite))
 	end
 	table.insert(parts, ui.gap())
-	local html = if plain then nil else html_lines(message, cells)
+	local html, said: { string } = nil, {}
+	if not plain then
+		html, said = html_lines(message, cells)
+	end
 	if html then
-		table.move(html, 1, #html, #parts + 1, parts)
+		local lines = folded(html, said, message.key, shown)
+		table.move(lines, 1, #lines, #parts + 1, parts)
 	elseif message.text == nil then
 		table.insert(parts, ui.text("(its text is on its way)", "comment"))
 	else
-		local lines = text_lines(message.text)
+		local nodes, texts = text_lines(message.text)
+		local lines = folded(nodes, texts, message.key, shown)
 		table.move(lines, 1, #lines, #parts + 1, parts)
 	end
 	if message.text ~= nil and not message.complete then
@@ -679,19 +811,41 @@ local function message_node(message: backend.Message, cells: number, plain: bool
 	return ui.column(parts)
 end
 
+--- What a thread shows when it's opened: the messages that are unread
+--- then, and the last, opened; quotes folded.
+function M.showing(thread: Thread, changed: () -> ()): Shown
+	local opened: { [string]: boolean } = {}
+	for i, message in thread.messages do
+		if message.unread or i == #thread.messages then
+			opened[message.key] = true
+		end
+	end
+	return { messages = opened, quotes = {}, all = false, changed = changed }
+end
+
 --- The thread as it reads, `cells` wide: its subject, then each message,
---- from their HTML unless `plain`.
-function M.thread_node(thread: Thread, cells: number, plain: boolean): core.UiNode
+--- from their HTML unless `plain`; those `shown` doesn't open as a line
+--- each, their quotes folded.
+function M.thread_node(thread: Thread, cells: number, plain: boolean, shown: Shown?): core.UiNode
+	local showing = shown or M.showing(thread, function() end)
 	local rule = string.rep("═", math.max(3, core.text.width(thread.subject)))
 	local parts: { core.UiNode } =
 		{ ui.text(thread.subject, "markup.heading"), ui.text(rule, "comment") }
 	for i, message in thread.messages do
-		table.insert(parts, ui.gap())
-		if i > 1 then
+		local opened = showing.all or showing.messages[message.key]
+		if opened or i == 1 then
+			table.insert(parts, ui.gap())
+		end
+		if i > 1 and opened then
 			table.insert(parts, ui.text(string.rep("─", 40), "comment"))
 			table.insert(parts, ui.gap())
 		end
-		table.insert(parts, message_node(message, cells, plain))
+		table.insert(
+			parts,
+			if opened
+				then message_node(message, cells, plain, showing)
+				else closed_node(message, showing)
+		)
 	end
 	return ui.column(parts)
 end
@@ -726,9 +880,13 @@ function M.read(key: string, found: { string }?)
 		floating = page == nil,
 		plain = false,
 		view = nil :: any,
+		shown = nil :: any,
 	}
+	r.shown = M.showing(thread, function()
+		r.view:redraw()
+	end)
 	r.view = ui.mount(buffer, function()
-		return M.thread_node(r.thread, ui.width(buffer), r.plain)
+		return M.thread_node(r.thread, ui.width(buffer), r.plain, r.shown)
 	end)
 	reading = r
 	window:set_cursor(0)
@@ -1284,6 +1442,18 @@ greed.command({
 	end,
 })
 
+greed.command({
+	name = "mail-open-all",
+	doc = "Show all of the thread: every message opened and every quote, or folded again",
+	run = function()
+		local r = reading
+		if r then
+			r.shown.all = not r.shown.all
+			r.view:redraw()
+		end
+	end,
+})
+
 -- The message to show in a browser: the last in the thread being read
 -- that has HTML, or the one under the cursor in the list.
 local function browsed(ctx: greed.Context): string?
@@ -1434,6 +1604,9 @@ greed.keymap.bind({ kind = "mail" }, {
 	["["] = "mail-search-previous",
 })
 greed.keymap.bind({ kind = "mail-thread" }, ACTIONS)
-greed.keymap.bind({ kind = "mail-thread" }, { h = "mail-plain", S = "mail-save-attachment" })
+greed.keymap.bind(
+	{ kind = "mail-thread" },
+	{ h = "mail-plain", o = "mail-open-all", S = "mail-save-attachment" }
+)
 
 return M

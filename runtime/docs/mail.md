@@ -101,6 +101,12 @@ images show as their descriptions: nothing is fetched from anywhere, so
 no tracking pixel tells the sender you read it. Links show as links;
 `tab` goes from one to the next and `enter` opens it.
 
+A thread opens on what's new: messages you've read before show as a line
+each (who, when, how it starts) and open when you press them, and a quote
+of four lines or more folds into one line saying how many, with the
+"Anna wrote:" line over it; pressing it shows them. `o` shows all of the
+thread at once, and folds it again.
+
 In a thread, `h` reads it as its plain text instead (and back). `b`, in a
 thread or the list, opens the message in your web browser as it was sent,
 with everything that would load from elsewhere blocked: scripts, remote

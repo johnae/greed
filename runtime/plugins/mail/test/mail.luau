@@ -15,6 +15,8 @@ type Fake = {
 	-- Its HTML, as greed-mail lays it out.
 	html: any?,
 	invite: any?,
+	-- Messages of its thread before it, as greed-mail gives them.
+	earlier: { any }?,
 }
 
 local MAIL: { Fake } = {
@@ -215,7 +217,9 @@ local function fake()
 					message.complete = true
 					message.html = m.html ~= nil
 					message.invite = m.invite
-					return { key = m.thread, subject = m.subject, messages = { message } }
+					local messages = table.clone(m.earlier or {})
+					table.insert(messages, message)
+					return { key = m.thread, subject = m.subject, messages = messages }
 				end
 			end
 			return nil
@@ -813,4 +817,56 @@ test("sent mail says z takes it back", function(t)
 		string.find(table.concat(t:messages(), "\n"), "sending in 10 s: z takes it back", 1, true)
 			~= nil
 	)
+end)
+
+test("a long quote folds into a line to press, and o shows all of the thread", function(t)
+	fake()
+	now[2].text = "Paid.\n\nOn Sun, Anna Berg wrote:\n> please\n> pay\n>\n> by\n> Friday\n"
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc enter")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "··· 6 lines quoted", 1, true) ~= nil, text)
+	assert(string.find(text, "> pay", 1, true) == nil, "folded: " .. text)
+	assert(string.find(text, "Paid.", 1, true) ~= nil, text)
+	local at = string.find(text, "··· 6", 1, true) :: number
+	greed.view():set_cursor(at - 1)
+	t:keys("enter")
+	text = greed.view():buffer():text()
+	assert(string.find(text, "On Sun, Anna Berg wrote:\n> please", 1, true) ~= nil, text)
+	local runs = mail.quoted_runs({ "hi", "> a", "> b", "> c" })
+	assert(#runs == 0, "three quoted lines stay")
+end)
+
+test("earlier messages read before show as a line each until pressed", function(t)
+	fake()
+	now[2].earlier = {
+		{
+			key = "m:1:b0",
+			thread = "t:1:b",
+			from = "Anna Berg <anna@example.com>",
+			subject = "Invoice 41",
+			date = "2026-10-17T08:00:00+02:00",
+			unread = false,
+			flagged = false,
+			tags = {},
+			to = "me@example.com",
+			cc = "",
+			text = "The first word on it\nand more",
+			attachments = {},
+			complete = true,
+			html = false,
+		},
+	}
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc enter")
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "▸ Anna Berg", 1, true) ~= nil, text)
+	assert(string.find(text, "The first word on it", 1, true) ~= nil, text)
+	assert(string.find(text, "and more", 1, true) == nil, "closed: " .. text)
+	assert(string.find(text, "please pay by Friday", 1, true) ~= nil, "the last is open")
+	t:keys("o")
+	text = greed.view():buffer():text()
+	assert(string.find(text, "and more", 1, true) ~= nil, "all open: " .. text)
 end)
