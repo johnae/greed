@@ -14,6 +14,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
+use crate::addresses;
 use crate::body::Body;
 use crate::header::{Fetched, Header};
 use crate::imap::Change;
@@ -140,6 +141,86 @@ fn add_after(db: &Connection) -> Result<(), Trouble> {
     if !has_column(db, "main", "outbox", "after")? {
         db.execute_batch("ALTER TABLE outbox ADD COLUMN after INTEGER NOT NULL DEFAULT 0")?;
     }
+    Ok(())
+}
+
+/// Who you've had mail from or written to, for completing addresses: by
+/// address (lowercase), the name they go by last, how many messages they're
+/// in, how many you wrote them, and when last.
+const CONTACTS: &str = "
+CREATE TABLE IF NOT EXISTS contacts (
+    address TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    seen INTEGER NOT NULL DEFAULT 0,
+    written INTEGER NOT NULL DEFAULT 0,
+    last TEXT
+);
+";
+
+/// Notes the people message `id` is from and to in `contacts`; what goes
+/// to them from your account's address counts as written.
+fn note_contacts(db: &Connection, id: i64) -> Result<(), Trouble> {
+    let (sender, recipients, cc, date, own): (String, String, String, Option<String>, String) = db
+        .query_row(
+            "SELECT messages.sender, messages.recipients, messages.cc, messages.date,
+                 accounts.address
+             FROM messages JOIN accounts ON accounts.id = messages.account
+             WHERE messages.id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )?;
+    let own = addresses::bare(&own);
+    let mine = addresses::bare(&sender) == own;
+    let note = |who: &str, wrote: bool| -> Result<(), Trouble> {
+        let address = addresses::bare(who);
+        if address == own || !address.contains('@') {
+            return Ok(());
+        }
+        db.execute(
+            "INSERT INTO contacts (address, name, seen, written, last) VALUES (?1, ?2, 1, ?3, ?4)
+             ON CONFLICT (address) DO UPDATE SET
+                 seen = seen + 1,
+                 written = written + ?3,
+                 name = CASE WHEN ?2 != '' AND coalesce(?4, '') >= coalesce(last, '')
+                     THEN ?2 ELSE name END,
+                 last = max(coalesce(last, ''), coalesce(?4, ''))",
+            params![
+                address,
+                addresses::name(who).unwrap_or_default(),
+                i64::from(wrote),
+                date
+            ],
+        )?;
+        Ok(())
+    };
+    note(&sender, false)?;
+    for who in addresses::split(&recipients)
+        .iter()
+        .chain(&addresses::split(&cc))
+    {
+        note(who, mine)?;
+    }
+    Ok(())
+}
+
+/// Fills `contacts` once from the mail already in a store from before it.
+fn fill_contacts(db: &Connection) -> Result<(), Trouble> {
+    let filled: bool = db
+        .prepare("SELECT 1 FROM meta WHERE key = 'contacts'")?
+        .exists([])?;
+    if filled {
+        return Ok(());
+    }
+    let tx = db.unchecked_transaction()?;
+    let ids: Vec<i64> = tx
+        .prepare("SELECT id FROM messages")?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    for id in ids {
+        note_contacts(&tx, id)?;
+    }
+    tx.execute("INSERT INTO meta (key, value) VALUES ('contacts', '1')", [])?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -386,6 +467,8 @@ impl Store {
         db.execute_batch(BODIES)?;
         add_calendar(&db)?;
         add_after(&db)?;
+        db.execute_batch(CONTACTS)?;
+        fill_contacts(&db)?;
         Ok(Store { db, lock })
     }
 
@@ -545,6 +628,9 @@ impl Store {
         let whole = was_in == Some(1);
         for f in fetched {
             let (id, new) = put_message(&tx, account, f)?;
+            if new {
+                note_contacts(&tx, id)?;
+            }
             if whole && new {
                 tx.execute("INSERT OR IGNORE INTO arrived (message) VALUES (?1)", [id])?;
             }
@@ -1891,5 +1977,45 @@ mod tests {
         let now_id = store.post(account, &outgoing, None, now()).unwrap();
         assert_eq!(store.outbox(account).unwrap().len(), 1);
         assert!(!store.unpost(now_id).unwrap(), "on its way already");
+    }
+
+    #[test]
+    #[ignore = "a measurement: cargo test -p greed-mail --lib -- --ignored --nocapture contacts_fill"]
+    fn contacts_fill_from_a_big_store() {
+        let dir = temp("contacts-fill");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "anna@x").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        for batch in 0..85u32 {
+            let fetched: Vec<Fetched> = (0..1000u32)
+                .map(|n| {
+                    let uid = batch * 1000 + n + 1;
+                    Fetched {
+                        uid,
+                        raw: format!(
+                            "From: Person {p} <p{p}@x>\r\nTo: anna@x, other{q}@x\r\n\
+                             Message-ID: <{uid}@x>\r\nX-Pm-Internal-Id: f{uid}\r\n\r\n",
+                            p = uid % 3000,
+                            q = uid % 500
+                        )
+                        .into_bytes(),
+                        ..Fetched::default()
+                    }
+                })
+                .collect();
+            store.put(account, inbox.id, &fetched, 85_000, 1).unwrap();
+        }
+        store
+            .db
+            .execute_batch("DELETE FROM contacts; DELETE FROM meta WHERE key = 'contacts';")
+            .unwrap();
+        let started = std::time::Instant::now();
+        fill_contacts(&store.db).unwrap();
+        println!(
+            "filling contacts from 85k messages: {:?}",
+            started.elapsed()
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

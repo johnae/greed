@@ -77,13 +77,21 @@ export type Rendered = {
 --- Mail as it's written: addresses apart by commas, and the key of the
 --- message it answers.
 export type Draft = {
+	--- Who it's from: an account's address or one of its aliases.
+	from: string?,
 	to: string,
 	cc: string,
 	bcc: string,
 	subject: string,
 	text: string,
 	replying: string?,
+	--- The files it carries, by path.
+	attach: { string }?,
 }
+
+--- An account in mail.toml: what it's called, its address and the
+--- others it sends from.
+export type Account = { name: string, address: string, aliases: { string } }
 
 --- What the view needs from wherever its mail comes from.
 export type Backend = {
@@ -113,6 +121,11 @@ export type Backend = {
 	undo: () -> (string?, string?),
 	--- A reply to the message `key`, to everyone it went to with `all`.
 	draft: (key: string, all: boolean) -> (Draft?, string?),
+	--- The accounts, in mail.toml's order.
+	accounts: () -> { Account },
+	--- People whose name or address starts as `typed`, as "Name
+	--- <address>": those you write to most first.
+	contacts: (typed: string) -> { string },
 	--- Sends `draft` after a few seconds (how many, third), in which `undo`
 	--- takes it back; or says why it can't.
 	send: (draft: Draft) -> (boolean, string?, number?),
@@ -284,6 +297,12 @@ M.served = {
 	end,
 	draft = function(key: string, all: boolean): (Draft?, string?)
 		return ask("draft", { key = key, all = all })
+	end,
+	accounts = function(): { Account }
+		return ask("accounts", {}) or {}
+	end,
+	contacts = function(typed: string): { string }
+		return ask("contacts", { typed = typed }) or {}
 	end,
 	send = function(draft: Draft): (boolean, string?, number?)
 		local posted, err = ask("send", draft)

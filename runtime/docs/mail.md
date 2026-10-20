@@ -154,6 +154,7 @@ A reply opens with its header lines, the cursor on the line where your
 text goes and the message you answer quoted under it:
 
 ```text
+From: anna@proton.me
 To: Anna Berg <anna@example.com>
 Cc:
 Subject: Re: Invoice 41
@@ -163,6 +164,16 @@ Paid this morning.
 On 2026-10-19 08:00, Anna Berg wrote:
 > Please pay by Friday.
 ```
+
+A reply is from the address of yours the mail was sent to: your
+account's, or one of its `aliases` (see below). New mail (`c`) is from
+your first account; change `From:` to send from another, and it goes
+through that account.
+
+On `To:`, `Cc:` and `Bcc:` the addresses complete as you type, from the
+people you've had mail with, those you write to most first; on `From:`,
+from your own. `:mail-attach FILE` attaches a file, on an `Attach:` line
+you can edit too (paths apart by commas, 25 MB in all at most).
 
 Edit it as any text, the header lines too (add `Bcc:` for blind copies,
 addresses apart by commas), then `:mail-send` sends it and goes back to
@@ -192,6 +203,7 @@ config folder:
 [[account]]
 name = "proton"
 address = "anna@proton.me"
+aliases = ["anna@pm.me", "hello@annaberg.example"]
 provider = "proton-bridge"
 imap = { host = "127.0.0.1", port = 1143, tls = "starttls" }
 password = ["pass", "show", "mail/bridge"]
@@ -211,7 +223,8 @@ a server on this machine. `smtp` is where mail is sent, with the same
 login, `tls` as for `imap` (ports 465 and 587); Gmail needs none, and for
 Bridge it's Bridge's SMTP port. `provider` is `gmail` or `proton-bridge` for
 their ways (Gmail needs no `imap`, and its labels and Bridge's are places
-like folders); any other server is plain IMAP.
+like folders); any other server is plain IMAP. `aliases` are the other
+addresses the account gets mail at and may send from.
 
 `greed-mail check` logs in to each account and says what its server can
 do, and `greed-mail sync` syncs once, if you want to see it work on its

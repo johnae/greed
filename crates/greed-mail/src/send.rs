@@ -8,12 +8,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use lettre::address::Envelope;
 use lettre::message::header::ContentType;
-use lettre::message::{Mailbox, Mailboxes, MultiPart, SinglePart};
+use lettre::message::{Attachment, Mailbox, Mailboxes, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Address, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::{Deserialize, Serialize};
 
+use crate::addresses::{bare, name, split};
 use crate::config::{Account, Tls};
+use crate::files;
 
 /// How long a server may take to answer while mail is handed to it.
 const ANSWERING: Duration = Duration::from_secs(60);
@@ -22,6 +24,9 @@ const ANSWERING: Duration = Duration::from_secs(60);
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Draft {
+    /// Who it's from: an account's address or one of its aliases, with a
+    /// name or not; empty for the account's own.
+    pub from: String,
     pub to: String,
     pub cc: String,
     pub bcc: String,
@@ -29,6 +34,8 @@ pub struct Draft {
     pub text: String,
     /// The key of the message it answers.
     pub replying: Option<String>,
+    /// The files it carries, by path (`~` for your home folder).
+    pub attach: Vec<String>,
     /// An answer to an invite it carries (`invite::reply`), sent beside the
     /// text. Only greed-mail sets it, never a draft from the client.
     #[serde(skip)]
@@ -69,11 +76,24 @@ pub enum Failure {
 }
 
 /// A reply to `original`: to who sent it (its Reply-To when it has one),
-/// and with `all` to everyone else it went to as well, but this account;
+/// and with `all` to everyone else it went to as well, but you; from the
+/// address of yours it went to (the account's or one of its `aliases`);
 /// its subject with "Re:", its text quoted under who wrote it.
-pub fn reply(original: &Original, key: &str, all: bool) -> Draft {
-    let own = bare(&original.address);
-    let mine = bare(&original.from) == own;
+pub fn reply(original: &Original, key: &str, all: bool, aliases: &[String]) -> Draft {
+    let own: Vec<String> = std::iter::once(&original.address)
+        .chain(aliases)
+        .map(|a| bare(a))
+        .collect();
+    let mine = own.contains(&bare(&original.from));
+    let went_to: Vec<String> = split(&original.to)
+        .into_iter()
+        .chain(split(&original.cc))
+        .collect();
+    let from = went_to
+        .iter()
+        .map(|a| bare(a))
+        .find(|a| own.contains(a))
+        .unwrap_or_else(|| original.address.clone());
     // A reply to one's own mail goes on to whom it went.
     let to = if mine {
         original.to.clone()
@@ -83,11 +103,11 @@ pub fn reply(original: &Original, key: &str, all: bool) -> Draft {
         original.reply_to.clone()
     };
     let cc = if all {
-        let taken: Vec<String> = split(&to).into_iter().map(bare).collect();
-        let others: Vec<&str> = split(&original.to)
-            .into_iter()
-            .chain(split(&original.cc))
-            .filter(|a| bare(a) != own && !taken.contains(&bare(a)))
+        let taken: Vec<String> = split(&to).iter().map(|a| bare(a)).collect();
+        let others: Vec<&str> = went_to
+            .iter()
+            .map(String::as_str)
+            .filter(|a| !own.contains(&bare(a)) && !taken.contains(&bare(a)))
             .collect();
         others.join(", ")
     } else {
@@ -99,9 +119,9 @@ pub fn reply(original: &Original, key: &str, all: bool) -> Draft {
         format!("Re: {}", original.subject)
     };
     Draft {
+        from,
         to,
         cc,
-        bcc: String::new(),
         subject,
         text: format!(
             "\n\n{}\n{}",
@@ -109,7 +129,7 @@ pub fn reply(original: &Original, key: &str, all: bool) -> Draft {
             quoted(original.text.as_deref())
         ),
         replying: Some(key.to_string()),
-        calendar: None,
+        ..Draft::default()
     }
 }
 
@@ -120,13 +140,7 @@ fn wrote(original: &Original) -> String {
         (Some(day), Some(time)) => format!("On {day} {time}, "),
         _ => String::new(),
     };
-    let who = original
-        .from
-        .split('<')
-        .next()
-        .map(|name| name.trim().trim_matches('"'))
-        .filter(|name| !name.is_empty())
-        .unwrap_or(&original.from);
+    let who = name(&original.from).unwrap_or_else(|| original.from.clone());
     format!("{when}{who} wrote:")
 }
 
@@ -146,33 +160,52 @@ fn quoted(text: Option<&str>) -> String {
         + "\n"
 }
 
-/// The addresses in `list`, apart by commas, as they're written.
-fn split(list: &str) -> Vec<&str> {
-    list.split(',')
-        .map(str::trim)
-        .filter(|a| !a.is_empty())
-        .collect()
+/// The most the files mail carries may weigh together; most servers take
+/// no more.
+const ATTACHED: u64 = 25 * 1024 * 1024;
+
+/// The files `paths` name, read: each one's name, what's in it and its
+/// kind; or why one can't go.
+fn attached(paths: &[String]) -> Result<Vec<(String, Vec<u8>, ContentType)>, String> {
+    let mut out = Vec::new();
+    let mut weight = 0;
+    for path in paths {
+        let at = files::expand_home(path.trim());
+        let bytes = std::fs::read(&at).map_err(|e| format!("can't attach {path}: {e}"))?;
+        weight += bytes.len() as u64;
+        if weight > ATTACHED {
+            return Err(format!(
+                "what's attached weighs more than {} MB, more than mail takes",
+                ATTACHED / 1024 / 1024
+            ));
+        }
+        let name = at
+            .file_name()
+            .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+        let kind = ContentType::parse(files::kind_of(&name)).map_err(|e| e.to_string())?;
+        out.push((name, bytes, kind));
+    }
+    Ok(out)
 }
 
-/// The address alone, lowercase: "Anna <ANNA@x>" is "anna@x".
-fn bare(address: &str) -> String {
-    let inner = address
-        .rsplit_once('<')
-        .map_or(address, |(_, rest)| rest.trim_end_matches('>'));
-    inner.trim().to_lowercase()
-}
-
-/// The message `draft` makes, from `address`, answering `original` (its
-/// Message-ID and References) when it's a reply.
+/// The message `draft` makes, from its `from` or else `address`,
+/// answering `original` (its Message-ID and References) when it's a
+/// reply, with the files it attaches.
 pub fn compose(
     address: &str,
     draft: &Draft,
     original: Option<&Original>,
 ) -> Result<Outgoing, String> {
-    let from: Mailbox = address
+    let sender = if draft.from.trim().is_empty() {
+        address
+    } else {
+        draft.from.trim()
+    };
+    let from: Mailbox = sender
         .parse()
-        .map_err(|e| format!("{address} isn't an address: {e}"))?;
-    let domain = address.rsplit_once('@').map_or("localhost", |(_, d)| d);
+        .map_err(|e| format!("{sender} isn't an address: {e}"))?;
+    let own = bare(sender);
+    let domain = own.rsplit_once('@').map_or("localhost", |(_, d)| d);
     let mut builder = Message::builder()
         .from(from)
         .subject(draft.subject.clone())
@@ -204,6 +237,7 @@ pub fn compose(
             .in_reply_to(format!("<{id}>"))
             .references(references.join(" "));
     }
+    let files = attached(&draft.attach)?;
     let built = match &draft.calendar {
         Some(calendar) => {
             let kind = ContentType::parse("text/calendar; charset=utf-8; method=REPLY")
@@ -213,6 +247,13 @@ pub fn compose(
                     .singlepart(SinglePart::plain(draft.text.clone()))
                     .singlepart(SinglePart::builder().header(kind).body(calendar.clone())),
             )
+        }
+        None if !files.is_empty() => {
+            let mut parts = MultiPart::mixed().singlepart(SinglePart::plain(draft.text.clone()));
+            for (name, bytes, kind) in files {
+                parts = parts.singlepart(Attachment::new(name).body(bytes, kind));
+            }
+            builder.multipart(parts)
         }
         None => builder
             .header(ContentType::TEXT_PLAIN)
@@ -295,7 +336,7 @@ mod tests {
 
     #[test]
     fn a_reply_goes_to_the_sender_quoting_what_they_wrote() {
-        let draft = reply(&original(), "m:1:x", false);
+        let draft = reply(&original(), "m:1:x", false, &[]);
         assert_eq!(draft.to, "Bob Berg <bob@example.com>");
         assert_eq!(draft.cc, "");
         assert_eq!(draft.subject, "Re: Invoice 41");
@@ -309,7 +350,7 @@ mod tests {
             reply_to: "billing@example.com".into(),
             ..original()
         };
-        let draft = reply(&again, "m:1:x", false);
+        let draft = reply(&again, "m:1:x", false, &[]);
         assert_eq!(draft.subject, "RE: Invoice 41", "one Re: is enough");
         assert_eq!(
             draft.to, "billing@example.com",
@@ -319,7 +360,7 @@ mod tests {
 
     #[test]
     fn a_reply_to_all_copies_everyone_else_but_this_account() {
-        let draft = reply(&original(), "m:1:x", true);
+        let draft = reply(&original(), "m:1:x", true, &[]);
         assert_eq!(draft.to, "Bob Berg <bob@example.com>");
         assert_eq!(draft.cc, "carl@example.com, dora@example.com");
         let own = Original {
@@ -329,7 +370,7 @@ mod tests {
             ..original()
         };
         assert_eq!(
-            reply(&own, "m:1:x", true).to,
+            reply(&own, "m:1:x", true, &[]).to,
             "bob@example.com",
             "on to whom it went"
         );
@@ -410,5 +451,59 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(given.calendar, None, "a client can't make one");
+    }
+
+    #[test]
+    fn a_reply_goes_from_the_address_of_yours_it_was_sent_to() {
+        let mut sent = original();
+        sent.to = "Anna <anna@alias.example>, carl@example.com".into();
+        let aliases = ["anna@alias.example".to_string()];
+        let draft = reply(&sent, "m:1:x", true, &aliases);
+        assert_eq!(draft.from, "anna@alias.example");
+        assert_eq!(
+            draft.cc, "carl@example.com, dora@example.com",
+            "not you, by any address"
+        );
+        assert_eq!(
+            reply(&original(), "m:1:x", false, &aliases).from,
+            "anna@example.com"
+        );
+    }
+
+    #[test]
+    fn mail_carries_the_files_it_attaches_from_who_it_says() {
+        let dir = std::env::temp_dir().join(format!("gm-attach-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("plan.pdf");
+        std::fs::write(&file, b"%PDF-1.4\n").unwrap();
+        let draft = Draft {
+            from: "Anna <anna@alias.example>".into(),
+            to: "bob@example.com".into(),
+            subject: "the plan".into(),
+            text: "Here.\n".into(),
+            attach: vec![file.display().to_string()],
+            ..Draft::default()
+        };
+        let out = compose("anna@example.com", &draft, None).unwrap();
+        assert_eq!(out.sender, "anna@alias.example");
+        let body = crate::body::Body::of(&out.message, out.message.len());
+        assert_eq!(body.text.as_deref().map(str::trim), Some("Here."));
+        assert_eq!(body.attachments.len(), 1);
+        assert_eq!(
+            (
+                body.attachments[0].name.as_str(),
+                body.attachments[0].mime.as_str()
+            ),
+            ("plan.pdf", "application/pdf")
+        );
+        let missing = Draft {
+            attach: vec![dir.join("gone.txt").display().to_string()],
+            ..draft
+        };
+        let Err(why) = compose("anna@example.com", &missing, None) else {
+            panic!("sent without its attachment");
+        };
+        assert!(why.starts_with("can't attach"), "{why}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

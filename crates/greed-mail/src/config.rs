@@ -30,6 +30,9 @@ pub struct Account {
     /// What it's called here, unique among the accounts.
     pub name: String,
     pub address: String,
+    /// Other addresses it gets mail at and sends from, like Proton's.
+    #[serde(default)]
+    pub aliases: Vec<String>,
     /// Known hosts and quirks; plain IMAP without one.
     pub provider: Option<Provider>,
     imap: Option<Server>,
@@ -197,6 +200,17 @@ impl Config {
     /// The account called `name`.
     pub fn account(&self, name: &str) -> Option<&Account> {
         self.accounts.iter().find(|a| a.name == name)
+    }
+
+    /// The account that sends as `from` ("Anna <anna@x>" or the address),
+    /// its own address or one of its aliases.
+    pub fn sending_as(&self, from: &str) -> Option<&Account> {
+        let address = crate::addresses::bare(from);
+        self.accounts.iter().find(|a| {
+            std::iter::once(&a.address)
+                .chain(&a.aliases)
+                .any(|own| crate::addresses::bare(own) == address)
+        })
     }
 }
 

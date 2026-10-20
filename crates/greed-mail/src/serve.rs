@@ -7,7 +7,9 @@
 //! `summaries` (`keys` the index found, as a list shows them), `thread`
 //! (a thread by its key or one of its messages', with their text; bodies
 //! not in yet come ahead of everything else, then `changed` says so),
-//! `find` (the key of the message with a `message_id`),
+//! `find` (the key of the message with a `message_id`), `contacts` (people
+//! whose name or address starts as `typed`), `accounts` (each account's
+//! name, address and aliases),
 //! `act` (`action` on the messages `keys` name: read, unread, flag,
 //! unflag, archive, trash, move `to` a mailbox, or tag and untag with
 //! `tag`; made here at once and sent to the server in the next round,
@@ -497,6 +499,17 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
                 .ok_or("find takes message_id, a Message-ID without <>")?;
             Ok(json!({ "key": reader.find(id).map_err(|e| e.0)? }))
         }
+        "contacts" => {
+            let typed = params["typed"].as_str().unwrap_or("");
+            Ok(json!(reader.contacts(typed, CONTACTS).map_err(|e| e.0)?))
+        }
+        "accounts" => Ok(json!(
+            with.config
+                .accounts
+                .iter()
+                .map(|a| json!({ "name": a.name, "address": a.address, "aliases": a.aliases }))
+                .collect::<Vec<_>>()
+        )),
         "act" => act(params, with),
         "undo" => undo(with),
         "render" => render(params, reader),
@@ -506,11 +519,17 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             let key = params["key"]
                 .as_str()
                 .ok_or("draft takes key, the message to reply to")?;
-            let Some((_, original)) = reader.original(key).map_err(|e| e.0)? else {
+            let Some((name, original)) = reader.original(key).map_err(|e| e.0)? else {
                 return Err("that mail is gone".into());
             };
             let all = params["all"].as_bool().unwrap_or(false);
-            serde_json::to_value(send::reply(&original, key, all)).map_err(|e| e.to_string())
+            let aliases = with
+                .config
+                .account(&name)
+                .map(|a| a.aliases.as_slice())
+                .unwrap_or_default();
+            serde_json::to_value(send::reply(&original, key, all, aliases))
+                .map_err(|e| e.to_string())
         }
         "send" => post(params, with),
         "respond" => respond(params, with),
@@ -626,12 +645,21 @@ fn post_draft(draft: &Draft, account: Option<&str>, with: &Answering<'_>) -> Res
         Some(key) => reader.original(key).map_err(|e| e.0)?,
         None => None,
     };
-    let name = original.as_ref().map(|(name, _)| name.as_str()).or(account);
-    let account = match name {
-        Some(name) => with.config.account(name),
-        None => with.config.accounts.first(),
-    }
-    .ok_or_else(|| format!("no account {} in mail.toml", name.unwrap_or("")))?;
+    let account = if draft.from.trim().is_empty() {
+        let name = original.as_ref().map(|(name, _)| name.as_str()).or(account);
+        match name {
+            Some(name) => with.config.account(name),
+            None => with.config.accounts.first(),
+        }
+        .ok_or_else(|| format!("no account {} in mail.toml", name.unwrap_or("")))?
+    } else {
+        with.config.sending_as(&draft.from).ok_or_else(|| {
+            format!(
+                "no account in mail.toml sends as {}: add it to one's aliases",
+                draft.from.trim()
+            )
+        })?
+    };
     let outgoing = send::compose(&account.address, draft, original.as_ref().map(|(_, o)| o))?;
     let (store, _) = &mut *writer.borrow_mut();
     let id = store
@@ -649,6 +677,9 @@ fn post_draft(draft: &Draft, account: Option<&str>, with: &Answering<'_>) -> Res
     shared.wake.notify_one();
     Ok(json!({ "posted": posted, "seconds": SENDING.as_secs() }))
 }
+
+/// How many people a `contacts` request gives at most.
+const CONTACTS: u32 = 12;
 
 /// How long mail waits in the outbox before it goes, to be taken back.
 const SENDING: Duration = Duration::from_secs(10);

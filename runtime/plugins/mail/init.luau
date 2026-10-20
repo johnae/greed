@@ -925,23 +925,42 @@ local writing: { window: greed.View, buffer: greed.Buffer, replying: string? }? 
 
 --- `draft` as it's written: its header lines, a blank line, its text.
 function M.draft_text(draft: Draft): string
-	local head = { `To: {draft.to}`, `Cc: {draft.cc}` }
+	local head = { `From: {draft.from or ""}`, `To: {draft.to}`, `Cc: {draft.cc}` }
 	if draft.bcc ~= "" then
 		table.insert(head, `Bcc: {draft.bcc}`)
 	end
 	table.insert(head, `Subject: {draft.subject}`)
+	local attach = draft.attach or {}
+	if #attach > 0 then
+		table.insert(head, `Attach: {table.concat(attach, ", ")}`)
+	end
 	return table.concat(head, "\n") .. "\n\n" .. draft.text
+end
+
+-- The paths an Attach line names, apart by commas.
+local function paths(value: string): { string }
+	local out: { string } = {}
+	for path in string.gmatch(value, "[^,]+") do
+		local trimmed = string.match(path, "^%s*(.-)%s*$") or ""
+		if trimmed ~= "" then
+			table.insert(out, trimmed)
+		end
+	end
+	return out
 end
 
 --- The draft written in `text`: header lines up to the first blank one,
 --- its text after that.
 function M.parse_draft(text: string): Draft
 	local head, body = string.match(text, "^(.-)\n\n(.*)$")
-	local draft: Draft = { to = "", cc = "", bcc = "", subject = "", text = body or "" }
+	local draft: Draft =
+		{ from = "", to = "", cc = "", bcc = "", subject = "", text = body or "", attach = {} }
 	for line in string.gmatch(head or text, "[^\n]+") do
 		local name, value = string.match(line, "^([%w%-]+):%s*(.-)%s*$")
 		local field = string.lower(name or "")
-		if field == "to" then
+		if field == "from" then
+			draft.from = value or ""
+		elseif field == "to" then
 			draft.to = value or ""
 		elseif field == "cc" then
 			draft.cc = value or ""
@@ -949,14 +968,20 @@ function M.parse_draft(text: string): Draft
 			draft.bcc = value or ""
 		elseif field == "subject" then
 			draft.subject = value or ""
+		elseif field == "attach" then
+			draft.attach = paths(value or "")
 		end
 	end
 	return draft
 end
 
 --- Writes `draft` where the list is, the cursor where its text goes, or on
---- To when it goes to no one yet.
+--- To when it goes to no one yet. New mail is from your first account.
 function M.write(draft: Draft)
+	if draft.from == nil or draft.from == "" then
+		local accounts = backend.get().accounts()
+		draft.from = if accounts[1] then accounts[1].address else ""
+	end
 	local o = open
 	local window = if o and o.window:valid() then o.window else greed.view()
 	local buffer = greed.create_buffer("mail-compose", M.draft_text(draft))
@@ -967,8 +992,41 @@ function M.write(draft: Draft)
 		reading = nil
 	end
 	writing = { window = window, buffer = buffer, replying = draft.replying }
-	local heads = if draft.bcc ~= "" then 4 else 3
-	window:set_cursor(if draft.to == "" then 4 else buffer:line_start(heads + 1))
+	if draft.to == "" then
+		window:set_cursor(buffer:line_end(1))
+	else
+		local text = buffer:text()
+		local blank = string.find(text, "\n\n", 1, true) or #text
+		window:set_cursor(blank + 1)
+	end
+end
+
+--- Adds the file at `path` to what the mail being written attaches, on
+--- its Attach line.
+function M.attach(path: string)
+	local w = writing
+	if w == nil or not w.buffer:valid() then
+		greed.echo("there's no mail being written: c writes some")
+		return
+	end
+	local buffer = w.buffer
+	local draft = M.parse_draft(buffer:text())
+	local attach = draft.attach or {}
+	table.insert(attach, path)
+	local line = `Attach: {table.concat(attach, ", ")}`
+	buffer:edit(function(e)
+		for i = 0, buffer:line_count() - 1 do
+			local text = buffer:line_text(i)
+			if text == "" then
+				e:insert(buffer:line_start(i), line .. "\n")
+				return
+			elseif string.match(string.lower(text), "^attach:") then
+				e:replace(buffer:line_start(i), buffer:line_end(i), line)
+				return
+			end
+		end
+	end)
+	greed.echo(`attached {path}`)
 end
 
 -- From the thread in `ctx` back to the list, or out of a quick look.
@@ -1402,6 +1460,78 @@ greed.command({
 	doc = "Reply to everyone the message (or the thread being read) went to",
 	run = replying(true),
 })
+
+greed.command({
+	name = "mail-attach",
+	doc = "Attach a file to the mail being written",
+	args = { { name = "path", doc = "The file", complete = "file", type = "string" } },
+	run = function(ctx: greed.Context)
+		M.attach(core.project.resolve(ctx.values.path))
+	end,
+})
+
+-- The header lines addresses go on, and whether they're yours (From).
+local ADDRESSED = { from = true, to = false, cc = false, bcc = false }
+
+--- What could go at the cursor on an address line of mail being written:
+--- people you've had mail with, or on From your own addresses; nil
+--- anywhere else.
+function M.addressed(view: greed.View): { core.CompletionItem }?
+	local buffer = view:buffer()
+	if buffer:kind() ~= "mail-compose" then
+		return nil
+	end
+	local pos = view:cursor()
+	local line = buffer:line_of(pos)
+	for i = 0, line - 1 do
+		if buffer:line_text(i) == "" then
+			return nil
+		end
+	end
+	local before = buffer:slice(buffer:line_start(line), pos)
+	local field = string.lower(string.match(before, "^([%a]+):") or "")
+	local own = ADDRESSED[field]
+	if own == nil then
+		return nil
+	end
+	local typed = string.match(before, "[:,]%s*([^,:]*)$") or ""
+	local mail = backend.get()
+	local offered: { string } = {}
+	if own then
+		for _, account in mail.accounts() do
+			table.insert(offered, account.address)
+			for _, alias in account.aliases do
+				table.insert(offered, alias)
+			end
+		end
+	elseif typed ~= "" then
+		offered = mail.contacts(typed)
+	end
+	local items: { core.CompletionItem } = {}
+	for _, address in offered do
+		if string.find(string.lower(address), string.lower(typed), 1, true) then
+			table.insert(items, { label = address, text = address, from = pos - #typed })
+		end
+	end
+	return items
+end
+
+-- The completion menu is the lsp plugin's: asked while it's loaded.
+local function complete_addresses()
+	local completion = require("@lsp").completion
+	completion.source(M.addressed, { first = true })
+	completion.keys_over("mail-compose")
+end
+
+if table.find(greed.plugin.list(), "lsp") then
+	complete_addresses()
+end
+
+greed.on("plugin.loaded", function(event: greed.PluginLoaded)
+	if event.name == "lsp" then
+		complete_addresses()
+	end
+end)
 
 greed.command({
 	name = "mail-send",

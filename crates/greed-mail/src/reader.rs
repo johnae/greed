@@ -247,6 +247,34 @@ impl Reader {
             .optional()?)
     }
 
+    /// Up to `most` people whose address or name starts with `typed` (a
+    /// word of it, for a name), as "Name <address>": those you've written
+    /// to most first, then those you've had most mail from.
+    pub fn contacts(&self, typed: &str, most: u32) -> Result<Vec<String>, Trouble> {
+        let escaped = typed.replace(['\\', '%', '_'], "");
+        let mut statement = self.db.prepare(
+            "SELECT address, name FROM contacts
+             WHERE address LIKE ?1 OR name LIKE ?1 OR name LIKE ?2
+             ORDER BY written DESC, seen DESC, last DESC LIMIT ?3",
+        )?;
+        let found = statement
+            .query_map(
+                params![format!("{escaped}%"), format!("% {escaped}%"), most],
+                |r| {
+                    let (address, name): (String, String) = (r.get(0)?, r.get(1)?);
+                    Ok(if name.is_empty() {
+                        address
+                    } else if name.contains([',', '"', '<']) {
+                        format!("\"{}\" <{address}>", name.replace('"', ""))
+                    } else {
+                        format!("{name} <{address}>")
+                    })
+                },
+            )?
+            .collect::<Result<_, _>>()?;
+        Ok(found)
+    }
+
     /// The iCalendar the message `key` carries, and the address of the
     /// account it's in.
     pub fn calendar(&self, key: &str) -> Result<Option<(String, String)>, Trouble> {
@@ -402,5 +430,50 @@ mod tests {
         assert_eq!(summaries[1].message_id.as_deref(), Some("a@x"));
         assert_eq!(reader.find("a@x").unwrap().as_deref(), Some("m:1:pm:a"));
         assert_eq!(reader.find("nothing@x").unwrap(), None);
+    }
+
+    #[test]
+    fn contacts_are_who_you_write_to_most_then_who_writes_most() {
+        let dir = std::env::temp_dir().join(format!("gm-contacts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "anna@x").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let message = |uid: u32, from: &str, to: &str| Fetched {
+            uid,
+            raw: format!(
+                "From: {from}\r\nTo: {to}\r\nSubject: s\r\nMessage-ID: <{uid}@x>\r\n\
+                 X-Pm-Internal-Id: c{uid}\r\nDate: Sun, 19 Oct 2026 10:0{uid}:00 +0200\r\n\r\n"
+            )
+            .into_bytes(),
+            ..Fetched::default()
+        };
+        store
+            .put(
+                account,
+                inbox.id,
+                &[
+                    message(1, "Bob Berg <bob@x>", "anna@x"),
+                    message(2, "Bob Berg <bob@x>", "anna@x"),
+                    message(3, "Anna <anna@x>", "Bea Bell <bea@x>"),
+                    message(4, "news@x", "anna@x"),
+                ],
+                4,
+                1,
+            )
+            .unwrap();
+        let reader = Reader::open(&dir).unwrap();
+        assert_eq!(
+            reader.contacts("b", 10).unwrap(),
+            ["Bea Bell <bea@x>", "Bob Berg <bob@x>"],
+            "written to first"
+        );
+        assert_eq!(
+            reader.contacts("bell", 10).unwrap(),
+            ["Bea Bell <bea@x>"],
+            "by a word of the name"
+        );
+        assert_eq!(reader.contacts("news", 10).unwrap(), ["news@x"]);
+        assert!(reader.contacts("anna", 10).unwrap().is_empty(), "never you");
     }
 }

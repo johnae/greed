@@ -233,6 +233,20 @@ local function fake()
 			return nil, nil
 		end,
 		sync = function() end,
+		accounts = function(): { any }
+			return {
+				{ name = "home", address = "me@example.com", aliases = { "me@alias.example" } },
+			}
+		end,
+		contacts = function(typed: string): { string }
+			local out: { string } = {}
+			for _, who in { "Anna Berg <anna@example.com>", "Bob <bob@example.com>" } do
+				if string.find(string.lower(who), string.lower(typed), 1, true) then
+					table.insert(out, who)
+				end
+			end
+			return out
+		end,
 		draft = function(key: string, all: boolean): (any, string?)
 			for _, m in now do
 				if m.key == key then
@@ -471,11 +485,12 @@ test("r writes a reply quoting the message, and :mail-send sends it", function(t
 		local buffer = window:buffer()
 		assert(buffer:kind() == "mail-compose", buffer:kind())
 		local text = buffer:text()
-		local head = "To: Anna Berg <anna@example.com>\nCc: \nSubject: Re: Invoice 41\n\n"
+		local head =
+			"From: me@example.com\nTo: Anna Berg <anna@example.com>\nCc: \nSubject: Re: Invoice 41\n\n"
 		assert(string.sub(text, 1, #head) == head, text)
 		assert(string.find(text, "> please pay by Friday", 1, true), text)
 		local at = window:cursor()
-		assert(at == buffer:line_start(4), "the cursor where the text goes")
+		assert(at == buffer:line_start(5), "the cursor where the text goes")
 		buffer:edit(function(e)
 			e:replace(at, at, "Paid.")
 		end)
@@ -498,10 +513,50 @@ test("a reads a reply to all; c writes new mail from To", function(t)
 		t:run("mail-close")
 		assert(window:buffer():kind() == "mail", "dropped, back in the list")
 		t:keys("c")
-		assert(window:buffer():text() == "To: \nCc: \nSubject: \n\n")
-		assert(window:cursor() == 4, "on To")
+		local text = window:buffer():text()
+		assert(text == "From: me@example.com\nTo: \nCc: \nSubject: \n\n", text)
+		assert(window:cursor() == window:buffer():line_end(1), "on To")
 	end)
 end)
+
+test(
+	"addresses complete from your mail, From from your own, and :mail-attach adds a file",
+	function(t)
+		fake()
+		in_the_mail_session(function()
+			t:buffer("|x")
+			t:run("mail")
+			t:keys("esc c")
+			local view = greed.view()
+			local buffer = view:buffer()
+			view:set_cursor(buffer:line_end(1))
+			buffer:edit(function(e)
+				e:insert(buffer:line_end(1), "carl@x, an")
+			end)
+			view:set_cursor(buffer:line_end(1))
+			local items = mail.addressed(view) or {}
+			assert(
+				#items == 1 and items[1].text == "Anna Berg <anna@example.com>",
+				tostring(#items)
+			)
+			assert(items[1].from == buffer:line_end(1) - 2, "replaces what was typed")
+			view:set_cursor(buffer:line_end(0))
+			local own = mail.addressed(view) or {}
+			assert(
+				#own == 1 and own[1].text == "me@example.com",
+				"your own addresses, as far as typed"
+			)
+			view:set_cursor(buffer:line_end(3))
+			assert(#(mail.addressed(view) or {}) == 0, "nothing for the subject")
+			local dir = t:tempdir({ ["plan.pdf"] = "%PDF" })
+			t:run("mail-attach", { `{dir}/plan.pdf` })
+			t:run("mail-attach", { `{dir}/notes.txt` })
+			local draft = mail.parse_draft(buffer:text())
+			assert(draft.attach and #draft.attach == 2, buffer:text())
+			assert(draft.from == "me@example.com" and draft.to == "carl@x, an", draft.to)
+		end)
+	end
+)
 
 test("mail is written from a quick look too, and goes back to it once sent", function(t)
 	fake()

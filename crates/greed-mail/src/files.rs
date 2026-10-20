@@ -31,6 +31,39 @@ pub fn safe_name(name: &str) -> String {
     }
 }
 
+/// The kind of file `name` is by its extension, as mail says it:
+/// `application/octet-stream` for what isn't known.
+pub fn kind_of(name: &str) -> &'static str {
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "txt" | "md" | "log" => "text/plain; charset=utf-8",
+        "csv" => "text/csv; charset=utf-8",
+        "html" | "htm" => "text/html; charset=utf-8",
+        "ics" => "text/calendar; charset=utf-8",
+        "json" => "application/json",
+        "zip" => "application/zip",
+        "gz" | "tgz" => "application/gzip",
+        "doc" => "application/msword",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" => "application/vnd.ms-excel",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "odt" => "application/vnd.oasis.opendocument.text",
+        "mp3" => "audio/mpeg",
+        "mp4" => "video/mp4",
+        _ => "application/octet-stream",
+    }
+}
+
 /// `path` as the reader writes it, `~/` for their home folder.
 pub fn expand_home(path: &str) -> PathBuf {
     match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
