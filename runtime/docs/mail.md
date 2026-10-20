@@ -148,7 +148,7 @@ Reading a thread marks it read.
 A dot marks unread mail and ⚑ flagged mail; a message's folders, labels
 and tags follow its subject (`#work`).
 
-Over the list are your saved searches, each with how many unread threads
+Over the list are your saved searches, each with how many unread messages
 it finds, counted again as mail comes in. `g 1` to `g 9` go to them, and
 `]` and `[` go to the next and the one before; pressing one goes to it
 too. Set your own in your config:

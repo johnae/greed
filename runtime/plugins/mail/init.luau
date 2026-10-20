@@ -72,7 +72,7 @@ M.source = {
 } :: core.QuerySource
 
 --- The searches kept to go back to, shown over the list with how many
---- unread threads each finds; `g 1` to `g 9` go to them. Set them in your
+--- unread messages each finds; `g 1` to `g 9` go to them. Set them in your
 --- config: `require("@mail").searches = { { name = "Work", query = "in:work" } }`.
 M.searches = {
 	{ name = "Inbox", query = "in:inbox" },
@@ -120,7 +120,7 @@ type Open = {
 	-- Results by the query that found them, as the search box counts the
 	-- same queries the list shows.
 	found: { [string]: { Summary } },
-	-- How many unread threads each saved search finds, by its query, once
+	-- How many unread messages each saved search finds, by its query, once
 	-- counted; counting goes on while this is set.
 	unread: { [string]: number },
 	counting: boolean,
@@ -143,11 +143,10 @@ local reading: {
 }? =
 	nil
 
---- The messages `parsed` finds, newest first unless it sorts otherwise,
---- or nil and why.
-function M.search(parsed: core.Query): ({ Summary }?, string?)
-	local mail = backend.get()
-	local index, err = mail.index()
+--- The keys of the messages `parsed` finds, newest first unless it sorts
+--- otherwise, from the index alone; or nil and why.
+function M.found(parsed: core.Query): ({ string }?, string?)
+	local index, err = backend.get().index()
 	if index == nil then
 		return nil, err
 	end
@@ -158,10 +157,17 @@ function M.search(parsed: core.Query): ({ Summary }?, string?)
 	end
 	asked.view.limit = asked.view.limit or LIMIT
 	local keys, _, trouble = core.query.search(index, asked, M.source)
+	return keys, trouble
+end
+
+--- The messages `parsed` finds, newest first unless it sorts otherwise,
+--- or nil and why.
+function M.search(parsed: core.Query): ({ Summary }?, string?)
+	local keys, trouble = M.found(parsed)
 	if keys == nil then
 		return nil, trouble
 	end
-	return mail.summaries(keys)
+	return backend.get().summaries(keys)
 end
 
 greed.option.define({
@@ -232,11 +238,12 @@ function M.tag_text(tags: { string }): string
 	return table.concat(shown, " ")
 end
 
--- How many unread threads a saved search counts at most.
+-- How many unread messages a saved search counts at most.
 local COUNTED = 999
 
--- Counts the unread threads each saved search finds, in the background,
--- then draws the list again.
+-- Counts the unread messages each saved search finds, in the background,
+-- then draws the list again. From the index alone: counting asks
+-- greed-mail nothing.
 local function count(o: Open)
 	if o.counting then
 		return
@@ -248,7 +255,7 @@ local function count(o: Open)
 			local parsed = core.search_box.read(text, { source = M.source })
 			if parsed.ok then
 				parsed.view.limit = COUNTED + 1
-				o.unread[saved.query] = #M.threads(M.search(parsed) or {})
+				o.unread[saved.query] = #(M.found(parsed) or {})
 			end
 		end
 		o.counting = false
