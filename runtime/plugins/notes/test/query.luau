@@ -204,3 +204,20 @@ test("front matter's lists and links are fields, and its date is the note's", fu
 	assert(found("is:note people:ann") == "Meeting")
 	assert(found("is:note date:2023-09-12") == "Meeting", found("is:note date:2023-09-12"))
 end)
+
+test("a field is a number or a date when its values are, or Obsidian says", function(t)
+	local dir = t:tempdir({
+		["Dune.md"] = "---\nrating: 9\nread: 2024-03-01\ncode: 7\n---\n",
+		["Emma.md"] = "---\nrating: 10\nread: 2021-06-15\ncode: 12\n---\n",
+		["Ulysses.md"] = "---\nrating: 4\ncode: x1\n---\n",
+		[".obsidian/types.json"] = '{"types": {"code": "number"}}',
+	})
+	greed.option.set("notes-folder", dir)
+	greed.option.set("notes-project-folder", `{dir}/.no-project-notes`)
+	notes.index.ensure()
+	assert(found("is:note rating>5 sort:note") == "Dune, Emma", found("is:note rating>5 sort:note"))
+	assert(found("is:note read<2023") == "Emma", found("is:note read<2023"))
+	local fields = notes.query.source().fields
+	assert(fields.rating.kind == "value" and fields.read.kind == "date", "inferred")
+	assert(fields.code.kind == "value", "as Obsidian's types say")
+end)

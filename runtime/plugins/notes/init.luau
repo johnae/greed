@@ -10,6 +10,8 @@
 --   space n r   dismiss the reminders notice
 --   space n l   have Greed's agent link the inbox to your other notes
 --   space n k   link to a heading, list item or block in a note
+--   space n n   a new note from a template (types.luau)
+--   space n y   give this note a template's fields
 --   space k     on a due date or a reminder, say when it is in words
 --   g d         follow the [[link]] under the cursor (making the note)
 --   tab, z a    fold the section, list item or code block under the cursor,
@@ -29,6 +31,7 @@ local notes = require("@self/notes")
 local links = require("@self/links")
 local mentions = require("@self/mentions")
 local query = require("@self/query")
+local types = require("@self/types")
 local todos = require("@self/todos")
 require("@self/tools")
 require("@self/objects")
@@ -76,6 +79,7 @@ local exported: typeof(notes) & {
 	links: typeof(links),
 	mentions: typeof(mentions),
 	query: typeof(query),
+	types: typeof(types),
 	clock: () -> number,
 } = setmetatable(
 	{
@@ -87,6 +91,7 @@ local exported: typeof(notes) & {
 		links = links,
 		mentions = mentions,
 		query = query,
+		types = types,
 	},
 	{
 		__index = function(_, key: string): any

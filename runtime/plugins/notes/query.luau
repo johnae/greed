@@ -302,21 +302,60 @@ local function plain_value(value: string): string
 	return string.match(value, "^%[%[([^%]|#]*)") or value
 end
 
+-- How Obsidian's property types (`.obsidian/types.json`) match.
+local OBSIDIAN_KINDS: { [string]: string } = {
+	date = "date",
+	datetime = "date",
+	number = "value",
+	checkbox = "exact",
+}
+
+-- What kind of field `values` make: dates when they all are, numbers
+-- (compared as such) when they all are, otherwise words.
+local function kind_of(values: { string }): string
+	if #values == 0 then
+		return "text"
+	end
+	local all_dates, all_numbers = true, true
+	for _, value in values do
+		all_dates = all_dates and string.match(value, "^%d%d%d%d%-%d%d%-%d%d") ~= nil
+		all_numbers = all_numbers and tonumber(value) ~= nil
+	end
+	return if all_dates then "date" elseif all_numbers then "value" else "text"
+end
+
 --- The source a query runs over notes with: the fields above, and the
 --- `key:: value` fields and front matter keys the notes have now, a list
 --- in front matter (`genre: ["[[Sci-fi]]", ...]`) as each of its values.
+--- A field is a date or a number as Obsidian's property types say, or
+--- when every value it has is one.
 function M.source(): core.QuerySource
 	local cached = made_source
 	if cached then
 		return cached
 	end
 	local fields = table.clone(FIELDS)
-	local function add(name: string)
-		if fields[name] ~= nil then
-			return
+	local seen: { [string]: { string } } = {}
+	for _, note in index.all() do
+		for key, value in note.fields do
+			local name = string.lower(key)
+			local values = seen[name] or {}
+			seen[name] = values
+			table.insert(values, value)
 		end
+		for key in note.front do
+			seen[key] = seen[key] or {}
+		end
+	end
+	local typed = notes.obsidian("types").types
+	for name, values in seen do
+		if fields[name] ~= nil then
+			continue
+		end
+		local said = if type(typed) == "table" then typed[name] else nil
 		fields[name] = {
-			kind = "text",
+			kind = (if type(said) == "string" then OBSIDIAN_KINDS[said] else nil)
+				or kind_of(values),
 			get = function(item: Item): string | { string } | nil
 				local node = item.node
 				local own = if node then node.fields[name] else nil
@@ -335,14 +374,6 @@ function M.source(): core.QuerySource
 				return out
 			end,
 		}
-	end
-	for _, note in index.all() do
-		for key in note.fields do
-			add(string.lower(key))
-		end
-		for key in note.front do
-			add(key)
-		end
 	end
 	local source: core.QuerySource = {
 		fields = fields,

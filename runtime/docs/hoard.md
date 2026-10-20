@@ -296,7 +296,8 @@ The query is the one Greed searches with everywhere: words, `field:value`,
   day's note's day, or when a note last changed), `modified`, and your own
   `key:: value` fields and front matter. A list in front matter matches
   each of its values, and a link by its note's name: `genre:sci-fi` finds
-  `genre: ["[[Sci-fi]]", Noir]`.
+  `genre: ["[[Sci-fi]]", Noir]`. A field whose values are all dates is a
+  date (`read:<2023`), as is one Obsidian's property types call a date.
 - Where: `in:NAME` or `in:(query)` for what's in a note, `has:(query)` for
   notes holding something.
 - `sort:due`, `sort:-date` (newest first) and `limit:20` say how to list
@@ -322,11 +323,12 @@ greed capture --note the plumber comes at noon
 The first adds a todo to today's note, read as above; `--note` adds a
 line that isn't a todo.
 
-## Today's note from a template
+## Templates
 
 Each day's note starts as `templates/daily.md` in your notes folder says,
-when there is one. `{{date}}` becomes the date (`2026-10-18`) and
-`{{day}}` the day in words (`Sunday 18 October`):
+when there is one. `{{date}}` becomes the date (`2026-10-18`), `{{day}}`
+the day in words (`Sunday 18 October`), `{{title}}` the note's name and
+`{{time}}` the time:
 
 ```markdown
 # {{day}}
@@ -335,6 +337,29 @@ when there is one. `{{date}}` becomes the date (`2026-10-18`) and
 
 ## Notes
 ```
+
+Each note in the templates folder is a kind of note you can start from,
+named without its "Template". With `templates/Meeting Template.md` holding
+
+```markdown
+---
+categories:
+  - "[[Meetings]]"
+date: {{date}}
+people: []
+---
+## Agenda
+```
+
+`:notes-new` (`ctrl-space n n`, `space n n` with Vim's or Helix's keys)
+asks which kind (`Meeting`), then the name, and opens the new note filled
+in. `:notes-type` (`space n y`) in a note you have gives it the kind's
+fields it's missing, with the template's values, and leaves the ones it
+has alone.
+
+In front matter, typing a key at the start of a line lists the keys your
+notes use, and after `key: ` (or `- ` under a key) the values they give
+it, most used first.
 
 ## Where your notes are
 

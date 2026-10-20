@@ -104,9 +104,10 @@ end
 -- (`.obsidian/daily-notes.json`), read again every few seconds.
 local obsidian_read: { [string]: { at: number, folder: string, value: { [string]: any } } } = {}
 
--- Obsidian's setting `key` in `.obsidian/FILE.json` of the notes folder,
--- when it's text that says something.
-local function obsidian(file: string, key: string): string?
+--- What Obsidian's settings in `.obsidian/FILE.json` of the notes folder
+--- say (`daily-notes`, `templates`, `types`), or an empty table where
+--- there are none. Read again every few seconds.
+function M.obsidian(file: string): { [string]: any }
 	local folder = M.folder()
 	local known = obsidian_read[file]
 	if known == nil or known.folder ~= folder or os.clock() - known.at > 5 then
@@ -119,7 +120,13 @@ local function obsidian(file: string, key: string): string?
 		}
 		obsidian_read[file] = known
 	end
-	local value = known.value[key]
+	return known.value
+end
+
+-- Obsidian's setting `key` in `.obsidian/FILE.json`, when it's text that
+-- says something.
+local function obsidian(file: string, key: string): string?
+	local value = M.obsidian(file)[key]
 	return if type(value) == "string" and string.match(value, "%S") then value else nil
 end
 
@@ -430,21 +437,28 @@ function M.make_daily(): string
 				then (string.gsub(trimmed_folder(template_name), "%.md$", ""))
 				else `{M.templates_folder()}/daily`
 		)
-		local clock = core.dates.clock()
-		local filled = {
-			["{{date}}"] = today,
-			["{{day}}"] = os.date("%A %d %B", clock) :: string,
-			["{{title}}"] = string.match(name, "([^/]+)$") or name,
-			["{{time}}"] = os.date("%H:%M", clock) :: string,
-		}
-		local text = if template
-			then (string.gsub(template, "{{%a+}}", function(found: string): string
-				return filled[found] or found
-			end))
-			else `# {today}\n\n`
-		core.file.write(path, text)
+		core.file.write(path, if template then M.filled(template, name) else `# {today}\n\n`)
 	end
 	return path
+end
+
+--- `template`'s text for a new note `name`, its `{{date}}`
+--- ("2026-10-18"), `{{day}}` ("Sunday 18 October"), `{{title}}` (the
+--- note's name without its folders) and `{{time}}` filled in, as
+--- Obsidian's templates have them.
+function M.filled(template: string, name: string): string
+	local clock = core.dates.clock()
+	local values = {
+		["{{date}}"] = M.today(),
+		["{{day}}"] = os.date("%A %d %B", clock) :: string,
+		["{{title}}"] = string.match(name, "([^/:]+)$") or name,
+		["{{time}}"] = os.date("%H:%M", clock) :: string,
+	}
+	return (
+		string.gsub(template, "{{%a+}}", function(found: string): string
+			return values[found] or found
+		end)
+	)
 end
 
 export type Symbols = {

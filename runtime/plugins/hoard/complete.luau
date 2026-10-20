@@ -8,6 +8,9 @@
 -- Typing `[[` offers the notes (and their aliases); after a note's name,
 -- `#` offers its headings and `#^` its list items and blocks, a block
 -- without an id getting one when it's picked.
+--
+-- In front matter, the keys the notes have are offered, and after a key
+-- (or a list item under one) the values the notes give it.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -173,6 +176,100 @@ local function linked(view: greed.View): { core.CompletionItem }?
 	return items
 end
 
+-- The front matter key whose value is typed on line `line` of `buffer`
+-- (the key itself, or one above for a list's `- item`), and what's typed
+-- of it; or with no key, what's typed of a key. Nil outside front matter.
+local function typing_front(buffer: greed.Buffer, line: number, before: string): (string?, string?)
+	if line == 0 or buffer:slice(buffer:line_start(0), buffer:line_end(0)) ~= "---" then
+		return nil, nil
+	end
+	local above: string? = nil
+	for n = 1, line - 1 do
+		local text = buffer:slice(buffer:line_start(n), buffer:line_end(n))
+		if string.match(text, "^%-%-%-%s*$") then
+			return nil, nil
+		end
+		local key = string.match(text, "^([%w_%-]+):")
+		if key then
+			above = key
+		elseif not string.match(text, "^%s") then
+			above = nil
+		end
+	end
+	local key, value = string.match(before, "^([%w_%-]+):%s+(.*)$")
+	if key then
+		return key, value
+	end
+	local item = string.match(before, "^%s+%-%s+(.*)$")
+	if item then
+		return above, item
+	end
+	return nil, string.match(before, "^([%w_%-]*)$")
+end
+
+-- `counts`' names, most first.
+local function by_count(counts: { [string]: number }): { string }
+	local out: { string } = {}
+	for name in counts do
+		table.insert(out, name)
+	end
+	table.sort(out, function(a: string, b: string): boolean
+		return if counts[a] ~= counts[b] then counts[a] > counts[b] else a < b
+	end)
+	return out
+end
+
+-- Front matter at the cursor in `view`: the keys the notes have, and once
+-- a key's typed, the values they give it (`[[Steph Ango]]` as written).
+local function fielded(view: greed.View): { core.CompletionItem }?
+	local buffer = view:buffer()
+	if not notes.is_note(buffer) then
+		return nil
+	end
+	local pos = view:cursor()
+	local line = buffer:line_of(pos)
+	local before = buffer:slice(buffer:line_start(line), pos)
+	local key, typed = typing_front(buffer, line, before)
+	if typed == nil then
+		return nil
+	end
+	notes.index.ensure()
+	local counts: { [string]: number } = {}
+	local function count(name: string)
+		counts[name] = (counts[name] or 0) + 1
+	end
+	for _, note in notes.index.all() do
+		if key == nil then
+			for name in note.front do
+				count(name)
+			end
+		else
+			local value = note.front[string.lower(key)]
+			if type(value) == "table" then
+				for _, each in value do
+					count(each)
+				end
+			elseif type(value) == "string" and value ~= "" then
+				count(value)
+			end
+		end
+	end
+	local items: { core.CompletionItem } = {}
+	for _, name in by_count(counts) do
+		table.insert(items, {
+			label = name,
+			detail = if key then `in {counts[name]} notes` else "a field",
+			-- A link is quoted, as YAML wants it.
+			text = if key == nil
+				then `{name}: `
+				elseif string.sub(name, 1, 2) == "[[" then `"{name}"`
+				else name,
+			from = pos - #typed,
+		})
+	end
+	return items
+end
+
 -- A link picked to a block offered an id gives the block that id: the
 -- menu puts the link in, and this sees it on the lines that changed.
 greed.on("buffer.changed", function(event: greed.BufferChanged)
@@ -199,6 +296,7 @@ local function attach()
 	local completion = require("@lsp").completion
 	completion.source(offered, { first = true })
 	completion.source(linked, { first = true })
+	completion.source(fielded, { first = true })
 	completion.keys_over("hoard")
 	completion.keys_over("file")
 end

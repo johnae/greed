@@ -517,3 +517,26 @@ test(
 		assert(greed.fs.read(path) == "# Mine\n", "kept")
 	end
 )
+
+test("in front matter, the notes' keys are offered, then their values", function(t)
+	local dir = folder(t, {
+		["Dune.md"] = '---\ngenre:\n  - "[[Sci-fi]]"\nstatus: read\n---\n',
+		["Emma.md"] = "---\nstatus: reading\n---\n",
+		["new.md"] = "---\n\n---\n",
+	})
+	notes.index.ensure()
+	greed.open(`{dir}/new.md`)
+	local buffer = greed.view():buffer()
+	t:keys("j i s t a")
+	t:run("completion-ask")
+	t:keys("enter")
+	assert(buffer:line_text(1) == "status: ", buffer:line_text(1))
+	t:keys("r e a d i")
+	t:run("completion-ask")
+	t:keys("enter")
+	assert(buffer:line_text(1) == "status: reading", buffer:line_text(1))
+	t:keys("enter g e n r e : enter space space - space S c")
+	t:run("completion-ask")
+	t:keys("enter")
+	assert(buffer:line_text(3) == '  - "[[Sci-fi]]"', buffer:line_text(3))
+end)

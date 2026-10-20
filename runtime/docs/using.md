@@ -1843,6 +1843,8 @@ to show other words.
 | `space k` | On a due date or a reminder, say when it is in words ("tomorrow, 18:00, in 25 hours") |
 | `space n l` | Have Greed's agent connect the inbox (or the note you're in) to your other notes (below) |
 | `space n k` | Link to a heading, a list item or a block in any note, picked from all of them ([more](hoard.md#links-embeds-and-obsidian)) |
+| `space n n` | Make a note from a template: pick the kind, then name it ([more](hoard.md#templates)) |
+| `space n y` | Give the note you're in a template's fields it doesn't have yet |
 | `g d` | Follow the link under the cursor, to the heading or block it names, making the note if it's new; in Markdown outside your notes, `[[name]]` is `name.md` beside the file |
 | `z a` | Fold the section under the cursor, or unfold it (any Markdown) |
 | `alt-up` `alt-down` | Move the list item (with the items under it) or section the cursor is in past the one beside it (any Markdown; the vscode style's keys, `move-lines-up` and `move-lines-down` in others) |
