@@ -28,8 +28,10 @@
 //! sync, and why), `refused` (a change or mail its server refused, and
 //! why), `sent` (mail its server took), `arrived` (the keys of new mail,
 //! once it's in the index: what came since its mailbox was all in, never
-//! what a first sync brings) and `attachment` (where one asked
-//! for went, or why it couldn't).
+//! what a first sync brings), `attachment` (where one asked
+//! for went, or why it couldn't), `indexing` (how far a long catch-up of
+//! the index got: `done` of `of`) and `synced` (an account's round over:
+//! how many `messages` it has, and whether it's all `done`).
 //!
 //! A greed-mail only reading the mail (`--read`, in other sessions) has
 //! the mail session's make its changes, sends and fetches, over `SOCKET`
@@ -945,7 +947,7 @@ async fn round(
             .await
             .map_err(|e| format!("{}: {e}", mailbox.name))?;
         more |= !synced.done || fetched >= BODIES;
-        if indexing::catch_up(store, index).map_err(|e| e.0)? > 0 {
+        if index_telling(store, index, shared).await? > 0 {
             shared.notify("changed", &json!({}));
         }
         // Said once they're in the index, so rules searching find them.
@@ -954,6 +956,7 @@ async fn round(
             shared.notify("arrived", &json!({ "keys": arrived }));
         }
         if synced.fetched + synced.changed + synced.gone + fetched > 0 {
+            let (messages, _) = store.counts(id).map_err(|e| e.0)?;
             shared.notify(
                 "progress",
                 &json!({
@@ -961,12 +964,17 @@ async fn round(
                     "mailbox": mailbox.name,
                     "fetched": synced.fetched,
                     "bodies": fetched,
+                    "messages": messages,
                 }),
             );
         }
     }
     asked_for(&mut connection, store, index, id, shared).await?;
     let (messages, _) = store.counts(id).map_err(|e| e.0)?;
+    shared.notify(
+        "synced",
+        &json!({ "account": account.name, "messages": messages, "done": !more }),
+    );
     shared.standing.borrow_mut().insert(
         account.name.clone(),
         Standing {
@@ -978,6 +986,42 @@ async fn round(
     );
     let _ = connection.close().await;
     Ok(more)
+}
+
+/// Brings `index` up to `store` a batch at a time, letting requests be
+/// answered between batches. When there's more than a batch it says how
+/// far it got (`indexing`, `done` of `of`), first before it starts, and
+/// that the mail changed after each, so a list fills in as it goes. Gives
+/// how many it wrote.
+async fn index_telling(
+    store: &mut Store,
+    index: &mut Index,
+    shared: &Shared,
+) -> Result<usize, String> {
+    let of = store.unindexed_count().map_err(|e| e.0)?;
+    let telling = of > indexing::BATCH;
+    if telling {
+        shared.notify("indexing", &json!({ "done": 0, "of": of }));
+        tokio::task::yield_now().await;
+    }
+    let mut done = 0;
+    loop {
+        let some = indexing::catch_up_some(store, index).map_err(|e| e.0)?;
+        if some == 0 {
+            break;
+        }
+        done += some;
+        if telling {
+            shared.notify("indexing", &json!({ "done": done.min(of), "of": of }));
+            shared.notify("changed", &json!({}));
+        }
+        tokio::task::yield_now().await;
+    }
+    indexing::take_out_gone(store, index).map_err(|e| e.0)?;
+    if telling {
+        shared.notify("indexing", &json!({ "done": of, "of": of }));
+    }
+    Ok(done)
 }
 
 /// Sends what was written and changed here in `account` (store id `id`)
@@ -1205,6 +1249,53 @@ fn attachment(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::header::Fetched;
+
+    #[test]
+    fn indexing_much_says_so_before_the_first_batch_and_after_each() {
+        let dir = std::env::temp_dir().join(format!("gm-telling-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut store = Store::open(&dir).unwrap();
+        let mut index = Index::open(&dir.join("index.db")).unwrap();
+        let account = store.account("proton", "anna@example.com").unwrap();
+        let all = store.mailbox(account, "All Mail", Some("all")).unwrap();
+        let count = indexing::BATCH + 1;
+        let messages: Vec<Fetched> = (1..=u32::try_from(count).unwrap())
+            .map(|uid| Fetched {
+                uid,
+                raw: format!("Message-ID: <{uid}@x>\r\nSubject: s{uid}\r\n\r\n").into_bytes(),
+                ..Fetched::default()
+            })
+            .collect();
+        store.put(account, all.id, &messages, 1, 1).unwrap();
+        let (out, mut lines) = mpsc::unbounded_channel();
+        let shared = Shared {
+            out,
+            wanted: RefCell::new(Vec::new()),
+            attachments: RefCell::new(Vec::new()),
+            kept: dir.join("attachments"),
+            standing: RefCell::new(BTreeMap::new()),
+            wake: Notify::new(),
+            copies: None,
+            last: RefCell::new(None),
+        };
+        let written = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(index_telling(&mut store, &mut index, &shared))
+            .unwrap();
+        assert_eq!(written, count);
+        let mut told = Vec::new();
+        while let Ok(line) = lines.try_recv() {
+            let message: Value = serde_json::from_str(&line).unwrap();
+            if message["method"] == "indexing" {
+                told.push(message["params"]["done"].as_u64().unwrap());
+            }
+        }
+        let batch = indexing::BATCH as u64;
+        assert_eq!(told, [0, batch, batch + 1, batch + 1]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn each_failure_waits_twice_as_long_up_to_five_minutes() {

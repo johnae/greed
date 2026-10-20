@@ -310,8 +310,34 @@ local function render(o: Open): core.UiNode
 			value = row,
 		})
 	end
-	return ui.column({ tabs(o), head, ui.gap(), ui.grid(rows) })
+	local parts: { core.UiNode } = { tabs(o), head }
+	local busy = M.busy_node()
+	if busy then
+		table.insert(parts, busy)
+	end
+	table.insert(parts, ui.gap())
+	table.insert(parts, ui.grid(rows))
+	return ui.column(parts)
 end
+
+--- What greed-mail is busy with, as a line over the list: a bar while it
+--- indexes, how much is in while an account syncs; nil when it isn't.
+function M.busy_node(): core.UiNode?
+	local indexing = backend.busy.indexing
+	if indexing then
+		return ui.progress("indexing your mail", indexing.done, indexing.of)
+	end
+	local said = backend.syncing_text()
+	return if said then ui.text(said, "comment") else nil
+end
+
+-- Drawn again as what greed-mail is busy with changes.
+backend.on_busy(function()
+	local o = open
+	if o and o.buffer:valid() then
+		o.view:redraw()
+	end
+end)
 
 -- Runs the list's query again, as the mail changed or it was typed; as
 -- the mail changed (no `parsed`), counts the saved searches' unread too.

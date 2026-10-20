@@ -339,6 +339,27 @@ function M.input_sides(
 	return marks
 end
 
+-- How many cells a progress bar takes.
+local BAR = 20
+
+--- How far something long has got: `label`, then a bar and "40,000 of
+--- 143,691" when how much there is (`of`) is known, else just how much is
+--- `done` so far.
+function M.progress(label: string, done: number, of: number?): Node
+	if of == nil or of <= 0 then
+		return M.line({ M.span(`{label}: `, "comment"), M.span(text_helpers.count(done)) })
+	end
+	local filled = math.clamp(math.floor(done / of * BAR + 0.5), 0, BAR)
+	return M.line({
+		M.span(`{label} `, "comment"),
+		M.span("▕", "comment"),
+		M.span(string.rep("█", filled), "function"),
+		M.span(string.rep("░", BAR - filled), "comment"),
+		M.span("▏ ", "comment"),
+		M.span(`{text_helpers.count(done)} of {text_helpers.count(of)}`),
+	})
+end
+
 --- A button: its label in the theme's `ui.button` (a badge in the window),
 --- calling `on_press` when pressed.
 function M.button(label: string, on_press: () -> ()): Node

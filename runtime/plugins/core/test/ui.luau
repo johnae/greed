@@ -579,3 +579,16 @@ test("a burst of resizes draws at once, then once more where it ends", function(
 	t:wait(350)
 	assert(draws == 2, `then once for where it ended, drawn {draws} times`)
 end)
+
+test("progress shows a bar and how far, or how much so far", function()
+	local half = ui.draw(ui.progress("indexing", 50, 100), 80)
+	assert(
+		half
+			== "indexing ▕██████████░░░░░░░░░░▏ 50 of 100",
+		half
+	)
+	local big = ui.draw(ui.progress("indexing", 40000, 143691), 80)
+	assert(string.find(big, "40,000 of 143,691", 1, true) ~= nil, big)
+	local open = ui.draw(ui.progress("syncing", 2500), 80)
+	assert(open == "syncing: 2,500", open)
+end)

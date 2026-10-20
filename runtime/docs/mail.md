@@ -51,8 +51,10 @@ greed mail
 The first sync brings the newest mail first, and the list fills in as it
 goes; a message you open has its text fetched ahead of the rest. A big
 mailbox takes a while the first time (on Proton through Bridge, each
-message's text comes from Proton when first asked for). After that, new
-mail shows within seconds.
+message's text comes from Proton when first asked for). While it syncs,
+a line over the list says how much of each account is in, and while it
+indexes, a bar says how far it got. After that, new mail shows within
+seconds.
 
 ### The mail session and the quick look
 
@@ -68,8 +70,8 @@ session does for it. It needs the mail session running, and says so when
 it isn't.
 
 After an upgrade, the mail session indexes your mail again the first time
-it starts (half a minute or so for a hundred thousand messages); a quick
-look says so until it's done.
+it starts (a minute or two for a hundred thousand messages); the list
+shows how far it got, and fills in as it goes.
 
 ## Several accounts
 

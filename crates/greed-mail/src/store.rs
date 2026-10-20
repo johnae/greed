@@ -856,6 +856,16 @@ impl Store {
         }))
     }
 
+    /// How many messages the index doesn't have as they are now.
+    pub fn unindexed_count(&self) -> Result<usize, Trouble> {
+        let count: i64 =
+            self.db
+                .query_row("SELECT count(*) FROM messages WHERE indexed = 0", [], |r| {
+                    r.get(0)
+                })?;
+        Ok(usize::try_from(count).unwrap_or(0))
+    }
+
     /// Up to `most` messages the index doesn't have as they are now.
     pub fn unindexed(&self, most: usize) -> Result<Vec<Indexable>, Trouble> {
         let mut rows = self.db.prepare(

@@ -187,6 +187,59 @@ function M.arrived(keys: { string })
 	core.registry.tell(arrivals, keys)
 end
 
+--- What greed-mail is busy with, as it says: indexing (how far, of how
+--- many), and each account's sync while it isn't all in (how many
+--- messages so far).
+export type Busy = {
+	indexing: { done: number, of: number }?,
+	syncing: { [string]: number },
+}
+
+M.busy = { syncing = {} } :: Busy
+
+-- What wants to know when what greed-mail is busy with changed.
+local busy_listeners: { () -> () } = {}
+
+--- Calls `listener` whenever what greed-mail is busy with changes. It goes
+--- with the plugin that added it.
+function M.on_busy(listener: () -> ())
+	greed.plugin.tie(core.registry.put(busy_listeners, listener))
+end
+
+--- Notes what greed-mail said it's doing (`indexing`, `progress`,
+--- `synced`), as it does (and a test).
+function M.heard(method: string, params: any)
+	local busy = M.busy
+	if method == "indexing" then
+		busy.indexing = if params.done < params.of
+			then { done = params.done, of = params.of }
+			else nil
+	elseif method == "progress" then
+		busy.syncing[params.account] = params.messages
+	elseif method == "synced" then
+		busy.syncing[params.account] = if params.done then nil else params.messages
+	else
+		return
+	end
+	core.registry.tell(busy_listeners)
+end
+
+--- Which accounts greed-mail syncs and how much of each is in, in words,
+--- or nil when none.
+function M.syncing_text(): string?
+	local syncing = M.busy.syncing
+	local accounts: { string } = {}
+	for account in syncing do
+		table.insert(accounts, account)
+	end
+	table.sort(accounts)
+	local said: { string } = {}
+	for _, account in accounts do
+		table.insert(said, `{account}: {core.text.count(syncing[account])} messages in`)
+	end
+	return if #said > 0 then `syncing {table.concat(said, ", ")}` else nil
+end
+
 -- Who waits for an attachment, by "key index", for greed-mail to say where
 -- it went.
 local awaiting: { [string]: greed.Signal } = {}
@@ -233,6 +286,8 @@ local function served(): (greed.RpcConnection?, string?)
 				changed()
 			elseif method == "refused" then
 				greed.echo(`{params.account}: {params.message}`)
+			elseif method == "indexing" or method == "progress" or method == "synced" then
+				M.heard(method, params)
 			elseif method == "sent" then
 				greed.echo("mail sent")
 			elseif method == "attachment" then

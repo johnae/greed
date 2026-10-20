@@ -938,3 +938,23 @@ test("greed-mail is the one mail-program names, or the one beside greed", functi
 		`beside greed when it's there, else on PATH: {found}`
 	)
 end)
+
+test("the list says what greed-mail is busy with: indexing, then syncing", function(t)
+	fake()
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc")
+	local backend = mail.backend
+	backend.heard("indexing", { done = 40000, of = 143691 })
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "indexing your mail ▕", 1, true) ~= nil, text)
+	assert(string.find(text, "40,000 of 143,691", 1, true) ~= nil, text)
+	backend.heard("indexing", { done = 143691, of = 143691 })
+	backend.heard("progress", { account = "proton", messages = 85412 })
+	text = greed.view():buffer():text()
+	assert(string.find(text, "indexing", 1, true) == nil, "done: " .. text)
+	assert(string.find(text, "syncing proton: 85,412 messages in", 1, true) ~= nil, text)
+	backend.heard("synced", { account = "proton", messages = 90000, done = true })
+	text = greed.view():buffer():text()
+	assert(string.find(text, "syncing", 1, true) == nil, "all in: " .. text)
+end)

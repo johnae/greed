@@ -448,6 +448,14 @@ function M.bytes(n: number): string
 	return string.format("%.1f %s", value, units[unit])
 end
 
+--- A whole number as people read a big one: "143,691".
+function M.count(n: number): string
+	local digits = tostring(math.floor(math.abs(n)))
+	local grouped = string.reverse((string.gsub(string.reverse(digits), "(%d%d%d)", "%1,")))
+	grouped = string.gsub(grouped, "^,", "") :: string
+	return if n < 0 then `-{grouped}` else grouped
+end
+
 -- `line` without a `\r` its break left at its end.
 local function without_cr(line: string): string
 	return if string.sub(line, -1) == "\r" then string.sub(line, 1, -2) else line

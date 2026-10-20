@@ -28,7 +28,7 @@ pub const PLACES: &str = "tag";
 const WORDED: [&str; 4] = ["from", "to", "cc", "subject"];
 
 /// How many messages are written to the index at a time.
-const BATCH: usize = 2000;
+pub const BATCH: usize = 2000;
 
 /// The most of a body's text that's indexed.
 const TEXT: usize = 64 * 1024;
@@ -64,27 +64,44 @@ pub fn open(store: &mut Store, path: &Path) -> Result<Index, Trouble> {
 pub fn catch_up(store: &mut Store, index: &mut Index) -> Result<usize, Trouble> {
     let mut written = 0;
     loop {
-        let messages = store.unindexed(BATCH)?;
-        if messages.is_empty() {
+        let some = catch_up_some(store, index)?;
+        if some == 0 {
             break;
         }
-        let mut items: Vec<Item> = messages.iter().map(item).collect();
-        let threads: BTreeSet<(i64, &str)> = messages
-            .iter()
-            .filter_map(|m| Some((m.account, m.thread.as_deref()?)))
-            .collect();
-        for (account, thread) in threads {
-            items.push(Item {
-                key: thread_key(account, thread),
-                name: Some(store.thread_subject(account, thread)?),
-                ..Item::default()
-            });
-        }
-        index.write(&items).map_err(|e| Trouble(e.0))?;
-        let ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
-        store.indexed(&ids)?;
-        written += messages.len();
+        written += some;
     }
+    take_out_gone(store, index)?;
+    Ok(written)
+}
+
+/// Writes the next `BATCH` of what changed to `index`, for a catch-up
+/// that says how far it got as it goes; gives how many, 0 once none are
+/// left. What went is left for `take_out_gone`.
+pub fn catch_up_some(store: &mut Store, index: &mut Index) -> Result<usize, Trouble> {
+    let messages = store.unindexed(BATCH)?;
+    if messages.is_empty() {
+        return Ok(0);
+    }
+    let mut items: Vec<Item> = messages.iter().map(item).collect();
+    let threads: BTreeSet<(i64, &str)> = messages
+        .iter()
+        .filter_map(|m| Some((m.account, m.thread.as_deref()?)))
+        .collect();
+    for (account, thread) in threads {
+        items.push(Item {
+            key: thread_key(account, thread),
+            name: Some(store.thread_subject(account, thread)?),
+            ..Item::default()
+        });
+    }
+    index.write(&items).map_err(|e| Trouble(e.0))?;
+    let ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
+    store.indexed(&ids)?;
+    Ok(messages.len())
+}
+
+/// Takes out of `index` what went from `store`.
+pub fn take_out_gone(store: &mut Store, index: &mut Index) -> Result<(), Trouble> {
     loop {
         let keys = store.removed(BATCH)?;
         if keys.is_empty() {
@@ -93,7 +110,7 @@ pub fn catch_up(store: &mut Store, index: &mut Index) -> Result<usize, Trouble> 
         index.remove(&keys).map_err(|e| Trouble(e.0))?;
         store.unlisted(&keys)?;
     }
-    Ok(written)
+    Ok(())
 }
 
 /// The index's item for message `m`.
