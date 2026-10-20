@@ -164,14 +164,24 @@ local ACTIONS: { [string]: (m: Fake, tag: string?) -> () } = {
 	end,
 }
 
-local function fake()
-	now = {}
-	for _, m in MAIL do
-		local copy = table.clone(m)
-		copy.flags = table.clone(m.flags)
-		copy.tags = table.clone(m.tags)
-		table.insert(now, copy)
+-- A copy of `mail` to change.
+local function copy(mail: { Fake }): { Fake }
+	local out: { Fake } = {}
+	for _, m in mail do
+		local one = table.clone(m)
+		one.flags = table.clone(m.flags)
+		one.tags = table.clone(m.tags)
+		table.insert(out, one)
 	end
+	return out
+end
+
+-- The mail as it was before the last change, for the fake's undo.
+local before: { Fake }? = nil
+
+local function fake()
+	now = copy(MAIL)
+	before = nil
 	acted = {}
 	sent = {}
 	fetched = {}
@@ -249,25 +259,55 @@ local function fake()
 		browse = function(key: string): (string?, string?)
 			return `/pages/{key}.html`, nil
 		end,
-		send = function(draft: any): (boolean, string?)
+		send = function(draft: any): (boolean, string?, number?)
 			table.insert(sent, draft)
-			return true, nil
+			before = nil
+			return true, nil, 10
 		end,
 		respond = function(key: string, answer: string): (boolean, string?)
 			table.insert(responded, `{key} {answer}`)
 			return true, nil
 		end,
-		act = function(keys: { string }, action: string, tag: string?): (number?, string?)
-			for _, key in keys do
-				table.insert(acted, if tag then `{action} {tag} {key}` else `{action} {key}`)
-				for _, m in now do
-					if m.key == key or m.thread == key then
-						ACTIONS[action](m, tag)
-					end
+		act = function(
+			keys: { string },
+			action: string,
+			tag: string?,
+			for_good: boolean?
+		): (number?, string?, number?)
+			local hits: { Fake } = {}
+			for _, m in now do
+				if table.find(keys, m.key) or table.find(keys, m.thread) then
+					table.insert(hits, m)
 				end
 			end
+			if action == "trash" and not for_good then
+				local in_trash = 0
+				for _, m in hits do
+					in_trash += if table.find(m.tags, "Trash") then 1 else 0
+				end
+				if in_trash > 0 then
+					return 0, nil, in_trash
+				end
+			end
+			before = copy(now)
+			for _, key in keys do
+				table.insert(acted, if tag then `{action} {tag} {key}` else `{action} {key}`)
+			end
+			for _, m in hits do
+				ACTIONS[action](m, tag)
+			end
 			changed()
-			return #keys, nil
+			return #keys, nil, nil
+		end,
+		undo = function(): (string?, string?)
+			if before == nil then
+				return nil, "nothing to undo"
+			end
+			now = before :: { Fake }
+			before = nil
+			table.insert(acted, "undo")
+			changed()
+			return "changes", nil
 		end,
 	})
 end
@@ -729,5 +769,48 @@ test("an invite's time reads in words, all day or across midnight", function()
 		mail.invite_when(invite)
 			== `{core.dates.day("2026-10-24")} 23:00 to {core.dates.day("2026-10-25")} 01:00`,
 		mail.invite_when(invite)
+	)
+end)
+
+test("z undoes the last change, and deleting for good asks first", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		t:run("mail")
+		t:keys("esc e")
+		assert(table.concat(subjects(), ", ") == "Garden plans", table.concat(subjects(), ", "))
+		t:keys("z")
+		assert(acted[#acted] == "undo", tostring(acted[#acted]))
+		assert(
+			table.concat(subjects(), ", ") == "Invoice 41, Garden plans",
+			"back in the inbox: " .. table.concat(subjects(), ", ")
+		)
+		t:keys("z")
+		assert(
+			string.find(table.concat(t:messages(), "\n"), "nothing to undo", 1, true) ~= nil,
+			"once"
+		)
+		-- In the trash, d asks before deleting for good.
+		now[2].tags = { "Trash" }
+		t:keys("/ ctrl-u i n : t r a s h enter")
+		local count = #acted
+		t:keys("d n")
+		assert(#acted == count, "kept: " .. table.concat(acted, ", "))
+		assert(string.find(table.concat(t:messages(), "\n"), "can't be undone", 1, true) ~= nil)
+		t:keys("d y")
+		assert(acted[#acted] == "trash m:1:b", tostring(acted[#acted]))
+	end)
+end)
+
+test("sent mail says z takes it back", function(t)
+	fake()
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc c")
+	t:keys("i a n n a @ x esc")
+	t:run("mail-send")
+	assert(
+		string.find(table.concat(t:messages(), "\n"), "sending in 10 s: z takes it back", 1, true)
+			~= nil
 	)
 end)

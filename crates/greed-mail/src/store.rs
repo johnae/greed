@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS pending (
 );
 -- Mail written here that its server hasn't taken yet: the message as it's
 -- sent and who it goes to, the message it answers (marked answered once
--- it's gone), and why its server refused it, when it did.
+-- it's gone), why its server refused it, when it did, and the time (Unix
+-- seconds) before which it waits, to be taken back.
 CREATE TABLE IF NOT EXISTS outbox (
     id INTEGER PRIMARY KEY,
     account INTEGER NOT NULL REFERENCES accounts (id),
@@ -115,9 +116,32 @@ CREATE TABLE IF NOT EXISTS outbox (
     recipients TEXT NOT NULL,
     message BLOB NOT NULL,
     replying INTEGER,
-    refused TEXT
+    refused TEXT,
+    after INTEGER NOT NULL DEFAULT 0
 );
 ";
+
+/// The time now, in Unix seconds.
+fn now() -> i64 {
+    jiff::Timestamp::now().as_second()
+}
+
+/// Whether `schema`'s `table` has `column`.
+fn has_column(db: &Connection, schema: &str, table: &str, column: &str) -> Result<bool, Trouble> {
+    Ok(db
+        .prepare(&format!(
+            "SELECT 1 FROM {schema}.pragma_table_info(?1) WHERE name = ?2"
+        ))?
+        .exists([table, column])?)
+}
+
+/// Gives a store from before mail waited to be sent its outbox's `after`.
+fn add_after(db: &Connection) -> Result<(), Trouble> {
+    if !has_column(db, "main", "outbox", "after")? {
+        db.execute_batch("ALTER TABLE outbox ADD COLUMN after INTEGER NOT NULL DEFAULT 0")?;
+    }
+    Ok(())
+}
 
 /// Whether `messages`' row has flags changed here that aren't sent yet:
 /// what the server says of its flags until then is from before.
@@ -157,10 +181,7 @@ type StoredBody = (
 /// last `INVITES_BACK` days' bodies fetched again so their invites show.
 /// Only this store changes; the mail on the server is left as it is.
 fn add_calendar(db: &Connection) -> Result<(), Trouble> {
-    let has: bool = db
-        .prepare("SELECT 1 FROM bodies.pragma_table_info('bodies') WHERE name = 'calendar'")?
-        .exists([])?;
-    if has {
+    if has_column(db, "bodies", "bodies", "calendar")? {
         return Ok(());
     }
     let since = jiff::Timestamp::now()
@@ -241,6 +262,16 @@ pub enum Action {
     Archive,
     /// Moves it to the trash, or deletes it for good when it's there.
     Trash,
+}
+
+/// What undoes a change to one message (`Store::undo`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Undo {
+    /// The flag as it was.
+    Flag { flag: String, on: bool },
+    /// Back in the folder `to` it was in: the move taken back while it
+    /// waits to be made on the server, made back once it's been made.
+    Back { to: String },
 }
 
 /// A change made here, as it's sent: what to do with the message at
@@ -354,6 +385,7 @@ impl Store {
         db.execute_batch(TABLES)?;
         db.execute_batch(BODIES)?;
         add_calendar(&db)?;
+        add_after(&db)?;
         Ok(Store { db, lock })
     }
 
@@ -842,6 +874,76 @@ impl Store {
         Ok(ids)
     }
 
+    /// What undoes `action` on message `id`, asked before it's made: None
+    /// when it would change nothing, or can't be undone (deleting for
+    /// good).
+    pub fn undoing(&self, id: i64, action: &Action) -> Result<Option<Undo>, Trouble> {
+        let Some(flags): Option<String> = self
+            .db
+            .query_row("SELECT flags FROM messages WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .optional()?
+        else {
+            return Ok(None);
+        };
+        let places = places_of(&self.db, id)?;
+        let folder = places.iter().find(|p| p.folder());
+        let back = |unless: &dyn Fn(&Place) -> bool| {
+            folder
+                .filter(|f| !unless(f))
+                .map(|f| Undo::Back { to: f.name.clone() })
+        };
+        Ok(match action {
+            Action::Flag { flag, on } => {
+                let has = flags.split_whitespace().any(|f| f == flag);
+                (has != *on).then(|| Undo::Flag {
+                    flag: flag.clone(),
+                    on: !on,
+                })
+            }
+            Action::Move { to } => back(&|f| f.name == *to),
+            Action::Archive => back(&|f| f.role.as_deref() == Some("archive")),
+            Action::Trash => back(&|f| f.role.as_deref() == Some("trash")),
+        })
+    }
+
+    /// Undoes a change to message `id`; gives whether anything changed.
+    pub fn undo(&mut self, id: i64, undo: &Undo) -> Result<bool, Trouble> {
+        match undo {
+            Undo::Flag { flag, on } => self.act(
+                id,
+                &Action::Flag {
+                    flag: flag.clone(),
+                    on: *on,
+                },
+            ),
+            Undo::Back { to } => {
+                let waiting: Vec<i64> = self
+                    .db
+                    .prepare(
+                        "SELECT id FROM pending WHERE message = ?1 AND op = 'move' ORDER BY id",
+                    )?
+                    .query_map([id], |r| r.get(0))?
+                    .collect::<Result<_, _>>()?;
+                if waiting.is_empty() {
+                    self.act(id, &Action::Move { to: to.clone() })
+                } else {
+                    self.take_back(&waiting, false)?;
+                    Ok(true)
+                }
+            }
+        }
+    }
+
+    /// Whether message `id` is in the trash, where trashing it deletes it
+    /// for good.
+    pub fn in_trash(&self, id: i64) -> Result<bool, Trouble> {
+        Ok(places_of(&self.db, id)?
+            .iter()
+            .any(|p| p.uid > 0 && p.role.as_deref() == Some("trash")))
+    }
+
     /// Makes `action` on message `id` here, and queues it to be made on
     /// its server; gives whether anything changed.
     pub fn act(&mut self, id: i64, action: &Action) -> Result<bool, Trouble> {
@@ -917,37 +1019,57 @@ impl Store {
         Ok(())
     }
 
-    /// Puts `outgoing` in `account`'s outbox, answering message `replying`;
-    /// gives its id there.
+    /// Puts `outgoing` in `account`'s outbox, answering message `replying`,
+    /// to wait there until `after` (Unix seconds); gives its id there.
     pub fn post(
         &mut self,
         account: i64,
         outgoing: &Outgoing,
         replying: Option<i64>,
+        after: i64,
     ) -> Result<i64, Trouble> {
         self.db.execute(
-            "INSERT INTO outbox (account, sender, recipients, message, replying)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO outbox (account, sender, recipients, message, replying, after)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 account,
                 outgoing.sender,
                 outgoing.recipients.join("\n"),
                 outgoing.message,
-                replying
+                replying,
+                after
             ],
         )?;
         Ok(self.db.last_insert_rowid())
     }
 
+    /// Takes mail `id` out of the outbox while it still waits; gives
+    /// whether it did, false once it's on its way.
+    pub fn unpost(&mut self, id: i64) -> Result<bool, Trouble> {
+        Ok(self.db.execute(
+            "DELETE FROM outbox WHERE id = ?1 AND after > ?2 AND refused IS NULL",
+            params![id, now()],
+        )? > 0)
+    }
+
+    /// When the next mail waiting in the outbox may go (Unix seconds).
+    pub fn next_due(&self) -> Result<Option<i64>, Trouble> {
+        Ok(self.db.query_row(
+            "SELECT min(after) FROM outbox WHERE refused IS NULL AND after > ?1",
+            [now()],
+            |r| r.get(0),
+        )?)
+    }
+
     /// What's in `account`'s outbox to send, oldest first: not what its
-    /// server refused.
+    /// server refused, nor what still waits.
     pub fn outbox(&self, account: i64) -> Result<Vec<Posted>, Trouble> {
         let mut statement = self.db.prepare(
             "SELECT id, sender, recipients, message, replying FROM outbox
-             WHERE account = ?1 AND refused IS NULL ORDER BY id",
+             WHERE account = ?1 AND refused IS NULL AND after <= ?2 ORDER BY id",
         )?;
         let posted = statement
-            .query_map([account], |r| {
+            .query_map(params![account, now()], |r| {
                 let recipients: String = r.get(2)?;
                 Ok(Posted {
                     id: r.get(0)?,
@@ -1078,8 +1200,8 @@ fn drop_placeless(tx: &Transaction<'_>, account: i64) -> Result<(), Trouble> {
 }
 
 /// Message `id`'s places, those it's moving to included.
-fn places_of(tx: &Transaction<'_>, id: i64) -> Result<Vec<Place>, Trouble> {
-    let mut statement = tx.prepare(
+fn places_of(db: &Connection, id: i64) -> Result<Vec<Place>, Trouble> {
+    let mut statement = db.prepare(
         "SELECT places.mailbox, places.uid, mailboxes.uidvalidity, mailboxes.name, mailboxes.role
          FROM places JOIN mailboxes ON mailboxes.id = places.mailbox
          WHERE places.message = ?1",
@@ -1670,5 +1792,104 @@ mod tests {
         assert_eq!((kept.text.as_deref(), kept.calendar), (Some("hi"), None));
         let wanting = store.wanting(inbox.id, 10).unwrap();
         assert_eq!(wanting.len(), 1);
+    }
+
+    #[test]
+    fn a_change_undoes_while_it_waits_and_once_its_made() {
+        let dir = temp("undo");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let archive = store.mailbox(account, "Archive", Some("archive")).unwrap();
+        let trash = store.mailbox(account, "Trash", Some("trash")).unwrap();
+        store
+            .put(account, inbox.id, &[mail(1, "a", &[], None)], 1, 1)
+            .unwrap();
+        let id = store.messages_of(&format!("m:{account}:pm:a")).unwrap()[0];
+        let read = Action::Flag {
+            flag: "\\Seen".into(),
+            on: true,
+        };
+        let undo = store.undoing(id, &read).unwrap().unwrap();
+        assert_eq!(
+            undo,
+            Undo::Flag {
+                flag: "\\Seen".into(),
+                on: false
+            }
+        );
+        store.act(id, &read).unwrap();
+        assert_eq!(store.undoing(id, &read).unwrap(), None, "read already");
+        store.undo(id, &undo).unwrap();
+        let flags: String = store
+            .db
+            .query_row("SELECT flags FROM messages WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(!flags.contains("\\Seen"), "unread again: {flags}");
+        // Archived and undone before the server has it: taken back.
+        let back = store.undoing(id, &Action::Archive).unwrap().unwrap();
+        assert_eq!(back, Undo::Back { to: "INBOX".into() });
+        store.act(id, &Action::Archive).unwrap();
+        store.undo(id, &back).unwrap();
+        assert_eq!(places(&store, id), [(inbox.id, 1)]);
+        assert!(
+            store
+                .pending(account)
+                .unwrap()
+                .iter()
+                .all(|p| p.op != "move"),
+            "nothing left to move"
+        );
+        // Archived, made on the server, then undone: moved back.
+        store.act(id, &Action::Archive).unwrap();
+        let moved: Vec<i64> = store
+            .pending(account)
+            .unwrap()
+            .iter()
+            .filter(|p| p.op == "move")
+            .map(|p| p.id)
+            .collect();
+        store.sent(&moved).unwrap();
+        store
+            .put(account, archive.id, &[mail(5, "a", &[], None)], 5, 5)
+            .unwrap();
+        store.undo(id, &back).unwrap();
+        let again = store.pending(account).unwrap();
+        let last = again.last().unwrap();
+        assert_eq!(
+            (last.mailbox.as_str(), last.op.as_str(), last.arg.as_str()),
+            ("Archive", "move", "INBOX")
+        );
+        assert!(!store.in_trash(id).unwrap());
+        // In the trash, trashing deletes for good, which nothing undoes.
+        store
+            .sent(&again.iter().map(|p| p.id).collect::<Vec<_>>())
+            .unwrap();
+        store
+            .put(account, trash.id, &[mail(9, "a", &[], None)], 9, 9)
+            .unwrap();
+        assert!(store.in_trash(id).unwrap());
+    }
+
+    #[test]
+    fn mail_waits_in_the_outbox_and_is_taken_back_until_it_goes() {
+        let dir = temp("waits");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let outgoing = Outgoing {
+            sender: "a@example.com".into(),
+            recipients: vec!["b@example.com".into()],
+            message: b"hi".to_vec(),
+        };
+        let later = store.post(account, &outgoing, None, now() + 60).unwrap();
+        assert!(store.outbox(account).unwrap().is_empty(), "it waits");
+        assert!(store.next_due().unwrap().is_some_and(|at| at > now()));
+        assert!(store.unpost(later).unwrap(), "taken back");
+        assert_eq!(store.next_due().unwrap(), None);
+        let now_id = store.post(account, &outgoing, None, now()).unwrap();
+        assert_eq!(store.outbox(account).unwrap().len(), 1);
+        assert!(!store.unpost(now_id).unwrap(), "on its way already");
     }
 }

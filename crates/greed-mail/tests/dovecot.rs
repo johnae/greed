@@ -685,7 +685,17 @@ fn mail_marked_moved_and_deleted_here_is_so_on_the_server() {
             status["accounts"][0]["done"] == true
         }
     });
-    assert_eq!(act(&mut served, "trash", &two), 1);
+    // Only when asked for: it can't be undone.
+    let asked = served.ask(
+        "act",
+        &serde_json::json!({ "action": "trash", "keys": [two] }),
+    );
+    assert_eq!(
+        (asked["changed"].clone(), asked["in_trash"].clone()),
+        (0.into(), 1.into())
+    );
+    let params = serde_json::json!({ "action": "trash", "keys": [two], "for_good": true });
+    assert_eq!(served.ask("act", &params)["changed"], 1);
     wait_until("gone for good", || files(&dovecot, "Trash").is_empty());
     let thread = served.ask("thread", &serde_json::json!({ "key": two }));
     assert!(thread.is_null(), "gone here too: {thread}");
@@ -1082,4 +1092,37 @@ fn another_session_has_the_mail_session_make_its_changes() {
     );
     let said = answer["error"]["message"].as_str().unwrap_or_default();
     assert!(said.contains("mail session isn't running"), "{answer}");
+}
+
+#[test]
+fn undo_moves_back_what_the_server_has_and_takes_back_mail_just_sent() {
+    let Some(mut dovecot) = Dovecot::start("undo") else {
+        return;
+    };
+    let (port, mailed) = fake_smtp();
+    dovecot.smtp = Some(port);
+    deliver(&dovecot, 1, false);
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let key = message_keys(&mut served).remove(0);
+    assert_eq!(act(&mut served, "archive", &key), 1);
+    wait_until("in the archive on the server", || {
+        files(&dovecot, "Archive").len() == 1 && files(&dovecot, "").is_empty()
+    });
+    let undone = served.ask("undo", &serde_json::json!({}));
+    assert_eq!(undone["undone"], "changes", "{undone}");
+    wait_until("back in the inbox on the server", || {
+        files(&dovecot, "Archive").is_empty() && files(&dovecot, "").len() == 1
+    });
+    let again = served.answer("undo", &serde_json::json!({}));
+    assert_eq!(again["error"]["message"], "nothing to undo", "{again}");
+    let draft = serde_json::json!({ "to": "zoe@example.com", "subject": "hi", "text": "x" });
+    let posted = served.ask("send", &draft);
+    assert_eq!(posted["seconds"], 10, "{posted}");
+    let undone = served.ask("undo", &serde_json::json!({}));
+    assert_eq!(undone["undone"], "sent", "{undone}");
+    std::thread::sleep(Duration::from_secs(11));
+    served.ask("sync", &serde_json::json!({}));
+    std::thread::sleep(Duration::from_secs(1));
+    assert!(mailed.lock().unwrap().is_empty(), "never sent");
 }

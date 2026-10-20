@@ -46,14 +46,17 @@ These work on the message under the cursor, or in a thread on all of it:
 | `T`      | makes a todo of it in your inbox note (see below)         |
 | `b`      | opens it in a web browser, loading nothing from anywhere  |
 | `e`      | moves it to the archive                                   |
-| `d`, `#` | moves it to the trash; in the trash, deletes it for good  |
+| `d`, `#` | moves it to the trash; in the trash, asks, then deletes   |
 | `r`      | replies to who sent it (in a thread, its last message)    |
 | `a`      | replies to everyone it went to                            |
 | `c`      | writes new mail                                           |
+| `z`      | undoes the last change, or takes back mail just sent      |
 
 A change shows at once and goes to the server within seconds. If the
 server refuses it (a folder that went, say), it's taken back and Greed
-says why.
+says why. `z` undoes the last one, even once the server has it:
+something archived goes back where it was, a mark comes off again.
+Deleting from the trash is for good, so it asks first (`y` deletes).
 
 ## Todos
 
@@ -157,11 +160,11 @@ On 2026-10-19 08:00, Anna Berg wrote:
 
 Edit it as any text, the header lines too (add `Bcc:` for blind copies,
 addresses apart by commas), then `:mail-send` sends it and goes back to
-the list; `:mail-close` drops it. It goes in the next sync round, within
-seconds, and Greed says when it's sent. A copy goes in your Sent folder
-(Gmail and Bridge file it themselves), and the message you answered is
-marked answered. Mail the server won't take stays out, and Greed says
-why.
+the list; `:mail-close` drops it. It waits ten seconds, in which `z`
+takes it back, then goes, and Greed says when it's sent. A copy goes in
+your Sent folder (Gmail and Bridge file it themselves), and the message
+you answered is marked answered. Mail the server won't take stays out,
+and Greed says why.
 
 The mail session is the one that syncs. In any other session, `:mail`
 opens a quick look at the same mail in a float (`q` closes it), and

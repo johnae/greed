@@ -99,12 +99,23 @@ export type Backend = {
 	sync: () -> (),
 	--- Makes `action` (read, unread, flag, unflag, archive, trash, or tag
 	--- and untag with `tag`) on the messages and threads `keys` name;
-	--- gives how many it changed, or nil and why.
-	act: (keys: { string }, action: string, tag: string?) -> (number?, string?),
+	--- gives how many it changed, or nil and why. Trashing what's in the
+	--- trash deletes it for good, only `for_good`: otherwise it changes
+	--- nothing and gives how many are in the trash third.
+	act: (
+		keys: { string },
+		action: string,
+		tag: string?,
+		for_good: boolean?
+	) -> (number?, string?, number?),
+	--- Undoes the last change, or takes back the mail just sent while it
+	--- waits: "changes" or "sent", or nil and why not.
+	undo: () -> (string?, string?),
 	--- A reply to the message `key`, to everyone it went to with `all`.
 	draft: (key: string, all: boolean) -> (Draft?, string?),
-	--- Sends `draft` (in the next round), or says why it can't.
-	send: (draft: Draft) -> (boolean, string?),
+	--- Sends `draft` after a few seconds (how many, third), in which `undo`
+	--- takes it back; or says why it can't.
+	send: (draft: Draft) -> (boolean, string?, number?),
 	--- Sends `answer` (accepted, tentative, declined) to the invite in the
 	--- message `key` to its organizer, or says why it can't.
 	respond: (key: string, answer: string) -> (boolean, string?),
@@ -254,19 +265,29 @@ M.served = {
 	sync = function()
 		ask("sync", {})
 	end,
-	act = function(keys: { string }, action: string, tag: string?): (number?, string?)
-		local done, err = ask("act", { keys = keys, action = action, tag = tag })
+	act = function(
+		keys: { string },
+		action: string,
+		tag: string?,
+		for_good: boolean?
+	): (number?, string?, number?)
+		local done, err =
+			ask("act", { keys = keys, action = action, tag = tag, for_good = for_good })
 		if done == nil then
-			return nil, err
+			return nil, err, nil
 		end
-		return done.changed, nil
+		return done.changed, nil, done.in_trash
+	end,
+	undo = function(): (string?, string?)
+		local done, err = ask("undo", {})
+		return if done then done.undone else nil, err
 	end,
 	draft = function(key: string, all: boolean): (Draft?, string?)
 		return ask("draft", { key = key, all = all })
 	end,
-	send = function(draft: Draft): (boolean, string?)
+	send = function(draft: Draft): (boolean, string?, number?)
 		local posted, err = ask("send", draft)
-		return posted ~= nil, err
+		return posted ~= nil, err, if posted then posted.seconds else nil
 	end,
 	respond = function(key: string, answer: string): (boolean, string?)
 		local posted, err = ask("respond", { key = key, answer = answer })

@@ -884,9 +884,19 @@ local function chosen(ctx: greed.Context): Chosen?
 	}
 end
 
+-- Whether you press y to delete `count` messages for good, which can't be
+-- undone (keys a plugin feeds don't answer).
+local function for_good(count: number): boolean
+	local what = if count == 1 then "it's in the trash" else `{count} are in the trash`
+	greed.echo(`{what}: delete for good? It can't be undone. y deletes, anything else keeps`)
+	local key = greed.next_key()
+	greed.echo(if key == "y" then "" else "kept")
+	return key == "y"
+end
+
 -- Makes the action `which` picks for what's chosen in `ctx` (nil for none),
 -- with the tag it names; a thread archived or trashed is left for the
--- list.
+-- list. Deleting for good asks first.
 local function acting(which: (chosen: Chosen) -> (string?, string?)): (ctx: greed.Context) -> ()
 	return function(ctx: greed.Context)
 		local c = chosen(ctx)
@@ -897,7 +907,14 @@ local function acting(which: (chosen: Chosen) -> (string?, string?)): (ctx: gree
 		if action == nil then
 			return
 		end
-		local _, err = backend.get().act(c.keys, action, tag)
+		local mail = backend.get()
+		local _, err, in_trash = mail.act(c.keys, action, tag)
+		if in_trash and in_trash > 0 then
+			if not for_good(in_trash) then
+				return
+			end
+			_, err = mail.act(c.keys, action, tag, true)
+		end
 		if err then
 			greed.echo(err)
 		elseif
@@ -1130,6 +1147,21 @@ greed.command({
 })
 
 greed.command({
+	name = "mail-undo",
+	doc = "Undo the last change to your mail, or take back the mail just sent while it waits",
+	run = function()
+		local undone, err = backend.get().undo()
+		if undone == "sent" then
+			greed.echo("taken back: it wasn't sent")
+		elseif undone then
+			greed.echo("undone")
+		else
+			greed.echo(err or "nothing to undo")
+		end
+	end,
+})
+
+greed.command({
 	name = "mail-close",
 	doc = "Go back from a thread to the list, or close a quick look at mail",
 	run = leave,
@@ -1224,12 +1256,12 @@ greed.command({
 		end
 		local draft = M.parse_draft(ctx.buffer:text())
 		draft.replying = w.replying
-		local ok, err = backend.get().send(draft)
+		local ok, err, seconds = backend.get().send(draft)
 		if not ok then
 			greed.echo(err or "it couldn't be sent")
 			return
 		end
-		greed.echo("sending")
+		greed.echo(if seconds then `sending in {seconds} s: z takes it back` else "sending")
 		leave(ctx)
 	end,
 })
@@ -1384,6 +1416,7 @@ local ACTIONS = {
 	c = "mail-compose",
 	t = "mail-tag",
 	T = "mail-todo",
+	z = "mail-undo",
 	b = "mail-browser",
 	q = "mail-close",
 	esc = "mail-close",

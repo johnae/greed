@@ -11,7 +11,9 @@
 //! `act` (`action` on the messages `keys` name: read, unread, flag,
 //! unflag, archive, trash, move `to` a mailbox, or tag and untag with
 //! `tag`; made here at once and sent to the server in the next round,
-//! which starts right away),
+//! which starts right away; trashing what's in the trash only with
+//! `for_good`), `undo` (the last change, or the mail just sent while it
+//! waits `SENDING` in the outbox),
 //! `draft` (a reply to the message `key`, to everyone with `all`), `send`
 //! (a draft, put in the outbox and sent in the next round), `respond`
 //! (`answer` to the invite in the message `key`: accepted, tentative or
@@ -61,7 +63,7 @@ use crate::invite;
 use crate::pending;
 use crate::reader::Reader;
 use crate::send::{self, Draft, Failure};
-use crate::store::{Action, Store, Wanting};
+use crate::store::{Action, Store, Undo, Wanting};
 use crate::sync::{self, Options};
 
 /// The most headers a round fetches a mailbox.
@@ -128,6 +130,8 @@ struct Shared {
     /// Where notifications go besides the output: to the greed-mail of
     /// the sessions only reading the mail, in the mail session.
     copies: Option<mpsc::UnboundedSender<String>>,
+    /// What undoes the last change asked for, in the mail session.
+    last: RefCell<Option<Undoing>>,
 }
 
 impl Shared {
@@ -147,7 +151,15 @@ const SOCKET: &str = "serve.sock";
 /// What a greed-mail only reading the mail has the mail session's do:
 /// changes, mail to send, answers to invites, syncing, and attachments and
 /// bodies to fetch.
-const FORWARDED: &[&str] = &["act", "send", "respond", "sync", "attachment", "want"];
+const FORWARDED: &[&str] = &[
+    "act",
+    "undo",
+    "send",
+    "respond",
+    "sync",
+    "attachment",
+    "want",
+];
 
 /// Serves `config`'s accounts from the store in `dir` until its input
 /// closes. With `read`, it only answers, from what the store has: another
@@ -194,6 +206,7 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
         standing: RefCell::new(BTreeMap::new()),
         wake: Notify::new(),
         copies: listener.as_ref().map(|_| copies),
+        last: RefCell::new(None),
     };
     let output = async {
         let mut stdout = tokio::io::stdout();
@@ -484,29 +497,8 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
                 .ok_or("find takes message_id, a Message-ID without <>")?;
             Ok(json!({ "key": reader.find(id).map_err(|e| e.0)? }))
         }
-        "act" => {
-            let writer = with.writer()?;
-            let keys =
-                keys(params).ok_or("act takes keys, a list of messages' or threads' keys")?;
-            let action = action(params)?;
-            let tagging = matches!(params["action"].as_str(), Some("tag" | "untag"));
-            let (store, index) = &mut *writer.borrow_mut();
-            let mut changed = 0;
-            for key in &keys {
-                if tagging {
-                    can_tag(with.config, reader, key)?;
-                }
-                for id in store.messages_of(key).map_err(|e| e.0)? {
-                    changed += usize::from(store.act(id, &action).map_err(|e| e.0)?);
-                }
-            }
-            if changed > 0 {
-                indexing::catch_up(store, index).map_err(|e| e.0)?;
-                shared.notify("changed", &json!({}));
-                shared.wake.notify_one();
-            }
-            Ok(json!({ "changed": changed }))
-        }
+        "act" => act(params, with),
+        "undo" => undo(with),
         "render" => render(params, reader),
         "browse" => browse(params, with),
         "attachment" => attachment(params, with),
@@ -649,9 +641,97 @@ fn post_draft(draft: &Draft, account: Option<&str>, with: &Answering<'_>) -> Res
         Some(key) => store.messages_of(key).map_err(|e| e.0)?.first().copied(),
         None => None,
     };
-    let posted = store.post(id, &outgoing, replying).map_err(|e| e.0)?;
+    let after = jiff::Timestamp::now().as_second() + SENDING.as_secs().cast_signed();
+    let posted = store
+        .post(id, &outgoing, replying, after)
+        .map_err(|e| e.0)?;
+    *shared.last.borrow_mut() = Some(Undoing::Sent(posted));
     shared.wake.notify_one();
-    Ok(json!({ "posted": posted }))
+    Ok(json!({ "posted": posted, "seconds": SENDING.as_secs() }))
+}
+
+/// How long mail waits in the outbox before it goes, to be taken back.
+const SENDING: Duration = Duration::from_secs(10);
+
+/// What undoes the last change asked for: each message's undo, or taking
+/// back mail just sent.
+enum Undoing {
+    Changes(Vec<(i64, Undo)>),
+    Sent(i64),
+}
+
+/// An `act` request: `action` on the messages `keys` name, kept to be
+/// undone. Trashing what's in the trash deletes it for good, which can't
+/// be: it's only done with `for_good`, and otherwise said how many are.
+fn act(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
+    let writer = with.writer()?;
+    let keys = keys(params).ok_or("act takes keys, a list of messages' or threads' keys")?;
+    let action = action(params)?;
+    let tagging = matches!(params["action"].as_str(), Some("tag" | "untag"));
+    let for_good = params["for_good"].as_bool().unwrap_or(false);
+    let (store, index) = &mut *writer.borrow_mut();
+    let mut ids = Vec::new();
+    for key in &keys {
+        if tagging {
+            can_tag(with.config, with.reader, key)?;
+        }
+        ids.extend(store.messages_of(key).map_err(|e| e.0)?);
+    }
+    if action == Action::Trash && !for_good {
+        let mut in_trash = 0;
+        for id in &ids {
+            in_trash += usize::from(store.in_trash(*id).map_err(|e| e.0)?);
+        }
+        if in_trash > 0 {
+            return Ok(json!({ "changed": 0, "in_trash": in_trash }));
+        }
+    }
+    let mut undos = Vec::new();
+    let mut changed = 0;
+    for id in ids {
+        let undo = store.undoing(id, &action).map_err(|e| e.0)?;
+        if store.act(id, &action).map_err(|e| e.0)? {
+            changed += 1;
+            undos.extend(undo.map(|u| (id, u)));
+        }
+    }
+    if changed > 0 {
+        *with.shared.last.borrow_mut() = Some(Undoing::Changes(undos));
+        indexing::catch_up(store, index).map_err(|e| e.0)?;
+        with.shared.notify("changed", &json!({}));
+        with.shared.wake.notify_one();
+    }
+    Ok(json!({ "changed": changed }))
+}
+
+/// An `undo` request: the last change asked for undone, or the mail just
+/// sent taken back while it waits; says which.
+fn undo(with: &Answering<'_>) -> Result<Value, String> {
+    let writer = with.writer()?;
+    let last = with
+        .shared
+        .last
+        .borrow_mut()
+        .take()
+        .ok_or("nothing to undo")?;
+    let (store, index) = &mut *writer.borrow_mut();
+    match last {
+        Undoing::Sent(id) => {
+            if !store.unpost(id).map_err(|e| e.0)? {
+                return Err("it's sent already".into());
+            }
+            Ok(json!({ "undone": "sent" }))
+        }
+        Undoing::Changes(undos) => {
+            for (id, undo) in &undos {
+                store.undo(*id, undo).map_err(|e| e.0)?;
+            }
+            indexing::catch_up(store, index).map_err(|e| e.0)?;
+            with.shared.notify("changed", &json!({}));
+            with.shared.wake.notify_one();
+            Ok(json!({ "undone": "changes", "count": undos.len() }))
+        }
+    }
 }
 
 /// The action an `act` request asks for.
@@ -736,10 +816,15 @@ async fn keep_syncing(config: &Config, mut store: Store, mut index: Index, share
                 futures::future::select_all(config.accounts.iter().map(|a| Box::pin(watch(a))))
                     .await;
             };
+            // Mail waiting in the outbox goes once its wait is over.
+            let due = store.next_due().ok().flatten().map(|at| {
+                let left = at - jiff::Timestamp::now().as_second();
+                Duration::from_secs(left.max(0).cast_unsigned())
+            });
             tokio::select! {
                 () = shared.wake.notified() => {}
                 () = changed => {}
-                () = tokio::time::sleep(QUIET) => {}
+                () = tokio::time::sleep(due.unwrap_or(QUIET).min(QUIET)) => {}
             }
         }
     }
