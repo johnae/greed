@@ -85,3 +85,21 @@ test("the home brings back todos that waited long and an old note", function(t)
 		end)
 	end)
 end)
+
+test("the week job writes the review and has the agent sum up into it", function(t)
+	folder(t, {})
+	local asked: { any } = {}
+	local models: any = require("@models")
+	models.turn = function(_role, request)
+		table.insert(asked, table.clone(request))
+		return { text = "A quiet week.", calls = {}, stop = "done" }, nil
+	end
+	assert(notes.jobs.run("week"))
+	local path = notes.path(hoard.review.name())
+	assert(greed.fs.stat(path), "the review is there")
+	t:wait_for(function()
+		return asked[1] ~= nil
+	end)
+	local said = asked[1].said[1].text
+	assert(string.find(said, path, 1, true) and string.find(said, "## Thoughts", 1, true), said)
+end)

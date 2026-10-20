@@ -1,5 +1,5 @@
 name = "hoard"
 requires = ["core", "notes", "statusline", "picker"]
 # Shows your notes and today's things to do; notes are written through
-# the notes plugin.
-capabilities = ["fs.read", "fs.write"]
+# the notes plugin. Asking your notes starts Greed's agent, a program.
+capabilities = ["fs.read", "fs.write", "proc"]

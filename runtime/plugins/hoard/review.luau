@@ -188,15 +188,19 @@ function M.text(date: string?): string
 	return table.concat(out, "\n")
 end
 
---- Opens the review of this week, writing it first if it isn't there yet.
-function M.open()
+--- Writes the review of this week if it isn't there yet; its path.
+function M.make(): string
 	index.ensure()
-	local name = M.name()
-	local path = notes.path(name)
+	local path = notes.path(M.name())
 	if greed.fs.stat(path) == nil then
 		core.file.write(path, M.text())
 	end
-	core.file.open(path)
+	return path
+end
+
+--- Opens the review of this week, writing it first if it isn't there yet.
+function M.open()
+	core.file.open(M.make())
 end
 
 greed.command({
@@ -209,5 +213,29 @@ greed.command({
 })
 
 greed.keymap.bind({ layer = "leader" }, { ["n w"] = "hoard-review" })
+
+-- The agent's part of the review: a summary of the week, from what was
+-- written in it, proposed for the review's Thoughts.
+notes.jobs.add({
+	name = "week",
+	doc = "Sum up the week from what you wrote, in the week's review",
+	prompt = function()
+		local today = notes.today()
+		local _, _, monday = dates.week(today)
+		local path = M.make()
+		return string.format(
+			[=[
+Sum up my week, %s to %s, from what I wrote: the days' notes and the other notes changed this
+week (notes_query with "is:note modified:%s..", then notes_read). In a few lines say what
+happened, what got done, what's still open and what keeps coming up, linking the notes with
+[[name]]. Put it under the "## Thoughts" heading of %s with the propose tool, so I can review it.
+Change nothing else.]=],
+			monday,
+			today,
+			monday,
+			path
+		)
+	end,
+})
 
 return M

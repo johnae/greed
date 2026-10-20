@@ -9,6 +9,7 @@
 --   space n t   jot a thought down in the inbox
 --   space n r   dismiss the reminders notice
 --   space n l   have Greed's agent link the inbox to your other notes
+--   space n j   pick another job for the agent (jobs.luau)
 --   space n k   link to a heading, list item or block in a note
 --   space n n   a new note from a template (types.luau)
 --   space n y   give this note a template's fields
@@ -37,7 +38,7 @@ require("@self/tools")
 require("@self/objects")
 require("@self/look")
 local reminders = require("@self/reminders")
-require("@self/connect")
+local jobs = require("@self/jobs")
 local index = require("@self/index")
 local syntax = require("@self/syntax")
 local dates = require("@self/dates")
@@ -45,6 +46,7 @@ local dates = require("@self/dates")
 greed.keymap.bind({ layer = "leader" }, {
 	["n r"] = "notes-reminders-dismiss",
 	["n l"] = "notes-connect",
+	["n j"] = "notes-agent",
 	["n d"] = "notes-daily",
 	["n c"] = "notes-capture",
 	["n t"] = "notes-thought",
@@ -80,6 +82,7 @@ local exported: typeof(notes) & {
 	mentions: typeof(mentions),
 	query: typeof(query),
 	types: typeof(types),
+	jobs: typeof(jobs),
 	clock: () -> number,
 } = setmetatable(
 	{
@@ -92,6 +95,7 @@ local exported: typeof(notes) & {
 		mentions = mentions,
 		query = query,
 		types = types,
+		jobs = jobs,
 	},
 	{
 		__index = function(_, key: string): any

@@ -607,6 +607,12 @@ function M.welcomed()
 	end
 end
 
+-- The question when what's written in the box starts with `?`: it's asked
+-- of the notes, by Greed's agent, rather than added.
+local function asking(text: string): string?
+	return string.match(text, "^%s*%?%s*(.-)%s*$")
+end
+
 -- Frames what's written after the home as a box (the home ends with its
 -- top), with what alt-enter does on its bottom; a click there does it.
 local function frame(buffer: greed.Buffer, view: core.UiView)
@@ -615,13 +621,20 @@ local function frame(buffer: greed.Buffer, view: core.UiView)
 	-- As wide as its top, however wide the view was when that was drawn.
 	local width = core.text.width
 	local cells = if first > 0 then width(buffer:line_text(first - 1)) else ui.width(buffer)
-	local add = " Add to today, alt-enter "
+	local add = if asking(view:input())
+		then " Ask your notes, alt-enter "
+		else " Add to today, alt-enter "
 	-- Cells left for the hint and the rule, beside the corners and the button.
 	local room = cells - 4 - width(add)
 	-- The longest hint that fits.
 	local hint = ""
 	for _, said in
-		{ " [] makes a todo · ↑ goes to what's above, enter opens it ", " [] makes a todo ", "" }
+		{
+			" [] makes a todo · ? asks your notes · ↑ goes to what's above ",
+			" [] makes a todo · ? asks your notes ",
+			" [] makes a todo ",
+			"",
+		}
 	do
 		if room - width(said) >= 1 then
 			hint = said
@@ -683,22 +696,36 @@ end
 
 greed.command({
 	name = "hoard-add",
-	doc = "Add what's written in the home's box to today's note: lines starting [] as todos",
+	doc = "Add what's written in the home's box to today's note: lines starting [] as todos; "
+		.. "starting with ?, ask your notes",
 	run = function()
 		local shown = home
 		if shown == nil or not shown.buffer:valid() then
 			return
 		end
 		local view = shown.view
-		local said = M.add(view:input())
-		if said == nil then
-			return
+		local text = view:input()
+		local question = asking(text)
+		local said: string?
+		if question then
+			local ok, why = notes.jobs.run("ask", nil, question)
+			if not ok then
+				greed.echo(why :: string)
+				return
+			end
+		else
+			said = M.add(text)
+			if said == nil then
+				return
+			end
 		end
 		local buffer = shown.buffer
 		buffer:edit(function(e)
 			e:replace(view:input_start(), buffer:len(), "")
 		end)
-		greed.echo(said)
+		if said then
+			greed.echo(said)
+		end
 	end,
 })
 

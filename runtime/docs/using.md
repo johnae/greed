@@ -1845,6 +1845,7 @@ to show other words.
 | `space n k` | Link to a heading, a list item or a block in any note, picked from all of them ([more](hoard.md#links-embeds-and-obsidian)) |
 | `space n n` | Make a note from a template: pick the kind, then name it ([more](hoard.md#templates)) |
 | `space n y` | Give the note you're in a template's fields it doesn't have yet |
+| `space n j` | Pick a job for Greed's agent on your notes: connect, pull out todos, ask, sum up the week |
 | `g d` | Follow the link under the cursor, to the heading or block it names, making the note if it's new; in Markdown outside your notes, `[[name]]` is `name.md` beside the file |
 | `z a` | Fold the section under the cursor, or unfold it (any Markdown) |
 | `alt-up` `alt-down` | Move the list item (with the items under it) or section the cursor is in past the one beside it (any Markdown; the vscode style's keys, `move-lines-up` and `move-lines-down` in others) |
@@ -1917,7 +1918,9 @@ and `space n c`), or the note you're in, find the notes each item relates
 to, link them with `[[name]]` and add a line of context. Changes to
 existing notes come as proposed edits you accept or reject one by one. It
 makes new notes for items that belong together and ends with a summary. It
-uses the model playing the `agent` role.
+uses the model playing the `agent` role. `space n j` has other jobs for it:
+pulling the todos out of a note, answering a question from your notes, and
+summing up the week ([more](hoard.md#having-the-agent-help)).
 
 Any agent can work with your notes the same way through the `notes` tool
 group (see [Agents](agents.md#tool-groups)); `:set agent-tool-groups "plan

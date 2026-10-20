@@ -58,6 +58,8 @@ today's note:
   when (below): `[] call the bank tomorrow 18:00`.
 - Anything else goes in as you wrote it; a single line becomes a list item.
 - `/` and `[[` work as they do in notes (below).
+- Starting with `?` asks your notes a question instead (see "Having the
+  agent help" below).
 
 While what you write is one line, what matches it shows above the box:
 notes with those words anywhere in them, headings and todos, the last
@@ -353,13 +355,37 @@ people: []
 
 `:notes-new` (`ctrl-space n n`, `space n n` with Vim's or Helix's keys)
 asks which kind (`Meeting`), then the name, and opens the new note filled
-in. `:notes-type` (`space n y`) in a note you have gives it the kind's
+in. `:notes-type` (`ctrl-space n y`) in a note you have gives it the kind's
 fields it's missing, with the template's values, and leaves the ones it
 has alone.
 
 In front matter, typing a key at the start of a line lists the keys your
 notes use, and after `key: ` (or `- ` under a key) the values they give
 it, most used first.
+
+## Having the agent help
+
+Write `?` and a question in the box on the home page and press
+`alt-enter`: Greed's agent answers from your notes and links where each
+part of the answer came from.
+
+```text
+? when is the plumber coming
+```
+
+`:notes-agent` (`ctrl-space n j`, `space n j` with Vim's or Helix's
+keys) picks other jobs for it:
+
+| Job | What it does |
+|---|---|
+| `connect` | Links the inbox (or the note you're in) to your other notes, adds tags and context (`ctrl-space n l`) |
+| `todos` | Pulls the todos out of the note you're in, a meeting's say, under `## Todos` |
+| `ask` | Answers a question from your notes (`:notes-ask QUESTION`) |
+| `week` | Sums up the week from what you wrote, in the week's review |
+
+The agent's transcript opens beside you. Whatever it changes in a note
+you have comes to you as a proposed edit to accept or reject; it doesn't
+delete anything.
 
 ## Where your notes are
 

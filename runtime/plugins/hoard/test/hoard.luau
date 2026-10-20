@@ -540,3 +540,36 @@ test("in front matter, the notes' keys are offered, then their values", function
 	t:keys("enter")
 	assert(buffer:line_text(3) == '  - "[[Sci-fi]]"', buffer:line_text(3))
 end)
+
+test("a ? in the home's box asks the notes instead of adding", function(t)
+	local dir = folder(t, {})
+	local asked: { any } = {}
+	local models: any = require("@models")
+	models.turn = function(_role, request)
+		table.insert(asked, table.clone(request))
+		return { text = "Tuesday.", calls = {}, stop = "done" }, nil
+	end
+	local buffer = show(t)
+	t:keys("i ? space w h e n space i s space t h e space p l u m b e r")
+	t:wait_for(function()
+		for _, mark in buffer:decorations("hoard-box") do
+			for _, line in (mark.lines or {}) :: { greed.MarkLine } do
+				if type(line) ~= "string" then
+					for _, piece in line do
+						if piece.text == " Ask your notes, alt-enter " then
+							return true
+						end
+					end
+				end
+			end
+		end
+		return false
+	end)
+	t:run("hoard-add")
+	t:wait_for(function()
+		return asked[1] ~= nil
+	end)
+	local said = asked[1].said[1].text
+	assert(string.find(said, "Answer this from my notes: when is the plumber", 1, true), said)
+	assert(greed.fs.read(`{dir}/{notes.daily()}.md`) == nil, "nothing added")
+end)
