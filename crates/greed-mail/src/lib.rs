@@ -9,6 +9,7 @@ pub mod indexing;
 pub mod names;
 pub mod pending;
 pub mod reader;
+pub mod send;
 pub mod serve;
 pub mod store;
 pub mod sync;

@@ -469,6 +469,13 @@ pub trait Changing {
 
     /// Deletes `uids` in the open mailbox for good, and nothing else.
     fn expunge(&mut self, uids: &[u32]) -> impl Future<Output = Result<Answer, Trouble>> + Send;
+
+    /// Puts `message` in `mailbox`, read, as a copy of mail sent.
+    fn append(
+        &mut self,
+        mailbox: &str,
+        message: &[u8],
+    ) -> impl Future<Output = Result<Answer, Trouble>> + Send;
 }
 
 /// What came of a command that changes something: a refusal is an
@@ -530,6 +537,14 @@ impl Changing for Connection {
             gone.try_collect::<Vec<_>>().await
         };
         answer(expunged.await)
+    }
+
+    async fn append(&mut self, mailbox: &str, message: &[u8]) -> Result<Answer, Trouble> {
+        answer(
+            self.session
+                .append(mailbox, Some("(\\Seen)"), None, message)
+                .await,
+        )
     }
 }
 

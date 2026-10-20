@@ -2,11 +2,12 @@
 -- (`greed mail`) the page shows what a search finds, newest first, with
 -- the search box over it (in:inbox to start); elsewhere `:mail` opens the
 -- same list in a float for a quick look. `enter` reads a thread, `/`
--- searches again, `r` syncs now, `q` goes back or closes; `u` marks read
--- or unread, `s` flags, `e` archives and `d` trashes. greed-mail
--- syncs the accounts in mail.toml and keeps the index this searches
--- (backend.luau); a search is the query language anywhere in Greed:
--- from:anna is:unread date:2w.. in:work invoice.
+-- searches again, `$` syncs now, `q` goes back or closes; `u` marks read
+-- or unread, `s` flags, `e` archives and `d` trashes; `r` replies, `a`
+-- replies to all and `c` writes new mail, which `:mail-send` sends.
+-- greed-mail syncs the accounts in mail.toml and keeps the index this
+-- searches (backend.luau); a search is the query language anywhere in
+-- Greed: from:anna is:unread date:2w.. in:work invoice.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -16,6 +17,7 @@ local ui = core.ui
 
 type Summary = backend.Summary
 type Thread = backend.Thread
+type Draft = backend.Draft
 
 local M = {}
 
@@ -377,8 +379,73 @@ backend.on_changed(function()
 	end
 end)
 
+-- The mail being written, while it is.
+local writing: { window: greed.View, buffer: greed.Buffer, replying: string? }? = nil
+
+--- `draft` as it's written: its header lines, a blank line, its text.
+function M.draft_text(draft: Draft): string
+	local head = { `To: {draft.to}`, `Cc: {draft.cc}` }
+	if draft.bcc ~= "" then
+		table.insert(head, `Bcc: {draft.bcc}`)
+	end
+	table.insert(head, `Subject: {draft.subject}`)
+	return table.concat(head, "\n") .. "\n\n" .. draft.text
+end
+
+--- The draft written in `text`: header lines up to the first blank one,
+--- its text after that.
+function M.parse_draft(text: string): Draft
+	local head, body = string.match(text, "^(.-)\n\n(.*)$")
+	local draft: Draft = { to = "", cc = "", bcc = "", subject = "", text = body or "" }
+	for line in string.gmatch(head or text, "[^\n]+") do
+		local name, value = string.match(line, "^([%w%-]+):%s*(.-)%s*$")
+		local field = string.lower(name or "")
+		if field == "to" then
+			draft.to = value or ""
+		elseif field == "cc" then
+			draft.cc = value or ""
+		elseif field == "bcc" then
+			draft.bcc = value or ""
+		elseif field == "subject" then
+			draft.subject = value or ""
+		end
+	end
+	return draft
+end
+
+--- Writes `draft` on the mail session's page, the cursor where its text
+--- goes, or on To when it goes to no one yet.
+function M.write(draft: Draft)
+	if not backend.here() then
+		greed.echo("mail is written in the mail session: :mail-session goes there")
+		return
+	end
+	local o = open
+	local window = if o and not o.floating and o.window:valid() then o.window else greed.view()
+	local buffer = greed.create_buffer("mail-compose", M.draft_text(draft))
+	buffer:set_line_numbers(false)
+	window:show(buffer)
+	window:focus()
+	if reading and reading.window == window then
+		reading = nil
+	end
+	writing = { window = window, buffer = buffer, replying = draft.replying }
+	local heads = if draft.bcc ~= "" then 4 else 3
+	window:set_cursor(if draft.to == "" then 4 else buffer:line_start(heads + 1))
+end
+
 -- From the thread in `ctx` back to the list, or out of a quick look.
 local function leave(ctx: greed.Context)
+	local w = writing
+	if ctx.buffer:kind() == "mail-compose" and w then
+		writing = nil
+		local list = open
+		if list and list.buffer:valid() then
+			w.window:show(list.buffer)
+			back(list)
+		end
+		return
+	end
 	local o = open
 	local r = reading
 	if ctx.buffer:kind() == "mail-thread" and r then
@@ -434,6 +501,34 @@ local function acting(
 		then
 			leave(ctx)
 		end
+	end
+end
+
+-- The message a reply in `ctx` answers: the last in the thread being
+-- read, or the one under the cursor in the list.
+local function answering(ctx: greed.Context): string?
+	local r = reading
+	if ctx.buffer:kind() == "mail-thread" and r then
+		local last = r.thread.messages[#r.thread.messages]
+		return if last then last.key else nil
+	end
+	local o = open
+	local row: Summary? = if o then o.view:value_at(ctx.view:cursor()) else nil
+	return if row then row.key else nil
+end
+
+local function replying(all: boolean): (ctx: greed.Context) -> ()
+	return function(ctx: greed.Context)
+		local key = answering(ctx)
+		if key == nil then
+			return
+		end
+		local draft, err = backend.get().draft(key, all)
+		if draft == nil then
+			greed.echo(err or "that mail is gone")
+			return
+		end
+		M.write(draft)
 	end
 end
 
@@ -536,6 +631,52 @@ greed.command({
 	end),
 })
 
+greed.command({
+	name = "mail-compose",
+	doc = "Write new mail",
+	run = function()
+		M.write({ to = "", cc = "", bcc = "", subject = "", text = "" })
+	end,
+})
+
+greed.command({
+	name = "mail-reply",
+	doc = "Reply to the message (or the thread being read), quoting it",
+	run = replying(false),
+})
+
+greed.command({
+	name = "mail-reply-all",
+	doc = "Reply to everyone the message (or the thread being read) went to",
+	run = replying(true),
+})
+
+greed.command({
+	name = "mail-send",
+	doc = "Send the mail being written",
+	run = function(ctx: greed.Context)
+		local w = writing
+		if ctx.buffer:kind() ~= "mail-compose" or w == nil then
+			greed.echo("there's no mail being written here")
+			return
+		end
+		local draft = M.parse_draft(ctx.buffer:text())
+		draft.replying = w.replying
+		local ok, err = backend.get().send(draft)
+		if not ok then
+			greed.echo(err or "it couldn't be sent")
+			return
+		end
+		greed.echo("sending")
+		leave(ctx)
+	end,
+})
+
+-- :w in mail being written keeps it as it is; :mail-send sends it.
+core.file.on_save("mail-compose", function()
+	greed.echo("it stays here as you wrote it: :mail-send sends it")
+end)
+
 -- What a list and a thread both do to their mail.
 local ACTIONS = {
 	u = "mail-toggle-read",
@@ -543,6 +684,9 @@ local ACTIONS = {
 	e = "mail-archive",
 	d = "mail-trash",
 	["#"] = "mail-trash",
+	r = "mail-reply",
+	a = "mail-reply-all",
+	c = "mail-compose",
 	q = "mail-close",
 	esc = "mail-close",
 }
@@ -551,7 +695,7 @@ greed.keymap.bind({ kind = "mail" }, ACTIONS)
 greed.keymap.bind({ kind = "mail" }, {
 	enter = "mail-read",
 	["/"] = "mail-search",
-	r = "mail-sync",
+	["$"] = "mail-sync",
 })
 greed.keymap.bind({ kind = "mail-thread" }, ACTIONS)
 

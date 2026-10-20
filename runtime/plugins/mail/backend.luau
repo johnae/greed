@@ -35,6 +35,17 @@ export type Message = Summary & {
 --- A thread: what it's called and its messages, oldest first.
 export type Thread = { key: string, subject: string, messages: { Message } }
 
+--- Mail as it's written: addresses apart by commas, and the key of the
+--- message it answers.
+export type Draft = {
+	to: string,
+	cc: string,
+	bcc: string,
+	subject: string,
+	text: string,
+	replying: string?,
+}
+
 --- What the view needs from wherever its mail comes from.
 export type Backend = {
 	--- The index to search, or nil and why.
@@ -49,6 +60,10 @@ export type Backend = {
 	--- the messages and threads `keys` name; gives how many it changed,
 	--- or nil and why.
 	act: (keys: { string }, action: string) -> (number?, string?),
+	--- A reply to the message `key`, to everyone it went to with `all`.
+	draft: (key: string, all: boolean) -> (Draft?, string?),
+	--- Sends `draft` (in the next round), or says why it can't.
+	send: (draft: Draft) -> (boolean, string?),
 }
 
 --- The session `greed mail` starts, which syncs the mail; others read what
@@ -98,7 +113,9 @@ local function served(): (greed.RpcConnection?, string?)
 			if method == "changed" then
 				changed()
 			elseif method == "refused" then
-				greed.echo(`{params.account} refused a change: {params.message}`)
+				greed.echo(`{params.account}: {params.message}`)
+			elseif method == "sent" then
+				greed.echo("mail sent")
 			end
 		end,
 	})
@@ -156,6 +173,13 @@ M.served = {
 			return nil, err
 		end
 		return done.changed, nil
+	end,
+	draft = function(key: string, all: boolean): (Draft?, string?)
+		return ask("draft", { key = key, all = all })
+	end,
+	send = function(draft: Draft): (boolean, string?)
+		local posted, err = ask("send", draft)
+		return posted ~= nil, err
 	end,
 } :: Backend
 

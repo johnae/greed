@@ -17,6 +17,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use crate::body::Body;
 use crate::header::{Fetched, Header};
 use crate::imap::Change;
+use crate::send::Outgoing;
 
 /// The version of the tables; a store from another is refused rather than
 /// guessed at.
@@ -97,6 +98,18 @@ CREATE TABLE IF NOT EXISTS pending (
     uidvalidity INTEGER,
     op TEXT NOT NULL,
     arg TEXT NOT NULL DEFAULT ''
+);
+-- Mail written here that its server hasn't taken yet: the message as it's
+-- sent and who it goes to, the message it answers (marked answered once
+-- it's gone), and why its server refused it, when it did.
+CREATE TABLE IF NOT EXISTS outbox (
+    id INTEGER PRIMARY KEY,
+    account INTEGER NOT NULL REFERENCES accounts (id),
+    sender TEXT NOT NULL,
+    recipients TEXT NOT NULL,
+    message BLOB NOT NULL,
+    replying INTEGER,
+    refused TEXT
 );
 ";
 
@@ -199,6 +212,15 @@ pub struct Pending {
     pub uid_validity: Option<u32>,
     pub op: String,
     pub arg: String,
+}
+
+/// Mail in the outbox: its id there, the mail, and the id of the message
+/// it answers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Posted {
+    pub id: i64,
+    pub outgoing: Outgoing,
+    pub replying: Option<i64>,
 }
 
 /// A place of a message, as an action needs it.
@@ -807,6 +829,70 @@ impl Store {
         Ok(())
     }
 
+    /// Puts `outgoing` in `account`'s outbox, answering message `replying`;
+    /// gives its id there.
+    pub fn post(
+        &mut self,
+        account: i64,
+        outgoing: &Outgoing,
+        replying: Option<i64>,
+    ) -> Result<i64, Trouble> {
+        self.db.execute(
+            "INSERT INTO outbox (account, sender, recipients, message, replying)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                account,
+                outgoing.sender,
+                outgoing.recipients.join("\n"),
+                outgoing.message,
+                replying
+            ],
+        )?;
+        Ok(self.db.last_insert_rowid())
+    }
+
+    /// What's in `account`'s outbox to send, oldest first: not what its
+    /// server refused.
+    pub fn outbox(&self, account: i64) -> Result<Vec<Posted>, Trouble> {
+        let mut statement = self.db.prepare(
+            "SELECT id, sender, recipients, message, replying FROM outbox
+             WHERE account = ?1 AND refused IS NULL ORDER BY id",
+        )?;
+        let posted = statement
+            .query_map([account], |r| {
+                let recipients: String = r.get(2)?;
+                Ok(Posted {
+                    id: r.get(0)?,
+                    outgoing: Outgoing {
+                        sender: r.get(1)?,
+                        recipients: recipients.lines().map(str::to_string).collect(),
+                        message: r.get(3)?,
+                    },
+                    replying: r.get(4)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(posted)
+    }
+
+    /// Takes mail `id` out of the outbox: it's gone, or with `refused` its
+    /// server won't take it and it stays, not sent again, saying why.
+    pub fn sent_out(&mut self, id: i64, refused: Option<&str>) -> Result<(), Trouble> {
+        match refused {
+            None => self.db.execute("DELETE FROM outbox WHERE id = ?1", [id])?,
+            Some(why) => self.db.execute(
+                "UPDATE outbox SET refused = ?2 WHERE id = ?1",
+                params![id, why],
+            )?,
+        };
+        Ok(())
+    }
+
+    /// The name of `account`'s mailbox with `role` (sent, trash...).
+    pub fn role(&self, account: i64, role: &str) -> Result<Option<String>, Trouble> {
+        Ok(mailbox_where(&self.db, account, "role", role)?.map(|(_, name)| name))
+    }
+
     /// Takes back the changes `ids`, which the server refused or which
     /// came too late (the mailbox's UIDs started over): a flag is as it
     /// was, a message moved or deleted is back where it was, unless
@@ -927,12 +1013,12 @@ fn places_of(tx: &Transaction<'_>, id: i64) -> Result<Vec<Place>, Trouble> {
 /// The id and name of `account`'s mailbox whose `column` (name or role)
 /// is `value`.
 fn mailbox_where(
-    tx: &Transaction<'_>,
+    db: &Connection,
     account: i64,
     column: &str,
     value: &str,
 ) -> Result<Option<(i64, String)>, Trouble> {
-    Ok(tx
+    Ok(db
         .query_row(
             &format!("SELECT id, name FROM mailboxes WHERE account = ?1 AND {column} = ?2"),
             params![account, value],

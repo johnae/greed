@@ -16,6 +16,8 @@ struct Dovecot {
     child: Child,
     port: u16,
     dir: PathBuf,
+    /// The port of an SMTP server for the account to send with.
+    smtp: Option<u16>,
 }
 
 impl Dovecot {
@@ -43,7 +45,12 @@ impl Dovecot {
             .stderr(Stdio::null())
             .spawn()
             .unwrap();
-        let dovecot = Dovecot { child, port, dir };
+        let dovecot = Dovecot {
+            child,
+            port,
+            dir,
+            smtp: None,
+        };
         let started = Instant::now();
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
             assert!(
@@ -63,6 +70,9 @@ impl Dovecot {
 
     /// That account as `mail.toml` says it.
     fn account_toml(&self) -> String {
+        let smtp = self.smtp.map_or(String::new(), |port| {
+            format!(r#"smtp = {{ host = "127.0.0.1", port = {port}, tls = "none" }}"#)
+        });
         format!(
             r#"
             [[account]]
@@ -70,6 +80,7 @@ impl Dovecot {
             address = "anna@localhost"
             user = "anna"
             imap = {{ host = "127.0.0.1", port = {}, tls = "none" }}
+            {smtp}
             password = ["echo", "secret"]
             "#,
             self.port
@@ -672,4 +683,109 @@ fn mail_marked_moved_and_deleted_here_is_so_on_the_server() {
 fn act(served: &mut Served, action: &str, key: &str) -> serde_json::Value {
     let params = serde_json::json!({ "action": action, "keys": [key] });
     served.ask("act", &params)["changed"].clone()
+}
+
+/// What a fake SMTP server was given: each message's recipients and text.
+type Mailed = std::sync::Arc<std::sync::Mutex<Vec<(Vec<String>, String)>>>;
+
+/// An SMTP server on this machine that takes every message, logging in
+/// anyone, and keeps them in `Mailed`; gives its port.
+fn fake_smtp() -> (u16, Mailed) {
+    use std::io::{BufRead, BufReader, Write};
+
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let mailed = Mailed::default();
+    let keep = mailed.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { break };
+            let mut out = stream.try_clone().unwrap();
+            let mut lines = BufReader::new(stream);
+            let mut say = |s: &str| out.write_all(format!("{s}\r\n").as_bytes()).unwrap();
+            say("220 fake ESMTP");
+            let mut recipients = Vec::new();
+            let mut line = String::new();
+            while lines.read_line(&mut line).unwrap_or(0) > 0 {
+                let command = line.trim_end().to_uppercase();
+                if command.starts_with("EHLO") {
+                    say("250-fake");
+                    say("250 AUTH PLAIN LOGIN");
+                } else if command.starts_with("AUTH") {
+                    say("235 2.7.0 in");
+                } else if command.starts_with("RCPT TO:") {
+                    recipients.push(line.trim_end()[8..].trim_matches(['<', '>']).to_string());
+                    say("250 ok");
+                } else if command == "DATA" {
+                    say("354 go on");
+                    let mut text = String::new();
+                    let mut data = String::new();
+                    while lines.read_line(&mut data).unwrap() > 0 && data != ".\r\n" {
+                        text.push_str(&data);
+                        data.clear();
+                    }
+                    keep.lock()
+                        .unwrap()
+                        .push((std::mem::take(&mut recipients), text));
+                    say("250 2.0.0 queued");
+                } else if command == "QUIT" {
+                    say("221 bye");
+                    break;
+                } else {
+                    say("250 ok");
+                }
+                line.clear();
+            }
+        }
+    });
+    (port, mailed)
+}
+
+#[test]
+fn a_reply_is_sent_filed_in_sent_and_its_original_marked_answered() {
+    let Some(mut dovecot) = Dovecot::start("send") else {
+        return;
+    };
+    let (port, mailed) = fake_smtp();
+    dovecot.smtp = Some(port);
+    deliver(&dovecot, 1, true);
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let path = served.ask("index", &serde_json::json!({}));
+    let index =
+        greed_index::index::Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
+    let key = index
+        .search(
+            None,
+            &greed_index::query::Schema::default(),
+            &greed_index::index::View::default(),
+        )
+        .unwrap()
+        .keys
+        .into_iter()
+        .find(|k| k.starts_with("m:"))
+        .unwrap();
+    let mut draft = served.ask("draft", &serde_json::json!({ "key": key }));
+    assert_eq!(draft["to"], "Zoë <zoe@example.com>", "{draft}");
+    assert_eq!(draft["subject"], "Re: note 1");
+    let quoted = draft["text"].as_str().unwrap().to_string();
+    assert!(quoted.contains("Zoë wrote:\n> body 1"), "{quoted}");
+    draft["text"] = format!("Thanks!{quoted}").into();
+    served.ask("send", &draft);
+    served.wait_for("sent");
+    let got = mailed.lock().unwrap().clone();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0, ["zoe@example.com"]);
+    assert!(
+        got[0].1.contains("In-Reply-To: <1@example.com>"),
+        "{}",
+        got[0].1
+    );
+    assert!(got[0].1.contains("Thanks!"), "{}", got[0].1);
+    wait_until("a copy in Sent", || files(&dovecot, "Sent").len() == 1);
+    wait_until("the original answered", || {
+        files(&dovecot, "")
+            .iter()
+            .any(|f| f.contains("M1P1") && f.contains('R'))
+    });
 }

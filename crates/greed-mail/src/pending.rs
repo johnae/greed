@@ -150,6 +150,16 @@ mod tests {
         fn expunge(&mut self, uids: &[u32]) -> impl Future<Output = Result<Answer, imap::Trouble>> {
             ready(Ok(self.answer(format!("expunge {uids:?}"))))
         }
+
+        fn append(
+            &mut self,
+            mailbox: &str,
+            message: &[u8],
+        ) -> impl Future<Output = Result<Answer, imap::Trouble>> {
+            ready(Ok(
+                self.answer(format!("append {mailbox} {}", message.len()))
+            ))
+        }
     }
 
     fn run<F: Future>(future: F) -> F::Output {

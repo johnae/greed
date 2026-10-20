@@ -13,28 +13,56 @@ subject:"quarterly report" is:attachment
 ```
 
 In the list, `enter` reads the thread under the cursor in its place, `/`
-searches again and `r` syncs now; `q` in a thread goes back to the list.
+searches again and `$` syncs now; `q` in a thread goes back to the list.
 Reading a thread marks it read.
 
 These work on the message under the cursor, or in a thread on all of it:
 
-| Key       | Does                                                    |
-| --------- | ------------------------------------------------------- |
-| `u`       | marks it read, or unread when it's read                 |
-| `s`       | flags it, or takes the flag off                         |
-| `e`       | moves it to the archive                                 |
-| `d`, `#`  | moves it to the trash; in the trash, deletes it for good |
+| Key      | Does                                                      |
+| -------- | --------------------------------------------------------- |
+| `u`      | marks it read, or unread when it's read                   |
+| `s`      | flags it, or takes the flag off                           |
+| `e`      | moves it to the archive                                   |
+| `d`, `#` | moves it to the trash; in the trash, deletes it for good  |
+| `r`      | replies to who sent it (in a thread, its last message)    |
+| `a`      | replies to everyone it went to                            |
+| `c`      | writes new mail                                           |
 
 A change shows at once and goes to the server within seconds. If the
 server refuses it (a folder that went, say), it's taken back and Greed
 says why.
+
+## Writing
+
+A reply opens with its header lines, the cursor on the line where your
+text goes and the message you answer quoted under it:
+
+```text
+To: Anna Berg <anna@example.com>
+Cc:
+Subject: Re: Invoice 41
+
+Paid this morning.
+
+On 2026-10-19 08:00, Anna Berg wrote:
+> Please pay by Friday.
+```
+
+Edit it as any text, the header lines too (add `Bcc:` for blind copies,
+addresses apart by commas), then `:mail-send` sends it and goes back to
+the list; `:mail-close` drops it. It goes in the next sync round, within
+seconds, and Greed says when it's sent. A copy goes in your Sent folder
+(Gmail and Bridge file it themselves), and the message you answered is
+marked answered. Mail the server won't take stays out, and Greed says
+why.
 
 The mail session is the one that syncs. In any other session, `:mail`
 opens a quick look at the same mail in a float (`q` closes it), and
 `:mail-session` goes to the mail session, starting it if it isn't
 running. The quick look reads what the mail session has synced, and
 changes nothing: a message whose text hasn't come in yet gets it once you
-open it there, and marking, archiving and deleting are done there too.
+open it there, and marking, archiving, deleting and writing mail are done
+there too.
 
 ## Accounts
 
@@ -56,13 +84,16 @@ password = ["pass", "show", "mail/bridge"]
 name = "work"
 address = "anna@example.com"
 imap = { host = "mail.example.com" }
+smtp = { host = "mail.example.com", tls = "starttls" }
 password = ["rbw", "get", "work-mail"]
 ```
 
 `password` is a command that prints the password; it runs when a
 connection needs it, and the password is never written down. `tls` is
 `implicit` (the default, port 993), `starttls` (port 143), or `none` for
-a server on this machine. `provider` is `gmail` or `proton-bridge` for
+a server on this machine. `smtp` is where mail is sent, with the same
+login, `tls` as for `imap` (ports 465 and 587); Gmail needs none, and for
+Bridge it's Bridge's SMTP port. `provider` is `gmail` or `proton-bridge` for
 their ways (Gmail needs no `imap`, and its labels and Bridge's are places
 like folders); any other server is plain IMAP.
 

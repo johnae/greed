@@ -9,6 +9,8 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::Serialize;
 
 use crate::body::Attachment;
+use crate::header::{Fetched, Header};
+use crate::send::Original;
 use crate::store::Trouble;
 
 /// A message as a list shows it.
@@ -168,6 +170,49 @@ impl Reader {
             subject: first.summary.subject.clone(),
             messages,
         }))
+    }
+
+    /// What a reply to the message `key` needs of it, and the name of the
+    /// account it's in.
+    pub fn original(&self, key: &str) -> Result<Option<(String, Original)>, Trouble> {
+        let Some(('m', account, identity)) = split_key(key) else {
+            return Ok(None);
+        };
+        Ok(self
+            .db
+            .query_row(
+                "SELECT accounts.name, accounts.address, messages.message_id, messages.refs,
+                     messages.sender, messages.recipients, messages.cc, messages.subject,
+                     messages.date, messages.headers, bodies.text
+                 FROM messages JOIN accounts ON accounts.id = messages.account
+                 LEFT JOIN bodies.bodies ON bodies.message = messages.id
+                 WHERE messages.account = ?1 AND messages.identity = ?2",
+                params![account, identity],
+                |r| {
+                    let refs: String = r.get(3)?;
+                    let headers: Option<Vec<u8>> = r.get(9)?;
+                    let header = Header::of(&Fetched {
+                        raw: headers.unwrap_or_default(),
+                        ..Fetched::default()
+                    });
+                    Ok((
+                        r.get(0)?,
+                        Original {
+                            address: r.get(1)?,
+                            message_id: r.get(2)?,
+                            references: refs.split_whitespace().map(str::to_string).collect(),
+                            from: r.get(4)?,
+                            reply_to: header.reply_to,
+                            to: r.get(5)?,
+                            cc: r.get(6)?,
+                            subject: r.get(7)?,
+                            date: r.get(8)?,
+                            text: r.get(10)?,
+                        },
+                    ))
+                },
+            )
+            .optional()?)
     }
 }
 

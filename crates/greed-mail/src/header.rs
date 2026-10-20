@@ -7,7 +7,7 @@ use mail_parser::{Address, HeaderValue, MessageParser};
 /// The header fields fetched for every message: what lists, threads and
 /// search need, and Bridge's id for a message.
 pub const FIELDS: &str =
-    "From To Cc Subject Date Message-ID In-Reply-To References List-Id X-Pm-Internal-Id";
+    "From Reply-To To Cc Subject Date Message-ID In-Reply-To References List-Id X-Pm-Internal-Id";
 
 /// One message's fetch.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -31,6 +31,8 @@ pub struct Header {
     /// When it was written (its Date), else when it arrived, RFC 3339.
     pub date: Option<String>,
     pub from: String,
+    /// Where replies go, when not to `from`.
+    pub reply_to: String,
     pub to: String,
     pub cc: String,
     pub subject: String,
@@ -58,6 +60,7 @@ impl Header {
                 .map(mail_parser::DateTime::to_rfc3339)
                 .or_else(|| fetched.arrived.clone()),
             from: addresses(message.from()),
+            reply_to: addresses(message.reply_to()),
             to: addresses(message.to()),
             cc: addresses(message.cc()),
             subject: message.subject().unwrap_or_default().to_string(),

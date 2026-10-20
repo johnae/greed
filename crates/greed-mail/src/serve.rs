@@ -6,14 +6,16 @@
 //! `index` (where `index.db` is, for `greed.index.open`), `sync` (sync now),
 //! `summaries` (`keys` the index found, as a list shows them), `thread`
 //! (a thread by its key or one of its messages', with their text; bodies
-//! not in yet come ahead of everything else, then `changed` says so) and
+//! not in yet come ahead of everything else, then `changed` says so),
 //! `act` (`action` on the messages `keys` name: read, unread, flag,
 //! unflag, archive, trash, or move `to` a mailbox; made here at once and
-//! sent to the server in the next round, which starts right away).
+//! sent to the server in the next round, which starts right away),
+//! `draft` (a reply to the message `key`, to everyone with `all`) and
+//! `send` (a draft, put in the outbox and sent in the next round).
 //! Notifications: `changed` (the index changed: search again), `progress`
 //! (an account's mailbox synced some), `trouble` (an account that can't
-//! sync, and why) and `refused` (a change its server refused, taken back
-//! here, and why).
+//! sync, and why), `refused` (a change or mail its server refused, and
+//! why) and `sent` (mail its server took).
 //!
 //! The sync goes in rounds of at most `HEADERS` headers and `BODIES` bodies
 //! a mailbox, so what's asked for never waits long. After a round with
@@ -33,10 +35,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Notify, mpsc};
 
 use crate::config::{Account, Config};
-use crate::imap::{Connection, Imap};
+use crate::imap::{Changing, Connection, Imap};
 use crate::indexing;
 use crate::pending;
 use crate::reader::Reader;
+use crate::send::{self, Draft, Failure};
 use crate::store::{Action, Store, Wanting};
 use crate::sync::{self, Options};
 
@@ -147,7 +150,14 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
             }
         }
     };
-    let answering = answer(&reader, writer.as_ref(), &dir, &shared);
+    let with = Answering {
+        config: &config,
+        reader: &reader,
+        writer: writer.as_ref(),
+        dir: &dir,
+        shared: &shared,
+    };
+    let answering = answer(&with);
     let syncing = async {
         match stores {
             Some((store, index)) => keep_syncing(&config, store, index, &shared).await,
@@ -162,8 +172,21 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
     Ok(())
 }
 
+/// What changes are made with: a store and an index, the mail session's
+/// only.
+type Writer = RefCell<(Store, Index)>;
+
+/// What requests are answered from.
+struct Answering<'a> {
+    config: &'a Config,
+    reader: &'a Reader,
+    writer: Option<&'a Writer>,
+    dir: &'a Path,
+    shared: &'a Shared,
+}
+
 /// Answers each request on the input until it closes.
-async fn answer(reader: &Reader, writer: Option<&Writer>, dir: &Path, shared: &Shared) {
+async fn answer(with: &Answering<'_>) {
     let mut input = BufReader::new(tokio::io::stdin()).lines();
     while let Ok(Some(line)) = input.next_line().await {
         let Ok(request) = serde_json::from_str::<Value>(&line) else {
@@ -173,7 +196,7 @@ async fn answer(reader: &Reader, writer: Option<&Writer>, dir: &Path, shared: &S
             continue;
         };
         let method = request["method"].as_str().unwrap_or("");
-        let reply = match handle(method, &request["params"], reader, writer, dir, shared) {
+        let reply = match handle(method, &request["params"], with) {
             Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
             Err(message) => json!({
                 "jsonrpc": "2.0",
@@ -181,29 +204,23 @@ async fn answer(reader: &Reader, writer: Option<&Writer>, dir: &Path, shared: &S
                 "error": { "code": -32000, "message": message },
             }),
         };
-        let _ = shared.out.send(reply.to_string());
+        let _ = with.shared.out.send(reply.to_string());
     }
 }
 
-/// What changes are made with: a store and an index, the mail session's
-/// only.
-type Writer = RefCell<(Store, Index)>;
-
 /// The result of request `method`, or why there's none.
-fn handle(
-    method: &str,
-    params: &Value,
-    reader: &Reader,
-    writer: Option<&Writer>,
-    dir: &Path,
-    shared: &Shared,
-) -> Result<Value, String> {
+fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, String> {
+    let Answering { reader, shared, .. } = with;
+    let writer = || {
+        with.writer
+            .ok_or("mail is changed in the mail session; here it's only read")
+    };
     match method {
         "status" => {
             let standing: Vec<Standing> = shared.standing.borrow().values().cloned().collect();
             Ok(json!({ "accounts": standing }))
         }
-        "index" => Ok(json!({ "path": dir.join("index.db") })),
+        "index" => Ok(json!({ "path": with.dir.join("index.db") })),
         "sync" => {
             shared.wake.notify_one();
             Ok(json!({}))
@@ -229,8 +246,7 @@ fn handle(
             serde_json::to_value(thread).map_err(|e| e.to_string())
         }
         "act" => {
-            let writer =
-                writer.ok_or("mail is changed in the mail session; here it's only read")?;
+            let writer = writer()?;
             let keys: Vec<String> = serde_json::from_value(params["keys"].clone())
                 .map_err(|_| "act takes keys, a list of messages' or threads' keys".to_string())?;
             let action = action(params)?;
@@ -247,6 +263,47 @@ fn handle(
                 shared.wake.notify_one();
             }
             Ok(json!({ "changed": changed }))
+        }
+        "draft" => {
+            let key = params["key"]
+                .as_str()
+                .ok_or("draft takes key, the message to reply to")?;
+            let Some((_, original)) = reader.original(key).map_err(|e| e.0)? else {
+                return Err("that mail is gone".into());
+            };
+            let all = params["all"].as_bool().unwrap_or(false);
+            serde_json::to_value(send::reply(&original, key, all)).map_err(|e| e.to_string())
+        }
+        "send" => {
+            let writer = writer()?;
+            let draft: Draft = serde_json::from_value(params.clone())
+                .map_err(|e| format!("send takes a draft: {e}"))?;
+            let original = match &draft.replying {
+                Some(key) => reader.original(key).map_err(|e| e.0)?,
+                None => None,
+            };
+            let name = original
+                .as_ref()
+                .map(|(name, _)| name.as_str())
+                .or(params["account"].as_str());
+            let account = match name {
+                Some(name) => with.config.account(name),
+                None => with.config.accounts.first(),
+            }
+            .ok_or_else(|| format!("no account {} in mail.toml", name.unwrap_or("")))?;
+            let outgoing =
+                send::compose(&account.address, &draft, original.as_ref().map(|(_, o)| o))?;
+            let (store, _) = &mut *writer.borrow_mut();
+            let id = store
+                .account(&account.name, &account.address)
+                .map_err(|e| e.0)?;
+            let replying = match &draft.replying {
+                Some(key) => store.messages_of(key).map_err(|e| e.0)?.first().copied(),
+                None => None,
+            };
+            let posted = store.post(id, &outgoing, replying).map_err(|e| e.0)?;
+            shared.wake.notify_one();
+            Ok(json!({ "posted": posted }))
         }
         _ => Err(format!("no method {method}")),
     }
@@ -425,8 +482,8 @@ async fn round(
     Ok(more)
 }
 
-/// Sends what was changed here in `account` (store id `id`) to its
-/// server, saying what it refused.
+/// Sends what was written and changed here in `account` (store id `id`)
+/// to its servers, saying what they refused.
 async fn send_changes(
     connection: &mut Connection,
     store: &mut Store,
@@ -435,6 +492,7 @@ async fn send_changes(
     id: i64,
     shared: &Shared,
 ) -> Result<(), String> {
+    send_mail(connection, store, account, id, shared).await?;
     let sent = pending::send(connection, store, id)
         .await
         .map_err(|e| e.0)?;
@@ -444,11 +502,71 @@ async fn send_changes(
     for why in &sent.refused {
         shared.notify(
             "refused",
-            &json!({ "account": account.name, "message": why }),
+            &json!({ "account": account.name, "message": format!("a change was refused: {why}") }),
         );
     }
     indexing::catch_up(store, index).map_err(|e| e.0)?;
     shared.notify("changed", &json!({}));
+    Ok(())
+}
+
+/// Sends the mail in `account`'s outbox (store id `id`) over SMTP, a copy
+/// of each in Sent where the server doesn't file one itself, and marks
+/// what it answers answered. Mail the server refuses stays in the outbox,
+/// saying why; when it can't be reached, it waits for the next round.
+async fn send_mail(
+    connection: &mut Connection,
+    store: &mut Store,
+    account: &Account,
+    id: i64,
+    shared: &Shared,
+) -> Result<(), String> {
+    let refused = |message: String| {
+        shared.notify(
+            "refused",
+            &json!({ "account": account.name, "message": message }),
+        );
+    };
+    for posted in store.outbox(id).map_err(|e| e.0)? {
+        match send::deliver(account, &posted.outgoing).await {
+            Ok(()) => {}
+            Err(Failure::Refused(why)) => {
+                store.sent_out(posted.id, Some(&why)).map_err(|e| e.0)?;
+                refused(format!("mail wasn't sent: {why}"));
+                continue;
+            }
+            Err(Failure::Later(why)) => {
+                shared.notify(
+                    "trouble",
+                    &json!({ "account": account.name, "message": format!("mail waits to go: {why}") }),
+                );
+                return Ok(());
+            }
+        }
+        store.sent_out(posted.id, None).map_err(|e| e.0)?;
+        shared.notify(
+            "sent",
+            &json!({ "account": account.name, "posted": posted.id }),
+        );
+        // Gmail and Bridge file what they send themselves.
+        let files_itself = account.provider.is_some();
+        if !files_itself && let Some(sent) = store.role(id, "sent").map_err(|e| e.0)? {
+            let kept = connection
+                .append(&sent, &posted.outgoing.message)
+                .await
+                .map_err(|e| e.0)?;
+            if let Err(why) = kept {
+                refused(format!("mail was sent, but no copy is in {sent}: {why}"));
+            }
+        }
+        if let Some(original) = posted.replying {
+            let answered = Action::Flag {
+                flag: "\\Answered".into(),
+                on: true,
+            };
+            store.act(original, &answered).map_err(|e| e.0)?;
+        }
+    }
     Ok(())
 }
 

@@ -53,6 +53,9 @@ local now: { Fake } = {}
 -- What was asked of the fake, as "action key".
 local acted: { string } = {}
 
+-- What was sent through the fake.
+local sent: { any } = {}
+
 -- An index of the mail now, in memory: the query run by
 -- greed.query.run, sorted newest first as the list asks.
 local index = {
@@ -142,6 +145,7 @@ local function fake()
 		table.insert(now, copy)
 	end
 	acted = {}
+	sent = {}
 	local changed: () -> () = function() end
 	changed = mail.backend.use({
 		index = function(): (any, string?)
@@ -173,6 +177,25 @@ local function fake()
 			return nil
 		end,
 		sync = function() end,
+		draft = function(key: string, all: boolean): (any, string?)
+			for _, m in now do
+				if m.key == key then
+					return {
+						to = m.from,
+						cc = if all then "carl@example.com" else "",
+						bcc = "",
+						subject = `Re: {m.subject}`,
+						text = `\n\n{m.from} wrote:\n> {m.text}\n`,
+						replying = key,
+					}
+				end
+			end
+			return nil, "that mail is gone"
+		end,
+		send = function(draft: any): (boolean, string?)
+			table.insert(sent, draft)
+			return true, nil
+		end,
 		act = function(keys: { string }, action: string): (number?, string?)
 			for _, key in keys do
 				table.insert(acted, `{action} {key}`)
@@ -329,4 +352,64 @@ test("archiving the thread being read goes back to the list", function(t)
 		assert(window:buffer():kind() == "mail", "back in the list")
 		assert(table.concat(subjects(), ", ") == "Garden plans")
 	end)
+end)
+
+test("r writes a reply quoting the message, and :mail-send sends it", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc r")
+		local buffer = window:buffer()
+		assert(buffer:kind() == "mail-compose", buffer:kind())
+		local text = buffer:text()
+		local head = "To: Anna Berg <anna@example.com>\nCc: \nSubject: Re: Invoice 41\n\n"
+		assert(string.sub(text, 1, #head) == head, text)
+		assert(string.find(text, "> please pay by Friday", 1, true), text)
+		local at = window:cursor()
+		assert(at == buffer:line_start(4), "the cursor where the text goes")
+		buffer:edit(function(e)
+			e:replace(at, at, "Paid.")
+		end)
+		t:run("mail-send")
+		assert(#sent == 1)
+		assert(sent[1].replying == "m:1:b" and sent[1].subject == "Re: Invoice 41")
+		assert(string.sub(sent[1].text, 1, 7) == "Paid.\n\n", sent[1].text)
+		assert(window:buffer():kind() == "mail", "back in the list")
+	end)
+end)
+
+test("a reads a reply to all; c writes new mail from To", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc a")
+		assert(string.find(window:buffer():text(), "Cc: carl@example.com\n", 1, true) ~= nil)
+		t:run("mail-close")
+		assert(window:buffer():kind() == "mail", "dropped, back in the list")
+		t:keys("c")
+		assert(window:buffer():text() == "To: \nCc: \nSubject: \n\n")
+		assert(window:cursor() == 4, "on To")
+	end)
+end)
+
+test("mail is written in the mail session only", function(t)
+	fake()
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc c")
+	assert(greed.view():buffer():kind() == "mail", greed.view():buffer():kind())
+end)
+
+test("a draft reads from its header lines and text", function()
+	local draft = mail.parse_draft(
+		"to: anna@x, bob@x\nBCC: me@x\nSubject:  Hi \nX-Other: y\n\nHello\n\nthere\n"
+	)
+	assert(draft.to == "anna@x, bob@x" and draft.bcc == "me@x" and draft.cc == "")
+	assert(draft.subject == "Hi")
+	assert(draft.text == "Hello\n\nthere\n", draft.text)
+	assert(mail.parse_draft("To: anna@x").to == "anna@x", "no text yet")
 end)
