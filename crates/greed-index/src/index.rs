@@ -4,7 +4,7 @@
 //! same rules as rows in memory ([`crate::query`]) decide, over the items
 //! SQL found, so an index and a list in memory can't disagree.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags, params_from_iter, types::Value};
@@ -13,12 +13,19 @@ use crate::compare;
 use crate::query::{self, Answer, Flag, Kind, Node, Query, Row, Rows, Schema};
 
 /// The version of the tables; an index made by another is made again.
-const VERSION: &str = "4";
+const VERSION: &str = "5";
 
 /// How many candidates are loaded and checked at a time.
 const CHUNK: usize = 1000;
 
-const SELECT_ITEMS: &str = "SELECT id, key, parent, name, text FROM items";
+/// How many are loaded first: a search sorted in SQL that wants a page
+/// usually has it in the first few hundred.
+const FIRST_CHUNK: usize = 250;
+
+/// From how many candidates a search sorted by a date, newest first, walks
+/// that date's values in order rather than sorting the candidates: many
+/// fill a page in the first stretch of the walk, few are quicker sorted.
+const WALK: i64 = 2000;
 
 const TABLES: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -42,7 +49,8 @@ CREATE TABLE IF NOT EXISTS item_values (
 );
 CREATE INDEX IF NOT EXISTS values_field ON item_values (field, lower);
 CREATE INDEX IF NOT EXISTS values_number ON item_values (field, number);
-CREATE INDEX IF NOT EXISTS values_item ON item_values (item);
+-- By item and field: loading an item's values, and the value it's sorted by.
+CREATE INDEX IF NOT EXISTS values_item ON item_values (item, field, lower);
 CREATE TABLE IF NOT EXISTS item_flags (item INTEGER NOT NULL, flag TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS flags_flag ON item_flags (flag);
 CREATE INDEX IF NOT EXISTS flags_item ON item_flags (item);
@@ -236,55 +244,65 @@ impl Index {
             .transpose()?;
         let mut args: Vec<Value> = Vec::new();
         let narrowed = node.and_then(|n| narrow(n, schema, &mut args));
-        let sql = format!(
-            "SELECT id FROM items WHERE {} ORDER BY id",
-            narrowed.as_deref().unwrap_or("1")
-        );
-        let ids: Vec<i64> = {
-            let mut statement = self.db.prepare(&sql)?;
-            let found = statement.query_map(params_from_iter(args.iter()), |r| r.get(0))?;
-            found.collect::<rusqlite::Result<_>>()?
+        // Sorted by one date, the candidates come in that order from SQL, so
+        // the first that match are the ones wanted. Other sorts compare in
+        // Rust (`compare::order`), which SQL can't.
+        let by_date = match view.sort.as_slice() {
+            [(field, descending)]
+                if schema.fields.get(&field.to_lowercase()) == Some(&Kind::Date) =>
+            {
+                Some((field.to_lowercase(), *descending))
+            }
+            _ => None,
         };
         // What the items are in, for `in:` and `under:`, and what they hold,
-        // for `has:`.
+        // for `has:`; their text only when words or regexes read it.
         let up = node.is_some_and(|n| uses(n, &["in", "under"]));
         let down = node.is_some_and(|n| uses(n, &["has"]));
+        let text = node.is_some_and(reads_text);
         let by: Vec<String> = view.sort.iter().map(|(f, _)| f.to_lowercase()).collect();
-        // A limit without a sort stops once enough have matched, unless some
-        // only might.
-        let early = if by.is_empty() { view.limit } else { None };
+        // A limit stops once enough have matched, when the candidates come
+        // in the order wanted, unless some only might.
+        let early = if by.is_empty() || by_date.is_some() {
+            view.limit
+        } else {
+            None
+        };
+        let walk = by_date.is_some()
+            && node
+                .and_then(|n| estimate(&self.db, n, schema))
+                .is_none_or(|n| n >= WALK);
+        let mut candidates = Candidates::new(
+            narrowed.as_deref().unwrap_or("1"),
+            args,
+            by_date.as_ref(),
+            walk,
+        );
         let mut matching: Vec<Match> = Vec::new();
         let mut any_maybe = false;
-        for chunk in ids.chunks(CHUNK) {
-            let mut loaded = Loaded::default();
-            self.load(
-                &mut loaded,
-                &format!("id IN ({})", marks(chunk.len())),
-                chunk,
-            )?;
-            let wanted = loaded.ids.len();
-            if up {
-                self.load_up(&mut loaded)?;
+        // Without a limit every candidate is looked at: all in one go.
+        let mut size = if early.is_some() {
+            FIRST_CHUNK
+        } else {
+            usize::MAX
+        };
+        loop {
+            let ids = candidates.next(&self.db, size)?;
+            size = CHUNK;
+            if ids.is_empty() {
+                break;
             }
-            if down {
-                self.load_down(&mut loaded, wanted)?;
-            }
-            self.load_values(&mut loaded)?;
-            let rows = Rows::new(std::mem::take(&mut loaded.rows));
-            for at in 0..wanted {
-                let answer = compiled
-                    .as_ref()
-                    .map_or(Answer::Yes, |q| q.answer(&rows, at));
-                if answer == Answer::No {
-                    continue;
-                }
-                let maybe = answer == Answer::Maybe;
-                any_maybe |= maybe;
-                matching.push(Match {
-                    key: loaded.keys[at].clone(),
-                    maybe,
-                    sort: by.iter().map(|f| first_value(&rows, at, f)).collect(),
-                });
+            for chunk in ids.chunks(CHUNK) {
+                self.check(
+                    chunk,
+                    text,
+                    (up, down),
+                    by_date.is_some(),
+                    compiled.as_ref(),
+                    &by,
+                    &mut matching,
+                    &mut any_maybe,
+                )?;
             }
             if early.is_some_and(|limit| !any_maybe && matching.len() >= limit) {
                 break;
@@ -306,6 +324,58 @@ impl Index {
         })
     }
 
+    // Loads the candidates `chunk` and adds those `compiled` takes to
+    // `matching`, in the chunk's order when `ordered`.
+    #[allow(clippy::too_many_arguments)]
+    fn check(
+        &self,
+        chunk: &[i64],
+        text: bool,
+        (up, down): (bool, bool),
+        ordered: bool,
+        compiled: Option<&Query>,
+        by: &[String],
+        matching: &mut Vec<Match>,
+        any_maybe: &mut bool,
+    ) -> Result<(), Trouble> {
+        let mut loaded = Loaded {
+            text,
+            ..Loaded::default()
+        };
+        self.load(
+            &mut loaded,
+            &format!("id IN ({})", marks(chunk.len())),
+            chunk,
+        )?;
+        // The order SQL gave, as `load` reads them by id.
+        if ordered {
+            loaded.reorder(chunk);
+        }
+        let wanted = loaded.ids.len();
+        if up {
+            self.load_up(&mut loaded)?;
+        }
+        if down {
+            self.load_down(&mut loaded, wanted)?;
+        }
+        self.load_values(&mut loaded)?;
+        let rows = Rows::new(std::mem::take(&mut loaded.rows));
+        for at in 0..wanted {
+            let answer = compiled.map_or(Answer::Yes, |q| q.answer(&rows, at));
+            if answer == Answer::No {
+                continue;
+            }
+            let maybe = answer == Answer::Maybe;
+            *any_maybe |= maybe;
+            matching.push(Match {
+                key: loaded.keys[at].clone(),
+                maybe,
+                sort: by.iter().map(|f| first_value(&rows, at, f)).collect(),
+            });
+        }
+        Ok(())
+    }
+
     // Loads the items `condition` picks, with `args` for its marks.
     fn load<T: rusqlite::ToSql>(
         &self,
@@ -313,9 +383,10 @@ impl Index {
         condition: &str,
         args: &[T],
     ) -> Result<(), Trouble> {
-        let mut statement = self
-            .db
-            .prepare_cached(&format!("{SELECT_ITEMS} WHERE {condition} ORDER BY id"))?;
+        let text = if loaded.text { "text" } else { "''" };
+        let mut statement = self.db.prepare_cached(&format!(
+            "SELECT id, key, parent, name, {text} FROM items WHERE {condition} ORDER BY id"
+        ))?;
         let mut rows = statement.query(params_from_iter(args.iter()))?;
         while let Some(row) = rows.next()? {
             let key: String = row.get(1)?;
@@ -431,9 +502,114 @@ fn forget(tx: &rusqlite::Transaction, key: &str) -> Result<(), Trouble> {
     Ok(())
 }
 
-// Items read from the index, as rows, with what finds them again.
+// The ids of the items a search looks at, a page at a time, in the order
+// wanted: by id, or by one date field. Newest first, it walks the field's
+// values in order, then takes the items with none (they sort last, as an
+// empty value does); oldest first, it sorts the candidates.
+struct Candidates {
+    // Each part's query, without its LIMIT and OFFSET, and its values.
+    parts: Vec<(String, Vec<Value>)>,
+    part: usize,
+    offset: i64,
+    seen: HashSet<i64>,
+}
+
+impl Candidates {
+    fn new(
+        condition: &str,
+        args: Vec<Value>,
+        by: Option<&(String, bool)>,
+        walk: bool,
+    ) -> Candidates {
+        let parts = match by {
+            None => vec![(
+                format!("SELECT id FROM items WHERE {condition} ORDER BY id"),
+                args,
+            )],
+            Some((field, true)) if walk => {
+                let field = Value::Text(field.clone());
+                let mut walk_args = vec![field.clone()];
+                walk_args.extend(args.iter().cloned());
+                // The CROSS JOIN keeps the walk over the values outside.
+                let walk = (
+                    format!(
+                        "SELECT v.item FROM item_values v CROSS JOIN items ON items.id = v.item
+                         WHERE v.field = ? AND {condition} ORDER BY v.lower DESC, v.item"
+                    ),
+                    walk_args,
+                );
+                let mut undated_args = args;
+                undated_args.push(field);
+                let undated = (
+                    format!(
+                        "SELECT id FROM items WHERE {condition} AND NOT EXISTS
+                         (SELECT 1 FROM item_values WHERE item = items.id AND field = ?)
+                         ORDER BY id"
+                    ),
+                    undated_args,
+                );
+                vec![walk, undated]
+            }
+            Some((field, descending)) => {
+                // Few candidates, or oldest first: sorted as they are. No
+                // value sorts as an empty one; of several, the newest or
+                // oldest counts.
+                let (way, pick) = if *descending {
+                    ("DESC", "max")
+                } else {
+                    ("ASC", "min")
+                };
+                let mut sorted_args = args;
+                sorted_args.push(Value::Text(field.clone()));
+                vec![(
+                    format!(
+                        "SELECT id FROM items WHERE {condition} ORDER BY coalesce(
+                         (SELECT {pick}(lower) FROM item_values WHERE item = items.id AND field = ?),
+                         '') {way}, id"
+                    ),
+                    sorted_args,
+                )]
+            }
+        };
+        Candidates {
+            parts,
+            part: 0,
+            offset: 0,
+            seen: HashSet::new(),
+        }
+    }
+
+    // Up to `most` more ids, none twice; none once they're all given.
+    fn next(&mut self, db: &Connection, most: usize) -> Result<Vec<i64>, Trouble> {
+        let mut out = Vec::new();
+        while out.len() < most && self.part < self.parts.len() {
+            let (sql, args) = &self.parts[self.part];
+            let want = i64::try_from(most - out.len()).unwrap_or(-1);
+            let mut statement = db.prepare_cached(&format!("{sql} LIMIT ? OFFSET ?"))?;
+            let params = args
+                .iter()
+                .cloned()
+                .chain([Value::Integer(want), Value::Integer(self.offset)]);
+            let ids: Vec<i64> = statement
+                .query_map(params_from_iter(params), |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            if want < 0 || i64::try_from(ids.len()).unwrap_or(i64::MAX) < want {
+                self.part += 1;
+                self.offset = 0;
+            } else {
+                self.offset += want;
+            }
+            out.extend(ids.into_iter().filter(|id| self.seen.insert(*id)));
+        }
+        Ok(out)
+    }
+}
+
+// Items read from the index, as rows, with what finds them again; their
+// text only with `text`.
 #[derive(Default)]
 struct Loaded {
+    text: bool,
     rows: Vec<Row>,
     ids: Vec<i64>,
     keys: Vec<String>,
@@ -442,6 +618,28 @@ struct Loaded {
 }
 
 impl Loaded {
+    // Puts the rows loaded so far in the order of `ids`, which are all of
+    // them; nothing else is loaded yet.
+    fn reorder(&mut self, ids: &[i64]) {
+        let at: HashMap<i64, usize> = self
+            .ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (*id, i))
+            .collect();
+        let order: Vec<usize> = ids.iter().filter_map(|id| at.get(id).copied()).collect();
+        self.rows = reordered(std::mem::take(&mut self.rows), &order);
+        self.ids = reordered(std::mem::take(&mut self.ids), &order);
+        self.keys = reordered(std::mem::take(&mut self.keys), &order);
+        self.parents = reordered(std::mem::take(&mut self.parents), &order);
+        self.by_key = self
+            .keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| (k.clone(), i))
+            .collect();
+    }
+
     fn add(&mut self, row: &rusqlite::Row) -> Result<(), Trouble> {
         let key: String = row.get(1)?;
         self.by_key.insert(key.clone(), self.rows.len());
@@ -455,6 +653,17 @@ impl Loaded {
         });
         Ok(())
     }
+}
+
+// `items` in `order`, given as their places.
+fn reordered<T>(items: Vec<T>, order: &[usize]) -> Vec<T> {
+    let mut old: Vec<Option<T>> = items.into_iter().map(Some).collect();
+    order.iter().filter_map(|&i| old[i].take()).collect()
+}
+
+// Whether `node` reads items' text: its words and regexes do.
+fn reads_text(node: &Node) -> bool {
+    node.kind == "word" || node.kind == "regex" || node.items.iter().any(reads_text)
 }
 
 // Whether `node` uses any of the fields `names` (`in:`, `under:`, `has:`).
@@ -514,26 +723,118 @@ fn narrow(node: &Node, schema: &Schema, args: &mut Vec<Value>) -> Option<String>
     }
 }
 
+// The flags `is:VALUE` names, stored on the items; None when one of them
+// is one the source works out, which the index doesn't have.
+fn stored_flags(node: &Node, schema: &Schema) -> Option<Vec<String>> {
+    let wanted = node.value.as_deref().unwrap_or("").to_lowercase();
+    let mut flags = Vec::new();
+    for (flag, from) in &schema.flags {
+        if *flag == wanted || (node.prefix && flag.starts_with(&wanted)) {
+            if *from == Flag::Computed {
+                return None;
+            }
+            flags.push(flag.clone());
+        }
+    }
+    Some(flags)
+}
+
+/// At most how many items `node` can match, counted no further than
+/// `WALK`, from its terms that are cheap to count (words, flags, places,
+/// whole values); None where none of them is.
+fn estimate(db: &Connection, node: &Node, schema: &Schema) -> Option<i64> {
+    let count = |sql: &str, args: Vec<Value>| -> Option<i64> {
+        db.prepare_cached(&format!("SELECT count(*) FROM ({sql} LIMIT {WALK})"))
+            .ok()?
+            .query_row(params_from_iter(args), |r| r.get(0))
+            .ok()
+    };
+    let value = node.value.as_deref().unwrap_or("");
+    let op = node.op.as_deref().unwrap_or(":");
+    let plain = op == ":" || op == "=";
+    let whole = plain
+        && !node.prefix
+        && node.items.is_empty()
+        && node.regex.is_none()
+        && node.low.is_none()
+        && node.high.is_none();
+    match node.kind.as_str() {
+        "and" => node
+            .items
+            .iter()
+            .filter_map(|item| estimate(db, item, schema))
+            .min(),
+        "or" => node
+            .items
+            .iter()
+            .map(|item| estimate(db, item, schema))
+            .sum::<Option<i64>>()
+            .map(|n| n.min(WALK)),
+        "word" if !schema.anywhere => {
+            let text = node.text.as_deref().unwrap_or("");
+            if text.trim().is_empty() {
+                return None;
+            }
+            count(
+                "SELECT 1 FROM words WHERE words MATCH ?",
+                vec![Value::Text(phrase(text, node.prefix))],
+            )
+        }
+        "field" => {
+            let name = node.field.as_deref()?.to_lowercase();
+            match name.as_str() {
+                "is" => {
+                    let flags = stored_flags(node, schema)?;
+                    let marks = marks(flags.len());
+                    count(
+                        &format!("SELECT 1 FROM item_flags WHERE flag IN ({marks})"),
+                        flags.into_iter().map(Value::Text).collect(),
+                    )
+                }
+                "in" if node.items.is_empty() => {
+                    let folded = Value::Text(query::fold(value));
+                    let held = count(
+                        "SELECT 1 FROM items WHERE parent IN (SELECT key FROM items WHERE folded = ?)",
+                        vec![folded.clone()],
+                    )?;
+                    let placed = match &schema.places {
+                        Some(places) => count(
+                            "SELECT 1 FROM item_values WHERE field = ? AND lower = ?",
+                            vec![Value::Text(places.to_lowercase()), folded],
+                        )?,
+                        None => 0,
+                    };
+                    Some((held + placed).min(WALK))
+                }
+                _ if whole => match schema.fields.get(&name)? {
+                    Kind::Exact => count(
+                        "SELECT 1 FROM item_values WHERE field = ? AND lower = ?",
+                        vec![Value::Text(name), Value::Text(query::fold(value))],
+                    ),
+                    Kind::Text if op == ":" && !value.trim().is_empty() => count(
+                        "SELECT 1 FROM field_words WHERE field = ? AND field_words MATCH ?",
+                        vec![Value::Text(name), Value::Text(phrase(value, false))],
+                    ),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 fn narrow_field(node: &Node, schema: &Schema, args: &mut Vec<Value>) -> Option<String> {
     let name = node.field.as_deref()?.to_lowercase();
     let value = node.value.as_deref().unwrap_or("");
     let op = node.op.as_deref().unwrap_or(":");
     match name.as_str() {
         "is" => {
-            let wanted = value.to_lowercase();
-            let mut flags = Vec::new();
-            for (flag, from) in &schema.flags {
-                if *flag == wanted || (node.prefix && flag.starts_with(&wanted)) {
-                    if *from == Flag::Computed {
-                        return None;
-                    }
-                    flags.push(flag.clone());
-                }
-            }
+            let flags = stored_flags(node, schema)?;
             if flags.is_empty() {
                 return Some("0".into());
             }
-            let marks = vec!["?"; flags.len()].join(", ");
+            let marks = marks(flags.len());
             args.extend(flags.into_iter().map(Value::Text));
             Some(format!(
                 "id IN (SELECT item FROM item_flags WHERE flag IN ({marks}))"
@@ -968,5 +1269,94 @@ mod tests {
             ["big"],
             "a range of tags isn't narrowed to nothing"
         );
+    }
+
+    #[test]
+    fn a_page_sorted_by_date_is_the_same_page_walked_or_sorted() {
+        let path = temp("by-date");
+        let mut index = Index::open(&path).unwrap();
+        // 3000 items over many days, some on the same one, two in three
+        // "often" (enough to walk to), every hundredth "seldom" (few enough
+        // to sort), a few with no date at all.
+        let items: Vec<Item> = (0..3000)
+            .map(|i| {
+                let mut fields = HashMap::new();
+                if i % 97 != 0 {
+                    let day = (i * 7919) % 400;
+                    fields.insert(
+                        "date".to_string(),
+                        vec![format!(
+                            "2025-{:02}-{:02}T10:00:00Z",
+                            day / 31 % 12 + 1,
+                            day % 28 + 1
+                        )],
+                    );
+                }
+                let mut flags = Vec::new();
+                if i % 3 != 0 {
+                    flags.push("often".to_string());
+                }
+                if i % 100 == 0 {
+                    flags.push("seldom".to_string());
+                }
+                Item {
+                    key: format!("k{i:04}"),
+                    fields,
+                    flags,
+                    ..Item::default()
+                }
+            })
+            .collect();
+        index.write(&items).unwrap();
+        let schema = Schema {
+            fields: HashMap::from([("date".to_string(), Kind::Date)]),
+            flags: HashMap::from([
+                ("often".to_string(), Flag::Row),
+                ("seldom".to_string(), Flag::Row),
+            ]),
+            ..Schema::default()
+        };
+        let is = |flag: &str| Node {
+            kind: "field".into(),
+            field: Some("is".into()),
+            op: Some(":".into()),
+            value: Some(flag.into()),
+            ..Node::default()
+        };
+        // What a page must be: the matches sorted by date (none sorting as
+        // empty), ties by order of writing, cut.
+        let expected = |flag: Option<&str>, descending: bool, limit: usize| -> Vec<String> {
+            let mut matching: Vec<&Item> = items
+                .iter()
+                .filter(|i| flag.is_none_or(|f| i.flags.iter().any(|g| g == f)))
+                .collect();
+            let date = |i: &Item| {
+                i.fields
+                    .get("date")
+                    .map_or(String::new(), |d| d[0].to_lowercase())
+            };
+            matching.sort_by(|a, b| {
+                let order = date(a).cmp(&date(b));
+                if descending { order.reverse() } else { order }
+            });
+            matching.iter().take(limit).map(|i| i.key.clone()).collect()
+        };
+        for flag in [None, Some("often"), Some("seldom")] {
+            for descending in [true, false] {
+                for limit in [1, 50, 2000] {
+                    let view = View {
+                        sort: vec![("date".into(), descending)],
+                        limit: Some(limit),
+                    };
+                    let node = flag.map(is);
+                    let found = index.search(node.as_ref(), &schema, &view).unwrap();
+                    assert_eq!(
+                        found.keys,
+                        expected(flag, descending, limit),
+                        "{flag:?}, descending {descending}, limit {limit}"
+                    );
+                }
+            }
+        }
     }
 }

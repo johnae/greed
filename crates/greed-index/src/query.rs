@@ -6,6 +6,7 @@
 //! means comes with it, in a [`Schema`]. `runtime/plugins/core/test/query_cases.json`
 //! holds what every way of running a query must agree on.
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::iter;
 
@@ -411,17 +412,17 @@ pub fn fold(text: &str) -> String {
         .to_lowercase()
 }
 
-/// Rows to run a query over, with their text folded (`fold`) and the rows
-/// each holds, worked out once.
+/// Rows to run a query over, with the rows each holds worked out once and
+/// each row's text folded (`fold`) the first time a word looks at it.
 pub struct Rows {
     pub rows: Vec<Row>,
-    lower: Vec<String>,
+    lower: Vec<OnceCell<String>>,
     children: Vec<Vec<usize>>,
 }
 
 impl Rows {
     pub fn new(rows: Vec<Row>) -> Rows {
-        let lower = rows.iter().map(|r| fold(&r.text)).collect();
+        let lower = rows.iter().map(|_| OnceCell::new()).collect();
         let mut children = vec![Vec::new(); rows.len()];
         for (i, row) in rows.iter().enumerate() {
             if let Some(parent) = row.parent
@@ -438,7 +439,7 @@ impl Rows {
     }
 
     fn text(&self, at: usize) -> &str {
-        &self.lower[at]
+        self.lower[at].get_or_init(|| fold(&self.rows[at].text))
     }
 
     fn children(&self, at: usize) -> &[usize] {
