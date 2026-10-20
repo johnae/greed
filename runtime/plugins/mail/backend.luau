@@ -119,6 +119,21 @@ local function changed()
 	core.registry.tell(listeners)
 end
 
+-- What wants to know of new mail.
+local arrivals: { (keys: { string }) -> () } = {}
+
+--- Calls `listener` with the keys of mail that arrived, once it's in the
+--- index: new since its mailbox was all in, never what a first sync
+--- brings. It goes with the plugin that added it.
+function M.on_arrived(listener: (keys: { string }) -> ())
+	greed.plugin.tie(core.registry.put(arrivals, listener))
+end
+
+--- Says the mail with `keys` arrived, as greed-mail does (and a test).
+function M.arrived(keys: { string })
+	core.registry.tell(arrivals, keys)
+end
+
 -- Who waits for an attachment, by "key index", for greed-mail to say where
 -- it went.
 local awaiting: { [string]: greed.Signal } = {}
@@ -142,7 +157,9 @@ local function served(): (greed.RpcConnection?, string?)
 	local started, err = greed.rpc.start(command, {
 		framing = "lines",
 		on_notify = function(method: string, params: any)
-			if method == "changed" then
+			if method == "arrived" then
+				M.arrived(params.keys)
+			elseif method == "changed" then
 				changed()
 			elseif method == "refused" then
 				greed.echo(`{params.account}: {params.message}`)

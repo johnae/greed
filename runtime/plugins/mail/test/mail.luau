@@ -584,3 +584,23 @@ test("saved searches show over the list with their unread, and g 1 to g 9 go to 
 		)
 	end)
 end)
+
+test("rules act on new mail they find, only that, and only in the mail session", function()
+	fake()
+	mail.rules = { { query = "from:bob", tag = "garden", read = true, archive = true } }
+	local ok, err: any = pcall(function()
+		mail.backend.arrived({ "m:1:a", "m:1:b" })
+		assert(#acted == 0, "not outside the mail session: " .. table.concat(acted, ", "))
+		in_the_mail_session(function()
+			mail.backend.arrived({ "m:1:b" })
+			assert(#acted == 0, "Bob's isn't new: " .. table.concat(acted, ", "))
+			mail.backend.arrived({ "m:1:a", "m:1:b" })
+			assert(
+				table.concat(acted, ", ") == "read m:1:a, tag garden m:1:a, archive m:1:a",
+				table.concat(acted, ", ")
+			)
+		end)
+	end)
+	mail.rules = {}
+	assert(ok, tostring(err))
+end)

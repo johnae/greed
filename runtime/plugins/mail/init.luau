@@ -832,6 +832,91 @@ local function replying(all: boolean): (ctx: greed.Context) -> ()
 	end
 end
 
+--- A rule for new mail: a query, and what to do with the new mail it
+--- finds: `read`, `flag`, `tag` (a tag to put on), then `archive` or
+--- `trash`.
+export type Rule = {
+	query: string,
+	read: boolean?,
+	flag: boolean?,
+	tag: string?,
+	archive: boolean?,
+	trash: boolean?,
+}
+
+--- Rules for new mail, run in the mail session as it arrives, in order,
+--- and never over mail that was there before. Set them in your config:
+--- `require("@mail").rules = { { query = "from:github.com", tag = "github", archive = true } }`.
+M.rules = {} :: { Rule }
+
+--- What `rule` does, as the actions greed-mail takes, in the order made:
+--- marks first, a move last.
+function M.rule_actions(rule: Rule): { { action: string, tag: string? } }
+	local out: { { action: string, tag: string? } } = {}
+	if rule.read then
+		table.insert(out, { action = "read" })
+	end
+	if rule.flag then
+		table.insert(out, { action = "flag" })
+	end
+	if rule.tag then
+		table.insert(out, { action = "tag", tag = rule.tag })
+	end
+	if rule.trash then
+		table.insert(out, { action = "trash" })
+	elseif rule.archive then
+		table.insert(out, { action = "archive" })
+	end
+	return out
+end
+
+--- Runs the rules over the mail with `keys`, just arrived: each rule's
+--- query finds what it does to among them.
+function M.run_rules(keys: { string })
+	if #M.rules == 0 or #keys == 0 then
+		return
+	end
+	local new: { [string]: boolean } = {}
+	for _, key in keys do
+		new[key] = true
+	end
+	for _, rule in M.rules do
+		local parsed = core.search_box.read(rule.query, { source = M.source })
+		if not parsed.ok then
+			local problem = parsed.problems[1]
+			greed.echo(
+				`a mail rule can't run: {rule.query}: {if problem
+					then problem.message
+					else "it won't read"}`
+			)
+			continue
+		end
+		-- New mail is the newest, so it's among the first found.
+		parsed.view.limit = math.max(LIMIT, #keys * 4)
+		local hit: { string } = {}
+		local found_all: { Summary } = M.search(parsed) or {}
+		for _, found in found_all do
+			if new[found.key] then
+				table.insert(hit, found.key)
+			end
+		end
+		if #hit > 0 then
+			for _, act in M.rule_actions(rule) do
+				local _, err = backend.get().act(hit, act.action, act.tag)
+				if err then
+					greed.echo(`a mail rule ({rule.query}): {err}`)
+				end
+			end
+		end
+	end
+end
+
+backend.on_arrived(function(keys: { string })
+	if backend.here() then
+		M.run_rules(keys)
+	end
+end)
+
 -- In the mail session, the page is there from the start.
 greed.on("editor.started", function()
 	if backend.here() then

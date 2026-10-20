@@ -19,7 +19,9 @@
 //! Notifications: `changed` (the index changed: search again), `progress`
 //! (an account's mailbox synced some), `trouble` (an account that can't
 //! sync, and why), `refused` (a change or mail its server refused, and
-//! why), `sent` (mail its server took) and `attachment` (where one asked
+//! why), `sent` (mail its server took), `arrived` (the keys of new mail,
+//! once it's in the index: what came since its mailbox was all in, never
+//! what a first sync brings) and `attachment` (where one asked
 //! for went, or why it couldn't).
 //!
 //! The sync goes in rounds of at most `HEADERS` headers and `BODIES` bodies
@@ -551,6 +553,11 @@ async fn round(
         more |= !synced.done || fetched >= BODIES;
         if indexing::catch_up(store, index).map_err(|e| e.0)? > 0 {
             shared.notify("changed", &json!({}));
+        }
+        // Said once they're in the index, so rules searching find them.
+        let arrived = store.arrived().map_err(|e| e.0)?;
+        if !arrived.is_empty() {
+            shared.notify("arrived", &json!({ "keys": arrived }));
         }
         if synced.fetched + synced.changed + synced.gone + fetched > 0 {
             shared.notify(

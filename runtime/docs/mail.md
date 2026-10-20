@@ -54,6 +54,25 @@ A change shows at once and goes to the server within seconds. If the
 server refuses it (a folder that went, say), it's taken back and Greed
 says why.
 
+## Rules
+
+Rules act on new mail as it comes in: a query, and what to do with what
+it finds. Set them in your config:
+
+```luau
+require("@mail").rules = {
+	{ query = "from:github.com", tag = "github", archive = true },
+	{ query = "from:boss@example.com", flag = true },
+	{ query = "subject:newsletter", read = true },
+}
+```
+
+A rule can mark what it finds `read`, `flag` it, put a `tag` on it, and
+`archive` or `trash` it, in that order. Each rule looks at the new mail on
+its own, so one that archives doesn't stop the next from tagging. Rules
+run in the mail session, on mail that arrives once a mailbox is all
+synced: what the first sync brings is left as it is.
+
 ## Reading
 
 Mail sent as HTML reads laid out in Greed: headings, bold and italics,

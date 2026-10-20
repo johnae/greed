@@ -86,6 +86,9 @@ CREATE INDEX IF NOT EXISTS places_message ON places (message);
 CREATE INDEX IF NOT EXISTS messages_unindexed ON messages (indexed) WHERE indexed = 0;
 -- Keys the index still has of messages and threads that went.
 CREATE TABLE IF NOT EXISTS unindexed (key TEXT PRIMARY KEY);
+-- Messages that came in since their mailbox was all synced, for rules
+-- on new mail to look at; taken once looked at.
+CREATE TABLE IF NOT EXISTS arrived (message INTEGER PRIMARY KEY);
 -- Changes made here that the server doesn't have yet, one for each place
 -- they're made in, sent at the start of the next round: `op` is `+` or
 -- `-` with `arg` a flag, `move` with `arg` the mailbox it goes to, or
@@ -454,7 +457,9 @@ impl Store {
     }
 
     /// Puts what one fetch got in `mailbox`, then sets how far its sync
-    /// got (`high`, `low`), in one transaction.
+    /// got (`high`, `low`), in one transaction. Messages new to the store
+    /// in a mailbox that was all in already have arrived: new mail, which
+    /// a first sync, however long, never is.
     pub fn put(
         &mut self,
         account: i64,
@@ -464,8 +469,16 @@ impl Store {
         low: u32,
     ) -> Result<(), Trouble> {
         let tx = self.db.transaction()?;
+        let was_in: Option<u32> =
+            tx.query_row("SELECT low FROM mailboxes WHERE id = ?1", [mailbox], |r| {
+                r.get(0)
+            })?;
+        let whole = was_in == Some(1);
         for f in fetched {
-            let id = put_message(&tx, account, f)?;
+            let (id, new) = put_message(&tx, account, f)?;
+            if whole && new {
+                tx.execute("INSERT OR IGNORE INTO arrived (message) VALUES (?1)", [id])?;
+            }
             tx.execute(
                 "INSERT INTO places (message, mailbox, uid) VALUES (?1, ?2, ?3)
                  ON CONFLICT (mailbox, uid) DO UPDATE SET message = ?1",
@@ -692,6 +705,24 @@ impl Store {
         self.db
             .execute_batch("UPDATE messages SET indexed = 0; DELETE FROM unindexed;")?;
         Ok(())
+    }
+
+    /// The keys of the messages that arrived since this was last asked,
+    /// still there, oldest first; asked once, they're forgotten.
+    pub fn arrived(&mut self) -> Result<Vec<String>, Trouble> {
+        let tx = self.db.transaction()?;
+        let keys = {
+            let mut statement = tx.prepare(
+                "SELECT 'm:' || messages.account || ':' || messages.identity FROM arrived
+                 JOIN messages ON messages.id = arrived.message ORDER BY messages.date",
+            )?;
+            statement
+                .query_map([], |r| r.get(0))?
+                .collect::<Result<Vec<String>, _>>()?
+        };
+        tx.execute("DELETE FROM arrived", [])?;
+        tx.commit()?;
+        Ok(keys)
     }
 
     /// Notes that the index no longer has `keys`.
@@ -1146,8 +1177,9 @@ fn expunge_here(
     Ok(true)
 }
 
-/// Puts one message in, or updates the one with its identity; gives its id.
-fn put_message(tx: &Transaction<'_>, account: i64, f: &Fetched) -> Result<i64, Trouble> {
+/// Puts one message in, or updates the one with its identity; gives its id
+/// and whether it's new to the store.
+fn put_message(tx: &Transaction<'_>, account: i64, f: &Fetched) -> Result<(i64, bool), Trouble> {
     let header = Header::of(f);
     let identity = header.identity(f);
     tx.execute(
@@ -1181,10 +1213,11 @@ fn put_message(tx: &Transaction<'_>, account: i64, f: &Fetched) -> Result<i64, T
         params![account, identity],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    if thread.is_none() {
+    let new = thread.is_none();
+    if new {
         put_thread(tx, account, id, &header, &identity)?;
     }
-    Ok(id)
+    Ok((id, new))
 }
 
 /// Puts message `id`, new to the store, in its thread: that of the first
@@ -1500,5 +1533,37 @@ mod tests {
             store.removed(10).unwrap(),
             [format!("m:{account}:pm:a"), format!("t:{account}:a@x")]
         );
+    }
+
+    #[test]
+    fn only_mail_after_a_mailbox_is_all_in_has_arrived() {
+        let dir = temp("arrived");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let archive = store.mailbox(account, "Archive", Some("archive")).unwrap();
+        // The first sync, newest first, down to 1.
+        store
+            .put(account, inbox.id, &[mail(5, "e", &[], None)], 5, 5)
+            .unwrap();
+        store
+            .put(account, inbox.id, &[mail(1, "a", &[], None)], 5, 1)
+            .unwrap();
+        assert!(
+            store.arrived().unwrap().is_empty(),
+            "a first sync brings no new mail"
+        );
+        store
+            .put(account, inbox.id, &[mail(6, "f", &[], None)], 6, 1)
+            .unwrap();
+        // Seen elsewhere already: moved, not new.
+        store
+            .put(account, archive.id, &[mail(1, "e", &[], None)], 1, 1)
+            .unwrap();
+        store
+            .put(account, archive.id, &[mail(2, "e", &[], None)], 2, 1)
+            .unwrap();
+        assert_eq!(store.arrived().unwrap(), [format!("m:{account}:pm:f")]);
+        assert!(store.arrived().unwrap().is_empty(), "said once");
     }
 }

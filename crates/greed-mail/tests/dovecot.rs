@@ -962,3 +962,32 @@ fn an_attachment_is_fetched_whole_and_saved_or_kept() {
         "nothing written over: {over}"
     );
 }
+
+#[test]
+fn mail_coming_after_the_first_sync_is_said_to_have_arrived() {
+    let Some(dovecot) = Dovecot::start("arrived") else {
+        return;
+    };
+    for n in 1..=3 {
+        deliver(&dovecot, n, true);
+    }
+    let mut served = Served::start(&dovecot);
+    let started = Instant::now();
+    loop {
+        let status = served.ask("status", &serde_json::json!({}));
+        if status["accounts"][0]["done"] == true {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(20), "{status}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    deliver(&dovecot, 4, false);
+    served.ask("sync", &serde_json::json!({}));
+    // What the first sync brought never counts as arrived, so the first
+    // word of it is only the new one.
+    let arrived = served.wait_for("arrived");
+    let keys = arrived["keys"].as_array().unwrap();
+    assert_eq!(keys.len(), 1, "{arrived}");
+    let shown = served.ask("summaries", &serde_json::json!({ "keys": keys }));
+    assert_eq!(shown[0]["subject"], "note 4", "{shown}");
+}
