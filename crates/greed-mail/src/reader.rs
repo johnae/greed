@@ -91,7 +91,7 @@ const SUMMARY: &str = "SELECT 'm:' || messages.account || ':' || messages.identi
          FROM places JOIN mailboxes ON mailboxes.id = places.mailbox
          WHERE places.message = messages.id),
         bodies.html IS NOT NULL, messages.message_id, bodies.calendar,
-        (SELECT address FROM accounts WHERE accounts.id = messages.account)
+        (SELECT address || char(10) || aliases FROM accounts WHERE accounts.id = messages.account)
      FROM messages LEFT JOIN bodies.bodies ON bodies.message = messages.id";
 
 fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
@@ -132,7 +132,8 @@ fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
         complete: r.get::<_, Option<bool>>(10)?.unwrap_or(false),
         html: r.get::<_, Option<bool>>(13)?.unwrap_or(false),
         invite: r.get::<_, Option<String>>(15)?.and_then(|ics| {
-            let me: String = r.get(16).unwrap_or_default();
+            let own: String = r.get(16).unwrap_or_default();
+            let me: Vec<String> = own.lines().map(str::to_string).collect();
             invite::read(&ics, &me, &jiff::tz::TimeZone::system())
         }),
     })
@@ -275,22 +276,25 @@ impl Reader {
         Ok(found)
     }
 
-    /// The iCalendar the message `key` carries, and the address of the
-    /// account it's in.
-    pub fn calendar(&self, key: &str) -> Result<Option<(String, String)>, Trouble> {
+    /// The iCalendar the message `key` carries, and the addresses of the
+    /// account it's in: its own, then its aliases.
+    pub fn calendar(&self, key: &str) -> Result<Option<(String, Vec<String>)>, Trouble> {
         let Some(('m', account, identity)) = split_key(key) else {
             return Ok(None);
         };
         Ok(self
             .db
             .query_row(
-                "SELECT bodies.calendar, accounts.address FROM messages
+                "SELECT bodies.calendar, accounts.address || char(10) || accounts.aliases FROM messages
                  JOIN accounts ON accounts.id = messages.account
                  JOIN bodies.bodies ON bodies.message = messages.id
                  WHERE messages.account = ?1 AND messages.identity = ?2
                    AND bodies.calendar IS NOT NULL",
                 params![account, identity],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| {
+                    let own: String = r.get(1)?;
+                    Ok((r.get(0)?, own.lines().map(str::to_string).collect()))
+                },
             )
             .optional()?)
     }
@@ -475,5 +479,17 @@ mod tests {
         );
         assert_eq!(reader.contacts("news", 10).unwrap(), ["news@x"]);
         assert!(reader.contacts("anna", 10).unwrap().is_empty(), "never you");
+        // An alias is you too: not someone to write to.
+        let mut store = store;
+        store.set_aliases(account, &["news@x".to_string()]).unwrap();
+        assert!(
+            reader.contacts("news", 10).unwrap().is_empty(),
+            "your alias"
+        );
+        assert_eq!(
+            reader.contacts("b", 10).unwrap().len(),
+            2,
+            "the rest as they were"
+        );
     }
 }

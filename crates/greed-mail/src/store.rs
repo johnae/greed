@@ -29,7 +29,8 @@ const TABLES: &str = "
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
-    address TEXT NOT NULL
+    address TEXT NOT NULL,
+    aliases TEXT NOT NULL DEFAULT ''
 );
 -- `high` and `low` say how far a sync got: every UID from `low` up to
 -- `high` is in, new mail comes above `high` and the first sync goes on
@@ -137,10 +138,14 @@ fn has_column(db: &Connection, schema: &str, table: &str, column: &str) -> Resul
         .exists([table, column])?)
 }
 
-/// Gives a store from before mail waited to be sent its outbox's `after`.
+/// Gives a store from before mail waited to be sent its outbox's `after`,
+/// and from before aliases its accounts' `aliases`.
 fn add_after(db: &Connection) -> Result<(), Trouble> {
     if !has_column(db, "main", "outbox", "after")? {
         db.execute_batch("ALTER TABLE outbox ADD COLUMN after INTEGER NOT NULL DEFAULT 0")?;
+    }
+    if !has_column(db, "main", "accounts", "aliases")? {
+        db.execute_batch("ALTER TABLE accounts ADD COLUMN aliases TEXT NOT NULL DEFAULT ''")?;
     }
     Ok(())
 }
@@ -159,22 +164,37 @@ CREATE TABLE IF NOT EXISTS contacts (
 ";
 
 /// Notes the people message `id` is from and to in `contacts`; what goes
-/// to them from your account's address counts as written.
+/// to them from one of your account's addresses counts as written.
 fn note_contacts(db: &Connection, id: i64) -> Result<(), Trouble> {
-    let (sender, recipients, cc, date, own): (String, String, String, Option<String>, String) = db
-        .query_row(
-            "SELECT messages.sender, messages.recipients, messages.cc, messages.date,
-                 accounts.address
-             FROM messages JOIN accounts ON accounts.id = messages.account
-             WHERE messages.id = ?1",
-            [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-        )?;
-    let own = addresses::bare(&own);
-    let mine = addresses::bare(&sender) == own;
+    let (sender, recipients, cc, date, address, aliases): (
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        String,
+    ) = db.query_row(
+        "SELECT messages.sender, messages.recipients, messages.cc, messages.date,
+             accounts.address, accounts.aliases
+         FROM messages JOIN accounts ON accounts.id = messages.account
+         WHERE messages.id = ?1",
+        [id],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
+        },
+    )?;
+    let own = addresses::own(&address, aliases.lines());
+    let mine = own.contains(&addresses::bare(&sender));
     let note = |who: &str, wrote: bool| -> Result<(), Trouble> {
         let address = addresses::bare(who);
-        if address == own || !address.contains('@') {
+        if own.contains(&address) || !address.contains('@') {
             return Ok(());
         }
         db.execute(
@@ -301,6 +321,8 @@ pub struct Indexable {
     pub account_name: String,
     /// The account's own address, so its mail can be told from others'.
     pub address: String,
+    /// Its other addresses, mail.toml's `aliases`.
+    pub aliases: Vec<String>,
     pub identity: String,
     pub thread: Option<String>,
     pub date: Option<String>,
@@ -516,6 +538,27 @@ impl Store {
             .query_row("SELECT id FROM accounts WHERE name = ?1", [name], |r| {
                 r.get(0)
             })?)
+    }
+
+    /// Notes `account`'s other addresses (mail.toml's `aliases`). When they
+    /// changed, what's yours is told again: its mail is indexed again (for
+    /// `is:mine`) and contacts are filled again without them.
+    pub fn set_aliases(&mut self, account: i64, aliases: &[String]) -> Result<(), Trouble> {
+        let now = aliases.join("\n");
+        let changed = self.db.execute(
+            "UPDATE accounts SET aliases = ?2 WHERE id = ?1 AND aliases != ?2",
+            params![account, now],
+        )? > 0;
+        if changed {
+            self.db
+                .execute_batch("DELETE FROM contacts; DELETE FROM meta WHERE key = 'contacts';")?;
+            fill_contacts(&self.db)?;
+            self.db.execute(
+                "UPDATE messages SET indexed = 0 WHERE account = ?1",
+                [account],
+            )?;
+        }
+        Ok(())
     }
 
     /// Where the sync of `account`'s mailbox `name` is, the mailbox added
@@ -820,7 +863,8 @@ impl Store {
                     messages.identity, messages.thread, messages.date, messages.sender,
                     messages.recipients, messages.cc, messages.subject, messages.list_id,
                     messages.size, messages.flags, messages.labels,
-                    bodies.text, coalesce(bodies.attachments, '[]') != '[]'
+                    bodies.text, coalesce(bodies.attachments, '[]') != '[]',
+                    accounts.aliases
              FROM messages JOIN accounts ON accounts.id = messages.account
              LEFT JOIN bodies.bodies ON bodies.message = messages.id
              WHERE messages.indexed = 0 LIMIT ?1",
@@ -850,6 +894,11 @@ impl Store {
                     labels: r.get(14)?,
                     text: r.get(15)?,
                     attached: r.get(16)?,
+                    aliases: r
+                        .get::<_, String>(17)?
+                        .lines()
+                        .map(str::to_string)
+                        .collect(),
                     places: Vec::new(),
                 })
             })?

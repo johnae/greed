@@ -35,6 +35,15 @@ pub fn bare(address: &str) -> String {
     inner.trim().to_lowercase()
 }
 
+/// An account's own addresses, bare: its `address` and its `aliases`,
+/// leaving out empty ones.
+pub fn own<A: AsRef<str>>(address: &str, aliases: impl IntoIterator<Item = A>) -> Vec<String> {
+    std::iter::once(bare(address))
+        .chain(aliases.into_iter().map(|a| bare(a.as_ref())))
+        .filter(|a| !a.is_empty())
+        .collect()
+}
+
 /// The name before the address, if it has one: "Anna Berg <anna@x>" is
 /// Anna Berg.
 pub fn name(address: &str) -> Option<String> {

@@ -146,16 +146,16 @@ fn item(m: &Indexable) -> Item {
 }
 
 /// Whether `m` was sent by the account's owner: it's in a Sent mailbox, or
-/// it's from the account's address (people send from more than one, which
-/// the Sent mailbox knows and the address doesn't).
+/// it's from the account's address or one of its aliases (people send
+/// from more than mail.toml says, which the Sent mailbox knows).
 fn mine(m: &Indexable) -> bool {
+    let own = addresses::own(&m.address, &m.aliases);
     m.places
         .iter()
         .any(|(_, role)| role.as_deref() == Some("sent"))
-        || (!m.address.is_empty()
-            && addresses::split(&m.from)
-                .iter()
-                .any(|from| addresses::bare(from) == addresses::bare(&m.address)))
+        || addresses::split(&m.from)
+            .iter()
+            .any(|from| own.contains(&addresses::bare(from)))
 }
 
 fn tags(m: &Indexable) -> Vec<String> {
@@ -501,5 +501,10 @@ mod tests {
             ..from("other@x")
         };
         assert!(mine(&sent), "in Sent, whoever it says");
+        let alias = Indexable {
+            aliases: vec!["support@hyper.example".into()],
+            ..from("Support <SUPPORT@hyper.example>")
+        };
+        assert!(mine(&alias), "from an alias");
     }
 }

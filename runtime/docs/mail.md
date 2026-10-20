@@ -231,7 +231,9 @@ login, `tls` as for `imap` (ports 465 and 587); Gmail needs none, and for
 Bridge it's Bridge's SMTP port. `provider` is `gmail` or `proton-bridge` for
 their ways (Gmail needs no `imap`, and its labels and Bridge's are places
 like folders); any other server is plain IMAP. `aliases` are the other
-addresses the account gets mail at and may send from.
+addresses the account gets mail at and may send from: mail from them is
+yours (`is:mine`), an invite to one is answered from it, and they're
+never offered as people to write to.
 
 `greed-mail check` logs in to each account and says what its server can
 do, and `greed-mail sync` syncs once, if you want to see it work on its

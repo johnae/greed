@@ -350,13 +350,15 @@ fn parse_offset(text: &str) -> Option<Offset> {
     Offset::from_seconds(sign * (hours * 3600 + minutes * 60)).ok()
 }
 
-/// Whether `line` is the ATTENDEE line for `me`.
-fn is_me(line: &Line, me: &str) -> bool {
-    line.name == "ATTENDEE" && address(&line.value).eq_ignore_ascii_case(me)
+/// Whether `line` is the ATTENDEE line for one of `me`, your addresses.
+fn is_me(line: &Line, me: &[String]) -> bool {
+    let at = address(&line.value);
+    line.name == "ATTENDEE" && me.iter().any(|m| at.eq_ignore_ascii_case(m))
 }
 
-/// The invite in `ics`, for the account at `me`, its times in `local`.
-pub fn read(ics: &str, me: &str, local: &TimeZone) -> Option<Invite> {
+/// The invite in `ics`, for the account at `me` (its address and aliases),
+/// its times in `local`.
+pub fn read(ics: &str, me: &[String], local: &TimeZone) -> Option<Invite> {
     let calendar = parse(ics)?;
     let event = calendar.event()?;
     let time = |name: &str| event.line(name).and_then(|l| when(l, &calendar, local));
@@ -391,7 +393,7 @@ pub fn read(ics: &str, me: &str, local: &TimeZone) -> Option<Invite> {
 
 /// `me`'s `answer` to the invite in `ics`, made at `now`, as a REPLY to its
 /// organizer; None when it has no event or no organizer to answer.
-pub fn reply(ics: &str, me: &str, answer: Answer, now: Timestamp) -> Option<Reply> {
+pub fn reply(ics: &str, me: &[String], answer: Answer, now: Timestamp) -> Option<Reply> {
     let calendar = parse(ics)?;
     let event = calendar.event()?;
     let organizer = event.line("ORGANIZER")?;
@@ -443,7 +445,10 @@ pub fn reply(ics: &str, me: &str, answer: Answer, now: Timestamp) -> Option<Repl
                 .collect()
         })
         .unwrap_or_default();
-    let address = mine.map_or_else(|| me.to_string(), |l| address(&l.value));
+    let address = mine.map_or_else(
+        || me.first().cloned().unwrap_or_default(),
+        |l| address(&l.value),
+    );
     out.push(format!(
         "ATTENDEE{params};PARTSTAT={}:mailto:{address}",
         answer.partstat()
@@ -534,13 +539,39 @@ ATTENDEE;CN=Carl;PARTSTAT=ACCEPTED:mailto:carl@exa\r\n mple.com\r\n\
 END:VEVENT\r\n\
 END:VCALENDAR\r\n";
 
+    /// Your addresses, as the account knows them: `address` alone.
+    fn me(address: &str) -> Vec<String> {
+        vec![address.to_string()]
+    }
+
+    #[test]
+    fn an_invite_to_an_alias_is_answered_from_it() {
+        let to_alias = INVITE.replace("mailto:anna@example.com", "mailto:support@hyper.example");
+        let own = [
+            "anna@example.com".to_string(),
+            "support@hyper.example".to_string(),
+        ];
+        let invite = read(&to_alias, &own, &utc()).unwrap();
+        assert_eq!(invite.answer.as_deref(), Some("NEEDS-ACTION"), "found you");
+        let now = Timestamp::from_second(1_792_000_000).unwrap();
+        let reply = reply(&to_alias, &own, Answer::Accepted, now).unwrap();
+        assert!(
+            reply
+                .calendar
+                .replace("\r\n ", "")
+                .contains("PARTSTAT=ACCEPTED:mailto:support@hyper.example"),
+            "{}",
+            reply.calendar
+        );
+    }
+
     fn utc() -> TimeZone {
         TimeZone::UTC
     }
 
     #[test]
     fn an_invite_reads_its_event_in_local_time() {
-        let invite = read(INVITE, "Anna@Example.com", &utc()).unwrap();
+        let invite = read(INVITE, &me("Anna@Example.com"), &utc()).unwrap();
         assert_eq!(invite.method, "REQUEST");
         assert_eq!(invite.summary, "Garden plans, again");
         assert_eq!(invite.location.as_deref(), Some("The shed"));
@@ -562,14 +593,14 @@ END:VCALENDAR\r\n";
         // Only where the system has a zone database, as Linux and macOS do.
         if TimeZone::get("Europe/Stockholm").is_ok() {
             let known = INVITE.replace("W. Europe Standard Time:", "Europe/Stockholm:");
-            let invite = read(&known, "anna@example.com", &utc()).unwrap();
+            let invite = read(&known, &me("anna@example.com"), &utc()).unwrap();
             assert_eq!(invite.start.as_deref(), Some("2026-10-24T08:00:00+00:00"));
         }
         let winter = INVITE.replace("20261024T1", "20261124T1");
-        let invite = read(&winter, "anna@example.com", &utc()).unwrap();
+        let invite = read(&winter, &me("anna@example.com"), &utc()).unwrap();
         assert_eq!(invite.start.as_deref(), Some("2026-11-24T09:00:00+00:00"));
         let spring = INVITE.replace("20261024T1", "20260210T1");
-        let invite = read(&spring, "anna@example.com", &utc()).unwrap();
+        let invite = read(&spring, &me("anna@example.com"), &utc()).unwrap();
         assert_eq!(
             invite.start.as_deref(),
             Some("2026-02-10T09:00:00+00:00"),
@@ -586,7 +617,7 @@ END:VCALENDAR\r\n";
             )
             .replace("DTEND;TZID=W. Europe Standard Time:20261024T110000\r\n", "")
             .replace("METHOD:REQUEST", "METHOD:CANCEL");
-        let invite = read(&day, "anna@example.com", &utc()).unwrap();
+        let invite = read(&day, &me("anna@example.com"), &utc()).unwrap();
         assert!(invite.all_day && invite.cancelled);
         assert_eq!(invite.start.as_deref(), Some("2026-10-24"));
         assert_eq!(invite.end, None);
@@ -595,10 +626,10 @@ END:VCALENDAR\r\n";
             "DTSTART:20261024T100000Z",
         );
         let plus_two = TimeZone::fixed(Offset::from_hours(2).unwrap());
-        let invite = read(&zulu, "anna@example.com", &plus_two).unwrap();
+        let invite = read(&zulu, &me("anna@example.com"), &plus_two).unwrap();
         assert_eq!(invite.start.as_deref(), Some("2026-10-24T12:00:00+02:00"));
         assert_eq!(
-            read("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", "a", &utc()),
+            read("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", &me("a"), &utc()),
             None
         );
     }
@@ -606,7 +637,7 @@ END:VCALENDAR\r\n";
     #[test]
     fn a_reply_answers_the_organizer_as_the_invite_names_you() {
         let now = Timestamp::from_second(1_792_000_000).unwrap();
-        let reply = reply(INVITE, "anna@example.com", Answer::Tentative, now).unwrap();
+        let reply = reply(INVITE, &me("anna@example.com"), Answer::Tentative, now).unwrap();
         assert_eq!(reply.to, "\"Bob Example\" <bob@example.com>");
         assert_eq!(reply.subject, "Tentative: Garden plans, again");
         let lines = unfold(&reply.calendar);
@@ -623,11 +654,11 @@ END:VCALENDAR\r\n";
         );
         assert!(!reply.calendar.contains("carl"), "only you answer");
         assert!(reply.calendar.lines().all(|l| l.len() <= 76));
-        let back = read(&reply.calendar, "anna@example.com", &utc()).unwrap();
+        let back = read(&reply.calendar, &me("anna@example.com"), &utc()).unwrap();
         assert_eq!(back.answer.as_deref(), Some("TENTATIVE"));
         assert_eq!(back.method, "REPLY");
         assert_eq!(back.start.as_deref(), Some("2026-10-24T08:00:00+00:00"));
-        let alias = super::reply(INVITE, "me@else.example", Answer::Declined, now).unwrap();
+        let alias = super::reply(INVITE, &me("me@else.example"), Answer::Declined, now).unwrap();
         assert!(
             alias
                 .calendar

@@ -80,10 +80,7 @@ pub enum Failure {
 /// address of yours it went to (the account's or one of its `aliases`);
 /// its subject with "Re:", its text quoted under who wrote it.
 pub fn reply(original: &Original, key: &str, all: bool, aliases: &[String]) -> Draft {
-    let own: Vec<String> = std::iter::once(&original.address)
-        .chain(aliases)
-        .map(|a| bare(a))
-        .collect();
+    let own = crate::addresses::own(&original.address, aliases);
     let mine = own.contains(&bare(&original.from));
     let went_to: Vec<String> = split(&original.to)
         .into_iter()

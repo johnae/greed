@@ -210,11 +210,9 @@ impl Config {
     /// its own address or one of its aliases.
     pub fn sending_as(&self, from: &str) -> Option<&Account> {
         let address = crate::addresses::bare(from);
-        self.accounts.iter().find(|a| {
-            std::iter::once(&a.address)
-                .chain(&a.aliases)
-                .any(|own| crate::addresses::bare(own) == address)
-        })
+        self.accounts
+            .iter()
+            .find(|a| crate::addresses::own(&a.address, &a.aliases).contains(&address))
     }
 }
 

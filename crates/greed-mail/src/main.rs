@@ -180,6 +180,7 @@ async fn sync_account(
     let id = store
         .account(&account.name, &account.address)
         .map_err(|e| e.0)?;
+    store.set_aliases(id, &account.aliases).map_err(|e| e.0)?;
     let mailboxes = connection.mailboxes().await.map_err(|e| e.0)?;
     for mailbox in sync::chosen(account.provider, &mailboxes) {
         let started = Instant::now();

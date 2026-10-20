@@ -917,6 +917,7 @@ async fn round(
     let id = store
         .account(&account.name, &account.address)
         .map_err(|e| e.0)?;
+    store.set_aliases(id, &account.aliases).map_err(|e| e.0)?;
     let options = Options {
         limit: Some(HEADERS),
         ..Options::default()
