@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use lettre::address::Envelope;
 use lettre::message::header::ContentType;
-use lettre::message::{Mailbox, Mailboxes};
+use lettre::message::{Mailbox, Mailboxes, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Address, AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,10 @@ pub struct Draft {
     pub text: String,
     /// The key of the message it answers.
     pub replying: Option<String>,
+    /// An answer to an invite it carries (`invite::reply`), sent beside the
+    /// text. Only greed-mail sets it, never a draft from the client.
+    #[serde(skip)]
+    pub calendar: Option<String>,
 }
 
 /// What a reply needs of the message it answers.
@@ -105,6 +109,7 @@ pub fn reply(original: &Original, key: &str, all: bool) -> Draft {
             quoted(original.text.as_deref())
         ),
         replying: Some(key.to_string()),
+        calendar: None,
     }
 }
 
@@ -171,8 +176,7 @@ pub fn compose(
     let mut builder = Message::builder()
         .from(from)
         .subject(draft.subject.clone())
-        .message_id(Some(new_id(domain)))
-        .header(ContentType::TEXT_PLAIN);
+        .message_id(Some(new_id(domain)));
     for (field, list) in [("To", &draft.to), ("Cc", &draft.cc), ("Bcc", &draft.bcc)] {
         if list.trim().is_empty() {
             continue;
@@ -200,7 +204,21 @@ pub fn compose(
             .in_reply_to(format!("<{id}>"))
             .references(references.join(" "));
     }
-    let message = builder.body(draft.text.clone()).map_err(|e| match e {
+    let built = match &draft.calendar {
+        Some(calendar) => {
+            let kind = ContentType::parse("text/calendar; charset=utf-8; method=REPLY")
+                .map_err(|e| e.to_string())?;
+            builder.multipart(
+                MultiPart::alternative()
+                    .singlepart(SinglePart::plain(draft.text.clone()))
+                    .singlepart(SinglePart::builder().header(kind).body(calendar.clone())),
+            )
+        }
+        None => builder
+            .header(ContentType::TEXT_PLAIN)
+            .body(draft.text.clone()),
+    };
+    let message = built.map_err(|e| match e {
         lettre::error::Error::MissingTo => "it goes to no one: To is empty".to_string(),
         other => other.to_string(),
     })?;
@@ -362,5 +380,35 @@ mod tests {
             panic!("took a broken address");
         };
         assert!(why.starts_with("To: bob@ won't do"), "{why}");
+    }
+
+    #[test]
+    fn an_answer_to_an_invite_carries_its_calendar_beside_the_text() {
+        let draft = Draft {
+            to: "Bob <bob@example.com>".into(),
+            subject: "Accepted: plans".into(),
+            text: "anna@example.com has accepted.\n".into(),
+            calendar: Some("BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nEND:VCALENDAR\r\n".into()),
+            ..Draft::default()
+        };
+        let out = compose("anna@example.com", &draft, None).unwrap();
+        let text = String::from_utf8_lossy(&out.message).into_owned();
+        assert!(text.contains("multipart/alternative"), "{text}");
+        assert!(text.contains("method=REPLY"), "{text}");
+        let body = crate::body::Body::of(&out.message, out.message.len());
+        assert_eq!(
+            body.text.as_deref().map(str::trim),
+            Some("anna@example.com has accepted.")
+        );
+        assert_eq!(
+            body.calendar.as_deref().map(str::trim_end),
+            Some("BEGIN:VCALENDAR\r\nMETHOD:REPLY\r\nEND:VCALENDAR")
+        );
+        let given: Draft = serde_json::from_value(serde_json::json!({
+            "to": "x@example.com",
+            "calendar": "BEGIN:VCALENDAR",
+        }))
+        .unwrap();
+        assert_eq!(given.calendar, None, "a client can't make one");
     }
 }

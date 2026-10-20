@@ -13,7 +13,9 @@
 //! `tag`; made here at once and sent to the server in the next round,
 //! which starts right away),
 //! `draft` (a reply to the message `key`, to everyone with `all`), `send`
-//! (a draft, put in the outbox and sent in the next round), `render` (the
+//! (a draft, put in the outbox and sent in the next round), `respond`
+//! (`answer` to the invite in the message `key`: accepted, tentative or
+//! declined, sent to its organizer the same way), `render` (the
 //! message `key`'s HTML laid out `width` wide), `browse` (it as a page that
 //! loads nothing) and `attachment` (thing number `index` attached to it,
 //! saved `to` a path or kept beside the store).
@@ -48,6 +50,7 @@ use crate::files;
 use crate::html;
 use crate::imap::{Changing, Connection, Imap};
 use crate::indexing;
+use crate::invite;
 use crate::pending;
 use crate::reader::Reader;
 use crate::send::{self, Draft, Failure};
@@ -309,6 +312,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             serde_json::to_value(send::reply(&original, key, all)).map_err(|e| e.to_string())
         }
         "send" => post(params, with),
+        "respond" => respond(params, with),
         _ => Err(format!("no method {method}")),
     }
 }
@@ -378,24 +382,56 @@ fn browse(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
 /// outbox of the account it's from (the one of the mail it answers, else
 /// `account`, else the first); the next round sends it.
 fn post(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
-    let Answering { reader, shared, .. } = with;
-    let writer = with.writer()?;
     let draft: Draft =
         serde_json::from_value(params.clone()).map_err(|e| format!("send takes a draft: {e}"))?;
+    post_draft(&draft, params["account"].as_str(), with)
+}
+
+/// A `respond` request: `answer` (accepted, tentative, declined) to the
+/// invite the message `key` carries, sent to its organizer as a REPLY
+/// through the outbox like any mail.
+fn respond(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
+    let key = params["key"]
+        .as_str()
+        .ok_or("respond takes key, the message with the invite")?;
+    let answer = params["answer"]
+        .as_str()
+        .and_then(invite::Answer::parse)
+        .ok_or("respond takes answer: accepted, tentative or declined")?;
+    let (ics, me) = with
+        .reader
+        .calendar(key)
+        .map_err(|e| e.0)?
+        .ok_or("that mail has no invite")?;
+    let reply = invite::reply(&ics, &me, answer, jiff::Timestamp::now())
+        .ok_or("the invite names no one to answer")?;
+    let draft = Draft {
+        to: reply.to,
+        subject: reply.subject,
+        text: reply.text,
+        replying: Some(key.to_string()),
+        calendar: Some(reply.calendar),
+        ..Draft::default()
+    };
+    post_draft(&draft, None, with)
+}
+
+/// `draft` made a message and put in the outbox of the account it's from:
+/// the one of the mail it answers, else `account`, else the first.
+fn post_draft(draft: &Draft, account: Option<&str>, with: &Answering<'_>) -> Result<Value, String> {
+    let Answering { reader, shared, .. } = with;
+    let writer = with.writer()?;
     let original = match &draft.replying {
         Some(key) => reader.original(key).map_err(|e| e.0)?,
         None => None,
     };
-    let name = original
-        .as_ref()
-        .map(|(name, _)| name.as_str())
-        .or(params["account"].as_str());
+    let name = original.as_ref().map(|(name, _)| name.as_str()).or(account);
     let account = match name {
         Some(name) => with.config.account(name),
         None => with.config.accounts.first(),
     }
     .ok_or_else(|| format!("no account {} in mail.toml", name.unwrap_or("")))?;
-    let outgoing = send::compose(&account.address, &draft, original.as_ref().map(|(_, o)| o))?;
+    let outgoing = send::compose(&account.address, draft, original.as_ref().map(|(_, o)| o))?;
     let (store, _) = &mut *writer.borrow_mut();
     let id = store
         .account(&account.name, &account.address)

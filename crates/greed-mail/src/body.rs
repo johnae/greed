@@ -24,6 +24,8 @@ pub struct Body {
     pub text: Option<String>,
     pub html: Option<String>,
     pub attachments: Vec<Attachment>,
+    /// Its iCalendar part, an invite or an answer to one.
+    pub calendar: Option<String>,
     /// Whether the whole message was read, so nothing is missing from it.
     pub complete: bool,
 }
@@ -59,10 +61,22 @@ impl Body {
                 size: part.len(),
             })
             .collect();
+        let calendar = message
+            .parts
+            .iter()
+            .find(|part| {
+                part.content_type().is_some_and(|t| {
+                    t.ctype().eq_ignore_ascii_case("text")
+                        && t.subtype()
+                            .is_some_and(|s| s.eq_ignore_ascii_case("calendar"))
+                })
+            })
+            .map(|part| String::from_utf8_lossy(part.contents()).into_owned());
         Body {
             text,
             html,
             attachments,
+            calendar,
             complete,
         }
     }
@@ -130,6 +144,25 @@ mod tests {
             "decoded"
         );
         assert_eq!(attached(&raw, 1), None);
+    }
+
+    #[test]
+    fn an_invite_keeps_its_calendar() {
+        let raw = message(
+            "Subject: Invitation: plans\nMIME-Version: 1.0\n\
+             Content-Type: multipart/alternative; boundary=\"b\"\n\n\
+             --b\nContent-Type: text/plain\n\nyou're invited\n\
+             --b\nContent-Type: text/calendar; charset=utf-8; method=REQUEST\n\
+             Content-Transfer-Encoding: base64\n\n\
+             QkVHSU46VkNBTEVOREFSDQpFTkQ6VkNBTEVOREFSDQo=\n\
+             --b--\n",
+        );
+        let body = Body::of(&raw, raw.len());
+        assert_eq!(body.text.as_deref().map(str::trim), Some("you're invited"));
+        assert_eq!(
+            body.calendar.as_deref(),
+            Some("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n")
+        );
     }
 
     #[test]

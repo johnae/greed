@@ -110,6 +110,27 @@ under the cursor, or the thread's only one). The mail session fetches it
 from the server the first time, whole, and keeps it beside your mail for
 next time. A file that's already where you save is never written over.
 
+## Invites
+
+A calendar invite reads as a card over the message: what it is, when in
+your time zone, where, and who sent it.
+
+```text
+┌ Invite ──────────────────────────┐
+│ Garden plans                     │
+│ Friday 24 Oct 10:00 to 11:00     │
+│ The shed                         │
+│ From: Bob                        │
+│  Accept   Maybe   Decline        │
+└──────────────────────────────────┘
+```
+
+`enter` on Accept, Maybe or Decline sends your answer to whoever sent the
+invite, in the mail session, the way calendars expect it, so it shows in
+theirs. It goes in the next round like any mail, with a copy in Sent. A
+cancelled invite says so, and an answer to one of yours says who
+accepted or declined.
+
 ## Tags
 
 A message's folders, labels and tags show after its subject (`#work`),

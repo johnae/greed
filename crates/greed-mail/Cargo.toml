@@ -16,6 +16,7 @@ futures.workspace = true
 greed-dirs.workspace = true
 greed-index.workspace = true
 html2text.workspace = true
+jiff.workspace = true
 lettre.workspace = true
 mail-parser.workspace = true
 rusqlite.workspace = true

@@ -991,3 +991,64 @@ fn mail_coming_after_the_first_sync_is_said_to_have_arrived() {
     let shown = served.ask("summaries", &serde_json::json!({ "keys": keys }));
     assert_eq!(shown[0]["subject"], "note 4", "{shown}");
 }
+
+#[test]
+fn an_invite_shows_in_its_thread_and_is_answered_to_its_organizer() {
+    let Some(mut dovecot) = Dovecot::start("invite") else {
+        return;
+    };
+    let (port, mailed) = fake_smtp();
+    dovecot.smtp = Some(port);
+    let maildir = dovecot.dir.join("home/anna/Maildir");
+    for sub in ["cur", "new", "tmp"] {
+        std::fs::create_dir_all(maildir.join(sub)).unwrap();
+    }
+    let calendar = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\n\
+        UID:plans@example.com\r\nSEQUENCE:0\r\nSUMMARY:Garden plans\r\n\
+        DTSTART:20261024T080000Z\r\nDTEND:20261024T090000Z\r\n\
+        ORGANIZER;CN=Bob:mailto:bob@example.com\r\n\
+        ATTENDEE;CN=Anna;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:anna@localhost\r\n\
+        END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let message = format!(
+        "From: Bob <bob@example.com>\r\nTo: anna@localhost\r\nSubject: Invitation: Garden plans\r\n\
+         Date: Sun, 19 Oct 2026 10:00:00 +0200\r\nMessage-ID: <invite@example.com>\r\n\
+         MIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=\"b\"\r\n\r\n\
+         --b\r\nContent-Type: text/plain\r\n\r\nYou're invited.\r\n\
+         --b\r\nContent-Type: text/calendar; charset=utf-8; method=REQUEST\r\n\r\n{calendar}\
+         --b--\r\n"
+    );
+    std::fs::write(maildir.join("new/1760000001.M1P1.test"), message).unwrap();
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let key = message_keys(&mut served).remove(0);
+    let thread = served.ask("thread", &serde_json::json!({ "key": key }));
+    let invite = if thread["messages"][0]["invite"].is_null() {
+        served.wait_for("changed");
+        let thread = served.ask("thread", &serde_json::json!({ "key": key }));
+        thread["messages"][0]["invite"].clone()
+    } else {
+        thread["messages"][0]["invite"].clone()
+    };
+    assert_eq!(invite["summary"], "Garden plans", "{invite}");
+    assert_eq!(invite["answer"], "NEEDS-ACTION", "{invite}");
+    served.ask(
+        "respond",
+        &serde_json::json!({ "key": key, "answer": "accepted" }),
+    );
+    served.wait_for("sent");
+    let got = mailed.lock().unwrap().clone();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].0, ["bob@example.com"]);
+    let sent = greed_mail::body::Body::of(got[0].1.as_bytes(), got[0].1.len());
+    let reply = sent.calendar.expect("the answer carries its calendar");
+    assert!(reply.contains("METHOD:REPLY"), "{reply}");
+    assert!(
+        reply.contains("PARTSTAT=ACCEPTED:mailto:anna@localhost"),
+        "{reply}"
+    );
+    assert!(
+        got[0].1.contains("Subject: Accepted: Garden plans"),
+        "{}",
+        got[0].1
+    );
+}

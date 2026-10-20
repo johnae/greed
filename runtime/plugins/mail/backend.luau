@@ -30,6 +30,27 @@ export type Summary = {
 --- Something attached, as the message lists it.
 export type Attachment = { name: string, mime: string, size: number }
 
+--- Someone an invite names, and their answer (ACCEPTED, TENTATIVE,
+--- DECLINED, NEEDS-ACTION) for an attendee.
+export type Person = { name: string?, address: string, answer: string? }
+
+--- An invite a message carries: what `method` (REQUEST asks, CANCEL, REPLY
+--- answers yours), when (RFC 3339 in local time, a date when `all_day`),
+--- who, and your `answer` so far.
+export type Invite = {
+	method: string,
+	summary: string,
+	location: string?,
+	start: string?,
+	["end"]: string?,
+	all_day: boolean,
+	organizer: Person?,
+	attendees: { Person },
+	repeats: boolean,
+	cancelled: boolean,
+	answer: string?,
+}
+
 --- A message as it's read; `text` nil until its body is in.
 export type Message = Summary & {
 	to: string,
@@ -39,6 +60,7 @@ export type Message = Summary & {
 	complete: boolean,
 	--- Whether it has an HTML part, which `render` lays out.
 	html: boolean,
+	invite: Invite?,
 }
 
 --- A thread: what it's called and its messages, oldest first.
@@ -83,6 +105,9 @@ export type Backend = {
 	draft: (key: string, all: boolean) -> (Draft?, string?),
 	--- Sends `draft` (in the next round), or says why it can't.
 	send: (draft: Draft) -> (boolean, string?),
+	--- Sends `answer` (accepted, tentative, declined) to the invite in the
+	--- message `key` to its organizer, or says why it can't.
+	respond: (key: string, answer: string) -> (boolean, string?),
 	--- The message `key`'s HTML laid out `width` cells wide; nil when it
 	--- has none.
 	render: (key: string, width: number) -> Rendered?,
@@ -241,6 +266,10 @@ M.served = {
 	end,
 	send = function(draft: Draft): (boolean, string?)
 		local posted, err = ask("send", draft)
+		return posted ~= nil, err
+	end,
+	respond = function(key: string, answer: string): (boolean, string?)
+		local posted, err = ask("respond", { key = key, answer = answer })
 		return posted ~= nil, err
 	end,
 	render = function(key: string, width: number): Rendered?

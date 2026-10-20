@@ -11,6 +11,7 @@ use serde::Serialize;
 use crate::body::Attachment;
 use crate::header::{Fetched, Header};
 use crate::indexing;
+use crate::invite::{self, Invite};
 use crate::send::Original;
 use crate::store::Trouble;
 
@@ -44,6 +45,8 @@ pub struct Message {
     pub complete: bool,
     /// Whether it has an HTML part, which `render` lays out.
     pub html: bool,
+    /// The invite it carries, or the answer to one.
+    pub invite: Option<Invite>,
 }
 
 /// A thread: what it's called and its messages, oldest first.
@@ -87,7 +90,8 @@ const SUMMARY: &str = "SELECT 'm:' || messages.account || ':' || messages.identi
         (SELECT group_concat(mailboxes.name || char(31) || coalesce(mailboxes.role, ''), char(30))
          FROM places JOIN mailboxes ON mailboxes.id = places.mailbox
          WHERE places.message = messages.id),
-        bodies.html IS NOT NULL, messages.message_id
+        bodies.html IS NOT NULL, messages.message_id, bodies.calendar,
+        (SELECT address FROM accounts WHERE accounts.id = messages.account)
      FROM messages LEFT JOIN bodies.bodies ON bodies.message = messages.id";
 
 fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
@@ -127,6 +131,10 @@ fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
             .unwrap_or_default(),
         complete: r.get::<_, Option<bool>>(10)?.unwrap_or(false),
         html: r.get::<_, Option<bool>>(13)?.unwrap_or(false),
+        invite: r.get::<_, Option<String>>(15)?.and_then(|ics| {
+            let me: String = r.get(16).unwrap_or_default();
+            invite::read(&ics, &me, &jiff::tz::TimeZone::system())
+        }),
     })
 }
 
@@ -235,6 +243,26 @@ impl Reader {
                  WHERE message_id = ?1 ORDER BY date DESC LIMIT 1",
                 [id],
                 |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// The iCalendar the message `key` carries, and the address of the
+    /// account it's in.
+    pub fn calendar(&self, key: &str) -> Result<Option<(String, String)>, Trouble> {
+        let Some(('m', account, identity)) = split_key(key) else {
+            return Ok(None);
+        };
+        Ok(self
+            .db
+            .query_row(
+                "SELECT bodies.calendar, accounts.address FROM messages
+                 JOIN accounts ON accounts.id = messages.account
+                 JOIN bodies.bodies ON bodies.message = messages.id
+                 WHERE messages.account = ?1 AND messages.identity = ?2
+                   AND bodies.calendar IS NOT NULL",
+                params![account, identity],
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?)
     }

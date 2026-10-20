@@ -14,6 +14,7 @@ type Fake = {
 	text: string,
 	-- Its HTML, as greed-mail lays it out.
 	html: any?,
+	invite: any?,
 }
 
 local MAIL: { Fake } = {
@@ -68,6 +69,9 @@ local sent: { any } = {}
 
 -- Attachments asked for of the fake, as "key index to".
 local fetched: { string } = {}
+
+-- Invites answered through the fake, as "key answer".
+local responded: { string } = {}
 
 -- An index of the mail now, in memory: the query run by
 -- greed.query.run, sorted newest first as the list asks.
@@ -171,6 +175,7 @@ local function fake()
 	acted = {}
 	sent = {}
 	fetched = {}
+	responded = {}
 	local changed: () -> () = function() end
 	changed = mail.backend.use({
 		index = function(): (any, string?)
@@ -199,6 +204,7 @@ local function fake()
 						else {}
 					message.complete = true
 					message.html = m.html ~= nil
+					message.invite = m.invite
 					return { key = m.thread, subject = m.subject, messages = { message } }
 				end
 			end
@@ -245,6 +251,10 @@ local function fake()
 		end,
 		send = function(draft: any): (boolean, string?)
 			table.insert(sent, draft)
+			return true, nil
+		end,
+		respond = function(key: string, answer: string): (boolean, string?)
+			table.insert(responded, `{key} {answer}`)
 			return true, nil
 		end,
 		act = function(keys: { string }, action: string, tag: string?): (number?, string?)
@@ -642,4 +652,74 @@ test("a mail link keeps an odd Message-ID whole", function()
 	local link = mail.link(id)
 	assert(link == "[mail](mail:a%20b%28c%29%5Bd%5D%3Ce%3E%25f@x)", link)
 	assert(mail.linked(string.match(link, "%((.*)%)") :: string) == id)
+end)
+
+test(
+	"an invite shows as a card in its thread, and Accept answers it from the mail session",
+	function(t)
+		fake()
+		local invite: any = {
+			method = "REQUEST",
+			summary = "Invoice review",
+			location = "The shed",
+			start = "2026-10-24T10:00:00+02:00",
+			["end"] = "2026-10-24T11:00:00+02:00",
+			all_day = false,
+			organizer = { name = "Anna Berg", address = "anna@example.com" },
+			attendees = {},
+			repeats = true,
+			cancelled = false,
+			answer = "NEEDS-ACTION",
+		}
+		now[2].invite = invite
+		in_the_mail_session(function()
+			t:buffer("|x")
+			t:run("mail")
+			t:keys("esc enter")
+			local text = greed.view():buffer():text()
+			for _, shown in
+				{ "Invoice review", "10:00 to 11:00, repeating", "The shed", "From: Anna Berg" }
+			do
+				assert(string.find(text, shown, 1, true), `{shown} in {text}`)
+			end
+			local at = string.find(text, " Accept ", 1, true)
+			assert(at, text)
+			greed.view():set_cursor(at)
+			t:keys("enter")
+			assert(responded[1] == "m:1:b accepted", tostring(responded[1]))
+			text = greed.view():buffer():text()
+			assert(string.find(text, "You accepted", 1, true), text)
+		end)
+		t:keys("q esc")
+		t:run("mail")
+		t:keys("esc enter")
+		local text = greed.view():buffer():text()
+		local at = string.find(text, " Decline ", 1, true)
+		assert(at, text)
+		greed.view():set_cursor(at)
+		t:keys("enter")
+		assert(#responded == 1, "not outside the mail session")
+		assert(string.find(table.concat(t:messages(), "\n"), "mail session", 1, true) ~= nil)
+		invite.cancelled = true
+		t:keys("q esc")
+		t:run("mail")
+		t:keys("esc enter")
+		text = greed.view():buffer():text()
+		assert(string.find(text, "Cancelled", 1, true) ~= nil, text)
+		assert(string.find(text, " Accept ", 1, true) == nil, "nothing to answer: " .. text)
+	end
+)
+
+test("an invite's time reads in words, all day or across midnight", function()
+	local invite: any = {
+		start = "2026-10-24",
+		all_day = true,
+	}
+	assert(mail.invite_when(invite) == core.dates.day("2026-10-24"), mail.invite_when(invite))
+	invite = { start = "2026-10-24T23:00:00+02:00", ["end"] = "2026-10-25T01:00:00+02:00" }
+	assert(
+		mail.invite_when(invite)
+			== `{core.dates.day("2026-10-24")} 23:00 to {core.dates.day("2026-10-25")} 01:00`,
+		mail.invite_when(invite)
+	)
 end)

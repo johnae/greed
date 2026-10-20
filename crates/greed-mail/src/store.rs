@@ -126,20 +126,56 @@ const FLAGGING: &str = "EXISTS (SELECT 1 FROM pending
 
 /// `bodies.db`: each message's text, its HTML packed with zstd and what's
 /// attached, by its id in `mail.db`, apart so `mail.db` stays small.
-/// `complete` says the whole message was read.
+/// `complete` says the whole message was read; `calendar` is its iCalendar
+/// part.
 const BODIES: &str = "
 CREATE TABLE IF NOT EXISTS bodies.bodies (
     message INTEGER PRIMARY KEY,
     text TEXT,
     html BLOB,
     attachments TEXT NOT NULL DEFAULT '',
-    complete INTEGER NOT NULL
+    complete INTEGER NOT NULL,
+    calendar TEXT
 );
 ";
 
+/// How many days back bodies are fetched again when a store gets its
+/// `calendar` column, for the invites among them.
+const INVITES_BACK: i64 = 60;
+
 /// A body as `bodies.db` has it: text, packed HTML, attachments as JSON,
-/// whether it's complete.
-type StoredBody = (Option<String>, Option<Vec<u8>>, String, bool);
+/// whether it's complete, its calendar.
+type StoredBody = (
+    Option<String>,
+    Option<Vec<u8>>,
+    String,
+    bool,
+    Option<String>,
+);
+
+/// Gives a store from before invites its `calendar` column, and has the
+/// last `INVITES_BACK` days' bodies fetched again so their invites show.
+/// Only this store changes; the mail on the server is left as it is.
+fn add_calendar(db: &Connection) -> Result<(), Trouble> {
+    let has: bool = db
+        .prepare("SELECT 1 FROM bodies.pragma_table_info('bodies') WHERE name = 'calendar'")?
+        .exists([])?;
+    if has {
+        return Ok(());
+    }
+    let since = jiff::Timestamp::now()
+        .checked_sub(jiff::SignedDuration::from_hours(24 * INVITES_BACK))
+        .map_err(|e| Trouble(e.to_string()))?
+        .strftime("%Y-%m-%d")
+        .to_string();
+    db.execute_batch("ALTER TABLE bodies.bodies ADD COLUMN calendar TEXT")?;
+    db.execute(
+        "DELETE FROM bodies.bodies
+         WHERE message IN (SELECT id FROM messages WHERE date >= ?1)",
+        [since],
+    )?;
+    Ok(())
+}
 
 /// A message whose body isn't in yet: its id, and its UID and size in the
 /// mailbox it's fetched from.
@@ -317,6 +353,7 @@ impl Store {
         }
         db.execute_batch(TABLES)?;
         db.execute_batch(BODIES)?;
+        add_calendar(&db)?;
         Ok(Store { db, lock })
     }
 
@@ -591,9 +628,17 @@ impl Store {
                 .transpose()
                 .map_err(|e| Trouble(format!("packing a body: {e}")))?;
             tx.execute(
-                "INSERT OR REPLACE INTO bodies.bodies (message, text, html, attachments, complete)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![message, body.text, html, attachments, body.complete],
+                "INSERT OR REPLACE INTO bodies.bodies
+                     (message, text, html, attachments, complete, calendar)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    message,
+                    body.text,
+                    html,
+                    attachments,
+                    body.complete,
+                    body.calendar
+                ],
             )?;
             tx.execute("UPDATE messages SET indexed = 0 WHERE id = ?1", [message])?;
         }
@@ -606,14 +651,14 @@ impl Store {
         let found: Option<StoredBody> = self
             .db
             .query_row(
-                "SELECT text, html, attachments, complete FROM bodies.bodies
+                "SELECT text, html, attachments, complete, calendar FROM bodies.bodies
                  JOIN messages ON messages.id = bodies.message
                  WHERE messages.account = ?1 AND messages.identity = ?2",
                 params![account, identity],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .optional()?;
-        let Some((text, html, attachments, complete)) = found else {
+        let Some((text, html, attachments, complete, calendar)) = found else {
             return Ok(None);
         };
         let html = html
@@ -625,6 +670,7 @@ impl Store {
             text,
             html,
             attachments: serde_json::from_str(&attachments).unwrap_or_default(),
+            calendar,
             complete,
         }))
     }
@@ -1565,5 +1611,64 @@ mod tests {
             .unwrap();
         assert_eq!(store.arrived().unwrap(), [format!("m:{account}:pm:f")]);
         assert!(store.arrived().unwrap().is_empty(), "said once");
+    }
+
+    #[test]
+    fn a_store_from_before_invites_fetches_recent_bodies_again() {
+        let dir = temp("calendar");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let dated = |uid: u32, id: &str, date: &str| Fetched {
+            uid,
+            raw: format!("X-Pm-Internal-Id: {id}\r\nMessage-ID: <{id}@x>\r\nDate: {date}\r\n\r\n")
+                .into_bytes(),
+            ..Fetched::default()
+        };
+        let today = jiff::Timestamp::now().strftime("%a, %d %b %Y %H:%M:%S +0000");
+        store
+            .put(
+                account,
+                inbox.id,
+                &[
+                    dated(2, "new", &today.to_string()),
+                    dated(1, "old", "Sun, 19 Oct 2014 10:00:00 +0200"),
+                ],
+                2,
+                1,
+            )
+            .unwrap();
+        let bodies: Vec<(i64, Body)> = store
+            .wanting(inbox.id, 10)
+            .unwrap()
+            .iter()
+            .map(|w| {
+                let body = Body {
+                    text: Some("hi".into()),
+                    calendar: Some("BEGIN:VCALENDAR".into()),
+                    complete: true,
+                    ..Body::default()
+                };
+                (w.message, body)
+            })
+            .collect();
+        store.put_bodies(&bodies).unwrap();
+        let calendar = store.body(account, "pm:new").unwrap().unwrap().calendar;
+        assert_eq!(calendar.as_deref(), Some("BEGIN:VCALENDAR"));
+        drop(store);
+        let old = Connection::open(dir.join("bodies.db")).unwrap();
+        old.execute_batch("ALTER TABLE bodies DROP COLUMN calendar")
+            .unwrap();
+        drop(old);
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(
+            store.body(account, "pm:new").unwrap(),
+            None,
+            "fetched again"
+        );
+        let kept = store.body(account, "pm:old").unwrap().unwrap();
+        assert_eq!((kept.text.as_deref(), kept.calendar), (Some("hi"), None));
+        let wanting = store.wanting(inbox.id, 10).unwrap();
+        assert_eq!(wanting.len(), 1);
     }
 }

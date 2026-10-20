@@ -516,6 +516,113 @@ local function header(name: string, value: string, style: string?): core.UiNode
 	return ui.line({ ui.span(`{name}: `, "comment"), ui.span(value, style) })
 end
 
+-- Answers given here, by the key of the invite's message, until its
+-- organizer's next update says so itself.
+local answered: { [string]: string } = {}
+
+local ANSWERS = {
+	ACCEPTED = "accepted",
+	TENTATIVE = "said maybe",
+	DECLINED = "declined",
+	["NEEDS-ACTION"] = "not answered",
+}
+
+--- When an invite is, in words: "Friday 24 Oct 10:00 to 11:00", "today
+--- 09:30", a day for a day-long one.
+function M.invite_when(invite: backend.Invite): string
+	local function at(stamp: string?): (string?, string?)
+		return string.match(stamp or "", "^(%d+%-%d+%-%d+)T?(%d*:?%d*)")
+	end
+	local day, time = at(invite.start)
+	if day == nil then
+		return ""
+	end
+	local said = core.dates.day(day)
+	if invite.all_day or time == "" then
+		return said
+	end
+	said ..= ` {time}`
+	local end_day, end_time = at(invite["end"])
+	if end_day == day and end_time ~= "" then
+		said ..= ` to {end_time}`
+	elseif end_day then
+		said ..= ` to {core.dates.day(end_day)} {end_time}`
+	end
+	return said
+end
+
+--- Answers the invite in the message `key` (`accepted`, `tentative`,
+--- `declined`), sending it to its organizer from the mail session.
+function M.respond(key: string, answer: string)
+	if not backend.here() then
+		greed.echo("invites are answered in the mail session: :mail-session goes there")
+		return
+	end
+	local ok, err = backend.get().respond(key, answer)
+	if not ok then
+		greed.echo(err or "the answer couldn't be sent")
+		return
+	end
+	local word = string.upper(answer)
+	answered[key] = word
+	greed.echo(`your answer goes in the next round: {ANSWERS[word]}`)
+	local r = reading
+	if r and r.buffer:valid() then
+		r.view:redraw()
+	end
+end
+
+-- The invite `message` carries, as a card: what, when, where, who asks,
+-- and buttons to answer a request.
+local function invite_node(message: backend.Message, invite: backend.Invite): core.UiNode
+	local lines: { core.UiNode } = { ui.text(invite.summary, "markup.bold") }
+	local when = M.invite_when(invite)
+	if when ~= "" then
+		table.insert(lines, ui.text(if invite.repeats then `{when}, repeating` else when))
+	end
+	if invite.location then
+		table.insert(lines, ui.text(invite.location))
+	end
+	local organizer = invite.organizer
+	if organizer then
+		table.insert(lines, header("From", organizer.name or organizer.address))
+	end
+	if invite.cancelled then
+		table.insert(lines, ui.text("Cancelled", "diagnostic.warning"))
+		return ui.box("Invite", ui.column(lines))
+	elseif invite.method == "REPLY" then
+		for _, who in invite.attendees do
+			local said = ANSWERS[who.answer or ""] or "answered"
+			table.insert(lines, ui.text(`{who.name or who.address} {said}`))
+		end
+		return ui.box("Answer", ui.column(lines))
+	end
+	local yours = answered[message.key] or invite.answer
+	if yours and yours ~= "NEEDS-ACTION" then
+		table.insert(lines, ui.text(`You {ANSWERS[yours] or "answered"}`, "comment"))
+	end
+	local function answer(label: string, word: string): any
+		return {
+			text = ` {label} `,
+			style = "ui.button",
+			press = function()
+				M.respond(message.key, word)
+			end,
+		}
+	end
+	table.insert(
+		lines,
+		ui.line({
+			answer("Accept", "accepted"),
+			{ text = " " },
+			answer("Maybe", "tentative"),
+			{ text = " " },
+			answer("Decline", "declined"),
+		})
+	)
+	return ui.box("Invite", ui.column(lines))
+end
+
 -- A message as it's read, `cells` wide: who, when, to whom, then what it
 -- says, from its HTML unless `plain`.
 local function message_node(message: backend.Message, cells: number, plain: boolean): core.UiNode
@@ -545,6 +652,11 @@ local function message_node(message: backend.Message, cells: number, plain: bool
 				},
 			})
 		)
+	end
+	local invite = message.invite
+	if invite then
+		table.insert(parts, ui.gap())
+		table.insert(parts, invite_node(message, invite))
 	end
 	table.insert(parts, ui.gap())
 	local html = if plain then nil else html_lines(message, cells)
