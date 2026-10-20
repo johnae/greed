@@ -2,7 +2,8 @@
 
 ## Starting and sessions
 
-`greed FILE` opens a file. The editor runs as a session in the background,
+`greed FILE` opens a file; one that isn't there yet opens empty, and `:w`
+writes it there. The editor runs as a session in the background,
 and what you see is a client attached to it: the terminal, a window
 (`greed --gui`), or several at once, here or over `greed ssh`. Closing a
 client (or `:detach`) leaves the session as it was: open files, undo
@@ -760,8 +761,8 @@ directly.
 | `space y` `space p` `space R` | Copy, paste and replace, as in Helix (copies always go to the clipboard here) |
 | `space e` | File tree in a side panel |
 | `space -` | This file's folder as text to edit: rename, make, move and delete files (see the file tree, below) |
-| `:w` `:w PATH` | Save, or save as; an untitled buffer asks where to save it |
-| `:wa` (`:write-all`) | Save every file with unsaved changes |
+| `:w` `:w PATH` | Save, or save as; an untitled buffer asks where to save it. Into a folder that isn't there it refuses; `:w!` makes the folder and saves |
+| `:wa` (`:write-all`) | Save every file with unsaved changes; `:wa!` makes missing folders too |
 | `:e PATH` | Open a file |
 | `ctrl-s` | Save, in every style |
 | `:b NAME` | Switch to the open file whose path is NAME or has it in it; `:b#` (or `ctrl-^` in normal mode) goes back to the one before |

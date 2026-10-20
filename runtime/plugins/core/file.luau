@@ -43,7 +43,9 @@ function M.before_save(name: string, hook: (buffer: greed.Buffer) -> ())
 	greed.plugin.tie(registry.set(before_save, name, hook))
 end
 
-local function save(buffer: greed.Buffer, path: string?)
+-- Saves `buffer`, to `path` if given. A folder it goes in that isn't there
+-- is made with `force`; without, saving refuses, saying `forced` makes it.
+local function save(buffer: greed.Buffer, path: string?, force: boolean?, forced: string?)
 	path = path and project.resolve(path)
 	local saver = savers[buffer:kind()]
 	if saver and path == nil then
@@ -57,6 +59,16 @@ local function save(buffer: greed.Buffer, path: string?)
 			error("not saved", 0)
 		end
 		path = project.resolve(given)
+	end
+	local folder = string.match(path or buffer:path() or "", "^(.+)/[^/]*$")
+	if folder and greed.fs.stat(folder) == nil then
+		if not force then
+			error(
+				`can't save {project.name(buffer)}: the folder {project.relative(folder)} isn't there; {forced or ":w!"} makes it`,
+				0
+			)
+		end
+		assert(greed.fs.mkdir(folder))
 	end
 	registry.tell(before_save, buffer)
 	buffer:save(path)
@@ -83,13 +95,13 @@ local function all_unsaved(): { greed.Buffer }
 	return found
 end
 
--- Saves each of `buffers` that has a file; fails naming how many have
--- none, after saving the rest.
-local function save_all(buffers: { greed.Buffer })
+-- Saves each of `buffers` that has a file, making missing folders with
+-- `force`; fails naming how many have none, after saving the rest.
+local function save_all(buffers: { greed.Buffer }, force: boolean?, forced: string?)
 	local unnamed = 0
 	for _, buffer in buffers do
 		if buffer:path() then
-			save(buffer)
+			save(buffer, nil, force, forced or ":wa!")
 		else
 			unnamed += 1
 		end
@@ -315,7 +327,7 @@ end
 
 greed.command({
 	name = "save",
-	doc = "Write the buffer to its file, or to a new one",
+	doc = "Write the buffer to its file, or to a new one; force makes a folder it goes in that isn't there",
 	args = {
 		{
 			name = "path",
@@ -333,7 +345,7 @@ greed.command({
 				0
 			)
 		end
-		save(ctx.buffer, path)
+		save(ctx.buffer, path, ctx.force)
 	end,
 })
 
@@ -453,7 +465,7 @@ greed.command({
 		-- Unchanged, there's nothing to write, as with an untitled buffer
 		-- nothing was typed in.
 		if unsaved.unsaved(ctx.buffer) or savers[ctx.buffer:kind()] then
-			save(ctx.buffer)
+			save(ctx.buffer, nil, ctx.force, ":wq!")
 		end
 		quit(ctx.force)
 	end,
@@ -461,14 +473,14 @@ greed.command({
 
 greed.command({
 	name = "save-all",
-	doc = "Write every file with unsaved changes",
-	run = function()
+	doc = "Write every file with unsaved changes; force makes folders they go in that aren't there",
+	run = function(ctx)
 		local buffers = all_unsaved()
 		if #buffers == 0 then
 			greed.echo("nothing to save")
 			return
 		end
-		save_all(buffers)
+		save_all(buffers, ctx.force)
 	end,
 })
 
@@ -476,7 +488,7 @@ greed.command({
 	name = "save-quit-all",
 	doc = "Write every file with unsaved changes, then end the session",
 	run = function(ctx)
-		save_all(all_unsaved())
+		save_all(all_unsaved(), ctx.force, ":wqa!")
 		end_session(ctx.force)
 	end,
 })
