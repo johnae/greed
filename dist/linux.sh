@@ -29,18 +29,24 @@ export CXXSTDLIB=static=stdc++
 cxx_lib=$(dirname "$(g++ -print-file-name=libstdc++.a)")
 export RUSTFLAGS="${RUSTFLAGS:-} -L native=$cxx_lib"
 
-cargo build --locked --profile dist -p greed-editor
-bin=target/dist/greed
+# Greed, and greed-mail beside it, which the mail session runs.
+cargo build --locked --profile dist -p greed-editor -p greed-mail
+bins="target/dist/greed target/dist/greed-mail"
 
 # Only glibc's own libraries and libgcc_s, and nothing newer than glibc 2.28.
 allowed='^(libc|libm|libdl|libpthread|librt|libutil|libgcc_s|ld-linux-(x86-64|aarch64))\.so'
-for lib in $(readelf -d "$bin" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p'); do
-  if ! [[ $lib =~ $allowed ]]; then
-    echo "greed links $lib, which not every distribution has" >&2
-    exit 1
-  fi
+newest=GLIBC_2.0
+for bin in $bins; do
+  for lib in $(readelf -d "$bin" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p'); do
+    if ! [[ $lib =~ $allowed ]]; then
+      echo "$(basename "$bin") links $lib, which not every distribution has" >&2
+      exit 1
+    fi
+  done
+  newest=$(
+    { echo "$newest"; objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*'; } | sort -uV | tail -n1
+  )
 done
-newest=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n1)
 if [ "$(printf '%s\nGLIBC_2.28\n' "$newest" | sort -V | tail -n1)" != GLIBC_2.28 ]; then
   echo "greed needs $newest, newer than glibc 2.28" >&2
   exit 1
@@ -50,7 +56,8 @@ fi
 out=target/packages/$name
 rm -rf "$out"
 mkdir -p "$out/bin" "$out/share/applications" "$out/share/icons/hicolor/256x256/apps"
-cp "$bin" "$out/bin/"
+# shellcheck disable=SC2086
+cp $bins "$out/bin/"
 cp dist/greed.desktop "$out/share/applications/"
 cp site/assets/icon-256.png "$out/share/icons/hicolor/256x256/apps/greed.png"
 cp LICENSE README.md THIRD-PARTY.md "$out/"

@@ -43,7 +43,7 @@ class Greed < Formula
   end
 
   def install
-    bin.install "bin/greed"
+    bin.install "bin/greed", "bin/greed-mail"
     share.install Dir["share/*"] if OS.linux?
   end
 

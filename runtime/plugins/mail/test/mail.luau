@@ -925,3 +925,15 @@ test("earlier messages read before show as a line each until pressed", function(
 	text = greed.view():buffer():text()
 	assert(string.find(text, "and more", 1, true) ~= nil, "all open: " .. text)
 end)
+
+test("greed-mail is the one mail-program names, or the one beside greed", function()
+	greed.option.set("mail-program", "/opt/mail/greed-mail")
+	assert(mail.backend.program() == "/opt/mail/greed-mail")
+	greed.option.set("mail-program", "")
+	local found = mail.backend.program()
+	local beside = string.match(greed.session.program() or "", "^(.*)/[^/]*$")
+	assert(
+		found == `{beside}/greed-mail` or found == "greed-mail",
+		`beside greed when it's there, else on PATH: {found}`
+	)
+end)

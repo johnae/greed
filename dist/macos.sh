@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Builds the macOS release on a Mac: one binary for Apple silicon and Intel,
-# as Greed.app (zipped; it opens the window) and on its own (a tarball, for
-# the terminal and Homebrew). Both land in target/packages.
+# Builds the macOS release on a Mac: greed and greed-mail, each one binary
+# for Apple silicon and Intel, as Greed.app (zipped; it opens the window)
+# and on their own (a tarball, for the terminal and Homebrew). Both land in
+# target/packages.
 #
 # With a Developer ID certificate in the keychain, named by
 # GREED_SIGN_IDENTITY, both are signed with it, and with an App Store
@@ -20,16 +21,19 @@ export RUSTUP_TOOLCHAIN=stable
 
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 for target in aarch64-apple-darwin x86_64-apple-darwin; do
-  cargo build --locked --profile dist -p greed-editor --target "$target"
+  cargo build --locked --profile dist -p greed-editor -p greed-mail --target "$target"
 done
 rm -rf "$out"
 mkdir -p "$out"
-lipo -create -output "$out/greed" \
-  target/aarch64-apple-darwin/dist/greed target/x86_64-apple-darwin/dist/greed
+# Greed, and greed-mail beside it, which the mail session runs.
+for bin in greed greed-mail; do
+  lipo -create -output "$out/$bin" \
+    "target/aarch64-apple-darwin/dist/$bin" "target/x86_64-apple-darwin/dist/$bin"
+done
 
 app=$out/Greed.app
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$out/greed" "$app/Contents/MacOS/greed"
+cp "$out/greed" "$out/greed-mail" "$app/Contents/MacOS/"
 iconset=$out/greed.iconset
 mkdir -p "$iconset"
 # Each size iconutil wants, by the name it wants it under.
@@ -68,11 +72,14 @@ sign() {
   fi
 }
 sign "$out/greed"
+sign "$out/greed-mail"
+# What the app holds beside its own program is signed before it.
+sign "$app/Contents/MacOS/greed-mail"
 sign "$app"
 
 if [ "$identity" != - ] && [ -n "${GREED_NOTARY_KEY:-}" ]; then
   ditto -c -k --keepParent "$app" "$out/notarize.zip"
-  zip -qj "$out/notarize.zip" "$out/greed"
+  zip -qj "$out/notarize.zip" "$out/greed" "$out/greed-mail"
   key=(--key "$GREED_NOTARY_KEY" --key-id "$GREED_NOTARY_KEY_ID" --issuer "$GREED_NOTARY_ISSUER")
   id=$(xcrun notarytool submit "$out/notarize.zip" "${key[@]}" --output-format plist |
     plutil -extract id raw -)
@@ -100,7 +107,7 @@ fi
 ditto -c -k --keepParent "$app" "$out/greed-$version-macos.zip"
 name=greed-$version-macos-universal
 mkdir -p "$out/$name/bin"
-cp "$out/greed" "$out/$name/bin/"
+cp "$out/greed" "$out/greed-mail" "$out/$name/bin/"
 cp LICENSE README.md THIRD-PARTY.md "$out/$name/"
 tar -C "$out" -czf "$out/$name.tar.gz" "$name"
 echo "$out/greed-$version-macos.zip and $out/$name.tar.gz"

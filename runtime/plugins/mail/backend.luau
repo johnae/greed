@@ -155,8 +155,8 @@ end
 
 greed.option.define({
 	name = "mail-program",
-	doc = "The greed-mail program that syncs your mail: its name on PATH, or a path",
-	default = "greed-mail",
+	doc = "The greed-mail program that syncs your mail, its name on PATH or a path; empty for the one beside greed, or else on PATH",
+	default = "",
 })
 
 -- What wants to know when the index changed.
@@ -198,12 +198,29 @@ local PATIENCE = 120 * 1000
 local connection: greed.RpcConnection? = nil
 local opened: greed.Index? = nil
 
+--- The greed-mail to run: the `mail-program` option's when it's set,
+--- else the one beside this greed (as Greed's packages have it), else
+--- the one on PATH.
+function M.program(): string
+	local set = tostring(greed.option.get("mail-program"))
+	if set ~= "" then
+		return set
+	end
+	local greed_program = greed.session.program()
+	local folder = if greed_program then string.match(greed_program, "^(.*)/[^/]*$") else nil
+	local beside = if folder then `{folder}/greed-mail` else nil
+	if beside and greed.fs.stat(beside) then
+		return beside
+	end
+	return "greed-mail"
+end
+
 -- greed-mail, started if it isn't running.
 local function served(): (greed.RpcConnection?, string?)
 	if connection and connection:alive() then
 		return connection, nil
 	end
-	local program = tostring(greed.option.get("mail-program"))
+	local program = M.program()
 	-- Only the mail session syncs; anywhere else greed-mail reads what it
 	-- synced.
 	local command = if M.here() then { program, "serve" } else { program, "--read", "serve" }
