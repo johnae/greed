@@ -51,7 +51,10 @@ test("g d follows a link, making the note; elsewhere it goes to the definition",
 	greed.open(dir .. "/a.md")
 	t:keys("w w")
 	t:keys("g d")
-	assert(greed.view():buffer():path() == dir .. "/ideas.md", greed.view():buffer():path())
+	-- Following a link waits for the index.
+	t:wait_for(function()
+		return greed.view():buffer():path() == dir .. "/ideas.md"
+	end)
 	t:keys("i n e w esc")
 	t:run("save")
 	assert(greed.fs.read(dir .. "/ideas.md") == "new")
