@@ -3,9 +3,10 @@
 //! what changed; `catch_up` writes those and takes out what went, so the
 //! index is behind at most until the next catch-up, never wrong for good.
 //!
-//! A message's fields: `from`, `to`, `cc` and `subject` (text), `date`,
-//! `size` (a value), `tag` (where it is: its folders and labels by name,
-//! which `in:` matches, as `places` says), `account` and `list` (exact).
+//! A message's fields: `from`, `to`, `cc` and `subject` (text), `date` (in
+//! UTC), `size` (a value), `tag` (where it is: its folders and labels by
+//! name, which `in:` matches, as `places` says), `account` and `list`
+//! (exact).
 //! Its flags: `unread`, `flagged`, `answered`, `draft`, `attachment` and
 //! `mine` (sent by the owner: in Sent, or from the account's address). A
 //! thread is an item too, named by its first message's subject, with its
@@ -26,7 +27,7 @@ pub const PLACES: &str = "tag";
 const WORDED: [&str; 4] = ["from", "to", "cc", "subject"];
 
 /// How many messages are written to the index at a time.
-const BATCH: usize = 500;
+const BATCH: usize = 2000;
 
 /// The most of a body's text that's indexed.
 const TEXT: usize = 64 * 1024;
@@ -100,7 +101,7 @@ fn item(m: &Indexable) -> Item {
     field("to", &m.to);
     field("cc", &m.cc);
     field("subject", &m.subject);
-    field("date", m.date.as_deref().unwrap_or(""));
+    field("date", &utc(m.date.as_deref().unwrap_or("")));
     field("size", &m.size.to_string());
     field("account", &m.account_name);
     field("list", m.list_id.as_deref().unwrap_or(""));
@@ -204,6 +205,16 @@ fn cut(text: &str, most: usize) -> &str {
     &text[..end]
 }
 
+/// `date` (RFC 3339) in UTC, so every message's date sorts and compares
+/// with every other's: as they come, each has its own offset. One that
+/// doesn't read as a date stays as it is.
+fn utc(date: &str) -> String {
+    mail_parser::DateTime::parse_rfc3339(date).map_or_else(
+        || date.to_string(),
+        |d| mail_parser::DateTime::from_timestamp(d.to_timestamp()).to_rfc3339(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +224,17 @@ mod tests {
 
     use crate::body::Body;
     use crate::header::Fetched;
+
+    #[test]
+    fn dates_are_indexed_in_utc_so_they_sort_across_offsets() {
+        assert_eq!(utc("2026-10-19T08:00:00+02:00"), "2026-10-19T06:00:00Z");
+        assert_eq!(utc("2026-10-19T23:30:00-05:00"), "2026-10-20T04:30:00Z");
+        assert_eq!(utc("2026-10-19T06:00:00Z"), "2026-10-19T06:00:00Z");
+        assert_eq!(utc("not a date"), "not a date");
+        assert_eq!(utc(""), "");
+        // Later in the day by the clock, earlier in fact.
+        assert!(utc("2026-10-19T08:00:00+02:00") < utc("2026-10-19T07:00:00Z"));
+    }
 
     #[test]
     fn places_read_as_names() {

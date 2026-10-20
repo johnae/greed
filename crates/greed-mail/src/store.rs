@@ -72,7 +72,10 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS messages_date ON messages (account, date);
 CREATE INDEX IF NOT EXISTS messages_message_id ON messages (message_id);
-CREATE INDEX IF NOT EXISTS messages_thread ON messages (account, thread);
+-- By thread and date: a thread's first message, for its subject, without
+-- walking the account's mail in date order.
+DROP INDEX IF EXISTS messages_thread;
+CREATE INDEX IF NOT EXISTS messages_thread_date ON messages (account, thread, date);
 CREATE TABLE IF NOT EXISTS places (
     message INTEGER NOT NULL REFERENCES messages (id),
     mailbox INTEGER NOT NULL REFERENCES mailboxes (id),
