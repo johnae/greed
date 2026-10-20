@@ -5,6 +5,7 @@ local project = require("./project")
 local prompt = require("./prompt")
 local recent = require("./recent")
 local registry = require("./registry")
+local text = require("./text")
 local transient = require("./transient")
 local unsaved = require("./unsaved")
 
@@ -608,9 +609,7 @@ function M.open_link(uri: string)
 		own(uri)
 		return
 	elseif path then
-		M.open((string.gsub(path, "%%(%x%x)", function(hex: string): string
-			return string.char(tonumber(hex, 16) :: number)
-		end)))
+		M.open(text.percent_decode(path))
 		return
 	elseif not OPENED[scheme] then
 		greed.echo(`not opening {uri}: only http, https and mailto links open from Greed`)
@@ -908,11 +907,7 @@ greed.option.define({
 -- `path` in a Trash Info file's Path line: bytes outside the safe ones
 -- percent-encoded.
 local function trash_path(path: string): string
-	return (
-		string.gsub(path, "[^%w%-%._~/]", function(c: string): string
-			return string.format("%%%02X", string.byte(c))
-		end)
-	)
+	return text.percent_encode(path, "/")
 end
 
 --- Moves the file or folder at `path` to the trash: `~/.Trash` on macOS,

@@ -77,3 +77,11 @@ test(
 		end
 	end
 )
+
+test("percent-encoding keeps what URLs keep, and what you ask it to", function()
+	assert(text.percent_encode("a b/c~d") == "a%20b%2Fc~d", text.percent_encode("a b/c~d"))
+	assert(text.percent_encode("a b/c", "/") == "a%20b/c")
+	assert(text.percent_encode("x]@%", "]@") == "x]@%25", text.percent_encode("x]@%", "]@"))
+	assert(text.percent_decode("a%20b%2fc%zz") == "a b/c%zz")
+	assert(text.percent_decode(text.percent_encode("åäö (1)")) == "åäö (1)")
+end)

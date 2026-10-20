@@ -8,14 +8,7 @@ local core = require("@core")
 
 local M = {}
 
--- `%20` and the like as the characters they stand for.
-local function decode(text: string): string
-	return (
-		string.gsub(text, "%%(%x%x)", function(hex: string)
-			return string.char(tonumber(hex, 16) :: number)
-		end)
-	)
-end
+local decode = core.text.percent_decode
 
 --- The folder `buffer`'s file is in, if it has one.
 function M.dir(buffer: greed.Buffer): string?

@@ -510,4 +510,24 @@ function M.relines(
 	return now, at
 end
 
+--- `text` with every byte but letters, digits and `-._~` (and the ones
+--- `keep` lists, like "/" for a path) as `%XX`, as URLs and links have it.
+function M.percent_encode(text: string, keep: string?): string
+	local unsafe = `[^%w%-%._~{string.gsub(keep or "", "%p", "%%%0")}]`
+	return (
+		string.gsub(text, unsafe, function(c: string): string
+			return string.format("%%%02X", string.byte(c))
+		end)
+	)
+end
+
+--- `text` with each `%XX` as the byte it stands for.
+function M.percent_decode(text: string): string
+	return (
+		string.gsub(text, "%%(%x%x)", function(hex: string): string
+			return string.char(tonumber(hex, 16) :: number)
+		end)
+	)
+end
+
 return M

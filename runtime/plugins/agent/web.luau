@@ -7,6 +7,7 @@
 -- searxng) and its key with `:secret-set brave`; SearXNG needs no key,
 -- just `:set web-search-url https://your.searx`.
 
+local core = require("@core")
 local greed = require("@greed")
 local registry = require("./registry")
 local untrusted = require("./untrusted").wrap
@@ -35,13 +36,7 @@ function M.request(request: greed.HttpRequest): (greed.HttpResponse?, string?)
 	return greed.http.request(request)
 end
 
-local function encode(text: string): string
-	return (
-		string.gsub(text, "[^%w%-%._~]", function(c: string): string
-			return string.format("%%%02X", string.byte(c))
-		end)
-	)
-end
+local encode = core.text.percent_encode
 
 local ENTITIES: { [string]: string } =
 	{ amp = "&", lt = "<", gt = ">", quot = '"', apos = "'", nbsp = " " }

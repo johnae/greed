@@ -60,10 +60,7 @@ function M.post(url: string, body: { [string]: string }, kind: "form" | "json"):
 	else
 		local pairs_ = {}
 		for key, value in body do
-			local escaped = string.gsub(value, "[^%w%-%._~]", function(c: string): string
-				return string.format("%%%02X", string.byte(c))
-			end)
-			table.insert(pairs_, `{key}={escaped}`)
+			table.insert(pairs_, `{key}={core.text.percent_encode(value)}`)
 		end
 		table.sort(pairs_)
 		encoded, content_type = table.concat(pairs_, "&"), "application/x-www-form-urlencoded"

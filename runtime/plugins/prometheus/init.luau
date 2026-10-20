@@ -43,14 +43,7 @@ function M.fetch(url: string): (string?, string?)
 	return response.body, nil
 end
 
--- `text` as a URL's query string has it.
-local function encoded(text: string): string
-	return (
-		string.gsub(text, "[^%w%-%._~]", function(c: string): string
-			return string.format("%%%02X", string.byte(c))
-		end)
-	)
-end
+local encoded = core.text.percent_encode
 
 local UNITS: { [string]: number } = { s = 1, m = 60, h = 3600, d = 86400, w = 7 * 86400 }
 

@@ -832,21 +832,14 @@ local function replying(all: boolean): (ctx: greed.Context) -> ()
 end
 
 --- A link to the message whose Message-ID is `id`, as notes write it:
---- `[mail](mail:ID)`, what would break the link percent-encoded.
+--- `[mail](mail:ID)`, percent-encoded but for the `@+=` most have.
 function M.link(id: string): string
-	local escaped = string.gsub(id, "[%%%s%(%)<>%[%]]", function(c: string): string
-		return string.format("%%%02X", string.byte(c))
-	end)
-	return `[mail](mail:{escaped})`
+	return `[mail](mail:{core.text.percent_encode(id, "@+=")})`
 end
 
 --- The Message-ID a `mail:` link names.
 function M.linked(uri: string): string
-	return (
-		string.gsub(string.sub(uri, #"mail:" + 1), "%%(%x%x)", function(hex: string): string
-			return string.char(tonumber(hex, 16) :: number)
-		end)
-	)
+	return core.text.percent_decode(string.sub(uri, #"mail:" + 1))
 end
 
 --- What a todo made from `message` says to start with: who sent it and
