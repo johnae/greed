@@ -4,6 +4,7 @@
 pub mod body;
 pub mod config;
 pub mod header;
+pub mod html;
 pub mod imap;
 pub mod indexing;
 pub mod names;

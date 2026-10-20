@@ -40,6 +40,8 @@ pub struct Message {
     pub attachments: Vec<Attachment>,
     /// Whether all of it was read; a big message's text can stop short.
     pub complete: bool,
+    /// Whether it has an HTML part, which `render` lays out.
+    pub html: bool,
 }
 
 /// A thread: what it's called and its messages, oldest first.
@@ -82,7 +84,8 @@ const SUMMARY: &str = "SELECT 'm:' || messages.account || ':' || messages.identi
         messages.labels,
         (SELECT group_concat(mailboxes.name || char(31) || coalesce(mailboxes.role, ''), char(30))
          FROM places JOIN mailboxes ON mailboxes.id = places.mailbox
-         WHERE places.message = messages.id)
+         WHERE places.message = messages.id),
+        bodies.html IS NOT NULL
      FROM messages LEFT JOIN bodies.bodies ON bodies.message = messages.id";
 
 fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
@@ -120,6 +123,7 @@ fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
             .and_then(|a| serde_json::from_str(&a).ok())
             .unwrap_or_default(),
         complete: r.get::<_, Option<bool>>(10)?.unwrap_or(false),
+        html: r.get::<_, Option<bool>>(13)?.unwrap_or(false),
     })
 }
 
@@ -191,6 +195,31 @@ impl Reader {
             subject: first.summary.subject.clone(),
             messages,
         }))
+    }
+
+    /// The HTML of the message `key`, unpacked, if it has any.
+    pub fn html(&self, key: &str) -> Result<Option<String>, Trouble> {
+        let Some(('m', account, identity)) = split_key(key) else {
+            return Ok(None);
+        };
+        let packed: Option<Vec<u8>> = self
+            .db
+            .query_row(
+                "SELECT bodies.html FROM messages
+                 JOIN bodies.bodies ON bodies.message = messages.id
+                 WHERE messages.account = ?1 AND messages.identity = ?2",
+                params![account, identity],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        packed
+            .map(|packed| {
+                zstd::decode_all(packed.as_slice())
+                    .map(|html| String::from_utf8_lossy(&html).into_owned())
+                    .map_err(|e| Trouble(format!("its HTML won't unpack: {e}")))
+            })
+            .transpose()
     }
 
     /// The name of the account the message or thread `key` is in.

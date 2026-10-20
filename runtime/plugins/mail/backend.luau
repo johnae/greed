@@ -32,10 +32,20 @@ export type Message = Summary & {
 	text: string?,
 	attachments: { Attachment },
 	complete: boolean,
+	--- Whether it has an HTML part, which `render` lays out.
+	html: boolean,
 }
 
 --- A thread: what it's called and its messages, oldest first.
 export type Thread = { key: string, subject: string, messages: { Message } }
+
+--- A message's HTML as it reads: lines of spans, each styled (strong,
+--- emphasis, code, strike, link, image) or not, a link's span saying which
+--- of `links` (from 0) it goes to.
+export type Rendered = {
+	lines: { { { text: string, style: string?, link: number? } } },
+	links: { string },
+}
 
 --- Mail as it's written: addresses apart by commas, and the key of the
 --- message it answers.
@@ -66,6 +76,12 @@ export type Backend = {
 	draft: (key: string, all: boolean) -> (Draft?, string?),
 	--- Sends `draft` (in the next round), or says why it can't.
 	send: (draft: Draft) -> (boolean, string?),
+	--- The message `key`'s HTML laid out `width` cells wide; nil when it
+	--- has none.
+	render: (key: string, width: number) -> Rendered?,
+	--- The message `key`'s HTML as a page that loads nothing, for a
+	--- browser: where it is, or nil and why.
+	browse: (key: string) -> (string?, string?),
 }
 
 --- The session `greed mail` starts, which syncs the mail; others read what
@@ -182,6 +198,13 @@ M.served = {
 	send = function(draft: Draft): (boolean, string?)
 		local posted, err = ask("send", draft)
 		return posted ~= nil, err
+	end,
+	render = function(key: string, width: number): Rendered?
+		return ask("render", { key = key, width = width })
+	end,
+	browse = function(key: string): (string?, string?)
+		local page, err = ask("browse", { key = key })
+		return if page then page.path else nil, err
 	end,
 } :: Backend
 

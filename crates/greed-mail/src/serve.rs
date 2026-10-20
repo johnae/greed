@@ -36,6 +36,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Notify, mpsc};
 
 use crate::config::{Account, Config, Provider};
+use crate::html;
 use crate::imap::{Changing, Connection, Imap};
 use crate::indexing;
 use crate::pending;
@@ -186,6 +187,14 @@ struct Answering<'a> {
     shared: &'a Shared,
 }
 
+impl Answering<'_> {
+    /// What changes the mail, which only the mail session has.
+    fn writer(&self) -> Result<&Writer, String> {
+        self.writer
+            .ok_or_else(|| "mail is changed in the mail session; here it's only read".into())
+    }
+}
+
 /// Answers each request on the input until it closes.
 async fn answer(with: &Answering<'_>) {
     let mut input = BufReader::new(tokio::io::stdin()).lines();
@@ -212,10 +221,6 @@ async fn answer(with: &Answering<'_>) {
 /// The result of request `method`, or why there's none.
 fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, String> {
     let Answering { reader, shared, .. } = with;
-    let writer = || {
-        with.writer
-            .ok_or("mail is changed in the mail session; here it's only read")
-    };
     match method {
         "status" => {
             let standing: Vec<Standing> = shared.standing.borrow().values().cloned().collect();
@@ -246,7 +251,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             serde_json::to_value(thread).map_err(|e| e.to_string())
         }
         "act" => {
-            let writer = writer()?;
+            let writer = with.writer()?;
             let keys =
                 keys(params).ok_or("act takes keys, a list of messages' or threads' keys")?;
             let action = action(params)?;
@@ -268,6 +273,8 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             }
             Ok(json!({ "changed": changed }))
         }
+        "render" => render(params, reader),
+        "browse" => browse(params, with),
         "draft" => {
             let key = params["key"]
                 .as_str()
@@ -278,37 +285,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             let all = params["all"].as_bool().unwrap_or(false);
             serde_json::to_value(send::reply(&original, key, all)).map_err(|e| e.to_string())
         }
-        "send" => {
-            let writer = writer()?;
-            let draft: Draft = serde_json::from_value(params.clone())
-                .map_err(|e| format!("send takes a draft: {e}"))?;
-            let original = match &draft.replying {
-                Some(key) => reader.original(key).map_err(|e| e.0)?,
-                None => None,
-            };
-            let name = original
-                .as_ref()
-                .map(|(name, _)| name.as_str())
-                .or(params["account"].as_str());
-            let account = match name {
-                Some(name) => with.config.account(name),
-                None => with.config.accounts.first(),
-            }
-            .ok_or_else(|| format!("no account {} in mail.toml", name.unwrap_or("")))?;
-            let outgoing =
-                send::compose(&account.address, &draft, original.as_ref().map(|(_, o)| o))?;
-            let (store, _) = &mut *writer.borrow_mut();
-            let id = store
-                .account(&account.name, &account.address)
-                .map_err(|e| e.0)?;
-            let replying = match &draft.replying {
-                Some(key) => store.messages_of(key).map_err(|e| e.0)?.first().copied(),
-                None => None,
-            };
-            let posted = store.post(id, &outgoing, replying).map_err(|e| e.0)?;
-            shared.wake.notify_one();
-            Ok(json!({ "posted": posted }))
-        }
+        "send" => post(params, with),
         _ => Err(format!("no method {method}")),
     }
 }
@@ -341,6 +318,72 @@ fn keys(params: &Value) -> Option<Vec<String>> {
         Value::Object(empty) if empty.is_empty() => Some(Vec::new()),
         keys => serde_json::from_value(keys.clone()).ok(),
     }
+}
+
+/// A `render` request: the message `key`'s HTML laid out `width` cells
+/// wide, or null when it has none.
+fn render(params: &Value, reader: &Reader) -> Result<Value, String> {
+    let key = params["key"]
+        .as_str()
+        .ok_or("render takes key, a message's")?;
+    let cells = params["width"]
+        .as_u64()
+        .and_then(|w| usize::try_from(w).ok())
+        .unwrap_or(80);
+    let Some(html) = reader.html(key).map_err(|e| e.0)? else {
+        return Ok(Value::Null);
+    };
+    serde_json::to_value(html::render(&html, cells)).map_err(|e| e.to_string())
+}
+
+/// A `browse` request: the message `key`'s HTML as a page that loads
+/// nothing, written beside the store for a browser; gives where.
+fn browse(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
+    let key = params["key"]
+        .as_str()
+        .ok_or("browse takes key, a message's")?;
+    let html = with
+        .reader
+        .html(key)
+        .map_err(|e| e.0)?
+        .ok_or("it has no HTML to show")?;
+    let path = html::page(&html, &with.dir.join("html"), key)?;
+    Ok(json!({ "path": path }))
+}
+
+/// A `send` request: the draft in `params` made a message and put in the
+/// outbox of the account it's from (the one of the mail it answers, else
+/// `account`, else the first); the next round sends it.
+fn post(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
+    let Answering { reader, shared, .. } = with;
+    let writer = with.writer()?;
+    let draft: Draft =
+        serde_json::from_value(params.clone()).map_err(|e| format!("send takes a draft: {e}"))?;
+    let original = match &draft.replying {
+        Some(key) => reader.original(key).map_err(|e| e.0)?,
+        None => None,
+    };
+    let name = original
+        .as_ref()
+        .map(|(name, _)| name.as_str())
+        .or(params["account"].as_str());
+    let account = match name {
+        Some(name) => with.config.account(name),
+        None => with.config.accounts.first(),
+    }
+    .ok_or_else(|| format!("no account {} in mail.toml", name.unwrap_or("")))?;
+    let outgoing = send::compose(&account.address, &draft, original.as_ref().map(|(_, o)| o))?;
+    let (store, _) = &mut *writer.borrow_mut();
+    let id = store
+        .account(&account.name, &account.address)
+        .map_err(|e| e.0)?;
+    let replying = match &draft.replying {
+        Some(key) => store.messages_of(key).map_err(|e| e.0)?.first().copied(),
+        None => None,
+    };
+    let posted = store.post(id, &outgoing, replying).map_err(|e| e.0)?;
+    shared.wake.notify_one();
+    Ok(json!({ "posted": posted }))
 }
 
 /// The action an `act` request asks for.

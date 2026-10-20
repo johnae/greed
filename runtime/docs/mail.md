@@ -23,6 +23,7 @@ These work on the message under the cursor, or in a thread on all of it:
 | `u`      | marks it read, or unread when it's read                   |
 | `s`      | flags it, or takes the flag off                           |
 | `t`      | asks for a tag and puts it on, or takes it off if it's on |
+| `b`      | opens it in a web browser, loading nothing from anywhere  |
 | `e`      | moves it to the archive                                   |
 | `d`, `#` | moves it to the trash; in the trash, deletes it for good  |
 | `r`      | replies to who sent it (in a thread, its last message)    |
@@ -32,6 +33,20 @@ These work on the message under the cursor, or in a thread on all of it:
 A change shows at once and goes to the server within seconds. If the
 server refuses it (a folder that went, say), it's taken back and Greed
 says why.
+
+## Reading
+
+Mail sent as HTML reads laid out in Greed: headings, bold and italics,
+lists, tables of data (a receipt's lines) in columns, and tables only
+there for layout as plain text. What the sender hid stays hidden, and
+images show as their descriptions: nothing is fetched from anywhere, so
+no tracking pixel tells the sender you read it. Links show as links;
+`tab` goes from one to the next and `enter` opens it.
+
+In a thread, `h` reads it as its plain text instead (and back). `b`, in a
+thread or the list, opens the message in your web browser as it was sent,
+with everything that would load from elsewhere blocked: scripts, remote
+images, fonts and styles.
 
 ## Tags
 

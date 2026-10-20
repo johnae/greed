@@ -112,7 +112,15 @@ type Open = {
 local open: Open? = nil
 
 -- The thread being read, while it's open.
-local reading: { window: greed.View, buffer: greed.Buffer, thread: Thread, floating: boolean }? =
+local reading: {
+	window: greed.View,
+	buffer: greed.Buffer,
+	thread: Thread,
+	floating: boolean,
+	-- Read as its text, rather than laid out from its HTML.
+	plain: boolean,
+	view: core.UiView,
+}? =
 	nil
 
 --- The messages `parsed` finds, newest first unless it sorts otherwise,
@@ -300,45 +308,125 @@ function M.page()
 	M.ask()
 end
 
--- A message's text as it's read: who, when, to whom, then what it says.
-local function message_text(message: backend.Message): string
-	local day, time = string.match(message.date or "", "^(%d+%-%d+%-%d+)T(%d+:%d+)")
-	local date = if day then `{day} {time}` else (message.date or "")
-	local lines = { `From: {message.from}`, `Date: {date}`, `To: {message.to}` }
-	if message.cc ~= "" then
-		table.insert(lines, `Cc: {message.cc}`)
+-- How the styles of a message's HTML show.
+local STYLES: { [string]: string } = {
+	strong = "markup.bold",
+	emphasis = "markup.italic",
+	code = "markup.raw",
+	strike = "markup.strikethrough",
+	link = "markup.link",
+	image = "comment",
+}
+
+-- Messages' HTML as laid out, by key and width: laying out goes to
+-- greed-mail, once for each.
+local laid: { [string]: backend.Rendered } = {}
+
+-- The lines `message`'s HTML reads as, `cells` wide, its links pressed to
+-- open; nil when it has none.
+local function html_lines(message: backend.Message, cells: number): { core.UiNode }?
+	if not message.html then
+		return nil
 	end
-	for _, attached in message.attachments do
-		table.insert(lines, `Attached: {attached.name} ({attached.mime})`)
+	local at = `{message.key} {cells}`
+	local rendered = laid[at] or backend.get().render(message.key, cells)
+	if rendered == nil then
+		return nil
 	end
-	table.insert(lines, "")
-	if message.text == nil then
-		table.insert(
-			lines,
-			if backend.here()
-				then "(its text is on its way)"
-				else "(its text isn't in yet: the mail session fetches it when you open it there)"
-		)
-	else
-		table.insert(lines, (string.gsub(message.text, "\r\n", "\n")))
-		if not message.complete then
-			table.insert(lines, "(it goes on: only the start of a big message is in)")
+	laid[at] = rendered
+	local nodes: { core.UiNode } = {}
+	for _, line in rendered.lines do
+		local spans: { core.UiSpan } = {}
+		for _, span in line do
+			local target = if span.link then rendered.links[span.link + 1] else nil
+			table.insert(spans, {
+				text = span.text,
+				style = if span.style then STYLES[span.style] else nil,
+				value = if target then { link = target } else nil,
+				press = if target
+					then function()
+						core.file.open_link(target)
+					end
+					else nil,
+			})
 		end
+		table.insert(nodes, ui.line(spans))
 	end
-	return table.concat(lines, "\n")
+	return nodes
 end
 
---- The thread as it reads: its subject, then each message.
-function M.thread_text(thread: Thread): string
-	local rule = string.rep("═", math.max(3, core.text.width(thread.subject)))
-	local parts = { `{thread.subject}\n{rule}` }
-	for i, message in thread.messages do
-		if i > 1 then
-			table.insert(parts, string.rep("─", 40))
-		end
-		table.insert(parts, message_text(message))
+-- The lines of `message`'s text, its quoted lines dimmed.
+local function text_lines(text: string): { core.UiNode }
+	local nodes: { core.UiNode } = {}
+	for line in string.gmatch(string.gsub(text, "\r\n", "\n") .. "\n", "(.-)\n") do
+		table.insert(nodes, ui.text(line, if string.sub(line, 1, 1) == ">" then "comment" else nil))
 	end
-	return table.concat(parts, "\n\n") .. "\n"
+	return nodes
+end
+
+-- A header line: its name dimmed, then its value.
+local function header(name: string, value: string, style: string?): core.UiNode
+	return ui.line({ ui.span(`{name}: `, "comment"), ui.span(value, style) })
+end
+
+-- A message as it's read, `cells` wide: who, when, to whom, then what it
+-- says, from its HTML unless `plain`.
+local function message_node(message: backend.Message, cells: number, plain: boolean): core.UiNode
+	local day, time = string.match(message.date or "", "^(%d+%-%d+%-%d+)T(%d+:%d+)")
+	local date = if day then `{day} {time}` else (message.date or "")
+	local parts: { core.UiNode } = {
+		header("From", message.from, "markup.bold"),
+		header("Date", date),
+		header("To", message.to),
+	}
+	if message.cc ~= "" then
+		table.insert(parts, header("Cc", message.cc))
+	end
+	for _, attached in message.attachments do
+		table.insert(parts, header("Attached", `{attached.name} ({attached.mime})`))
+	end
+	table.insert(parts, ui.gap())
+	local html = if plain then nil else html_lines(message, cells)
+	if html then
+		table.move(html, 1, #html, #parts + 1, parts)
+	elseif message.text == nil then
+		table.insert(
+			parts,
+			ui.text(
+				if backend.here()
+					then "(its text is on its way)"
+					else "(its text isn't in yet: the mail session fetches it when you open it there)",
+				"comment"
+			)
+		)
+	else
+		local lines = text_lines(message.text)
+		table.move(lines, 1, #lines, #parts + 1, parts)
+	end
+	if message.text ~= nil and not message.complete then
+		table.insert(
+			parts,
+			ui.text("(it goes on: only the start of a big message is in)", "comment")
+		)
+	end
+	return ui.column(parts)
+end
+
+--- The thread as it reads, `cells` wide: its subject, then each message,
+--- from their HTML unless `plain`.
+function M.thread_node(thread: Thread, cells: number, plain: boolean): core.UiNode
+	local rule = string.rep("═", math.max(3, core.text.width(thread.subject)))
+	local parts: { core.UiNode } =
+		{ ui.text(thread.subject, "markup.heading"), ui.text(rule, "comment") }
+	for i, message in thread.messages do
+		table.insert(parts, ui.gap())
+		if i > 1 then
+			table.insert(parts, ui.text(string.rep("─", 40), "comment"))
+			table.insert(parts, ui.gap())
+		end
+		table.insert(parts, message_node(message, cells, plain))
+	end
+	return ui.column(parts)
 end
 
 --- Reads the thread `key` (a message's or a thread's): where the list is,
@@ -353,7 +441,7 @@ function M.read(key: string)
 	if reading and reading.floating and reading.window:valid() then
 		reading.window:close()
 	end
-	local buffer = greed.create_buffer("mail-thread", M.thread_text(thread), { readonly = true })
+	local buffer = greed.create_buffer("mail-thread", "", { readonly = true })
 	buffer:set_line_numbers(false)
 	local o = open
 	local page = if o and not o.floating and o.window:valid() then o.window else nil
@@ -362,7 +450,19 @@ function M.read(key: string)
 	if page then
 		page:show(buffer)
 	end
-	reading = { window = window, buffer = buffer, thread = thread, floating = page == nil }
+	local r = {
+		window = window,
+		buffer = buffer,
+		thread = thread,
+		floating = page == nil,
+		plain = false,
+		view = nil :: any,
+	}
+	r.view = ui.mount(buffer, function()
+		return M.thread_node(r.thread, ui.width(buffer), r.plain)
+	end)
+	reading = r
+	window:set_cursor(0)
 	if backend.here() and M.any(thread, "unread") then
 		backend.get().act({ thread.key }, "read")
 	end
@@ -388,10 +488,7 @@ backend.on_changed(function()
 		local thread = backend.get().thread(r.thread.key)
 		if thread then
 			r.thread = thread
-			local buffer = r.buffer
-			buffer:edit(function(e)
-				e:replace(0, buffer:len(), M.thread_text(thread))
-			end)
+			r.view:redraw()
 		end
 	end
 end)
@@ -736,6 +833,54 @@ core.file.on_save("mail-compose", function()
 	greed.echo("it stays here as you wrote it: :mail-send sends it")
 end)
 
+greed.command({
+	name = "mail-plain",
+	doc = "Read the thread as its messages' text, or laid out from their HTML again",
+	run = function()
+		local r = reading
+		if r then
+			r.plain = not r.plain
+			r.view:redraw()
+			greed.echo(if r.plain then "as text" else "from its HTML")
+		end
+	end,
+})
+
+-- The message to show in a browser: the last in the thread being read
+-- that has HTML, or the one under the cursor in the list.
+local function browsed(ctx: greed.Context): string?
+	local r = reading
+	if ctx.buffer:kind() == "mail-thread" and r then
+		for i = #r.thread.messages, 1, -1 do
+			if r.thread.messages[i].html then
+				return r.thread.messages[i].key
+			end
+		end
+		return nil
+	end
+	local o = open
+	local row: Summary? = if o then o.view:value_at(ctx.view:cursor()) else nil
+	return if row then row.key else nil
+end
+
+greed.command({
+	name = "mail-browser",
+	doc = "Show the message in a web browser as it was sent, loading nothing from anywhere",
+	run = function(ctx: greed.Context)
+		local key = browsed(ctx)
+		if key == nil then
+			greed.echo("there's no HTML here to show")
+			return
+		end
+		local path, err = backend.get().browse(key)
+		if path == nil then
+			greed.echo(err or "it has no HTML to show")
+			return
+		end
+		core.file.open_link(`file://{path}`)
+	end,
+})
+
 -- What a list and a thread both do to their mail.
 local ACTIONS = {
 	u = "mail-toggle-read",
@@ -747,6 +892,7 @@ local ACTIONS = {
 	a = "mail-reply-all",
 	c = "mail-compose",
 	t = "mail-tag",
+	b = "mail-browser",
 	q = "mail-close",
 	esc = "mail-close",
 }
@@ -758,5 +904,6 @@ greed.keymap.bind({ kind = "mail" }, {
 	["$"] = "mail-sync",
 })
 greed.keymap.bind({ kind = "mail-thread" }, ACTIONS)
+greed.keymap.bind({ kind = "mail-thread" }, { h = "mail-plain" })
 
 return M

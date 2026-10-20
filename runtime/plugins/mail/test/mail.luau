@@ -12,6 +12,8 @@ type Fake = {
 	tags: { string },
 	flags: { string },
 	text: string,
+	-- Its HTML, as greed-mail lays it out.
+	html: any?,
 }
 
 local MAIL: { Fake } = {
@@ -24,6 +26,14 @@ local MAIL: { Fake } = {
 		tags = { "Inbox" },
 		flags = { "unread" },
 		text = "tomatoes by the fence",
+		html = {
+			lines = {
+				{ { text = "Tomatoes " }, { text = "by the fence", style = "strong" } },
+				{},
+				{ { text = "Read more", style = "link", link = 0 } },
+			},
+			links = { "https://example.com/garden" },
+		},
 	},
 	{
 		key = "m:1:b",
@@ -181,6 +191,7 @@ local function fake()
 					message.text = m.text
 					message.attachments = {}
 					message.complete = true
+					message.html = m.html ~= nil
 					return { key = m.thread, subject = m.subject, messages = { message } }
 				end
 			end
@@ -201,6 +212,17 @@ local function fake()
 				end
 			end
 			return nil, "that mail is gone"
+		end,
+		render = function(key: string): any
+			for _, m in now do
+				if m.key == key then
+					return m.html
+				end
+			end
+			return nil
+		end,
+		browse = function(key: string): (string?, string?)
+			return `/pages/{key}.html`, nil
 		end,
 		send = function(draft: any): (boolean, string?)
 			table.insert(sent, draft)
@@ -439,4 +461,34 @@ test("t tags the message under the cursor, and takes the tag off again", functio
 		assert(acted[2] == "untag garden m:1:b", "off as it is: " .. acted[2])
 		assert(mail.tag_text(mail.shown()[1].tags) == "#Work", "the inbox isn't shown")
 	end)
+end)
+
+test("a thread reads from its HTML, its links open, and h reads it as text", function(t)
+	fake()
+	local opened: { string } = {}
+	local open_link = core.file.open_link
+	core.file.open_link = function(uri: string)
+		table.insert(opened, uri)
+	end
+	local ok, err: any = pcall(function()
+		t:buffer("|x")
+		t:run("mail")
+		t:keys("esc j enter")
+		local buffer = greed.view():buffer()
+		local text = buffer:text()
+		assert(string.find(text, "Tomatoes by the fence", 1, true), text)
+		local at = string.find(text, "Read more", 1, true)
+		assert(at, text)
+		greed.view():set_cursor(at - 1)
+		t:keys("enter")
+		assert(opened[1] == "https://example.com/garden", tostring(opened[1]))
+		t:keys("b")
+		assert(opened[2] == "file:///pages/m:1:a.html", tostring(opened[2]))
+		t:keys("h")
+		text = buffer:text()
+		assert(string.find(text, "tomatoes by the fence", 1, true), text)
+		assert(not string.find(text, "Read more", 1, true), "as text: " .. text)
+	end)
+	core.file.open_link = open_link
+	assert(ok, tostring(err))
 end)
