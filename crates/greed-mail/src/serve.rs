@@ -17,7 +17,8 @@
 //! `for_good`), `undo` (the last change, or the mail just sent while it
 //! waits `SENDING` in the outbox),
 //! `draft` (a reply to the message `key`, to everyone with `all`), `send`
-//! (a draft, put in the outbox and sent in the next round), `respond`
+//! (a draft, put in the outbox and sent in the next round, or between
+//! batches of a long catch-up of the index), `respond`
 //! (`answer` to the invite in the message `key`: accepted, tentative or
 //! declined, sent to its organizer the same way), `render` (the
 //! message `key`'s HTML laid out `width` wide), `browse` (it as a page that
@@ -944,7 +945,11 @@ async fn round(
             .await
             .map_err(|e| format!("{}: {e}", mailbox.name))?;
         more |= !synced.done || fetched >= BODIES;
-        if index_telling(store, index, shared).await? > 0 {
+        // Mail coming due while a long catch-up goes on is sent between
+        // its batches, not once it's over.
+        let sending =
+            async |store: &mut Store| send_mail(&mut connection, store, account, id, shared).await;
+        if index_telling(store, index, shared, sending).await? > 0 {
             shared.notify("changed", &json!({}));
         }
         // Said once they're in the index, so rules searching find them.
@@ -988,12 +993,13 @@ async fn round(
 /// Brings `index` up to `store` a batch at a time, letting requests be
 /// answered between batches. When there's more than a batch it says how
 /// far it got (`indexing`, `done` of `of`), first before it starts, and
-/// that the mail changed after each, so a list fills in as it goes. Gives
-/// how many it wrote.
+/// that the mail changed after each, so a list fills in as it goes.
+/// `between` runs after each batch. Gives how many it wrote.
 async fn index_telling(
     store: &mut Store,
     index: &mut Index,
     shared: &Shared,
+    mut between: impl AsyncFnMut(&mut Store) -> Result<(), String>,
 ) -> Result<usize, String> {
     let of = store.unindexed_count().map_err(|e| e.0)?;
     let telling = of > indexing::BATCH;
@@ -1012,6 +1018,7 @@ async fn index_telling(
             shared.notify("indexing", &json!({ "done": done.min(of), "of": of }));
             shared.notify("changed", &json!({}));
         }
+        between(store).await?;
         tokio::task::yield_now().await;
     }
     indexing::take_out_gone(store, index).map_err(|e| e.0)?;
@@ -1249,7 +1256,7 @@ mod tests {
     use crate::header::Fetched;
 
     #[test]
-    fn indexing_much_says_so_before_the_first_batch_and_after_each() {
+    fn indexing_much_says_so_before_the_first_batch_and_sends_after_each() {
         let dir = std::env::temp_dir().join(format!("gm-telling-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut store = Store::open(&dir).unwrap();
@@ -1276,12 +1283,18 @@ mod tests {
             copies: None,
             last: RefCell::new(None),
         };
+        let mut left_between = Vec::new();
+        let between = async |store: &mut Store| {
+            left_between.push(store.unindexed_count().unwrap());
+            Ok(())
+        };
         let written = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap()
-            .block_on(index_telling(&mut store, &mut index, &shared))
+            .block_on(index_telling(&mut store, &mut index, &shared, between))
             .unwrap();
         assert_eq!(written, count);
+        assert_eq!(left_between, [1, 0], "after each batch, mail is sent");
         let mut told = Vec::new();
         while let Ok(line) = lines.try_recv() {
             let message: Value = serde_json::from_str(&line).unwrap();
