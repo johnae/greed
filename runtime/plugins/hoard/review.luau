@@ -236,6 +236,15 @@ Change nothing else.]=],
 			path
 		)
 	end,
+	-- Something written since the last summary, other than the reviews.
+	worth = function(since)
+		for _, note in index.all() do
+			if note.modified > since and not own(note.name) then
+				return true
+			end
+		end
+		return false
+	end,
 })
 
 return M

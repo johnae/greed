@@ -395,6 +395,20 @@ The agent's transcript opens beside you. Whatever it changes in a note
 you have comes to you as a proposed edit to accept or reject; it doesn't
 delete anything.
 
+`connect` and `week` can also run on their own, when you set a schedule
+in your config:
+
+```luau
+greed.option.set("notes-agent-schedule", "week friday 16:00, connect weekdays 08:00")
+```
+
+The day is `daily`, `weekdays` or a weekday's name. A run Greed was
+closed for happens when it next starts that day, and a run with nothing
+new to work on (an inbox unchanged since the last one) is skipped, so
+the model isn't asked for nothing. With several Greed sessions open, one
+of them runs the schedule. What a scheduled run changes waits for your
+review like any other.
+
 ## Where your notes are
 
 Your notes are plain text files (Markdown) in a folder, `~/notes` unless

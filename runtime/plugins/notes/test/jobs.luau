@@ -91,3 +91,64 @@ test("notes-agent lists the jobs", function(t)
 		assert(string.find(text, name, 1, true), text)
 	end
 end)
+
+test("a schedule is read as JOB DAY HH:MM, and says what it can't read", function()
+	local schedule, wrong = notes.jobs.schedule(
+		"week-less daily 8:00, connect weekdays 8:05, todos daily 09:00, ask monday 10:00"
+	)
+	assert(#schedule == 1 and schedule[1].job == "connect", tostring(#schedule))
+	assert(schedule[1].day == "weekdays" and schedule[1].time == "08:05", schedule[1].time)
+	local said = table.concat(wrong, " | ")
+	assert(string.find(said, "no notes job week-less", 1, true), said)
+	assert(string.find(said, "todos needs a note", 1, true), said)
+	assert(string.find(said, "ask needs a question", 1, true), said)
+	local _, bad = notes.jobs.schedule("connect someday 08:00, connect daily soon")
+	assert(#bad == 2, table.concat(bad, " | "))
+	assert(#notes.jobs.schedule("") == 0)
+end)
+
+test("a scheduled job is due once its time has come that day, and once", function()
+	local schedule = notes.jobs.schedule("connect friday 16:00, connect weekdays 08:00")
+	local function due(today: string, now: string, ran: any): string
+		local out = {}
+		for _, entry in notes.jobs.due(schedule, ran or {}, today, now) do
+			table.insert(out, `{entry.day} {entry.time}`)
+		end
+		return table.concat(out, ",")
+	end
+	-- 2026-10-23 is a Friday, 2026-10-24 a Saturday.
+	assert(due("2026-10-23", "07:59") == "", due("2026-10-23", "07:59"))
+	assert(due("2026-10-23", "16:00") == "friday 16:00,weekdays 08:00", due("2026-10-23", "16:00"))
+	assert(due("2026-10-24", "18:00") == "", "not on a Saturday")
+	local ran = { connect = { slot = "2026-10-23 16:00", at = 0 } }
+	assert(due("2026-10-23", "17:00", ran) == "", "ran today already")
+	assert(due("2026-10-26", "09:00", ran) == "weekdays 08:00", "Monday's comes")
+end)
+
+test("a scheduled job runs quietly in the background when there's something new", function(t)
+	local asked = asked_model()
+	local dir = t:tempdir({ ["inbox.md"] = "- a thought to file\n" })
+	greed.option.set("notes-folder", dir)
+	greed.option.set("notes-project-folder", `{dir}/.no-project-notes`)
+	notes.index.ensure()
+	greed.option.set("notes-agent-schedule", "connect daily 00:00")
+	local before = greed.view():buffer()
+	local started = notes.jobs.tick()
+	assert(table.concat(started, ",") == "connect", table.concat(started, ","))
+	local said = first_said(t, asked)
+	assert(string.find(said, "my inbox note", 1, true), said)
+	assert(greed.view():buffer() == before, "the transcript didn't take the window")
+	assert(#notes.jobs.tick() == 0, "once a day")
+end)
+
+test("a scheduled job with nothing new to work on is skipped", function(t)
+	local asked = asked_model()
+	local dir = t:tempdir({})
+	greed.option.set("notes-folder", dir)
+	greed.option.set("notes-project-folder", `{dir}/.no-project-notes`)
+	notes.index.ensure()
+	greed.option.set("notes-agent-schedule", "connect daily 00:00")
+	assert(#notes.jobs.tick() == 0, "no inbox")
+	t:wait(1)
+	assert(asked[1] == nil, "the model wasn't asked")
+end)

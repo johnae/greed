@@ -289,8 +289,10 @@ function M.reminds_yours(current: string?, running: { string }): boolean
 	return true
 end
 
--- Whether this session sets off reminders in your own notes.
-local function yours_here(): boolean
+--- Whether this session sets off reminders in your own notes, and does
+--- the other things that should happen once for all sessions (the agent's
+--- scheduled jobs).
+function M.yours_here(): boolean
 	local running = {}
 	for _, session in greed.session.list() do
 		table.insert(running, session.name)
@@ -328,7 +330,7 @@ function M.check(): number
 	local reminders = M.scan()
 	local went = load_fired()
 	local now = dates.clock()
-	local yours = yours_here()
+	local yours = M.yours_here()
 	local due: { Reminder } = {}
 	-- A line with several reminders that went off since the last look
 	-- shows once, at its latest.

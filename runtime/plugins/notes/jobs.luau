@@ -14,17 +14,35 @@ local greed = require("@greed")
 local core = require("@core")
 local acp = require("@acp")
 local picker = require("@picker")
+local index = require("./index")
+local todos = require("./todos")
+local reminders = require("./reminders")
+
+local dates = core.dates
+
+greed.option.define({
+	name = "notes-agent-schedule",
+	doc = "Jobs Greed's agent runs on its own, as JOB DAY HH:MM separated by commas, "
+		.. "e.g. `week friday 16:00, connect weekdays 08:00`; DAY is daily, weekdays or a "
+		.. "weekday's name. Empty runs none",
+	default = "",
+	needs = "proc",
+})
 
 local M = {}
 
 --- A job: its `name`, what it does (`doc`), and what the agent is told,
 --- given the note you're in (nil when you're in none) and the question.
 --- A job that `needs` a note or a question doesn't start without one.
+--- `worth` says whether there's anything for it to do since it last ran
+--- on its schedule (`since`, seconds since 1970; 0 for never), so a
+--- scheduled run with nothing new is skipped.
 export type Job = {
 	name: string,
 	doc: string,
 	needs: "note" | "question" | nil,
 	prompt: (note: string?, question: string?) -> string,
+	worth: ((since: number) -> boolean)?,
 }
 
 -- How changes are made, said to every job that makes any.
@@ -58,9 +76,10 @@ function M.get(name: string): Job?
 end
 
 --- Starts Greed's agent on job `name`, for the note at `note` and with
---- `question` as the job needs, and shows its transcript. False and why
---- when it can't.
-function M.run(name: string, note: string?, question: string?): (boolean, string?)
+--- `question` as the job needs, and shows its transcript, unless `quiet`
+--- (a scheduled run, which only says it started). False and why when it
+--- can't.
+function M.run(name: string, note: string?, question: string?, quiet: boolean?): (boolean, string?)
 	local job = M.get(name)
 	if job == nil then
 		return false, `there's no notes job {name}`
@@ -78,7 +97,11 @@ function M.run(name: string, note: string?, question: string?): (boolean, string
 		return false, `can't start Greed's agent: {err}`
 	end
 	acp.switch_on(s, "notes")
-	acp.show(s)
+	if quiet then
+		greed.echo(`Greed's agent started the {name} job; what it changes waits for your review`)
+	else
+		acp.show(s)
+	end
 	return acp.prompt(s, job.prompt(note, question))
 end
 
@@ -101,6 +124,10 @@ gathering them.
 			what,
 			CHANGES
 		)
+	end,
+	worth = function(since)
+		local inbox = index.note(todos.inbox())
+		return inbox ~= nil and inbox.modified > since
 	end,
 })
 
@@ -136,6 +163,146 @@ briefly, and after each thing you say link where it came from: [[note#Heading]] 
 Don't change any notes.]=]
 	end,
 })
+
+--- A job on the schedule: run on `day` ("daily", "weekdays" or a
+--- weekday's name) at `time` ("16:00").
+export type Scheduled = { job: string, day: string, time: string }
+
+local DAYS = { "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday" }
+
+--- The schedule `text` says (`notes-agent-schedule`), and what's wrong
+--- with the parts that can't be read.
+function M.schedule(text: string): ({ Scheduled }, { string })
+	local out: { Scheduled } = {}
+	local wrong: { string } = {}
+	for _, part in string.split(text, ",") do
+		local trimmed = core.text.trim(part)
+		if trimmed == "" then
+			continue
+		end
+		local job, day, hour, minute = string.match(trimmed, "^(%S+)%s+(%a+)%s+(%d%d?):(%d%d)$")
+		local found = if job then M.get(job) else nil
+		day = if day then string.lower(day) else nil
+		if job == nil or day == nil or hour == nil or minute == nil then
+			table.insert(wrong, `{trimmed}: write it as JOB DAY HH:MM`)
+		elseif found == nil then
+			table.insert(wrong, `{trimmed}: there's no notes job {job}`)
+		elseif found.needs then
+			table.insert(
+				wrong,
+				`{trimmed}: {job} needs a {found.needs}, so it can't run on its own`
+			)
+		elseif day ~= "daily" and day ~= "weekdays" and not table.find(DAYS, day) then
+			table.insert(wrong, `{trimmed}: the day is daily, weekdays or a weekday's name`)
+		else
+			local entry: Scheduled = {
+				job = job,
+				day = day :: string,
+				time = string.format("%02d:%s", tonumber(hour) :: number, minute),
+			}
+			table.insert(out, entry)
+		end
+	end
+	return out, wrong
+end
+
+-- When each scheduled job last ran, by job: the run it was (`date time`)
+-- and when, in Greed's cache, read again each time as reminders' are.
+type Ran = { [string]: { slot: string, at: number } }
+
+local function ran_file(): string?
+	local cache = greed.fs.dirs().cache
+	return if cache then `{cache}/notes-jobs.json` else nil
+end
+
+local function load_ran(): Ran
+	local file = ran_file()
+	local text = if file then greed.fs.read(file) else nil
+	local ok, value = pcall(greed.json.decode, text or "")
+	return if ok and type(value) == "table" then value else {}
+end
+
+--- The scheduled runs due now, at `today` (a date) and `now` ("HH:MM"),
+--- that haven't run yet as `ran` says: each job's run of today once its
+--- time has come, so a run missed while Greed was closed happens when it
+--- starts again that day.
+function M.due(schedule: { Scheduled }, ran: Ran, today: string, now: string): { Scheduled }
+	local weekday = dates.weekday(today)
+	local out: { Scheduled } = {}
+	for _, entry in schedule do
+		local today_too = entry.day == "daily"
+			or entry.day == DAYS[weekday]
+			or (entry.day == "weekdays" and weekday <= 5)
+		local last = ran[entry.job]
+		if
+			today_too
+			and entry.time <= now
+			and (last == nil or last.slot < `{today} {entry.time}`)
+		then
+			table.insert(out, entry)
+		end
+	end
+	return out
+end
+
+--- Runs the scheduled jobs that are due, in the one session that does what
+--- should happen once (see reminders), skipping those with nothing new to
+--- work on. Returns the names of those started.
+function M.tick(): { string }
+	local text = greed.option.get("notes-agent-schedule") :: string
+	if text == "" or not reminders.yours_here() then
+		return {}
+	end
+	local clock = dates.clock()
+	local today, now = dates.today(), os.date("%H:%M", clock) :: string
+	local ran = load_ran()
+	local started: { string } = {}
+	local due = M.due(M.schedule(text), ran, today, now)
+	for _, entry in due do
+		local job = M.get(entry.job) :: Job
+		local last = ran[entry.job]
+		-- Marked first, so a run that fails isn't tried again each minute.
+		ran[entry.job] = { slot = `{today} {entry.time}`, at = clock }
+		if job.worth == nil or job.worth(if last then last.at else 0) then
+			local ok, why = M.run(entry.job, nil, nil, true)
+			if ok then
+				table.insert(started, entry.job)
+			else
+				greed.echo(`notes-agent-schedule: {entry.job}: {why}`)
+			end
+		end
+	end
+	local file = ran_file()
+	if file and #due > 0 then
+		greed.fs.write(file, greed.json.encode(ran))
+	end
+	return started
+end
+
+-- Once a minute, on the minute, as reminders go off.
+greed.spawn(function()
+	while true do
+		greed.sleep((60 - dates.clock() % 60) * 1000)
+		local ok, err = pcall(M.tick)
+		if not ok then
+			greed.echo(`notes-agent-schedule: {err}`)
+		end
+	end
+end)
+
+-- A schedule that can't be read says so as it's set: a moment later, so
+-- the plugins adding jobs (Hoard's week) have loaded when it's in a config.
+greed.on("option.changed", function(event)
+	if event.name == "notes-agent-schedule" then
+		greed.spawn(function()
+			greed.sleep(1000)
+			local _, wrong = M.schedule(greed.option.get("notes-agent-schedule") :: string)
+			if #wrong > 0 then
+				greed.echo(`notes-agent-schedule: {table.concat(wrong, "; ")}`)
+			end
+		end)
+	end
+end)
 
 -- The note at the cursor's buffer's path, when it's Markdown.
 local function note_of(buffer: greed.Buffer): string?

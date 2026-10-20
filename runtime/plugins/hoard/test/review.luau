@@ -103,3 +103,10 @@ test("the week job writes the review and has the agent sum up into it", function
 	local said = asked[1].said[1].text
 	assert(string.find(said, path, 1, true) and string.find(said, "## Thoughts", 1, true), said)
 end)
+
+test("the week job has something to sum up only when notes changed since", function(t)
+	folder(t, { ["plans.md"] = "# Plans\n" })
+	local week: any = notes.jobs.get("week")
+	assert(week.worth(0), "a note changed since never")
+	assert(not week.worth(notes.clock() + 60), "nothing since")
+end)
