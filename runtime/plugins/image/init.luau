@@ -70,6 +70,11 @@ end
 
 local M = {}
 
+--- Whether `path` names a file this plugin shows, by its extension.
+function M.is_image(path: string): boolean
+	return EXTENSIONS[string.lower(string.match(path, "%.(%w+)$") or "")] ~= nil
+end
+
 --- Shows the image at `path` in each of `views` (the focused view by
 --- default). Returns the viewer's buffer, or nil and why.
 function M.open(path: string, views: { greed.View }?): (greed.Buffer?, string?)
@@ -155,9 +160,7 @@ greed.keymap.bind({ kind = "image" }, {
 	["0"] = "image-zoom-actual",
 })
 
-core.file.opener(function(path)
-	return EXTENSIONS[string.lower(string.match(path, "%.(%w+)$") or "")] ~= nil
-end, function(path, views)
+core.file.opener(M.is_image, function(path, views)
 	local _, err = M.open(path, views)
 	return err
 end)

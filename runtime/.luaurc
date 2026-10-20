@@ -28,6 +28,7 @@
 		"describe": "./plugins/describe",
 		"acp": "./plugins/acp",
 		"markdown": "./plugins/markdown",
+		"image": "./plugins/image",
 		"tree": "./plugins/tree",
 		"blocks": "./plugins/blocks",
 		"lsp": "./plugins/lsp",

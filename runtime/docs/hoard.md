@@ -173,6 +173,10 @@ See [[Garden plans#Seeds]] for the list, and [[Garden plans#^fence|the fence]].
   current as the note changes. `![[note#Heading]]` shows that section and
   `![[note#^id]]` that line, with what's under it in a list. Long ones are
   cut short.
+- `![[beach.png]]` shows the picture in the window (and in terminals that
+  show pictures), found as Obsidian finds it: beside the note, in
+  Obsidian's attachments folder or anywhere in your notes by its name.
+  `![[beach.png|300]]` makes it 300 pixels wide at most.
 - Typing `[[` lists your notes, and their other names, as you type, and
   the closing `]]` comes along. After a note's name, `#` lists its
   headings and `#^` its list items and lines. You don't write ids: a line

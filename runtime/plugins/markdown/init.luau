@@ -434,24 +434,28 @@ local function draw_table(
 	return true
 end
 
--- The image `src` names, loaded for `read`, at its own size or as wide as
--- a view of the buffer if that's narrower; nil if it doesn't load.
-local function picture(
-	read: Reading,
-	src: string
-): { id: number, cols: number, rows: number, col: number?, row: number? }?
-	local path = links.path(read.buffer, src)
-	if path == nil then
-		return nil
-	end
-	local cached = read.images[path]
+--- An image for a mark's `image`: what it shows and the cells it covers.
+export type Picture = { id: number, cols: number, rows: number, col: number?, row: number? }
+
+--- The image file at `path`, for a mark in `buffer`: loaded once into
+--- `images` (by path; false when it doesn't load, and the caller forgets
+--- the rest when done), at its own size, `width` pixels wide when given,
+--- or as wide as a view of the buffer if that's narrower. Nil if it
+--- doesn't load.
+function M.picture(
+	buffer: greed.Buffer,
+	path: string,
+	images: { [string]: number | false },
+	width: number?
+): Picture?
+	local cached = images[path]
 	if cached == nil then
 		local loaded = greed.image.load(path)
 		if loaded == nil then
-			read.images[path] = false
+			images[path] = false
 			return nil
 		end
-		read.images[path] = loaded
+		images[path] = loaded
 		cached = loaded
 	end
 	if type(cached) ~= "number" then
@@ -462,14 +466,23 @@ local function picture(
 	if not (natural_cols and natural_rows) then
 		return nil
 	end
-	local view = read.buffer:views()[1]
+	local view = buffer:views()[1]
 	local cols = (if view then select(2, view:size()) else nil) or 80
+	if width then
+		cols = math.min(cols, width / greed.image.cell_size())
+	end
 	local scale = math.min(1, cols / math.max(natural_cols, 1))
 	return {
 		id = id,
 		cols = math.max(1, math.round(natural_cols * scale)),
 		rows = math.max(1, math.round(natural_rows * scale)),
 	}
+end
+
+-- The image `src` names, loaded for `read` (see `M.picture`).
+local function picture(read: Reading, src: string): Picture?
+	local path = links.path(read.buffer, src)
+	return if path then M.picture(read.buffer, path, read.images) else nil
 end
 
 -- Obsidian's callouts, `> [!warning] Title` on a quote's first line: the

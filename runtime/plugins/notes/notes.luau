@@ -148,6 +148,44 @@ function M.templates_folder(): string
 	return if set then trimmed_folder(set) else "templates"
 end
 
+-- The files in each notes folder by their name in lower case, found by
+-- walking it, walked again after a minute.
+local by_name: { [string]: { at: number, files: { [string]: string } } } = {}
+
+--- The file (a picture, a PDF) that `![[name]]` in note `from` shows, as
+--- Obsidian finds it: a path from the notes folder, beside the note, in
+--- Obsidian's attachments folder, or anywhere in the notes folder by its
+--- name, in any case. Nil when there's none. Walking the folder waits like
+--- greed.sleep.
+function M.attachment(name: string, from: string?): string?
+	local place, rest = M.split(from or "")
+	local folder = place.folder
+	local note_dir = string.match(`{folder}/{rest}`, "^(.*)/[^/]*$") :: string
+	local set = obsidian("app", "attachmentFolderPath")
+	local candidates = { `{folder}/{name}`, `{note_dir}/{name}` }
+	if set and string.sub(set, 1, 2) == "./" then
+		table.insert(candidates, `{note_dir}/{trimmed_folder(string.sub(set, 3))}/{name}`)
+	elseif set and set ~= "/" then
+		table.insert(candidates, `{folder}/{trimmed_folder(set)}/{name}`)
+	end
+	for _, path in candidates do
+		if core.project.inside(path, folder) and greed.fs.stat(path) then
+			return path
+		end
+	end
+	local known = by_name[folder]
+	if known == nil or os.clock() - known.at > 60 then
+		local files: { [string]: string } = {}
+		for _, file in greed.fs.scan(folder) do
+			local base = string.lower(string.match(file.path, "[^/]+$") :: string)
+			files[base] = files[base] or `{folder}/{file.path}`
+		end
+		known = { at = os.clock(), files = files }
+		by_name[folder] = known
+	end
+	return known.files[string.lower(string.match(name, "[^/]+$") :: string)]
+end
+
 -- How day notes' names are written: Obsidian's format when it's the
 -- year, month and day once each with marks between (`YYYY-MM-DD`,
 -- `DD.MM.YYYY`), else "YYYY-MM-DD".

@@ -5,6 +5,7 @@
 
 local core = require("@core")
 local greed = require("@greed")
+local image = require("@image")
 local markdown = require("@markdown")
 local notes = require("./notes")
 local syntax = require("./syntax")
@@ -14,8 +15,8 @@ local todos = require("./todos")
 
 --- A link in a buffer: where it is (bytes, end exclusive), where the part
 --- shown in its place is, the note it names (as written, without a
---- `#heading` or `#^block`), the heading or block in it, and whether it
---- embeds what it names (`![[...]]`).
+--- `#heading` or `#^block`), the heading or block in it, whether it
+--- embeds what it names (`![[...]]`), and what it says after a `|`.
 type Link = {
 	from: number,
 	to: number,
@@ -25,6 +26,7 @@ type Link = {
 	heading: string?,
 	block: string?,
 	embed: boolean,
+	shown: string?,
 }
 
 local M = {}
@@ -48,6 +50,7 @@ local function links_in(s: markdown.Structure, first: number, last: number): { L
 				heading = link.heading,
 				block = link.block,
 				embed = link.embed,
+				shown = link.shown,
 			})
 		end
 	end
@@ -90,9 +93,13 @@ M.EMBED_LINES = 30
 -- What each embed in a buffer shows, by buffer id and then by what it
 -- names, and whether it's still current; worked out away from drawing,
 -- which only reads it. A stale one shows until it's worked out again.
-type Embedded = { lines: { greed.MarkLine }, current: boolean }
+-- A picture's embed has the file it shows.
+type Embedded = { lines: { greed.MarkLine }, current: boolean, picture: string? }
 local embedded: { [number]: { [string]: Embedded } } = {}
 local embedding: { [number]: { [string]: boolean } } = {}
+-- The pictures loaded for each buffer, by file (see markdown.picture),
+-- forgotten as it closes.
+local pictures: { [number]: { [string]: number | false } } = {}
 
 local redraw: (buffer: greed.Buffer?) -> ()
 
@@ -192,7 +199,30 @@ local function embed_later(buffer: greed.Buffer, link: Link, from: string?)
 		return
 	end
 	busy[key] = true
+	local function show(shown: Embedded)
+		local cached: { [string]: Embedded } = embedded[id] or {}
+		embedded[id] = cached
+		cached[key] = shown
+		redraw(buffer)
+	end
 	greed.spawn(function()
+		if image.is_image(link.target) then
+			local file = notes.attachment(link.target, from)
+			busy[key] = nil
+			if not buffer:valid() then
+				return
+			end
+			if file then
+				-- Loaded here, so drawing doesn't read the file.
+				local images = pictures[id] or {}
+				pictures[id] = images
+				markdown.picture(buffer, file, images)
+			end
+			local missing: { greed.MarkLine } =
+				{ { { text = `({link.target} isn't there to show)`, style = "comment" } } }
+			show({ lines = if file then {} else missing, current = true, picture = file })
+			return
+		end
 		local target = M.target(link.target, from)
 		local lines = M.embedded_lines(target, link.heading, link.block)
 		busy[key] = nil
@@ -206,10 +236,7 @@ local function embed_later(buffer: greed.Buffer, link: Link, from: string?)
 				{ { text = "│ ", style = "comment" }, { text = line, style = "markup.quote" } }
 			table.insert(shown, pieces)
 		end
-		local cached: { [string]: Embedded } = embedded[id] or {}
-		embedded[id] = cached
-		cached[key] = { lines = shown, current = true }
-		redraw(buffer)
+		show({ lines = shown, current = true })
 	end)
 end
 
@@ -230,14 +257,34 @@ redraw = markdown.conceal({
 		for _, link in links_in(s, first, last) do
 			if link.embed then
 				local shown = cached[embed_key(link)]
-				if shown then
+				if shown == nil or not shown.current then
+					embed_later(buffer, link, here)
+				end
+				local file = if shown then shown.picture else nil
+				-- `![[picture.png|100]]` is 100 pixels wide at most.
+				local width = tonumber(string.match(link.shown or "", "^%s*(%d+)"))
+				local picture = if file
+					then markdown.picture(buffer, file, pictures[buffer:id()] or {}, width)
+					else nil
+				if picture then
+					-- In the window the picture shows in its place, and where
+					-- pictures can't show, its name does.
+					table.insert(marks, {
+						from = link.from,
+						to = link.to,
+						style = "markdown.image",
+						text = link.target,
+						conceal = true,
+						reveal = "auto" :: "auto",
+						image = picture,
+						lines = table.create(picture.rows - 1, "") :: any,
+					})
+					continue
+				elseif shown then
 					table.insert(
 						marks,
 						{ from = link.from, to = link.to, style = "comment", lines = shown.lines }
 					)
-				end
-				if shown == nil or not shown.current then
-					embed_later(buffer, link, here)
 				end
 			end
 			table.insert(marks, { from = link.text_from, to = link.text_to, style = "markup.link" })
@@ -308,6 +355,18 @@ end)
 
 greed.on("buffer.saved", function(event: greed.BufferChanged)
 	refresh(event.buffer)
+end)
+
+greed.on("buffer.closed", function(event: greed.BufferClosed)
+	local id = event.id
+	local images: { [string]: number | false } = pictures[id] or {}
+	for _, loaded in images do
+		if type(loaded) == "number" then
+			greed.image.forget(loaded)
+		end
+	end
+	pictures[id] = nil
+	embedded[id] = nil
 end)
 
 -- A note linking here added or taken away, here or on disk, shows at once,

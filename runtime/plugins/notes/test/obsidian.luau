@@ -248,3 +248,45 @@ test("moving a folder of notes changes the links into it", function(t)
 	local sunday = once(t, "Sunday", "later/Trip")
 	assert(sunday == "See [[later/Trip|the trip]].\n", sunday)
 end)
+
+test("a picture an embed shows is found as Obsidian finds it", function(t)
+	local dir = t:tempdir({
+		["notes/Trip.md"] = "![[beach.png]]\n![[gone.png]]\n",
+		["notes/pics/beach.png"] = "x",
+		["notes/here.png"] = "x",
+		["assets/map.png"] = "x",
+		["Deep/Down/Far.png"] = "x",
+		[".obsidian/app.json"] = '{"attachmentFolderPath": "assets"}',
+	})
+	greed.option.set("notes-folder", dir)
+	greed.option.set("notes-project-folder", `{dir}/.no-project-notes`)
+	notes.index.ensure()
+	local function found(name: string): string?
+		local path = notes.attachment(name, "notes/Trip")
+		return if path then string.sub(path, #dir + 2) else nil
+	end
+	assert(found("here.png") == "notes/here.png", found("here.png"))
+	assert(found("map.png") == "assets/map.png", found("map.png"))
+	assert(found("Deep/Down/Far.png") == "Deep/Down/Far.png")
+	assert(found("FAR.png") == "Deep/Down/Far.png", found("FAR.png"))
+	assert(found("beach.png") == "notes/pics/beach.png", found("beach.png"))
+	assert(found("gone.png") == nil)
+	-- One that isn't anywhere says so in place.
+	greed.open(`{dir}/notes/Trip.md`)
+	t:wait_for(function()
+		return embedded("![[gone.png]]") ~= nil
+	end)
+	local gone = embedded("![[gone.png]]") :: string
+	assert(string.find(gone, "gone.png isn't there", 1, true), gone)
+end)
+
+test("Obsidian's attachments beside the note, in a folder of their own", function(t)
+	local dir = t:tempdir({
+		["a/Note.md"] = "",
+		["a/files/pic.png"] = "x",
+		[".obsidian/app.json"] = '{"attachmentFolderPath": "./files"}',
+	})
+	greed.option.set("notes-folder", dir)
+	local path = notes.attachment("pic.png", "a/Note")
+	assert(path == `{dir}/a/files/pic.png`, path)
+end)
