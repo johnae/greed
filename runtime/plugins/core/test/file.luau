@@ -666,6 +666,18 @@ test("open_link opens only web and mail links outside; a file link opens here", 
 	greed.option.set("link-opener", "")
 end)
 
+test("a plugin's link scheme opens its links in Greed", function(t)
+	t:buffer("|x")
+	local opened = {}
+	core.file.link_scheme("Thing", function(uri)
+		table.insert(opened, uri)
+	end)
+	core.file.open_link("thing:42")
+	core.file.open_link("THING:43")
+	assert(table.concat(opened, " ") == "thing:42 THING:43", table.concat(opened, " "))
+	assert(#t:messages() == 0, t:messages()[1])
+end)
+
 test(":bd on an untitled buffer closes it quietly, and :q's hint fits what's unsaved", function(t)
 	t:buffer("|")
 	t:run("buffer-close")

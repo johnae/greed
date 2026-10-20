@@ -7,6 +7,7 @@
 //! `summaries` (`keys` the index found, as a list shows them), `thread`
 //! (a thread by its key or one of its messages', with their text; bodies
 //! not in yet come ahead of everything else, then `changed` says so),
+//! `find` (the key of the message with a `message_id`),
 //! `act` (`action` on the messages `keys` name: read, unread, flag,
 //! unflag, archive, trash, move `to` a mailbox, or tag and untag with
 //! `tag`; made here at once and sent to the server in the next round,
@@ -264,6 +265,12 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
                 shared.wake.notify_one();
             }
             serde_json::to_value(thread).map_err(|e| e.to_string())
+        }
+        "find" => {
+            let id = params["message_id"]
+                .as_str()
+                .ok_or("find takes message_id, a Message-ID without <>")?;
+            Ok(json!({ "key": reader.find(id).map_err(|e| e.0)? }))
         }
         "act" => {
             let writer = with.writer()?;

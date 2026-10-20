@@ -587,13 +587,27 @@ greed.option.define({
 -- read, so they aren't opened.
 local OPENED = { http = true, https = true, mailto = true }
 
---- Opens `uri`, a web or mail address, with the link-opener option, or the
---- system's opener; a file:// link opens the file here. Says why when it
+-- What opens links of a scheme in Greed, by scheme.
+local schemes: { [string]: (uri: string) -> () } = {}
+
+--- Makes `open` open links of `scheme` (like "mail" for mail:ID) in Greed
+--- rather than outside, until the plugin that called this goes.
+function M.link_scheme(scheme: string, open: (uri: string) -> ())
+	greed.plugin.tie(registry.set(schemes, string.lower(scheme), open))
+end
+
+--- Opens `uri`: a link of a scheme a plugin opens (`link_scheme`) with
+--- that plugin, a web or mail address with the link-opener option or the
+--- system's opener, and a file:// link as the file here. Says why when it
 --- can't.
 function M.open_link(uri: string)
 	local scheme = string.lower(string.match(uri, "^(%a[%w+.-]*):") or "")
 	local path = if scheme == "file" then string.match(uri, "^%a+://(/.*)$") else nil
-	if path then
+	local own = schemes[scheme]
+	if own then
+		own(uri)
+		return
+	elseif path then
 		M.open((string.gsub(path, "%%(%x%x)", function(hex: string): string
 			return string.char(tonumber(hex, 16) :: number)
 		end)))

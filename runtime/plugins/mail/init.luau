@@ -3,15 +3,16 @@
 -- the search box over it (in:inbox to start); elsewhere `:mail` opens the
 -- same list in a float for a quick look. `enter` reads a thread, `/`
 -- searches again, `$` syncs now, `q` goes back or closes; `u` marks read
--- or unread, `s` flags, `t` tags, `e` archives and `d` trashes; `r`
--- replies, `a` replies to all and `c` writes new mail, which `:mail-send`
--- sends.
+-- or unread, `s` flags, `t` tags, `T` makes a todo, `e` archives and
+-- `d` trashes; `r` replies, `a` replies to all and `c` writes new mail,
+-- which `:mail-send` sends.
 -- greed-mail syncs the accounts in mail.toml and keeps the index this
 -- searches (backend.luau); a search is the query language anywhere in
 -- Greed: from:anna is:unread date:2w.. in:work invoice.
 
 local greed = require("@greed")
 local core = require("@core")
+local notes = require("@notes")
 local backend = require("@self/backend")
 
 local ui = core.ui
@@ -804,26 +805,24 @@ local function acting(which: (chosen: Chosen) -> (string?, string?)): (ctx: gree
 	end
 end
 
--- The message a reply in `ctx` answers: the last in the thread being
--- read, or the one under the cursor in the list.
-local function answering(ctx: greed.Context): string?
+-- The message a reply or a todo in `ctx` is about: the last in the thread
+-- being read, or the one under the cursor in the list.
+local function answering(ctx: greed.Context): Summary?
 	local r = reading
 	if ctx.buffer:kind() == "mail-thread" and r then
-		local last = r.thread.messages[#r.thread.messages]
-		return if last then last.key else nil
+		return r.thread.messages[#r.thread.messages]
 	end
 	local o = open
-	local row: Summary? = if o then o.view:value_at(ctx.view:cursor()) else nil
-	return if row then row.key else nil
+	return if o then o.view:value_at(ctx.view:cursor()) else nil
 end
 
 local function replying(all: boolean): (ctx: greed.Context) -> ()
 	return function(ctx: greed.Context)
-		local key = answering(ctx)
-		if key == nil then
+		local message = answering(ctx)
+		if message == nil then
 			return
 		end
-		local draft, err = backend.get().draft(key, all)
+		local draft, err = backend.get().draft(message.key, all)
 		if draft == nil then
 			greed.echo(err or "that mail is gone")
 			return
@@ -831,6 +830,62 @@ local function replying(all: boolean): (ctx: greed.Context) -> ()
 		M.write(draft)
 	end
 end
+
+--- A link to the message whose Message-ID is `id`, as notes write it:
+--- `[mail](mail:ID)`, what would break the link percent-encoded.
+function M.link(id: string): string
+	local escaped = string.gsub(id, "[%%%s%(%)<>%[%]]", function(c: string): string
+		return string.format("%%%02X", string.byte(c))
+	end)
+	return `[mail](mail:{escaped})`
+end
+
+--- The Message-ID a `mail:` link names.
+function M.linked(uri: string): string
+	return (
+		string.gsub(string.sub(uri, #"mail:" + 1), "%%(%x%x)", function(hex: string): string
+			return string.char(tonumber(hex, 16) :: number)
+		end)
+	)
+end
+
+--- What a todo made from `message` says to start with: who sent it and
+--- what about.
+function M.todo_text(message: Summary): string
+	return `{M.who(message.from)}: {message.subject}`
+end
+
+greed.command({
+	name = "mail-todo",
+	doc = "Add a todo about the message (or the thread being read) to your inbox note, linking back to it",
+	run = function(ctx: greed.Context)
+		local message = answering(ctx)
+		if message == nil then
+			return
+		end
+		local text = core.prompt.ask("Todo for your inbox", M.todo_text(message))
+		if text == nil or not string.match(text, "%S") then
+			return
+		end
+		local id = message.message_id
+		local link = if id then M.link(id) else nil
+		local said = notes.todos.capture(if link then `{text} {link}` else text, "inbox")
+		if link then
+			said = string.gsub(said, " " .. string.gsub(link, "%p", "%%%0"), "")
+		end
+		greed.echo(`added to your inbox: {said}`)
+	end,
+})
+
+-- A mail: link, in a note or anywhere, reads its thread.
+core.file.link_scheme("mail", function(uri: string)
+	local key, err = backend.get().find(M.linked(uri))
+	if key == nil then
+		greed.echo(err or "that mail isn't here: it may not have synced yet")
+		return
+	end
+	M.read(key)
+end)
 
 --- A rule for new mail: a query, and what to do with the new mail it
 --- finds: `read`, `flag`, `tag` (a tag to put on), then `archive` or
@@ -1232,6 +1287,7 @@ local ACTIONS = {
 	a = "mail-reply-all",
 	c = "mail-compose",
 	t = "mail-tag",
+	T = "mail-todo",
 	b = "mail-browser",
 	q = "mail-close",
 	esc = "mail-close",

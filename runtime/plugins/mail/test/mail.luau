@@ -115,6 +115,7 @@ local function summary(m: Fake): any
 		unread = table.find(m.flags, "unread") ~= nil,
 		flagged = table.find(m.flags, "flagged") ~= nil,
 		tags = table.clone(m.tags),
+		message_id = `{string.sub(m.key, -1)}@example.com`,
 	}
 end
 
@@ -202,6 +203,14 @@ local function fake()
 				end
 			end
 			return nil
+		end,
+		find = function(id: string): (string?, string?)
+			for _, m in now do
+				if summary(m).message_id == id then
+					return m.key, nil
+				end
+			end
+			return nil, nil
 		end,
 		sync = function() end,
 		draft = function(key: string, all: boolean): (any, string?)
@@ -603,4 +612,34 @@ test("rules act on new mail they find, only that, and only in the mail session",
 	end)
 	mail.rules = {}
 	assert(ok, tostring(err))
+end)
+
+test("T makes a todo of the message in your inbox note, and its link reads it again", function(t)
+	fake()
+	local dir = t:tempdir()
+	greed.option.set("notes-folder", dir)
+	greed.option.set("notes-project-folder", `{dir}/.no-project-notes`)
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc T space f r i d a y enter")
+	local text = greed.fs.read(`{dir}/inbox.md`) or ""
+	local due = core.dates.read_words("friday").date
+	assert(text == `- [ ] Anna Berg: Invoice 41 [mail](mail:b@example.com) due:{due}\n`, text)
+	local said = table.concat(t:messages(), "\n")
+	assert(string.find(said, "added to your inbox: Anna Berg: Invoice 41, due", 1, true), said)
+	t:keys("q")
+	core.file.open_link("mail:b@example.com")
+	assert(greed.view():buffer():kind() == "mail-thread", greed.view():buffer():kind())
+	assert(string.find(greed.view():buffer():text(), "Invoice 41", 1, true) ~= nil)
+	t:keys("q")
+	core.file.open_link("mail:gone@example.com")
+	said = table.concat(t:messages(), "\n")
+	assert(string.find(said, "isn't here", 1, true), said)
+end)
+
+test("a mail link keeps an odd Message-ID whole", function()
+	local id = "a b(c)[d]<e>%f@x"
+	local link = mail.link(id)
+	assert(link == "[mail](mail:a%20b%28c%29%5Bd%5D%3Ce%3E%25f@x)", link)
+	assert(mail.linked(string.match(link, "%((.*)%)") :: string) == id)
 end)

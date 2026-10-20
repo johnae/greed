@@ -199,6 +199,8 @@ See [[Garden plans#Seeds]] for the list, and [[Garden plans#^fence|the fence]].
   the link goes where you are.
 - Renaming a note, or moving a folder of them (`:file-rename`, or from the
   file list), changes the links to them in your other notes.
+- `[mail](mail:ID)`, which `T` in [mail](mail.md) writes in a todo, opens
+  that message's thread in Greed.
 
 A folder Obsidian writes works as it is. Links find notes as Obsidian
 finds them: `[[Cards view]]` goes to `Bases/Cards view.md` wherever it

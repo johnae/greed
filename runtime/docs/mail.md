@@ -43,6 +43,7 @@ These work on the message under the cursor, or in a thread on all of it:
 | `u`      | marks it read, or unread when it's read                   |
 | `s`      | flags it, or takes the flag off                           |
 | `t`      | asks for a tag and puts it on, or takes it off if it's on |
+| `T`      | makes a todo of it in your inbox note (see below)         |
 | `b`      | opens it in a web browser, loading nothing from anywhere  |
 | `e`      | moves it to the archive                                   |
 | `d`, `#` | moves it to the trash; in the trash, deletes it for good  |
@@ -53,6 +54,21 @@ These work on the message under the cursor, or in a thread on all of it:
 A change shows at once and goes to the server within seconds. If the
 server refuses it (a folder that went, say), it's taken back and Greed
 says why.
+
+## Todos
+
+`T` asks for a todo about the message, starting as who sent it and what
+it's about, and adds it to your inbox note in [Hoard](hoard.md). Say when
+it's due in words, as anywhere in Hoard: `Anna Berg: Invoice 41 friday`.
+It ends in a link back to the message:
+
+```markdown
+- [ ] Anna Berg: Invoice 41 [mail](mail:41@example.com) due:2026-10-23
+```
+
+Opening the link reads the thread again, in the mail session or as a
+quick look anywhere else. The todo reads well without it too, on your
+phone say.
 
 ## Rules
 

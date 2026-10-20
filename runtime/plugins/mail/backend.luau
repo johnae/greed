@@ -23,6 +23,8 @@ export type Summary = {
 	--- In a list of threads, the messages found of its thread, newest
 	--- first: what a change to the row changes.
 	found: { string }?,
+	--- Its Message-ID, without the `<>`: what a `mail:` link names.
+	message_id: string?,
 }
 
 --- Something attached, as the message lists it.
@@ -69,6 +71,8 @@ export type Backend = {
 	summaries: (keys: { string }) -> ({ Summary }?, string?),
 	--- The thread `key` names, or the one message `key` is in.
 	thread: (key: string) -> (Thread?, string?),
+	--- The key of the message whose Message-ID is `id`, or nil and why.
+	find: (id: string) -> (string?, string?),
 	--- Syncs now.
 	sync: () -> (),
 	--- Makes `action` (read, unread, flag, unflag, archive, trash, or tag
@@ -217,6 +221,10 @@ M.served = {
 	end,
 	thread = function(key: string): (Thread?, string?)
 		return ask("thread", { key = key })
+	end,
+	find = function(id: string): (string?, string?)
+		local found, err = ask("find", { message_id = id })
+		return if found then found.key else nil, err
 	end,
 	sync = function()
 		ask("sync", {})

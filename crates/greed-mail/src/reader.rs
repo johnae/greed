@@ -26,6 +26,8 @@ pub struct Summary {
     pub flagged: bool,
     /// Where it is and what it's tagged with, by name, as `in:` finds it.
     pub tags: Vec<String>,
+    /// Its Message-ID, without the `<>`: what a `mail:` link names.
+    pub message_id: Option<String>,
 }
 
 /// A message as it's read: its summary, who else it went to, and its body
@@ -85,7 +87,7 @@ const SUMMARY: &str = "SELECT 'm:' || messages.account || ':' || messages.identi
         (SELECT group_concat(mailboxes.name || char(31) || coalesce(mailboxes.role, ''), char(30))
          FROM places JOIN mailboxes ON mailboxes.id = places.mailbox
          WHERE places.message = messages.id),
-        bodies.html IS NOT NULL
+        bodies.html IS NOT NULL, messages.message_id
      FROM messages LEFT JOIN bodies.bodies ON bodies.message = messages.id";
 
 fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
@@ -115,6 +117,7 @@ fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
             unread: !has("\\Seen"),
             flagged: has("\\Flagged"),
             tags: indexing::tags_of(&places, &labels, &flags),
+            message_id: r.get(14)?,
         },
         to: r.get(6)?,
         cc: r.get(7)?,
@@ -220,6 +223,20 @@ impl Reader {
                     .map_err(|e| Trouble(format!("its HTML won't unpack: {e}")))
             })
             .transpose()
+    }
+
+    /// The key of the message whose Message-ID is `id` (without `<>`): the
+    /// newest, when it's in more than one account or folder copy.
+    pub fn find(&self, id: &str) -> Result<Option<String>, Trouble> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT 'm:' || account || ':' || identity FROM messages
+                 WHERE message_id = ?1 ORDER BY date DESC LIMIT 1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 
     /// The name of the account the message or thread `key` is in.
@@ -354,5 +371,8 @@ mod tests {
             2
         );
         assert_eq!(reader.thread("m:1:pm:nothing").unwrap(), None);
+        assert_eq!(summaries[1].message_id.as_deref(), Some("a@x"));
+        assert_eq!(reader.find("a@x").unwrap().as_deref(), Some("m:1:pm:a"));
+        assert_eq!(reader.find("nothing@x").unwrap(), None);
     }
 }
