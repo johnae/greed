@@ -116,6 +116,8 @@ local reading: {
 	window: greed.View,
 	buffer: greed.Buffer,
 	thread: Thread,
+	-- What a change made while reading changes, when not all of it.
+	found: { string }?,
 	floating: boolean,
 	-- Read as its text, rather than laid out from its HTML.
 	plain: boolean,
@@ -144,7 +146,43 @@ function M.search(parsed: core.Query): ({ Summary }?, string?)
 	return mail.summaries(keys)
 end
 
--- The list's results for `parsed`, found once for the list and its count.
+greed.option.define({
+	name = "mail-threads",
+	doc = "Whether a mail list shows each thread once, as its newest message found, rather than every message",
+	default = true,
+})
+
+--- `found` (newest first) a row a thread: each thread's newest message,
+--- unread or flagged if any found of the thread is, with the tags of all
+--- and their keys in `found`.
+function M.threads(found: { Summary }): { Summary }
+	local rows: { Summary } = {}
+	local by: { [string]: Summary } = {}
+	for _, message in found do
+		local thread = message.thread or message.key
+		local row = by[thread]
+		if row == nil then
+			row = table.clone(message)
+			row.tags = table.clone(message.tags)
+			row.found = { message.key }
+			by[thread] = row
+			table.insert(rows, row)
+		else
+			table.insert(row.found :: { string }, message.key)
+			row.unread = row.unread or message.unread
+			row.flagged = row.flagged or message.flagged
+			for _, tag in message.tags do
+				if not table.find(row.tags, tag) then
+					table.insert(row.tags, tag)
+				end
+			end
+		end
+	end
+	return rows
+end
+
+-- The list's results for `parsed`, found once for the list and its count:
+-- a row a thread, or a message, as `mail-threads` says.
 local function results(o: Open, parsed: core.Query): { Summary }
 	local text = core.query.print(parsed)
 	local found = o.found[text]
@@ -152,6 +190,9 @@ local function results(o: Open, parsed: core.Query): { Summary }
 		local rows, trouble = M.search(parsed)
 		o.trouble = trouble
 		found = rows or {}
+		if greed.option.get("mail-threads") then
+			found = M.threads(found)
+		end
 		o.found[text] = found
 	end
 	return found
@@ -188,7 +229,13 @@ local function render(o: Open): core.UiNode
 						if row.unread then "keyword" else nil
 					),
 				},
-				{ ui.span(row.subject) },
+				{
+					ui.span(row.subject),
+					ui.span(
+						if row.found and #row.found > 1 then ` ({#row.found})` else "",
+						"comment"
+					),
+				},
 				{ ui.span(M.tag_text(row.tags), "comment") },
 			},
 			value = row,
@@ -462,8 +509,9 @@ end
 
 --- Reads the thread `key` (a message's or a thread's): where the list is,
 --- on the page, or in a float over a quick look. In the mail session,
---- reading it marks it read.
-function M.read(key: string)
+--- reading it marks it read. A change made while reading changes the
+--- messages `found` (a list row's), or the whole thread without them.
+function M.read(key: string, found: { string }?)
 	local thread, err = backend.get().thread(key)
 	if thread == nil then
 		greed.echo(err or "that mail is gone")
@@ -485,6 +533,7 @@ function M.read(key: string)
 		window = window,
 		buffer = buffer,
 		thread = thread,
+		found = found,
 		floating = page == nil,
 		plain = false,
 		view = nil :: any,
@@ -627,7 +676,7 @@ local function chosen(ctx: greed.Context): Chosen?
 			end
 		end
 		return {
-			keys = { r.thread.key },
+			keys = r.found or { r.thread.key },
 			unread = M.any(r.thread, "unread"),
 			flagged = M.any(r.thread, "flagged"),
 			tags = tags,
@@ -638,7 +687,15 @@ local function chosen(ctx: greed.Context): Chosen?
 	if row == nil then
 		return nil
 	end
-	return { keys = { row.key }, unread = row.unread, flagged = row.flagged, tags = row.tags }
+	-- A thread's row changes the messages found of it, not others of
+	-- the thread: archiving a thread found in the inbox leaves your replies
+	-- in Sent.
+	return {
+		keys = row.found or { row.key },
+		unread = row.unread,
+		flagged = row.flagged,
+		tags = row.tags,
+	}
 end
 
 -- Makes the action `which` picks for what's chosen in `ctx` (nil for none),
@@ -740,7 +797,7 @@ greed.command({
 		end
 		local row: Summary? = o.view:value_at(ctx.view:cursor())
 		if row then
-			M.read(row.thread or row.key)
+			M.read(row.thread or row.key, row.found)
 		end
 	end,
 })

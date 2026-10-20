@@ -16,6 +16,12 @@ In the list, `enter` reads the thread under the cursor in its place, `/`
 searches again and `$` syncs now; `q` in a thread goes back to the list.
 Reading a thread marks it read.
 
+A thread shows once, as its newest message the search found, with how
+many it found after the subject (`(3)`). A change to a row changes those
+messages and no others of the thread, so archiving a thread found in the
+inbox leaves your replies in Sent. `:set mail-threads false` lists every
+message on its own.
+
 These work on the message under the cursor, or in a thread on all of it:
 
 | Key      | Does                                                      |

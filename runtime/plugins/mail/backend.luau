@@ -20,6 +20,9 @@ export type Summary = {
 	flagged: boolean,
 	--- Where it is and what it's tagged with, as `in:` finds it.
 	tags: { string },
+	--- In a list of threads, the messages found of its thread, newest
+	--- first: what a change to the row changes.
+	found: { string }?,
 }
 
 --- Something attached, as the message lists it.

@@ -533,3 +533,28 @@ test("what's attached opens when pressed, and S saves it where you say", functio
 	core.file.open_link = open_link
 	assert(ok, tostring(err))
 end)
+
+test("a list shows a thread once, as its newest message found", function()
+	local function message(key: string, thread: string, unread: boolean, tags: { string }): any
+		return {
+			key = key,
+			thread = thread,
+			from = "Bob <bob@example.com>",
+			subject = "Plans",
+			unread = unread,
+			flagged = false,
+			tags = tags,
+		}
+	end
+	local rows = mail.threads({
+		message("m:1:c", "t:1:x", false, { "Inbox" }),
+		message("m:1:b", "t:1:y", false, { "Inbox" }),
+		message("m:1:a", "t:1:x", true, { "Work" }),
+	})
+	assert(#rows == 2, tostring(#rows))
+	assert(rows[1].key == "m:1:c", "the newest stands for it")
+	assert(rows[1].unread, "unread if any found is")
+	assert(table.concat(rows[1].tags, " ") == "Inbox Work")
+	assert(table.concat(rows[1].found or {}, " ") == "m:1:c m:1:a", "what a change changes")
+	assert(table.concat(rows[2].found or {}, " ") == "m:1:b")
+end)
