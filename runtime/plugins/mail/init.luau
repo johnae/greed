@@ -70,6 +70,17 @@ M.source = {
 	stored = FLAGS,
 } :: core.QuerySource
 
+--- The searches kept to go back to, shown over the list with how many
+--- unread threads each finds; `g 1` to `g 9` go to them. Set them in your
+--- config: `require("@mail").searches = { { name = "Work", query = "in:work" } }`.
+M.searches = {
+	{ name = "Inbox", query = "in:inbox" },
+	{ name = "Unread", query = "is:unread" },
+	{ name = "Flagged", query = "is:flagged" },
+	{ name = "Sent", query = "is:mine" },
+	{ name = "Attached", query = "is:attachment" },
+}
+
 --- The search a list starts with.
 M.START = "in:inbox"
 
@@ -108,6 +119,10 @@ type Open = {
 	-- Results by the query that found them, as the search box counts the
 	-- same queries the list shows.
 	found: { [string]: { Summary } },
+	-- How many unread threads each saved search finds, by its query, once
+	-- counted; counting goes on while this is set.
+	unread: { [string]: number },
+	counting: boolean,
 }
 local open: Open? = nil
 
@@ -213,6 +228,50 @@ function M.tag_text(tags: { string }): string
 	return table.concat(shown, " ")
 end
 
+-- How many unread threads a saved search counts at most.
+local COUNTED = 999
+
+-- Counts the unread threads each saved search finds, in the background,
+-- then draws the list again.
+local function count(o: Open)
+	if o.counting then
+		return
+	end
+	o.counting = true
+	greed.spawn(function()
+		for _, saved in M.searches do
+			local text = if saved.query == "" then "is:unread" else `({saved.query}) is:unread`
+			local parsed = core.search_box.read(text, { source = M.source })
+			if parsed.ok then
+				parsed.view.limit = COUNTED + 1
+				o.unread[saved.query] = #M.threads(M.search(parsed) or {})
+			end
+		end
+		o.counting = false
+		if o.buffer:valid() then
+			o.view:redraw()
+		end
+	end)
+end
+
+-- The saved searches over the list: each with its number and unread
+-- count, the one shown picked out, pressing one going to it.
+local function tabs(o: Open): core.UiNode
+	local spans: { core.UiSpan } = {}
+	for i, saved in M.searches do
+		local n = o.unread[saved.query] or 0
+		local unread = if n > COUNTED then ` {COUNTED}+` elseif n > 0 then ` {n}` else ""
+		table.insert(spans, {
+			text = ` {i} {saved.name}{unread} `,
+			style = if o.query == saved.query then "markup.bold" else "comment",
+			press = function()
+				M.go(saved.query)
+			end,
+		})
+	end
+	return ui.line(spans)
+end
+
 local function render(o: Open): core.UiNode
 	local head = if o.trouble
 		then ui.text(o.trouble, "diagnostic.error")
@@ -241,10 +300,11 @@ local function render(o: Open): core.UiNode
 			value = row,
 		})
 	end
-	return ui.column({ head, ui.gap(), ui.grid(rows) })
+	return ui.column({ tabs(o), head, ui.gap(), ui.grid(rows) })
 end
 
--- Runs the list's query again, as the mail changed or it was typed.
+-- Runs the list's query again, as the mail changed or it was typed; as
+-- the mail changed (no `parsed`), counts the saved searches' unread too.
 local function refresh(o: Open, parsed: core.Query?)
 	o.found = {}
 	local query = parsed or core.search_box.read(o.query, { source = M.source })
@@ -252,6 +312,9 @@ local function refresh(o: Open, parsed: core.Query?)
 		o.rows = results(o, query)
 	end
 	o.view:redraw()
+	if parsed == nil then
+		count(o)
+	end
 end
 
 --- What the open list shows, for tests.
@@ -266,9 +329,26 @@ local function back(o: Open)
 		return
 	end
 	o.window:focus()
-	if o.view:value_at(o.window:cursor()) == nil and o.buffer:line_count() > 2 then
-		o.window:set_cursor(o.buffer:line_start(2))
+	if o.view:value_at(o.window:cursor()) == nil then
+		local first = o.view:line_of(function(value: any): boolean
+			return value ~= nil
+		end)
+		if first then
+			o.window:set_cursor(o.buffer:line_start(first))
+		end
 	end
+end
+
+--- Shows what `query` finds in the open list, the cursor on its first.
+function M.go(query: string)
+	local o = open
+	if o == nil or not o.buffer:valid() then
+		return
+	end
+	o.query = query
+	refresh(o, core.search_box.read(query, { source = M.source }))
+	o.window:set_cursor(0)
+	back(o)
 end
 
 --- Asks for a search in the open list, as it's typed.
@@ -317,6 +397,8 @@ local function list(query: string, window: greed.View?): Open
 		query = query,
 		rows = {},
 		found = {},
+		unread = {},
+		counting = false,
 		view = nil :: any,
 	}
 	o.view = ui.mount(buffer, function()
@@ -1008,6 +1090,52 @@ greed.command({
 	end,
 })
 
+-- Goes `by` saved searches on from the one shown (the first when it's
+-- none of them), around.
+local function step(by: number)
+	local o = open
+	if o == nil or #M.searches == 0 then
+		return
+	end
+	local at = 0
+	for i, saved in M.searches do
+		if saved.query == o.query then
+			at = i
+		end
+	end
+	local to = if at == 0 then 1 else (at - 1 + by) % #M.searches + 1
+	M.go(M.searches[to].query)
+end
+
+for i = 1, 9 do
+	greed.command({
+		name = `mail-search-{i}`,
+		doc = `Show what saved search {i} finds (require("@mail").searches)`,
+		run = function()
+			local saved = M.searches[i]
+			if saved then
+				M.go(saved.query)
+			end
+		end,
+	})
+end
+
+greed.command({
+	name = "mail-search-next",
+	doc = "Show what the next saved search finds",
+	run = function()
+		step(1)
+	end,
+})
+
+greed.command({
+	name = "mail-search-previous",
+	doc = "Show what the saved search before finds",
+	run = function()
+		step(-1)
+	end,
+})
+
 -- What a list and a thread both do to their mail.
 local ACTIONS = {
 	u = "mail-toggle-read",
@@ -1025,10 +1153,15 @@ local ACTIONS = {
 }
 
 greed.keymap.bind({ kind = "mail" }, ACTIONS)
+for i = 1, 9 do
+	greed.keymap.bind({ kind = "mail" }, { [`g {i}`] = `mail-search-{i}` })
+end
 greed.keymap.bind({ kind = "mail" }, {
 	enter = "mail-read",
 	["/"] = "mail-search",
 	["$"] = "mail-sync",
+	["]"] = "mail-search-next",
+	["["] = "mail-search-previous",
 })
 greed.keymap.bind({ kind = "mail-thread" }, ACTIONS)
 greed.keymap.bind({ kind = "mail-thread" }, { h = "mail-plain", S = "mail-save-attachment" })

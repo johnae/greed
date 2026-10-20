@@ -16,6 +16,20 @@ In the list, `enter` reads the thread under the cursor in its place, `/`
 searches again and `$` syncs now; `q` in a thread goes back to the list.
 Reading a thread marks it read.
 
+Over the list are your saved searches, each with how many unread
+threads it finds, counted again as mail comes in. `g 1` to `g 9` go to
+them, and `]` and `[` go to the next and the one before; pressing one
+goes to it too. To keep your own, set them in your config:
+
+```luau
+require("@mail").searches = {
+	{ name = "Inbox", query = "in:inbox" },
+	{ name = "Work", query = "in:work is:unread" },
+	{ name = "Recent", query = "date:2w.. -is:mine" },
+	{ name = "Receipts", query = "(receipt OR invoice) is:attachment" },
+}
+```
+
 A thread shows once, as its newest message the search found, with how
 many it found after the subject (`(3)`). A change to a row changes those
 messages and no others of the thread, so archiving a thread found in the

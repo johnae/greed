@@ -558,3 +558,29 @@ test("a list shows a thread once, as its newest message found", function()
 	assert(table.concat(rows[1].found or {}, " ") == "m:1:c m:1:a", "what a change changes")
 	assert(table.concat(rows[2].found or {}, " ") == "m:1:b")
 end)
+
+test("saved searches show over the list with their unread, and g 1 to g 9 go to them", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc")
+		local top = string.match(window:buffer():text(), "^[^\n]*") or ""
+		assert(string.find(top, "1 Inbox 1", 1, true), top)
+		assert(
+			string.find(top, "3 Flagged ", 1, true) and not string.find(top, "Flagged 1", 1, true),
+			top
+		)
+		t:keys("g 2")
+		assert(table.concat(subjects(), ", ") == "Garden plans", table.concat(subjects(), ", "))
+		assert(window:buffer():kind() == "mail")
+		t:keys("]")
+		assert(#mail.shown() == 0, "on to Flagged, none")
+		t:keys("[ [")
+		assert(
+			table.concat(subjects(), ", ") == "Invoice 41, Garden plans",
+			"back round to the inbox"
+		)
+	end)
+end)
