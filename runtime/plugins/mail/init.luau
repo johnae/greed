@@ -181,7 +181,8 @@ function M.threads(found: { Summary }): { Summary }
 		local row = by[thread]
 		if row == nil then
 			row = table.clone(message)
-			row.tags = table.clone(message.tags)
+			-- A list from greed-mail is a JSON array, which won't clone.
+			row.tags = table.move(message.tags, 1, #message.tags, 1, {})
 			row.found = { message.key }
 			by[thread] = row
 			table.insert(rows, row)

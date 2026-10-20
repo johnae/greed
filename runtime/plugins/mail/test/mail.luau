@@ -120,7 +120,8 @@ local function summary(m: Fake): any
 		date = m.date,
 		unread = table.find(m.flags, "unread") ~= nil,
 		flagged = table.find(m.flags, "flagged") ~= nil,
-		tags = table.clone(m.tags),
+		-- As greed-mail sends it: a JSON array.
+		tags = greed.json.array(table.clone(m.tags)),
 		message_id = `{string.sub(m.key, -1)}@example.com`,
 	}
 end
