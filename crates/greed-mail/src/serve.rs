@@ -113,16 +113,16 @@ impl Shared {
 /// greed-mail syncs it (the mail session's), so this one takes no lock and
 /// fetches nothing, and any number of them can run beside it.
 pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), String> {
-    let open_index = || Index::open(&dir.join("index.db")).map_err(|e| e.0);
     let (stores, writer) = if read {
         (None, None)
     } else {
-        let store = Store::open(&dir).map_err(|e| e.0)?;
+        let mut store = Store::open(&dir).map_err(|e| e.0)?;
+        let index = indexing::open(&mut store, &dir.join("index.db")).map_err(|e| e.0)?;
         // Changes asked for are made with a store and index of their own,
         // as the sync holds its own while it waits on a server.
         let beside = store.beside(&dir).map_err(|e| e.0)?;
-        let writer = RefCell::new((beside, open_index()?));
-        (Some((store, open_index()?)), Some(writer))
+        let again = Index::open(&dir.join("index.db")).map_err(|e| e.0)?;
+        (Some((store, index)), Some(RefCell::new((beside, again))))
     };
     let reader = Reader::open(&dir).map_err(|_| {
         format!(
@@ -226,8 +226,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             Ok(json!({}))
         }
         "summaries" => {
-            let keys: Vec<String> = serde_json::from_value(params["keys"].clone())
-                .map_err(|_| "summaries takes keys, a list of the index's keys".to_string())?;
+            let keys = keys(params).ok_or("summaries takes keys, a list of the index's keys")?;
             let found = reader.summaries(&keys).map_err(|e| e.0)?;
             serde_json::to_value(found).map_err(|e| e.to_string())
         }
@@ -247,8 +246,8 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
         }
         "act" => {
             let writer = writer()?;
-            let keys: Vec<String> = serde_json::from_value(params["keys"].clone())
-                .map_err(|_| "act takes keys, a list of messages' or threads' keys".to_string())?;
+            let keys =
+                keys(params).ok_or("act takes keys, a list of messages' or threads' keys")?;
             let action = action(params)?;
             let (store, index) = &mut *writer.borrow_mut();
             let mut changed = 0;
@@ -306,6 +305,15 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             Ok(json!({ "posted": posted }))
         }
         _ => Err(format!("no method {method}")),
+    }
+}
+
+/// A request's `keys`. Luau writes an empty list as `{}`, so that's an
+/// empty list too.
+fn keys(params: &Value) -> Option<Vec<String>> {
+    match &params["keys"] {
+        Value::Object(empty) if empty.is_empty() => Some(Vec::new()),
+        keys => serde_json::from_value(keys.clone()).ok(),
     }
 }
 
@@ -618,5 +626,17 @@ mod tests {
         assert_eq!(waits, [2, 4, 8, 16, 32, 64, 128, 256, 300, 300]);
         backoff.reset();
         assert_eq!(backoff.next().as_secs(), 2, "from the start once it works");
+    }
+
+    #[test]
+    fn no_keys_is_an_empty_list_however_its_written() {
+        assert_eq!(keys(&json!({ "keys": {} })), Some(Vec::new()));
+        assert_eq!(keys(&json!({ "keys": [] })), Some(Vec::new()));
+        assert_eq!(
+            keys(&json!({ "keys": ["m:1:a"] })),
+            Some(vec!["m:1:a".into()])
+        );
+        assert_eq!(keys(&json!({ "keys": { "a": 1 } })), None);
+        assert_eq!(keys(&json!({})), None);
     }
 }

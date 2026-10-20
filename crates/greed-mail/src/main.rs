@@ -93,11 +93,11 @@ fn main() -> ExitCode {
                     Err(e) => fail(&e),
                 };
             }
-            let store = match Store::open(&dir) {
+            let mut store = match Store::open(&dir) {
                 Ok(store) => store,
                 Err(e) => return fail(&e.0),
             };
-            match Index::open(&dir.join("index.db")) {
+            match indexing::open(&mut store, &dir.join("index.db")) {
                 Ok(index) => Some((store, index)),
                 Err(e) => return fail(&e.0),
             }

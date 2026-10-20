@@ -12,6 +12,7 @@
 //! messages under it.
 
 use std::collections::{BTreeSet, HashMap};
+use std::path::Path;
 
 use greed_index::index::{Index, Item};
 
@@ -38,6 +39,16 @@ pub fn message_key(account: i64, identity: &str) -> String {
 /// The key of `account`'s thread `thread` in the index.
 pub fn thread_key(account: i64, thread: &str) -> String {
     format!("t:{account}:{thread}")
+}
+
+/// The index at `path`, for `store`. One that's empty (new, or made again
+/// by a newer greed-index) gets every message again in the next catch-up.
+pub fn open(store: &mut Store, path: &Path) -> Result<Index, Trouble> {
+    let index = Index::open(path).map_err(|e| Trouble(e.0))?;
+    if index.count().map_err(|e| Trouble(e.0))? == 0 {
+        store.unindex_all()?;
+    }
+    Ok(index)
 }
 
 /// Brings `index` up to `store`: writes what changed and takes out what
@@ -360,5 +371,23 @@ mod tests {
     fn text_is_cut_where_a_character_ends() {
         assert_eq!(cut("café", 4), "caf");
         assert_eq!(cut("café", 5), "café");
+    }
+
+    #[test]
+    fn an_index_made_again_gets_every_message_again() {
+        let (mut store, index, _, _) = sample("again");
+        assert_eq!(index.count().unwrap(), 6);
+        drop(index);
+        let path = std::env::temp_dir().join(format!("gm-index-again-new-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut fresh = open(&mut store, &path).unwrap();
+        assert_eq!(catch_up(&mut store, &mut fresh).unwrap(), 3);
+        assert_eq!(fresh.count().unwrap(), 6);
+        let mut again = open(&mut store, &path).unwrap();
+        assert_eq!(
+            catch_up(&mut store, &mut again).unwrap(),
+            0,
+            "not when it has them"
+        );
     }
 }

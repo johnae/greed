@@ -683,6 +683,14 @@ impl Store {
         Ok(keys)
     }
 
+    /// Notes that the index has nothing: every message is written to it
+    /// again.
+    pub fn unindex_all(&mut self) -> Result<(), Trouble> {
+        self.db
+            .execute_batch("UPDATE messages SET indexed = 0; DELETE FROM unindexed;")?;
+        Ok(())
+    }
+
     /// Notes that the index no longer has `keys`.
     pub fn unlisted(&mut self, keys: &[String]) -> Result<(), Trouble> {
         let tx = self.db.transaction()?;
