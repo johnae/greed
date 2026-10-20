@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::body::Attachment;
 use crate::header::{Fetched, Header};
+use crate::indexing;
 use crate::send::Original;
 use crate::store::Trouble;
 
@@ -23,6 +24,8 @@ pub struct Summary {
     pub date: Option<String>,
     pub unread: bool,
     pub flagged: bool,
+    /// Where it is and what it's tagged with, by name, as `in:` finds it.
+    pub tags: Vec<String>,
 }
 
 /// A message as it's read: its summary, who else it went to, and its body
@@ -75,13 +78,30 @@ const SUMMARY: &str = "SELECT 'm:' || messages.account || ':' || messages.identi
         CASE WHEN messages.thread IS NULL THEN NULL
              ELSE 't:' || messages.account || ':' || messages.thread END,
         messages.sender, messages.subject, messages.date, messages.flags,
-        messages.recipients, messages.cc, bodies.text, bodies.attachments, bodies.complete
+        messages.recipients, messages.cc, bodies.text, bodies.attachments, bodies.complete,
+        messages.labels,
+        (SELECT group_concat(mailboxes.name || char(31) || coalesce(mailboxes.role, ''), char(30))
+         FROM places JOIN mailboxes ON mailboxes.id = places.mailbox
+         WHERE places.message = messages.id)
      FROM messages LEFT JOIN bodies.bodies ON bodies.message = messages.id";
 
 fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
     let flags: String = r.get(5)?;
     let has = |flag: &str| flags.split(' ').any(|f| f.eq_ignore_ascii_case(flag));
     let attachments: Option<String> = r.get(9)?;
+    let labels: String = r.get(11)?;
+    let places: Option<String> = r.get(12)?;
+    let places: Vec<(String, Option<String>)> = places
+        .unwrap_or_default()
+        .split('\u{1e}')
+        .filter_map(|place| {
+            let (name, role) = place.split_once('\u{1f}')?;
+            Some((
+                name.to_string(),
+                (!role.is_empty()).then(|| role.to_string()),
+            ))
+        })
+        .collect();
     Ok(Message {
         summary: Summary {
             key: r.get(0)?,
@@ -91,6 +111,7 @@ fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
             date: r.get(4)?,
             unread: !has("\\Seen"),
             flagged: has("\\Flagged"),
+            tags: indexing::tags_of(&places, &labels, &flags),
         },
         to: r.get(6)?,
         cc: r.get(7)?,
@@ -170,6 +191,19 @@ impl Reader {
             subject: first.summary.subject.clone(),
             messages,
         }))
+    }
+
+    /// The name of the account the message or thread `key` is in.
+    pub fn account_of(&self, key: &str) -> Result<Option<String>, Trouble> {
+        let Some((_, account, _)) = split_key(key) else {
+            return Ok(None);
+        };
+        Ok(self
+            .db
+            .query_row("SELECT name FROM accounts WHERE id = ?1", [account], |r| {
+                r.get(0)
+            })
+            .optional()?)
     }
 
     /// What a reply to the message `key` needs of it, and the name of the

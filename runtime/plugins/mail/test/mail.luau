@@ -101,6 +101,7 @@ local function summary(m: Fake): any
 		date = m.date,
 		unread = table.find(m.flags, "unread") ~= nil,
 		flagged = table.find(m.flags, "flagged") ~= nil,
+		tags = table.clone(m.tags),
 	}
 end
 
@@ -115,7 +116,16 @@ local function flag(m: Fake, name: string, on: boolean)
 end
 
 -- What the fake does for each action greed-mail takes.
-local ACTIONS: { [string]: (m: Fake) -> () } = {
+local ACTIONS: { [string]: (m: Fake, tag: string?) -> () } = {
+	tag = function(m, tag)
+		table.insert(m.tags, tag or "")
+	end,
+	untag = function(m, tag)
+		local i = table.find(m.tags, tag or "")
+		if i then
+			table.remove(m.tags, i)
+		end
+	end,
 	read = function(m)
 		flag(m, "unread", false)
 	end,
@@ -196,12 +206,12 @@ local function fake()
 			table.insert(sent, draft)
 			return true, nil
 		end,
-		act = function(keys: { string }, action: string): (number?, string?)
+		act = function(keys: { string }, action: string, tag: string?): (number?, string?)
 			for _, key in keys do
-				table.insert(acted, `{action} {key}`)
+				table.insert(acted, if tag then `{action} {tag} {key}` else `{action} {key}`)
 				for _, m in now do
 					if m.key == key or m.thread == key then
-						ACTIONS[action](m)
+						ACTIONS[action](m, tag)
 					end
 				end
 			end
@@ -412,4 +422,21 @@ test("a draft reads from its header lines and text", function()
 	assert(draft.subject == "Hi")
 	assert(draft.text == "Hello\n\nthere\n", draft.text)
 	assert(mail.parse_draft("To: anna@x").to == "anna@x", "no text yet")
+end)
+
+test("t tags the message under the cursor, and takes the tag off again", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		t:run("mail")
+		t:keys("esc t g a r d e n enter")
+		assert(table.concat(acted, ", ") == "tag garden m:1:b", table.concat(acted, ", "))
+		assert(
+			mail.tag_text(mail.shown()[1].tags) == "#Work #garden",
+			mail.tag_text(mail.shown()[1].tags)
+		)
+		t:keys("t G a r d e n enter")
+		assert(acted[2] == "untag garden m:1:b", "off as it is: " .. acted[2])
+		assert(mail.tag_text(mail.shown()[1].tags) == "#Work", "the inbox isn't shown")
+	end)
 end)

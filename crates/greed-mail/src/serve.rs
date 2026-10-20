@@ -8,8 +8,9 @@
 //! (a thread by its key or one of its messages', with their text; bodies
 //! not in yet come ahead of everything else, then `changed` says so),
 //! `act` (`action` on the messages `keys` name: read, unread, flag,
-//! unflag, archive, trash, or move `to` a mailbox; made here at once and
-//! sent to the server in the next round, which starts right away),
+//! unflag, archive, trash, move `to` a mailbox, or tag and untag with
+//! `tag`; made here at once and sent to the server in the next round,
+//! which starts right away),
 //! `draft` (a reply to the message `key`, to everyone with `all`) and
 //! `send` (a draft, put in the outbox and sent in the next round).
 //! Notifications: `changed` (the index changed: search again), `progress`
@@ -34,7 +35,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Notify, mpsc};
 
-use crate::config::{Account, Config};
+use crate::config::{Account, Config, Provider};
 use crate::imap::{Changing, Connection, Imap};
 use crate::indexing;
 use crate::pending;
@@ -249,9 +250,13 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             let keys =
                 keys(params).ok_or("act takes keys, a list of messages' or threads' keys")?;
             let action = action(params)?;
+            let tagging = matches!(params["action"].as_str(), Some("tag" | "untag"));
             let (store, index) = &mut *writer.borrow_mut();
             let mut changed = 0;
             for key in &keys {
+                if tagging {
+                    can_tag(with.config, reader, key)?;
+                }
                 for id in store.messages_of(key).map_err(|e| e.0)? {
                     changed += usize::from(store.act(id, &action).map_err(|e| e.0)?);
                 }
@@ -308,6 +313,27 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
     }
 }
 
+/// Whether the mail `key` names can be tagged: a tag is an IMAP keyword,
+/// which plain servers keep. Proton's labels and Gmail's need their own
+/// ways (a copy into the label's mailbox, X-GM-LABELS), not done yet:
+/// taking a Proton label off deletes from its mailbox, which must be
+/// checked against Bridge before it's let near anyone's mail.
+fn can_tag(config: &Config, reader: &Reader, key: &str) -> Result<(), String> {
+    let name = reader.account_of(key).map_err(|e| e.0)?;
+    let provider = name
+        .as_deref()
+        .and_then(|name| config.account(name))
+        .and_then(|account| account.provider);
+    let at = match provider {
+        Some(Provider::ProtonBridge) => "Proton",
+        Some(Provider::Gmail) => "Gmail",
+        None => return Ok(()),
+    };
+    Err(format!(
+        "tags on {at} are its labels, which can't be set from Greed yet"
+    ))
+}
+
 /// A request's `keys`. Luau writes an empty list as `{}`, so that's an
 /// empty list too.
 fn keys(params: &Value) -> Option<Vec<String>> {
@@ -336,9 +362,15 @@ fn action(params: &Value) -> Result<Action, String> {
                 .ok_or("move takes to, the mailbox to move it to")?
                 .into(),
         },
+        "tag" | "untag" => {
+            let tag = params["tag"]
+                .as_str()
+                .ok_or("tag takes tag, the tag to set or take off")?;
+            flag(&indexing::keyword(tag)?, params["action"] == "tag")
+        }
         other => {
             return Err(format!(
-                "no action {other:?}: read, unread, flag, unflag, archive, trash or move"
+                "no action {other:?}: read, unread, flag, unflag, archive, trash, move, tag or untag"
             ));
         }
     })

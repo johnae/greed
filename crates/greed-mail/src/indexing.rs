@@ -148,18 +148,60 @@ fn mine(m: &Indexable) -> bool {
         || (!m.address.is_empty() && m.from.to_lowercase().contains(&m.address.to_lowercase()))
 }
 
-/// Where `m` is, by name: the mailboxes it's in (All Mail aside, as every
-/// message is there) and its Gmail labels, each once.
 fn tags(m: &Indexable) -> Vec<String> {
-    let mut tags: Vec<String> = m
-        .places
+    tags_of(&m.places, &m.labels, &m.flags)
+}
+
+/// Where a message is, by name: the mailboxes it's in (`places`, by name
+/// and role; All Mail aside, as every message is there), its Gmail
+/// `labels` (one a line) and the keywords among its `flags`, each once.
+pub fn tags_of(places: &[(String, Option<String>)], labels: &str, flags: &str) -> Vec<String> {
+    let mut tags: Vec<String> = places
         .iter()
         .filter_map(|(name, role)| place_name(name, role.as_deref()))
         .collect();
-    tags.extend(m.labels.lines().filter(|l| !l.is_empty()).map(label_name));
+    tags.extend(labels.lines().filter(|l| !l.is_empty()).map(label_name));
+    tags.extend(flags.split(' ').filter(|f| is_tag(f)).map(str::to_string));
     tags.sort();
     tags.dedup();
     tags
+}
+
+/// The keywords servers and clients set for their own ends, which aren't
+/// tags anyone gave: forwarded, receipts sent, junk marks.
+const NOT_TAGS: &[&str] = &[
+    "$forwarded",
+    "$mdnsent",
+    "$junk",
+    "$notjunk",
+    "junk",
+    "nonjunk",
+    "notjunk",
+    "$phishing",
+    "$submitpending",
+    "$submitted",
+];
+
+/// Whether `flag` is a tag: a keyword (no `\` system flag) set by someone,
+/// not one of `NOT_TAGS`.
+pub fn is_tag(flag: &str) -> bool {
+    !flag.is_empty() && !flag.starts_with('\\') && !NOT_TAGS.contains(&flag.to_lowercase().as_str())
+}
+
+/// `name` as an IMAP keyword, which a tag is on a plain IMAP server: an
+/// atom, so nothing that has a meaning in IMAP's syntax; or why it can't
+/// be one.
+pub fn keyword(name: &str) -> Result<String, String> {
+    let bad = |c: char| !c.is_ascii_graphic() || "(){%*\"\\]".contains(c);
+    if name.is_empty() || name.chars().any(bad) {
+        return Err(format!(
+            "{name:?} can't be a tag here: no spaces, and none of ( ) {{ % * \" \\ ]"
+        ));
+    }
+    if !is_tag(name) {
+        return Err(format!("{name} is kept for the server's own use"));
+    }
+    Ok(name.to_string())
 }
 
 /// A mailbox's name as a place: readable, Bridge's `Labels/` and
@@ -224,6 +266,28 @@ mod tests {
 
     use crate::body::Body;
     use crate::header::Fetched;
+
+    #[test]
+    fn a_messages_tags_are_its_places_labels_and_keywords() {
+        let places = vec![
+            ("INBOX".to_string(), Some("inbox".to_string())),
+            ("All Mail".to_string(), Some("all".to_string())),
+            ("Labels/Work".to_string(), None),
+        ];
+        let tags = tags_of(
+            &places,
+            "\\Important\nTrips",
+            "\\Seen garden $Forwarded NonJunk",
+        );
+        assert_eq!(tags, ["Important", "Inbox", "Trips", "Work", "garden"]);
+        assert_eq!(keyword("garden"), Ok("garden".into()));
+        assert_eq!(keyword("$label1"), Ok("$label1".into()));
+        assert!(keyword("two words").is_err());
+        assert!(keyword("a(b").is_err());
+        assert!(keyword("\\Seen").is_err(), "a system flag isn't a tag");
+        assert!(keyword("$Junk").is_err(), "nor is a junk mark");
+        assert!(keyword("").is_err());
+    }
 
     #[test]
     fn dates_are_indexed_in_utc_so_they_sort_across_offsets() {

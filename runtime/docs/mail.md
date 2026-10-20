@@ -22,6 +22,7 @@ These work on the message under the cursor, or in a thread on all of it:
 | -------- | --------------------------------------------------------- |
 | `u`      | marks it read, or unread when it's read                   |
 | `s`      | flags it, or takes the flag off                           |
+| `t`      | asks for a tag and puts it on, or takes it off if it's on |
 | `e`      | moves it to the archive                                   |
 | `d`, `#` | moves it to the trash; in the trash, deletes it for good  |
 | `r`      | replies to who sent it (in a thread, its last message)    |
@@ -31,6 +32,15 @@ These work on the message under the cursor, or in a thread on all of it:
 A change shows at once and goes to the server within seconds. If the
 server refuses it (a folder that went, say), it's taken back and Greed
 says why.
+
+## Tags
+
+A message's folders, labels and tags show after its subject (`#work`),
+and `in:work` (or `tag:work`) finds them. Proton's labels and Gmail's come
+along as they are. On other servers (Dovecot, Fastmail) `t` sets a tag as
+an IMAP keyword, which every client of that mailbox sees. On Proton and
+Gmail, setting tags from Greed isn't done yet: it says so and changes
+nothing.
 
 ## Writing
 

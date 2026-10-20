@@ -18,6 +18,8 @@ export type Summary = {
 	date: string?,
 	unread: boolean,
 	flagged: boolean,
+	--- Where it is and what it's tagged with, as `in:` finds it.
+	tags: { string },
 }
 
 --- Something attached, as the message lists it.
@@ -56,10 +58,10 @@ export type Backend = {
 	thread: (key: string) -> (Thread?, string?),
 	--- Syncs now.
 	sync: () -> (),
-	--- Makes `action` (read, unread, flag, unflag, archive or trash) on
-	--- the messages and threads `keys` name; gives how many it changed,
-	--- or nil and why.
-	act: (keys: { string }, action: string) -> (number?, string?),
+	--- Makes `action` (read, unread, flag, unflag, archive, trash, or tag
+	--- and untag with `tag`) on the messages and threads `keys` name;
+	--- gives how many it changed, or nil and why.
+	act: (keys: { string }, action: string, tag: string?) -> (number?, string?),
 	--- A reply to the message `key`, to everyone it went to with `all`.
 	draft: (key: string, all: boolean) -> (Draft?, string?),
 	--- Sends `draft` (in the next round), or says why it can't.
@@ -167,8 +169,8 @@ M.served = {
 	sync = function()
 		ask("sync", {})
 	end,
-	act = function(keys: { string }, action: string): (number?, string?)
-		local done, err = ask("act", { keys = keys, action = action })
+	act = function(keys: { string }, action: string, tag: string?): (number?, string?)
+		local done, err = ask("act", { keys = keys, action = action, tag = tag })
 		if done == nil then
 			return nil, err
 		end

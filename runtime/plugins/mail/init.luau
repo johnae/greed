@@ -3,8 +3,9 @@
 -- the search box over it (in:inbox to start); elsewhere `:mail` opens the
 -- same list in a float for a quick look. `enter` reads a thread, `/`
 -- searches again, `$` syncs now, `q` goes back or closes; `u` marks read
--- or unread, `s` flags, `e` archives and `d` trashes; `r` replies, `a`
--- replies to all and `c` writes new mail, which `:mail-send` sends.
+-- or unread, `s` flags, `t` tags, `e` archives and `d` trashes; `r`
+-- replies, `a` replies to all and `c` writes new mail, which `:mail-send`
+-- sends.
 -- greed-mail syncs the accounts in mail.toml and keeps the index this
 -- searches (backend.luau); a search is the query language anywhere in
 -- Greed: from:anna is:unread date:2w.. in:work invoice.
@@ -148,6 +149,21 @@ local function results(o: Open, parsed: core.Query): { Summary }
 	return found
 end
 
+-- Where everything new is, so a list doesn't say it of every message.
+local UNTOLD = { inbox = true }
+
+--- A message's tags as a list shows them: "#work #trips", the inbox left
+--- out.
+function M.tag_text(tags: { string }): string
+	local shown: { string } = {}
+	for _, tag in tags do
+		if not UNTOLD[string.lower(tag)] then
+			table.insert(shown, `#{tag}`)
+		end
+	end
+	return table.concat(shown, " ")
+end
+
 local function render(o: Open): core.UiNode
 	local head = if o.trouble
 		then ui.text(o.trouble, "diagnostic.error")
@@ -165,6 +181,7 @@ local function render(o: Open): core.UiNode
 					),
 				},
 				{ ui.span(row.subject) },
+				{ ui.span(M.tag_text(row.tags), "comment") },
 			},
 			value = row,
 		})
@@ -468,32 +485,48 @@ end
 -- What a change in `ctx` is made on: the thread being read, or the
 -- message under the cursor in the list; and whether any of it is unread
 -- and flagged.
-local function chosen(ctx: greed.Context): ({ string }?, boolean, boolean)
+type Chosen = { keys: { string }, unread: boolean, flagged: boolean, tags: { string } }
+
+local function chosen(ctx: greed.Context): Chosen?
 	local r = reading
 	if ctx.buffer:kind() == "mail-thread" and r then
-		return { r.thread.key }, M.any(r.thread, "unread"), M.any(r.thread, "flagged")
+		local tags: { string } = {}
+		for _, message in r.thread.messages do
+			for _, tag in message.tags do
+				if not table.find(tags, tag) then
+					table.insert(tags, tag)
+				end
+			end
+		end
+		return {
+			keys = { r.thread.key },
+			unread = M.any(r.thread, "unread"),
+			flagged = M.any(r.thread, "flagged"),
+			tags = tags,
+		}
 	end
 	local o = open
 	local row: Summary? = if o then o.view:value_at(ctx.view:cursor()) else nil
 	if row == nil then
-		return nil, false, false
+		return nil
 	end
-	return { row.key }, row.unread, row.flagged
+	return { keys = { row.key }, unread = row.unread, flagged = row.flagged, tags = row.tags }
 end
 
--- Makes `action` on what's chosen in `ctx`, `which` picking it from
--- whether that's unread and flagged; a thread archived or trashed is
--- left for the list.
-local function acting(
-	which: (unread: boolean, flagged: boolean) -> string
-): (ctx: greed.Context) -> ()
+-- Makes the action `which` picks for what's chosen in `ctx` (nil for none),
+-- with the tag it names; a thread archived or trashed is left for the
+-- list.
+local function acting(which: (chosen: Chosen) -> (string?, string?)): (ctx: greed.Context) -> ()
 	return function(ctx: greed.Context)
-		local keys, unread, flagged = chosen(ctx)
-		if keys == nil then
+		local c = chosen(ctx)
+		if c == nil then
 			return
 		end
-		local action = which(unread, flagged)
-		local _, err = backend.get().act(keys, action)
+		local action, tag = which(c)
+		if action == nil then
+			return
+		end
+		local _, err = backend.get().act(c.keys, action, tag)
 		if err then
 			greed.echo(err)
 		elseif
@@ -602,32 +635,58 @@ greed.command({
 greed.command({
 	name = "mail-toggle-read",
 	doc = "Mark the message (or the thread being read) read, or unread if it's read",
-	run = acting(function(unread: boolean): string
-		return if unread then "read" else "unread"
+	run = acting(function(c: Chosen): (string?, string?)
+		return if c.unread then "read" else "unread", nil
 	end),
 })
 
 greed.command({
 	name = "mail-toggle-flag",
 	doc = "Flag the message (or the thread being read), or take its flag off",
-	run = acting(function(_, flagged: boolean): string
-		return if flagged then "unflag" else "flag"
+	run = acting(function(c: Chosen): (string?, string?)
+		return if c.flagged then "unflag" else "flag", nil
 	end),
 })
 
 greed.command({
 	name = "mail-archive",
 	doc = "Move the message (or the thread being read) to the archive",
-	run = acting(function(): string
-		return "archive"
+	run = acting(function(): (string?, string?)
+		return "archive", nil
 	end),
 })
 
 greed.command({
 	name = "mail-trash",
 	doc = "Move the message (or the thread being read) to the trash; in the trash, delete it for good",
-	run = acting(function(): string
-		return "trash"
+	run = acting(function(): (string?, string?)
+		return "trash", nil
+	end),
+})
+
+--- `tag` as `tags` has it, minding no case, or nil when it hasn't.
+function M.tagged(tags: { string }, tag: string): string?
+	for _, have in tags do
+		if string.lower(have) == string.lower(tag) then
+			return have
+		end
+	end
+	return nil
+end
+
+greed.command({
+	name = "mail-tag",
+	doc = "Tag the message (or the thread being read), or take the tag off if it has it",
+	run = acting(function(c: Chosen): (string?, string?)
+		local tag = core.prompt.ask("Tag")
+		if tag == nil or tag == "" then
+			return nil, nil
+		end
+		local have = M.tagged(c.tags, tag)
+		if have then
+			return "untag", have
+		end
+		return "tag", tag
 	end),
 })
 
@@ -687,6 +746,7 @@ local ACTIONS = {
 	r = "mail-reply",
 	a = "mail-reply-all",
 	c = "mail-compose",
+	t = "mail-tag",
 	q = "mail-close",
 	esc = "mail-close",
 }

@@ -18,6 +18,8 @@ struct Dovecot {
     dir: PathBuf,
     /// The port of an SMTP server for the account to send with.
     smtp: Option<u16>,
+    /// The provider the account says it's at, as if it were.
+    provider: Option<&'static str>,
 }
 
 impl Dovecot {
@@ -50,6 +52,7 @@ impl Dovecot {
             port,
             dir,
             smtp: None,
+            provider: None,
         };
         let started = Instant::now();
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
@@ -73,6 +76,9 @@ impl Dovecot {
         let smtp = self.smtp.map_or(String::new(), |port| {
             format!(r#"smtp = {{ host = "127.0.0.1", port = {port}, tls = "none" }}"#)
         });
+        let provider = self
+            .provider
+            .map_or(String::new(), |p| format!(r#"provider = "{p}""#));
         format!(
             r#"
             [[account]]
@@ -81,6 +87,7 @@ impl Dovecot {
             user = "anna"
             imap = {{ host = "127.0.0.1", port = {}, tls = "none" }}
             {smtp}
+            {provider}
             password = ["echo", "secret"]
             "#,
             self.port
@@ -458,6 +465,13 @@ impl Served {
 
     /// Asks `method` and gives the result, passing over notifications.
     fn ask(&mut self, method: &str, params: &serde_json::Value) -> serde_json::Value {
+        let answer = self.answer(method, params);
+        assert!(answer["error"].is_null(), "{answer}");
+        answer["result"].clone()
+    }
+
+    /// Asks `method` and gives the whole answer, an error or a result.
+    fn answer(&mut self, method: &str, params: &serde_json::Value) -> serde_json::Value {
         use std::io::Write;
         self.next += 1;
         let request = serde_json::json!({
@@ -467,8 +481,7 @@ impl Served {
         loop {
             let message = self.read();
             if message["id"] == self.next {
-                assert!(message["error"].is_null(), "{message}");
-                return message["result"].clone();
+                return message;
             }
         }
     }
@@ -788,4 +801,98 @@ fn a_reply_is_sent_filed_in_sent_and_its_original_marked_answered() {
             .iter()
             .any(|f| f.contains("M1P1") && f.contains('R'))
     });
+}
+
+/// The keys of the messages `served`'s index has.
+fn message_keys(served: &mut Served) -> Vec<String> {
+    let path = served.ask("index", &serde_json::json!({}));
+    let index =
+        greed_index::index::Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
+    index
+        .search(
+            None,
+            &greed_index::query::Schema::default(),
+            &greed_index::index::View::default(),
+        )
+        .unwrap()
+        .keys
+        .into_iter()
+        .filter(|k| k.starts_with("m:"))
+        .collect()
+}
+
+#[test]
+fn a_tag_is_a_keyword_on_the_server_and_comes_off_again() {
+    let Some(dovecot) = Dovecot::start("tags") else {
+        return;
+    };
+    deliver(&dovecot, 1, true);
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let key = message_keys(&mut served).remove(0);
+    let tag = |served: &mut Served, action: &str| {
+        let params = serde_json::json!({ "action": action, "tag": "garden", "keys": [key] });
+        served.ask("act", &params)["changed"].clone()
+    };
+    assert_eq!(tag(&mut served, "tag"), 1);
+    let shown = served.ask("summaries", &serde_json::json!({ "keys": [key] }));
+    assert_eq!(
+        shown[0]["tags"],
+        serde_json::json!(["Inbox", "garden"]),
+        "{shown}"
+    );
+    let keywords = dovecot.dir.join("home/anna/Maildir/dovecot-keywords");
+    // Dovecot keeps a keyword as a letter among the flags at the end of the
+    // file's name, a for the first it was told of.
+    let tagged = || {
+        std::fs::read_to_string(&keywords).is_ok_and(|k| k.contains("garden"))
+            && files(&dovecot, "").iter().any(|f| {
+                f.contains("M1P1")
+                    && f.rsplit_once(":2,")
+                        .is_some_and(|(_, flags)| flags.contains('a'))
+            })
+    };
+    wait_until("tagged on the server", tagged);
+    assert_eq!(tag(&mut served, "untag"), 1);
+    wait_until("untagged on the server", || !tagged());
+    let refused = served.answer(
+        "act",
+        &serde_json::json!({ "action": "tag", "tag": "two words", "keys": [key] }),
+    );
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("can't be a tag"),
+        "{refused}"
+    );
+}
+
+#[test]
+fn tags_on_proton_wait_until_labels_are_checked_against_bridge() {
+    let Some(mut dovecot) = Dovecot::start("proton-tags") else {
+        return;
+    };
+    dovecot.provider = Some("proton-bridge");
+    deliver(&dovecot, 1, true);
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let key = message_keys(&mut served).remove(0);
+    let refused = served.answer(
+        "act",
+        &serde_json::json!({ "action": "tag", "tag": "garden", "keys": [key] }),
+    );
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("Proton"),
+        "{refused}"
+    );
+    std::thread::sleep(Duration::from_millis(500));
+    let keywords = dovecot.dir.join("home/anna/Maildir/dovecot-keywords");
+    assert!(
+        !std::fs::read_to_string(keywords).is_ok_and(|k| k.contains("garden")),
+        "nothing went to the server"
+    );
 }
