@@ -74,11 +74,33 @@ pub fn catch_up(store: &mut Store, index: &mut Index) -> Result<usize, Trouble> 
     Ok(written)
 }
 
+/// Writes the messages `ids` to `index` if they changed, and takes out
+/// what went: what a change asked for needs at once, however much else
+/// waits for a catch-up. Gives how many it wrote.
+pub fn catch_up_on(store: &mut Store, index: &mut Index, ids: &[i64]) -> Result<usize, Trouble> {
+    let mut written = 0;
+    for some in ids.chunks(BATCH) {
+        written += write_some(store, index, Some(some))?;
+    }
+    take_out_gone(store, index)?;
+    Ok(written)
+}
+
 /// Writes the next `BATCH` of what changed to `index`, for a catch-up
 /// that says how far it got as it goes; gives how many, 0 once none are
 /// left. What went is left for `take_out_gone`.
 pub fn catch_up_some(store: &mut Store, index: &mut Index) -> Result<usize, Trouble> {
-    let messages = store.unindexed(BATCH)?;
+    write_some(store, index, None)
+}
+
+/// Writes up to `BATCH` of what changed to `index`, of `only` those
+/// messages when given; gives how many.
+fn write_some(
+    store: &mut Store,
+    index: &mut Index,
+    only: Option<&[i64]>,
+) -> Result<usize, Trouble> {
+    let messages = store.unindexed(BATCH, only)?;
     if messages.is_empty() {
         return Ok(0);
     }
@@ -435,6 +457,21 @@ mod tests {
         store.put_bodies(&[(first, body)]).unwrap();
         assert_eq!(catch_up(&mut store, &mut index).unwrap(), 3);
         (store, index, account, all.id)
+    }
+
+    #[test]
+    fn a_catch_up_on_some_writes_only_those_and_leaves_the_rest_waiting() {
+        let (mut store, mut index, account, _) = sample("on");
+        store.unindex_all().unwrap();
+        let p1 = store.messages_of(&message_key(account, "pm:p1")).unwrap();
+        assert_eq!(catch_up_on(&mut store, &mut index, &p1).unwrap(), 1);
+        assert_eq!(store.unindexed_count().unwrap(), 2, "the others wait");
+        assert_eq!(
+            catch_up_on(&mut store, &mut index, &p1).unwrap(),
+            0,
+            "nothing new"
+        );
+        assert_eq!(catch_up(&mut store, &mut index).unwrap(), 2);
     }
 
     #[test]

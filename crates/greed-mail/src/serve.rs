@@ -749,21 +749,22 @@ fn act(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
         }
     }
     let mut undos = Vec::new();
-    let mut changed = 0;
+    let mut changed = Vec::new();
     for (id, action) in ids {
         let undo = store.undoing(id, &action).map_err(|e| e.0)?;
         if store.act(id, &action).map_err(|e| e.0)? {
-            changed += 1;
+            changed.push(id);
             undos.extend(undo.map(|u| (id, u)));
         }
     }
-    if changed > 0 {
+    if !changed.is_empty() {
         *with.shared.last.borrow_mut() = Some(Undoing::Changes(undos));
-        indexing::catch_up(store, index).map_err(|e| e.0)?;
+        // Only what changed: a long catch-up going on mustn't hold it up.
+        indexing::catch_up_on(store, index, &changed).map_err(|e| e.0)?;
         with.shared.notify("changed", &json!({}));
         with.shared.wake.notify_one();
     }
-    Ok(json!({ "changed": changed }))
+    Ok(json!({ "changed": changed.len() }))
 }
 
 /// An `undo` request: the last change asked for undone, or the mail just
@@ -788,7 +789,8 @@ fn undo(with: &Answering<'_>) -> Result<Value, String> {
             for (id, undo) in &undos {
                 store.undo(*id, undo).map_err(|e| e.0)?;
             }
-            indexing::catch_up(store, index).map_err(|e| e.0)?;
+            let ids: Vec<i64> = undos.iter().map(|(id, _)| *id).collect();
+            indexing::catch_up_on(store, index, &ids).map_err(|e| e.0)?;
             with.shared.notify("changed", &json!({}));
             with.shared.wake.notify_one();
             Ok(json!({ "undone": "changes", "count": undos.len() }))
@@ -1051,7 +1053,7 @@ async fn send_changes(
             &json!({ "account": account.name, "message": format!("a change was refused: {why}") }),
         );
     }
-    indexing::catch_up(store, index).map_err(|e| e.0)?;
+    index_telling(store, index, shared, async |_: &mut Store| Ok(())).await?;
     shared.notify("changed", &json!({}));
     Ok(())
 }
@@ -1169,13 +1171,16 @@ async fn asked_for(
             by_mailbox.entry(mailbox).or_default().push(wanting);
         }
     }
+    let mut fetched = Vec::new();
     for (mailbox, wanting) in by_mailbox {
         connection.open(&mailbox).await.map_err(|e| e.0)?;
         sync::fetch_bodies(connection, store, &wanting)
             .await
             .map_err(|e| format!("{mailbox}: {e}"))?;
+        fetched.extend(wanting.iter().map(|w| w.message));
     }
-    indexing::catch_up(store, index).map_err(|e| e.0)?;
+    // Someone's waiting on these, not on whatever else waits to be indexed.
+    indexing::catch_up_on(store, index, &fetched).map_err(|e| e.0)?;
     shared.notify("changed", &json!({ "keys": keys }));
     Ok(())
 }

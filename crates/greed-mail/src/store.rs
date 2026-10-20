@@ -866,8 +866,9 @@ impl Store {
         Ok(usize::try_from(count).unwrap_or(0))
     }
 
-    /// Up to `most` messages the index doesn't have as they are now.
-    pub fn unindexed(&self, most: usize) -> Result<Vec<Indexable>, Trouble> {
+    /// Up to `most` messages the index doesn't have as they are now; of
+    /// `only` those, when given.
+    pub fn unindexed(&self, most: usize, only: Option<&[i64]>) -> Result<Vec<Indexable>, Trouble> {
         let mut rows = self.db.prepare(
             "SELECT messages.id, messages.account, accounts.name, accounts.address,
                     messages.identity, messages.thread, messages.date, messages.sender,
@@ -877,15 +878,18 @@ impl Store {
                     accounts.aliases
              FROM messages JOIN accounts ON accounts.id = messages.account
              LEFT JOIN bodies.bodies ON bodies.message = messages.id
-             WHERE messages.indexed = 0 LIMIT ?1",
+             WHERE messages.indexed = 0
+             AND (?2 IS NULL OR messages.id IN (SELECT value FROM json_each(?2)))
+             LIMIT ?1",
         )?;
         let mut places = self.db.prepare(
             "SELECT mailboxes.name, mailboxes.role FROM places
              JOIN mailboxes ON mailboxes.id = places.mailbox WHERE places.message = ?1",
         )?;
         let most = i64::try_from(most).unwrap_or(i64::MAX);
+        let only = only.map(|ids| serde_json::to_string(ids).unwrap_or_default());
         let mut found: Vec<Indexable> = rows
-            .query_map([most], |r| {
+            .query_map(params![most, only], |r| {
                 Ok(Indexable {
                     id: r.get(0)?,
                     account: r.get(1)?,
