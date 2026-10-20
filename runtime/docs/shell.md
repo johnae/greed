@@ -448,8 +448,9 @@ can read out of it, and every layer below works on what's under it.
 `/` on a block's output keeps the lines with what you type in them, as you
 type:
 
-- Several words keep the lines with all of them, in any case
-  (`shell-filter-search-case` changes that).
+- Several words keep the lines with all of them, minding neither case
+  nor accents: `cafe` keeps `Café`. `shell-filter-search-case` says when
+  case matters, and then accents do too.
 - `-word` leaves out the lines with it, `error OR warn` keeps lines with
   either (`OR` in capitals), and `"connection refused"` is a phrase.
 - A filter that starts with `/` is a regex (`/^error|warn`).
