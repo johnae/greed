@@ -314,16 +314,30 @@ end
 -- What ends a tag: space and punctuation other than `_`, `-` and `/`.
 local TAG = "^[^%s%.,;:!%?%(%)%[%]{}\"'`~@%$%%%^&%*=+<>|\\#]+"
 
---- The `#tags` on a line, as written, outside inline code: a `#` at the
---- start or after a space, then letters (any language), digits, `_`, `-`
---- and `/`, with something other than digits. A heading's `# ` isn't one.
-function M.tags(text: string): { string }
-	local out: { string } = {}
-	for raw in string.gmatch(" " .. without_code(text), "%s#(%S+)") do
+--- A `#tag` on a line: its words, and the bytes they take (after the `#`).
+export type Tag = { tag: string, from: number, to: number }
+
+--- The `#tags` on a line, where they are, outside inline code: a `#` at
+--- the start or after a space, then letters (any language), digits, `_`,
+--- `-` and `/`, with something other than digits. A heading's `# ` isn't
+--- one.
+function M.tag_spans(text: string): { Tag }
+	local out: { Tag } = {}
+	-- The space put in front makes each place one more than in `text`.
+	for at: any, raw: any in string.gmatch(" " .. without_code(text), "%s#()(%S+)") do
 		local tag = string.match(raw, TAG)
 		if tag and string.find(tag, "%D") then
-			table.insert(out, tag)
+			table.insert(out, { tag = tag, from = at - 1, to = at + #tag - 2 })
 		end
+	end
+	return out
+end
+
+--- The `#tags` on a line, as written (see `M.tag_spans`).
+function M.tags(text: string): { string }
+	local out: { string } = {}
+	for _, span in M.tag_spans(text) do
+		table.insert(out, span.tag)
 	end
 	return out
 end

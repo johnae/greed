@@ -122,7 +122,9 @@ a list, and `- [ ]` a todo:
   Helix's keys), or a click on it, makes those words a link, kept as you
   wrote them. Each note also lists the notes mentioning it without a
   link, under "Mentioned in".
-- `#garden` tags a note, and a todo or line in it.
+- `#garden` tags a note, and a todo or line in it. `#garden/seeds` is a
+  tag under it. `:notes-tag-rename garden yard` renames a tag in every
+  note, the tags under it and front matter's `tags:` too.
 - `/` at the start of a word opens a menu of these: todo, today's or
   tomorrow's date, due, remind, every, link, heading, table and tag. Pick
   one and fill in its places, `tab` going from one to the next.

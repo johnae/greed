@@ -33,6 +33,7 @@ local links = require("@self/links")
 local mentions = require("@self/mentions")
 local query = require("@self/query")
 local types = require("@self/types")
+local tags = require("@self/tags")
 local todos = require("@self/todos")
 require("@self/tools")
 require("@self/objects")
@@ -82,6 +83,7 @@ local exported: typeof(notes) & {
 	mentions: typeof(mentions),
 	query: typeof(query),
 	types: typeof(types),
+	tags: typeof(tags),
 	jobs: typeof(jobs),
 	clock: () -> number,
 } = setmetatable(
@@ -95,6 +97,7 @@ local exported: typeof(notes) & {
 		mentions = mentions,
 		query = query,
 		types = types,
+		tags = tags,
 		jobs = jobs,
 	},
 	{
