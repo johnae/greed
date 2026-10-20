@@ -57,6 +57,22 @@ test("matches show above the prompt and tab fills them in", function(t)
 	t:expect("abc|")
 end)
 
+test("fewer matches than before all show, none scrolled out of sight", function(t)
+	for _, name in { "zq-one", "zq-two" } do
+		greed.command({ name = name, doc = "", run = function() end })
+	end
+	t:buffer("|abc")
+	-- A frame after each key, as a client draws them, scrolls the view to
+	-- the cursor while there are many matches.
+	local screen = ""
+	for _, key in { ":", "z", "q" } do
+		t:keys(key)
+		screen = table.concat(t:screen(80, 24), "\n")
+	end
+	assert(string.find(screen, "zq-one", 1, true), screen)
+	assert(string.find(screen, "zq-two", 1, true), screen)
+end)
+
 test("arguments complete by what the command takes", function(t)
 	greed.option.define({ name = "tab-width", doc = "Spaces per tab", default = 4 })
 	t:buffer("|abc")

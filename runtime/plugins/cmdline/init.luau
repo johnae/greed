@@ -162,6 +162,9 @@ local function render(o: Open, to_end: boolean?)
 	o.view:set_selection({ ranges = { { anchor = head, head = head } }, primary = 1 })
 	-- Two rows of border.
 	o.view:configure({ height = o.buffer:line_count() + 2 })
+	-- Everything fits, so nothing may stay scrolled out of sight from when
+	-- there were more matches.
+	o.view:set_scroll(0)
 end
 
 -- Closes the command line; unless what's typed is about to run, a preview
