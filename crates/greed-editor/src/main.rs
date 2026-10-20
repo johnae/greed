@@ -45,7 +45,7 @@ use greed_text::ClientId;
 /// The session `greed notes` shows, where the hoard plugin opens the notes.
 const NOTES_SESSION: &str = "hoard";
 
-const USAGE: &str = "usage: greed [FILE]\n       greed --session NAME [FILE]\n                            show the session NAME, starting it if it isn't running\n       greed --new [FILE]   start another session for the project, with this greed\n       greed notes          Hoard: your notes, todos and today, in a session of their own\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed ssh HOST ctl ARGS\n                            greed ctl on another machine, asking nothing (for programs)\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--run COMMAND] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --fresh              with greed [FILE] or greed ssh: a session started now opens nothing it had open before\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed --session NAME [FILE]\n                            show the session NAME, starting it if it isn't running\n       greed --new [FILE]   start another session for the project, with this greed\n       greed notes          Hoard: your notes, todos and today, in a session of their own\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed ssh HOST ctl ARGS\n                            greed ctl on another machine, asking nothing (for programs)\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--run COMMAND] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --fresh              with greed [FILE] or greed ssh: a session started now opens nothing it had open before\n       --restore            with greed [FILE] or greed ssh: a session started now opens what it had open, even after it was quit\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -93,7 +93,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     let opening = opening_flag(&mut args);
-    fresh_flag(&mut args);
+    restore_flags(&mut args);
     if let Err(err) = client_flags(&mut args) {
         eprintln!("greed: {err}");
         return ExitCode::FAILURE;
@@ -646,12 +646,19 @@ fn client_flags(args: &mut Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
-/// `--fresh`, anywhere on the line, taken out of `args`: a session this
-/// starts opens nothing it had open before.
-fn fresh_flag(args: &mut Vec<String>) {
-    if args.iter().any(|arg| arg == "--fresh") {
-        args.retain(|arg| arg != "--fresh");
-        greed_core::control::set_fresh();
+/// `--fresh` and `--restore`, anywhere on the line, taken out of `args`: a
+/// session this starts opens nothing it had open before, or opens it even
+/// after it was quit.
+fn restore_flags(args: &mut Vec<String>) {
+    let flags = [
+        ("--fresh", greed_core::control::set_fresh as fn()),
+        ("--restore", greed_core::control::set_restore),
+    ];
+    for (flag, set) in flags {
+        if args.iter().any(|arg| arg == flag) {
+            args.retain(|arg| arg != flag);
+            set();
+        }
     }
 }
 

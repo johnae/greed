@@ -1117,6 +1117,8 @@ export type Sessions = {
 	build: () -> string,
 	--- Whether the session was started with `greed --fresh`, to begin without what it had open before.
 	fresh: () -> boolean,
+	--- Whether the session was started with `greed --restore`, or for an upgrade, to open what it had open before even after it was quit.
+	restoring: () -> boolean,
 	--- Whether the attached client (or the last one) came over `greed ssh`; before any attached, whether `greed ssh` started the session.
 	remote: () -> boolean,
 	--- Whether a terminal or window is attached to the session.

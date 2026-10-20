@@ -45,6 +45,10 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         lua.create_function(|_, NoArgs| Ok(control::fresh()))?,
     )?;
     session.set(
+        "restoring",
+        lua.create_function(|_, NoArgs| Ok(control::restore()))?,
+    )?;
+    session.set(
         "remote",
         lua.create_function(|lua, NoArgs| {
             // Before any client attached, whether `greed ssh` started it.

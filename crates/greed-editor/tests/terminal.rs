@@ -91,10 +91,15 @@ fn greed_with_a_file_that_isnt_there_yet_opens_it_to_be_written() {
         return;
     };
     let project = world.project("draft", &[("old.md", "old")]);
-    // A new session, then the one running.
-    for (i, file) in ["new.md", "second.md"].iter().enumerate() {
+    // A new session, then the one running, then one starting again after a
+    // crash with files to restore, which keeps the new file shown.
+    for (i, file) in ["new.md", "second.md", "third.md"].iter().enumerate() {
         let mut steps = vec![];
-        if i == 0 {
+        if i == 2 {
+            common::kill_sessions(&world.root.join("run/greed"), |_| true);
+            world.wait_for("the session to be gone", none_running);
+        }
+        if i != 1 {
             steps.push(Step::Until("the session", running));
         }
         steps.extend([
@@ -113,6 +118,55 @@ fn greed_with_a_file_that_isnt_there_yet_opens_it_to_be_written() {
         );
     }
     assert_eq!(world.sessions().lines().count(), 1, "{}", world.sessions());
+    world.eval("draft", "require('@greed').quit()");
+}
+
+#[test]
+fn a_session_that_crashed_is_restored_and_one_that_was_quit_starts_clean() {
+    fn shown(w: &World) -> String {
+        w.eval(
+            "draft",
+            "return require('@greed').view():buffer():path() or 'none'",
+        )
+    }
+    let Some(world) = World::new("restore") else {
+        return;
+    };
+    let project = world.project("draft", &[("old.md", "old")]);
+    world.terminal(
+        &project,
+        "old.md",
+        &[],
+        &[
+            Step::Until("the session", running),
+            Step::Shows("old"),
+            Step::Keys(":detach\r"),
+        ],
+    );
+    common::kill_sessions(&world.root.join("run/greed"), |_| true);
+    world.wait_for("the session to be gone", none_running);
+    world.terminal(
+        &project,
+        "",
+        &[],
+        &[
+            Step::Until("the session", running),
+            Step::Until("old.md to be restored", |w| shown(w).ends_with("/old.md")),
+            Step::Keys(":quit-session\r"),
+        ],
+    );
+    world.wait_for("the session to quit", none_running);
+    world.terminal(
+        &project,
+        "",
+        &[],
+        &[
+            Step::Until("the session", running),
+            Step::Pause(1000),
+            Step::Keys(":detach\r"),
+        ],
+    );
+    assert_eq!(shown(&world), "none", "nothing restored after a quit");
     world.eval("draft", "require('@greed').quit()");
 }
 

@@ -95,6 +95,21 @@ pub fn fresh() -> bool {
     FRESH.load(Ordering::Relaxed)
 }
 
+/// Whether a session this greed starts restores what it had open even
+/// after it was quit, as `--restore` and an upgrade ask.
+static RESTORE: AtomicBool = AtomicBool::new(false);
+
+/// Says a session this greed starts is to be restored even after a quit.
+pub fn set_restore() {
+    RESTORE.store(true, Ordering::Relaxed);
+}
+
+/// Whether a session this greed starts is to be restored even after a
+/// quit (see [`set_restore`]).
+pub fn restore() -> bool {
+    RESTORE.load(Ordering::Relaxed)
+}
+
 /// What each side says about itself when a client attaches: the protocol it
 /// speaks, the greed version and which build of it.
 pub fn handshake() -> Value {

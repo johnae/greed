@@ -1,10 +1,12 @@
 -- Session restore: a session remembers its projects, the files open in
 -- each and where the cursor was, and each project's tabs: their panes,
 -- what those show, and the terminals in them (run again, unless what they
--- ran is risky; then a shell). It opens them again when it starts.
--- Written down when it quits and when a file is saved, per session name in
--- the cache, so it only works for editors running as a session (which
--- `greed` is, unless GREED_NO_SESSION is set).
+-- ran is risky; then a shell). It opens them again when it starts, unless
+-- it was quit: then it starts clean, except with `restore-after-quit` or
+-- after an upgrade. Written down when it starts and quits and when a file
+-- is opened, closed or saved, per session name in the cache, so it only
+-- works for editors running as a session (which `greed` is, unless
+-- GREED_NO_SESSION is set).
 
 local greed = require("@greed")
 local core = require("@core")
@@ -12,8 +14,14 @@ local saved_layouts = require("@panes").saved
 
 greed.option.define({
 	name = "restore-session",
-	doc = "Open the files a session had open when it starts again",
+	doc = "Open the files a session had open when it starts again after it ended without being quit, as in a crash or a restart",
 	default = true,
+})
+
+greed.option.define({
+	name = "restore-after-quit",
+	doc = "Restore a session when it starts again after it was quit, too",
+	default = false,
 })
 
 type Project = {
@@ -29,6 +37,8 @@ type Project = {
 type Saved = {
 	current: string?,
 	projects: { Project },
+	--- Whether the session was quit, rather than ending some other way.
+	quit: boolean?,
 }
 
 local M = {}
@@ -42,6 +52,17 @@ end
 function M.fresh(): boolean
 	return greed.session.fresh()
 end
+
+--- Whether the session was started to be restored even after a quit, as
+--- for an upgrade.
+function M.restoring(): boolean
+	return greed.session.restoring()
+end
+
+--- Whether the session has started and restored what it would: until
+--- then, opening a file doesn't write down what's open, which would lose
+--- what's to be restored.
+M.started = false
 
 local function file(): string?
 	local name = M.name()
@@ -69,8 +90,9 @@ local function shown_tabs(): { any }
 	return out
 end
 
---- Writes down the open projects and files.
-function M.save()
+--- Writes down the open projects and files, and with `quit` that the
+--- session was quit.
+function M.save(quit: boolean?)
 	local path = file()
 	if path == nil or greed.option.get("restore-session") ~= true then
 		return
@@ -108,7 +130,11 @@ function M.save()
 	end
 	greed.fs.write(
 		path,
-		greed.json.encode({ current = current.root, projects = greed.json.array(projects) })
+		greed.json.encode({
+			current = current.root,
+			projects = greed.json.array(projects),
+			quit = quit or nil,
+		})
 	)
 end
 
@@ -186,14 +212,9 @@ local function reopen_tabs(project: Project, keep_shown: boolean)
 	greed.tab.switch(start)
 end
 
---- Opens what `save` wrote down. A file the session was started with stays
---- shown, and its project stays the shown one.
-function M.restore()
-	local wanted = greed.option.get("restore-session") == true and not M.fresh()
-	local saved = if wanted then read() else nil
-	if saved == nil then
-		return
-	end
+-- Opens `saved`'s projects, files and tabs. A file the session was
+-- started with stays shown, and its project stays the shown one.
+local function reopen_all(saved: Saved)
 	local start = greed.project.current().id
 	local started_with_file = greed.view():buffer():path() ~= nil
 	for _, project in saved.projects do
@@ -215,8 +236,40 @@ function M.restore()
 	greed.project.switch(if current and not started_with_file then current else start)
 end
 
+--- Opens what `save` wrote down, unless the session was quit (see
+--- `restore-after-quit`).
+function M.restore()
+	local wanted = greed.option.get("restore-session") == true and not M.fresh()
+	local saved = if wanted then read() else nil
+	local after_quit = greed.option.get("restore-after-quit") == true or M.restoring()
+	-- Files opened along the way are written down once it's done, and what
+	-- the session starts with is too, for when it ends without quitting.
+	local ok, err = true, nil
+	if saved and (after_quit or not saved.quit) then
+		ok, err = pcall(reopen_all, saved)
+	end
+	M.started = true
+	M.save()
+	if not ok then
+		error(err, 0)
+	end
+end
+
+-- What's open now, for a session that ends without quitting.
+local function changed()
+	if M.started then
+		M.save()
+	end
+end
+
 greed.on("editor.started", M.restore)
-greed.on("editor.quitting", M.save)
-greed.on("buffer.saved", M.save)
+greed.on("editor.quitting", function()
+	M.save(true)
+end)
+greed.on("buffer.saved", function()
+	M.save()
+end)
+greed.on("buffer.opened", changed)
+greed.on("buffer.closed", changed)
 
 return M

@@ -83,18 +83,24 @@ terminal and `$GREED_BIN` which greed runs the session.
 If a session can't start in the background, `GREED_NO_SESSION=1 greed FILE`
 runs the editor directly in the terminal.
 
-A session that quits remembers its projects, their open files and cursors,
-and the tabs of the project you were in: panes, what each showed, and their
+A session remembers its projects, their open files and cursors, and the
+tabs of the project you were in: panes, what each showed, and their
 terminals, which run what they ran again (one that ran something risky,
-like `rm -rf` or `kubectl delete`, comes back as a plain shell). The next
-start opens them again. This is written when the session quits and on
-every save, in the cache folder (`~/.cache/greed/sessions`). Starting with a file keeps that
-file shown.
+like `rm -rf` or `kubectl delete`, comes back as a plain shell). When it
+ends without being quit, as in a crash, a reboot or a logout, the next
+start opens all that again. A session you quit (`:quit-session`, `:qa`)
+starts clean next time. Ending one to start it again with a newer greed,
+from the page that asks about the other version, restores it. This is
+written when the session starts, quits, and opens, closes or saves a
+file, in the cache folder (`~/.cache/greed/sessions`). Starting with a
+file keeps that file shown.
 
 | To | |
 |---|---|
 | Start one session fresh | `greed --fresh` (or `greed ssh HOST --fresh`); quit a running one first, or start another with `--new` |
 | The same on a Mac | Hold Shift while Greed opens |
+| Bring back a session you quit | `greed --restore`, as the next start after quitting it |
+| Restore after quitting too, always | `greed.option.set("restore-after-quit", true)` |
 | Turn restoring off | `greed.option.set("restore-session", false)` |
 
 ### Quitting or keeping a session

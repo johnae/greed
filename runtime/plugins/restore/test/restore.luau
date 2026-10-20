@@ -162,6 +162,78 @@ test("nothing is opened in a session started fresh", function(t)
 	assert(not open_paths()[dir .. "/a.txt"])
 end)
 
+-- Writes down a session that was quit with `a.txt` open in `dir`.
+local function quit_with(t: test.TestContext, file: string, dir: string)
+	greed.open(dir .. "/a.txt")
+	t:run("quit")
+	assert(t:quitting())
+	assert(saved(file).quit == true, "written down as quit")
+	greed.run("buffer-close", { force = true })
+	assert(not open_paths()[dir .. "/a.txt"], "closed again")
+end
+
+test("a session that was quit starts clean, one that ended otherwise is restored", function(t)
+	local file = session()
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	quit_with(t, file, dir)
+	restore.restore()
+	assert(not open_paths()[dir .. "/a.txt"], "quit: nothing opened")
+
+	-- Ended without quitting, as a crash or a reboot does: what was last
+	-- written down.
+	local state = saved(file)
+	state.quit = nil
+	remember(file, state)
+	restore.restore()
+	assert(open_paths()[dir .. "/a.txt"], "restored")
+end)
+
+test("with restore-after-quit a session that was quit is restored too", function(t)
+	local file = session()
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	quit_with(t, file, dir)
+	greed.option.set("restore-after-quit", true)
+	restore.restore()
+	assert(open_paths()[dir .. "/a.txt"])
+end)
+
+test("a session started to be restored, as for an upgrade, is restored after a quit", function(t)
+	local file = session()
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	quit_with(t, file, dir)
+	restore.restoring = function()
+		return true
+	end
+	greed.option.set("restore-session", false)
+	restore.restore()
+	assert(not open_paths()[dir .. "/a.txt"], "restore-session off still wins")
+	greed.option.set("restore-session", true)
+	restore.fresh = function()
+		return true
+	end
+	restore.restore()
+	assert(not open_paths()[dir .. "/a.txt"], "--fresh still wins")
+	restore.fresh = function()
+		return false
+	end
+	restore.restore()
+	assert(open_paths()[dir .. "/a.txt"], "restored")
+end)
+
+test("opening a file writes it down, once the session has restored", function(t)
+	local file = session()
+	local dir = t:tempdir({ ["a.txt"] = "one\n", ["b.txt"] = "two\n", ["c.txt"] = "three\n" })
+	local root = greed.project.current().root
+	remember(file, { current = root, projects = { { root = root, files = { dir .. "/a.txt" } } } })
+	restore.started = false
+	greed.open(dir .. "/b.txt")
+	assert(#saved(file).projects[1].files == 1, "not before restoring, which would lose it")
+	restore.restore()
+	greed.open(dir .. "/c.txt")
+	local files = saved(file).projects[1].files
+	assert(#files == 3 and saved(file).quit == nil, table.concat(files, " "))
+end)
+
 test("quitting writes down the shown project's tabs, and starting opens them again", function(t)
 	local file = session()
 	local root = greed.project.current().root

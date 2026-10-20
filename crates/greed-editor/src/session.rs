@@ -460,6 +460,8 @@ fn settle(
         Choice::End => {
             ctl::quit(Some(name), !stale.state.unsaved.is_empty())?;
             wait_gone(name)?;
+            // It was quit only to start again with this version.
+            control::set_restore();
             spawn_server(name, stale.root.as_deref(), false)?;
             Ok(Some(name.to_owned()))
         }
@@ -729,6 +731,17 @@ fn answer_here(
     }
 }
 
+/// `--fresh` and `--restore` as this greed was given them (or, for
+/// `--restore`, an upgrade asked), for a greed it starts a session with.
+fn restore_flags() -> impl Iterator<Item = &'static str> {
+    [
+        control::fresh().then_some("--fresh"),
+        control::restore().then_some("--restore"),
+    ]
+    .into_iter()
+    .flatten()
+}
+
 /// Starts `greed serve` for the session called `name` in the background, its
 /// output going to a log, and waits until it listens.
 fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, Error> {
@@ -737,9 +750,7 @@ fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, 
     let log = std::fs::File::create(&log_path)?;
     let mut command = Command::new(std::env::current_exe()?);
     command.args(["serve", "--session", name]);
-    if control::fresh() {
-        command.arg("--fresh");
-    }
+    command.args(restore_flags());
     if let Some(file) = file {
         command.arg(file);
     }
@@ -926,6 +937,8 @@ fn settle_remote(
                 host,
                 &format!("{} ctl quit{force} {}", quote(greed), quote(&name)),
             )?;
+            // The bridge starts it again with this version, restored.
+            control::set_restore();
             Ok(Some(false))
         }
         Choice::Beside => Ok(Some(true)),
@@ -1234,9 +1247,7 @@ pub fn serve_project(path: Option<&Path>) -> Result<(), Error> {
 /// may use `$HOME`).
 fn bridge_command(greed: &str, to: &SwitchTo, config: Option<&str>, new: bool) -> String {
     let mut args = vec![greed.to_owned(), "bridge".to_owned()];
-    if control::fresh() {
-        args.push("--fresh".to_owned());
-    }
+    args.extend(restore_flags().map(str::to_owned));
     if let Some(name) = &to.session {
         args.extend(["--session".to_owned(), name.clone()]);
     } else if new {
