@@ -322,6 +322,12 @@ function M.name(path: string): string
 	return (string.gsub(core.project.resolve(path), "%.md$", ""))
 end
 
+--- The name of the note `buffer` is, or nil when it isn't one.
+function M.name_of(buffer: greed.Buffer): string?
+	local path = buffer:path()
+	return if path and M.is_note(buffer) then M.name(path) else nil
+end
+
 --- Every note's name, sorted, from every place.
 function M.all(): { string }
 	local names = {}
@@ -398,6 +404,11 @@ end
 --- Note `name`'s text, as the editor has it if it's open.
 function M.read(name: string): string?
 	return (core.file.text(M.path(name)))
+end
+
+--- The key for the quick fix, as a hint in a note says it.
+function M.fix_key(): string
+	return if greed.option.get("editing-style") == "vscode" then "ctrl-." else "space a"
 end
 
 -- Checks on what agents may write, each saying why not for a note's path.

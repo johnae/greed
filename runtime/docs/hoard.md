@@ -363,7 +363,9 @@ people: []
 asks which kind (`Meeting`), then the name, and opens the new note filled
 in. `:notes-type` (`ctrl-space n y`) in a note you have gives it the kind's
 fields it's missing, with the template's values, and leaves the ones it
-has alone.
+has alone. Tagging a note with a kind's name (`#meeting`, or `meeting` in
+its `tags:`) does the same through a hint on that line: `⊕ Meeting:
+ctrl-. adds date, people` (`space a` with Vim's or Helix's keys).
 
 In front matter, typing a key at the start of a line lists the keys your
 notes use, and after `key: ` (or `- ` under a key) the values they give

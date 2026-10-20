@@ -151,15 +151,9 @@ function M.link_text(mention: Mention, from: string?): string
 	return if written == mention.text then `[[{written}]]` else `[[{written}|{mention.text}]]`
 end
 
--- The note `buffer` is, if it's one.
-local function name_of(buffer: greed.Buffer): string?
-	local path = buffer:path()
-	return if path and notes.is_note(buffer) then notes.name(path) else nil
-end
-
 -- The quick fix in a note: the mentions on the cursor's line, linked.
 core.lookup.add("fix", function(ctx)
-	local here = name_of(ctx.buffer)
+	local here = notes.name_of(ctx.buffer)
 	if here == nil then
 		return false
 	end
@@ -186,7 +180,7 @@ local function hint(view: greed.View)
 		return
 	end
 	local buffer = view:buffer()
-	local here = name_of(buffer)
+	local here = notes.name_of(buffer)
 	if here == nil then
 		return
 	end
@@ -201,14 +195,13 @@ local function hint(view: greed.View)
 		local note = index.note(mention.note)
 		table.insert(named, if note then note.title else mention.note)
 	end
-	local key = if greed.option.get("editing-style") == "vscode" then "ctrl-." else "space a"
 	local start = buffer:line_start(line)
 	buffer:decorate("mentions", {
 		{
 			from = start,
 			to = start,
 			style = "comment",
-			text = `  ↗ {table.concat(named, ", ")}: {key} links`,
+			text = `  ↗ {table.concat(named, ", ")}: {notes.fix_key()} links`,
 			eol = true,
 			action = "quick-fix",
 		},
@@ -277,7 +270,7 @@ end
 
 -- Each note shows where it's mentioned, worked out as it's opened or saved.
 local function refresh(buffer: greed.Buffer)
-	local here = name_of(buffer)
+	local here = notes.name_of(buffer)
 	if here == nil then
 		return
 	end

@@ -514,8 +514,7 @@ greed.command({
 	doc = "Link to a heading, a list item or a block in a note, picked from all of them",
 	run = function(ctx)
 		index.ensure()
-		local path = ctx.buffer:path()
-		local here = if path and notes.is_note(ctx.buffer) then notes.name(path) else nil
+		local here = notes.name_of(ctx.buffer)
 		local items = {}
 		local all = index.all()
 		table.sort(all, function(a: index.Note, b: index.Note)

@@ -65,3 +65,47 @@ test("a note takes a type's fields it doesn't have, keeping its own", function(t
 		bare
 	)
 end)
+
+test("a line tagging a type says which of its fields the note lacks", function(t)
+	vault(t, {
+		["templates/Meeting Template.md"] = MEETING,
+		["templates/Book club.md"] = "---\nbook:\n---\n",
+	})
+	local text =
+		"---\ndate: 2026-01-05\ntags:\n  - meeting\n---\nAbout #meeting and #book-club\nplain\n"
+	local kind, keys = notes.types.suggested("Standup", text, 5)
+	assert(kind and kind.name == "Meeting", "the first tag's")
+	assert(table.concat(keys, ",") == "categories,people", table.concat(keys, ","))
+	assert(notes.types.suggested("Standup", text, 3) ~= nil, "front matter's tags")
+	assert(notes.types.suggested("Standup", text, 6) == nil, "a line without one")
+	local done = "---\ncategories: x\ndate: x\npeople: x\n---\n#meeting\n"
+	local _, none = notes.types.suggested("Done", done, 5)
+	assert(notes.types.suggested("Done", done, 5) == nil, table.concat(none, ","))
+end)
+
+test("the quick fix gives the note the fields its tag's type has", function(t)
+	local dir = vault(t, {
+		["templates/Meeting Template.md"] = MEETING,
+		["Standup.md"] = "Notes from today #meeting\n",
+	})
+	greed.open(`{dir}/Standup.md`)
+	local buffer = greed.view():buffer()
+	local hint = ""
+	t:wait_for(function()
+		for _, mark in buffer:decorations("note-types") do
+			hint = mark.text or ""
+		end
+		return hint ~= ""
+	end)
+	assert(
+		string.find(hint, "Meeting:", 1, true)
+			and string.find(hint, "categories, date, people", 1, true),
+		hint
+	)
+	t:run("quick-fix")
+	t:wait_for(function()
+		return string.find(buffer:text(), "people: []", 1, true) ~= nil
+	end)
+	assert(string.match(buffer:text(), "^%-%-%-\n"), buffer:text())
+	assert(string.find(buffer:text(), "---\nNotes from today #meeting\n", 1, true), buffer:text())
+end)
