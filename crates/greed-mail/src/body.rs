@@ -68,6 +68,17 @@ impl Body {
     }
 }
 
+/// Thing number `index` attached to the whole message `raw`, counted as
+/// `Body::of` lists them: its name and what it holds, decoded.
+pub fn attached(raw: &[u8], index: usize) -> Option<(String, Vec<u8>)> {
+    let message = MessageParser::default().parse(raw)?;
+    let part = message.attachments().nth(index)?;
+    Some((
+        part.attachment_name().unwrap_or_default().to_string(),
+        part.contents().to_vec(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,6 +124,12 @@ mod tests {
                 size: 9,
             }]
         );
+        assert_eq!(
+            attached(&raw, 0),
+            Some(("plan.pdf".into(), b"%PDF-1.4\n".to_vec())),
+            "decoded"
+        );
+        assert_eq!(attached(&raw, 1), None);
     }
 
     #[test]

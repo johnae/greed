@@ -3,6 +3,7 @@
 
 pub mod body;
 pub mod config;
+pub mod files;
 pub mod header;
 pub mod html;
 pub mod imap;

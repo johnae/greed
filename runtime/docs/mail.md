@@ -48,6 +48,13 @@ thread or the list, opens the message in your web browser as it was sent,
 with everything that would load from elsewhere blocked: scripts, remote
 images, fonts and styles.
 
+What's attached is listed under who a message is from, with its kind and
+size. `enter` on one opens it with what your system opens that kind of
+file with; `S` saves it where you say (`~/Downloads` to start; the one
+under the cursor, or the thread's only one). The mail session fetches it
+from the server the first time, whole, and keeps it beside your mail for
+next time. A file that's already where you save is never written over.
+
 ## Tags
 
 A message's folders, labels and tags show after its subject (`#work`),

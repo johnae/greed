@@ -11,12 +11,16 @@
 //! unflag, archive, trash, move `to` a mailbox, or tag and untag with
 //! `tag`; made here at once and sent to the server in the next round,
 //! which starts right away),
-//! `draft` (a reply to the message `key`, to everyone with `all`) and
-//! `send` (a draft, put in the outbox and sent in the next round).
+//! `draft` (a reply to the message `key`, to everyone with `all`), `send`
+//! (a draft, put in the outbox and sent in the next round), `render` (the
+//! message `key`'s HTML laid out `width` wide), `browse` (it as a page that
+//! loads nothing) and `attachment` (thing number `index` attached to it,
+//! saved `to` a path or kept beside the store).
 //! Notifications: `changed` (the index changed: search again), `progress`
 //! (an account's mailbox synced some), `trouble` (an account that can't
 //! sync, and why), `refused` (a change or mail its server refused, and
-//! why) and `sent` (mail its server took).
+//! why), `sent` (mail its server took) and `attachment` (where one asked
+//! for went, or why it couldn't).
 //!
 //! The sync goes in rounds of at most `HEADERS` headers and `BODIES` bodies
 //! a mailbox, so what's asked for never waits long. After a round with
@@ -35,7 +39,9 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{Notify, mpsc};
 
+use crate::body;
 use crate::config::{Account, Config, Provider};
+use crate::files;
 use crate::html;
 use crate::imap::{Changing, Connection, Imap};
 use crate::indexing;
@@ -99,6 +105,11 @@ struct Standing {
 struct Shared {
     out: mpsc::UnboundedSender<String>,
     wanted: RefCell<Vec<String>>,
+    /// Attachments asked for: of which message, which one, and where to
+    /// save it (beside the store without a place).
+    attachments: RefCell<Vec<(String, usize, Option<PathBuf>)>>,
+    /// Where attachments opened from the store are kept.
+    kept: PathBuf,
     standing: RefCell<BTreeMap<String, Standing>>,
     wake: Notify,
 }
@@ -136,6 +147,8 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
     let shared = Shared {
         out,
         wanted: RefCell::new(Vec::new()),
+        attachments: RefCell::new(Vec::new()),
+        kept: dir.join("attachments"),
         standing: RefCell::new(BTreeMap::new()),
         wake: Notify::new(),
     };
@@ -275,6 +288,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
         }
         "render" => render(params, reader),
         "browse" => browse(params, with),
+        "attachment" => attachment(params, with),
         "draft" => {
             let key = params["key"]
                 .as_str()
@@ -653,8 +667,8 @@ async fn send_mail(
     Ok(())
 }
 
-/// Fetches the bodies asked for of account `id`'s messages, from where
-/// each is, then says they're in.
+/// Fetches the attachments, then the bodies, asked for of account `id`'s
+/// messages, from where each is, then says they're in.
 async fn asked_for(
     connection: &mut Connection,
     store: &mut Store,
@@ -663,6 +677,33 @@ async fn asked_for(
     shared: &Shared,
 ) -> Result<(), String> {
     let prefix = format!("m:{id}:");
+    let (attachments, others): (Vec<_>, Vec<_>) = shared
+        .attachments
+        .take()
+        .into_iter()
+        .partition(|(key, _, _)| key.starts_with(&prefix));
+    *shared.attachments.borrow_mut() = others;
+    for (key, number, to) in attachments {
+        let saved = save_attachment(
+            connection,
+            store,
+            id,
+            &key[prefix.len()..],
+            number,
+            to,
+            &shared.kept,
+        )
+        .await;
+        // Whatever happened, the one waiting hears of it.
+        let mut said = json!({ "key": key, "index": number });
+        match &saved {
+            Ok(Ok(path)) => said["path"] = json!(path),
+            Ok(Err(why)) | Err(why) => said["error"] = json!(why),
+        }
+        shared.notify("attachment", &said);
+        // A connection that broke ends the round, as anywhere else.
+        let _ = saved?;
+    }
     let (keys, others): (Vec<String>, Vec<String>) = shared
         .wanted
         .take()
@@ -688,6 +729,76 @@ async fn asked_for(
     indexing::catch_up(store, index).map_err(|e| e.0)?;
     shared.notify("changed", &json!({ "keys": keys }));
     Ok(())
+}
+
+/// Fetches account `id`'s message `identity` whole and saves thing number
+/// `number` attached to it: at `to`, or kept beside the store. Gives where,
+/// or why it couldn't; trouble is a connection that broke.
+async fn save_attachment(
+    connection: &mut Connection,
+    store: &Store,
+    id: i64,
+    identity: &str,
+    number: usize,
+    to: Option<PathBuf>,
+    kept: &Path,
+) -> Result<Result<PathBuf, String>, String> {
+    let Some((mailbox, place)) = store.place_of(id, identity).map_err(|e| e.0)? else {
+        return Ok(Err("that mail is gone".into()));
+    };
+    connection.open(&mailbox).await.map_err(|e| e.0)?;
+    let fetched = connection
+        .bodies(&[place.uid], u32::MAX)
+        .await
+        .map_err(|e| e.0)?;
+    let Some((_, raw)) = fetched.into_iter().next() else {
+        return Ok(Err("that mail is gone from the server".into()));
+    };
+    let Some((name, bytes)) = body::attached(&raw, number) else {
+        return Ok(Err("it has nothing attached there".into()));
+    };
+    let path = to.unwrap_or_else(|| {
+        kept_attachment(kept, &format!("m:{id}:{identity}"), number).join(files::safe_name(&name))
+    });
+    // Kept before, it's there already: as good.
+    if path.starts_with(kept) && path.exists() {
+        return Ok(Ok(path));
+    }
+    Ok(files::write_new(&path, &bytes))
+}
+
+/// Where thing number `number` attached to the message `key` is kept beside
+/// the store, in a folder of its own.
+fn kept_attachment(kept: &Path, key: &str, number: usize) -> PathBuf {
+    kept.join(files::hashed(key)).join(number.to_string())
+}
+
+/// An `attachment` request: thing number `index` attached to the message
+/// `key`, saved `to` a path, or kept beside the store to open. One kept
+/// already is given at once; otherwise the next step of the sync fetches
+/// it and an `attachment` notification says where it went, or why not.
+fn attachment(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
+    with.writer()?;
+    let key = params["key"]
+        .as_str()
+        .ok_or("attachment takes key, a message's")?;
+    let number = params["index"]
+        .as_u64()
+        .and_then(|n| usize::try_from(n).ok())
+        .ok_or("attachment takes index, which of its attachments")?;
+    let to = params["to"].as_str().map(files::expand_home);
+    if to.is_none()
+        && let Ok(mut found) = std::fs::read_dir(kept_attachment(&with.shared.kept, key, number))
+        && let Some(Ok(entry)) = found.next()
+    {
+        return Ok(json!({ "path": entry.path() }));
+    }
+    with.shared
+        .attachments
+        .borrow_mut()
+        .push((key.to_string(), number, to));
+    with.shared.wake.notify_one();
+    Ok(json!({ "waiting": true }))
 }
 
 #[cfg(test)]

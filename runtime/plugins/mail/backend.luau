@@ -82,6 +82,10 @@ export type Backend = {
 	--- The message `key`'s HTML as a page that loads nothing, for a
 	--- browser: where it is, or nil and why.
 	browse: (key: string) -> (string?, string?),
+	--- Thing number `index` (from 0) attached to the message `key`, saved
+	--- `to` a path or kept beside the store: where it is, once it's there,
+	--- or nil and why.
+	attachment: (key: string, index: number, to: string?) -> (string?, string?),
 }
 
 --- The session `greed mail` starts, which syncs the mail; others read what
@@ -112,6 +116,13 @@ local function changed()
 	core.registry.tell(listeners)
 end
 
+-- Who waits for an attachment, by "key index", for greed-mail to say where
+-- it went.
+local awaiting: { [string]: greed.Signal } = {}
+
+-- How long an attachment may take to come.
+local PATIENCE = 120 * 1000
+
 -- greed-mail, once it's started, and the index it keeps.
 local connection: greed.RpcConnection? = nil
 local opened: greed.Index? = nil
@@ -134,6 +145,11 @@ local function served(): (greed.RpcConnection?, string?)
 				greed.echo(`{params.account}: {params.message}`)
 			elseif method == "sent" then
 				greed.echo("mail sent")
+			elseif method == "attachment" then
+				local waiting = awaiting[`{params.key} {params.index}`]
+				if waiting then
+					waiting:send(params)
+				end
 			end
 		end,
 	})
@@ -205,6 +221,25 @@ M.served = {
 	browse = function(key: string): (string?, string?)
 		local page, err = ask("browse", { key = key })
 		return if page then page.path else nil, err
+	end,
+	attachment = function(key: string, index: number, to: string?): (string?, string?)
+		local asked, err = ask("attachment", { key = key, index = index, to = to })
+		if asked == nil then
+			return nil, err
+		elseif asked.path then
+			return asked.path, nil
+		end
+		-- Fetched in the sync's next step, it says when it's there.
+		local at = `{key} {index}`
+		local done = greed.signal()
+		awaiting[at] = done
+		greed.spawn(function()
+			greed.sleep(PATIENCE)
+			done:send({ error = "it didn't come: the server may be slow, try again" })
+		end)
+		local got = done:wait()
+		awaiting[at] = nil
+		return got.path, got.error
 	end,
 } :: Backend
 

@@ -308,6 +308,23 @@ function M.page()
 	M.ask()
 end
 
+-- Something attached to a message, as a thread lists it: the message, its
+-- place among them (from 0) and its name.
+type Attached = { key: string, index: number, name: string }
+
+--- Opens `which` with what the system opens its kind of file with; the
+--- mail session fetches it first, the first time.
+function M.open_attachment(which: Attached)
+	greed.echo(`getting {which.name}`)
+	local path, err = backend.get().attachment(which.key, which.index)
+	if path == nil then
+		greed.echo(err or `{which.name} didn't come`)
+		return
+	end
+	greed.echo("")
+	core.file.open_link(`file://{path}`)
+end
+
 -- How the styles of a message's HTML show.
 local STYLES: { [string]: string } = {
 	strong = "markup.bold",
@@ -382,8 +399,22 @@ local function message_node(message: backend.Message, cells: number, plain: bool
 	if message.cc ~= "" then
 		table.insert(parts, header("Cc", message.cc))
 	end
-	for _, attached in message.attachments do
-		table.insert(parts, header("Attached", `{attached.name} ({attached.mime})`))
+	for i, attached in message.attachments do
+		local which: Attached = { key = message.key, index = i - 1, name = attached.name }
+		table.insert(
+			parts,
+			ui.line({
+				ui.span("Attached: ", "comment"),
+				{
+					text = `{attached.name} ({attached.mime}, {core.text.bytes(attached.size)})`,
+					style = "markup.link",
+					value = { attached = which },
+					press = function()
+						M.open_attachment(which)
+					end,
+				},
+			})
+		)
 	end
 	table.insert(parts, ui.gap())
 	local html = if plain then nil else html_lines(message, cells)
@@ -881,6 +912,45 @@ greed.command({
 	end,
 })
 
+-- What's attached that `ctx` is on: the one under the cursor in a thread,
+-- or the thread's only one.
+local function attachment_at(ctx: greed.Context): Attached?
+	local r = reading
+	if ctx.buffer:kind() ~= "mail-thread" or r == nil then
+		return nil
+	end
+	local value = r.view:value_at(ctx.view:cursor())
+	if type(value) == "table" and value.attached then
+		return value.attached
+	end
+	local all: { Attached } = {}
+	for _, message in r.thread.messages do
+		for i, attached in message.attachments do
+			table.insert(all, { key = message.key, index = i - 1, name = attached.name })
+		end
+	end
+	return if #all == 1 then all[1] else nil
+end
+
+greed.command({
+	name = "mail-save-attachment",
+	doc = "Save what's attached under the cursor (or the thread's only attachment) where you say",
+	run = function(ctx: greed.Context)
+		local which = attachment_at(ctx)
+		if which == nil then
+			greed.echo("put the cursor on what's attached, on its Attached line")
+			return
+		end
+		local to = core.prompt.ask("Save as", `~/Downloads/{which.name}`)
+		if to == nil or to == "" then
+			return
+		end
+		greed.echo(`getting {which.name}`)
+		local path, err = backend.get().attachment(which.key, which.index, to)
+		greed.echo(if path then `saved {path}` else err or `{which.name} didn't come`)
+	end,
+})
+
 -- What a list and a thread both do to their mail.
 local ACTIONS = {
 	u = "mail-toggle-read",
@@ -904,6 +974,6 @@ greed.keymap.bind({ kind = "mail" }, {
 	["$"] = "mail-sync",
 })
 greed.keymap.bind({ kind = "mail-thread" }, ACTIONS)
-greed.keymap.bind({ kind = "mail-thread" }, { h = "mail-plain" })
+greed.keymap.bind({ kind = "mail-thread" }, { h = "mail-plain", S = "mail-save-attachment" })
 
 return M

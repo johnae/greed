@@ -66,6 +66,9 @@ local acted: { string } = {}
 -- What was sent through the fake.
 local sent: { any } = {}
 
+-- Attachments asked for of the fake, as "key index to".
+local fetched: { string } = {}
+
 -- An index of the mail now, in memory: the query run by
 -- greed.query.run, sorted newest first as the list asks.
 local index = {
@@ -166,6 +169,7 @@ local function fake()
 	end
 	acted = {}
 	sent = {}
+	fetched = {}
 	local changed: () -> () = function() end
 	changed = mail.backend.use({
 		index = function(): (any, string?)
@@ -189,7 +193,9 @@ local function fake()
 					message.to = "anna@example.com"
 					message.cc = ""
 					message.text = m.text
-					message.attachments = {}
+					message.attachments = if m.key == "m:1:b"
+						then { { name = "invoice-41.pdf", mime = "application/pdf", size = 20480 } }
+						else {}
 					message.complete = true
 					message.html = m.html ~= nil
 					return { key = m.thread, subject = m.subject, messages = { message } }
@@ -220,6 +226,10 @@ local function fake()
 				end
 			end
 			return nil
+		end,
+		attachment = function(key: string, index: number, to: string?): (string?, string?)
+			table.insert(fetched, `{key} {index} {to or "-"}`)
+			return to or `/kept/{key}/{index}`, nil
 		end,
 		browse = function(key: string): (string?, string?)
 			return `/pages/{key}.html`, nil
@@ -488,6 +498,37 @@ test("a thread reads from its HTML, its links open, and h reads it as text", fun
 		text = buffer:text()
 		assert(string.find(text, "tomatoes by the fence", 1, true), text)
 		assert(not string.find(text, "Read more", 1, true), "as text: " .. text)
+	end)
+	core.file.open_link = open_link
+	assert(ok, tostring(err))
+end)
+
+test("what's attached opens when pressed, and S saves it where you say", function(t)
+	fake()
+	local opened: { string } = {}
+	local open_link = core.file.open_link
+	core.file.open_link = function(uri: string)
+		table.insert(opened, uri)
+	end
+	local ok, err: any = pcall(function()
+		t:buffer("|x")
+		t:run("mail")
+		t:keys("esc enter")
+		local text = greed.view():buffer():text()
+		local at = string.find(text, "invoice-41.pdf (application/pdf, ", 1, true)
+		assert(at, text)
+		greed.view():set_cursor(at - 1)
+		t:keys("enter")
+		assert(fetched[1] == "m:1:b 0 -", tostring(fetched[1]))
+		assert(opened[1] == "file:///kept/m:1:b/0", tostring(opened[1]))
+		greed.view():set_cursor(0)
+		t:keys("S")
+		assert(
+			greed.view():buffer():text() == "~/Downloads/invoice-41.pdf",
+			"the only one, offered"
+		)
+		t:keys("enter")
+		assert(fetched[2] == "m:1:b 0 ~/Downloads/invoice-41.pdf", tostring(fetched[2]))
 	end)
 	core.file.open_link = open_link
 	assert(ok, tostring(err))

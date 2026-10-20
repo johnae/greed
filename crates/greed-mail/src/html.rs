@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use html2text::render::RichAnnotation;
 use serde::Serialize;
 
+use crate::files;
+
 /// A piece of a line: its text, how it's styled (`strong`, `emphasis`,
 /// `code`, `strike`, `link`, `image`), and for a link which of the
 /// rendered message's links it is.
@@ -113,7 +115,7 @@ const LOCKED: &str = "<meta http-equiv=\"Content-Security-Policy\" content=\"def
 /// `key`, with `LOCKED` at its head; gives where.
 pub fn page(html: &str, dir: &Path, key: &str) -> Result<PathBuf, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("couldn't make {}: {e}", dir.display()))?;
-    let path = dir.join(format!("{:016x}.html", name(key)));
+    let path = dir.join(format!("{}.html", files::hashed(key)));
     // First in its head, before anything it says itself can load.
     let lower = html.to_ascii_lowercase();
     let page = match lower
@@ -125,13 +127,6 @@ pub fn page(html: &str, dir: &Path, key: &str) -> Result<PathBuf, String> {
     };
     std::fs::write(&path, page).map_err(|e| format!("couldn't write {}: {e}", path.display()))?;
     Ok(path)
-}
-
-/// A name for `key` that's the same each time (FNV-1a).
-fn name(key: &str) -> u64 {
-    key.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
-    })
 }
 
 #[cfg(test)]

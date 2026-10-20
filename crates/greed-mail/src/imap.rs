@@ -306,7 +306,7 @@ pub trait Imap {
     ) -> impl Future<Output = Result<Vec<u32>, Trouble>> + Send;
 
     /// The first `cap` bytes of each message with `uids` (lowest first),
-    /// by UID; those gone since aren't there.
+    /// by UID, all of each with `u32::MAX`; those gone since aren't there.
     fn bodies(
         &mut self,
         uids: &[u32],
@@ -387,9 +387,14 @@ impl Imap for Connection {
         if uids.is_empty() {
             return Ok(Vec::new());
         }
+        let part = if cap == u32::MAX {
+            String::new()
+        } else {
+            format!("<0.{cap}>")
+        };
         let found: Vec<_> = self
             .session
-            .uid_fetch(set(uids), format!("(UID BODY.PEEK[]<0.{cap}>)"))
+            .uid_fetch(set(uids), format!("(UID BODY.PEEK[]{part})"))
             .await?
             .try_collect()
             .await?;

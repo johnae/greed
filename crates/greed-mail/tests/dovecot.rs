@@ -896,3 +896,69 @@ fn tags_on_proton_wait_until_labels_are_checked_against_bridge() {
         "nothing went to the server"
     );
 }
+
+#[test]
+fn an_attachment_is_fetched_whole_and_saved_or_kept() {
+    let Some(dovecot) = Dovecot::start("attached") else {
+        return;
+    };
+    let maildir = dovecot.dir.join("home/anna/Maildir");
+    for sub in ["cur", "new", "tmp"] {
+        std::fs::create_dir_all(maildir.join(sub)).unwrap();
+    }
+    // Big enough that the first fetch, capped, doesn't have all of it.
+    let plan = "step: dig, sow, water\r\n".repeat(16_000);
+    let message = format!(
+        "From: Zoë <zoe@example.com>\r\nTo: anna@localhost\r\nSubject: the plan\r\n\
+         Date: Sun, 19 Oct 2026 10:00:00 +0200\r\nMessage-ID: <plan@example.com>\r\n\
+         MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
+         --b\r\nContent-Type: text/plain\r\n\r\nsee attached\r\n\
+         --b\r\nContent-Type: text/plain; name=\"../plan.txt\"\r\n\
+         Content-Disposition: attachment; filename=\"../plan.txt\"\r\n\r\n{plan}\r\n--b--\r\n"
+    );
+    std::fs::write(maildir.join("cur/1760000001.M1P1.test:2,S"), message).unwrap();
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let key = message_keys(&mut served).remove(0);
+    let asked = served.ask("attachment", &serde_json::json!({ "key": key, "index": 0 }));
+    assert_eq!(asked["waiting"], true, "{asked}");
+    let got = served.wait_for("attachment");
+    let kept = std::path::PathBuf::from(got["path"].as_str().unwrap_or_else(|| panic!("{got}")));
+    assert_eq!(
+        kept.file_name().unwrap(),
+        "plan.txt",
+        "no folders from its name"
+    );
+    assert!(
+        kept.starts_with(dovecot.dir.join("store")),
+        "{}",
+        kept.display()
+    );
+    assert_eq!(
+        std::fs::read(&kept).unwrap(),
+        plan.as_bytes(),
+        "all of it, though the first fetch had only the start"
+    );
+    let again = served.ask("attachment", &serde_json::json!({ "key": key, "index": 0 }));
+    assert_eq!(again["path"], got["path"], "kept: given at once");
+    let to = dovecot.dir.join("saved/the plan.txt");
+    served.ask(
+        "attachment",
+        &serde_json::json!({ "key": key, "index": 0, "to": to }),
+    );
+    let saved = served.wait_for("attachment");
+    assert_eq!(saved["path"], serde_json::json!(to), "{saved}");
+    assert_eq!(std::fs::read(&to).unwrap(), plan.as_bytes());
+    served.ask(
+        "attachment",
+        &serde_json::json!({ "key": key, "index": 0, "to": to }),
+    );
+    let over = served.wait_for("attachment");
+    assert!(
+        over["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("is there already"),
+        "nothing written over: {over}"
+    );
+}
