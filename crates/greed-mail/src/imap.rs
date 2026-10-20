@@ -472,6 +472,23 @@ pub trait Changing {
         to: &str,
     ) -> impl Future<Output = Result<Answer, Trouble>> + Send;
 
+    /// Copies `uids` from the open mailbox to `to`, leaving them here too:
+    /// on Bridge, a label put on.
+    fn copy_to(
+        &mut self,
+        uids: &[u32],
+        to: &str,
+    ) -> impl Future<Output = Result<Answer, Trouble>> + Send;
+
+    /// Puts Gmail's `label` on `uids` in the open mailbox (`on`), or takes
+    /// it off; the messages stay where they are.
+    fn label(
+        &mut self,
+        uids: &[u32],
+        label: &str,
+        on: bool,
+    ) -> impl Future<Output = Result<Answer, Trouble>> + Send;
+
     /// Deletes `uids` in the open mailbox for good, and nothing else.
     fn expunge(&mut self, uids: &[u32]) -> impl Future<Output = Result<Answer, Trouble>> + Send;
 
@@ -519,6 +536,17 @@ impl Changing for Connection {
     async fn flag(&mut self, uids: &[u32], flag: &str, on: bool) -> Result<Answer, Trouble> {
         let sign = if on { '+' } else { '-' };
         self.store(uids, &format!("{sign}FLAGS.SILENT ({flag})"))
+            .await
+    }
+
+    async fn copy_to(&mut self, uids: &[u32], to: &str) -> Result<Answer, Trouble> {
+        answer(self.session.uid_copy(set(uids), to).await)
+    }
+
+    async fn label(&mut self, uids: &[u32], label: &str, on: bool) -> Result<Answer, Trouble> {
+        let sign = if on { '+' } else { '-' };
+        let label = names::quoted_label(label);
+        self.store(uids, &format!("{sign}X-GM-LABELS.SILENT ({label})"))
             .await
     }
 

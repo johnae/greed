@@ -78,9 +78,73 @@ fn utf16_of(encoded: &str) -> Option<String> {
     String::from_utf16(&units).ok()
 }
 
+/// `name` in modified UTF-7, as IMAP writes mailbox names and Gmail labels:
+/// what `decode` reads back.
+pub fn encode(name: &str) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+,";
+    let mut out = String::new();
+    let mut run: Vec<u16> = Vec::new();
+    let flush = |run: &mut Vec<u16>, out: &mut String| {
+        if run.is_empty() {
+            return;
+        }
+        let bytes: Vec<u8> = run.iter().flat_map(|u| u.to_be_bytes()).collect();
+        out.push('&');
+        for chunk in bytes.chunks(3) {
+            let n = chunk
+                .iter()
+                .enumerate()
+                .fold(0u32, |n, (i, b)| n | u32::from(*b) << (16 - 8 * i));
+            for i in 0..=chunk.len() {
+                out.push(char::from(ALPHABET[(n >> (18 - 6 * i) & 63) as usize]));
+            }
+        }
+        out.push('-');
+        run.clear();
+    };
+    for c in name.chars() {
+        if c == '&' {
+            flush(&mut run, &mut out);
+            out.push_str("&-");
+        } else if (' '..='~').contains(&c) {
+            flush(&mut run, &mut out);
+            out.push(c);
+        } else {
+            let mut units = [0; 2];
+            run.extend_from_slice(c.encode_utf16(&mut units));
+        }
+    }
+    flush(&mut run, &mut out);
+    out
+}
+
+/// A Gmail label as `X-GM-LABELS` takes it: encoded, and quoted.
+pub fn quoted_label(name: &str) -> String {
+    let encoded = encode(name).replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"{encoded}\"")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_encode_as_they_decode() {
+        for name in [
+            "INBOX",
+            "Skräp",
+            "Labels/Återbesök",
+            "Fika & kaka",
+            "日本語",
+            "a😀b",
+        ] {
+            assert_eq!(decode(&encode(name)), name, "{name}");
+        }
+        assert_eq!(encode("Skräp"), "Skr&AOQ-p");
+        assert_eq!(encode("Labels/Återbesök"), "Labels/&AMU-terbes&APY-k");
+        assert_eq!(encode("日本語"), "&ZeVnLIqe-");
+        assert_eq!(quoted_label("say \"hi\""), "\"say \\\"hi\\\"\"");
+    }
 
     #[test]
     fn modified_utf7_names_read_as_text() {

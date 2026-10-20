@@ -1,6 +1,7 @@
 //! Sending what was changed here (the store's `pending`) to the server at
-//! the start of a round, mailbox by mailbox: flags first, then moves, then
-//! deletes, each kind in one command for all its messages. What the server
+//! the start of a round, mailbox by mailbox: flags and Gmail labels first,
+//! then copies (Bridge's labels), then moves, then deletes, each kind in
+//! one command for all its messages. What the server
 //! refuses is taken back here, so the store never says what the server
 //! won't.
 
@@ -51,6 +52,12 @@ pub async fn send<S: Changing>(
             let first = group[0];
             let answer: Answer = match first.op.as_str() {
                 "+" | "-" => server.flag(&uids, &first.arg, first.op == "+").await?,
+                "label+" | "label-" => {
+                    server
+                        .label(&uids, &first.arg, first.op == "label+")
+                        .await?
+                }
+                "copy" => server.copy_to(&uids, &first.arg).await?,
                 "move" => server.move_to(&uids, &first.arg).await?,
                 _ => server.expunge(&uids).await?,
             };
@@ -74,13 +81,15 @@ fn ids(pending: &[&Pending]) -> Vec<i64> {
 }
 
 /// `pending` (in one mailbox) as the commands that send it: those alike
-/// together, UIDs lowest first, flags before moves before deletes, as a
-/// message moved or deleted has no UID here to flag.
+/// together, UIDs lowest first, flags and labels before copies before
+/// moves before deletes, as a message moved or deleted has no UID here to
+/// change.
 fn groups<'a>(pending: &[&'a Pending]) -> Vec<Vec<&'a Pending>> {
     let rank = |p: &Pending| match p.op.as_str() {
-        "+" | "-" => 0,
-        "move" => 1,
-        _ => 2,
+        "+" | "-" | "label+" | "label-" => 0,
+        "copy" => 1,
+        "move" => 2,
+        _ => 3,
     };
     let mut sorted = pending.to_vec();
     sorted.sort_by(|a, b| (rank(a), &a.op, &a.arg, a.uid).cmp(&(rank(b), &b.op, &b.arg, b.uid)));
@@ -145,6 +154,24 @@ mod tests {
             to: &str,
         ) -> impl Future<Output = Result<Answer, imap::Trouble>> {
             ready(Ok(self.answer(format!("move {uids:?} {to}"))))
+        }
+
+        fn copy_to(
+            &mut self,
+            uids: &[u32],
+            to: &str,
+        ) -> impl Future<Output = Result<Answer, imap::Trouble>> {
+            ready(Ok(self.answer(format!("copy {uids:?} {to}"))))
+        }
+
+        fn label(
+            &mut self,
+            uids: &[u32],
+            label: &str,
+            on: bool,
+        ) -> impl Future<Output = Result<Answer, imap::Trouble>> {
+            let sign = if on { '+' } else { '-' };
+            ready(Ok(self.answer(format!("{sign}label {label} {uids:?}"))))
         }
 
         fn expunge(&mut self, uids: &[u32]) -> impl Future<Output = Result<Answer, imap::Trouble>> {
@@ -274,5 +301,27 @@ mod tests {
         );
         assert_eq!(sent.sent, 0);
         assert!(store.pending(account).unwrap().is_empty());
+    }
+
+    #[test]
+    fn labels_go_before_copies_before_moves_before_deletes() {
+        let p = |id: i64, op: &str| Pending {
+            id,
+            mailbox: "INBOX".into(),
+            uid: u32::try_from(id).unwrap(),
+            uid_validity: Some(1),
+            op: op.into(),
+            arg: String::new(),
+        };
+        let all = [
+            p(1, "expunge"),
+            p(2, "move"),
+            p(3, "copy"),
+            p(4, "label+"),
+            p(5, "+"),
+        ];
+        let refs: Vec<&Pending> = all.iter().collect();
+        let order: Vec<&str> = groups(&refs).iter().map(|g| g[0].op.as_str()).collect();
+        assert_eq!(order, ["+", "label+", "copy", "move", "expunge"]);
     }
 }

@@ -33,6 +33,10 @@ pub struct Account {
     /// Other addresses it gets mail at and sends from, like Proton's.
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// Whether tags set here are Bridge's labels, put on and taken off on
+    /// the server; off until you've tried it on a message you can lose.
+    #[serde(default)]
+    pub labels: bool,
     /// Known hosts and quirks; plain IMAP without one.
     pub provider: Option<Provider>,
     imap: Option<Server>,

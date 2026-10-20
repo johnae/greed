@@ -20,6 +20,8 @@ struct Dovecot {
     smtp: Option<u16>,
     /// The provider the account says it's at, as if it were.
     provider: Option<&'static str>,
+    /// Whether the account sets labels (`labels = true`).
+    labels: bool,
 }
 
 impl Dovecot {
@@ -53,6 +55,7 @@ impl Dovecot {
             dir,
             smtp: None,
             provider: None,
+            labels: false,
         };
         let started = Instant::now();
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
@@ -79,6 +82,7 @@ impl Dovecot {
         let provider = self
             .provider
             .map_or(String::new(), |p| format!(r#"provider = "{p}""#));
+        let labels = if self.labels { "labels = true" } else { "" };
         format!(
             r#"
             [[account]]
@@ -88,6 +92,7 @@ impl Dovecot {
             imap = {{ host = "127.0.0.1", port = {}, tls = "none" }}
             {smtp}
             {provider}
+            {labels}
             password = ["echo", "secret"]
             "#,
             self.port
@@ -1125,4 +1130,53 @@ fn undo_moves_back_what_the_server_has_and_takes_back_mail_just_sent() {
     served.ask("sync", &serde_json::json!({}));
     std::thread::sleep(Duration::from_secs(1));
     assert!(mailed.lock().unwrap().is_empty(), "never sent");
+}
+
+#[test]
+fn a_label_on_proton_is_a_copy_in_its_mailbox_and_comes_off_leaving_the_message() {
+    let Some(mut dovecot) = Dovecot::start("proton-labels") else {
+        return;
+    };
+    dovecot.provider = Some("proton-bridge");
+    dovecot.labels = true;
+    // Bridge's label, as a mailbox under Labels/.
+    let label = dovecot.dir.join("home/anna/Maildir/.Labels.Work");
+    for sub in ["cur", "new", "tmp"] {
+        std::fs::create_dir_all(label.join(sub)).unwrap();
+    }
+    deliver(&dovecot, 1, true);
+    let mut served = Served::start(&dovecot);
+    served.wait_for("changed");
+    let key = message_keys(&mut served).remove(0);
+    let missing = served.answer(
+        "act",
+        &serde_json::json!({ "action": "tag", "tag": "Garden", "keys": [key] }),
+    );
+    let said = missing["error"]["message"].as_str().unwrap_or("");
+    assert!(said.contains("no label Garden"), "{missing}");
+    let tag = serde_json::json!({ "action": "tag", "tag": "Work", "keys": [key] });
+    assert_eq!(served.ask("act", &tag)["changed"], 1);
+    wait_until("a copy in the label", || {
+        files(&dovecot, "Labels.Work").len() == 1 && files(&dovecot, "").len() == 1
+    });
+    let shown = served.ask("summaries", &serde_json::json!({ "keys": [key] }));
+    assert!(
+        shown[0]["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|t| t == "Work"),
+        "{shown}"
+    );
+    // Found there by the next sync, under its UID there; then it can come off.
+    wait_until("synced", || {
+        let status = served.ask("status", &serde_json::json!({}));
+        status["accounts"][0]["done"] == true
+    });
+    std::thread::sleep(Duration::from_millis(500));
+    let untag = serde_json::json!({ "action": "untag", "tag": "Work", "keys": [key] });
+    assert_eq!(served.ask("act", &untag)["changed"], 1);
+    wait_until("out of the label, still in the inbox", || {
+        files(&dovecot, "Labels.Work").is_empty() && files(&dovecot, "").len() == 1
+    });
 }

@@ -18,6 +18,7 @@ use crate::addresses;
 use crate::body::Body;
 use crate::header::{Fetched, Header};
 use crate::imap::Change;
+use crate::names;
 use crate::send::Outgoing;
 
 /// The version of the tables; a store from another is refused rather than
@@ -229,6 +230,10 @@ fn fill_contacts(db: &Connection) -> Result<(), Trouble> {
 const FLAGGING: &str = "EXISTS (SELECT 1 FROM pending
     WHERE pending.message = messages.id AND pending.op IN ('+', '-'))";
 
+/// The same for Gmail labels put on or taken off here.
+const LABELLING: &str = "EXISTS (SELECT 1 FROM pending
+    WHERE pending.message = messages.id AND pending.op IN ('label+', 'label-'))";
+
 /// `bodies.db`: each message's text, its HTML packed with zstd and what's
 /// attached, by its id in `mail.db`, apart so `mail.db` stays small.
 /// `complete` says the whole message was read; `calendar` is its iCalendar
@@ -343,13 +348,20 @@ pub enum Action {
     Archive,
     /// Moves it to the trash, or deletes it for good when it's there.
     Trash,
+    /// Puts Gmail's label `name` on (`on`) or takes it off; it stays where
+    /// it is.
+    GmailLabel { name: String, on: bool },
+    /// Puts Bridge's label `name` on by copying it into `Labels/NAME`, or
+    /// takes it off by deleting it from there, which on Bridge only takes
+    /// the label off.
+    FolderLabel { name: String, on: bool },
 }
 
 /// What undoes a change to one message (`Store::undo`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Undo {
-    /// The flag as it was.
-    Flag { flag: String, on: bool },
+    /// The opposite change: a flag or label as it was.
+    Act(Action),
     /// Back in the folder `to` it was in: the move taken back while it
     /// waits to be made on the server, made back once it's been made.
     Back { to: String },
@@ -392,6 +404,12 @@ impl Place {
     /// which holds everything, nor a Bridge label.
     fn folder(&self) -> bool {
         self.uid > 0 && self.role.as_deref() != Some("all") && !self.name.starts_with("Labels/")
+    }
+
+    /// Whether this is Bridge's label `name` (its `Labels/NAME` mailbox),
+    /// there or on its way there.
+    fn is_label(&self, name: &str) -> bool {
+        names::decode(&self.name) == format!("Labels/{name}")
     }
 }
 
@@ -546,9 +564,11 @@ impl Store {
             updated += tx.execute(
                 &format!(
                     "UPDATE messages SET flags = CASE WHEN {FLAGGING} THEN flags ELSE ?3 END,
-                     labels = coalesce(?4, labels), indexed = 0
+                     labels = CASE WHEN {LABELLING} THEN labels ELSE coalesce(?4, labels) END,
+                     indexed = 0
                      WHERE id = (SELECT message FROM places WHERE mailbox = ?1 AND uid = ?2)
-                     AND ((flags != ?3 AND NOT {FLAGGING}) OR labels != coalesce(?4, labels))"
+                     AND ((flags != ?3 AND NOT {FLAGGING})
+                         OR (labels != coalesce(?4, labels) AND NOT {LABELLING}))"
                 ),
                 params![
                     mailbox,
@@ -981,11 +1001,13 @@ impl Store {
     /// when it would change nothing, or can't be undone (deleting for
     /// good).
     pub fn undoing(&self, id: i64, action: &Action) -> Result<Option<Undo>, Trouble> {
-        let Some(flags): Option<String> = self
+        let Some((flags, labels)): Option<(String, String)> = self
             .db
-            .query_row("SELECT flags FROM messages WHERE id = ?1", [id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT flags, labels FROM messages WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional()?
         else {
             return Ok(None);
@@ -997,14 +1019,33 @@ impl Store {
                 .filter(|f| !unless(f))
                 .map(|f| Undo::Back { to: f.name.clone() })
         };
+        // The opposite of `action`, when it changes something.
+        let opposite = |has: bool, on: bool, other: Action| (has != on).then_some(Undo::Act(other));
         Ok(match action {
-            Action::Flag { flag, on } => {
-                let has = flags.split_whitespace().any(|f| f == flag);
-                (has != *on).then(|| Undo::Flag {
+            Action::Flag { flag, on } => opposite(
+                flags.split_whitespace().any(|f| f == flag),
+                *on,
+                Action::Flag {
                     flag: flag.clone(),
                     on: !on,
-                })
-            }
+                },
+            ),
+            Action::GmailLabel { name, on } => opposite(
+                labels.lines().any(|l| l == name),
+                *on,
+                Action::GmailLabel {
+                    name: name.clone(),
+                    on: !on,
+                },
+            ),
+            Action::FolderLabel { name, on } => opposite(
+                places.iter().any(|p| p.is_label(name)),
+                *on,
+                Action::FolderLabel {
+                    name: name.clone(),
+                    on: !on,
+                },
+            ),
             Action::Move { to } => back(&|f| f.name == *to),
             Action::Archive => back(&|f| f.role.as_deref() == Some("archive")),
             Action::Trash => back(&|f| f.role.as_deref() == Some("trash")),
@@ -1014,13 +1055,7 @@ impl Store {
     /// Undoes a change to message `id`; gives whether anything changed.
     pub fn undo(&mut self, id: i64, undo: &Undo) -> Result<bool, Trouble> {
         match undo {
-            Undo::Flag { flag, on } => self.act(
-                id,
-                &Action::Flag {
-                    flag: flag.clone(),
-                    on: *on,
-                },
-            ),
+            Undo::Act(action) => self.act(id, action),
             Undo::Back { to } => {
                 let waiting: Vec<i64> = self
                     .db
@@ -1051,11 +1086,11 @@ impl Store {
     /// its server; gives whether anything changed.
     pub fn act(&mut self, id: i64, action: &Action) -> Result<bool, Trouble> {
         let tx = self.db.transaction()?;
-        let Some((account, flags)): Option<(i64, String)> = tx
+        let Some((account, flags, labels)): Option<(i64, String, String)> = tx
             .query_row(
-                "SELECT account, flags FROM messages WHERE id = ?1",
+                "SELECT account, flags, labels FROM messages WHERE id = ?1",
                 [id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?
         else {
@@ -1064,6 +1099,16 @@ impl Store {
         let places = places_of(&tx, id)?;
         let changed = match action {
             Action::Flag { flag, on } => flag_here(&tx, id, &flags, &places, flag, *on)?,
+            Action::GmailLabel { name, on } => {
+                gmail_label_here(&tx, id, &labels, &places, name, *on)?
+            }
+            Action::FolderLabel { name, on } => {
+                let folder = names::encode(&format!("Labels/{name}"));
+                let label = mailbox_where(&tx, account, "name", &folder)?.ok_or_else(|| {
+                    Trouble(format!("there's no label {name}: make it in Proton first"))
+                })?;
+                folder_label_here(&tx, id, &places, &label, *on)?
+            }
             Action::Move { to } => {
                 let to = mailbox_where(&tx, account, "name", to)?
                     .ok_or_else(|| Trouble(format!("there's no mailbox {to}")))?;
@@ -1237,6 +1282,25 @@ impl Store {
                         params![message, flags],
                     )?;
                 }
+                "label+" | "label-" => {
+                    let labels: String = tx.query_row(
+                        "SELECT labels FROM messages WHERE id = ?1",
+                        [message],
+                        |r| r.get(0),
+                    )?;
+                    let labels = with_label(&labels, &arg, op == "label-");
+                    tx.execute(
+                        "UPDATE messages SET labels = ?2 WHERE id = ?1",
+                        params![message, labels],
+                    )?;
+                }
+                // A label that didn't go on: only its place there goes.
+                "copy" => {
+                    tx.execute(
+                        "DELETE FROM places WHERE message = ?1 AND uid = ?2",
+                        params![message, -id],
+                    )?;
+                }
                 _ => {
                     tx.execute(
                         "DELETE FROM places WHERE message = ?1 AND uid < 0",
@@ -1350,6 +1414,18 @@ fn with_flag(flags: &str, flag: &str, on: bool) -> String {
     list.join(" ")
 }
 
+/// `labels` (one a line) with `name` put on (`on`) or taken off.
+fn with_label(labels: &str, name: &str, on: bool) -> String {
+    let mut list: Vec<&str> = labels
+        .lines()
+        .filter(|l| !l.is_empty() && *l != name)
+        .collect();
+    if on {
+        list.push(name);
+    }
+    list.join("\n")
+}
+
 /// Queues a change for message `id` in `place`, giving its id.
 fn queue(
     tx: &Transaction<'_>,
@@ -1391,6 +1467,85 @@ fn flag_here(
     for place in places.iter().filter(|p| p.uid > 0) {
         queue(tx, id, place, if on { "+" } else { "-" }, flag)?;
     }
+    Ok(true)
+}
+
+/// Puts Gmail's label `name` on message `id` (whose labels are `labels`,
+/// one a line) or takes it off, here and, queued, on the server in its
+/// All Mail place; a change to the same label still waiting gives way.
+fn gmail_label_here(
+    tx: &Transaction<'_>,
+    id: i64,
+    labels: &str,
+    places: &[Place],
+    name: &str,
+    on: bool,
+) -> Result<bool, Trouble> {
+    if labels.lines().any(|l| l == name) == on {
+        return Ok(false);
+    }
+    let place = places
+        .iter()
+        .filter(|p| p.uid > 0)
+        .max_by_key(|p| p.role.as_deref() == Some("all"))
+        .ok_or_else(|| Trouble("it isn't on the server yet".into()))?;
+    tx.execute(
+        "UPDATE messages SET labels = ?2, indexed = 0 WHERE id = ?1",
+        params![id, with_label(labels, name, on)],
+    )?;
+    tx.execute(
+        "DELETE FROM pending WHERE message = ?1 AND op IN ('label+', 'label-') AND arg = ?2",
+        params![id, name],
+    )?;
+    queue(tx, id, place, if on { "label+" } else { "label-" }, name)?;
+    Ok(true)
+}
+
+/// Puts Bridge's label `label` (its mailbox's id and name) on message `id`
+/// by copying it there from a folder it's in, or takes it off by deleting
+/// it from there, which on Bridge leaves the message where else it is. A
+/// copy still waiting is dropped rather than undone on the server.
+fn folder_label_here(
+    tx: &Transaction<'_>,
+    id: i64,
+    places: &[Place],
+    label: &(i64, String),
+    on: bool,
+) -> Result<bool, Trouble> {
+    let there = places.iter().find(|p| p.mailbox == label.0);
+    match (on, there) {
+        (true, Some(_)) | (false, None) => return Ok(false),
+        (true, None) => {
+            let from = places
+                .iter()
+                .filter(|p| p.uid > 0 && !p.name.starts_with("Labels/"))
+                .max_by_key(|p| p.folder())
+                .ok_or_else(|| Trouble("it isn't on the server yet".into()))?;
+            let copy = queue(tx, id, from, "copy", &label.1)?;
+            tx.execute(
+                "INSERT INTO places (message, mailbox, uid) VALUES (?1, ?2, ?3)",
+                params![id, label.0, -copy],
+            )?;
+        }
+        (false, Some(there)) if there.uid < 0 => {
+            tx.execute(
+                "DELETE FROM pending WHERE id = ?1 AND op = 'copy'",
+                [-there.uid],
+            )?;
+            tx.execute(
+                "DELETE FROM places WHERE message = ?1 AND mailbox = ?2",
+                params![id, label.0],
+            )?;
+        }
+        (false, Some(there)) => {
+            queue(tx, id, there, "expunge", "")?;
+            tx.execute(
+                "DELETE FROM places WHERE mailbox = ?1 AND uid = ?2",
+                params![there.mailbox, there.uid],
+            )?;
+        }
+    }
+    tx.execute("UPDATE messages SET indexed = 0 WHERE id = ?1", [id])?;
     Ok(true)
 }
 
@@ -1459,7 +1614,8 @@ fn put_message(tx: &Transaction<'_>, account: i64, f: &Fetched) -> Result<(i64, 
                  subject, in_reply_to, refs, list_id, size, headers, flags, labels)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT (account, identity) DO UPDATE SET
-                 flags = CASE WHEN {FLAGGING} THEN flags ELSE ?14 END, labels = ?15, indexed = 0"
+                 flags = CASE WHEN {FLAGGING} THEN flags ELSE ?14 END,
+                 labels = CASE WHEN {LABELLING} THEN labels ELSE ?15 END, indexed = 0"
         ),
         params![
             account,
@@ -1916,10 +2072,10 @@ mod tests {
         let undo = store.undoing(id, &read).unwrap().unwrap();
         assert_eq!(
             undo,
-            Undo::Flag {
+            Undo::Act(Action::Flag {
                 flag: "\\Seen".into(),
                 on: false
-            }
+            })
         );
         store.act(id, &read).unwrap();
         assert_eq!(store.undoing(id, &read).unwrap(), None, "read already");
@@ -2034,5 +2190,68 @@ mod tests {
         );
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_gmail_label_goes_on_here_at_once_and_stays_until_the_server_has_it() {
+        let dir = temp("gmail-label");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "anna@x").unwrap();
+        let all = store
+            .mailbox(account, "[Gmail]/All Mail", Some("all"))
+            .unwrap();
+        store
+            .put(account, all.id, &[mail(7, "a", &[], None)], 7, 7)
+            .unwrap();
+        let id = store.messages_of(&format!("m:{account}:pm:a")).unwrap()[0];
+        let on = Action::GmailLabel {
+            name: "Resor/Göteborg".into(),
+            on: true,
+        };
+        let undo = store.undoing(id, &on).unwrap();
+        assert!(store.act(id, &on).unwrap());
+        assert!(!store.act(id, &on).unwrap(), "on already");
+        let labels = |store: &Store| -> String {
+            store
+                .db
+                .query_row("SELECT labels FROM messages WHERE id = ?1", [id], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        assert_eq!(labels(&store), "Resor/Göteborg");
+        let pending = store.pending(account).unwrap();
+        assert_eq!(
+            (
+                pending[0].op.as_str(),
+                pending[0].arg.as_str(),
+                pending[0].uid
+            ),
+            ("label+", "Resor/Göteborg", 7)
+        );
+        // What the server says before it has the label doesn't take it off.
+        let before = Change {
+            uid: 7,
+            flags: vec![],
+            labels: Some(vec![]),
+        };
+        store
+            .set_flags(all.id, std::slice::from_ref(&before))
+            .unwrap();
+        assert_eq!(labels(&store), "Resor/Göteborg");
+        // Refused: as it was.
+        store.take_back(&[pending[0].id], false).unwrap();
+        assert_eq!(labels(&store), "");
+        store.act(id, &on).unwrap();
+        let ids: Vec<i64> = store
+            .pending(account)
+            .unwrap()
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        store.sent(&ids).unwrap();
+        store.undo(id, &undo.unwrap()).unwrap();
+        assert_eq!(labels(&store), "", "undone: off again");
+        assert_eq!(store.pending(account).unwrap()[0].op, "label-");
     }
 }

@@ -143,10 +143,17 @@ and an answer to one of yours says who accepted or declined.
 
 A message's folders, labels and tags show after its subject (`#work`),
 and `in:work` (or `tag:work`) finds them. Proton's labels and Gmail's come
-along as they are. On other servers (Dovecot, Fastmail) `t` sets a tag as
-an IMAP keyword, which every client of that mailbox sees. On Proton and
-Gmail, setting tags from Greed isn't done yet: it says so and changes
-nothing.
+along as they are. `t` puts a tag on, or takes it off, on the server,
+where your other mail apps see it too:
+
+- On Gmail it's a Gmail label. Taking one off leaves the message where it
+  is.
+- On Proton it's a Proton label, one you've made in Proton already. It
+  goes on as a copy of the message in the label's folder, and comes off
+  by deleting it from there, which on Proton takes only the label off.
+  It's off until the account in `mail.toml` says `labels = true`: try it
+  on a message you can lose first.
+- On other servers (Dovecot, Fastmail) it's an IMAP keyword.
 
 ## Writing
 

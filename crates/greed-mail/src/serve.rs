@@ -537,25 +537,39 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
     }
 }
 
-/// Whether the mail `key` names can be tagged: a tag is an IMAP keyword,
-/// which plain servers keep. Proton's labels and Gmail's need their own
-/// ways (a copy into the label's mailbox, X-GM-LABELS), not done yet:
-/// taking a Proton label off deletes from its mailbox, which must be
-/// checked against Bridge before it's let near anyone's mail.
-fn can_tag(config: &Config, reader: &Reader, key: &str) -> Result<(), String> {
+/// What putting `tag` on the mail `key` names (`on`), or taking it off,
+/// is on its account's server: an IMAP keyword on a plain one, a label on
+/// Gmail (X-GM-LABELS), a label on Bridge (its `Labels/` mailbox) when the
+/// account says `labels = true`. Off by default there: taking one off
+/// deletes the message from the label's mailbox, which on Bridge only
+/// takes the label off; try it on a throwaway message first.
+fn tagging(
+    config: &Config,
+    reader: &Reader,
+    key: &str,
+    tag: &str,
+    on: bool,
+) -> Result<Action, String> {
     let name = reader.account_of(key).map_err(|e| e.0)?;
-    let provider = name
-        .as_deref()
-        .and_then(|name| config.account(name))
-        .and_then(|account| account.provider);
-    let at = match provider {
-        Some(Provider::ProtonBridge) => "Proton",
-        Some(Provider::Gmail) => "Gmail",
-        None => return Ok(()),
-    };
-    Err(format!(
-        "tags on {at} are its labels, which can't be set from Greed yet"
-    ))
+    let account = name.as_deref().and_then(|name| config.account(name));
+    let name = tag.trim().to_string();
+    Ok(match account.and_then(|a| a.provider) {
+        None => Action::Flag {
+            flag: indexing::keyword(tag)?,
+            on,
+        },
+        Some(Provider::Gmail) => Action::GmailLabel { name, on },
+        Some(Provider::ProtonBridge) if account.is_some_and(|a| a.labels) => {
+            Action::FolderLabel { name, on }
+        }
+        Some(Provider::ProtonBridge) => {
+            return Err(
+                "labels on Proton are off: `labels = true` on the account in mail.toml turns \
+                 them on (try it on a message you can lose first)"
+                    .into(),
+            );
+        }
+    })
 }
 
 /// A request's `keys`. Luau writes an empty list as `{}`, so that's an
@@ -697,20 +711,37 @@ enum Undoing {
 fn act(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
     let writer = with.writer()?;
     let keys = keys(params).ok_or("act takes keys, a list of messages' or threads' keys")?;
-    let action = action(params)?;
-    let tagging = matches!(params["action"].as_str(), Some("tag" | "untag"));
+    // A tag is a different change on each kind of server.
+    let tag = match params["action"].as_str() {
+        Some(word @ ("tag" | "untag")) => Some((
+            params["tag"]
+                .as_str()
+                .ok_or("tag takes tag, the tag to set or take off")?,
+            word == "tag",
+        )),
+        _ => None,
+    };
+    let given = if tag.is_none() {
+        Some(action(params)?)
+    } else {
+        None
+    };
     let for_good = params["for_good"].as_bool().unwrap_or(false);
     let (store, index) = &mut *writer.borrow_mut();
-    let mut ids = Vec::new();
+    let mut ids: Vec<(i64, Action)> = Vec::new();
     for key in &keys {
-        if tagging {
-            can_tag(with.config, with.reader, key)?;
+        let action = match (tag, &given) {
+            (Some((tag, on)), _) => tagging(with.config, with.reader, key, tag, on)?,
+            (None, Some(given)) => given.clone(),
+            (None, None) => unreachable!("an action or a tag"),
+        };
+        for id in store.messages_of(key).map_err(|e| e.0)? {
+            ids.push((id, action.clone()));
         }
-        ids.extend(store.messages_of(key).map_err(|e| e.0)?);
     }
-    if action == Action::Trash && !for_good {
+    if given == Some(Action::Trash) && !for_good {
         let mut in_trash = 0;
-        for id in &ids {
+        for (id, _) in &ids {
             in_trash += usize::from(store.in_trash(*id).map_err(|e| e.0)?);
         }
         if in_trash > 0 {
@@ -719,7 +750,7 @@ fn act(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
     }
     let mut undos = Vec::new();
     let mut changed = 0;
-    for id in ids {
+    for (id, action) in ids {
         let undo = store.undoing(id, &action).map_err(|e| e.0)?;
         if store.act(id, &action).map_err(|e| e.0)? {
             changed += 1;
@@ -784,12 +815,6 @@ fn action(params: &Value) -> Result<Action, String> {
                 .ok_or("move takes to, the mailbox to move it to")?
                 .into(),
         },
-        "tag" | "untag" => {
-            let tag = params["tag"]
-                .as_str()
-                .ok_or("tag takes tag, the tag to set or take off")?;
-            flag(&indexing::keyword(tag)?, params["action"] == "tag")
-        }
         other => {
             return Err(format!(
                 "no action {other:?}: read, unread, flag, unflag, archive, trash, move, tag or untag"
