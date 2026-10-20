@@ -27,6 +27,10 @@
 //! what a first sync brings) and `attachment` (where one asked
 //! for went, or why it couldn't).
 //!
+//! A greed-mail only reading the mail (`--read`, in other sessions) has
+//! the mail session's make its changes, sends and fetches, over `SOCKET`
+//! in the store's folder, and passes on the notifications it makes.
+//!
 //! The sync goes in rounds of at most `HEADERS` headers and `BODIES` bodies
 //! a mailbox, so what's asked for never waits long. After a round with
 //! nothing left to do it waits in IDLE on each account's inbox, so new
@@ -35,6 +39,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -42,6 +47,8 @@ use greed_index::index::Index;
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::unix::OwnedWriteHalf;
+use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, mpsc};
 
 use crate::body;
@@ -118,14 +125,29 @@ struct Shared {
     kept: PathBuf,
     standing: RefCell<BTreeMap<String, Standing>>,
     wake: Notify,
+    /// Where notifications go besides the output: to the greed-mail of
+    /// the sessions only reading the mail, in the mail session.
+    copies: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl Shared {
     fn notify(&self, method: &str, params: &Value) {
         let message = json!({ "jsonrpc": "2.0", "method": method, "params": params });
+        if let Some(copies) = &self.copies {
+            let _ = copies.send(message.to_string());
+        }
         let _ = self.out.send(message.to_string());
     }
 }
+
+/// Where the mail session's greed-mail takes requests from the others,
+/// in the store's folder.
+const SOCKET: &str = "serve.sock";
+
+/// What a greed-mail only reading the mail has the mail session's do:
+/// changes, mail to send, answers to invites, syncing, and attachments and
+/// bodies to fetch.
+const FORWARDED: &[&str] = &["act", "send", "respond", "sync", "attachment", "want"];
 
 /// Serves `config`'s accounts from the store in `dir` until its input
 /// closes. With `read`, it only answers, from what the store has: another
@@ -150,6 +172,20 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
         )
     })?;
     let (out, mut lines) = mpsc::unbounded_channel::<String>();
+    let (copies, notes) = mpsc::unbounded_channel::<String>();
+    // The others reach the mail session's greed-mail here; it holds the
+    // store's lock, so a socket left from before is no one's.
+    let listener = if read {
+        None
+    } else {
+        let socket = dir.join(SOCKET);
+        let _ = std::fs::remove_file(&socket);
+        let listener = UnixListener::bind(&socket)
+            .map_err(|e| format!("couldn't listen at {}: {e}", socket.display()))?;
+        std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("couldn't keep {} to you: {e}", socket.display()))?;
+        Some(listener)
+    };
     let shared = Shared {
         out,
         wanted: RefCell::new(Vec::new()),
@@ -157,6 +193,7 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
         kept: dir.join("attachments"),
         standing: RefCell::new(BTreeMap::new()),
         wake: Notify::new(),
+        copies: listener.as_ref().map(|_| copies),
     };
     let output = async {
         let mut stdout = tokio::io::stdout();
@@ -182,16 +219,175 @@ pub async fn serve(config: Config, dir: PathBuf, read: bool) -> Result<(), Strin
     let syncing = async {
         match stores {
             Some((store, index)) => keep_syncing(&config, store, index, &shared).await,
+            None => relay(&dir, &shared).await,
+        }
+    };
+    let others = async {
+        match listener {
+            Some(listener) => listen(&with, listener, notes).await,
             None => std::future::pending().await,
         }
     };
     tokio::select! {
         () = answering => {}
         () = syncing => {}
+        () = others => {}
         () = output => {}
     }
     Ok(())
 }
+
+/// The reply to the JSON-RPC `request`, made here; None for what isn't a
+/// request.
+fn reply_to(request: &Value, with: &Answering<'_>) -> Option<String> {
+    let id = request.get("id")?.clone();
+    let method = request["method"].as_str().unwrap_or("");
+    Some(reply(&id, handle(method, &request["params"], with)))
+}
+
+fn reply(id: &Value, result: Result<Value, String>) -> String {
+    match result {
+        Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+        Err(message) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32000, "message": message },
+        }),
+    }
+    .to_string()
+}
+
+/// Answers the other sessions' greed-mail on `listener`, in the mail
+/// session: their requests as its own, and to those that subscribe, every
+/// notification it makes (`notes`).
+async fn listen(
+    with: &Answering<'_>,
+    listener: UnixListener,
+    mut notes: mpsc::UnboundedReceiver<String>,
+) {
+    use futures::StreamExt;
+    use futures::stream::{self, LocalBoxStream, SelectAll};
+
+    let mut lines: SelectAll<LocalBoxStream<'static, (usize, Option<String>)>> = SelectAll::new();
+    let mut writers: HashMap<usize, OwnedWriteHalf> = HashMap::new();
+    let mut subscribed: Vec<usize> = Vec::new();
+    let mut next = 0;
+    loop {
+        tokio::select! {
+            Ok((stream, _)) = listener.accept() => {
+                let (read, write) = stream.into_split();
+                let id = next;
+                next += 1;
+                writers.insert(id, write);
+                let read = stream::unfold(BufReader::new(read).lines(), |mut input| async move {
+                    let line = input.next_line().await.ok().flatten()?;
+                    Some((line, input))
+                });
+                lines.push(
+                    read.map(move |line| (id, Some(line)))
+                        .chain(stream::once(async move { (id, None) }))
+                        .boxed_local(),
+                );
+            }
+            Some((id, line)) = lines.next(), if !lines.is_empty() => {
+                let Some(line) = line else {
+                    writers.remove(&id);
+                    subscribed.retain(|s| *s != id);
+                    continue;
+                };
+                let Ok(request) = serde_json::from_str::<Value>(&line) else {
+                    continue;
+                };
+                let answer = if request["method"] == "subscribe" {
+                    subscribed.push(id);
+                    request.get("id").map(|i| reply(i, Ok(json!({}))))
+                } else {
+                    reply_to(&request, with)
+                };
+                if let (Some(answer), Some(writer)) = (answer, writers.get_mut(&id))
+                    && writer.write_all(format!("{answer}\n").as_bytes()).await.is_err()
+                {
+                    writers.remove(&id);
+                }
+            }
+            Some(note) = notes.recv() => {
+                let line = format!("{note}\n");
+                for id in subscribed.clone() {
+                    let sent = match writers.get_mut(&id) {
+                        Some(writer) => writer.write_all(line.as_bytes()).await.is_ok(),
+                        None => false,
+                    };
+                    if !sent {
+                        writers.remove(&id);
+                        subscribed.retain(|s| *s != id);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// What the mail session isn't there to do, said so.
+fn not_running() -> String {
+    "the mail session isn't running: :mail-session starts it".to_string()
+}
+
+/// Has the mail session's greed-mail make request `method`, for a
+/// greed-mail only reading the mail: its result, or why there's none.
+async fn forward(dir: &Path, method: &str, params: &Value) -> Result<Value, String> {
+    let stream = UnixStream::connect(dir.join(SOCKET))
+        .await
+        .map_err(|_| not_running())?;
+    let (read, mut write) = stream.into_split();
+    let request = json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params });
+    write
+        .write_all(format!("{request}\n").as_bytes())
+        .await
+        .map_err(|_| not_running())?;
+    let line = BufReader::new(read)
+        .lines()
+        .next_line()
+        .await
+        .ok()
+        .flatten()
+        .ok_or_else(not_running)?;
+    let answer: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
+    match answer.get("error") {
+        Some(error) => Err(error["message"]
+            .as_str()
+            .unwrap_or("the mail session couldn't")
+            .to_string()),
+        None => Ok(answer["result"].clone()),
+    }
+}
+
+/// For a greed-mail only reading the mail: passes on what the mail
+/// session's says (the mail changed, sent, refused, an attachment came),
+/// as if it were its own, reconnecting when the mail session comes back.
+async fn relay(dir: &Path, shared: &Shared) {
+    let socket = dir.join(SOCKET);
+    loop {
+        if let Ok(stream) = UnixStream::connect(&socket).await {
+            let (read, mut write) = stream.into_split();
+            let subscribe = json!({ "jsonrpc": "2.0", "method": "subscribe" });
+            if write
+                .write_all(format!("{subscribe}\n").as_bytes())
+                .await
+                .is_ok()
+            {
+                let mut input = BufReader::new(read).lines();
+                while let Ok(Some(line)) = input.next_line().await {
+                    let _ = shared.out.send(line);
+                }
+            }
+        }
+        tokio::time::sleep(RECONNECT).await;
+    }
+}
+
+/// How often a greed-mail only reading the mail looks for the mail
+/// session's again.
+const RECONNECT: Duration = Duration::from_secs(5);
 
 /// What changes are made with: a store and an index, the mail session's
 /// only.
@@ -214,26 +410,33 @@ impl Answering<'_> {
     }
 }
 
-/// Answers each request on the input until it closes.
+/// Answers each request on the input until it closes. Only reading the
+/// mail, it has the mail session's greed-mail make the changes, and fetch
+/// the bodies a thread asked for.
 async fn answer(with: &Answering<'_>) {
+    let reading = with.writer.is_none();
     let mut input = BufReader::new(tokio::io::stdin()).lines();
     while let Ok(Some(line)) = input.next_line().await {
         let Ok(request) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
-        let Some(id) = request.get("id").cloned() else {
-            continue;
-        };
         let method = request["method"].as_str().unwrap_or("");
-        let reply = match handle(method, &request["params"], with) {
-            Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
-            Err(message) => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "error": { "code": -32000, "message": message },
-            }),
+        let answer = match request.get("id") {
+            Some(id) if reading && FORWARDED.contains(&method) => Some(reply(
+                id,
+                forward(with.dir, method, &request["params"]).await,
+            )),
+            _ => reply_to(&request, with),
         };
-        let _ = with.shared.out.send(reply.to_string());
+        if let Some(answer) = answer {
+            let _ = with.shared.out.send(answer);
+        }
+        if reading {
+            let wanted = std::mem::take(&mut *with.shared.wanted.borrow_mut());
+            if !wanted.is_empty() {
+                let _ = forward(with.dir, "want", &json!({ "keys": wanted })).await;
+            }
+        }
     }
 }
 
@@ -247,6 +450,12 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
         }
         "index" => Ok(json!({ "path": with.dir.join("index.db") })),
         "sync" => {
+            shared.wake.notify_one();
+            Ok(json!({}))
+        }
+        "want" => {
+            let keys = keys(params).ok_or("want takes keys, messages' whose bodies to fetch")?;
+            shared.wanted.borrow_mut().extend(keys);
             shared.wake.notify_one();
             Ok(json!({}))
         }

@@ -1052,3 +1052,34 @@ fn an_invite_shows_in_its_thread_and_is_answered_to_its_organizer() {
         got[0].1
     );
 }
+
+#[test]
+fn another_session_has_the_mail_session_make_its_changes() {
+    let Some(dovecot) = Dovecot::start("forward") else {
+        return;
+    };
+    deliver(&dovecot, 1, false);
+    let mut syncing = Served::start(&dovecot);
+    syncing.wait_for("changed");
+    let key = message_keys(&mut syncing).remove(0);
+    let mut reading = Served::with(&dovecot, &["--read"]);
+    // Once it's listening for what the mail session says.
+    std::thread::sleep(Duration::from_millis(300));
+    let done = reading.ask(
+        "act",
+        &serde_json::json!({ "keys": [key], "action": "archive" }),
+    );
+    assert_eq!(done["changed"], 1, "{done}");
+    reading.wait_for("changed");
+    wait_until("archived on the server", || {
+        files(&dovecot, "Archive").len() == 1
+    });
+    drop(syncing);
+    std::thread::sleep(Duration::from_millis(300));
+    let answer = reading.answer(
+        "act",
+        &serde_json::json!({ "keys": [key], "action": "read" }),
+    );
+    let said = answer["error"]["message"].as_str().unwrap_or_default();
+    assert!(said.contains("mail session isn't running"), "{answer}");
+}

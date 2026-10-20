@@ -386,9 +386,9 @@ local function list(query: string, window: greed.View?): Open
 	local buffer = greed.create_buffer("mail", "", { readonly = true })
 	buffer:set_line_numbers(false)
 	local shown = window or greed.float(buffer, { title = "Mail", width = "90%", height = "80%" })
+	-- The list stays while mail is written in its place.
+	buffer:set_kept(true)
 	if window then
-		-- The page's list stays while a thread is read in its place.
-		buffer:set_kept(true)
 		window:show(buffer)
 	end
 	local o: Open = {
@@ -416,8 +416,14 @@ end
 --- Opens a quick look at what `query` (in:inbox to start) finds in a
 --- float, and the search box over it.
 function M.open(query: string?)
-	if open and open.floating and open.window:valid() then
-		open.window:close()
+	local o = open
+	if o and o.floating then
+		if o.window:valid() then
+			o.window:close()
+		end
+		if o.buffer:valid() then
+			pcall(o.buffer.close, o.buffer)
+		end
 	end
 	open = list(query or M.START, nil)
 	M.ask()
@@ -552,12 +558,8 @@ function M.invite_when(invite: backend.Invite): string
 end
 
 --- Answers the invite in the message `key` (`accepted`, `tentative`,
---- `declined`), sending it to its organizer from the mail session.
+--- `declined`), sending it to its organizer.
 function M.respond(key: string, answer: string)
-	if not backend.here() then
-		greed.echo("invites are answered in the mail session: :mail-session goes there")
-		return
-	end
 	local ok, err = backend.get().respond(key, answer)
 	if not ok then
 		greed.echo(err or "the answer couldn't be sent")
@@ -663,15 +665,7 @@ local function message_node(message: backend.Message, cells: number, plain: bool
 	if html then
 		table.move(html, 1, #html, #parts + 1, parts)
 	elseif message.text == nil then
-		table.insert(
-			parts,
-			ui.text(
-				if backend.here()
-					then "(its text is on its way)"
-					else "(its text isn't in yet: the mail session fetches it when you open it there)",
-				"comment"
-			)
-		)
+		table.insert(parts, ui.text("(its text is on its way)", "comment"))
 	else
 		local lines = text_lines(message.text)
 		table.move(lines, 1, #lines, #parts + 1, parts)
@@ -738,7 +732,7 @@ function M.read(key: string, found: { string }?)
 	end)
 	reading = r
 	window:set_cursor(0)
-	if backend.here() and M.any(thread, "unread") then
+	if M.any(thread, "unread") then
 		backend.get().act({ thread.key }, "read")
 	end
 end
@@ -802,15 +796,11 @@ function M.parse_draft(text: string): Draft
 	return draft
 end
 
---- Writes `draft` on the mail session's page, the cursor where its text
---- goes, or on To when it goes to no one yet.
+--- Writes `draft` where the list is, the cursor where its text goes, or on
+--- To when it goes to no one yet.
 function M.write(draft: Draft)
-	if not backend.here() then
-		greed.echo("mail is written in the mail session: :mail-session goes there")
-		return
-	end
 	local o = open
-	local window = if o and not o.floating and o.window:valid() then o.window else greed.view()
+	local window = if o and o.window:valid() then o.window else greed.view()
 	local buffer = greed.create_buffer("mail-compose", M.draft_text(draft))
 	buffer:set_line_numbers(false)
 	window:show(buffer)
@@ -850,6 +840,7 @@ local function leave(ctx: greed.Context)
 		end
 	elseif o and o.floating then
 		o.window:close()
+		o.buffer:close()
 		open = nil
 	end
 end
@@ -1134,7 +1125,7 @@ greed.command({
 	doc = "Sync your mail now",
 	run = function()
 		backend.get().sync()
-		greed.echo(if backend.here() then "syncing mail" else "the mail session syncs your mail")
+		greed.echo("syncing mail")
 	end,
 })
 

@@ -126,10 +126,9 @@ your time zone, where, and who sent it.
 ```
 
 `enter` on Accept, Maybe or Decline sends your answer to whoever sent the
-invite, in the mail session, the way calendars expect it, so it shows in
-theirs. It goes in the next round like any mail, with a copy in Sent. A
-cancelled invite says so, and an answer to one of yours says who
-accepted or declined.
+invite, the way calendars expect it, so it shows in theirs. It goes in the
+next round like any mail, with a copy in Sent. A cancelled invite says so,
+and an answer to one of yours says who accepted or declined.
 
 ## Tags
 
@@ -167,10 +166,10 @@ why.
 The mail session is the one that syncs. In any other session, `:mail`
 opens a quick look at the same mail in a float (`q` closes it), and
 `:mail-session` goes to the mail session, starting it if it isn't
-running. The quick look reads what the mail session has synced, and
-changes nothing: a message whose text hasn't come in yet gets it once you
-open it there, and marking, archiving, deleting and writing mail are done
-there too.
+running. The quick look works as the page does: what you mark, archive,
+delete, write or answer there, the mail session does, and a message whose
+text hasn't come in yet has it fetched. It needs the mail session
+running, and says so when it isn't.
 
 ## Accounts
 
