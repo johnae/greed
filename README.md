@@ -52,7 +52,9 @@ Also in Greed:
   friendly-snippets, and they work as they are.
 - Hoard (`greed notes`): your notes and todos as plain Markdown files, on
   a home page with search, today's note and an agenda, usable without
-  knowing an editor.
+  knowing an editor. An Obsidian vault works as it is, and Greed's agent
+  can file your inbox, pull todos out of a meeting, sum up the week and
+  answer questions from your notes.
 
 ## Plugins in Luau
 

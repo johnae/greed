@@ -13,6 +13,19 @@ Running it again comes back to the same Hoard, with everything as you
 left it. The first time, the home starts with where your notes are kept
 and how to add to them, until you press `Got it`.
 
+Your notes are plain Markdown files in a folder, `~/notes` unless you
+set another in your config (`~/.config/greed/init.luau`). An Obsidian
+vault works as it is: its links, tags, front matter, daily notes and
+templates are read the way Obsidian reads them.
+
+```luau
+greed.option.set("notes-folder", "~/Documents/My vault")
+```
+
+This page starts with the everyday parts: the home page, writing notes,
+saying when things are due and repeats. Further down are links and
+Obsidian, queries, templates and having Greed's agent help.
+
 From Greed itself, `:hoard` (`space n h`) takes the window you're in to
 Hoard, starting it if needed, and `space B` brings you back.
 `:hoard-window` (`space n H`) opens Hoard in a window of its own instead,
