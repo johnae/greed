@@ -55,6 +55,10 @@ Also in Greed:
   knowing an editor. An Obsidian vault works as it is, and Greed's agent
   can file your inbox, pull todos out of a meeting, sum up the week and
   answer questions from your notes.
+- Mail (`greed mail`): your IMAP accounts (Gmail and Proton through Bridge
+  too) in one fast searchable list, read, written and answered in Greed,
+  HTML laid out without loading anything, invites answered from their
+  card.
 
 ## Plugins in Luau
 
