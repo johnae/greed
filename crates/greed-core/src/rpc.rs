@@ -147,7 +147,10 @@ impl Transport {
 pub struct Connection {
     /// Which connection this is, as its events say.
     server: ServerId,
-    input: BufWriter<Box<dyn Write + Send>>,
+    /// What goes to the other side's input, written there by a thread of
+    /// its own, so a side that stops reading never holds the editor up.
+    /// None once closed.
+    input: Option<Sender<Vec<u8>>>,
     child: Option<Child>,
     next_id: i64,
     /// Requests sent and not answered yet.
@@ -182,9 +185,23 @@ impl Connection {
             let _ = read.recv_timeout(STDERR_AFTER_EXIT);
             let _ = sender.send(Event::Exited { server: id });
         });
+        let (input, writes) = crossbeam_channel::unbounded::<Vec<u8>>();
+        let mut to = BufWriter::new(transport.input);
+        thread::spawn(move || {
+            // What came while the last was written goes in one flush.
+            while let Ok(first) = writes.recv() {
+                let mut written = to.write_all(&first);
+                for more in writes.try_iter() {
+                    written = written.and_then(|()| to.write_all(&more));
+                }
+                if written.and_then(|()| to.flush()).is_err() {
+                    break;
+                }
+            }
+        });
         Self {
             server: id,
-            input: BufWriter::new(transport.input),
+            input: Some(input),
             child: transport.child,
             next_id: 0,
             pending: HashSet::new(),
@@ -199,16 +216,21 @@ impl Connection {
         self.alive
     }
 
-    /// Writes `message` as it is.
+    /// Sends `message` as it is: queued at once for the other side's input,
+    /// however slowly it reads.
     pub fn send(&mut self, message: &Value) -> io::Result<()> {
         crate::debug!(Rpc, "server {}: -> {}", self.server, summary(message));
+        let mut bytes = Vec::new();
         match self.framing {
-            Framing::Headers => write_message(&mut self.input, message),
-            Framing::Lines => {
-                writeln!(self.input, "{message}")?;
-                self.input.flush()
-            }
+            Framing::Headers => write_message(&mut bytes, message)?,
+            Framing::Lines => writeln!(bytes, "{message}")?,
         }
+        let closed = || io::Error::new(io::ErrorKind::BrokenPipe, "its input is closed");
+        self.input
+            .as_ref()
+            .ok_or_else(closed)?
+            .send(bytes)
+            .map_err(|_| closed())
     }
 
     /// A request for `method`, numbered and counted as waiting for its
@@ -283,12 +305,8 @@ impl Drop for Connection {
     /// Closes the process's input and gives it a moment to exit on its own,
     /// in the background, before killing it.
     fn drop(&mut self) {
-        let _ = self.input.flush();
-        // Dropping the writer closes the pipe; swap in a sink to drop it now.
-        drop(std::mem::replace(
-            &mut self.input,
-            BufWriter::new(Box::new(io::sink())),
-        ));
+        // Its writer writes what's queued, then closes the pipe.
+        self.input = None;
         if let Some(mut child) = self.child.take() {
             thread::spawn(move || {
                 let until = Instant::now() + GRACE;

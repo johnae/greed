@@ -318,3 +318,22 @@ done"#;
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn sending_never_waits_on_a_process_that_isnt_reading() {
+    let (sender, _events) = crossbeam_channel::unbounded();
+    let dir = std::env::temp_dir();
+    let transport = Transport::spawn(&sh("sleep 30"), &dir).unwrap();
+    let mut connection = Connection::open(0, transport, &sender);
+    // Far more than a pipe holds, which would block a write until it reads.
+    let big = json!({ "keys": "k".repeat(64 * 1024) });
+    let started = Instant::now();
+    for _ in 0..200 {
+        connection.request("summaries", &big).unwrap();
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "sending waited {:?} on a process that doesn't read",
+        started.elapsed()
+    );
+}
