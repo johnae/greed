@@ -17,6 +17,7 @@ use std::path::Path;
 
 use greed_index::index::{Index, Item};
 
+use crate::addresses;
 use crate::names;
 use crate::store::{Indexable, Store, Trouble};
 
@@ -42,11 +43,17 @@ pub fn thread_key(account: i64, thread: &str) -> String {
     format!("t:{account}:{thread}")
 }
 
+/// How messages are made items here; changing what an item holds changes
+/// it, and every message is written again.
+const INDEXED: &str = "2";
+
 /// The index at `path`, for `store`. One that's empty (new, or made again
-/// by a newer greed-index) gets every message again in the next catch-up.
+/// by a newer greed-index), or made by an `INDEXED` before, gets every
+/// message again in the next catch-up.
 pub fn open(store: &mut Store, path: &Path) -> Result<Index, Trouble> {
     let index = Index::open(path).map_err(|e| Trouble(e.0))?;
-    if index.count().map_err(|e| Trouble(e.0))? == 0 {
+    let changed = store.indexed_as(INDEXED)?;
+    if changed || index.count().map_err(|e| Trouble(e.0))? == 0 {
         store.unindex_all()?;
     }
     Ok(index)
@@ -145,7 +152,10 @@ fn mine(m: &Indexable) -> bool {
     m.places
         .iter()
         .any(|(_, role)| role.as_deref() == Some("sent"))
-        || (!m.address.is_empty() && m.from.to_lowercase().contains(&m.address.to_lowercase()))
+        || (!m.address.is_empty()
+            && addresses::split(&m.from)
+                .iter()
+                .any(|from| addresses::bare(from) == addresses::bare(&m.address)))
 }
 
 fn tags(m: &Indexable) -> Vec<String> {
@@ -475,5 +485,21 @@ mod tests {
             0,
             "not when it has them"
         );
+    }
+
+    #[test]
+    fn mine_is_from_your_address_not_one_that_ends_like_it() {
+        let from = |from: &str| Indexable {
+            from: from.into(),
+            address: "anna@x".into(),
+            ..Indexable::default()
+        };
+        assert!(mine(&from("Anna <ANNA@x>")));
+        assert!(!mine(&from("Joanna <joanna@x>")));
+        let sent = Indexable {
+            places: vec![("Sent".into(), Some("sent".into()))],
+            ..from("other@x")
+        };
+        assert!(mine(&sent), "in Sent, whoever it says");
     }
 }

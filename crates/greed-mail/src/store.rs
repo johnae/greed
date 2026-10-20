@@ -871,6 +871,23 @@ impl Store {
         Ok(())
     }
 
+    /// Notes that the index is made as `version` says; gives whether it
+    /// was made another way before, so all of it is written again.
+    pub fn indexed_as(&mut self, version: &str) -> Result<bool, Trouble> {
+        let was: Option<String> = self
+            .db
+            .query_row("SELECT value FROM meta WHERE key = 'indexed'", [], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        self.db.execute(
+            "INSERT INTO meta (key, value) VALUES ('indexed', ?1)
+             ON CONFLICT (key) DO UPDATE SET value = ?1",
+            [version],
+        )?;
+        Ok(was.as_deref() != Some(version))
+    }
+
     /// The keys of the messages that arrived since this was last asked,
     /// still there, oldest first; asked once, they're forgotten.
     pub fn arrived(&mut self) -> Result<Vec<String>, Trouble> {
