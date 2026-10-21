@@ -1488,10 +1488,15 @@ local function call(
 			error(wrong, 0)
 		end
 		-- A path from where it works, as its own tools take them: Greed's
-		-- shared ones go from the project shown, which may be another.
+		-- shared ones go from the project shown, which may be another. An
+		-- object's id (buffer:12) stays as it is.
 		local input = c.input
 		local path = input.path
-		if type(path) == "string" and not string.match(path, "^[/~]") then
+		if
+			type(path) == "string"
+			and not string.match(path, "^[/~]")
+			and not core.objects.is_id(path)
+		then
 			input = table.clone(input)
 			input.path = core.project.resolve(path, s.cwd)
 		end

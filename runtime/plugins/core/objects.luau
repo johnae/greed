@@ -130,6 +130,13 @@ local function kind_named(name: string): Kind?
 	return nil
 end
 
+--- Whether `text` is written as an object's id, a kind there is and a
+--- key (`buffer:12`, `editor:`), rather than a path.
+function M.is_id(text: string): boolean
+	local name = string.match(text, "^([%w%-]+):")
+	return name ~= nil and kind_named(name) ~= nil
+end
+
 --- The id of the thing of `kind` with `value`: by its kind's `key`, or the
 --- value itself when it's a string or number. Nil when it can't be named.
 function M.id_of(kind: string, value: any): string?

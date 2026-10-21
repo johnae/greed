@@ -52,12 +52,7 @@ agent.tool({
 -- buffer when it's one. Nil when it isn't an id; an error for an object
 -- that has no text.
 local function object_text(id: string): (string?, greed.Buffer?)
-	local kind = string.match(id, "^([%w%-]+):")
-	local known = false
-	for _, each in core.objects.kinds() do
-		known = known or each.name == kind
-	end
-	if not known then
+	if not core.objects.is_id(id) then
 		return nil, nil
 	end
 	local found = core.objects.get(id) or error(`there's no object {id} now; objects lists them`, 0)

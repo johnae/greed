@@ -515,6 +515,20 @@ local function calling(name: string, input: any): any
 	end
 end
 
+test("a buffer is read by its id, not taken for a file in the project", function(t)
+	local buffer = greed.create_buffer("letter", "Szia!\n")
+	local asked = script({
+		calling("read", { path = `buffer:{buffer:id()}` }),
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local s = ask(t, "go", { ["a.txt"] = "" })
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	local read = asked[#asked].said[3]
+	assert(not read.error and read.text == "Szia!\n", read.text)
+end)
+
 test("a model that edits by hashlines reads named lines and edits by those names", function(t)
 	models.roles.agent = { provider = "anthropic", model = "test-model", edits = "hashline" }
 	local asked = script({
@@ -1107,9 +1121,9 @@ test("with agent-editor-context off, only what you wrote goes", function(t)
 	assert(untimed(asked[1].said[1].text) == "hi", asked[1].said[1].text)
 end)
 
-test("with no file on screen, there's no context", function(t)
+test("with nothing on screen, there's no context", function(t)
 	local asked = script({})
-	t:buffer("|scratch")
+	t:buffer("|")
 	local s = assert(acp.start(GREED, t:tempdir({})))
 	acp.show(s)
 	send(t, "hi")

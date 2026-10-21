@@ -64,7 +64,7 @@ and which [tool groups](#tool-groups) it can switch on. The tools:
 
 | Tool | What it does |
 |---|---|
-| `focus` | The file you are in (the last one, while an agent's pane has focus), its view and buffer ids, your selections with their text, the lines on screen, the mode (as `greed.mode.get()` names it, like `helix-insert`, with the status line's `insert` as its label) and the editing style |
+| `focus` | What you are in, a file or not (the last one, while an agent's pane has focus), its view and buffer ids, your selections with their text, the lines on screen, the mode (as `greed.mode.get()` names it, like `helix-insert`, with the status line's `insert` as its label) and the editing style |
 | `buffers` | Open files and which have unsaved changes |
 | `read` | A file as the editor has it, unsaved changes included, or a buffer or view by its id (`buffer:12`) |
 | `diagnostics` | Errors and warnings from language servers |
@@ -691,8 +691,11 @@ them back.
 Each message takes along what's on screen: the file you were last in (the
 one beside the agent's pane while you type there), the cursor's line and
 column, the selected text (cut after 4000 characters) and the other files
-showing. It's marked as editor context, so the agent treats the file text
-as data, and isn't sent again when nothing changed. `:set
+showing. When what you're in isn't a file, like mail you're reading, a
+shell or a list, it says which buffer, so "translate this" or "what does
+this say?" goes straight to its text. It's marked as editor context, so
+the agent treats the file text as data, and isn't sent again when nothing
+changed. `:set
 agent-editor-context false` turns it off.
 
 Agents also get the tools `greed mcp` offers above, connected to this

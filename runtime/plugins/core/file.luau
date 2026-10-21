@@ -954,43 +954,51 @@ function M.buffer(path: string, root: string?): greed.Buffer?
 	return greed.buffer_for(project.resolve(path, root))
 end
 
--- The last view showing a file that had focus.
-local last_file_view: greed.View? = nil
+--- A function giving the view the user is in among those whose buffer
+--- `wanted` says yes to, for things typed elsewhere (an agent's pane, a
+--- shell) that are about it: the focused one when wanted, else the tab's
+--- active pane, else the last wanted one that had focus. Nil when none is.
+function M.view_where(wanted: (greed.Buffer) -> boolean): () -> greed.View?
+	-- The last wanted view that had focus.
+	local last: greed.View? = nil
 
-local function has_file(view: greed.View?): boolean
-	if view == nil then
-		return false
+	local function fits(view: greed.View?): boolean
+		if view == nil then
+			return false
+		end
+		-- A closed view fails when asked anything.
+		local ok, yes = pcall(function(): boolean
+			return wanted(view:buffer())
+		end)
+		return ok and yes
 	end
-	-- A closed view fails when asked anything.
-	local ok, path = pcall(function(): string?
-		return view:buffer():path()
+
+	greed.on("view.focused", function(event: greed.ViewFocused)
+		if fits(event.view) then
+			last = event.view
+		elseif fits(event.from) then
+			last = event.from
+		end
 	end)
-	return ok and path ~= nil
+
+	return function(): greed.View?
+		local focused = greed.view()
+		if fits(focused) then
+			return focused
+		end
+		local active = greed.tab.current().active
+		if fits(active) then
+			return active
+		end
+		return if fits(last) then last else nil
+	end
 end
 
-greed.on("view.focused", function(event: greed.ViewFocused)
-	if has_file(event.view) then
-		last_file_view = event.view
-	elseif has_file(event.from) then
-		last_file_view = event.from
-	end
+--- The view with the file the user is in (see `view_where`). Nil when none
+--- shows a file.
+M.view = M.view_where(function(buffer: greed.Buffer): boolean
+	return buffer:path() ~= nil
 end)
-
---- The view with the file the user is in, for things typed elsewhere (an
---- agent's pane, a shell) that are about it: the focused one when it shows
---- a file, else the tab's active pane, else the last one with a file that
---- had focus. Nil when none shows a file.
-function M.view(): greed.View?
-	local focused = greed.view()
-	if has_file(focused) then
-		return focused
-	end
-	local active = greed.tab.current().active
-	if has_file(active) then
-		return active
-	end
-	return if has_file(last_file_view) then last_file_view else nil
-end
 
 --- The text of the file at `path` as you have it: its buffer's, unsaved
 --- changes included, when it's open, otherwise what's on disk; nil and why
