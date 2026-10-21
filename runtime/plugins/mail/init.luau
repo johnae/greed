@@ -1585,12 +1585,22 @@ export type Rule = {
 	tag: string?,
 	archive: boolean?,
 	trash: boolean?,
+	--- Over all mail its query finds, not only new mail: after a round of
+	--- syncing, at most hourly, as for keeping mail an age
+	--- (`in:inbox list:news date:..30d`, archive).
+	all: boolean?,
 }
 
 --- Rules for new mail, run in the mail session as it arrives, in order,
---- and never over mail that was there before. Set them in your config:
+--- and never over mail that was there before unless a rule says `all`.
+--- Set them in your config:
 --- `require("@mail").rules = { { query = "from:github.com", tag = "github", archive = true } }`.
 M.rules = {} :: { Rule }
+
+--- The most a rule over all mail changes at once on its own; more waits
+--- for `:mail-rule-run`, so a query that finds more than it should can't
+--- move a mailbox's worth of mail unseen.
+M.MANY = 100
 
 --- What `rule` does, as the actions greed-mail takes, in the order made:
 --- marks first, a move last.
@@ -1613,6 +1623,40 @@ function M.rule_actions(rule: Rule): { { action: string, tag: string? } }
 	return out
 end
 
+--- What `rule` does, in words: "tag github, archive".
+function M.rule_text(rule: Rule): string
+	local words: { string } = {}
+	for _, act in M.rule_actions(rule) do
+		table.insert(words, if act.tag then `{act.action} {act.tag}` else act.action)
+	end
+	return if #words > 0 then table.concat(words, ", ") else "nothing"
+end
+
+--- The keys of the messages `rule`'s query finds, newest first, up to
+--- `most`; nil and why when its query won't read.
+function M.rule_finds(rule: Rule, most: number): ({ string }?, string?)
+	local parsed = core.search_box.read(rule.query, { source = M.source })
+	if not parsed.ok then
+		local problem = parsed.problems[1]
+		return nil, `{rule.query}: {if problem then problem.message else "it won't read"}`
+	end
+	parsed.view.limit = most
+	return M.found(parsed)
+end
+
+--- Does what `rule` says to the mail with `keys`; says what went wrong.
+function M.apply_rule(rule: Rule, keys: { string })
+	if #keys == 0 then
+		return
+	end
+	for _, act in M.rule_actions(rule) do
+		local _, err = backend.get().act(keys, act.action, act.tag)
+		if err then
+			greed.echo(`a mail rule ({rule.query}): {err}`)
+		end
+	end
+end
+
 --- Runs the rules over the mail with `keys`, just arrived: each rule's
 --- query finds what it does to among them.
 function M.run_rules(keys: { string })
@@ -1624,41 +1668,122 @@ function M.run_rules(keys: { string })
 		new[key] = true
 	end
 	for _, rule in M.rules do
-		local parsed = core.search_box.read(rule.query, { source = M.source })
-		if not parsed.ok then
-			local problem = parsed.problems[1]
-			greed.echo(
-				`a mail rule can't run: {rule.query}: {if problem
-					then problem.message
-					else "it won't read"}`
-			)
+		-- New mail is the newest, so it's among the first found.
+		local found, err = M.rule_finds(rule, math.max(LIMIT, #keys * 4))
+		if found == nil then
+			greed.echo(`a mail rule can't run: {err}`)
 			continue
 		end
-		-- New mail is the newest, so it's among the first found.
-		parsed.view.limit = math.max(LIMIT, #keys * 4)
 		local hit: { string } = {}
-		local found_all: { Summary } = M.search(parsed) or {}
-		for _, found in found_all do
-			if new[found.key] then
-				table.insert(hit, found.key)
+		for _, key in found do
+			if new[key] then
+				table.insert(hit, key)
 			end
 		end
-		if #hit > 0 then
-			for _, act in M.rule_actions(rule) do
-				local _, err = backend.get().act(hit, act.action, act.tag)
-				if err then
-					greed.echo(`a mail rule ({rule.query}): {err}`)
-				end
-			end
+		M.apply_rule(rule, hit)
+	end
+end
+
+--- Runs the rules that say `all` over all the mail they find, each doing
+--- at most `MANY` on its own; for more it says so, and `:mail-rule-run`
+--- does it.
+function M.run_standing()
+	for _, rule in M.rules do
+		if not rule.all then
+			continue
+		end
+		local found, err = M.rule_finds(rule, M.MANY + 1)
+		if found == nil then
+			greed.echo(`a mail rule can't run: {err}`)
+		elseif #found > M.MANY then
+			greed.echo(
+				`the mail rule {rule.query} finds more than {M.MANY}: :mail-rule-run does it, once you've looked`
+			)
+		else
+			M.apply_rule(rule, found)
 		end
 	end
 end
 
 backend.on_arrived(function(keys: { string })
 	if backend.here() then
+		M.run_standing()
 		M.run_rules(keys)
 	end
 end)
+
+-- When rules over all mail last ran, as os.time().
+local standing_ran = 0
+
+backend.on_synced(function()
+	if backend.here() and os.time() - standing_ran >= 3600 then
+		standing_ran = os.time()
+		M.run_standing()
+	end
+end)
+
+-- Asks which of the rules, by query and what it does; says so when
+-- there are none.
+local function pick_rule(title: string, chosen: (rule: Rule) -> ())
+	if #M.rules == 0 then
+		greed.echo('no mail rules: require("@mail").rules sets them')
+		return
+	end
+	local items: { { label: string, value: any, kind: string? } } = {}
+	for i, rule in M.rules do
+		local all = if rule.all then ", on all mail" else ""
+		table.insert(items, { label = `{i}. {rule.query}  {M.rule_text(rule)}{all}`, value = rule })
+	end
+	require("@picker").pick(title, items, function(item)
+		chosen(item.value)
+	end)
+end
+
+-- As many as a rule may find when it's run by hand: all, for any mailbox
+-- one has.
+local ALL = 1000000
+
+greed.command({
+	name = "mail-rule-try",
+	doc = "Show what a mail rule finds in the mail you have, changing nothing",
+	run = function()
+		pick_rule("Try a rule", function(rule: Rule)
+			local found, err = M.rule_finds(rule, ALL)
+			if found == nil then
+				greed.echo(err or "it won't read")
+				return
+			end
+			M.go(rule.query)
+			greed.echo(
+				`{rule.query} finds {#found} now; it would {M.rule_text(rule)}: :mail-rule-run does it`
+			)
+		end)
+	end,
+})
+
+greed.command({
+	name = "mail-rule-run",
+	doc = "Run a mail rule over all the mail it finds, asking first",
+	run = function()
+		pick_rule("Run a rule", function(rule: Rule)
+			local found, err = M.rule_finds(rule, ALL)
+			if found == nil then
+				greed.echo(err or "it won't read")
+				return
+			elseif #found == 0 then
+				greed.echo(`{rule.query} finds nothing`)
+				return
+			end
+			greed.echo(`{M.rule_text(rule)} {#found} found by {rule.query}? y does it`)
+			local yes = greed.next_key() == "y"
+			greed.echo("")
+			if yes then
+				M.apply_rule(rule, found)
+				greed.echo(`{M.rule_text(rule)}: {#found}`)
+			end
+		end)
+	end,
+})
 
 -- In the mail session, the page is there from the start.
 greed.on("editor.started", function()

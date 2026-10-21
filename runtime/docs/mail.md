@@ -363,6 +363,28 @@ its own, so one that archives doesn't stop the next from tagging. Rules
 run in the mail session, on mail that arrives once a mailbox is all
 synced: what the first sync brings is left as it is.
 
+To see what a rule does before it does it, `:mail-rule-try` picks one and
+shows what it finds in the mail you have, changing nothing. `:mail-rule-run`
+runs it over all of that, once you've said `y` to how many it finds: for
+a new rule over mail you already have.
+
+A rule with `all = true` keeps on over all the mail it finds, not only new
+mail: after the mail session syncs, at most once an hour. That keeps mail
+an age, as a retention rule:
+
+```luau
+require("@mail").rules = {
+	-- A list's mail out of the inbox after a month, a shop's to the trash after a week.
+	{ query = "in:inbox list:news.example.com date:..30d", archive = true, all = true },
+	{ query = "in:inbox from:shop.example date:..1w", trash = true, all = true },
+}
+```
+
+One that would change more than a hundred messages at once doesn't: it
+says so, and `:mail-rule-run` does it once you've looked, so a query
+that finds more than you meant can't move your mail unseen. Rules never
+delete for good: trashing what's in the trash is left to you.
+
 ## mail.toml
 
 Each `[[account]]` has:

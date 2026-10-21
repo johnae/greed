@@ -1077,6 +1077,60 @@ test("rules act on new mail they find, only that, and only in the mail session",
 	assert(ok, tostring(err))
 end)
 
+test("a rule is tried on the mail there, changing nothing, then run over it once asked", function(t)
+	fake()
+	mail.rules = {
+		{ query = "in:inbox", tag = "seen-it" },
+		{ query = "from:nobody", archive = true },
+	}
+	local ok, err: any = pcall(function()
+		in_the_mail_session(function()
+			t:buffer("|x")
+			t:run("mail")
+			t:keys("esc")
+			t:run("mail-rule-try")
+			t:keys("1 . enter")
+			assert(#acted == 0, "trying changes nothing: " .. table.concat(acted, ", "))
+			local said = table.concat(t:messages(), "\n")
+			assert(string.find(said, "in:inbox finds 2 now; it would tag seen-it", 1, true), said)
+			t:run("mail-rule-run")
+			t:keys("1 . enter n")
+			assert(#acted == 0, "not without a yes")
+			t:run("mail-rule-run")
+			t:keys("1 . enter y")
+			table.sort(acted)
+			assert(
+				table.concat(acted, ", ") == "tag seen-it m:1:a, tag seen-it m:1:b",
+				table.concat(acted, ", ")
+			)
+		end)
+	end)
+	mail.rules = {}
+	assert(ok, tostring(err))
+end)
+
+test("a rule over all mail keeps mail an age, but never moves many on its own", function(t)
+	fake()
+	mail.rules = { { query = "date:..2026-01-01", archive = true, all = true } }
+	local many = mail.MANY
+	local ok, err: any = pcall(function()
+		in_the_mail_session(function()
+			mail.run_standing()
+			assert(table.concat(acted, ", ") == "archive m:1:c", table.concat(acted, ", "))
+			acted = {}
+			mail.rules = { { query = "in:inbox", trash = true, all = true } }
+			mail.MANY = 1
+			mail.run_standing()
+			assert(#acted == 0, "two is many here: " .. table.concat(acted, ", "))
+			local said = table.concat(t:messages(), "\n")
+			assert(string.find(said, "finds more than 1: :mail-rule-run", 1, true), said)
+		end)
+	end)
+	mail.MANY = many
+	mail.rules = {}
+	assert(ok, tostring(err))
+end)
+
 test("T makes a todo of the message in your inbox note, and its link reads it again", function(t)
 	fake()
 	local dir = t:tempdir()

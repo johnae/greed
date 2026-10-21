@@ -231,6 +231,15 @@ function M.on_busy(listener: () -> ())
 	greed.plugin.tie(core.registry.put(busy_listeners, listener))
 end
 
+-- What wants to know when an account's round of syncing is over.
+local synced_listeners: { (account: string) -> () } = {}
+
+--- Calls `listener` with an account's name each time a round of its sync
+--- is over. It goes with the plugin that added it.
+function M.on_synced(listener: (account: string) -> ())
+	greed.plugin.tie(core.registry.put(synced_listeners, listener))
+end
+
 --- Notes what greed-mail said it's doing (`indexing`, `progress`,
 --- `synced`), as it does (and a test).
 function M.heard(method: string, params: any)
@@ -243,6 +252,7 @@ function M.heard(method: string, params: any)
 		busy.syncing[params.account] = params.messages
 	elseif method == "synced" then
 		busy.syncing[params.account] = if params.done then nil else params.messages
+		core.registry.tell(synced_listeners, params.account)
 	else
 		return
 	end
