@@ -573,3 +573,14 @@ test("a ? in the home's box asks the notes instead of adding", function(t)
 	assert(string.find(said, "Answer this from my notes: when is the plumber", 1, true), said)
 	assert(greed.fs.read(`{dir}/{notes.daily()}.md`) == nil, "nothing added")
 end)
+
+test("the home leaves templates out of recent notes, and shows links as words", function(t)
+	folder(t, {
+		[`daily/{day(0)}.md`] = `# {day(0)}\n\nmet [[Anna]] about the garden\n`,
+		["templates/Meeting Template.md"] = "# {{title}}\n",
+		["Anna.md"] = "# Anna\n",
+	})
+	local text = show(t):text()
+	assert(not string.find(text, "{{title}}", 1, true), text)
+	assert(string.find(text, "met Anna about the garden", 1, true), text)
+end)

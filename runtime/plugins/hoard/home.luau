@@ -125,15 +125,19 @@ function M.search(query: string): { Found }
 	return out
 end
 
--- The notes changed last, newest first.
+-- The notes changed last, newest first; templates aren't notes you write in.
 local function recent(): { notes.Note }
 	local all = index.all()
 	table.sort(all, function(a: notes.Note, b: notes.Note): boolean
 		return a.modified > b.modified
 	end)
 	local out = {}
-	for i = 1, math.min(#all, M.RECENT) do
-		table.insert(out, all[i])
+	for _, note in all do
+		if #out >= M.RECENT then
+			break
+		elseif not notes.is_template(note.name) then
+			table.insert(out, note)
+		end
 	end
 	return out
 end
@@ -159,7 +163,7 @@ local function today_lines(): { string }
 		if (#out == 0 and (string.match(line, "^#") or line == "")) or todos.parse(line) ~= nil then
 			continue
 		end
-		table.insert(out, line)
+		table.insert(out, notes.syntax.as_read(line))
 		if #out >= 8 then
 			break
 		end
@@ -227,7 +231,7 @@ local function task_line(task: Task, when: string?): { core.UiSpan }
 			greed.echo(tostring(err))
 		end
 	end
-	local spans = { tick, ui.span(task.text) }
+	local spans = { tick, ui.span(notes.syntax.as_read(task.text)) }
 	if task.every then
 		table.insert(spans, ui.span(" ↻", "comment"))
 	end

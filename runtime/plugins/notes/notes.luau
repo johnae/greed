@@ -249,13 +249,20 @@ function M.day_of(name: string): string?
 	return `{got.y}-{got.m}-{got.d}`
 end
 
+--- Whether note `name` is a template, one in the templates folder.
+function M.is_template(name: string): boolean
+	local _, rest = M.split(name)
+	local templates = M.templates_folder()
+	return string.sub(rest, 1, #templates + 1) == `{templates}/`
+end
+
 --- Whether note `name` is one whose name means little among others or in
 --- a sentence: a day's note, a template, a weekly review, the inbox.
 function M.routine(name: string): boolean
 	local _, rest = M.split(name)
-	local daily, templates = M.daily_folder(), M.templates_folder()
+	local daily = M.daily_folder()
 	return string.sub(rest, 1, #daily + 1) == `{daily}/`
-		or string.sub(rest, 1, #templates + 1) == `{templates}/`
+		or M.is_template(name)
 		or string.match(rest, "^reviews/") ~= nil
 		or rest == "inbox"
 end

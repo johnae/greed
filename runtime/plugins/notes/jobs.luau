@@ -102,7 +102,9 @@ function M.run(name: string, note: string?, question: string?, quiet: boolean?):
 	else
 		acp.show(s)
 	end
-	return acp.prompt(s, job.prompt(note, question))
+	-- The transcript shows the question, or what the job does, rather than
+	-- the instructions the agent gets.
+	return acp.prompt(s, job.prompt(note, question), question or `{name}: {job.doc}`)
 end
 
 M.add({

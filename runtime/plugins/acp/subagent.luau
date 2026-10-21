@@ -32,7 +32,7 @@ local M = {}
 --- `start` and `prompt`.
 export type Sessions = {
 	start: (chosen: agents.Agent, root: string, own: boolean?) -> (Session?, string?),
-	prompt: (s: Session, text: string) -> (boolean, string?),
+	prompt: (s: Session, text: string, shown: string?) -> (boolean, string?),
 }
 
 -- At most this many subagents work at once, so a subagent that starts

@@ -722,9 +722,11 @@ function M.of(buffer: greed.Buffer): Session?
 	return by_buffer[buffer:id()]
 end
 
---- Sends `text` to `s`, waiting for its turn to end.
-function M.prompt(s: Session, text: string): (boolean, string?)
-	return session.prompt(s, text)
+--- Sends `text` to `s`, waiting for its turn to end. The transcript shows
+--- `shown` in its place when given, like the question for instructions
+--- built around it.
+function M.prompt(s: Session, text: string, shown: string?): (boolean, string?)
+	return session.prompt(s, text, nil, shown)
 end
 
 --- Compacts the conversation of `s`, a session of Greed's own agent: the

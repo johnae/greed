@@ -290,3 +290,12 @@ test("Obsidian's attachments beside the note, in a folder of their own", functio
 	local path = notes.attachment("pic.png", "a/Note")
 	assert(path == `{dir}/a/files/pic.png`, path)
 end)
+
+test("a line reads with its links as their words, where brackets aren't hidden", function()
+	local read = notes.syntax.as_read
+	assert(read("met [[Anna]] about it") == "met Anna about it", read("met [[Anna]] about it"))
+	local shown = read("see [[Books#The Overstory|The Overstory]] and ![[Kitchen]]")
+	assert(shown == "see The Overstory and Kitchen", shown)
+	assert(read("`[[code]]` stays") == "`[[code]]` stays", "not in code")
+	assert(read("no links") == "no links")
+end)

@@ -201,6 +201,23 @@ function M.with_due(text: string, value: string?): string
 	return if trimmed == "" then marker else `{trimmed} {marker}`
 end
 
+--- `text` with its `[[links]]` as the words they show: `[[Anna]]` is
+--- "Anna", `[[Books#The Overstory|The Overstory]]` "The Overstory", as a
+--- line reads on a page that doesn't hide brackets as notes do.
+function M.as_read(text: string): string
+	if not string.find(text, "[[", 1, true) then
+		return text
+	end
+	local found = M.links(text)
+	for i = #found, 1, -1 do
+		local link = found[i]
+		text = string.sub(text, 1, link.from - 1)
+			.. (link.shown or link.target)
+			.. string.sub(text, link.to)
+	end
+	return text
+end
+
 -- The signs the Tasks plugin (as in Obsidian) puts before dates.
 local TASKS_DATES = { "📅", "⏳", "🛫", "✅", "➕" }
 

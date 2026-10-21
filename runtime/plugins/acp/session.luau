@@ -1191,17 +1191,22 @@ function M.about_images(attached: { Attachment }, seen: boolean): string
 end
 
 -- One prompt, as M.prompt sends it.
-local function prompt_once(session: Session, text: string, context: string?): (boolean, string?)
+local function prompt_once(
+	session: Session,
+	text: string,
+	context: string?,
+	shown_as: string?
+): (boolean, string?)
 	session.cancelled = nil
 	local attached = session.attached
 	local driver = session.driver
 	local seen = if driver
 		then driver.sees_images ~= nil and driver.sees_images(session)
 		else session.sees_images == true
-	local said, shown = text, text
+	local said, shown = text, shown_as or text
 	if attached then
 		said = `{text}\n\n{M.about_images(attached, seen)}`
-		shown = `{text}\n{M.chips(attached)}`
+		shown = `{shown}\n{M.chips(attached)}`
 	end
 	if driver then
 		session.attached = nil
@@ -1318,17 +1323,26 @@ end
 --- unless the last prompt took the same, and the images attached to the
 --- session go with it: as images to an agent that sees them, and as their
 --- files' paths to one that doesn't. Messages queued meanwhile go next,
---- together, unless you stopped the turn. False and why when it can't.
-function M.prompt(session: Session, text: string, context: string?): (boolean, string?)
+--- together, unless you stopped the turn. The transcript shows `shown` in
+--- place of `text` when given: a short line for long instructions a plugin
+--- sends. False and why when it can't.
+function M.prompt(
+	session: Session,
+	text: string,
+	context: string?,
+	shown: string?
+): (boolean, string?)
 	-- Those still queued when you stopped the last turn go first.
 	if session.status == "idle" then
 		local left, images = M.take_queued(session)
 		if left then
 			text = if text == "" then left elseif left == "" then text else `{left}\n\n{text}`
+			-- What you queued shows as you wrote it.
+			shown = nil
 			attach_first(session, images)
 		end
 	end
-	local ok, err = prompt_once(session, text, context)
+	local ok, err = prompt_once(session, text, context, shown)
 	while ok and not session.cancelled and session.status == "idle" do
 		local queued, images = M.take_queued(session)
 		if queued == nil then

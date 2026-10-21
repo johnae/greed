@@ -21,9 +21,7 @@ export type Item = { note: string, line: number, text: string, due: string? }
 -- Whether note `name` is one the review itself makes, or a template.
 local function own(name: string): boolean
 	local _, rest = notes.split(name)
-	local templates = notes.templates_folder()
-	return string.match(rest, "^reviews/") ~= nil
-		or string.sub(rest, 1, #templates + 1) == `{templates}/`
+	return string.match(rest, "^reviews/") ~= nil or notes.is_template(name)
 end
 
 -- Every open or done todo, with its note, for what `keep` says yes to.

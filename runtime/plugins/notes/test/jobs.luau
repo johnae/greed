@@ -152,3 +152,24 @@ test("a scheduled job with nothing new to work on is skipped", function(t)
 	t:wait(1)
 	assert(asked[1] == nil, "the model wasn't asked")
 end)
+
+test("the transcript shows the question asked, not the instructions around it", function(t)
+	asked_model()
+	assert(notes.jobs.run("ask", nil, "when is the plumber coming?"))
+	local acp = require("@acp")
+	local sessions = acp.sessions()
+	local s = sessions[#sessions]
+	t:wait_for(function()
+		for _, entry in s.entries do
+			if entry.kind == "user" then
+				return true
+			end
+		end
+		return false
+	end)
+	for _, entry in s.entries do
+		if entry.kind == "user" then
+			assert(entry.text == "when is the plumber coming?", entry.text)
+		end
+	end
+end)
