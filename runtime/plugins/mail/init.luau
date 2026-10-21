@@ -2368,6 +2368,12 @@ local ACTIONS = {
 	esc = "mail-close",
 }
 
+-- Mail is written by whoever sent it, so an agent reading it is told so;
+-- mail being written quotes what it answers.
+core.outside.kind("mail", "the list of mail you received")
+core.outside.kind("mail-thread", "mail you received")
+core.outside.kind("mail-compose", "mail being written, quoting mail you received")
+
 greed.keymap.bind({ kind = "mail" }, ACTIONS)
 -- The saved searches show as tabs over the list, so they go as tabs do:
 -- tab and shift-tab through them, alt and a number to one, as in a

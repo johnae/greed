@@ -231,6 +231,9 @@ return {
 	watch = require("@self/watch"),
 	--- Which command lines are risky for an agent to run, and why (risk.luau).
 	risk = require("@self/risk"),
+	--- Kinds of buffer whose text someone else wrote, as agents read it
+	--- (outside.luau).
+	outside = require("@self/outside"),
 	--- Going back through what was typed before with up and down, as a
 	--- shell's prompt and an agent's box do (recall.luau).
 	recall = recall,

@@ -2442,6 +2442,14 @@ DB_PASSWORD=[secret hidden]
 </untrusted-3fa2c1b0e9d4>
 ```
 
+A buffer that shows what someone else wrote, like the mail plugin's
+threads, can say so for its kind, and agents reading it with `read`, or
+its selection with `focus`, get it between those tags:
+
+```luau
+core.outside.kind("mail-thread", "mail you received")
+```
+
 A tool can wait: for a process, a request, or the user. Changes to files
 are best proposed, so the user reviews them first and the tool hears what
 they decided:

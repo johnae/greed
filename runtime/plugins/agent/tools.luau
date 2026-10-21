@@ -6,6 +6,7 @@ local agent = require("./registry")
 local proposals = require("./proposals")
 local describe = require("@describe")
 local context = require("./context")
+local untrusted = require("./untrusted").wrap
 
 local object = agent.schema.object
 
@@ -47,25 +48,27 @@ agent.tool({
 })
 
 -- The text of what `id` names when it's an object's id rather than a path:
--- a buffer's (unsaved changes too), a view's buffer's, a file's. Nil when
--- it isn't an id; an error for an object that has no text.
-local function object_text(id: string): string?
+-- a buffer's (unsaved changes too), a view's buffer's, a file's, and the
+-- buffer when it's one. Nil when it isn't an id; an error for an object
+-- that has no text.
+local function object_text(id: string): (string?, greed.Buffer?)
 	local kind = string.match(id, "^([%w%-]+):")
 	local known = false
 	for _, each in core.objects.kinds() do
 		known = known or each.name == kind
 	end
 	if not known then
-		return nil
+		return nil, nil
 	end
 	local found = core.objects.get(id) or error(`there's no object {id} now; objects lists them`, 0)
-	if found.kind == "buffer" then
-		return found.value:text()
-	elseif found.kind == "view" then
-		return found.value:buffer():text()
+	if found.kind == "buffer" or found.kind == "view" then
+		local buffer: greed.Buffer = if found.kind == "view"
+			then found.value:buffer()
+			else found.value
+		return buffer:text(), buffer
 	elseif found.kind == "file" then
 		local text, err = core.file.text(found.value)
-		return text or error(err, 0)
+		return text or error(err, 0), nil
 	end
 	error(`{id} is an object's id, not a file: use inspect for its state`, 0)
 end
@@ -86,7 +89,10 @@ agent.tool({
 	run = function(args)
 		local path: string? = args.path
 		local text: string
-		local of_object = if path then object_text(path) else nil
+		local of_object, buffer = nil, nil
+		if path then
+			of_object, buffer = object_text(path)
+		end
 		if of_object then
 			text = of_object
 		elseif path then
@@ -96,15 +102,18 @@ agent.tool({
 			end
 			text = read
 		else
-			text = greed.view():buffer():text()
+			local current = greed.view():buffer()
+			buffer = current
+			text = current:text()
 		end
-		if args.from_line == nil and args.to_line == nil then
-			return text
+		if args.from_line ~= nil or args.to_line ~= nil then
+			local lines = string.split(text, "\n")
+			local from = math.max(args.from_line or 1, 1)
+			local to = math.min(args.to_line or #lines, #lines)
+			text = table.concat(lines, "\n", from, to)
 		end
-		local lines = string.split(text, "\n")
-		local from = math.max(args.from_line or 1, 1)
-		local to = math.min(args.to_line or #lines, #lines)
-		return table.concat(lines, "\n", from, to)
+		local outside = buffer and core.outside.source(buffer)
+		return if outside then untrusted(outside, text) else text
 	end,
 })
 

@@ -73,13 +73,15 @@ function M.focus(view: greed.View): { [string]: any }
 	local buffer = view:buffer()
 	local selection = view:selection()
 	local selections = {}
+	local outside = core.outside.source(buffer)
 	for i, range in selection.ranges do
 		local from, to = core.text.span(range)
+		local text = buffer:slice(from, to)
 		table.insert(selections, {
 			primary = i == selection.primary,
 			from = position(buffer, from),
 			to = position(buffer, to),
-			text = buffer:slice(from, to),
+			text = if outside then untrusted(outside, text) else text,
 		})
 	end
 	local first, final = view:visible()
