@@ -98,10 +98,19 @@ impl Tasks {
     }
 
     /// The editor's clock: when the firing timers were due, otherwise now.
-    /// It never goes back, even after tests step past the real time.
+    /// It never goes back, even after tests step past the real time, or
+    /// code a timer woke lets time pass itself.
     pub(super) fn now(&self) -> Instant {
         self.firing
-            .unwrap_or_else(|| Instant::now().max(self.latest))
+            .unwrap_or_else(|| self.passing())
+            .max(self.latest)
+    }
+
+    /// The time as it passes, even while timers fire: the real time, or
+    /// the latest time timers fired at when tests stepped past it. What
+    /// waits for real things to happen goes by it.
+    pub(super) fn passing(&self) -> Instant {
+        Instant::now().max(self.latest)
     }
 
     /// Wakes whatever waits on `token` with no values after `delay`, unless
@@ -530,15 +539,17 @@ pub(super) fn next_timer(lua: &Lua) -> Option<Instant> {
 /// Resumes everything waiting on a timer that's due by `now`. Every due
 /// timer fires even if one of them fails; the first error is returned.
 pub(super) fn fire_timers(lua: &Lua, now: Instant) -> LuaResult<()> {
-    let due: Vec<u64> = {
+    let (due, outer): (Vec<u64>, Option<Instant>) = {
         let mut state = state_mut(lua);
         let (mut due, later): (Vec<_>, Vec<_>) =
             state.tasks.timers.drain(..).partition(|(at, _)| *at <= now);
         state.tasks.timers = later;
-        state.tasks.firing = Some(now);
+        // Code a timer woke may fire timers itself, as a test waiting does;
+        // the timers firing around it are due when they were after that.
+        let outer = state.tasks.firing.replace(now);
         state.tasks.latest = state.tasks.latest.max(now);
         due.sort();
-        due.into_iter().map(|(_, token)| token).collect()
+        (due.into_iter().map(|(_, token)| token).collect(), outer)
     };
     let mut first_error = None;
     for token in due {
@@ -546,7 +557,7 @@ pub(super) fn fire_timers(lua: &Lua, now: Instant) -> LuaResult<()> {
             first_error.get_or_insert(err);
         }
     }
-    state_mut(lua).tasks.firing = None;
+    state_mut(lua).tasks.firing = outer;
     first_error.map_or(Ok(()), Err)
 }
 

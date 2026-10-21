@@ -135,6 +135,35 @@ end)
 }
 
 #[test]
+fn waiting_after_a_sleep_lets_timers_started_meanwhile_fire() {
+    let dir = std::env::temp_dir().join(format!("greed-test-woken-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("test")).unwrap();
+    // The test's own body sleeps first, so a timer wakes it, as one waiting
+    // its turn behind other work does on a busy machine.
+    std::fs::write(
+        dir.join("test/woken.luau"),
+        r"local test = require('@greed/test')
+local greed = require('@greed')
+test('waits', function(t)
+    greed.sleep(10)
+    local done = false
+    greed.spawn(function()
+        greed.sleep(300)
+        done = true
+    end)
+    t:wait_for(function()
+        return done
+    end, 3000)
+end)
+",
+    )
+    .unwrap();
+    let results = run_tests(&[core()], &dir).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(results[0].failure, None);
+}
+
+#[test]
 fn statusline_plugin_tests_pass() {
     // The mode says COMMAND on the command line.
     assert_all_pass(

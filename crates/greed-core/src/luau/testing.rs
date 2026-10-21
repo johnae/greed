@@ -450,8 +450,9 @@ fn wait_until(lua: &Lua, done: &Function, limit: Duration) -> mlua::Result<()> {
         for event in events.try_iter() {
             terminal::handle(lua, event)?;
         }
-        // Timers due by now fire, as the editor fires them while it waits.
-        let now = state(lua).tasks.now();
+        // Timers due by now fire, as the editor fires them while it waits:
+        // by the time as it passes, also when a timer woke the test itself.
+        let now = state(lua).tasks.passing();
         tasks::advance(lua, now)?;
         jobs::settle(lua)?;
         watch::check(lua)?;
