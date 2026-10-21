@@ -36,6 +36,8 @@ pub struct Draft {
     pub text: String,
     /// The key of the message it answers.
     pub replying: Option<String>,
+    /// Whether its text is Markdown, which goes as HTML beside it.
+    pub markdown: bool,
     /// The files it carries, by path (`~` for your home folder).
     #[serde(deserialize_with = "crate::json::list")]
     pub attach: Vec<String>,
@@ -188,6 +190,62 @@ fn attached(paths: &[String]) -> Result<Vec<(String, Vec<u8>, ContentType)>, Str
     Ok(out)
 }
 
+/// `parts` with `files` (from `attached`) after them.
+fn with_files(parts: MultiPart, files: Vec<(String, Vec<u8>, ContentType)>) -> MultiPart {
+    files.into_iter().fold(parts, |parts, (name, bytes, kind)| {
+        parts.singlepart(Attachment::new(name).body(bytes, kind))
+    })
+}
+
+/// The HTML Markdown `text` makes, as a page of its own: its lines kept
+/// as they're written (mail's way, not Markdown's), quoted lines a quote.
+/// The signature, from a `-- ` line to the next blank one (a reply's
+/// quote comes after), goes as it is, line by line, so that line can't
+/// make what's over it a heading.
+fn html_of(text: &str) -> String {
+    use pulldown_cmark::{Event, Options, Parser, html};
+    let markdown = |out: &mut String, text: &str| {
+        let options =
+            Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
+        let events = Parser::new_ext(text, options).map(|event| match event {
+            Event::SoftBreak => Event::HardBreak,
+            other => other,
+        });
+        html::push_html(out, events);
+    };
+    let mut out = String::from(
+        "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">\
+         <style>blockquote{margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex}</style>\
+         </head><body>\n",
+    );
+    let start = if text.starts_with("-- \n") {
+        Some(0)
+    } else {
+        text.find("\n-- \n").map(|at| at + 1)
+    };
+    match start {
+        None => markdown(&mut out, text),
+        Some(at) => {
+            markdown(&mut out, &text[..at]);
+            let rest = &text[at + 4..];
+            let (signature, after) = rest.split_once("\n\n").unwrap_or((rest, ""));
+            let mut lines = vec![
+                Event::Html("<div class=\"signature\">".into()),
+                Event::Text("-- ".into()),
+            ];
+            for line in signature.lines() {
+                lines.push(Event::HardBreak);
+                lines.push(Event::Text(line.to_string().into()));
+            }
+            lines.push(Event::Html("</div>\n".into()));
+            html::push_html(&mut out, lines.into_iter());
+            markdown(&mut out, after);
+        }
+    }
+    out.push_str("</body></html>\n");
+    out
+}
+
 /// The message `draft` makes, from its `from` or else `address`,
 /// answering `original` (its Message-ID and References) when it's a
 /// reply, with the files it attaches.
@@ -255,12 +313,21 @@ pub fn compose(
                     .singlepart(SinglePart::builder().header(kind).body(calendar.clone())),
             )
         }
-        None if !files.is_empty() => {
-            let mut parts = MultiPart::mixed().singlepart(SinglePart::plain(draft.text.clone()));
-            for (name, bytes, kind) in files {
-                parts = parts.singlepart(Attachment::new(name).body(bytes, kind));
+        // Markdown goes as what was written and the HTML it makes, side
+        // by side, so either reads.
+        None if draft.markdown => {
+            let both = MultiPart::alternative()
+                .singlepart(SinglePart::plain(draft.text.clone()))
+                .singlepart(SinglePart::html(html_of(&draft.text)));
+            if files.is_empty() {
+                builder.multipart(both)
+            } else {
+                builder.multipart(with_files(MultiPart::mixed().multipart(both), files))
             }
-            builder.multipart(parts)
+        }
+        None if !files.is_empty() => {
+            let text = MultiPart::mixed().singlepart(SinglePart::plain(draft.text.clone()));
+            builder.multipart(with_files(text, files))
         }
         None => builder
             .header(ContentType::TEXT_PLAIN)
@@ -464,6 +531,74 @@ mod tests {
         }))
         .unwrap();
         assert!(unattached.attach.is_empty(), "Luau's empty table");
+    }
+
+    #[test]
+    fn markdown_goes_as_its_text_and_the_html_it_makes() {
+        let text = "Paid **today**, see the [receipt](https://example.com/r).\nThanks\n\n\
+                    -- \nAnna\nexample.com\n\nOn 2026-10-19 08:00, Bob wrote:\n> please pay\n";
+        let draft = Draft {
+            to: "bob@example.com".into(),
+            subject: "Re: invoice".into(),
+            text: text.into(),
+            markdown: true,
+            ..Draft::default()
+        };
+        let out = compose("anna@example.com", &draft, None).unwrap();
+        let raw = String::from_utf8_lossy(&out.message).into_owned();
+        assert!(raw.contains("multipart/alternative"), "{raw}");
+        let body = crate::body::Body::of(&out.message, out.message.len());
+        assert_eq!(
+            body.text
+                .map(|t| t.replace("\r\n", "\n").trim_end().to_string()),
+            Some(text.trim_end().to_string()),
+            "as written"
+        );
+        let html = body.html.unwrap().replace("\r\n", "\n");
+        assert!(html.contains("<strong>today</strong>"), "{html}");
+        assert!(
+            html.contains("<a href=\"https://example.com/r\">receipt</a>"),
+            "{html}"
+        );
+        assert!(html.contains("<br />\nThanks"), "its lines kept: {html}");
+        assert!(
+            html.contains("<div class=\"signature\">-- <br />\nAnna<br />\nexample.com</div>"),
+            "{html}"
+        );
+        assert!(!html.contains("<h2>"), "-- makes no heading: {html}");
+        assert!(
+            html.contains("<blockquote>"),
+            "the quote after the signature: {html}"
+        );
+        let plain = Draft {
+            markdown: false,
+            ..draft
+        };
+        let out = compose("anna@example.com", &plain, None).unwrap();
+        let raw = String::from_utf8_lossy(&out.message).into_owned();
+        assert!(!raw.contains("text/html"), "plain stays plain: {raw}");
+    }
+
+    #[test]
+    fn markdown_with_files_goes_both_ways_beside_them() {
+        let dir = std::env::temp_dir().join(format!("gm-md-files-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("plan.txt");
+        std::fs::write(&file, "dig\n").unwrap();
+        let draft = Draft {
+            to: "bob@example.com".into(),
+            subject: "plan".into(),
+            text: "The *plan*.\n".into(),
+            markdown: true,
+            attach: vec![file.display().to_string()],
+            ..Draft::default()
+        };
+        let out = compose("anna@example.com", &draft, None).unwrap();
+        let body = crate::body::Body::of(&out.message, out.message.len());
+        assert!(body.html.unwrap().contains("<em>plan</em>"));
+        assert_eq!(body.attachments.len(), 1);
+        assert_eq!(body.attachments[0].name, "plan.txt");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

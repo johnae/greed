@@ -292,6 +292,13 @@ most first; on `From:`, from your own addresses. `:mail-attach FILE`
 attaches a file, on an `Attach:` line you can edit too (paths apart by
 commas, 25 MB in all at most).
 
+What you write is Markdown: `**bold**`, `*italic*`, `[a link](https://…)`,
+lists and code. It goes as what you wrote, which reads as it is, and the
+HTML it makes beside it, so mail programs that show HTML show it set out.
+Your lines stay as you broke them, a reply's quoted lines are a quote, and
+the signature goes as it is. `:set mail-markdown false` sends plain text
+alone.
+
 `:mail-send` sends it and goes back to the list. It waits ten seconds,
 in which `z` takes it back and opens it again, then goes, and Greed says
 when it's sent. A copy goes in your Sent folder (Gmail and Bridge file

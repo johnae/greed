@@ -19,6 +19,7 @@ html2text.workspace = true
 jiff.workspace = true
 lettre.workspace = true
 mail-parser.workspace = true
+pulldown-cmark.workspace = true
 rusqlite.workspace = true
 rustls-platform-verifier.workspace = true
 serde.workspace = true

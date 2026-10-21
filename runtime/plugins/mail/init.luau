@@ -174,6 +174,12 @@ function M.search(parsed: core.Query): ({ Summary }?, string?)
 end
 
 greed.option.define({
+	name = "mail-markdown",
+	doc = "Whether mail you write is Markdown, sent as what you wrote and the HTML it makes; off sends plain text alone",
+	default = true,
+})
+
+greed.option.define({
 	name = "mail-threads",
 	doc = "Whether a mail list shows each thread once, as its newest message found, rather than every message",
 	default = true,
@@ -1874,6 +1880,7 @@ greed.command({
 		local d: { path: string?, replying: string? } = drafts[ctx.buffer:id()] or {}
 		local draft = M.parse_draft(ctx.buffer:text())
 		draft.replying = d.replying
+		draft.markdown = greed.option.get("mail-markdown") == true
 		-- Kept until it's gone for sure: taken back, it's written again.
 		keep(ctx.buffer)
 		local ok, err, seconds = backend.get().send(draft)

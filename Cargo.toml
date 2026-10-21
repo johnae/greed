@@ -18,6 +18,7 @@ html2text = { version = "0.17", features = ["css"] }
 jiff = "0.2"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "rustls-platform-verifier", "ring"] }
 mail-parser = "0.11"
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 rustls-platform-verifier = "0.7"
 tokio = { version = "1", features = ["rt", "net", "time", "macros", "io-util", "io-std", "process", "sync"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }

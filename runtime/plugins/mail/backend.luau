@@ -90,6 +90,8 @@ export type Draft = {
 	subject: string,
 	text: string,
 	replying: string?,
+	--- Whether its text is Markdown, sent with the HTML it makes.
+	markdown: boolean?,
 	--- The files it carries, by path.
 	attach: { string }?,
 }

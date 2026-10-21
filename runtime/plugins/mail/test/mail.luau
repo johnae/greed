@@ -560,6 +560,7 @@ test("r writes a reply quoting the message, and :mail-send sends it", function(t
 		t:run("mail-send")
 		assert(#sent == 1)
 		assert(sent[1].replying == "m:1:b" and sent[1].subject == "Re: Invoice 41")
+		assert(sent[1].markdown == true, "Markdown, as mail-markdown says by default")
 		assert(string.sub(sent[1].text, 1, 7) == "Paid.\n\n", sent[1].text)
 		assert(window:buffer():kind() == "mail", "back in the list")
 	end)
