@@ -109,12 +109,24 @@ fn is_text(part: &MessagePart<'_>) -> bool {
 /// Thing number `index` attached to the whole message `raw`, counted as
 /// `Body::of` lists them: its name and what it holds, decoded.
 pub fn attached(raw: &[u8], index: usize) -> Option<(String, Vec<u8>)> {
-    let message = MessageParser::default().parse(raw)?;
-    let part = message.attachments().nth(index)?;
-    Some((
-        part.attachment_name().unwrap_or_default().to_string(),
-        part.contents().to_vec(),
-    ))
+    all_attached(raw).into_iter().nth(index)
+}
+
+/// Everything attached to the whole message `raw`, in `Body::of`'s order:
+/// each one's name and what it holds, decoded.
+pub fn all_attached(raw: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let Some(message) = MessageParser::default().parse(raw) else {
+        return Vec::new();
+    };
+    message
+        .attachments()
+        .map(|part| {
+            (
+                part.attachment_name().unwrap_or_default().to_string(),
+                part.contents().to_vec(),
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]

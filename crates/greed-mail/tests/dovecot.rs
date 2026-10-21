@@ -925,7 +925,7 @@ fn an_attachment_is_fetched_whole_and_saved_or_kept() {
     let plan = "step: dig, sow, water\r\n".repeat(16_000);
     let message = format!(
         "From: Zoë <zoe@example.com>\r\nTo: anna@localhost\r\nSubject: the plan\r\n\
-         Date: Sun, 19 Oct 2026 10:00:00 +0200\r\nMessage-ID: <plan@example.com>\r\n\
+         Date: Sun, 19 Oct 2020 10:00:00 +0200\r\nMessage-ID: <plan@example.com>\r\n\
          MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
          --b\r\nContent-Type: text/plain\r\n\r\nsee attached\r\n\
          --b\r\nContent-Type: text/plain; name=\"../plan.txt\"\r\n\
@@ -978,6 +978,68 @@ fn an_attachment_is_fetched_whole_and_saved_or_kept() {
             .contains("is there already"),
         "nothing written over: {over}"
     );
+}
+
+#[test]
+fn what_is_attached_to_recent_mail_is_fetched_ahead_and_given_at_once() {
+    let Some(dovecot) = Dovecot::start("ahead") else {
+        return;
+    };
+    let maildir = dovecot.dir.join("home/anna/Maildir");
+    for sub in ["cur", "new", "tmp"] {
+        std::fs::create_dir_all(maildir.join(sub)).unwrap();
+    }
+    // Today's, and one from long ago that waits until it's asked for.
+    let today = jiff::Zoned::now()
+        .strftime("%a, %d %b %Y %H:%M:%S %z")
+        .to_string();
+    for (n, date) in [(1, today.as_str()), (2, "Sun, 19 Oct 2020 10:00:00 +0200")] {
+        let message = format!(
+            "From: Zoë <zoe@example.com>\r\nTo: anna@localhost\r\nSubject: seeds {n}\r\n\
+             Date: {date}\r\nMessage-ID: <seeds{n}@example.com>\r\n\
+             MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b\"\r\n\r\n\
+             --b\r\nContent-Type: text/plain\r\n\r\nsee attached\r\n\
+             --b\r\nContent-Type: text/plain; name=\"seeds.txt\"\r\n\
+             Content-Disposition: attachment; filename=\"seeds.txt\"\r\n\r\ntomato, bean\r\n--b--\r\n"
+        );
+        std::fs::write(
+            maildir.join(format!("cur/176000000{n}.M{n}P1.test:2,S")),
+            message,
+        )
+        .unwrap();
+    }
+    let mut served = Served::start(&dovecot);
+    wait_until("synced", || {
+        let status = served.ask("status", &serde_json::json!({}));
+        status["accounts"][0]["done"] == true
+    });
+    let keys = message_keys(&mut served);
+    let shown = served.ask("summaries", &serde_json::json!({ "keys": keys }));
+    let key_of = |subject: &str| {
+        shown
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["subject"] == subject)
+            .map(|s| s["key"].as_str().unwrap().to_string())
+            .unwrap()
+    };
+    let recent = served.ask(
+        "attachment",
+        &serde_json::json!({ "key": key_of("seeds 1"), "index": 0 }),
+    );
+    let kept = recent["path"]
+        .as_str()
+        .unwrap_or_else(|| panic!("at once: {recent}"));
+    assert_eq!(
+        std::fs::read_to_string(kept).unwrap().trim(),
+        "tomato, bean"
+    );
+    let old = served.ask(
+        "attachment",
+        &serde_json::json!({ "key": key_of("seeds 2"), "index": 0 }),
+    );
+    assert_eq!(old["waiting"], true, "old mail's waits to be asked: {old}");
 }
 
 #[test]

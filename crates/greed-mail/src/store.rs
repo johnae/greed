@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS unindexed (key TEXT PRIMARY KEY);
 -- Messages that came in since their mailbox was all synced, for rules
 -- on new mail to look at; taken once looked at.
 CREATE TABLE IF NOT EXISTS arrived (message INTEGER PRIMARY KEY);
+-- Messages whose attachments were fetched ahead, kept beside the store
+-- for opening at once (or tried and found gone).
+CREATE TABLE IF NOT EXISTS ahead (message INTEGER PRIMARY KEY);
 -- Changes made here that the server doesn't have yet, one for each place
 -- they're made in, sent at the start of the next round: `op` is `+` or
 -- `-` with `arg` a flag, `move` with `arg` the mailbox it goes to, or
@@ -810,6 +813,42 @@ impl Store {
             })?
             .collect::<Result<_, _>>()?;
         Ok(wanting)
+    }
+
+    /// Up to `most` of `account`'s messages worth having what's attached
+    /// fetched ahead: something attached, at most `bytes` in all, flagged
+    /// or come since the day `since` ("2026-10-07"), newest first, and not
+    /// fetched ahead before. Each one's id and identity.
+    pub fn ahead(
+        &self,
+        account: i64,
+        since: &str,
+        bytes: u32,
+        most: usize,
+    ) -> Result<Vec<(i64, String)>, Trouble> {
+        let mut statement = self.db.prepare(
+            "SELECT messages.id, messages.identity FROM messages
+             JOIN bodies.bodies ON bodies.message = messages.id
+             WHERE messages.account = ?1 AND bodies.attachments != '[]'
+             AND (messages.date >= ?2 OR instr(messages.flags, '\\Flagged') > 0)
+             AND messages.size <= ?3
+             AND messages.id NOT IN (SELECT message FROM ahead)
+             ORDER BY messages.date DESC LIMIT ?4",
+        )?;
+        let most = i64::try_from(most).unwrap_or(i64::MAX);
+        let found = statement
+            .query_map(params![account, since, bytes, most], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(found)
+    }
+
+    /// Notes that message `id`'s attachments were fetched ahead.
+    pub fn fetched_ahead(&mut self, id: i64) -> Result<(), Trouble> {
+        self.db
+            .execute("INSERT OR IGNORE INTO ahead (message) VALUES (?1)", [id])?;
+        Ok(())
     }
 
     /// Puts each message's body in, by its id.

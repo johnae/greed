@@ -974,6 +974,8 @@ async fn round(
         }
     }
     asked_for(&mut connection, store, index, id, shared).await?;
+    // Once what's asked for is done; what's asked meanwhile waits a round.
+    more |= fetch_ahead(&mut connection, store, id, &shared.kept).await?;
     let (messages, _) = store.counts(id).map_err(|e| e.0)?;
     shared.notify(
         "synced",
@@ -1197,6 +1199,29 @@ async fn save_attachment(
     to: Option<PathBuf>,
     kept: &Path,
 ) -> Result<Result<PathBuf, String>, String> {
+    let raw = match whole(connection, store, id, identity).await? {
+        Ok(raw) => raw,
+        Err(why) => return Ok(Err(why)),
+    };
+    let Some((name, bytes)) = body::attached(&raw, number) else {
+        return Ok(Err("it has nothing attached there".into()));
+    };
+    let path = to.unwrap_or_else(|| kept_path(kept, id, identity, number, &name));
+    // Kept before, it's there already: as good.
+    if path.starts_with(kept) && path.exists() {
+        return Ok(Ok(path));
+    }
+    Ok(files::write_new(&path, &bytes))
+}
+
+/// Account `id`'s message `identity`, all of it, from its server; or why
+/// it isn't there. Trouble is a connection that broke.
+async fn whole(
+    connection: &mut Connection,
+    store: &Store,
+    id: i64,
+    identity: &str,
+) -> Result<Result<Vec<u8>, String>, String> {
     let Some((mailbox, place)) = store.place_of(id, identity).map_err(|e| e.0)? else {
         return Ok(Err("that mail is gone".into()));
     };
@@ -1205,20 +1230,58 @@ async fn save_attachment(
         .bodies(&[place.uid], u32::MAX)
         .await
         .map_err(|e| e.0)?;
-    let Some((_, raw)) = fetched.into_iter().next() else {
-        return Ok(Err("that mail is gone from the server".into()));
-    };
-    let Some((name, bytes)) = body::attached(&raw, number) else {
-        return Ok(Err("it has nothing attached there".into()));
-    };
-    let path = to.unwrap_or_else(|| {
-        kept_attachment(kept, &format!("m:{id}:{identity}"), number).join(files::safe_name(&name))
-    });
-    // Kept before, it's there already: as good.
-    if path.starts_with(kept) && path.exists() {
-        return Ok(Ok(path));
+    Ok(fetched
+        .into_iter()
+        .next()
+        .map(|(_, raw)| raw)
+        .ok_or_else(|| "that mail is gone from the server".to_string()))
+}
+
+/// Where thing number `number` attached to account `id`'s message
+/// `identity`, called `name`, is kept beside the store.
+fn kept_path(kept: &Path, id: i64, identity: &str, number: usize, name: &str) -> PathBuf {
+    kept_attachment(kept, &format!("m:{id}:{identity}"), number).join(files::safe_name(name))
+}
+
+/// How far back what's attached is fetched ahead, so opening it is at
+/// once and works without a connection; flagged mail any age.
+const AHEAD_DAYS: i64 = 14;
+
+/// The biggest message whose attachments are fetched ahead.
+const AHEAD_BYTES: u32 = 10 * 1024 * 1024;
+
+/// How many messages' attachments a round fetches ahead.
+const AHEAD: usize = 10;
+
+/// Fetches what's attached to account `id`'s recent and flagged mail
+/// ahead (`AHEAD` messages a round, each once), keeping it where opening
+/// it looks. Gives whether there's more to fetch.
+async fn fetch_ahead(
+    connection: &mut Connection,
+    store: &mut Store,
+    id: i64,
+    kept: &Path,
+) -> Result<bool, String> {
+    let since = jiff::Timestamp::now()
+        .checked_sub(jiff::SignedDuration::from_hours(24 * AHEAD_DAYS))
+        .map_err(|e| e.to_string())?
+        .strftime("%Y-%m-%d")
+        .to_string();
+    let ahead = store
+        .ahead(id, &since, AHEAD_BYTES, AHEAD)
+        .map_err(|e| e.0)?;
+    for (message, identity) in &ahead {
+        if let Ok(raw) = whole(connection, store, id, identity).await? {
+            for (number, (name, bytes)) in body::all_attached(&raw).into_iter().enumerate() {
+                let path = kept_path(kept, id, identity, number, &name);
+                if !path.exists() {
+                    let _ = files::write_new(&path, &bytes);
+                }
+            }
+        }
+        store.fetched_ahead(*message).map_err(|e| e.0)?;
     }
-    Ok(files::write_new(&path, &bytes))
+    Ok(ahead.len() == AHEAD)
 }
 
 /// Where thing number `number` attached to the message `key` is kept beside
