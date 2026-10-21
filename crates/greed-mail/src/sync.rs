@@ -20,6 +20,9 @@ pub struct Options {
     pub batch: usize,
     /// Stop after fetching about this many messages, whole batches.
     pub limit: Option<usize>,
+    /// Only what arrived since the last sync, quickly, before anything
+    /// slower: no flags, no first sync, nothing after a UIDVALIDITY change.
+    pub arrived_only: bool,
 }
 
 impl Default for Options {
@@ -27,6 +30,7 @@ impl Default for Options {
         Options {
             batch: BATCH,
             limit: None,
+            arrived_only: false,
         }
     }
 }
@@ -93,6 +97,10 @@ pub async fn mailbox<I: Imap>(
     let opened = imap.open(name).await?;
     let role = role.map(Role::name);
     let mut state = store.mailbox(account, name, role)?;
+    let started = state.high.is_some() && state.low.is_some();
+    if options.arrived_only && (!started || state.uid_validity != Some(opened.uid_validity)) {
+        return Ok(Synced::default());
+    }
     if state.uid_validity != Some(opened.uid_validity) {
         store.restart(state.id, opened.uid_validity)?;
         state = store.mailbox(account, name, role)?;
@@ -125,6 +133,9 @@ pub async fn mailbox<I: Imap>(
         store.put(account, state.id, &fetched, high, low)?;
         window.saw(fetched.len());
         synced.fetched += fetched.len();
+    }
+    if options.arrived_only {
+        return Ok(synced);
     }
 
     // What changed and went among those that were in.
@@ -471,7 +482,10 @@ mod tests {
     }
 
     fn batches_of(batch: usize) -> Options {
-        Options { batch, limit: None }
+        Options {
+            batch,
+            ..Options::default()
+        }
     }
 
     #[test]
@@ -563,6 +577,7 @@ mod tests {
         let limited = Options {
             batch: 4,
             limit: Some(5),
+            ..Options::default()
         };
         let first = sync(&mut fake, &mut store, account, limited).unwrap();
         assert_eq!(
@@ -659,6 +674,28 @@ mod tests {
     }
 
     #[test]
+    fn arrived_only_brings_new_mail_and_leaves_the_slow_rest_for_later() {
+        let (mut store, account) = store("quick");
+        let mut fake = Fake::with(1, 1..=3);
+        let quick = Options {
+            arrived_only: true,
+            ..Options::default()
+        };
+        let before = sync(&mut fake, &mut store, account, quick).unwrap();
+        assert_eq!(before, Synced::default(), "nothing before the first sync");
+        assert_eq!(store.counts(account).unwrap(), (0, 0));
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        fake.add(4, "m4");
+        fake.flag(1, &["\\Seen"], &[]);
+        let synced = sync(&mut fake, &mut store, account, quick).unwrap();
+        assert_eq!(synced.fetched, 1, "what arrived");
+        assert_eq!(synced.changed, 0, "no flags: that's the slow part");
+        assert_eq!(store.counts(account).unwrap(), (4, 4));
+        let rest = sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!((rest.fetched, rest.changed), (0, 1), "the flags come next");
+    }
+
+    #[test]
     fn without_condstore_every_flag_comes_and_lists_what_went() {
         let (mut store, account) = store("plain");
         let mut fake = Fake::with(1, 1..=4);
@@ -739,6 +776,7 @@ mod tests {
         let first = Options {
             batch: 4,
             limit: Some(1),
+            ..Options::default()
         };
         assert_eq!(
             bodies_of(&mut fake, &mut store, account, first),

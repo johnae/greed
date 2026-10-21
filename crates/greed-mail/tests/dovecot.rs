@@ -233,7 +233,7 @@ fn a_mailbox_syncs_into_the_store_and_then_only_what_arrives() {
     let id = store.account(&account.name, &account.address).unwrap();
     let options = Options {
         batch: 5,
-        limit: None,
+        ..Options::default()
     };
     run(async {
         let mut connection = Connection::open(&account.imap(), account.user(), "secret")
@@ -645,20 +645,11 @@ fn mail_marked_moved_and_deleted_here_is_so_on_the_server() {
     deliver(&dovecot, 2, false);
     let mut served = Served::start(&dovecot);
     served.wait_for("changed");
-    let path = served.ask("index", &serde_json::json!({}));
-    let index =
-        greed_index::index::Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
-    let keys: Vec<String> = index
-        .search(
-            None,
-            &greed_index::query::Schema::default(),
-            &greed_index::index::View::default(),
-        )
-        .unwrap()
-        .keys
-        .into_iter()
-        .filter(|k| k.starts_with("m:"))
-        .collect();
+    let mut keys = Vec::new();
+    wait_until("both in the index", || {
+        keys = message_keys(&mut served);
+        keys.len() == 2
+    });
     let summaries = served.ask("summaries", &serde_json::json!({ "keys": keys }));
     let key = |subject: &str| -> String {
         let found = summaries.as_array().unwrap().iter();

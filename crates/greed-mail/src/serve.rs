@@ -62,7 +62,7 @@ use crate::body;
 use crate::config::{Account, Config, Provider};
 use crate::files;
 use crate::html;
-use crate::imap::{Changing, Connection, Imap};
+use crate::imap::{Changing, Connection, Imap, Mailbox};
 use crate::indexing;
 use crate::invite;
 use crate::pending;
@@ -929,8 +929,10 @@ async fn round(
         ..Options::default()
     };
     let mailboxes = connection.mailboxes().await.map_err(|e| e.0)?;
+    let chosen = sync::chosen(account.provider, &mailboxes);
+    arrived_first(&mut connection, store, index, account, id, &chosen, shared).await?;
     let mut more = false;
-    for mailbox in sync::chosen(account.provider, &mailboxes) {
+    for mailbox in chosen {
         send_changes(&mut connection, store, index, account, id, shared).await?;
         asked_for(&mut connection, store, index, id, shared).await?;
         let synced = sync::mailbox(
@@ -992,6 +994,53 @@ async fn round(
     );
     let _ = connection.close().await;
     Ok(more)
+}
+
+/// Fetches what arrived in each of `mailboxes`, before anything slow (all
+/// of a mailbox's flags without CONDSTORE, bodies), so new mail shows in
+/// each of its places at once, the inbox too, not when the round gets
+/// there; and says so, rules on new mail included.
+async fn arrived_first(
+    connection: &mut Connection,
+    store: &mut Store,
+    index: &mut Index,
+    account: &Account,
+    id: i64,
+    mailboxes: &[&Mailbox],
+    shared: &Shared,
+) -> Result<(), String> {
+    let arrived = Options {
+        limit: Some(HEADERS),
+        arrived_only: true,
+        ..Options::default()
+    };
+    let mut came = 0;
+    for mailbox in mailboxes {
+        came += sync::mailbox(connection, store, id, &mailbox.name, mailbox.role, arrived)
+            .await
+            .map_err(|e| format!("{}: {e}", mailbox.name))?
+            .fetched;
+    }
+    if came == 0 {
+        return Ok(());
+    }
+    index_telling(store, index, shared, async |_: &mut Store| Ok(())).await?;
+    shared.notify("changed", &json!({}));
+    let keys = store.arrived().map_err(|e| e.0)?;
+    if !keys.is_empty() {
+        shared.notify("arrived", &json!({ "keys": keys }));
+    }
+    let (messages, _) = store.counts(id).map_err(|e| e.0)?;
+    shared
+        .standing
+        .borrow_mut()
+        .entry(account.name.clone())
+        .or_insert_with(|| Standing {
+            name: account.name.clone(),
+            ..Standing::default()
+        })
+        .messages = messages;
+    Ok(())
 }
 
 /// Brings `index` up to `store` a batch at a time, letting requests be
