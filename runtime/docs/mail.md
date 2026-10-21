@@ -11,7 +11,13 @@ from:anna invoice date:2w..        from Anna, about an invoice, the last two wee
 in:work -is:mine                   in the Work folder or label, not sent by you
 account:work is:flagged            flagged, in the work account
 subject:"quarterly report" is:attachment
+file:invoice type:pdf from:kia     a PDF attached called something with invoice
+type:image date:1w..               pictures sent this last week
 ```
+
+`file:` searches the names of what's attached (a plain word does too),
+and `type:` their kind: the extension (`pdf`, `docx`, `jpg`), or `image`,
+`audio` and `video` for any of those.
 
 ## Setting it up
 

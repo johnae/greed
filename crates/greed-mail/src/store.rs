@@ -354,8 +354,8 @@ pub struct Indexable {
     pub places: Vec<(String, Option<String>)>,
     /// Its body's text, once that's in.
     pub text: Option<String>,
-    /// Whether something's attached.
-    pub attached: bool,
+    /// What's attached, once its body is in.
+    pub attached: Vec<crate::body::Attachment>,
 }
 
 /// What went wrong with the store, in words.
@@ -891,7 +891,7 @@ impl Store {
                     messages.identity, messages.thread, messages.date, messages.sender,
                     messages.recipients, messages.cc, messages.subject, messages.list_id,
                     messages.size, messages.flags, messages.labels,
-                    bodies.text, coalesce(bodies.attachments, '[]') != '[]',
+                    bodies.text, bodies.attachments,
                     accounts.aliases
              FROM messages JOIN accounts ON accounts.id = messages.account
              LEFT JOIN bodies.bodies ON bodies.message = messages.id
@@ -924,7 +924,10 @@ impl Store {
                     flags: r.get(13)?,
                     labels: r.get(14)?,
                     text: r.get(15)?,
-                    attached: r.get(16)?,
+                    attached: r
+                        .get::<_, Option<String>>(16)?
+                        .and_then(|a| serde_json::from_str(&a).ok())
+                        .unwrap_or_default(),
                     aliases: r
                         .get::<_, String>(17)?
                         .lines()

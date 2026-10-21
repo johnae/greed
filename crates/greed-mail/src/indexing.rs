@@ -6,7 +6,8 @@
 //! A message's fields: `from`, `to`, `cc` and `subject` (text), `date` (in
 //! UTC), `size` (a value), `tag` (where it is: its folders and labels by
 //! name, which `in:` matches, as `places` says), `account` and `list`
-//! (exact).
+//! (exact), and of what's attached `file` (text: its names) and `type`
+//! (exact: each one's extension, like pdf, and image, audio or video).
 //! Its flags: `unread`, `flagged`, `answered`, `draft`, `attachment` and
 //! `mine` (sent by the owner: in Sent, or from the account's address). A
 //! thread is an item too, named by its first message's subject, with its
@@ -25,7 +26,7 @@ use crate::store::{Indexable, Store, Trouble};
 pub const PLACES: &str = "tag";
 
 /// The fields searched by word: the text ones.
-const WORDED: [&str; 4] = ["from", "to", "cc", "subject"];
+const WORDED: [&str; 5] = ["from", "to", "cc", "subject", "file"];
 
 /// How many messages are written to the index at a time.
 pub const BATCH: usize = 2000;
@@ -45,7 +46,7 @@ pub fn thread_key(account: i64, thread: &str) -> String {
 
 /// How messages are made items here; changing what an item holds changes
 /// it, and every message is written again.
-const INDEXED: &str = "2";
+const INDEXED: &str = "3";
 
 /// The index at `path`, for `store`. One that's empty (new, or made again
 /// by a newer greed-index), or made by an `INDEXED` before, gets every
@@ -154,6 +155,12 @@ fn item(m: &Indexable) -> Item {
     for tag in tags(m) {
         field(PLACES, &tag);
     }
+    for attached in &m.attached {
+        field("file", &attached.name);
+        for kind in kinds(attached) {
+            field("type", &kind);
+        }
+    }
     let has = |flag: &str| m.flags.split(' ').any(|f| f.eq_ignore_ascii_case(flag));
     let mut flags = Vec::new();
     for (flag, on) in [
@@ -161,7 +168,7 @@ fn item(m: &Indexable) -> Item {
         ("flagged", has("\\Flagged")),
         ("answered", has("\\Answered")),
         ("draft", has("\\Draft")),
-        ("attachment", m.attached),
+        ("attachment", !m.attached.is_empty()),
         ("mine", mine(m)),
     ] {
         if on {
@@ -173,6 +180,11 @@ fn item(m: &Indexable) -> Item {
         text.push('\n');
         text.push_str(cut(body, TEXT));
     }
+    // What's attached is found by a plain word too.
+    for attached in &m.attached {
+        text.push('\n');
+        text.push_str(&attached.name);
+    }
     Item {
         key: message_key(m.account, &m.identity),
         parent: m.thread.as_deref().map(|t| thread_key(m.account, t)),
@@ -182,6 +194,23 @@ fn item(m: &Indexable) -> Item {
         flags,
         words: Some(WORDED.iter().map(ToString::to_string).collect()),
     }
+}
+
+/// What kind of file `attached` is, as `type:` finds it: its extension
+/// ("pdf", "jpg"), and "image", "audio" or "video" for those.
+fn kinds(attached: &crate::body::Attachment) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some((_, ext)) = attached.name.rsplit_once('.')
+        && !ext.is_empty()
+        && ext.len() <= 8
+    {
+        out.push(ext.to_lowercase());
+    }
+    let major = attached.mime.split('/').next().unwrap_or("").to_lowercase();
+    if matches!(major.as_str(), "image" | "audio" | "video") {
+        out.push(major);
+    }
+    out
 }
 
 /// Whether `m` was sent by the account's owner: it's in a Sent mailbox, or
@@ -313,7 +342,7 @@ mod tests {
     use greed_index::index::View;
     use greed_index::query::{Flag, Kind, Node, Schema};
 
-    use crate::body::Body;
+    use crate::body::{Attachment, Body};
     use crate::header::Fetched;
 
     #[test]
@@ -385,6 +414,8 @@ mod tests {
             ("subject", Kind::Text),
             ("tag", Kind::Exact),
             ("date", Kind::Date),
+            ("file", Kind::Text),
+            ("type", Kind::Exact),
         ] {
             schema.fields.insert(name.into(), kind);
         }
@@ -452,6 +483,18 @@ mod tests {
         let first = wanting.iter().find(|w| w.uid == 1).unwrap().message;
         let body = Body {
             text: Some("tomatoes by the fence".into()),
+            attachments: vec![
+                Attachment {
+                    name: "Seed list.PDF".into(),
+                    mime: "application/pdf".into(),
+                    size: 1,
+                },
+                Attachment {
+                    name: "plot.jpg".into(),
+                    mime: "image/jpeg".into(),
+                    size: 1,
+                },
+            ],
             ..Body::default()
         };
         store.put_bodies(&[(first, body)]).unwrap();
@@ -472,6 +515,25 @@ mod tests {
             "nothing new"
         );
         assert_eq!(catch_up(&mut store, &mut index).unwrap(), 2);
+    }
+
+    #[test]
+    fn what_is_attached_is_found_by_its_name_and_kind() {
+        let (_store, index, account, _) = sample("attached");
+        let m1 = vec![message_key(account, "pm:p1")];
+        assert_eq!(
+            found(&index, &field("file", "seed")),
+            m1,
+            "by a word of its name"
+        );
+        assert_eq!(found(&index, &word("plot")), m1, "a plain word too");
+        assert_eq!(
+            found(&index, &field("type", "pdf")),
+            m1,
+            "its extension, any case"
+        );
+        assert_eq!(found(&index, &field("type", "image")), m1, "its kind");
+        assert!(found(&index, &field("type", "docx")).is_empty());
     }
 
     #[test]

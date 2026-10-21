@@ -62,6 +62,9 @@ M.source = {
 		tag = field("exact"),
 		account = field("exact"),
 		list = field("exact"),
+		-- What's attached: its names, and its kinds (pdf, image, ...).
+		file = field("text"),
+		type = field("exact"),
 	},
 	flags = flags(),
 	text = function(): string
