@@ -123,6 +123,7 @@ local function summary(m: Fake): any
 		-- As greed-mail sends it: a JSON array.
 		tags = greed.json.array(table.clone(m.tags)),
 		message_id = `{string.sub(m.key, -1)}@example.com`,
+		attached = if m.key == "m:1:b" then 1 else 0,
 	}
 end
 
@@ -747,24 +748,50 @@ test("a thread reads from its HTML, its links open, and h reads it as text", fun
 	assert(ok, tostring(err))
 end)
 
+test("what's attached shows by its kind, a program as one that never opens", function()
+	local function icon(name: string, mime: string): string
+		return mail.attachment_icon({ name = name, mime = mime, size = 1 })
+	end
+	assert(icon("photo.jpg", "image/jpeg") == "🖼")
+	assert(icon("invoice.pdf", "application/pdf") == "📄")
+	assert(
+		icon(
+			"report.docx",
+			"application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+		) == "📄"
+	)
+	assert(icon("song.mp3", "audio/mpeg") == "🎵")
+	assert(icon("photos.zip", "application/zip") == "📦")
+	assert(icon("invite.ics", "text/calendar") == "📅")
+	assert(icon("setup.exe", "application/octet-stream") == "⚠", "never opened")
+	assert(icon("data.dat", "application/octet-stream") == "📎")
+	local _, says = core.file.opening("setup.exe", "application/octet-stream")
+	assert(says == "a program: it's saved, never opened", says)
+end)
+
 test("what's attached opens when pressed, and S saves it where you say", function(t)
 	fake()
 	local opened: { string } = {}
-	local open_link = core.file.open_link
-	core.file.open_link = function(uri: string)
-		table.insert(opened, uri)
+	local open = core.file.open
+	core.file.open = function(path: string)
+		table.insert(opened, path)
 	end
 	local ok, err: any = pcall(function()
 		t:buffer("|x")
 		t:run("mail")
-		t:keys("esc enter")
+		t:keys("esc")
+		local list = table.concat(t:screen(120, 20), "\n")
+		assert(string.find(list, "📎[^\n]*Invoice 41"), "a clip on its row: " .. list)
+		assert(not string.find(list, "📎[^\n]*Garden plans"), "none without: " .. list)
+		t:keys("enter")
 		local text = greed.view():buffer():text()
-		local at = string.find(text, "invoice-41.pdf (application/pdf, ", 1, true)
+		assert(string.find(text, "📎 1 attached", 1, true), text)
+		local at = string.find(text, "📄 invoice-41.pdf  20.5 kB · opens in Greed", 1, true)
 		assert(at, text)
-		greed.view():set_cursor(at - 1)
+		greed.view():set_cursor(at + #"📄 " - 1)
 		t:keys("enter")
 		assert(fetched[1] == "m:1:b 0 -", tostring(fetched[1]))
-		assert(opened[1] == "file:///kept/m:1:b/0", tostring(opened[1]))
+		assert(opened[1] == "/kept/m:1:b/0", "as its kind opens: " .. tostring(opened[1]))
 		greed.view():set_cursor(0)
 		t:keys("S")
 		assert(
@@ -774,7 +801,7 @@ test("what's attached opens when pressed, and S saves it where you say", functio
 		t:keys("enter")
 		assert(fetched[2] == "m:1:b 0 ~/Downloads/invoice-41.pdf", tostring(fetched[2]))
 	end)
-	core.file.open_link = open_link
+	core.file.open = open
 	assert(ok, tostring(err))
 end)
 

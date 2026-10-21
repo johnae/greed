@@ -25,6 +25,9 @@ export type Summary = {
 	found: { string }?,
 	--- Its Message-ID, without the `<>`: what a `mail:` link names.
 	message_id: string?,
+	--- How many things are attached to it (in a list of threads, to the
+	--- messages found), once its body is in.
+	attached: number?,
 }
 
 --- Something attached, as the message lists it.

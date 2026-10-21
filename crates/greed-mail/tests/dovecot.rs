@@ -935,6 +935,8 @@ fn an_attachment_is_fetched_whole_and_saved_or_kept() {
     let mut served = Served::start(&dovecot);
     served.wait_for("changed");
     let key = message_keys(&mut served).remove(0);
+    let shown = served.ask("summaries", &serde_json::json!({ "keys": [key] }));
+    assert_eq!(shown[0]["attached"], 1, "a list says it: {shown}");
     let asked = served.ask("attachment", &serde_json::json!({ "key": key, "index": 0 }));
     assert_eq!(asked["waiting"], true, "{asked}");
     let got = served.wait_for("attachment");

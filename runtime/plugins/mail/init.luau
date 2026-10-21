@@ -196,6 +196,7 @@ function M.threads(found: { Summary }): { Summary }
 			table.insert(row.found :: { string }, message.key)
 			row.unread = row.unread or message.unread
 			row.flagged = row.flagged or message.flagged
+			row.attached = (row.attached or 0) + (message.attached or 0)
 			for _, tag in message.tags do
 				if not table.find(row.tags, tag) then
 					table.insert(row.tags, tag)
@@ -297,6 +298,8 @@ local function render(o: Open): core.UiNode
 						if row.flagged then "⚑" else " ",
 						if row.flagged then "constant" else nil
 					),
+					-- Two cells wide either way, so the columns stay put.
+					ui.span(if (row.attached or 0) > 0 then "📎" else "  ", "comment"),
 				},
 				{ ui.span(M.when(row.date), "comment") },
 				{
@@ -490,8 +493,36 @@ end
 -- place among them (from 0) and its name.
 type Attached = { key: string, index: number, name: string }
 
---- Opens `which` with what the system opens its kind of file with; the
---- mail session fetches it first, the first time.
+--- An icon for what's attached, by its kind: a picture, a document, sound,
+--- video, an archive, an invite, a program (which never opens), or a clip.
+function M.attachment_icon(attached: backend.Attachment): string
+	local mime = string.lower(attached.mime)
+	local how = core.file.opening(attached.name, attached.mime)
+	if how == "refused" then
+		return "⚠"
+	elseif string.match(mime, "^image/") then
+		return "🖼"
+	elseif string.match(mime, "^audio/") then
+		return "🎵"
+	elseif string.match(mime, "^video/") then
+		return "🎞"
+	elseif mime == "text/calendar" then
+		return "📅"
+	elseif
+		string.match(mime, "zip")
+		or string.match(mime, "tar")
+		or string.match(mime, "compress")
+	then
+		return "📦"
+	elseif mime == "application/pdf" or how == "outside" or string.match(mime, "^text/") then
+		return "📄"
+	end
+	return "📎"
+end
+
+--- Opens `which` as its kind of file opens (`core.file.open`: in Greed, or
+--- with the program that opens it); the mail session fetches it first, the
+--- first time.
 function M.open_attachment(which: Attached)
 	greed.echo(`getting {which.name}`)
 	local path, err = backend.get().attachment(which.key, which.index)
@@ -500,7 +531,7 @@ function M.open_attachment(which: Attached)
 		return
 	end
 	greed.echo("")
-	core.file.open_link(`file://{path}`)
+	core.file.open(path)
 end
 
 -- How the styles of a message's HTML show.
@@ -805,20 +836,27 @@ local function message_node(
 	if message.cc ~= "" then
 		table.insert(parts, header("Cc", message.cc))
 	end
+	local count = #message.attachments
+	if count > 0 then
+		table.insert(parts, ui.gap())
+		table.insert(parts, ui.text(`📎 {count} attached`, "comment"))
+	end
 	for i, attached in message.attachments do
 		local which: Attached = { key = message.key, index = i - 1, name = attached.name }
+		local _, opens = core.file.opening(attached.name, attached.mime)
 		table.insert(
 			parts,
 			ui.line({
-				ui.span("Attached: ", "comment"),
+				ui.span(`  {M.attachment_icon(attached)} `),
 				{
-					text = `{attached.name} ({attached.mime}, {core.text.bytes(attached.size)})`,
+					text = attached.name,
 					style = "markup.link",
 					value = { attached = which },
 					press = function()
 						M.open_attachment(which)
 					end,
 				},
+				ui.span(`  {core.text.bytes(attached.size)} · {opens}`, "comment"),
 			})
 		)
 	end

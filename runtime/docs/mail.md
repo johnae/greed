@@ -145,8 +145,9 @@ In the list, `enter` reads the thread under the cursor in its place, `/`
 searches again and `$` syncs now; `q` in a thread goes back to the list.
 Reading a thread marks it read.
 
-A dot marks unread mail and ⚑ flagged mail; a message's folders, labels
-and tags follow its subject (`#work`).
+A dot marks unread mail, ⚑ flagged mail and 📎 mail with something
+attached; a message's folders, labels and tags follow its subject
+(`#work`).
 
 Over the list are your saved searches, each with how many unread messages
 it finds, counted again as mail comes in. `g 1` to `g 9` go to them, and
@@ -214,9 +215,20 @@ thread or the list, opens the message in your web browser as it was sent,
 with everything that would load from elsewhere blocked: scripts, remote
 images, fonts and styles.
 
-What's attached is listed under who a message is from, with its kind and
-size. `enter` on one opens it with what your system opens that kind of
-file with; `S` saves it where you say (`~/Downloads` to start; the one
+What's attached is listed under a message's header, a line each, with an
+icon for its kind, its size and how it opens:
+
+```text
+📎 2 attached
+  📄 Invoice 41.pdf  240.9 kB · opens in Greed
+  📄 Contract.docx  31.2 kB · opens with libreoffice
+```
+
+`enter` on one opens it as any file of its kind opens in Greed: a PDF or
+a picture in Greed itself, an office document or a video with the program
+your system (or `core.file.open_with`, see [Other
+files](using.md#other-files)) opens it with. A program (⚠) never opens,
+only saves. `S` saves one where you say (`~/Downloads` to start; the one
 under the cursor, or the thread's only one). The mail session fetches it
 from the server the first time, whole, and keeps it beside your mail for
 next time. A file that's already where you save is never written over.

@@ -29,6 +29,8 @@ pub struct Summary {
     pub tags: Vec<String>,
     /// Its Message-ID, without the `<>`: what a `mail:` link names.
     pub message_id: Option<String>,
+    /// How many things are attached to it, once its body is in.
+    pub attached: usize,
 }
 
 /// A message as it's read: its summary, who else it went to, and its body
@@ -97,7 +99,10 @@ const SUMMARY: &str = "SELECT 'm:' || messages.account || ':' || messages.identi
 fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
     let flags: String = r.get(5)?;
     let has = |flag: &str| flags.split(' ').any(|f| f.eq_ignore_ascii_case(flag));
-    let attachments: Option<String> = r.get(9)?;
+    let attachments: Vec<Attachment> = r
+        .get::<_, Option<String>>(9)?
+        .and_then(|a| serde_json::from_str(&a).ok())
+        .unwrap_or_default();
     let labels: String = r.get(11)?;
     let places: Option<String> = r.get(12)?;
     let places: Vec<(String, Option<String>)> = places
@@ -122,13 +127,12 @@ fn message(r: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
             flagged: has("\\Flagged"),
             tags: indexing::tags_of(&places, &labels, &flags),
             message_id: r.get(14)?,
+            attached: attachments.len(),
         },
         to: r.get(6)?,
         cc: r.get(7)?,
         text: r.get(8)?,
-        attachments: attachments
-            .and_then(|a| serde_json::from_str(&a).ok())
-            .unwrap_or_default(),
+        attachments,
         complete: r.get::<_, Option<bool>>(10)?.unwrap_or(false),
         html: r.get::<_, Option<bool>>(13)?.unwrap_or(false),
         invite: r.get::<_, Option<String>>(15)?.and_then(|ics| {
