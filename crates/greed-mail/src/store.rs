@@ -304,6 +304,22 @@ fn add_calendar(db: &Connection) -> Result<(), Trouble> {
     Ok(())
 }
 
+/// Has the bodies a store from before called cut short fetched again, once:
+/// `complete` used to mean the whole message was read, and now means none
+/// of its text is missing, which most of those had all along.
+fn recheck_cut(db: &Connection) -> Result<(), Trouble> {
+    let done = db
+        .prepare("SELECT 1 FROM meta WHERE key = 'complete'")?
+        .exists([])?;
+    if !done {
+        db.execute_batch(
+            "DELETE FROM bodies.bodies WHERE complete = 0;
+             INSERT INTO meta (key, value) VALUES ('complete', 'text');",
+        )?;
+    }
+    Ok(())
+}
+
 /// A message whose body isn't in yet: its id, and its UID and size in the
 /// mailbox it's fetched from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -507,6 +523,7 @@ impl Store {
         db.execute_batch(BODIES)?;
         add_calendar(&db)?;
         add_after(&db)?;
+        recheck_cut(&db)?;
         db.execute_batch(CONTACTS)?;
         fill_contacts(&db)?;
         Ok(Store { db, lock })
@@ -1777,6 +1794,45 @@ mod tests {
         );
         drop(store);
         assert!(Store::open(&dir).is_ok(), "free again once closed");
+    }
+
+    #[test]
+    fn bodies_called_cut_short_before_are_fetched_again_once() {
+        let dir = temp("recheck");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let raw = b"Message-ID: <x@example.com>\r\nX-Pm-Internal-Id: p1\r\n\r\n".to_vec();
+        let fetched = Fetched {
+            uid: 1,
+            raw,
+            ..Fetched::default()
+        };
+        store.put(account, inbox.id, &[fetched], 1, 1).unwrap();
+        let id = store.wanting(inbox.id, 10).unwrap()[0].message;
+        let cut = Body {
+            text: Some("hi".into()),
+            complete: false,
+            ..Body::default()
+        };
+        store.put_bodies(&[(id, cut)]).unwrap();
+        drop(store);
+        let store = Store::open(&dir).unwrap();
+        assert!(
+            store.wanting(inbox.id, 10).unwrap().is_empty(),
+            "a store made now keeps it"
+        );
+        store
+            .db
+            .execute("DELETE FROM meta WHERE key = 'complete'", [])
+            .unwrap();
+        drop(store);
+        let store = Store::open(&dir).unwrap();
+        assert_eq!(
+            store.wanting(inbox.id, 10).unwrap().len(),
+            1,
+            "one from before fetches it again"
+        );
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! messages; of a big one, the parts before its attachments, where the
 //! text nearly always is. Attachments themselves come when opened.
 
-use mail_parser::{MessageParser, MimeHeaders};
+use mail_parser::{MessageParser, MessagePart, MimeHeaders, PartType};
 use serde::{Deserialize, Serialize};
 
 /// How much of a message is fetched for its body.
@@ -26,20 +26,30 @@ pub struct Body {
     pub attachments: Vec<Attachment>,
     /// Its iCalendar part, an invite or an answer to one.
     pub calendar: Option<String>,
-    /// Whether the whole message was read, so nothing is missing from it.
+    /// Whether nothing of its text is missing: the whole message was read,
+    /// or what wasn't comes after its text and HTML, in what's attached.
     pub complete: bool,
 }
 
 impl Body {
     /// The body of `raw`, the start of a message `size` bytes long.
     pub fn of(raw: &[u8], size: usize) -> Body {
-        let complete = raw.len() >= size;
+        let whole = raw.len() >= size;
         let Some(message) = MessageParser::default().parse(raw) else {
             return Body {
-                complete,
+                complete: whole,
                 ..Body::default()
             };
         };
+        // The parts cut off run to where the read stopped; when none is
+        // text or HTML, the text is all in, only what's attached was cut.
+        let read = u32::try_from(raw.len()).unwrap_or(u32::MAX);
+        let complete = whole
+            || !message.parts.iter().any(|part| {
+                part.offset_end >= read
+                    && !matches!(part.body, PartType::Multipart(_))
+                    && is_text(part)
+            });
         // Its plain text, or its HTML as text when that's all it has, as
         // most mail is.
         let text = message.body_text(0).map(std::borrow::Cow::into_owned);
@@ -82,6 +92,20 @@ impl Body {
     }
 }
 
+/// Whether `part` is text to read: plain or HTML (plain when it doesn't
+/// say), and not attached as a file.
+fn is_text(part: &MessagePart<'_>) -> bool {
+    let attached = part
+        .content_disposition()
+        .is_some_and(|d| d.ctype().eq_ignore_ascii_case("attachment"));
+    let readable = part.content_type().is_none_or(|t| {
+        t.ctype().eq_ignore_ascii_case("text")
+            && t.subtype()
+                .is_none_or(|s| s.eq_ignore_ascii_case("plain") || s.eq_ignore_ascii_case("html"))
+    });
+    readable && !attached
+}
+
 /// Thing number `index` attached to the whole message `raw`, counted as
 /// `Body::of` lists them: its name and what it holds, decoded.
 pub fn attached(raw: &[u8], index: usize) -> Option<(String, Vec<u8>)> {
@@ -111,6 +135,32 @@ mod tests {
         assert_eq!(body.text.as_deref(), Some("Fika på café?\r\n"));
         assert_eq!(body.html, None);
         assert!(body.complete);
+    }
+
+    #[test]
+    fn cut_in_an_attachment_its_text_is_all_in_but_cut_in_its_text_it_isnt() {
+        let raw = message(&format!(
+            "Subject: invoice\nMIME-Version: 1.0\n\
+             Content-Type: multipart/mixed; boundary=\"b1\"\n\n\
+             --b1\nContent-Type: text/plain\n\nthe invoice, attached\n\
+             --b1\nContent-Type: application/pdf; name=\"invoice.pdf\"\n\
+             Content-Disposition: attachment; filename=\"invoice.pdf\"\n\
+             Content-Transfer-Encoding: base64\n\n{}\n\
+             --b1--\n",
+            "JVBERi0xLjQK".repeat(500)
+        ));
+        let in_attachment = raw.len() - 1000;
+        let body = Body::of(&raw[..in_attachment], raw.len());
+        assert_eq!(
+            body.text.as_deref().map(str::trim),
+            Some("the invoice, attached")
+        );
+        assert!(body.complete, "only the attachment was cut");
+        let at = raw.windows(7).position(|w| w == b"invoice").unwrap();
+        let text_start = raw.windows(4).position(|w| w == b"the ").unwrap();
+        assert!(text_start > at);
+        let body = Body::of(&raw[..text_start + 5], raw.len());
+        assert!(!body.complete, "the text was cut");
     }
 
     #[test]
@@ -192,6 +242,9 @@ mod tests {
         raw.extend(std::iter::repeat_n(b'A', 100));
         let body = Body::of(&raw, cut + 5_000_000);
         assert_eq!(body.text.as_deref().map(str::trim), Some("look at these"));
-        assert!(!body.complete, "the rest wasn't fetched");
+        assert!(
+            body.complete,
+            "only the photo is cut off: its text is all in"
+        );
     }
 }
