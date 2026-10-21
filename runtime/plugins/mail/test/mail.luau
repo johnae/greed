@@ -473,6 +473,50 @@ test("u, s, e and d change the message under the cursor", function(t)
 	end)
 end)
 
+-- The names of the actions `space .` offers on the first thing at the cursor.
+local function offered(window: greed.View): (core.Target?, { string })
+	local target = core.actions.at(window)[1]
+	local names: { string } = {}
+	if target then
+		for _, action in core.actions.for_kind(target.kind, target) do
+			table.insert(names, action.name)
+		end
+	end
+	table.sort(names)
+	return target, names
+end
+
+test("space . acts on the mail under the cursor, the thread read and the draft written", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc")
+		local target, names = offered(window)
+		assert(target and target.kind == "mail" and target.label == "Invoice 41", "the row")
+		assert(table.find(names, "archive") and table.find(names, "read"), table.concat(names, " "))
+		for _, action in core.actions.for_kind("mail", target) do
+			if action.name == "archive" then
+				core.actions.run(action, target :: core.Target)
+			end
+		end
+		assert(acted[#acted] == "archive m:1:b", "as e does: " .. tostring(acted[#acted]))
+		local row = offered(window)
+		assert(row and core.actions.run_default(row), "enter reads it")
+		assert(window:buffer():kind() == "mail-thread", window:buffer():kind())
+		target, names = offered(window)
+		assert(target and target.label == "Garden plans", "the thread")
+		assert(not table.find(names, "read"), "read only from a list")
+		t:keys("r")
+		target, names = offered(window)
+		assert(target and target.kind == "mail-draft", "the draft")
+		for _, name in { "open", "send", "discard" } do
+			assert(table.find(names, name), `{name}: {table.concat(names, " ")}`)
+		end
+	end)
+end)
+
 test("archiving the thread being read goes back to the list", function(t)
 	fake()
 	in_the_mail_session(function()

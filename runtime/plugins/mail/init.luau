@@ -1987,4 +1987,81 @@ greed.keymap.bind(
 	{ h = "mail-plain", o = "mail-open-all", S = "mail-save-attachment" }
 )
 
+-- What `space .` finds: the row under the cursor in a list, the thread
+-- being read, or the draft being written. Each acts as its keys do.
+core.actions.finder({
+	name = "mail",
+	find = function(view: greed.View, range: greed.Range): { core.Target }?
+		local buffer = view:buffer()
+		local kind = buffer:kind()
+		local o, r = open, reading
+		if kind == "mail" and o and o.buffer == buffer then
+			local row: Summary? = o.view:value_at(range.head)
+			if row then
+				return { { kind = "mail", label = row.subject, value = row.key, buffer = buffer } }
+			end
+		elseif kind == "mail-thread" and r and r.buffer == buffer then
+			return {
+				{ kind = "mail", label = r.thread.subject, value = r.thread.key, buffer = buffer },
+			}
+		elseif kind == "mail-compose" then
+			local d = drafts[buffer:id()]
+			if d and d.path then
+				local subject = M.parse_draft(buffer:text()).subject
+				return {
+					{
+						kind = "mail-draft",
+						label = if subject ~= "" then subject else "(no subject)",
+						value = d.path,
+						buffer = buffer,
+					},
+				}
+			end
+		end
+		return nil
+	end,
+})
+
+-- The actions on mail, each running its command on what's under the
+-- cursor, as its key does; `in_list` ones only from a list.
+local MAIL_ACTIONS: { { name: string, command: string, doc: string, in_list: boolean? } } = {
+	{ name = "read", command = "mail-read", doc = "Read the thread", in_list = true },
+	{ name = "reply", command = "mail-reply", doc = "Reply to who sent it" },
+	{ name = "reply-all", command = "mail-reply-all", doc = "Reply to everyone it went to" },
+	{ name = "archive", command = "mail-archive", doc = "Move it to the archive" },
+	{ name = "trash", command = "mail-trash", doc = "Move it to the trash" },
+	{ name = "toggle-read", command = "mail-toggle-read", doc = "Mark it read, or unread" },
+	{ name = "toggle-flag", command = "mail-toggle-flag", doc = "Flag it, or take the flag off" },
+	{ name = "tag", command = "mail-tag", doc = "Put a tag on it, or take one off" },
+	{ name = "todo", command = "mail-todo", doc = "Make a todo of it" },
+	{ name = "browser", command = "mail-browser", doc = "Open it in a web browser" },
+}
+
+for _, a in MAIL_ACTIONS do
+	core.actions.action({
+		kind = "mail",
+		name = a.name,
+		doc = a.doc,
+		offers = function(target: core.Target): boolean
+			return not a.in_list or (target.buffer ~= nil and target.buffer:kind() == "mail")
+		end,
+		run = function()
+			greed.run(a.command)
+		end,
+	})
+end
+core.actions.set_default("mail", "read")
+
+core.actions.action({
+	kind = "mail-draft",
+	name = "send",
+	doc = "Send it",
+	offers = function(target: core.Target): boolean
+		return target.buffer ~= nil
+	end,
+	run = function()
+		greed.run("mail-send")
+	end,
+})
+
 return M

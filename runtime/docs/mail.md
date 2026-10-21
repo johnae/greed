@@ -184,6 +184,10 @@ These work on the message under the cursor, or in a thread on all of it:
 | `c`      | writes new mail                                           |
 | `z`      | undoes the last change, or takes back mail just sent      |
 
+`space .` lists the same actions for the mail under the cursor, as it
+does for anything else in Greed, and in mail being written offers to
+send or discard it.
+
 A change shows at once and goes to the server within seconds. If the
 server refuses it (a folder that went, say), it's taken back and Greed
 says why. `z` undoes the last one, even once the server has it:
