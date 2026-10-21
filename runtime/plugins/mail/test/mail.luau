@@ -735,6 +735,38 @@ test("new mail is from mail.toml's from, and :mail-from changes who with its sig
 	end)
 end)
 
+test("a greed-mail that speaks another protocol, or none, says what to rebuild", function(t)
+	local dir = t:tempdir()
+	-- Stand-ins for greed-mail: each answers the first request, by its id.
+	local function stand_in(name: string, answer: string): string
+		local path = `{dir}/{name}`
+		greed.fs.write(
+			path,
+			"#!/bin/sh\n"
+				.. `read line; id=$(printf '%s' "$line" | sed 's/.*"id":\\([0-9]*\\).*/\\1/'); `
+				.. `printf '\{"jsonrpc":"2.0","id":%s,{answer}\}\\n' "$id"; sleep 5\n`
+		)
+		greed.process.run({ "chmod", "+x", path })
+		return path
+	end
+	local other = stand_in("other", '"result":{"protocol":99}')
+	local old = stand_in("old", '"error":{"code":-32601,"message":"no method hello"}')
+	mail.backend.use(nil)
+	local ok, err: any = pcall(function()
+		greed.option.set("mail-program", other)
+		local _, said = mail.backend.get().index()
+		assert(string.find(said or "", "speaks mail protocol 99", 1, true), tostring(said))
+		assert(string.find(said or "", "it's newer", 1, true), tostring(said))
+		greed.option.set("mail-program", old)
+		_, said = mail.backend.get().index()
+		assert(string.find(said or "", "older than this Greed", 1, true), tostring(said))
+		assert(string.find(said or "", "no method hello", 1, true), "why: " .. tostring(said))
+	end)
+	greed.option.set("mail-program", "")
+	fake()
+	assert(ok, tostring(err))
+end)
+
 test("a reads a reply to all; c writes new mail from To", function(t)
 	fake()
 	in_the_mail_session(function()

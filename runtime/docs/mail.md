@@ -26,7 +26,10 @@ Mail needs two things: `greed-mail`, the program that syncs it, and a
 
 `greed-mail` comes with Greed: Greed's packages put it beside `greed`, and
 Greed finds it there (or on your `PATH`). If yours is somewhere else, say
-where with `:set mail-program /path/to/greed-mail`.
+where with `:set mail-program /path/to/greed-mail`. Greed and greed-mail
+check they speak the same way when they meet; one older or newer than
+the other says so over the list, and which to update, rather than
+misreading the other.
 
 `mail.toml` goes in Greed's config folder: `~/.config/greed/mail.toml`, or
 under `$XDG_CONFIG_HOME` when that's set. One account looks like this:

@@ -276,6 +276,10 @@ local PATIENCE = 120 * 1000
 local connection: greed.RpcConnection? = nil
 local opened: greed.Index? = nil
 
+--- The requests and notifications this speaks with greed-mail: its
+--- `PROTOCOL` (serve.rs) must be the same, which it says in `hello`.
+M.PROTOCOL = 1
+
 --- The greed-mail to run: the `mail-program` option's when it's set,
 --- else the one beside this greed (as Greed's packages have it), else
 --- the one on PATH.
@@ -325,6 +329,20 @@ local function served(): (greed.RpcConnection?, string?)
 	})
 	if started == nil then
 		return nil, `couldn't start {program}: {err}`
+	end
+	-- One that speaks otherwise would misread what's asked of it, and
+	-- this what it says: so first it says which it speaks.
+	local hello, trouble = started:request("hello", {})
+	local speaks = if type(hello) == "table" then hello.protocol else nil
+	if speaks ~= M.PROTOCOL then
+		started:close()
+		if speaks == nil then
+			return nil,
+				`{program} is older than this Greed ({trouble or "it doesn't say which protocol it speaks"}): rebuild or update it, or :set mail-program to the one beside greed`
+		end
+		local newer = if speaks > M.PROTOCOL then "newer" else "older"
+		return nil,
+			`{program} speaks mail protocol {speaks}, this Greed {M.PROTOCOL}: it's {newer}; use the greed-mail that came with this Greed`
 	end
 	connection = started
 	opened = nil

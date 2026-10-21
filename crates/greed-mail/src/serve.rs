@@ -153,6 +153,13 @@ impl Shared {
 /// in the store's folder.
 const SOCKET: &str = "serve.sock";
 
+/// Which requests and notifications this greed-mail speaks, as `hello`
+/// says: the mail plugin checks it's the one it speaks before anything
+/// else. It goes up whenever one of them changes so that the other side
+/// would misread it; new requests, and new fields left out of old ones,
+/// don't need it.
+pub const PROTOCOL: u32 = 1;
+
 /// What a greed-mail only reading the mail has the mail session's do:
 /// changes, mail to send, answers to invites, syncing, and attachments and
 /// bodies to fetch.
@@ -466,6 +473,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             let standing: Vec<Standing> = shared.standing.borrow().values().cloned().collect();
             Ok(json!({ "accounts": standing }))
         }
+        "hello" => Ok(json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION") })),
         "index" => Ok(json!({ "path": with.dir.join("index.db") })),
         "sync" => {
             shared.wake.notify_one();
@@ -1371,6 +1379,19 @@ fn attachment(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
 mod tests {
     use super::*;
     use crate::header::Fetched;
+
+    #[test]
+    fn the_mail_plugin_speaks_the_protocol_this_does() {
+        let plugin = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../runtime/plugins/mail/backend.luau"
+        ))
+        .unwrap();
+        assert!(
+            plugin.contains(&format!("\nM.PROTOCOL = {PROTOCOL}\n")),
+            "backend.luau's M.PROTOCOL must be {PROTOCOL}: bump both together"
+        );
+    }
 
     #[test]
     fn indexing_much_says_so_before_the_first_batch_and_sends_after_each() {
