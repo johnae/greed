@@ -631,8 +631,8 @@ local function text_lines(text: string): ({ core.UiNode }, { string })
 end
 
 -- A header line: its name dimmed, then its value.
-local function header(name: string, value: string, style: string?): core.UiNode
-	return ui.line({ ui.span(`{name}: `, "comment"), ui.span(value, style) })
+local function header(name: string, value: string, style: string?, tag: string?): core.UiNode
+	return ui.line({ { text = `{name}: `, style = "comment", tag = tag }, ui.span(value, style) })
 end
 
 -- Answers given here, by the key of the invite's message, until its
@@ -835,6 +835,11 @@ local function folded(
 	return out
 end
 
+-- What a message's first line is tagged, to find where it is in a thread.
+local function message_tag(key: string): string
+	return `message {key}`
+end
+
 -- A message read before, as one line to press: who, when, how it starts.
 local function closed_node(message: backend.Message, shown: Shown): core.UiNode
 	local start = string.match(message.text or "", "^%s*([^\r\n]*)") or ""
@@ -842,6 +847,7 @@ local function closed_node(message: backend.Message, shown: Shown): core.UiNode
 		{
 			text = `▸ {M.who(message.from)}  {M.when(message.date)}  `,
 			style = "markup.bold",
+			tag = message_tag(message.key),
 			press = function()
 				shown.messages[message.key] = true
 				shown.changed()
@@ -862,7 +868,7 @@ local function message_node(
 	local day, time = string.match(message.date or "", "^(%d+%-%d+%-%d+)T(%d+:%d+)")
 	local date = if day then `{day} {time}` else (message.date or "")
 	local parts: { core.UiNode } = {
-		header("From", message.from, "markup.bold"),
+		header("From", message.from, "markup.bold", message_tag(message.key)),
 		header("Date", date),
 		header("To", message.to),
 	}
@@ -965,7 +971,8 @@ end
 --- on the page, or in a float over a quick look. In the mail session,
 --- reading it marks it read. A change made while reading changes the
 --- messages `found` (a list row's), or the whole thread without them.
-function M.read(key: string, found: { string }?)
+--- With `at`, a message's key, it opens on that message, unfolded.
+function M.read(key: string, found: { string }?, at: string?)
 	local thread, err = backend.get().thread(key)
 	if thread == nil then
 		greed.echo(err or "that mail is gone")
@@ -996,11 +1003,15 @@ function M.read(key: string, found: { string }?)
 	r.shown = M.showing(thread, function()
 		r.view:redraw()
 	end)
+	if at then
+		r.shown.messages[at] = true
+	end
 	r.view = ui.mount(buffer, function()
 		return M.thread_node(r.thread, ui.width(buffer), r.plain, r.shown)
 	end)
 	reading = r
-	window:set_cursor(0)
+	local spot = if at then r.view:spots(message_tag(at))[1] else nil
+	window:set_cursor(if spot then spot.from else 0)
 	if M.any(thread, "unread") then
 		backend.get().act({ thread.key }, "read")
 	end
@@ -1589,7 +1600,7 @@ core.file.link_scheme("mail", function(uri: string)
 		greed.echo(err or "that mail isn't here: it may not have synced yet")
 		return
 	end
-	M.read(key)
+	M.read(key, nil, key)
 end)
 
 --- A rule for new mail: a query, and what to do with the new mail it

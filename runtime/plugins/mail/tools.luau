@@ -164,7 +164,7 @@ return function(mail: any)
 			.. "It's marked read, as reading it does",
 		input = object({ key = { type = "string" } }, { "key" }),
 		run = function(args)
-			mail.read(args.key)
+			mail.read(args.key, nil, args.key)
 			return `showing {args.key}`
 		end,
 	})

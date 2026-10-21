@@ -1360,6 +1360,47 @@ test("earlier messages read before show as a line each until pressed", function(
 	assert(string.find(text, "and more", 1, true) ~= nil, "all open: " .. text)
 end)
 
+test(
+	"a thread opened at one message, as a mail: link opens it, shows it unfolded there",
+	function(t)
+		fake()
+		now[2].earlier = {
+			{
+				key = "m:1:b0",
+				thread = "t:1:b",
+				from = "Anna Berg <anna@example.com>",
+				subject = "Invoice 41",
+				date = "2026-10-17T08:00:00+02:00",
+				unread = false,
+				flagged = false,
+				tags = {},
+				to = "me@example.com",
+				cc = "",
+				text = "The first word on it\nand more",
+				attachments = {},
+				complete = true,
+				html = false,
+			},
+		}
+		t:buffer("|x")
+		-- The line the cursor is on.
+		local function here(): (string, number)
+			local view = greed.view()
+			local buffer = view:buffer()
+			local line = buffer:line_of(view:cursor())
+			return buffer:slice(buffer:line_start(line), buffer:line_end(line)), line
+		end
+		mail.read("m:1:b", nil, "m:1:b0")
+		local text = greed.view():buffer():text()
+		assert(string.find(text, "and more", 1, true) ~= nil, "unfolded: " .. text)
+		local line, first = here()
+		assert(line == "From: Anna Berg <anna@example.com>" and first > 0, line)
+		mail.read("m:1:b", nil, "m:1:b")
+		local last_line, last = here()
+		assert(last_line == "From: Anna Berg <anna@example.com>" and last > first, `{last} {first}`)
+	end
+)
+
 test("greed-mail is the one mail-program names, or the one beside greed", function()
 	greed.option.set("mail-program", "/opt/mail/greed-mail")
 	assert(mail.backend.program() == "/opt/mail/greed-mail")

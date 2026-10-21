@@ -362,8 +362,9 @@ be reminded. It ends in a link back to the message:
 From there it's a todo like any other: it's on the home page and the
 agenda when it's due, its reminder goes off in Greed and on your desktop,
 and you can move it to any note. Opening the link, as any link in a note
-opens, reads the thread again, in the mail session or as a quick look
-anywhere else. The link names the message by its Message-ID, so it keeps
+opens, reads the thread again at that message, unfolded, in the mail
+session or as a quick look anywhere else. The link names the one message
+by its Message-ID, so it keeps
 working after the mail is archived or moved, and the todo reads well
 without it too, on your phone say. A `[mail](mail:ID)` link works in any
 note, so a meeting's notes can link the thread they're about.
