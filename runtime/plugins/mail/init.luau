@@ -2386,6 +2386,11 @@ greed.keymap.bind({ kind = "mail" }, {
 	["["] = "mail-search-previous",
 })
 greed.keymap.bind({ kind = "mail-thread" }, ACTIONS)
+-- In every mode, as Hoard's box has it.
+greed.keymap.bind({ kind = "mail-compose" }, {
+	["alt-enter"] = "mail-send",
+	["ctrl-enter"] = "mail-send",
+})
 greed.keymap.bind(
 	{ kind = "mail-thread" },
 	{ h = "mail-plain", o = "mail-open-all", S = "mail-save-attachment" }
