@@ -424,7 +424,8 @@ function M.ask()
 	end
 	core.search_box.open({
 		title = "Search mail",
-		text = o.query,
+		-- What's typed adds a word to the search shown.
+		text = if string.match(o.query, "%S$") then o.query .. " " else o.query,
 		source = M.source,
 		history = "mail",
 		count = function(parsed: core.Query): (number?, string?)
@@ -474,6 +475,14 @@ local function list(query: string, window: greed.View?): Open
 		end,
 		-- tab goes through the saved searches here, not the view's buttons.
 		keys = false,
+		-- A row stays a row in a narrow pane: cut at the edge rather than
+		-- wrapped, as the shell's tables are.
+		after = function()
+			buffer:decorate(
+				"mail-rows",
+				{ { from = 0, to = buffer:len(), style = "", nowrap = true } }
+			)
+		end,
 	})
 	refresh(o)
 	return o
@@ -1579,7 +1588,8 @@ greed.command({
 		if message == nil then
 			return
 		end
-		local text = core.prompt.ask("Todo for your inbox", M.todo_text(message))
+		-- Ending in a space, for when it's due to be typed after it.
+		local text = core.prompt.ask("Todo for your inbox", M.todo_text(message) .. " ")
 		if text == nil or not string.match(text, "%S") then
 			return
 		end

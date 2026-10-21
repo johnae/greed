@@ -377,14 +377,15 @@ test("mail opens on the inbox, newest first, with the search box over it", funct
 		table.concat(subjects(), ", ")
 	)
 	assert(greed.view():buffer():kind() == "search-box", "the search box has the cursor")
-	assert(greed.view():buffer():text() == "in:inbox")
+	-- Ending in a space, so what's typed adds a word.
+	assert(greed.view():buffer():text() == "in:inbox ", greed.view():buffer():text())
 end)
 
 test("what's typed narrows the list as it's typed", function(t)
 	fake()
 	t:buffer("|x")
 	t:run("mail")
-	t:keys("space i s : u n r e a d")
+	t:keys("i s : u n r e a d")
 	assert(table.concat(subjects(), ", ") == "Garden plans", table.concat(subjects(), ", "))
 	t:keys("esc")
 	assert(greed.view():buffer():kind() == "mail", "back in the list")
@@ -1170,7 +1171,8 @@ test("T makes a todo of the message in your inbox note, and its link reads it ag
 	greed.option.set("notes-project-folder", `{dir}/.no-project-notes`)
 	t:buffer("|x")
 	t:run("mail")
-	t:keys("esc T space f r i d a y enter")
+	-- The prompt ends in a space, so when it's due is typed right after.
+	t:keys("esc T f r i d a y enter")
 	local text = greed.fs.read(`{dir}/inbox.md`) or ""
 	local due = core.dates.read_words("friday").date
 	assert(text == `- [ ] Anna Berg: Invoice 41 [mail](mail:b@example.com) due:{due}\n`, text)
