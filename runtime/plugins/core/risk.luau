@@ -31,6 +31,21 @@ function M.rule(program: string, rule: Rule)
 	end))
 end
 
+-- Greed's own commands that do something an agent should ask about, by
+-- name: why.
+local editor_commands: { [string]: string } = {}
+
+--- Says running Greed's command `name` is risky for an agent, and `why`
+--- ("sends the mail being written"), until the plugin that said so goes.
+function M.editor_command(name: string, why: string)
+	greed.plugin.tie(registry.set(editor_commands, name, why))
+end
+
+--- Why running Greed's command `name` is risky for an agent, or nil.
+function M.of_editor_command(name: string): string?
+	return editor_commands[name]
+end
+
 -- The commands in `line`, each as its words: split at the characters that
 -- end a command outside quotes, quotes taken off.
 local function commands(line: string): { { string } }

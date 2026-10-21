@@ -2373,6 +2373,8 @@ local ACTIONS = {
 core.outside.kind("mail", "the list of mail you received")
 core.outside.kind("mail-thread", "mail you received")
 core.outside.kind("mail-compose", "mail being written, quoting mail you received")
+-- Mail sent is out of your hands, so an agent sending it asks you.
+core.risk.editor_command("mail-send", "sends the mail being written")
 
 greed.keymap.bind({ kind = "mail" }, ACTIONS)
 -- The saved searches show as tabs over the list, so they go as tabs do:
@@ -2539,6 +2541,7 @@ core.actions.action({
 	kind = "mail-draft",
 	name = "send",
 	doc = "Send it",
+	danger = true,
 	offers = function(target: core.Target): boolean
 		return target.buffer ~= nil
 	end,

@@ -124,6 +124,10 @@ registry.tool({
 	}, { "name" }),
 	danger = function(args)
 		local name = tostring(args.name)
+		local why = core.risk.of_editor_command(name)
+		if why then
+			return `{name} {why}`
+		end
 		for _, word in CLOSING do
 			if string.find(name, word, 1, true) then
 				-- A wrong view is said when it runs.

@@ -191,6 +191,11 @@ test("agents find commands by what they do and run one, its arguments checked", 
 	local danger = assert(tool("run_command").danger)
 	assert(danger({ name = "quit-session" }) ~= nil, "quitting asks")
 	assert(danger({ name = "test-greet" }) == nil)
+	core.risk.editor_command("test-greet", "greets everyone you know")
+	assert(
+		danger({ name = "test-greet" }) == "test-greet greets everyone you know",
+		"a plugin says so"
+	)
 end)
 
 -- A file pane, and beside it an agent's chat pane that has focus.

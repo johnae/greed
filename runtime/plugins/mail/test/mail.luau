@@ -523,6 +523,10 @@ test("space . acts on the mail under the cursor, the thread read and the draft w
 		for _, name in { "open", "send", "discard" } do
 			assert(table.find(names, name), `{name}: {table.concat(names, " ")}`)
 		end
+		for _, action in core.actions.for_kind("mail-draft", target) do
+			assert(action.name ~= "send" or action.danger, "an agent sending asks you")
+		end
+		assert(core.risk.of_editor_command("mail-send"), "an agent's :mail-send asks you too")
 	end)
 end)
 
