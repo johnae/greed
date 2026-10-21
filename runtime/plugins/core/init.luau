@@ -18,7 +18,7 @@ require("@self/undo")
 require("@self/undo_files")
 local transient = require("@self/transient")
 require("@self/reload")
-require("@self/autosave")
+local autosave = require("@self/autosave")
 require("@self/numbers")
 require("@self/stalls")
 require("@self/secrets")
@@ -192,6 +192,7 @@ return {
 	jump = jump,
 	hints = hints,
 	actions = actions,
+	autosave = autosave,
 	transient = transient,
 	textobjects = textobjects,
 	objects = objects,

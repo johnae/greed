@@ -181,10 +181,13 @@ end
 
 -- The mail as it was before the last change, for the fake's undo.
 local before: { Fake }? = nil
+-- Whether the fake's undo takes back the mail sent last.
+local sending = false
 
 local function fake()
 	now = copy(MAIL)
 	before = nil
+	sending = false
 	acted = {}
 	sent = {}
 	fetched = {}
@@ -281,6 +284,7 @@ local function fake()
 		send = function(draft: any): (boolean, string?, number?)
 			table.insert(sent, draft)
 			before = nil
+			sending = true
 			return true, nil, 10
 		end,
 		respond = function(key: string, answer: string): (boolean, string?)
@@ -319,6 +323,11 @@ local function fake()
 			return #keys, nil, nil
 		end,
 		undo = function(): (string?, string?)
+			if sending then
+				sending = false
+				table.remove(sent)
+				return "sent", nil
+			end
 			if before == nil then
 				return nil, "nothing to undo"
 			end
@@ -500,6 +509,69 @@ test("r writes a reply quoting the message, and :mail-send sends it", function(t
 		assert(sent[1].replying == "m:1:b" and sent[1].subject == "Re: Invoice 41")
 		assert(string.sub(sent[1].text, 1, 7) == "Paid.\n\n", sent[1].text)
 		assert(window:buffer():kind() == "mail", "back in the list")
+	end)
+end)
+
+-- Types `text` where the cursor is in mail being written in `window`.
+local function type_in(window: greed.View, text: string)
+	local at = window:cursor()
+	window:buffer():edit(function(e)
+		e:replace(at, at, text)
+	end)
+end
+
+test("mail being written is kept as a draft, which :mail-drafts writes again", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc r")
+		type_in(window, "Paid.")
+		assert(#mail.drafts() == 0, "not before the typing stops")
+		t:wait(1100)
+		local kept = mail.drafts()
+		assert(#kept == 1, "kept once it stops")
+		assert(string.find(kept[1].kept.text, "Paid.", 1, true), kept[1].kept.text)
+		assert(kept[1].kept.replying == "m:1:b", "with what it answers")
+		-- Closed, as when the session ends.
+		local compose = window:buffer()
+		t:run("mail-close")
+		assert(not compose:valid(), "closed")
+		mail.open_draft(kept[1].path)
+		local again = window:buffer()
+		assert(again:kind() == "mail-compose", again:kind())
+		assert(again:text() == kept[1].kept.text, again:text())
+		t:run("mail-send")
+		assert(#sent == 1 and sent[1].replying == "m:1:b", "it still answers it")
+		assert(#mail.drafts() == 1, "kept while z can take it back")
+		t:wait(16000)
+		assert(#mail.drafts() == 0, "gone once it's sent")
+	end)
+end)
+
+test("mail taken back with z is written again; :w keeps a draft at once", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc c")
+		type_in(window, "anna@example.com")
+		t:run("save")
+		assert(#mail.drafts() == 1, ":w kept it")
+		t:run("mail-send")
+		assert(window:buffer():kind() == "mail", "back in the list")
+		t:run("mail-undo")
+		assert(#sent == 0, "taken back")
+		local buffer = window:buffer()
+		assert(buffer:kind() == "mail-compose", "written again")
+		assert(string.find(buffer:text(), "To: anna@example.com", 1, true), buffer:text())
+		t:wait(16000)
+		assert(#mail.drafts() == 1, "its draft stays")
+		mail.discard_draft(mail.drafts()[1].path)
+		assert(#mail.drafts() == 0, "discarded")
+		assert(window:buffer():kind() == "mail", "and closed")
 	end)
 end)
 

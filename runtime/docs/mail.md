@@ -262,11 +262,17 @@ most first; on `From:`, from your own addresses. `:mail-attach FILE`
 attaches a file, on an `Attach:` line you can edit too (paths apart by
 commas, 25 MB in all at most).
 
-`:mail-send` sends it and goes back to the list; `:mail-close` drops it.
-It waits ten seconds, in which `z` takes it back, then goes, and Greed
-says when it's sent. A copy goes in your Sent folder (Gmail and Bridge
-file it themselves), and the message you answered is marked answered.
-Mail the server won't take stays out, and Greed says why.
+`:mail-send` sends it and goes back to the list. It waits ten seconds,
+in which `z` takes it back and opens it again, then goes, and Greed says
+when it's sent. A copy goes in your Sent folder (Gmail and Bridge file
+it themselves), and the message you answered is marked answered. Mail
+the server won't take stays out, and Greed says why.
+
+What you write is kept as a draft a moment after you stop typing, and
+at once with `:w`, so it outlasts closing it with `:mail-close` and the
+mail session ending. `:mail-drafts` lists your drafts, newest first:
+`enter` goes on writing one, and `alt-.` on one offers to discard it.
+Drafts are kept on this machine, beside the store, and go once sent.
 
 ## Tags
 

@@ -961,7 +961,75 @@ backend.on_changed(function()
 end)
 
 -- The mail being written, while it is.
-local writing: { window: greed.View, buffer: greed.Buffer, replying: string? }? = nil
+local writing: { window: greed.View, buffer: greed.Buffer }? = nil
+
+-- Mail being written, by its buffer's id: the file its draft is kept in
+-- (none without a data folder) and the message it answers.
+local drafts: { [number]: { path: string?, replying: string? } } = {}
+
+-- The draft of the mail sent last, while z can still take it back.
+local sent_draft: string? = nil
+
+--- Where drafts are kept, a file each, beside greed-mail's store.
+function M.drafts_dir(): string?
+	local data = greed.fs.dirs().data
+	return if data then data .. "/mail/drafts" else nil
+end
+
+--- A draft as its file keeps it: what's written, the message it answers
+--- and when it was kept (Unix seconds).
+export type Kept = { text: string, replying: string?, saved: number }
+
+-- The draft kept in the file at `path`, if it holds one.
+local function read_kept(path: string): Kept?
+	local text = greed.fs.read(path)
+	local kept = if text then greed.json.decode(text) else nil
+	return if type(kept) == "table" and type(kept.text) == "string" then kept :: Kept else nil
+end
+
+-- Keeps `buffer`'s draft in its file, waiting for the disk off the
+-- editor's thread with `background`.
+local function keep(buffer: greed.Buffer, background: boolean?)
+	local d = drafts[buffer:id()]
+	if d == nil or d.path == nil then
+		return
+	end
+	local kept: Kept = { text = buffer:text(), replying = d.replying, saved = os.time() }
+	local ok, err =
+		greed.fs.write(d.path, greed.json.encode(kept), { private = true, background = background })
+	if not ok then
+		greed.echo(`the draft couldn't be kept: {err or "?"}`)
+	end
+end
+
+core.autosave.on_quiet("mail-compose", function(buffer: greed.Buffer)
+	keep(buffer, true)
+end)
+
+greed.on("buffer.closed", function(event: greed.BufferClosed)
+	drafts[event.id] = nil
+end)
+
+--- The drafts kept, newest first: each one's file and what it holds.
+function M.drafts(): { { path: string, kept: Kept } }
+	local dir = M.drafts_dir()
+	local out: { { path: string, kept: Kept } } = {}
+	local entries: { greed.DirEntry } = (if dir then greed.fs.list(dir) else nil) or {}
+	for _, entry in entries do
+		local path = `{dir}/{entry.name}`
+		local kept = if entry.dir then nil else read_kept(path)
+		if kept then
+			table.insert(out, { path = path, kept = kept })
+		end
+	end
+	table.sort(
+		out,
+		function(a: { path: string, kept: Kept }, b: { path: string, kept: Kept }): boolean
+			return a.kept.saved > b.kept.saved
+		end
+	)
+	return out
+end
 
 --- `draft` as it's written: its header lines, a blank line, its text.
 function M.draft_text(draft: Draft): string
@@ -1015,9 +1083,14 @@ function M.parse_draft(text: string): Draft
 	return draft
 end
 
+-- How many drafts were started here, to tell their files apart.
+local started = 0
+
 --- Writes `draft` where the list is, the cursor where its text goes, or on
 --- To when it goes to no one yet. New mail is from your first account.
-function M.write(draft: Draft)
+--- It's kept as a draft as it's written: in the file `kept`, when it was
+--- kept before, or a new one.
+function M.write(draft: Draft, kept: string?)
 	if draft.from == nil or draft.from == "" then
 		local accounts = backend.get().accounts()
 		draft.from = if accounts[1] then accounts[1].address else ""
@@ -1031,13 +1104,71 @@ function M.write(draft: Draft)
 	if reading and reading.window == window then
 		reading = nil
 	end
-	writing = { window = window, buffer = buffer, replying = draft.replying }
+	writing = { window = window, buffer = buffer }
+	local dir = M.drafts_dir()
+	started += 1
+	drafts[buffer:id()] = {
+		path = kept or (if dir then `{dir}/{os.time()}-{started}-{math.random(1e9)}.json` else nil),
+		replying = draft.replying,
+	}
 	if draft.to == "" then
 		window:set_cursor(buffer:line_end(1))
 	else
 		local text = buffer:text()
 		local blank = string.find(text, "\n\n", 1, true) or #text
 		window:set_cursor(blank + 1)
+	end
+end
+
+-- The buffer writing the draft kept in `path`, if one is.
+local function writing_draft(path: string): greed.Buffer?
+	for id, d in drafts do
+		local buffer = if d.path == path then greed.buffer(id) else nil
+		if buffer and buffer:valid() then
+			return buffer
+		end
+	end
+	return nil
+end
+
+--- Writes the draft kept in `path` again, or says why it can't.
+function M.open_draft(path: string)
+	local writing_it = writing_draft(path)
+	if writing_it then
+		local window = greed.view()
+		window:show(writing_it)
+		writing = { window = window, buffer = writing_it }
+		return
+	end
+	local kept = read_kept(path)
+	if kept == nil then
+		greed.echo("that draft is gone")
+		return
+	end
+	local draft = M.parse_draft(kept.text)
+	draft.replying = kept.replying
+	M.write(draft, path)
+end
+
+--- Throws away the draft kept in `path`, closing mail that's writing it.
+function M.discard_draft(path: string)
+	greed.fs.remove(path)
+	for id, d in drafts do
+		if d.path == path then
+			drafts[id] = nil
+			local w = writing
+			if w and w.buffer:id() == id then
+				writing = nil
+				local list = open
+				if list and list.buffer:valid() and w.window:valid() then
+					w.window:show(list.buffer)
+				end
+			end
+			local buffer = greed.buffer(id)
+			if buffer and buffer:valid() then
+				pcall(buffer.close, buffer)
+			end
+		end
 	end
 end
 
@@ -1408,6 +1539,11 @@ greed.command({
 	run = function()
 		local undone, err = backend.get().undo()
 		if undone == "sent" then
+			local path = sent_draft
+			sent_draft = nil
+			if path then
+				M.open_draft(path)
+			end
 			greed.echo("taken back: it wasn't sent")
 		elseif undone then
 			greed.echo("undone")
@@ -1486,6 +1622,60 @@ greed.command({
 	doc = "Write new mail",
 	run = function()
 		M.write({ to = "", cc = "", bcc = "", subject = "", text = "" })
+	end,
+})
+
+-- How a draft shows: its subject, who it's to and how old it is.
+local function draft_label(kept: Kept): string
+	local draft = M.parse_draft(kept.text)
+	local subject = if draft.subject ~= "" then draft.subject else "(no subject)"
+	local to = if draft.to ~= "" then draft.to else "no one yet"
+	return `{subject}  to {to}  {core.time.ago(os.time() - kept.saved)}`
+end
+
+greed.command({
+	name = "mail-drafts",
+	doc = "Pick a draft to go on writing; alt-. on one discards it",
+	run = function()
+		local items: { { label: string, value: any, kind: string? } } = {}
+		for _, d in M.drafts() do
+			table.insert(
+				items,
+				{ label = draft_label(d.kept), value = d.path, kind = "mail-draft" }
+			)
+		end
+		if #items == 0 then
+			greed.echo("no drafts: mail being written is kept as one")
+			return
+		end
+		require("@picker").pick("Drafts", items, function(item)
+			M.open_draft(item.value)
+		end, {
+			preview = function(item)
+				local kept = read_kept(item.value)
+				return if kept then { text = kept.text } else nil
+			end,
+		})
+	end,
+})
+
+core.actions.action({
+	kind = "mail-draft",
+	name = "open",
+	doc = "Go on writing it",
+	run = function(target)
+		M.open_draft(target.value)
+	end,
+})
+core.actions.set_default("mail-draft", "open")
+
+core.actions.action({
+	kind = "mail-draft",
+	name = "discard",
+	doc = "Throw the draft away",
+	danger = true,
+	run = function(target)
+		M.discard_draft(target.value)
 	end,
 })
 
@@ -1582,21 +1772,39 @@ greed.command({
 			greed.echo("there's no mail being written here")
 			return
 		end
+		local d: { path: string?, replying: string? } = drafts[ctx.buffer:id()] or {}
 		local draft = M.parse_draft(ctx.buffer:text())
-		draft.replying = w.replying
+		draft.replying = d.replying
+		-- Kept until it's gone for sure: taken back, it's written again.
+		keep(ctx.buffer)
 		local ok, err, seconds = backend.get().send(draft)
 		if not ok then
 			greed.echo(err or "it couldn't be sent")
 			return
 		end
 		greed.echo(if seconds then `sending in {seconds} s: z takes it back` else "sending")
+		drafts[ctx.buffer:id()] = nil
 		leave(ctx)
+		local path = d.path
+		if path then
+			sent_draft = path
+			greed.spawn(function()
+				greed.sleep(((seconds or 0) + 5) * 1000)
+				if sent_draft == path then
+					sent_draft = nil
+				end
+				if writing_draft(path) == nil then -- not taken back and written again
+					greed.fs.remove(path)
+				end
+			end)
+		end
 	end,
 })
 
--- :w in mail being written keeps it as it is; :mail-send sends it.
-core.file.on_save("mail-compose", function()
-	greed.echo("it stays here as you wrote it: :mail-send sends it")
+-- :w in mail being written keeps its draft now; :mail-send sends it.
+core.file.on_save("mail-compose", function(buffer: greed.Buffer)
+	keep(buffer)
+	greed.echo("kept as a draft (:mail-drafts): :mail-send sends it")
 end)
 
 greed.command({
