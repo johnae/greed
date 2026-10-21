@@ -1,0 +1,13 @@
+Date: Wed, 21 Oct 2026 09:10:00 +0200
+From: Rail Travel <bookings@rail.example>
+To: Sam Ek <sam@example.com>
+Subject: Booking confirmed: Stockholm to Göteborg, 12 November
+Message-ID: <rail-1012@rail.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Your booking is confirmed.
+
+Stockholm C 07:21 to Göteborg C 10:24, Thursday 12 November, coach 4, seat 32.
+
+Booking reference: QX7 41M

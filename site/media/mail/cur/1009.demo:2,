@@ -1,0 +1,13 @@
+Date: Wed, 21 Oct 2026 07:41:00 +0200
+From: Jonas Ek <jonas@work.example>
+To: Sam Ek <sam@example.com>
+Subject: Re: Deploy plan for Friday
+Message-ID: <plan-1009@work.example>
+In-Reply-To: <plan-1005@work.example>
+References: <plan-1005@work.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+One more thing: I moved the workers to 08:00, so there's time to check the queue. Still keen on your eyes on it before Thursday.
+
+Jonas

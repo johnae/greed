@@ -1,0 +1,15 @@
+Date: Mon, 19 Oct 2026 10:14:00 +0200
+From: Jonas Ek <jonas@work.example>
+To: Sam Ek <sam@example.com>
+Subject: Deploy plan for Friday
+Message-ID: <plan-1005@work.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hi Sam,
+
+Here's the plan for Friday's deploy: the database migration at 07:00, the API at 07:30, and the workers last, once the queue has drained.
+
+Could you look it over before Thursday? You know the workers best.
+
+Jonas

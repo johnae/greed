@@ -102,6 +102,43 @@ local UPCASE: { any } = {
 	},
 }
 
+-- Asked from Hoard's box when the plumber comes: it searches the notes,
+-- reads the day it was written down, and answers with links to both.
+local PLUMBER: { any } = {
+	{
+		thinking = "Searching the notes for the plumber.",
+		calls = { call("p1", "notes_search", { pattern = "plumber" }) },
+	},
+	{
+		thinking = "Tuesday's note has what he said.",
+		calls = { call("p2", "notes_read", { name = "daily/2026-10-20" }) },
+	},
+	{
+		text = "Erik, the plumber, comes **Thursday afternoon, after 14:00**, and brings a new "
+			.. "trap himself ([[daily/2026-10-20]]). His number is in [[Kitchen#Leak under the sink]], "
+			.. "and the cupboard under the sink needs clearing before then.",
+	},
+}
+
+-- Asked in the mail session what needs an answer: it searches the unread
+-- mail and names the three that do, and what can wait.
+local ANSWER: { any } = {
+	{
+		thinking = "Looking at what's unread in the inbox.",
+		calls = { call("m1", "mail_search", { query = "in:inbox is:unread" }) },
+	},
+	{
+		text = "Three need an answer from you this week:\n\n"
+			.. "- **Jonas Ek**, *Deploy plan for Friday*: he wants you to look over the plan "
+			.. "before Thursday; the workers now go at 08:00.\n"
+			.. "- **Maria Svensson**, *Parents' evening*: say by Friday whether you can come "
+			.. "on 3 November.\n"
+			.. "- **Kim Larsson**, *Lunch Thursday?*: 12:00 at the Thai place by the station.\n\n"
+			.. "Erik's mail confirms Thursday at 14:00 and needs nothing back. The October "
+			.. "invoice (642 kr) is due on the 31st: something to pay, not to answer.",
+	},
+}
+
 -- How far along each script is; a conversation follows one by what was asked.
 local steps: { [any]: number } = {}
 models.check = function(): string?
@@ -117,7 +154,11 @@ models.turn = function(_role, request, on_text, _on_open, on_thinking)
 			asked ..= said.text
 		end
 	end
-	local script = if string.find(asked, "upper", 1, true) then UPCASE else CRASH
+	local script = if string.find(asked, "upper", 1, true)
+		then UPCASE
+		elseif string.find(asked, "plumber", 1, true) then PLUMBER
+		elseif string.find(asked, "answer from me", 1, true) then ANSWER
+		else CRASH
 	steps[script] = (steps[script] or 0) + 1
 	local turn = script[steps[script]] or { text = "Done." }
 	greed.sleep(400)

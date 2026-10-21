@@ -1,0 +1,11 @@
+Date: Wed, 21 Oct 2026 08:15:00 +0200
+From: Build bot <ci@work.example>
+To: Sam Ek <sam@example.com>
+Subject: Build failed on main
+Message-ID: <ci-1010@work.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+The build of main failed at 08:14: 1 test failed in workers::queue (drains_before_shutdown).
+
+https://ci.work.example/builds/4812

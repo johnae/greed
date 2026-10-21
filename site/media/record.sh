@@ -7,7 +7,86 @@ set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 media=$root/site/media
-cargo build -q -p greed-editor --manifest-path "$root/Cargo.toml"
+cargo build -q -p greed-editor -p greed-mail --manifest-path "$root/Cargo.toml"
+
+# Starts a Dovecot in `$1` serving the sample mailbox, site/media/mail, as
+# sam (any password), and writes the demo profile's mail.toml for it, for
+# a demo saying `# needs: mail`. Prints Dovecot's pid. Dovecot comes from
+# devenv, or GREED_MAIL_DOVECOT names one.
+start_mail() {
+  local dir=$1 profile=$2 port program
+  program=${GREED_MAIL_DOVECOT:-$(command -v dovecot)}
+  port=$((20000 + RANDOM % 40000))
+  mkdir -p "$dir"/{run,state} "$dir"/home/sam/Maildir/{new,tmp}
+  cp -r "$media/mail/cur" "$dir/home/sam/Maildir/cur"
+  cat >"$dir/dovecot.conf" <<EOF
+dovecot_config_version = 2.4.0
+dovecot_storage_version = 2.4.0
+base_dir = $dir/run
+state_dir = $dir/state
+log_path = $dir/log
+instance_name = greed-demo-$port
+default_internal_user = $(id -un)
+default_internal_group = $(id -gn)
+default_login_user = $(id -un)
+protocols {
+  imap = yes
+}
+listen = 127.0.0.1
+ssl = no
+auth_allow_cleartext = yes
+service imap-login {
+  chroot =
+  inet_listener imap {
+    port = $port
+  }
+  inet_listener imaps {
+    port = 0
+  }
+}
+service anvil {
+  chroot =
+}
+passdb static {
+  password = demo
+}
+userdb static {
+  fields {
+    uid = $(id -u)
+    gid = $(id -g)
+    home = $dir/home/%{user}
+  }
+}
+mail_driver = maildir
+mail_path = ~/Maildir
+namespace inbox {
+  inbox = yes
+  separator = /
+  mailbox Sent {
+    special_use = \\Sent
+    auto = create
+  }
+  mailbox Trash {
+    special_use = \\Trash
+    auto = create
+  }
+  mailbox Archive {
+    special_use = \\Archive
+    auto = create
+  }
+}
+EOF
+  cat >"$profile/config/mail.toml" <<EOF
+[[account]]
+name = "home"
+address = "sam@example.com"
+user = "sam"
+imap = { host = "127.0.0.1", port = $port, tls = "none" }
+password = ["echo", "demo"]
+EOF
+  "$program" -F -c "$dir/dovecot.conf" >/dev/null 2>&1 &
+  echo $!
+}
 
 names=("$@")
 if [ ${#names[@]} -eq 0 ]; then
@@ -35,6 +114,15 @@ for name in "${names[@]}"; do
       commit -q -m "$project"
   done
   cp "$media/$name.demo" "$scratch/"
+  # The sample notes, ~/notes, only for a demo saying `# needs: notes`: in
+  # the others, their agenda would show on the status line.
+  if grep -q '^# needs: notes' "$media/$name.demo"; then
+    cp -r "$media/notes" "$scratch/home/notes"
+  fi
+  dovecot=""
+  if grep -q '^# needs: mail' "$media/$name.demo"; then
+    dovecot=$(start_mail "$scratch/dovecot" "$scratch/profile")
+  fi
   echo "recording $name"
   # Nothing of this machine: a home of its own, and only the variables
   # programs and the GPU need. Its programs come first, like a kubectl with
@@ -46,8 +134,16 @@ for name in "${names[@]}"; do
       vars+=("$var=${!var}")
     fi
   done
+  # What Greed is started with, from a demo's `# command: greed ARGS`
+  # line, like `greed notes` for Hoard; nothing for the editor.
+  read -ra args <<<"$(sed -n 's/^# command: greed //p' "$media/$name.demo")"
   (cd "$scratch/home/shop" && env -i "${vars[@]}" \
-    "$root/target/debug/greed" --profile "$scratch/profile" --record "$scratch/$name.demo")
+    "$root/target/debug/greed" --profile "$scratch/profile" --record "$scratch/$name.demo" \
+    "${args[@]}")
+  if [ -n "$dovecot" ]; then
+    kill "$dovecot" 2>/dev/null || true
+    wait "$dovecot" 2>/dev/null || true
+  fi
   out=$root/target/media/$name
   rm -rf "$out"
   mkdir -p "$(dirname "$out")"

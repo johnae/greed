@@ -1,0 +1,3 @@
+- [ ] renew the passport before the trip in March
+- [ ] stretch every:day!
+- a thought: herbs on the balcony would get the morning sun

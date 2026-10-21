@@ -1,0 +1,40 @@
+# Hoard, notes and todos: the home page, a todo added in plain words,
+# searching the notes as you type, and asking them a question that Greed's
+# agent answers with links to the notes it used. The notes are
+# site/media/notes, as ~/notes, on a morning the demo profile fixes.
+# command: greed notes
+# needs: notes
+size 1280 800
+fps 30
+typing 0.03
+show-keys
+hide
+wait-for Agenda
+show
+wait 0.6
+
+caption What's due, today's note and recent notes, on one page
+wait 2.2
+
+caption A todo in plain words: it's due tomorrow, with a reminder at 18:00
+type [] call the bank tomorrow 18:00
+wait 0.5
+keys alt-enter
+wait 2
+
+caption Searching the notes as you type
+type plumber
+wait 1.8
+keys ctrl-backspace
+type is:overdue
+wait 2
+keys ctrl-backspace ctrl-backspace ctrl-backspace
+
+caption Asking the notes: the agent answers with links to what it read
+type ? when is the plumber coming
+wait 0.4
+keys alt-enter
+wait-for Thursday afternoon
+wait 2.5
+shot hoard
+wait 0.5

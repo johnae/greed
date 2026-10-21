@@ -4,6 +4,8 @@ Hoard is where your notes, todos and today's plans live. It opens on a
 home page with what's due, what you wrote today and a search over
 everything, and you don't need to know an editor to use it.
 
+[![Hoard's home page with the agenda and today's note, a todo written in plain words added for tomorrow, the notes searched as words are typed, then a question about when the plumber comes answered by the agent with links to the notes it read](https://github.com/johnae/greed/releases/download/media/hoard.png)](https://github.com/johnae/greed/releases/download/media/hoard.mp4)
+
 ```bash
 greed notes          # in this terminal
 greed --gui notes    # in a window
@@ -201,6 +203,8 @@ See [[Garden plans#Seeds]] for the list, and [[Garden plans#^fence|the fence]].
   file list), changes the links to them in your other notes.
 - `[mail](mail:ID)`, which `T` in [mail](mail.md) writes in a todo, opens
   that message's thread in Greed.
+
+[![A note from an Obsidian vault with its properties, a callout, links shown as their words, a section of another note embedded, and a notes block of the garden's open todos that gains a row as a todo is written](https://github.com/johnae/greed/releases/download/media/obsidian.png)](https://github.com/johnae/greed/releases/download/media/obsidian.mp4)
 
 A folder Obsidian writes works as it is. Links find notes as Obsidian
 finds them: `[[Cards view]]` goes to `Bases/Cards view.md` wherever it

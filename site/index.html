@@ -31,9 +31,9 @@
   <section class="intro">
     <h1>Greed</h1>
     <p class="lead">A modal text editor with Helix, Vim and VS Code keys, a
-    shell, terminals and agent support. It runs in a terminal or a window,
-    locally or over ssh, and everything outside a small Rust core is a
-    <a href="https://luau.org">Luau</a> plugin.</p>
+    shell, terminals, notes and mail, with agents in all of them. It runs in
+    a terminal or a window, locally or over ssh, and everything outside a
+    small Rust core is a <a href="https://luau.org">Luau</a> plugin.</p>
     <p class="actions">
       <a class="button primary" href="#install">Install</a>
       <a class="button" href="docs/using.html">Docs</a>
@@ -42,6 +42,33 @@
 
   <section class="hero">
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/hero.mp4" poster="https://github.com/johnae/greed/releases/download/media/hero.png" autoplay muted loop playsinline preload="metadata" aria-label="Every attempt in a Rust function selected and renamed at once, a shell command's output filtered and charted, then Greed's agent asked why the worker pod keeps crashing, proposing an edit that is allowed and explaining the fix"></video>
+  </section>
+
+  <section class="showcase">
+    <div class="text">
+      <h2>Notes and todos</h2>
+      <p><code>greed notes</code> opens Hoard: a home page with what's due,
+      today's note and a search over all your notes. Write a todo in plain
+      words (<code>call the bank tomorrow 18:00</code>) and it gets its date
+      and reminder. Notes are Markdown files in a folder, and an Obsidian
+      vault works as it is. Ask your notes a question and the agent answers
+      with links to what it read.</p>
+      <p><a href="docs/hoard.html">Hoard</a></p>
+    </div>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/hoard.mp4" poster="https://github.com/johnae/greed/releases/download/media/hoard.png" autoplay muted loop playsinline preload="metadata" aria-label="Hoard's home page with the agenda and today's note, a todo written in plain words added for tomorrow, the notes searched as words are typed, then a question about when the plumber comes answered by the agent with links to the notes it read"></video>
+  </section>
+
+  <section class="showcase flip">
+    <div class="text">
+      <h2>Mail</h2>
+      <p><code>greed mail</code> keeps a copy of your IMAP accounts (Gmail, and
+      Proton through Bridge) in one list, searched as you type, offline too.
+      Threads read in Greed, HTML laid out as text with nothing loaded from
+      elsewhere. A message becomes a todo in your notes, and the agent can
+      tell you what needs an answer.</p>
+      <p><a href="docs/mail.html">Mail</a></p>
+    </div>
+    <video class="shot" src="https://github.com/johnae/greed/releases/download/media/mail.mp4" poster="https://github.com/johnae/greed/releases/download/media/mail.png" autoplay muted loop playsinline preload="metadata" aria-label="The mail list, searched for deploy, a thread read, turned into a todo due Thursday, then the agent asked which mail needs an answer this week, naming three messages"></video>
   </section>
 
   <section class="showcase wide">

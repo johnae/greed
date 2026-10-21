@@ -1,0 +1,54 @@
+# Mail: the list, searching it as you type, reading a thread, turning it
+# into a todo, and asking Greed's agent which mail needs an answer. The
+# mail is site/media/mail, served by a Dovecot of the recording's own, on
+# the morning the demo profile fixes.
+# command: greed mail
+# needs: mail
+size 1280 800
+fps 30
+typing 0.03
+show-keys
+hide
+wait-for Tomato seeds
+show
+wait 0.6
+
+caption Mail from every account in one list, newest first
+wait 2
+
+caption Searching as you type
+keys /
+type deploy
+wait 1.2
+keys enter
+wait 0.6
+
+caption Reading the thread
+keys enter
+wait-for Jonas
+wait 2.2
+
+caption A todo from it, due when you say, in your notes' inbox
+keys T
+wait 0.8
+type thursday
+wait 0.4
+shot mail-todo
+keys enter
+wait 1.6
+keys q
+keys alt-1
+wait 0.8
+
+caption Asking the agent about what's in front of you
+keys space i n
+type Greed
+keys enter
+type project
+keys enter
+type which of these need an answer from me this week?
+keys alt-enter
+wait-for something to pay
+wait 3
+shot mail
+wait 0.5

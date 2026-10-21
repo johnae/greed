@@ -1,0 +1,31 @@
+# Hoard on an Obsidian vault: a note with properties, a callout, links
+# shown as their words, a section embedded from another note and a notes
+# block listing the garden's open todos, which keeps up as one is added.
+# command: greed notes
+# needs: notes
+size 1280 800
+fps 30
+typing 0.03
+show-keys
+hide
+wait-for Agenda
+type Summer project
+wait-for Notes that match
+keys up enter
+wait-for Start early
+wait 1
+show
+
+caption A note from an Obsidian vault: properties, a callout, links as their words
+wait 3
+
+caption A section of another note, embedded and kept current
+wait 2.5
+
+caption A notes block lists the garden's open todos, and keeps up
+keys ctrl-end
+type - [ ] stake the tomatoes due:2026-10-23
+wait-for stake the tomatoes
+wait 4
+shot obsidian
+wait 0.5

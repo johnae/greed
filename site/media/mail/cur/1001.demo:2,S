@@ -1,0 +1,15 @@
+Date: Tue, 13 Oct 2026 08:12:00 +0200
+From: Nordic Power <billing@nordicpower.example>
+To: Sam Ek <sam@example.com>
+Subject: Your October invoice
+Message-ID: <inv-1001@nordicpower.example>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hi Sam,
+
+Your invoice for October is ready: 642 kr, due 31 October 2026.
+
+Pay it in your bank with reference 4410 2291 7735.
+
+Nordic Power

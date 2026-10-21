@@ -2,8 +2,12 @@
 
 Greed reads, searches and writes your mail. `greed mail` opens it in a
 session of its own, on a full page: your inbox, newest first, with the
-search box over it. What you type narrows the list as you type, in the
-query language every search in Greed speaks:
+search box over it.
+
+[![The mail list, searched for deploy, a thread read, turned into a todo due Thursday, then the agent asked which mail needs an answer this week, naming three messages](https://github.com/johnae/greed/releases/download/media/mail.png)](https://github.com/johnae/greed/releases/download/media/mail.mp4)
+
+What you type narrows the list as you type, in the query language every
+search in Greed speaks:
 
 ```text
 in:inbox is:unread                 unread in the inbox
