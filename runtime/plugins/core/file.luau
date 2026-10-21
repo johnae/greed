@@ -597,6 +597,19 @@ function M.link_scheme(scheme: string, open: (uri: string) -> ())
 	greed.plugin.tie(registry.set(schemes, string.lower(scheme), open))
 end
 
+local outside: (uri: string) -> ()
+
+--- Opens the web page at `path`, one a plugin wrote (like mail laid out
+--- to load nothing), in the browser, as links open outside Greed. Only an
+--- .html file: the system's opener runs a program it's given.
+function M.open_page(path: string)
+	if not string.match(string.lower(path), "%.html?$") then
+		greed.echo(`not opening {path}: only a web page opens in the browser`)
+		return
+	end
+	outside(`file://{text.percent_encode(path, "/")}`)
+end
+
 --- Opens `uri`: a link of a scheme a plugin opens (`link_scheme`) with
 --- that plugin, a web or mail address with the link-opener option or the
 --- system's opener, and a file:// link as the file here. Says why when it
@@ -615,6 +628,11 @@ function M.open_link(uri: string)
 		greed.echo(`not opening {uri}: only http, https and mailto links open from Greed`)
 		return
 	end
+	outside(uri)
+end
+
+-- Hands `uri` to the link-opener option or the system's opener.
+outside = function(uri: string)
 	local given = greed.option.get("link-opener") :: string
 	local done, err
 	if given ~= "" then

@@ -717,9 +717,12 @@ end)
 test("a thread reads from its HTML, its links open, and h reads it as text", function(t)
 	fake()
 	local opened: { string } = {}
-	local open_link = core.file.open_link
+	local open_link, open_page = core.file.open_link, core.file.open_page
 	core.file.open_link = function(uri: string)
 		table.insert(opened, uri)
+	end
+	core.file.open_page = function(path: string)
+		table.insert(opened, `page {path}`)
 	end
 	local ok, err: any = pcall(function()
 		t:buffer("|x")
@@ -734,13 +737,13 @@ test("a thread reads from its HTML, its links open, and h reads it as text", fun
 		t:keys("enter")
 		assert(opened[1] == "https://example.com/garden", tostring(opened[1]))
 		t:keys("b")
-		assert(opened[2] == "file:///pages/m:1:a.html", tostring(opened[2]))
+		assert(opened[2] == "page /pages/m:1:a.html", "in the browser: " .. tostring(opened[2]))
 		t:keys("h")
 		text = buffer:text()
 		assert(string.find(text, "tomatoes by the fence", 1, true), text)
 		assert(not string.find(text, "Read more", 1, true), "as text: " .. text)
 	end)
-	core.file.open_link = open_link
+	core.file.open_link, core.file.open_page = open_link, open_page
 	assert(ok, tostring(err))
 end)
 

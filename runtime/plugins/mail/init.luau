@@ -1863,7 +1863,7 @@ greed.command({
 			greed.echo(err or "it has no HTML to show")
 			return
 		end
-		core.file.open_link(`file://{path}`)
+		core.file.open_page(path)
 	end,
 })
 
