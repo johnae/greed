@@ -136,8 +136,9 @@ account.
 
 What you write goes through the account it's from. A reply is from the
 address the mail was sent to, so a reply to work mail goes from work. New
-mail (`c`) starts from your first account; change the `From:` line to
-any other address of yours, and it goes through that account. Changes,
+mail (`c`) starts from the address `from` names in mail.toml, or your
+first account's (see [Identities](#identities)); change the `From:` line
+to any other address of yours, and it goes through that account. Changes,
 like archiving or deleting, happen in the account the message is in.
 
 Rules see every account; add `account:` to a rule's query for one alone:
@@ -302,7 +303,9 @@ Your lines stay as you broke them, a reply's quoted lines are a quote, and
 the signature goes as it is. `:set mail-markdown false` sends plain text
 alone.
 
-`:mail-send` sends it and goes back to the list. It waits ten seconds,
+`ctrl-enter` (or `alt-enter`, in a terminal that can't tell `ctrl-enter`
+from `enter`) sends it, while typing too, and so does `:mail-send`; then
+it goes back to the list. It waits ten seconds,
 in which `z` takes it back and opens it again, then goes, and Greed says
 when it's sent. A copy goes in your Sent folder (Gmail and Bridge file
 it themselves), and the message you answered is marked answered. Mail
@@ -313,6 +316,20 @@ at once with `:w`, so it outlasts closing it with `:mail-close` and the
 mail session ending. `:mail-drafts` lists your drafts, newest first:
 `enter` goes on writing one, and `alt-.` on one offers to discard it.
 Drafts are kept on this machine, beside the store, and go once sent.
+
+While writing:
+
+| Keys or command           | Does                                                       |
+| ------------------------- | ---------------------------------------------------------- |
+| `ctrl-enter`, `alt-enter` | sends it                                                   |
+| `:w`                      | keeps it as a draft now                                    |
+| `:mail-close`             | closes it, kept as a draft                                 |
+| `:mail-attach FILE`       | attaches a file                                            |
+| `:mail-from`              | picks which of your addresses it's from (see [Identities](#identities)) |
+| `:mail-drafts`            | lists your drafts to go on with one                        |
+| `space .`                 | offers to send it, pick who it's from, or discard it       |
+
+Sending from `space .` asks `y` first; the keys and `:mail-send` don't.
 
 ## Tags
 
@@ -329,25 +346,34 @@ takes it off, on the server, where your other mail apps see it too:
   on a message you can lose first.
 - On other servers (Dovecot, Fastmail) it's an IMAP keyword.
 
-## Todos
+## Mail and Hoard
 
-`T` asks for a todo about the message, starting as who sent it and what
-it's about, and adds it to your inbox note in [Hoard](hoard.md). Say when
-it's due in words, as anywhere in Hoard: `Bob Lind: Invoice 41 friday`.
-It ends in a link back to the message:
+Mail and [Hoard](hoard.md), your notes and todos, meet in todos. `T` on
+a message (or in a thread) asks for a todo about it, starting as who sent
+it and what it's about, and adds it to your inbox note, the one Hoard's
+home page opens under **Inbox**. Say when it's due in words, as anywhere
+in Hoard: `Bob Lind: Invoice 41 friday`, or `... friday remind:09:00` to
+be reminded. It ends in a link back to the message:
 
 ```markdown
 - [ ] Bob Lind: Invoice 41 [mail](mail:41@example.com) due:2026-10-23
 ```
 
-Opening the link reads the thread again, in the mail session or as a
-quick look anywhere else. The todo reads well without it too, on your
-phone say.
+From there it's a todo like any other: it's on the home page and the
+agenda when it's due, its reminder goes off in Greed and on your desktop,
+and you can move it to any note. Opening the link, as any link in a note
+opens, reads the thread again, in the mail session or as a quick look
+anywhere else. The link names the message by its Message-ID, so it keeps
+working after the mail is archived or moved, and the todo reads well
+without it too, on your phone say. A `[mail](mail:ID)` link works in any
+note, so a meeting's notes can link the thread they're about.
 
 ## Rules
 
 Rules act on new mail as it comes in: a query, and what to do with what
-it finds. Set them in your config:
+it finds. They're Luau tables in your config (`~/.config/greed/init.luau`,
+which runs again when you save it), and the query is the one the search
+box takes:
 
 ```luau
 require("@mail").rules = {
@@ -384,6 +410,71 @@ One that would change more than a hundred messages at once doesn't: it
 says so, and `:mail-rule-run` does it once you've looked, so a query
 that finds more than you meant can't move your mail unseen. Rules never
 delete for good: trashing what's in the trash is left to you.
+
+## Mail and agents
+
+Mail has no agent tools of its own yet: an agent can't search your mail,
+or read a thread you haven't opened. What it sees is what any agent
+attached to a session sees, the buffers open there:
+
+- In the mail session, or another with a quick look open, that's the
+  list, the thread you're reading and mail you're writing. The `read`
+  tool gives their text and `focus` what you've selected. Mail is written
+  by whoever sent it, so that text reaches the agent marked as from
+  outside, to read as data: a mail saying "ignore your instructions" is
+  something it read, never something you asked for.
+- An agent in your project's session sees none of it unless a quick look
+  is open there, as the mail session is a session of its own.
+- It can write in mail you're writing, as in any buffer. Sending, with
+  `:mail-send` or `space .`, asks you every time, whatever you've allowed
+  it.
+- Other mail commands (archive, tag, mark read) it runs as any command,
+  asking you as you've set agents to (see [Agents](agents.md)), and
+  deleting from the trash asks you again.
+- Luau it runs with `eval` reads what the editor has open, mail too, and
+  what it returns isn't marked; `:set agent-eval ask` shows you each run
+  first. An agent you let run shell commands can read the store in
+  `~/.local/share/greed/mail` like any file of yours.
+
+Greed sends none of your mail to a model by itself: nothing sorts,
+summarises or answers it unless you ask an agent to. To have one help
+with a reply, press `r`, ask it to write the reply in the mail you're
+writing, then read it and send it yourself.
+
+## What's there and what isn't
+
+There now:
+
+- IMAP and SMTP accounts, any number, with Gmail (an app password) and
+  Proton (through Bridge) set up for their ways.
+- A local copy of everything, searched as you type, offline too, by
+  sender, subject, text, date, folder or label, account, list, and
+  what's attached by name and kind.
+- Threads, HTML laid out in Greed with nothing loaded from anywhere, and
+  attachments opened in Greed or the program for them.
+- Writing in Markdown, replies quoting what they answer, address
+  completion, attachments, identities with signatures, a default From,
+  drafts that outlast closing, and ten seconds to take mail back.
+- Read, flag, tag, archive and trash, undoable and sent to the server;
+  rules for new mail and for mail of an age; saved searches as tabs.
+- Answering calendar invites, and todos in Hoard linking back to mail.
+
+Not yet:
+
+- Forwarding mail, and moving it to a folder of your choosing (on Gmail
+  and Proton, a tag does that).
+- Drafts on the server: they're kept on this machine only, so your other
+  mail apps don't see them.
+- Signing in with OAuth, so accounts that only allow that (Microsoft 365,
+  Gmail without app passwords) can't be added.
+- PGP and S/MIME, for encrypting and signing.
+- An alert when new mail comes, beyond the counts over the list.
+- A calendar: invites are answered, not kept.
+- Contacts from an address book: completion knows the people you've had
+  mail with.
+- Replying from the address you got a Bcc'd or forwarded mail at, when it
+  isn't on the mail's To or Cc lines: change the `From:` line.
+- Windows.
 
 ## mail.toml
 
