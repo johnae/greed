@@ -143,7 +143,7 @@ row, named by its labels' values:
 
 ```text
 ❯ prom 'sum by (namespace) (kube_pod_container_resource_requests{resource="cpu"})' | chart
-hyperspool     ███████████████████████████████████████████ 1.88
+webshop        ███████████████████████████████████████████ 1.88
 kube-system    ████████████████████████████████████▎ 1.58
 flux-system    ████████████▋ 0.55
 monitoring     ███████▏ 0.31
