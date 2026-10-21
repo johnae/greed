@@ -1,8 +1,10 @@
 /* The docs in greed.rs's colors: the light theme like the front page, the
    dark one (navy) like it at night. */
 
+@import url("/assets/fonts/fonts.css");
+
 :root {
-  --mono-font: ui-monospace, "Iosevka", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --mono-font: "Greed Mono", ui-monospace, "Iosevka", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   --code-font-size: 0.9em;
 }
 

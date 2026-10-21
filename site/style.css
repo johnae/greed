@@ -1,6 +1,8 @@
 /* greed.rs: the landing page. Code and terminals are in Catppuccin Frappé,
    the theme the recordings use, with the logo's purple as the accent. */
 
+@import url("/assets/fonts/fonts.css");
+
 :root {
   --bg: #f4f2f7;
   --bg-soft: #ebe8f2;
@@ -19,7 +21,7 @@
   --code-op: #99d1db;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --mono: ui-monospace, "Iosevka", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --mono: "Greed Mono", ui-monospace, "Iosevka", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   color-scheme: light dark;
 }
 

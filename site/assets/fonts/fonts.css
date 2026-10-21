@@ -1,0 +1,16 @@
+/* Code in one font on every device, its box drawing and block bars the
+   width of its letters: JetBrains Mono, under the SIL Open Font License
+   (JetBrainsMono-OFL.txt). */
+@font-face {
+  font-family: "Greed Mono";
+  src: url("/assets/fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Greed Mono";
+  src: url("/assets/fonts/JetBrainsMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
