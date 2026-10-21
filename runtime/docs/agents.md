@@ -691,9 +691,11 @@ them back.
 Each message takes along what's on screen: the file you were last in (the
 one beside the agent's pane while you type there), the cursor's line and
 column, the selected text (cut after 4000 characters) and the other files
-showing. When what you're in isn't a file, like mail you're reading, a
-shell or a list, it says which buffer, so "translate this" or "what does
-this say?" goes straight to its text. It's marked as editor context, so
+showing. When what you're in isn't a file, it says what it is and which
+buffer: "the mail list, searching in:inbox, 198 shown", "a mail thread of
+3 messages", "the shell in ~/src, its last command `cargo test` failed",
+a terminal or Hoard's home page. So "translate this" or "why did that
+fail?" goes straight to it. It's marked as editor context, so
 the agent treats the file text as data, and isn't sent again when nothing
 changed. `:set
 agent-editor-context false` turns it off.

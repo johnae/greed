@@ -2376,6 +2376,32 @@ core.outside.kind("mail-compose", "mail being written, quoting mail you received
 -- Mail sent is out of your hands, so an agent sending it asks you.
 core.risk.editor_command("mail-send", "sends the mail being written")
 
+-- What an agent is told the user is in.
+core.about.kind("mail", function(buffer: greed.Buffer): string?
+	local o = open
+	if o == nil or o.buffer ~= buffer then
+		return nil
+	end
+	local named = ""
+	for _, search in M.searches do
+		if search.query == o.query then
+			named = ` (the saved search {search.name})`
+		end
+	end
+	return `the mail list, searching "{o.query}"{named}, {#o.rows} shown`
+end)
+core.about.kind("mail-thread", function(buffer: greed.Buffer): string?
+	local r = reading
+	if r == nil or r.buffer ~= buffer then
+		return nil
+	end
+	local count = #r.thread.messages
+	return `a mail thread of {count} message{if count == 1 then "" else "s"}`
+end)
+core.about.kind("mail-compose", function(): string
+	return "mail the user is writing, which only they send"
+end)
+
 greed.keymap.bind({ kind = "mail" }, ACTIONS)
 -- The saved searches show as tabs over the list, so they go as tabs do:
 -- tab and shift-tab through them, alt and a number to one, as in a

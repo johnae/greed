@@ -1455,6 +1455,20 @@ greed.command({
 -- typing again.
 core.style.typing_kind(KIND)
 
+-- What an agent is told the user is in: the shell, and the last command.
+core.about.kind(KIND, function(buffer: greed.Buffer): string?
+	local shell = state.of(buffer)
+	if shell == nil then
+		return nil
+	end
+	local said = `the shell {shell.name} in {shell.cwd}`
+	local last = shell.blocks[#shell.blocks]
+	if last then
+		said ..= `, its last command \`{last.command}\` {last.status}`
+	end
+	return said .. " (shell_read in the shell tools reads its blocks)"
+end)
+
 greed.keymap.bind({ layer = "leader" }, { ["o s"] = "pick-shell", ["o w"] = "pick-running" })
 greed.keymap.bind({ role = "typing", kind = KIND }, {
 	enter = "shell-enter",

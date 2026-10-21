@@ -234,6 +234,9 @@ return {
 	--- Kinds of buffer whose text someone else wrote, as agents read it
 	--- (outside.luau).
 	outside = require("@self/outside"),
+	--- What a buffer is, in a few words, as the plugin showing it says
+	--- (about.luau).
+	about = require("@self/about"),
 	--- Going back through what was typed before with up and down, as a
 	--- shell's prompt and an agent's box do (recall.luau).
 	recall = recall,

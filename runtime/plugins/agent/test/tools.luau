@@ -54,6 +54,14 @@ test("focus and the context sent tell what you're in when it isn't a file, like 
 	assert(focus.buffer == `buffer:{letter:id()}` and focus.kind == "letter", focus.buffer)
 	local said = assert(require("@agent").context.describe())
 	assert(string.find(said, `In: a letter buffer, buffer:{letter:id()}`, 1, true), said)
+	-- What its plugin says it is, when it says.
+	core.about.kind("letter", function(buffer)
+		return `a letter of {buffer:line_count()} lines`
+	end)
+	said = assert(require("@agent").context.describe())
+	assert(string.find(said, `In: a letter of 2 lines, buffer:{letter:id()}`, 1, true), said)
+	assert(run("focus").about == "a letter of 2 lines")
+	assert(run("inspect", { id = `buffer:{letter:id()}` }).state.about == "a letter of 2 lines")
 end)
 
 test("read falls back to the disk for files that aren't open", function(t)

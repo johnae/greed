@@ -2450,6 +2450,16 @@ its selection with `focus`, get it between those tags:
 core.outside.kind("mail-thread", "mail you received")
 ```
 
+An agent is told what you're in with each message. A file says it by its
+path; a buffer of your plugin can say in a few words what it is, which
+`focus` and the inspector show too:
+
+```luau
+core.about.kind("mail", function(buffer)
+	return `the mail list, searching "{query}", {#rows} shown`
+end)
+```
+
 A tool can wait: for a process, a request, or the user. Changes to files
 are best proposed, so the user reviews them first and the tool hears what
 they decided:

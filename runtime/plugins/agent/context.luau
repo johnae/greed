@@ -97,6 +97,7 @@ function M.focus(view: greed.View): { [string]: any }
 		buffer = `buffer:{buffer:id()}`,
 		path = buffer:path(),
 		kind = buffer:kind(),
+		about = core.about.of(buffer),
 		language = buffer:language(),
 		modified = buffer:modified(),
 		-- The mode as greed.mode.get() gives it, like "helix-normal", and as
@@ -128,8 +129,9 @@ end
 --- they write to an agent: the file they're in, the cursor's line and
 --- column, the selected text (cut at `MAX_SELECTION`) and the other files
 --- showing, with paths relative to `root`. What isn't a file (mail, a
---- shell, a list) is named by its kind and buffer id, for `read`. Nil when
---- the user has nothing open.
+--- shell, a list) says what it is, as its plugin says (`core.about`), or
+--- else its kind, and its buffer id, for `read`. Nil when the user has
+--- nothing open.
 function M.describe(root: string?): string?
 	local view = M.view()
 	if view == nil then
@@ -155,7 +157,8 @@ function M.describe(root: string?): string?
 			then `File: {relative(path, root)}, {at}` .. (if buffer:modified()
 				then " (unsaved changes)"
 				else "")
-			else `In: a {buffer:kind()} buffer, buffer:{buffer:id()} (read gives its text), {at}`,
+			else `In: {core.about.of(buffer) or `a {buffer:kind()} buffer`}, `
+				.. `buffer:{buffer:id()} (read gives its text), {at}`,
 	}
 	local from, to = core.text.span(range)
 	-- A selection of one character is the cursor, in the styles that have one.

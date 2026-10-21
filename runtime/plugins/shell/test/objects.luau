@@ -56,3 +56,23 @@ test("a shell is an object, with its blocks, and shows by default", function(t)
 	assert(up and up[1].id == object.id, "a block's shell")
 	assert(core.objects.actions(object)[1].name == "show")
 end)
+
+test("an agent is told which shell you're in and its last command", function(t)
+	t:run("shell")
+	local sh = assert(shell.of(greed.view():buffer()))
+	sh.cwd = t:tempdir({})
+	local block = assert(shell.run(sh, "echo hi", { view = greed.view() }))
+	t:wait_for(function()
+		return block.status ~= "running"
+	end)
+	local about = core.about.of(sh.buffer) or ""
+	assert(
+		string.find(
+			about,
+			`the shell {sh.name} in {sh.cwd}, its last command \`echo hi\` done`,
+			1,
+			true
+		),
+		about
+	)
+end)

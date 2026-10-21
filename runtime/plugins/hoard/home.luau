@@ -851,6 +851,12 @@ greed.keymap.bind({ kind = "hoard" }, {
 	["ctrl-enter"] = "hoard-add",
 })
 
+-- What an agent is told the user is in.
+core.about.kind("hoard", function(): string
+	return "Hoard's home page: the user's todos for today, their agenda and recent notes "
+		.. "(the notes tools find and read them)"
+end)
+
 -- What's written in the box is searched for as it's written, and the box
 -- grows around it.
 greed.on("buffer.changed", function(event: greed.BufferChanged)

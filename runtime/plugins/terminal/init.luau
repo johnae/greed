@@ -1705,6 +1705,11 @@ end
 
 core.mouse.claim("terminal", on_mouse)
 
+-- What an agent is told the user is in: what it runs, and where.
+core.about.kind("terminal", function(buffer: greed.Buffer): string?
+	return if term_of(buffer) then `a terminal running {buffer:name()}` else nil
+end)
+
 -- Clicking away from a terminal stops typing into it.
 greed.on("mouse", function(event: greed.MouseEvent)
 	local view = event.view

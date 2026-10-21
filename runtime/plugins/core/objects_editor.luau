@@ -3,6 +3,7 @@
 
 local greed = require("@greed")
 local actions = require("./actions")
+local about = require("./about")
 
 return function(objects: any)
 	type Object = { kind: string, id: string, label: string, value: any }
@@ -135,6 +136,7 @@ return function(objects: any)
 			return {
 				path = buffer:path(),
 				kind = buffer:kind(),
+				about = about.of(buffer),
 				language = buffer:language(),
 				lines = buffer:line_count(),
 				bytes = buffer:len(),

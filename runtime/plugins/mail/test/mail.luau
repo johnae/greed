@@ -495,6 +495,34 @@ local function offered(window: greed.View): (core.Target?, { string })
 	return target, names
 end
 
+test(
+	"an agent is told what the mail you're in is: the list and its search, a thread, a draft",
+	function(t)
+		fake()
+		in_the_mail_session(function()
+			t:buffer("|x")
+			local window = greed.view()
+			t:run("mail")
+			t:keys("esc")
+			local list = core.about.of(window:buffer()) or ""
+			assert(
+				string.find(
+					list,
+					'^the mail list, searching "in:inbox" %(the saved search Inbox%), %d+ shown$'
+				),
+				list
+			)
+			t:keys("enter")
+			local thread = core.about.of(window:buffer()) or ""
+			assert(string.find(thread, "^a mail thread of %d+ messages?$"), thread)
+			t:keys("r")
+			assert(
+				core.about.of(window:buffer()) == "mail the user is writing, which only they send"
+			)
+		end)
+	end
+)
+
 test("space . acts on the mail under the cursor, the thread read and the draft written", function(t)
 	fake()
 	in_the_mail_session(function()
