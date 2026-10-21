@@ -146,6 +146,16 @@ local reading: {
 }? =
 	nil
 
+--- `query` read as the search box reads it; nil and why when it won't.
+function M.query(query: string): (core.Query?, string?)
+	local parsed = core.search_box.read(query, { source = M.source })
+	if not parsed.ok then
+		local problem = parsed.problems[1]
+		return nil, `{query}: {if problem then problem.message else "it won't read"}`
+	end
+	return parsed, nil
+end
+
 --- The keys of the messages `parsed` finds, newest first unless it sorts
 --- otherwise, from the index alone; or nil and why.
 function M.found(parsed: core.Query): ({ string }?, string?)
@@ -599,6 +609,13 @@ local function html_lines(message: backend.Message, cells: number): ({ core.UiNo
 		table.insert(texts, table.concat(said))
 	end
 	return nodes, texts
+end
+
+--- What `message`'s HTML reads as, laid out `cells` wide; nil when it has
+--- none.
+function M.html_text(message: backend.Message, cells: number): string?
+	local nodes, texts = html_lines(message, cells)
+	return if nodes then table.concat(texts, "\n") else nil
 end
 
 -- The lines of `message`'s text, its quoted lines dimmed, and what each
@@ -1635,10 +1652,9 @@ end
 --- The keys of the messages `rule`'s query finds, newest first, up to
 --- `most`; nil and why when its query won't read.
 function M.rule_finds(rule: Rule, most: number): ({ string }?, string?)
-	local parsed = core.search_box.read(rule.query, { source = M.source })
-	if not parsed.ok then
-		local problem = parsed.problems[1]
-		return nil, `{rule.query}: {if problem then problem.message else "it won't read"}`
+	local parsed, err = M.query(rule.query)
+	if parsed == nil then
+		return nil, err
 	end
 	parsed.view.limit = most
 	return M.found(parsed)
@@ -2078,13 +2094,23 @@ local function complete_addresses()
 	completion.keys_over("mail-compose")
 end
 
+-- Agents' tools for mail, while there are agents (tools.luau).
+local function offer_tools()
+	require("@self/tools")(M)
+end
+
 if table.find(greed.plugin.list(), "lsp") then
 	complete_addresses()
+end
+if table.find(greed.plugin.list(), "agent") then
+	offer_tools()
 end
 
 greed.on("plugin.loaded", function(event: greed.PluginLoaded)
 	if event.name == "lsp" then
 		complete_addresses()
+	elseif event.name == "agent" then
+		offer_tools()
 	end
 end)
 

@@ -1391,3 +1391,75 @@ test("the list says what greed-mail is busy with: indexing, then syncing", funct
 	text = greed.view():buffer():text()
 	assert(string.find(text, "syncing", 1, true) == nil, "all in: " .. text)
 end)
+
+-- Runs the agent tool `name` with `args`.
+local function tool(name: string, args: { [string]: any }): any
+	local agent = require("@agent")
+	for _, found in agent.tools() do
+		if found.name == name then
+			return found.run(args, agent.caller())
+		end
+	end
+	error(`no tool {name}`)
+end
+
+test(
+	"an agent searches the mail and reads a thread, which stays unread, marked as from outside",
+	function(t)
+		fake()
+		local found = tool("mail_search", { query = "from:anna" })
+		assert(string.find(found, "^<untrusted%-%x+ source=\"a search of the user's mail"), found)
+		local rows = greed.json.decode(assert(string.match(found, "\n(.*)\n</untrusted")))
+		assert(#rows == 1 and rows[1].key == "m:1:b" and rows[1].subject == "Invoice 41", found)
+		assert(rows[1].attached == 1)
+		local none = greed.json.decode(
+			assert(
+				string.match(tool("mail_search", { query = "from:nobody" }), "\n(.*)\n</untrusted")
+			)
+		)
+		assert(#none == 0, "nothing found is an empty list")
+		assert(
+			not pcall(tool, "mail_search", { query = "date:not-a-date" }),
+			"a query that won't read fails"
+		)
+		local thread = tool("mail_read", { key = "m:1:a" })
+		assert(string.find(thread, 'source="mail the user received"', 1, true), thread)
+		local read = greed.json.decode(assert(string.match(thread, "\n(.*)\n</untrusted")))
+		assert(
+			read.subject == "Garden plans" and read.messages[1].text == "tomatoes by the fence",
+			thread
+		)
+		assert(#acted == 0, "reading for an agent leaves it unread")
+		assert(not pcall(tool, "mail_read", { key = "m:9:z" }), "no such mail")
+	end
+)
+
+test("an agent shows you a thread, and marks or archives mail after asking", function(t)
+	fake()
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		tool("mail_show", { key = "m:1:b" })
+		t:wait(0)
+		local shown = false
+		for _, view in greed.floats() do
+			shown = shown or view:buffer():kind() == "mail-thread"
+		end
+		assert(shown or window:buffer():kind() == "mail-thread", "the thread shows")
+		local agent = require("@agent")
+		for _, found in agent.tools() do
+			if found.name == "mail_act" then
+				assert(agent.asks(found), "changing mail asks first")
+			elseif found.name == "mail_search" or found.name == "mail_read" then
+				assert(not agent.asks(found), "searching and reading don't")
+			end
+		end
+		acted = {}
+		assert(tool("mail_act", { keys = { "m:1:a" }, action = "archive" }) == "changed 1")
+		assert(acted[1] == "archive m:1:a", tostring(acted[1]))
+		assert(not pcall(tool, "mail_act", { keys = { "m:1:a" }, action = "tag" }), "tag needs one")
+		tool("mail_act", { keys = { "m:1:a" }, action = "trash" })
+		local again = tool("mail_act", { keys = { "m:1:a" }, action = "trash" })
+		assert(string.find(again, "only the user's to do", 1, true), again)
+	end)
+end)

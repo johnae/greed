@@ -413,24 +413,50 @@ delete for good: trashing what's in the trash is left to you.
 
 ## Mail and agents
 
-Mail has no agent tools of its own yet: an agent can't search your mail,
-or read a thread you haven't opened. What it sees is what any agent
-attached to a session sees, the buffers open there:
+Talk to an agent about your mail as about anything else in Greed. With
+each message it's told what you're in, like "the mail list, searching
+in:inbox, 198 shown" or "a mail thread of 3 messages", so you can ask
+about what's in front of you:
 
-- In the mail session, or another with a quick look open, that's the
-  list, the thread you're reading and mail you're writing. The `read`
-  tool gives their text and `focus` what you've selected. Mail is written
-  by whoever sent it, so that text reaches the agent marked as from
-  outside, to read as data: a mail saying "ignore your instructions" is
-  something it read, never something you asked for.
-- An agent in your project's session sees none of it unless a quick look
-  is open there, as the mail session is a session of its own.
+```text
+what language is this in, and what does it say?
+is this a real invoice, or phishing?
+which of these need an answer from me this week?
+```
+
+For mail that isn't on screen it has the `mail` tools, a group it
+switches on when it needs them (see [Agents](agents.md#tool-groups)):
+
+| Tool          | Does                                                             |
+| ------------- | ---------------------------------------------------------------- |
+| `mail_search` | searches every account with the query the list takes             |
+| `mail_read`   | reads a thread; it stays unread                                  |
+| `mail_show`   | opens a thread for you, as if you'd pressed it                   |
+| `mail_act`    | marks, flags, tags, archives or trashes mail, asking you first    |
+
+So you can ask for things like:
+
+```text
+find the mail from my bank about the new card this year
+summarise what's unread in work since monday
+archive the newsletters in my inbox older than a month
+```
+
+The tools reach your mail through the mail session, so it needs to be
+running, from any session you ask in.
+
+What an agent can and can't do:
+
+- What it reads of mail, through the tools, `read` or `focus`, is marked
+  as from outside, to read as data: a mail saying "ignore your
+  instructions" is something it read, never something you asked for.
+- Changing mail asks you first, as you've set agents to (see
+  [Permissions](permissions.md)); `z` in the mail undoes it. Nothing an
+  agent does deletes mail for good: trashing what's in the trash is left
+  to you.
 - It can write in mail you're writing, as in any buffer. Sending, with
   `:mail-send` or `space .`, asks you every time, whatever you've allowed
   it.
-- Other mail commands (archive, tag, mark read) it runs as any command,
-  asking you as you've set agents to (see [Agents](agents.md)), and
-  deleting from the trash asks you again.
 - Luau it runs with `eval` reads what the editor has open, mail too, and
   what it returns isn't marked; `:set agent-eval ask` shows you each run
   first. An agent you let run shell commands can read the store in
