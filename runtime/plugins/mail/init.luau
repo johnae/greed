@@ -75,7 +75,7 @@ M.source = {
 } :: core.QuerySource
 
 --- The searches kept to go back to, shown over the list with how many
---- unread messages each finds; `g 1` to `g 9` go to them. Set them in your
+--- unread messages each finds; `tab` and `alt-1` to `alt-9` go to them. Set them in your
 --- config: `require("@mail").searches = { { name = "Work", query = "in:work" } }`.
 M.searches = {
 	{ name = "Inbox", query = "in:inbox" },
@@ -456,6 +456,8 @@ local function list(query: string, window: greed.View?): Open
 		key = function(row: Summary): string
 			return row.key
 		end,
+		-- tab goes through the saved searches here, not the view's buttons.
+		keys = false,
 	})
 	refresh(o)
 	return o
@@ -2089,14 +2091,19 @@ local ACTIONS = {
 }
 
 greed.keymap.bind({ kind = "mail" }, ACTIONS)
+-- The saved searches show as tabs over the list, so they go as tabs do:
+-- tab and shift-tab through them, alt and a number to one, as in a
+-- browser (a plain number is a count).
 for i = 1, 9 do
-	greed.keymap.bind({ kind = "mail" }, { [`g {i}`] = `mail-search-{i}` })
+	greed.keymap.bind({ kind = "mail" }, { [`alt-{i}`] = `mail-search-{i}` })
 end
 greed.keymap.bind({ kind = "mail" }, {
 	enter = "mail-read",
 	["/"] = "mail-search",
 	["$"] = "mail-sync",
 	["g s"] = "mail-searches",
+	tab = "mail-search-next",
+	["shift-tab"] = "mail-search-previous",
 	["]"] = "mail-search-next",
 	["["] = "mail-search-previous",
 })
