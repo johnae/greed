@@ -525,12 +525,218 @@ end
 -- Set while a file whose opener failed opens as text.
 local as_text = false
 
+-- Hands `uri` to `command` (the uri last), or else the link-opener option
+-- or the system's opener. Says why when it can't.
+local function outside(uri: string, command: { string }?)
+	local given = greed.option.get("link-opener") :: string
+	local done, err
+	if command or given ~= "" then
+		local run = if command then table.clone(command) else string.split(given, " ")
+		table.insert(run, uri)
+		done, err = greed.process.run(run)
+	else
+		done, err = greed.process.run({ "xdg-open", uri })
+		if done == nil then
+			done, err = greed.process.run({ "open", uri })
+		end
+	end
+	if done == nil then
+		greed.echo(`can't open {uri}: {err}`)
+	elseif done.code ~= 0 then
+		greed.echo(`can't open {uri}: {done.stderr}`)
+	end
+end
+
+--- How a file opens, by its extension: as Greed shows it ("greed": its
+--- viewer, or as text), with the system's opener ("outside"), or with a
+--- command, the file's path last.
+export type OpenWith = "greed" | "outside" | { string }
+
+-- How files open, by extension, as your config says.
+local ways: { [string]: OpenWith } = {}
+
+-- What Greed can't show and the system's opener can: documents, sound
+-- and video. Other files open in Greed unless you say otherwise.
+local DOCUMENTS = {}
+for _, ext in
+	{
+		"doc",
+		"docx",
+		"odt",
+		"rtf",
+		"pages",
+		"xls",
+		"xlsx",
+		"ods",
+		"numbers",
+		"ppt",
+		"pptx",
+		"odp",
+		"key",
+		"epub",
+		"mobi",
+		"mp3",
+		"m4a",
+		"ogg",
+		"oga",
+		"opus",
+		"flac",
+		"wav",
+		"aac",
+		"mp4",
+		"m4v",
+		"mov",
+		"mkv",
+		"webm",
+		"avi",
+	}
+do
+	DOCUMENTS[ext] = true
+end
+
+-- Programs and scripts: what the system's opener would run. They're
+-- never handed out; one that's text opens as text.
+local PROGRAMS = {}
+for _, ext in
+	{
+		"exe",
+		"msi",
+		"com",
+		"scr",
+		"bat",
+		"cmd",
+		"ps1",
+		"vbs",
+		"vbe",
+		"js",
+		"jse",
+		"wsf",
+		"hta",
+		"cpl",
+		"lnk",
+		"reg",
+		"jar",
+		"apk",
+		"app",
+		"command",
+		"tool",
+		"sh",
+		"bash",
+		"zsh",
+		"fish",
+		"csh",
+		"run",
+		"bin",
+		"appimage",
+		"desktop",
+		"deb",
+		"rpm",
+		"pkg",
+		"dmg",
+		"iso",
+		"workflow",
+		"scpt",
+		"applescript",
+		"py",
+		"pl",
+		"rb",
+	}
+do
+	PROGRAMS[ext] = true
+end
+
+local function extension(path: string): string
+	return string.lower(string.match(path, "%.([%w]+)$") or "")
+end
+
+--- Makes files ending in `.ext` open `how`: in Greed ("greed", the
+--- default), with the system's opener ("outside") or with a command, as
+--- `core.file.open_with("docx", { "libreoffice" })`. Programs never open
+--- outside, whatever it says. It goes with the plugin (or config) that
+--- said it.
+function M.open_with(ext: string, how: OpenWith)
+	local bare = string.gsub(ext, "^%.", "")
+	greed.plugin.tie(registry.set(ways, string.lower(bare), how))
+end
+
+-- Whether the file at `path` starts as a program does (ELF, Mach-O, a
+-- Windows .exe, a script's #!), whatever it's called.
+local function runs(path: string): boolean
+	local head = greed.fs.read(path, 4) or ""
+	return string.sub(head, 1, 2) == "#!"
+		or string.sub(head, 1, 2) == "MZ"
+		or head == "\127ELF"
+		or head == "\207\250\237\254"
+		or head == "\206\250\237\254"
+		or head == "\254\237\250\207"
+		or head == "\202\254\186\190"
+end
+
+--- How `path` would open, and in words: "viewer" (a plugin shows it, as a
+--- PDF's pages), "text", "outside" (another program), "binary" (nothing
+--- here shows it: save it, or open it outside) or "refused" (a program,
+--- which only saves). `mime`, when known, says what it is before the file
+--- is there to look at.
+function M.opening(
+	path: string,
+	mime: string?
+): ("viewer" | "text" | "outside" | "binary" | "refused", string)
+	local ext = extension(path)
+	local way = ways[ext]
+	local program = PROGRAMS[ext] == true
+	local function is_text(): boolean
+		if mime then
+			local m = string.lower(mime)
+			return string.match(m, "^text/") ~= nil
+				or string.match(m, "[/+]json$") ~= nil
+				or string.match(m, "[/+]xml$") ~= nil
+		end
+		-- One that isn't there yet is a new file, written as text.
+		local head = greed.fs.read(path, 8192)
+		return head == nil or not string.find(head, "\0", 1, true)
+	end
+	local out = type(way) == "table" or way == "outside" or (way == nil and DOCUMENTS[ext] == true)
+	if out and not program then
+		return "outside",
+			if type(way) == "table" then `opens with {way[1]}` else "opens outside Greed"
+	elseif opener_for(path) then
+		return "viewer", "opens in Greed"
+	elseif is_text() then
+		return "text", "opens in Greed as text"
+	elseif program then
+		return "refused", "a program: it's saved, never opened"
+	end
+	return "binary", "Greed can't show it: save it, or open it outside"
+end
+
+--- Hands the file at `path` to the program that opens it outside Greed
+--- (`open_with`'s, or the system's opener), unless it's a program itself.
+function M.open_outside(path: string)
+	path = project.resolve(path)
+	local ext = extension(path)
+	if PROGRAMS[ext] or runs(path) then
+		greed.echo(`not opening {project.short(path)} outside: it's a program`)
+		return
+	end
+	local way = ways[ext]
+	outside(`file://{text.percent_encode(path, "/")}`, if type(way) == "table" then way else nil)
+end
+
 --- Shows the file at `path` in the main view and focuses it: as its
---- opener shows it (an image, a PDF), otherwise as text.
+--- opener shows it (an image, a PDF), otherwise as text; or hands it to
+--- the program that opens it, as `opening` says.
 function M.open(path: string)
 	-- A relative path is from the project you're in, as in the picker.
 	path = project.resolve(path)
-	local opener = opener_for(path)
+	local how, says = M.opening(path)
+	if how == "outside" then
+		M.open_outside(path)
+		return
+	elseif how == "refused" or how == "binary" then
+		greed.echo(`not opening {project.short(path)}: {says}`)
+		return
+	end
+	local opener = if how == "viewer" then opener_for(path) else nil
 	if opener then
 		local main = greed.tab.current().active
 		local err = opener.open(path, { main })
@@ -597,8 +803,6 @@ function M.link_scheme(scheme: string, open: (uri: string) -> ())
 	greed.plugin.tie(registry.set(schemes, string.lower(scheme), open))
 end
 
-local outside: (uri: string) -> ()
-
 --- Opens the web page at `path`, one a plugin wrote (like mail laid out
 --- to load nothing), in the browser, as links open outside Greed. Only an
 --- .html file: the system's opener runs a program it's given.
@@ -629,27 +833,6 @@ function M.open_link(uri: string)
 		return
 	end
 	outside(uri)
-end
-
--- Hands `uri` to the link-opener option or the system's opener.
-outside = function(uri: string)
-	local given = greed.option.get("link-opener") :: string
-	local done, err
-	if given ~= "" then
-		local command = string.split(given, " ")
-		table.insert(command, uri)
-		done, err = greed.process.run(command)
-	else
-		done, err = greed.process.run({ "xdg-open", uri })
-		if done == nil then
-			done, err = greed.process.run({ "open", uri })
-		end
-	end
-	if done == nil then
-		greed.echo(`can't open {uri}: {err}`)
-	elseif done.code ~= 0 then
-		greed.echo(`can't open {uri}: {done.stderr}`)
-	end
 end
 
 greed.command({

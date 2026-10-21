@@ -395,6 +395,15 @@ M.action({
 	end,
 })
 
+M.action({
+	kind = "file",
+	name = "open-outside",
+	doc = "Open it with the program your system opens it with (never a program itself)",
+	run = function(target)
+		require("./file").open_outside(target.value)
+	end,
+})
+
 for _, kind in { "file", "folder" } do
 	M.action({
 		kind = kind,

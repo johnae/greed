@@ -688,8 +688,14 @@ secret, `greed.secrets.variable("anthropic")` is the variable that does
 To show a file to the user, `core.file.open(path)` opens it in the main
 view, as the picture for an image and the pages for a PDF, and
 `core.file.open_at(path, line, col)` puts the cursor there too (0-based
-line, byte column). `core.file.open_link(uri)` opens a web address with the
-`link-opener` option or the system's opener. A plugin that shows some kind
+line, byte column). A file Greed can't show goes to the program that opens
+it, as the user's `core.file.open_with` says; `core.file.opening(path, mime)`
+says beforehand how one would open ("viewer", "text", "outside", "binary"
+or "refused") and in words, as mail does under each attachment, and
+`core.file.open_outside(path)` hands one out (never a program).
+`core.file.open_link(uri)` opens a web address with the `link-opener`
+option or the system's opener, and `core.file.open_page(path)` a page a
+plugin wrote in the browser. A plugin that shows some kind
 of file its own way registers an opener; it goes when the plugin does:
 
 ```luau

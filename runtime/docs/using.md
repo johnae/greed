@@ -2386,8 +2386,30 @@ Opening a PDF shows its first page, as wide as the pane. `]` and `[` go to
 the next and previous page (with a count, that many), `+` and `-` draw it
 bigger and smaller, and `=` as wide as the pane again. `t` switches to the
 text of every page, which reads in any terminal and searches with `/`; `t`
-again shows the page the cursor is on. Other files that aren't text open
-read-only, so saving can't change them.
+again shows the page the cursor is on.
+
+### Other files
+
+Files Greed can't show open with the program your system opens them with
+(`xdg-open`, `open` on macOS, or what the `link-opener` option names):
+office documents (Word, Excel, PowerPoint, OpenDocument, Pages, Numbers,
+Keynote), e-books, sound and video. Anything else that isn't text, like a
+zip file, doesn't open, and Greed says so; `space .` on it offers
+`open-outside`.
+
+Your config says how a kind of file opens, by its extension:
+
+```luau
+local file = require("@core").file
+file.open_with("docx", { "libreoffice" })  -- with this program
+file.open_with("zip", "outside")           -- with the system's opener
+file.open_with("rtf", "greed")             -- in Greed, as its text
+```
+
+Programs and scripts are never handed to another program, whatever the
+config says, so opening a file can't run something: a `.exe`, `.app` or
+`.desktop` file, or one that starts like a program does whatever it's
+called. A script opens as its text.
 
 ## The command line
 

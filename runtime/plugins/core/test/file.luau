@@ -396,6 +396,53 @@ test("open_at puts the cursor on a line and column, kept inside the file", funct
 	t:expect("|one\ntwo\nthree")
 end)
 
+test("files open as Greed shows them, documents outside, and as open_with says", function(t)
+	local dir = t:tempdir({ ["notes.txt"] = "hi", ["map.shown"] = "\0\1" })
+	greed.fs.write(dir .. "/blob.zip", "PK\3\4\0\0")
+	greed.fs.write(dir .. "/report.docx", "PK\3\4\0\0")
+	greed.fs.write(dir .. "/tool", "\127ELF\2\1")
+	greed.fs.write(dir .. "/setup.exe", "MZ\0\0")
+	greed.fs.write(dir .. "/run.sh", "#!/bin/sh\necho hi\n")
+	greed.fs.write(dir .. "/open.sh", `echo "$*" >> {dir}/opened`)
+	greed.option.set("link-opener", `sh {dir}/open.sh`)
+	local file = require("@core").file
+	local function how(name: string): string
+		return (file.opening(`{dir}/{name}`))
+	end
+	-- A viewer of the test's own, as the image and pdf plugins add theirs.
+	file.opener(function(path: string): boolean
+		return string.match(path, "%.shown$") ~= nil
+	end, function(): string?
+		return nil
+	end)
+	assert(how("notes.txt") == "text")
+	assert(how("map.shown") == "viewer", "a plugin shows it")
+	assert(how("report.docx") == "outside", "a document")
+	assert(how("blob.zip") == "binary", "nothing shows it, and it isn't handed out unasked")
+	assert(how("setup.exe") == "refused", "a program")
+	assert(how("run.sh") == "text", "a script reads as text")
+	assert(how("new.md") == "text", "one that isn't there yet is new")
+	assert(file.opening("/kept/a.bin", "text/plain") == "text", "by its type, before it's there")
+	file.open(`{dir}/report.docx`)
+	file.open_outside(`{dir}/blob.zip`)
+	file.open_outside(`{dir}/tool`)
+	file.open_outside(`{dir}/run.sh`)
+	local opened = greed.fs.read(dir .. "/opened") or ""
+	assert(string.find(opened, "report.docx", 1, true), opened)
+	assert(string.find(opened, "blob.zip", 1, true), "asked for: " .. opened)
+	assert(not string.find(opened, "tool", 1, true), "a program by its start: " .. opened)
+	assert(not string.find(opened, "run.sh", 1, true), "a script: " .. opened)
+	file.open_with("docx", { "sh", `{dir}/open.sh`, "with" })
+	file.open_with("zip", "outside")
+	assert(select(2, file.opening(`{dir}/report.docx`)) == "opens with sh")
+	assert(how("blob.zip") == "outside")
+	file.open(`{dir}/report.docx`)
+	opened = greed.fs.read(dir .. "/opened") or ""
+	assert(string.find(opened, "with file://", 1, true), opened)
+	file.open_with("exe", "outside")
+	assert(how("setup.exe") == "refused", "a program never goes out")
+end)
+
 test("open_page opens a web page in the browser, and nothing else", function(t)
 	local dir = t:tempdir()
 	greed.fs.write(dir .. "/open.sh", `echo "$1" > {dir}/opened`)
