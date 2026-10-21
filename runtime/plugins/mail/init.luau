@@ -2031,6 +2031,30 @@ for i = 1, 9 do
 end
 
 greed.command({
+	name = "mail-searches",
+	doc = "Pick a saved search to show, however many there are, with how many unread each finds",
+	run = function()
+		local o = open
+		local items: { { label: string, value: string } } = {}
+		for _, saved in M.searches do
+			local unread = if o then o.unread[saved.query] else nil
+			local count = if unread and unread > 0 then `  {unread} unread` else ""
+			table.insert(
+				items,
+				{ label = `{saved.name}  {saved.query}{count}`, value = saved.query }
+			)
+		end
+		if #items == 0 then
+			greed.echo('no saved searches: require("@mail").searches sets them')
+			return
+		end
+		require("@picker").pick("Saved searches", items, function(item)
+			M.go(item.value)
+		end)
+	end,
+})
+
+greed.command({
 	name = "mail-search-next",
 	doc = "Show what the next saved search finds",
 	run = function()
@@ -2072,6 +2096,7 @@ greed.keymap.bind({ kind = "mail" }, {
 	enter = "mail-read",
 	["/"] = "mail-search",
 	["$"] = "mail-sync",
+	["g s"] = "mail-searches",
 	["]"] = "mail-search-next",
 	["["] = "mail-search-previous",
 })

@@ -898,6 +898,9 @@ test("saved searches show over the list with their unread, and g 1 to g 9 go to 
 			table.concat(subjects(), ", ") == "Invoice 41, Garden plans",
 			"back round to the inbox"
 		)
+		-- However many there are, g s picks one by its name.
+		t:keys("g s U n r e a d enter")
+		assert(table.concat(subjects(), ", ") == "Garden plans", table.concat(subjects(), ", "))
 	end)
 end)
 
