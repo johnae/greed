@@ -105,6 +105,8 @@ export type Identity = {
 	signature: string?,
 	reply_to: string?,
 	bcc: string?,
+	--- Whether new mail is from it (mail.toml's `from`).
+	default: boolean?,
 }
 
 --- An account in mail.toml: what it's called, its address and the

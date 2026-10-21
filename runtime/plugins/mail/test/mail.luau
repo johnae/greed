@@ -682,6 +682,59 @@ test("mail goes out as its From's identity says: name, Reply-To, Bcc and signatu
 	end)
 end)
 
+test("new mail is from mail.toml's from, and :mail-from changes who with its signature", function(t)
+	fake()
+	local own: { [string]: string } = { address = "me@example.com", signature = "Me" }
+	local alias: { [string]: any } = {
+		address = "me@alias.example",
+		display_name = "Alias Desk",
+		signature = "The desk",
+		reply_to = "help@alias.example",
+		default = true,
+	}
+	identities = { own, alias }
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc c")
+		local buffer = window:buffer()
+		local text = buffer:text()
+		assert(
+			string.find(text, "^From: Alias Desk <me@alias%.example>\n"),
+			"the default: " .. text
+		)
+		assert(string.find(text, "Reply-To: help@alias.example", 1, true), text)
+		-- Where the text goes: past the header's blank line.
+		window:set_cursor((string.find(text, "\n\n", 1, true) :: number) + 1)
+		type_in(window, "Hello")
+		t:run("mail-from")
+		t:keys("m e @ e x a m p l e enter")
+		text = buffer:text()
+		assert(string.find(text, "^From: me@example%.com\n"), text)
+		assert(not string.find(text, "Reply-To", 1, true), "the alias's Reply-To went: " .. text)
+		assert(
+			string.find(text, "\n\nHello\n\n-- \nMe\n", 1, true),
+			"its signature in the other's place: " .. text
+		)
+		assert(not string.find(text, "The desk", 1, true), text)
+		-- A signature edited by hand stays as it is.
+		buffer:edit(function(e)
+			local at = (string.find(buffer:text(), "-- \nMe", 1, true) :: number) + 3
+			e:replace(at, at + 2, "Me, from my phone")
+		end)
+		t:run("mail-from")
+		t:keys("D e s k enter")
+		text = buffer:text()
+		assert(string.find(text, "Me, from my phone", 1, true), "kept: " .. text)
+		assert(
+			not string.find(text, "The desk", 1, true),
+			"and no second signature under it: " .. text
+		)
+		assert(string.find(text, "From: Alias Desk", 1, true), text)
+	end)
+end)
+
 test("a reads a reply to all; c writes new mail from To", function(t)
 	fake()
 	in_the_mail_session(function()

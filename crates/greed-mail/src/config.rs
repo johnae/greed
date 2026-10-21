@@ -20,6 +20,9 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Who new mail is from: one of the accounts' addresses or aliases;
+    /// the first account's own without it.
+    pub from: Option<String>,
     #[serde(rename = "account", default)]
     pub accounts: Vec<Account>,
 }
@@ -82,6 +85,9 @@ pub struct Settled {
     pub signature: Option<String>,
     pub reply_to: Option<String>,
     pub bcc: Option<String>,
+    /// Whether new mail is from it, as mail.toml's `from` says
+    /// (`Config::identities`).
+    pub default: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -181,6 +187,7 @@ impl Account {
                     signature,
                     reply_to: pick(own.map(|i| &i.reply_to), &self.reply_to),
                     bcc: pick(own.map(|i| &i.bcc), &self.bcc),
+                    default: false,
                 }
             })
             .collect()
@@ -288,12 +295,37 @@ impl Config {
                 }
             }
         }
+        if let Some(from) = &config.from
+            && config.sending_as(from).is_none()
+        {
+            return Err(format!(
+                "from = \"{from}\" isn't an address of an account's, nor an alias of one"
+            ));
+        }
         Ok(config)
     }
 
     /// The account called `name`.
     pub fn account(&self, name: &str) -> Option<&Account> {
         self.accounts.iter().find(|a| a.name == name)
+    }
+
+    /// How mail goes out from each of `account`'s addresses, the one new
+    /// mail is from (`from`) marked: else the first account's own.
+    pub fn identities(&self, account: &Account) -> Vec<Settled> {
+        let default = match &self.from {
+            Some(from) => crate::addresses::bare(from),
+            None => self
+                .accounts
+                .first()
+                .map(|a| crate::addresses::bare(&a.address))
+                .unwrap_or_default(),
+        };
+        let mut identities = account.identities();
+        for identity in &mut identities {
+            identity.default = crate::addresses::bare(&identity.address) == default;
+        }
+        identities
     }
 
     /// The account that sends as `from` ("Anna <anna@x>" or the address),
@@ -389,6 +421,34 @@ mod tests {
         let one = format!("[[account]]\n{base}password = [\"x\"]\nprovider = \"gmail\"\n");
         assert!(says(&format!("{one}{one}")).contains("two accounts are called a"));
         assert!(says("[[account]]\nname = \"a\"\nadress = \"x\"").contains("adress"));
+    }
+
+    #[test]
+    fn new_mail_is_from_from_else_the_first_account_and_from_must_be_yours() {
+        let two = |from: &str| {
+            format!(
+                "{from}\n[[account]]\nname = \"a\"\naddress = \"a@x\"\naliases = [\"desk@x\"]\nprovider = \"gmail\"\npassword = [\"echo\", \"p\"]\n\
+                 [[account]]\nname = \"b\"\naddress = \"b@y\"\nprovider = \"gmail\"\npassword = [\"echo\", \"p\"]"
+            )
+        };
+        let defaults = |config: &Config| -> Vec<String> {
+            config
+                .accounts
+                .iter()
+                .flat_map(|a| config.identities(a))
+                .filter(|i| i.default)
+                .map(|i| i.address)
+                .collect()
+        };
+        let set = Config::parse(&two("from = \"Desk <DESK@x>\"")).unwrap();
+        assert_eq!(defaults(&set), ["desk@x"], "an alias, however it's written");
+        let unset = Config::parse(&two("")).unwrap();
+        assert_eq!(defaults(&unset), ["a@x"], "the first account's own");
+        let stranger = Config::parse(&two("from = \"c@z\"")).unwrap_err();
+        assert!(
+            stranger.contains("isn't an address of an account's"),
+            "{stranger}"
+        );
     }
 
     #[test]

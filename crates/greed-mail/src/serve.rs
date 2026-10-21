@@ -510,7 +510,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             with.config
                 .accounts
                 .iter()
-                .map(|a| json!({ "name": a.name, "address": a.address, "aliases": a.aliases, "identities": a.identities() }))
+                .map(|a| json!({ "name": a.name, "address": a.address, "aliases": a.aliases, "identities": with.config.identities(a) }))
                 .collect::<Vec<_>>()
         )),
         "act" => act(params, with),

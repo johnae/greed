@@ -422,6 +422,22 @@ the signature under where you write (above the quote in a reply), after a
 change before sending. An identity's address must be the account's or
 one of its aliases.
 
+New mail is from your first account's address unless `from`, at the top
+of mail.toml, names another of yours:
+
+```toml
+from = "support@spool.example"
+
+[[account]]
+…
+```
+
+A reply is from the address the mail was sent to, among your own. To
+send from another, `:mail-from` (or `space .` in the mail, then `from`)
+picks one of your addresses by name: the From line changes, and with it
+the signature, Reply-To and Bcc, where they're still as the last identity
+put them; one you've changed stays as you left it.
+
 ### Gmail
 
 ```toml

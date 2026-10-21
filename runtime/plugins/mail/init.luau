@@ -1145,19 +1145,53 @@ end
 -- How many drafts were started here, to tell their files apart.
 local started = 0
 
+--- Every address you send from, as it goes out: each account's, then its
+--- aliases', in mail.toml's order.
+function M.identities(): { backend.Identity }
+	local out: { backend.Identity } = {}
+	for _, account in backend.get().accounts() do
+		local identities: { backend.Identity } = account.identities or {}
+		table.move(identities, 1, #identities, #out + 1, out)
+	end
+	return out
+end
+
 --- How mail from `from` ("Anna <anna@x>" or the address) goes out, as
 --- mail.toml says; nil for an address that isn't yours.
 function M.identity(from: string): backend.Identity?
 	local address = string.lower(string.match(from, "<([^>]+)>") or core.text.trim(from))
-	for _, account in backend.get().accounts() do
-		local identities: { backend.Identity } = account.identities or {}
-		for _, identity in identities do
-			if string.lower(identity.address) == address then
-				return identity
-			end
+	for _, identity in M.identities() do
+		if string.lower(identity.address) == address then
+			return identity
 		end
 	end
 	return nil
+end
+
+--- The address new mail is from: mail.toml's `from`, else your first
+--- account's.
+function M.default_from(): string
+	for _, identity in M.identities() do
+		if identity.default then
+			return identity.address
+		end
+	end
+	local first = backend.get().accounts()[1]
+	return if first then first.address else ""
+end
+
+-- What `identity` puts on the From line.
+local function from_line(identity: backend.Identity): string
+	local name = identity.display_name
+	return if name and name ~= "" then `{name} <{identity.address}>` else identity.address
+end
+
+-- A signature as it's written in mail, after its "-- " line; "" for none.
+-- "-- " starts a signature, as mail programs know to leave it out of a
+-- reply's quote.
+local function signature_block(identity: backend.Identity?): string
+	local signature = identity and identity.signature
+	return if signature and signature ~= "" then `\n\n-- \n{signature}` else ""
 end
 
 --- `draft`, new, made as its From's identity says: the name on the From
@@ -1179,23 +1213,72 @@ function M.as_identity(draft: Draft): Draft
 	if out.bcc == "" then
 		out.bcc = identity.bcc or ""
 	end
-	local signature = identity.signature
-	if signature and signature ~= "" then
-		-- "-- " starts a signature, as mail programs know to leave it out
-		-- of a reply's quote.
-		out.text = `\n\n-- \n{signature}` .. (if out.text == "" then "\n" else out.text)
+	local signature = signature_block(identity)
+	if signature ~= "" then
+		out.text = signature .. (if out.text == "" then "\n" else out.text)
 	end
 	return out
 end
 
+--- `draft` from `to` instead: its From line, and the Reply-To, Bcc and
+--- signature of the identity it was from, where they're still as it put
+--- them, made `to`'s. A new signature goes where the old one was, else
+--- above what a reply quotes, else at the end.
+function M.from_identity(draft: Draft, to: backend.Identity): Draft
+	local out = table.clone(draft)
+	local was = M.identity(draft.from or "")
+	out.from = from_line(to)
+	if (out.reply_to or "") == (was and was.reply_to or "") then
+		out.reply_to = to.reply_to or ""
+	end
+	if out.bcc == (was and was.bcc or "") then
+		out.bcc = to.bcc or ""
+	end
+	local old, new = signature_block(was), signature_block(to)
+	-- The old one whole, as it put it: up to a line's end, or the end.
+	local at: number? = nil
+	if old ~= "" then
+		local found = string.find(out.text .. "\n", old .. "\n", 1, true)
+		at = found
+	end
+	if at then
+		out.text = string.sub(out.text, 1, at - 1) .. new .. string.sub(out.text, at + #old)
+	elseif new ~= "" and not string.find("\n" .. out.text, "\n-- \n", 1, true) then
+		local quote = string.find(out.text, "\n[^\n]*wrote:\n>")
+		if quote then
+			out.text = string.sub(out.text, 1, quote - 1) .. new .. string.sub(out.text, quote)
+		else
+			local ended = string.gsub(out.text, "\n+$", "")
+			out.text = ended .. new .. "\n"
+		end
+	end
+	return out
+end
+
+--- Asks which of your addresses the mail written in `buffer` is from,
+--- and makes it so (`from_identity`).
+function M.pick_from(buffer: greed.Buffer)
+	local items: { { label: string, value: any, kind: string? } } = {}
+	for _, identity in M.identities() do
+		table.insert(items, { label = from_line(identity), value = identity })
+	end
+	require("@picker").pick("From", items, function(item)
+		local draft = M.parse_draft(buffer:text())
+		local text = M.draft_text(M.from_identity(draft, item.value))
+		buffer:edit(function(e)
+			e:replace(0, buffer:len(), text)
+		end)
+	end)
+end
+
 --- Writes `draft` where the list is, the cursor where its text goes, or on
---- To when it goes to no one yet. New mail is from your first account,
---- and goes as its identity says. It's kept as a draft as it's written:
---- in the file `kept`, when it was kept before, or a new one.
+--- To when it goes to no one yet. New mail is from mail.toml's `from` (or
+--- your first account), and goes as its identity says. It's kept as a
+--- draft as it's written: in the file `kept`, when it was kept before, or
+--- a new one.
 function M.write(draft: Draft, kept: string?)
 	if draft.from == nil or draft.from == "" then
-		local accounts = backend.get().accounts()
-		draft.from = if accounts[1] then accounts[1].address else ""
+		draft.from = M.default_from()
 	end
 	if kept == nil then
 		draft = M.as_identity(draft)
@@ -1797,6 +1880,18 @@ greed.command({
 })
 
 greed.command({
+	name = "mail-from",
+	doc = "Pick which of your addresses the mail being written is from, with its signature",
+	run = function(ctx: greed.Context)
+		if ctx.buffer:kind() ~= "mail-compose" then
+			greed.echo("there's no mail being written here")
+			return
+		end
+		M.pick_from(ctx.buffer)
+	end,
+})
+
+greed.command({
 	name = "mail-attach",
 	doc = "Attach a file to the mail being written",
 	args = { { name = "path", doc = "The file", complete = "file", type = "string" } },
@@ -2313,6 +2408,18 @@ core.actions.action({
 	end,
 	run = function()
 		greed.run("mail-send")
+	end,
+})
+
+core.actions.action({
+	kind = "mail-draft",
+	name = "from",
+	doc = "Pick which of your addresses it's from, with its signature",
+	offers = function(target: core.Target): boolean
+		return target.buffer ~= nil
+	end,
+	run = function(target: core.Target)
+		M.pick_from(target.buffer :: greed.Buffer)
 	end,
 })
 

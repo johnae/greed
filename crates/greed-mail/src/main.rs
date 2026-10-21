@@ -88,7 +88,8 @@ fn main() -> ExitCode {
             };
             if command == "serve" {
                 let accounts = accounts.into_iter().cloned().collect();
-                return match runtime.block_on(serve::serve(Config { accounts }, dir, read)) {
+                let from = config.from.clone();
+                return match runtime.block_on(serve::serve(Config { from, accounts }, dir, read)) {
                     Ok(()) => ExitCode::SUCCESS,
                     Err(e) => fail(&e),
                 };
