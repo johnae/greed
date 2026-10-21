@@ -232,6 +232,9 @@ only saves. `S` saves one where you say (`~/Downloads` to start; the one
 under the cursor, or the thread's only one). The mail session fetches it
 from the server the first time, whole, and keeps it beside your mail for
 next time. A file that's already where you save is never written over.
+`space .` on one offers the rest: `open`, `open-outside`, `save`,
+`save-all` (everything attached to the thread, in a folder you say) and
+`copy-path`; saving offers the folder you saved in last.
 
 ## Invites
 

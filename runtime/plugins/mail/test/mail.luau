@@ -805,6 +805,51 @@ test("what's attached opens when pressed, and S saves it where you say", functio
 	assert(ok, tostring(err))
 end)
 
+test("space . on what's attached opens, saves, saves all and copies its path", function(t)
+	fake()
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc enter")
+	local window = greed.view()
+	local text = window:buffer():text()
+	local at = string.find(text, "invoice-41.pdf", 1, true)
+	assert(at, text)
+	window:set_cursor(at - 1)
+	local target: core.Target? = nil
+	local thread_at = 0
+	for i, found in core.actions.at(window) do
+		if found.kind == "mail-attachment" and target == nil then
+			target = found
+			assert(thread_at == 0, "the attachment, before its thread")
+		elseif found.kind == "mail" then
+			thread_at = i
+		end
+	end
+	assert(target, "the attachment")
+	assert(target.label == "invoice-41.pdf", target.label)
+	local actions: { [string]: any } = {}
+	for _, action in core.actions.for_kind(target.kind, target) do
+		actions[action.name] = action
+	end
+	for _, name in { "open", "open-outside", "save", "save-all", "copy-path" } do
+		assert(actions[name], name)
+	end
+	core.actions.run(actions["copy-path"], target)
+	local copied = (greed.clipboard.get() or {})[1]
+	assert(copied == "/kept/m:1:b/0", tostring(copied))
+	-- It asks, so it runs as a key's command would, and enter answers.
+	greed.spawn(function()
+		core.actions.run(actions["save-all"], target :: core.Target)
+	end)
+	t:wait(10)
+	assert(greed.view():buffer():text() == "~/Downloads", "asks for the folder")
+	t:keys("enter")
+	assert(
+		fetched[#fetched] == "m:1:b 0 ~/Downloads/invoice-41.pdf",
+		"each by its name: " .. tostring(fetched[#fetched])
+	)
+end)
+
 test("a list shows a thread once, as its newest message found", function()
 	local function message(key: string, thread: string, unread: boolean, tags: { string }): any
 		return {

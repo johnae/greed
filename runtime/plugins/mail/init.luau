@@ -524,14 +524,19 @@ end
 --- with the program that opens it); the mail session fetches it first, the
 --- first time.
 function M.open_attachment(which: Attached)
+	local path = M.kept_attachment(which)
+	if path then
+		core.file.open(path)
+	end
+end
+
+--- Where `which` is kept beside your mail, fetched the first time; nil
+--- when it didn't come, having said why.
+function M.kept_attachment(which: Attached): string?
 	greed.echo(`getting {which.name}`)
 	local path, err = backend.get().attachment(which.key, which.index)
-	if path == nil then
-		greed.echo(err or `{which.name} didn't come`)
-		return
-	end
-	greed.echo("")
-	core.file.open(path)
+	greed.echo(if path then "" else err or `{which.name} didn't come`)
+	return path
 end
 
 -- How the styles of a message's HTML show.
@@ -1916,13 +1921,67 @@ local function attachment_at(ctx: greed.Context): Attached?
 	if type(value) == "table" and value.attached then
 		return value.attached
 	end
+	local all = M.attached_in(r.thread)
+	return if #all == 1 then all[1] else nil
+end
+
+--- Everything attached to the messages of `thread`, in order.
+function M.attached_in(thread: Thread): { Attached }
 	local all: { Attached } = {}
-	for _, message in r.thread.messages do
+	for _, message in thread.messages do
 		for i, attached in message.attachments do
 			table.insert(all, { key = message.key, index = i - 1, name = attached.name })
 		end
 	end
-	return if #all == 1 then all[1] else nil
+	return all
+end
+
+-- The folder things attached are saved in to start with: the one last
+-- saved in, else Downloads.
+local saved_in = "~/Downloads"
+
+--- Saves `which` where you say, offering the folder last saved in.
+function M.save_attachment(which: Attached)
+	local to = core.prompt.ask("Save as", `{saved_in}/{which.name}`)
+	if to == nil or to == "" then
+		return
+	end
+	greed.echo(`getting {which.name}`)
+	local path, err = backend.get().attachment(which.key, which.index, to)
+	if path then
+		saved_in = string.match(to, "^(.*)/[^/]*$") or saved_in
+	end
+	greed.echo(if path then `saved {path}` else err or `{which.name} didn't come`)
+end
+
+--- Saves everything attached to `thread` in a folder you say, each by its
+--- name; says how many, and what didn't come.
+function M.save_all_attached(thread: Thread)
+	local all = M.attached_in(thread)
+	if #all == 0 then
+		greed.echo("nothing's attached here")
+		return
+	end
+	local given = core.prompt.ask(`Save {#all} in`, saved_in)
+	if given == nil or given == "" then
+		return
+	end
+	local folder = string.gsub(given, "/+$", "")
+	saved_in = folder
+	local saved, missed = 0, {}
+	for _, which in all do
+		greed.echo(`getting {which.name}`)
+		local path, err = backend.get().attachment(which.key, which.index, `{folder}/{which.name}`)
+		if path then
+			saved += 1
+		else
+			table.insert(missed, `{which.name}: {err or "didn't come"}`)
+		end
+	end
+	greed.echo(
+		`saved {saved} of {#all} in {folder}`
+			.. (if #missed > 0 then ` ({table.concat(missed, "; ")})` else "")
+	)
 end
 
 greed.command({
@@ -1931,16 +1990,10 @@ greed.command({
 	run = function(ctx: greed.Context)
 		local which = attachment_at(ctx)
 		if which == nil then
-			greed.echo("put the cursor on what's attached, on its Attached line")
+			greed.echo("put the cursor on what's attached, on its line under the header")
 			return
 		end
-		local to = core.prompt.ask("Save as", `~/Downloads/{which.name}`)
-		if to == nil or to == "" then
-			return
-		end
-		greed.echo(`getting {which.name}`)
-		local path, err = backend.get().attachment(which.key, which.index, to)
-		greed.echo(if path then `saved {path}` else err or `{which.name} didn't come`)
+		M.save_attachment(which)
 	end,
 })
 
@@ -2039,9 +2092,21 @@ core.actions.finder({
 				return { { kind = "mail", label = row.subject, value = row.key, buffer = buffer } }
 			end
 		elseif kind == "mail-thread" and r and r.buffer == buffer then
-			return {
-				{ kind = "mail", label = r.thread.subject, value = r.thread.key, buffer = buffer },
-			}
+			local found: { core.Target } = {}
+			-- What's attached under the cursor comes before its thread.
+			local value = r.view:value_at(range.head)
+			if type(value) == "table" and value.attached then
+				local which: Attached = value.attached
+				table.insert(
+					found,
+					{ kind = "mail-attachment", label = which.name, value = which, buffer = buffer }
+				)
+			end
+			table.insert(
+				found,
+				{ kind = "mail", label = r.thread.subject, value = r.thread.key, buffer = buffer }
+			)
+			return found
 		elseif kind == "mail-compose" then
 			local d = drafts[buffer:id()]
 			if d and d.path then
@@ -2089,6 +2154,62 @@ for _, a in MAIL_ACTIONS do
 	})
 end
 core.actions.set_default("mail", "read")
+
+core.actions.action({
+	kind = "mail-attachment",
+	name = "open",
+	doc = "Open it as its kind of file opens: in Greed, or with the program that opens it",
+	run = function(target: core.Target)
+		M.open_attachment(target.value)
+	end,
+})
+core.actions.set_default("mail-attachment", "open")
+
+core.actions.action({
+	kind = "mail-attachment",
+	name = "open-outside",
+	doc = "Open it with the program your system opens it with (never a program itself)",
+	run = function(target: core.Target)
+		local path = M.kept_attachment(target.value)
+		if path then
+			core.file.open_outside(path)
+		end
+	end,
+})
+
+core.actions.action({
+	kind = "mail-attachment",
+	name = "save",
+	doc = "Save it where you say",
+	run = function(target: core.Target)
+		M.save_attachment(target.value)
+	end,
+})
+
+core.actions.action({
+	kind = "mail-attachment",
+	name = "save-all",
+	doc = "Save everything attached to the thread in a folder you say",
+	run = function()
+		local r = reading
+		if r then
+			M.save_all_attached(r.thread)
+		end
+	end,
+})
+
+core.actions.action({
+	kind = "mail-attachment",
+	name = "copy-path",
+	doc = "Copy the path of the copy kept beside your mail",
+	run = function(target: core.Target)
+		local path = M.kept_attachment(target.value)
+		if path then
+			greed.clipboard.set(path)
+			greed.echo(`copied {path}`)
+		end
+	end,
+})
 
 core.actions.action({
 	kind = "mail-draft",
