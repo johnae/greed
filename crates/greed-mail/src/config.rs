@@ -46,6 +46,42 @@ pub struct Account {
     /// The command printing the password, and its arguments.
     #[serde(default)]
     password: Vec<String>,
+    /// How mail goes out from it, unless an identity says otherwise.
+    display_name: Option<String>,
+    signature: Option<String>,
+    signature_file: Option<String>,
+    reply_to: Option<String>,
+    bcc: Option<String>,
+    /// How mail goes out from one of its addresses, each its own way.
+    #[serde(default, rename = "identity")]
+    identities: Vec<Identity>,
+}
+
+/// How mail goes out from one of an account's addresses: the name its
+/// From line shows, a signature (written here, or in a file), where
+/// replies go, and a copy to yourself. What it leaves out, the account
+/// says.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Identity {
+    pub address: String,
+    display_name: Option<String>,
+    signature: Option<String>,
+    signature_file: Option<String>,
+    reply_to: Option<String>,
+    bcc: Option<String>,
+}
+
+/// An identity settled: what writing from `address` puts in, the
+/// account's own where the identity says nothing; the signature read
+/// from its file when it's in one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct Settled {
+    pub address: String,
+    pub display_name: Option<String>,
+    pub signature: Option<String>,
+    pub reply_to: Option<String>,
+    pub bcc: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -119,6 +155,37 @@ impl Account {
         self.user.as_deref().unwrap_or(&self.address)
     }
 
+    /// How mail goes out from each of its addresses, its own first, then
+    /// its aliases in order.
+    pub fn identities(&self) -> Vec<Settled> {
+        std::iter::once(&self.address)
+            .chain(&self.aliases)
+            .map(|address| {
+                let own = self
+                    .identities
+                    .iter()
+                    .find(|i| i.address.eq_ignore_ascii_case(address));
+                let pick = |mine: Option<&Option<String>>, account: &Option<String>| {
+                    mine.and_then(Option::clone).or_else(|| account.clone())
+                };
+                // The identity's own signature, written or in a file, and
+                // else the account's.
+                let signature = own
+                    .and_then(|i| signature(i.signature.as_deref(), i.signature_file.as_deref()))
+                    .or_else(|| {
+                        signature(self.signature.as_deref(), self.signature_file.as_deref())
+                    });
+                Settled {
+                    address: address.clone(),
+                    display_name: pick(own.map(|i| &i.display_name), &self.display_name),
+                    signature,
+                    reply_to: pick(own.map(|i| &i.reply_to), &self.reply_to),
+                    bcc: pick(own.map(|i| &i.bcc), &self.bcc),
+                }
+            })
+            .collect()
+    }
+
     /// The password, from its command. What the command prints is never
     /// put in an error, in case it printed the password and then failed.
     pub fn password(&self) -> Result<String, String> {
@@ -141,6 +208,16 @@ impl Account {
         }
         Ok(password.to_string())
     }
+}
+
+/// A signature as written, or read from its file (`~` for your home
+/// folder), its end trimmed; none when neither says one, or the file
+/// can't be read.
+fn signature(written: Option<&str>, file: Option<&str>) -> Option<String> {
+    written.map(str::to_string).or_else(|| {
+        let text = std::fs::read_to_string(crate::files::expand_home(file?)).ok()?;
+        Some(text.trim_end().to_string())
+    })
 }
 
 fn endpoint(server: Server, port: u16) -> Endpoint {
@@ -185,6 +262,19 @@ impl Config {
                 return Err(format!(
                     "{name} needs its IMAP server, like imap = {{ host = \"imap.example.com\" }}"
                 ));
+            }
+            for identity in &account.identities {
+                let theirs = identity.address.eq_ignore_ascii_case(&account.address)
+                    || account
+                        .aliases
+                        .iter()
+                        .any(|a| a.eq_ignore_ascii_case(&identity.address));
+                if !theirs {
+                    return Err(format!(
+                        "{name}: an identity for {} needs it among the account's aliases",
+                        identity.address
+                    ));
+                }
             }
             for (what, server) in [("imap", &account.imap), ("smtp", &account.smtp)] {
                 if let Some(server) = server
@@ -299,6 +389,73 @@ mod tests {
         let one = format!("[[account]]\n{base}password = [\"x\"]\nprovider = \"gmail\"\n");
         assert!(says(&format!("{one}{one}")).contains("two accounts are called a"));
         assert!(says("[[account]]\nname = \"a\"\nadress = \"x\"").contains("adress"));
+    }
+
+    #[test]
+    fn each_address_goes_out_as_its_identity_says_and_the_account_fills_the_rest() {
+        let dir = std::env::temp_dir().join(format!("gm-sig-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("support.sig");
+        std::fs::write(&file, "Hyperspool support\nspool.example\n\n").unwrap();
+        let config = Config::parse(&format!(
+            r#"
+            [[account]]
+            name = "proton"
+            address = "anna@proton.me"
+            aliases = ["support@spool.example", "anna@pm.me"]
+            imap = {{ host = "127.0.0.1", port = 1143, tls = "none" }}
+            password = ["echo", "x"]
+            display_name = "Anna Berg"
+            signature = "-- Anna"
+            bcc = "anna@proton.me"
+
+            [[account.identity]]
+            address = "support@spool.example"
+            display_name = "Hyperspool Support"
+            signature_file = "{}"
+            reply_to = "help@spool.example"
+            "#,
+            file.display()
+        ))
+        .unwrap();
+        let identities = config.accounts[0].identities();
+        assert_eq!(
+            identities
+                .iter()
+                .map(|i| i.address.as_str())
+                .collect::<Vec<_>>(),
+            ["anna@proton.me", "support@spool.example", "anna@pm.me"],
+            "its own first, then its aliases"
+        );
+        assert_eq!(identities[0].display_name.as_deref(), Some("Anna Berg"));
+        assert_eq!(identities[0].signature.as_deref(), Some("-- Anna"));
+        let support = &identities[1];
+        assert_eq!(support.display_name.as_deref(), Some("Hyperspool Support"));
+        assert_eq!(
+            support.signature.as_deref(),
+            Some("Hyperspool support\nspool.example"),
+            "from its file, its end trimmed"
+        );
+        assert_eq!(support.reply_to.as_deref(), Some("help@spool.example"));
+        assert_eq!(
+            support.bcc.as_deref(),
+            Some("anna@proton.me"),
+            "the account's"
+        );
+        assert_eq!(
+            identities[2].signature.as_deref(),
+            Some("-- Anna"),
+            "the account's"
+        );
+        let stranger = Config::parse(
+            "[[account]]\nname = \"a\"\naddress = \"a@b\"\nprovider = \"gmail\"\npassword = [\"echo\", \"x\"]\n[[account.identity]]\naddress = \"c@d\"",
+        )
+        .unwrap_err();
+        assert!(
+            stranger.contains("among the account's aliases"),
+            "{stranger}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

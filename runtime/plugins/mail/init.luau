@@ -1085,6 +1085,9 @@ function M.draft_text(draft: Draft): string
 	if draft.bcc ~= "" then
 		table.insert(head, `Bcc: {draft.bcc}`)
 	end
+	if (draft.reply_to or "") ~= "" then
+		table.insert(head, `Reply-To: {draft.reply_to}`)
+	end
 	table.insert(head, `Subject: {draft.subject}`)
 	local attach = draft.attach or {}
 	if #attach > 0 then
@@ -1122,6 +1125,8 @@ function M.parse_draft(text: string): Draft
 			draft.cc = value or ""
 		elseif field == "bcc" then
 			draft.bcc = value or ""
+		elseif field == "reply-to" then
+			draft.reply_to = value or ""
 		elseif field == "subject" then
 			draft.subject = value or ""
 		elseif field == "attach" then
@@ -1134,14 +1139,60 @@ end
 -- How many drafts were started here, to tell their files apart.
 local started = 0
 
+--- How mail from `from` ("Anna <anna@x>" or the address) goes out, as
+--- mail.toml says; nil for an address that isn't yours.
+function M.identity(from: string): backend.Identity?
+	local address = string.lower(string.match(from, "<([^>]+)>") or core.text.trim(from))
+	for _, account in backend.get().accounts() do
+		local identities: { backend.Identity } = account.identities or {}
+		for _, identity in identities do
+			if string.lower(identity.address) == address then
+				return identity
+			end
+		end
+	end
+	return nil
+end
+
+--- `draft`, new, made as its From's identity says: the name on the From
+--- line, its Reply-To and Bcc where the draft has none, and its signature
+--- under where you write, above what a reply quotes.
+function M.as_identity(draft: Draft): Draft
+	local identity = M.identity(draft.from or "")
+	if identity == nil then
+		return draft
+	end
+	local out = table.clone(draft)
+	local name = identity.display_name
+	if name and name ~= "" and not string.find(out.from or "", "<", 1, true) then
+		out.from = `{name} <{identity.address}>`
+	end
+	if (out.reply_to or "") == "" then
+		out.reply_to = identity.reply_to
+	end
+	if out.bcc == "" then
+		out.bcc = identity.bcc or ""
+	end
+	local signature = identity.signature
+	if signature and signature ~= "" then
+		-- "-- " starts a signature, as mail programs know to leave it out
+		-- of a reply's quote.
+		out.text = `\n\n-- \n{signature}` .. (if out.text == "" then "\n" else out.text)
+	end
+	return out
+end
+
 --- Writes `draft` where the list is, the cursor where its text goes, or on
---- To when it goes to no one yet. New mail is from your first account.
---- It's kept as a draft as it's written: in the file `kept`, when it was
---- kept before, or a new one.
+--- To when it goes to no one yet. New mail is from your first account,
+--- and goes as its identity says. It's kept as a draft as it's written:
+--- in the file `kept`, when it was kept before, or a new one.
 function M.write(draft: Draft, kept: string?)
 	if draft.from == nil or draft.from == "" then
 		local accounts = backend.get().accounts()
 		draft.from = if accounts[1] then accounts[1].address else ""
+	end
+	if kept == nil then
+		draft = M.as_identity(draft)
 	end
 	local o = open
 	local window = if o and o.window:valid() then o.window else greed.view()
@@ -2037,7 +2088,7 @@ greed.command({
 	doc = "Pick a saved search to show, however many there are, with how many unread each finds",
 	run = function()
 		local o = open
-		local items: { { label: string, value: string } } = {}
+		local items: { { label: string, value: any, kind: string? } } = {}
 		for _, saved in M.searches do
 			local unread = if o then o.unread[saved.query] else nil
 			local count = if unread and unread > 0 then `  {unread} unread` else ""

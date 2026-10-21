@@ -184,11 +184,14 @@ end
 local before: { Fake }? = nil
 -- Whether the fake's undo takes back the mail sent last.
 local sending = false
+-- How the fake's account sends from its addresses, when a test says.
+local identities: { { [string]: string } }? = nil
 
 local function fake()
 	now = copy(MAIL)
 	before = nil
 	sending = false
+	identities = nil
 	acted = {}
 	sent = {}
 	fetched = {}
@@ -240,7 +243,12 @@ local function fake()
 		sync = function() end,
 		accounts = function(): { any }
 			return {
-				{ name = "home", address = "me@example.com", aliases = { "me@alias.example" } },
+				{
+					name = "home",
+					address = "me@example.com",
+					aliases = { "me@alias.example" },
+					identities = identities,
+				},
 			}
 		end,
 		contacts = function(typed: string): { string }
@@ -617,6 +625,59 @@ test("mail taken back with z is written again; :w keeps a draft at once", functi
 		mail.discard_draft(mail.drafts()[1].path)
 		assert(#mail.drafts() == 0, "discarded")
 		assert(window:buffer():kind() == "mail", "and closed")
+	end)
+end)
+
+test("mail goes out as its From's identity says: name, Reply-To, Bcc and signature", function(t)
+	fake()
+	local own: { [string]: string } = {
+		address = "me@example.com",
+		display_name = "Me Myself",
+		signature = "Me\nexample.com",
+		bcc = "me@example.com",
+	}
+	local alias: { [string]: string } =
+		{ address = "me@alias.example", reply_to = "help@alias.example" }
+	identities = { own, alias }
+	in_the_mail_session(function()
+		t:buffer("|x")
+		local window = greed.view()
+		t:run("mail")
+		t:keys("esc c")
+		local text = window:buffer():text()
+		local new =
+			"From: Me Myself <me@example.com>\nTo: \nCc: \nBcc: me@example.com\nSubject: \n\n\n\n-- \nMe\nexample.com\n"
+		assert(text == new, text)
+		t:run("mail-close")
+		t:keys("r")
+		text = window:buffer():text()
+		local at = window:cursor()
+		local before = string.find(text, "\n-- \nMe\nexample.com\n", 1, true)
+		local quote = string.find(text, "> please pay by Friday", 1, true)
+		assert(before and quote and before < quote, "the signature above the quote: " .. text)
+		assert(at < (before :: number), "you write above it")
+		type_in(window, "Paid.")
+		t:run("mail-send")
+		assert(sent[1].bcc == "me@example.com" and sent[1].from == "Me Myself <me@example.com>")
+		-- An alias's own: its Reply-To, and nothing it doesn't say.
+		local alias = mail.as_identity({
+			from = "me@alias.example",
+			to = "bob@example.com",
+			cc = "",
+			bcc = "",
+			subject = "hi",
+			text = "",
+		})
+		assert(alias.reply_to == "help@alias.example" and alias.bcc == "", "its own")
+		assert(alias.text == "" and alias.from == "me@alias.example", "no name, no signature")
+		assert(mail.as_identity({
+			from = "x@other.example",
+			to = "",
+			cc = "",
+			bcc = "",
+			subject = "",
+			text = "a",
+		}).text == "a", "not yours: as it was")
 	end)
 end)
 

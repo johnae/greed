@@ -30,6 +30,8 @@ pub struct Draft {
     pub to: String,
     pub cc: String,
     pub bcc: String,
+    /// Where replies to it go, when not to who it's from.
+    pub reply_to: String,
     pub subject: String,
     pub text: String,
     /// The key of the message it answers.
@@ -208,6 +210,13 @@ pub fn compose(
         .from(from)
         .subject(draft.subject.clone())
         .message_id(Some(new_id(domain)));
+    let reply_to = draft.reply_to.trim();
+    if !reply_to.is_empty() {
+        let to: Mailbox = reply_to
+            .parse()
+            .map_err(|e| format!("Reply-To: {reply_to} won't do: {e}"))?;
+        builder = builder.reply_to(to);
+    }
     for (field, list) in [("To", &draft.to), ("Cc", &draft.cc), ("Bcc", &draft.bcc)] {
         if list.trim().is_empty() {
             continue;
@@ -455,6 +464,34 @@ mod tests {
         }))
         .unwrap();
         assert!(unattached.attach.is_empty(), "Luau's empty table");
+    }
+
+    #[test]
+    fn reply_to_goes_in_its_header_and_a_bad_one_says_so() {
+        let draft = Draft {
+            from: "Hyperspool Support <support@spool.example>".into(),
+            to: "bob@example.com".into(),
+            reply_to: "help@spool.example".into(),
+            subject: "Your ticket".into(),
+            text: "Fixed.\n".into(),
+            ..Draft::default()
+        };
+        let out = compose("anna@proton.me", &draft, None).unwrap();
+        let text = String::from_utf8_lossy(&out.message).into_owned();
+        assert!(text.contains("Reply-To: help@spool.example"), "{text}");
+        assert!(
+            text.contains("From: \"Hyperspool Support\" <support@spool.example>"),
+            "{text}"
+        );
+        let bad = Draft {
+            reply_to: "not an address".into(),
+            ..draft
+        };
+        assert!(
+            compose("anna@proton.me", &bad, None)
+                .unwrap_err()
+                .contains("Reply-To")
+        );
     }
 
     #[test]

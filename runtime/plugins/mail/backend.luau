@@ -85,6 +85,8 @@ export type Draft = {
 	to: string,
 	cc: string,
 	bcc: string,
+	--- Where replies to it go, when not to who it's from.
+	reply_to: string?,
 	subject: string,
 	text: string,
 	replying: string?,
@@ -92,9 +94,25 @@ export type Draft = {
 	attach: { string }?,
 }
 
+--- How mail goes out from one of an account's addresses: the name its
+--- From line shows, its signature, where replies go and a copy to
+--- yourself, as mail.toml says.
+export type Identity = {
+	address: string,
+	display_name: string?,
+	signature: string?,
+	reply_to: string?,
+	bcc: string?,
+}
+
 --- An account in mail.toml: what it's called, its address and the
---- others it sends from.
-export type Account = { name: string, address: string, aliases: { string } }
+--- others it sends from, and how mail goes out from each.
+export type Account = {
+	name: string,
+	address: string,
+	aliases: { string },
+	identities: { Identity }?,
+}
 
 --- What the view needs from wherever its mail comes from.
 export type Backend = {

@@ -377,6 +377,44 @@ only. `port` is needed only when it isn't one of those.
 or an invite's answer goes from the alias it was sent to, `From:` may name
 any of them, and they're never offered as people to write to.
 
+### Identities
+
+How mail goes out from an address: the name on its From line, a
+signature, where replies go and a copy to yourself. Set them on the
+account, and for an alias that's different, in an `[[account.identity]]`
+under it; what an identity leaves out, the account's settings give:
+
+```toml
+[[account]]
+name = "proton"
+address = "anna@proton.me"
+aliases = ["support@spool.example"]
+display_name = "Anna Berg"
+signature = "Anna"
+bcc = "anna@proton.me"
+
+[[account.identity]]
+address = "support@spool.example"
+display_name = "Hyperspool Support"
+signature_file = "~/.config/greed/support.sig"
+reply_to = "help@spool.example"
+```
+
+| Setting          | What it does                                                    |
+| ---------------- | --------------------------------------------------------------- |
+| `display_name`   | the name on the From line: `Anna Berg <anna@proton.me>`         |
+| `signature`      | the signature, written here                                     |
+| `signature_file` | the signature, from a file (in place of `signature`)            |
+| `reply_to`       | where replies go, on a `Reply-To:` line you can change          |
+| `bcc`            | who gets a copy, on the `Bcc:` line, like yourself              |
+
+New mail and replies are written with the identity of the address they're
+from: the From line with its name, a `Reply-To:` and `Bcc:` filled in, and
+the signature under where you write (above the quote in a reply), after a
+`-- ` line as mail programs expect. All of it is there in the text to
+change before sending. An identity's address must be the account's or
+one of its aliases.
+
 ### Gmail
 
 ```toml
