@@ -311,9 +311,11 @@ fn a_drafted_description_commits_what_is_staged() {
     };
     std::fs::write(dir.join("a.txt"), "one\n").unwrap();
     git(&["init", "-q"]);
-    // The commit the plugin makes needs a user too, on a machine with none.
+    // The commit the plugin makes needs a user too, on a machine with none,
+    // and no signing, on a machine whose git signs every commit.
     git(&["config", "user.name", "t"]);
     git(&["config", "user.email", "t@t"]);
+    git(&["config", "commit.gpgsign", "false"]);
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "first"]);
     std::fs::write(dir.join("a.txt"), "two\n").unwrap();

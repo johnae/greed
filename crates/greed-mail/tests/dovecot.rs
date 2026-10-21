@@ -1,7 +1,9 @@
 //! greed-mail against a real IMAP server: Dovecot, started for each test in
 //! a folder of its own as the user running the tests. Skipped, saying so,
 //! when there's no `dovecot` (devenv has it; `GREED_MAIL_DOVECOT` names
-//! another).
+//! another), and on macOS, where Dovecot can't start as a user: it limits
+//! each of its processes' memory with `setrlimit(RLIMIT_DATA)`, which macOS
+//! refuses whatever the size, and its log process stops at that.
 
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -27,6 +29,10 @@ struct Dovecot {
 impl Dovecot {
     /// Starts one, or None when there's no Dovecot to start.
     fn start(name: &str) -> Option<Dovecot> {
+        if cfg!(target_os = "macos") {
+            eprintln!("skipped: Dovecot can't set its memory limits on macOS");
+            return None;
+        }
         let program = std::env::var_os("GREED_MAIL_DOVECOT")
             .map(PathBuf::from)
             .or_else(|| find("dovecot"));
