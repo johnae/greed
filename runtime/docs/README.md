@@ -5,8 +5,9 @@ comes with a shell, terminals, notes and mail, with agents in all of them. It ru
 in a terminal or a window, locally or over ssh.
 
 I wanted an editor I could bend as far as Emacs, without it ever freezing on me
-while a plugin thinks. So the core is a small Rust program, and everything else is
-Luau plugins you can read, change or swap out while it runs.
+while a plugin thinks. So the core is a small Rust program, and everything else -
+the keys you edit with, modes, commands, pickers, themes, the agents - is Luau
+plugins you can read, change or swap out while it runs.
 
 To start, just run `greed`, answer its few questions, then `:tutor` - it walks you
 through your style's keys with lines to practise on, then shows you around.
