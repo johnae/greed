@@ -2,7 +2,8 @@
 -- write in. A thread opens the same way, with the thread's replies; what's
 -- sent there goes in the thread. On a message: alt-r answers it, alt-t
 -- opens its thread, alt-k reacts, alt-e changes it (yours), alt-d deletes
--- it; `space .` offers the same. Whoever's writing shows under the
+-- it, alt-b presses its buttons; `space .` offers the same. alt-/ picks a
+-- command (Mattermost) into the box. Whoever's writing shows under the
 -- messages, and the room is marked read as you look at it.
 
 local greed = require("@greed")
@@ -299,6 +300,16 @@ function M.item_node(
 	if #notes > 0 then
 		table.insert(parts, valued(ui.line(notes), item, false))
 	end
+	local actions: { backend.Action } = item.actions or {}
+	if #actions > 0 then
+		local buttons: { core.UiSpan } = {}
+		for _, action in actions do
+			local menu = if action.options and #action.options > 0 then " ▾" else ""
+			table.insert(buttons, ui.span(` [ {action.name}{menu} ]`, "function"))
+		end
+		table.insert(buttons, ui.span("  (enter)", "comment"))
+		table.insert(parts, valued(ui.line(buttons), item, false))
+	end
 	return ui.column(parts)
 end
 
@@ -593,6 +604,56 @@ function M.react(r: Open, item: backend.Item)
 	end)
 end
 
+--- Presses one of `item`'s buttons, or picks from one of its menus, as
+--- picked: each button, and each menu's choices.
+function M.press(r: Open, item: backend.Item)
+	local items = {}
+	local actions: { backend.Action } = item.actions or {}
+	for _, action in actions do
+		local options: { { text: string, value: string } } = action.options or {}
+		if #options == 0 then
+			table.insert(items, { label = action.name, value = { action = action.id } })
+		end
+		for _, option in options do
+			table.insert(items, {
+				label = `{action.name}: {option.text}`,
+				value = { action = action.id, option = option.value },
+			})
+		end
+	end
+	picker.pick("Press", items, function(chosen)
+		greed.spawn(function()
+			local _, why = ask(r, "press", {
+				event = item.event,
+				action = chosen.value.action,
+				option = chosen.value.option,
+			})
+			if why then
+				greed.echo(`chat: {why}`)
+			end
+		end)
+	end)
+end
+
+--- Puts a command the room's service has in `r`'s box, picked from those
+--- it lists, for its arguments to follow.
+function M.pick_command(r: Open, view: greed.View)
+	local commands, why = ask(r, "commands")
+	if commands == nil then
+		greed.echo(`chat: {why}`)
+		return
+	end
+	local items = {}
+	for _, command in commands do
+		local hint = if command.hint ~= "" then ` {command.hint}` else ""
+		local about = if command.description ~= "" then `  · {command.description}` else ""
+		table.insert(items, { label = `/{command.trigger}{hint}{about}`, value = command.trigger })
+	end
+	picker.pick("Command", items, function(chosen)
+		fill(r, view, `/{chosen.value} `)
+	end)
+end
+
 --- Asks, then deletes `item`.
 function M.delete(r: Open, item: backend.Item)
 	greed.echo("Delete this message? y deletes, anything else doesn't")
@@ -726,17 +787,46 @@ end
 
 greed.command({
 	name = "chat-enter",
-	doc = "In a room: open the file of the message under the cursor, or its thread",
+	doc = "In a room: open the file of the message under the cursor, press its buttons, or open its thread",
 	run = on_message(function(r, item, ctx)
 		if item.kind == "call" and item.link then
 			-- Calls happen in the service's own app; Greed shows them start.
 			core.file.open_link(item.link)
 		elseif item.media then
 			M.open_file(r, item)
+		elseif item.actions and #item.actions > 0 then
+			M.press(r, item)
 		elseif item.replies > 0 and r.thread == nil then
 			M.thread(r, item, ctx.view)
 		end
 	end),
+})
+
+greed.command({
+	name = "chat-press",
+	doc = "In a room: press a button in the message under the cursor, or pick from its menu",
+	run = on_message(function(r, item)
+		M.press(r, item)
+	end),
+})
+
+greed.command({
+	name = "chat-commands",
+	doc = "In a room: pick one of the service's commands (Mattermost) into the box",
+	run = function(ctx)
+		local r = M.of(ctx.buffer)
+		if r == nil then
+			greed.echo("open a room first")
+			return
+		end
+		local service = backend.split(r.account)
+		local can = backend.can[service]
+		if not (can and can.commands) then
+			greed.echo(`{service} has no commands`)
+			return
+		end
+		greed.spawn(M.pick_command, r, ctx.view)
+	end,
 })
 
 greed.command({
@@ -838,6 +928,8 @@ local ACTIONS: {
 		mine: boolean?,
 		--- Only for a message that carries a file.
 		media: boolean?,
+		--- Only for a message with buttons or menus.
+		actions: boolean?,
 		--- Only for a message with a link.
 		link: boolean?,
 		danger: boolean?,
@@ -851,6 +943,14 @@ local ACTIONS: {
 			media = true,
 			run = function(r, item)
 				M.open_file(r, item)
+			end,
+		},
+		{
+			name = "press",
+			doc = "Press one of its buttons, or pick from its menu",
+			actions = true,
+			run = function(r, item)
+				M.press(r, item)
 			end,
 		},
 		{
@@ -928,6 +1028,7 @@ for _, a in ACTIONS do
 			return (not a.mine or item.mine == true)
 				and (not a.media or item.media ~= nil)
 				and (not a.link or item.link ~= nil)
+				and (not a.actions or (item.actions ~= nil and #item.actions > 0))
 		end,
 		run = function(target: core.Target)
 			a.run(target.value.room, target.value.item, greed.view())
@@ -943,6 +1044,8 @@ greed.keymap.bind({ kind = "chat-room" }, {
 	["alt-k"] = "chat-react",
 	["alt-e"] = "chat-edit",
 	["alt-d"] = "chat-delete",
+	["alt-b"] = "chat-press",
+	["alt-/"] = "chat-commands",
 })
 
 -- Out of the box only, so esc while writing leaves writing as it does.
@@ -955,6 +1058,7 @@ greed.keymap.bind({ role = "command", kind = "chat-room" }, {
 greed.keymap.bind({ role = "typing", kind = "chat-room" }, {
 	enter = "chat-send",
 	["alt-enter"] = "chat-newline",
+	["alt-/"] = "chat-commands",
 })
 
 core.about.kind("chat-room", function(buffer: greed.Buffer): string

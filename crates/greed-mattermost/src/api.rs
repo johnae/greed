@@ -141,6 +141,9 @@ pub(crate) struct Post {
     pub(crate) pending_post_id: String,
     #[serde(default)]
     pub(crate) metadata: Metadata,
+    /// What integrations add, like attachments with buttons.
+    #[serde(default)]
+    pub(crate) props: Value,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

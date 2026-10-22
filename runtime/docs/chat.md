@@ -24,12 +24,19 @@ by" says who has read up to where.
 | `alt-k` | react to it, or take your reaction back |
 | `alt-e` | change it (your own); `enter` sends the change |
 | `alt-d` | delete it, after asking |
+| `alt-b`, `enter` | press one of its buttons, or pick from its menu (Mattermost) |
+| `alt-/` | pick a command into the box (Mattermost) |
 | `alt-up` | fetch older messages |
 | `q`, `esc` | stop answering or changing; else back to the room or the list |
 
 `space .` on a message offers the same, and copying what it says.
 A room shows each thread's first message with how many replies it has;
 the replies are in the thread.
+
+On Mattermost, a message starting with `/` runs a command, like `/away` or
+an integration's; what it answers only you shows in the room. Posts from
+integrations show their attachments' text, and their buttons and menus
+under them.
 
 Outside the chat session, `:chat` opens the same list in a float.
 
@@ -120,7 +127,7 @@ counts in the list.
 | Presence | Mattermost's dot beside a direct message. Matrix servers don't send it the way Greed syncs, so none there. |
 | Read receipts | "seen by" on Matrix. Mattermost has none to show. |
 | Polls, locations, live locations | Shown as what they are, without voting or a map. |
-| Mattermost slash commands, buttons in messages, Boards, Playbooks | Not yet; open the message in the browser (`space .`) to use them. |
+| Mattermost Boards, Playbooks, and interactive dialogs a command or button opens | Not supported; open the message in the browser (`space .`) to use them. |
 | Spaces and teams | Listed with their rooms; no browsing a space's rooms you haven't joined, nor joining by address, yet. |
 | Search | Not yet. |
 | Discord, Slack and others | Not supported. |

@@ -7,7 +7,9 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use greed_chat::rpc::{self, Service};
-use greed_chat::testing::{browse, find, free_port, heard, item_with, oauth_provider};
+use greed_chat::testing::{
+    browse, find, free_port, heard, item_with, json_service, oauth_provider,
+};
 use greed_mattermost::Mattermost;
 use serde_json::{Value, json};
 
@@ -620,6 +622,62 @@ fn sends_a_file_and_fetches_it_back() {
     });
 }
 
+/// Anna and Bea in team Crew's channel Plans, and the service signed in as
+/// Anna and connected.
+struct Crew {
+    anna: Rest,
+    bea: Rest,
+    channel: String,
+    service: std::rc::Rc<Mattermost>,
+    notices: tokio::sync::mpsc::UnboundedReceiver<String>,
+    /// Anna's account in the service.
+    account: String,
+}
+
+async fn crew(server: &Server) -> Crew {
+    let anna = Rest::login(server, "anna", "Secret-pass1").await;
+    let bea = Rest::login(server, "bea", "Secret-pass1").await;
+    let team = anna
+        .post(
+            "teams",
+            &json!({ "name": "crew", "display_name": "Crew", "type": "O" }),
+        )
+        .await;
+    let team_id = team["id"].as_str().unwrap();
+    anna.post(
+        &format!("teams/{team_id}/members"),
+        &json!({ "team_id": team_id, "user_id": bea.id }),
+    )
+    .await;
+    let channel = anna
+        .post(
+            "channels",
+            &json!({ "team_id": team_id, "name": "plans", "display_name": "Plans", "type": "O" }),
+        )
+        .await;
+    let channel = channel["id"].as_str().unwrap().to_string();
+    bea.post(
+        &format!("channels/{channel}/members"),
+        &json!({ "user_id": bea.id }),
+    )
+    .await;
+    let (notifier, mut notices) = rpc::notifier();
+    let service = Mattermost::new(server.dir.join("data"), notifier);
+    let account = sign_in(&service, server, "anna", "Secret-pass1").await;
+    heard(&mut notices, |n| {
+        n["method"] == "account.changed" && n["params"]["state"]["state"] == "ready"
+    })
+    .await;
+    Crew {
+        anna,
+        bea,
+        channel,
+        service,
+        notices,
+        account,
+    }
+}
+
 #[test]
 fn posts_for_you_are_alerts() {
     let Some(server) = Server::start("alerts", &[]) else {
@@ -628,44 +686,17 @@ fn posts_for_you_are_alerts() {
     server.user("anna", "Secret-pass1");
     server.user("bea", "Secret-pass1");
     run(async {
-        let anna_rest = Rest::login(&server, "anna", "Secret-pass1").await;
-        let bea = Rest::login(&server, "bea", "Secret-pass1").await;
-        let team = anna_rest
-            .post(
-                "teams",
-                &json!({ "name": "crew", "display_name": "Crew", "type": "O" }),
-            )
-            .await;
-        let team_id = team["id"].as_str().unwrap();
-        anna_rest
-            .post(
-                &format!("teams/{team_id}/members"),
-                &json!({ "team_id": team_id, "user_id": bea.id }),
-            )
-            .await;
-        let channel = anna_rest
-            .post(
-                "channels",
-                &json!({ "team_id": team_id, "name": "plans", "display_name": "Plans", "type": "O" }),
-            )
-            .await;
-        let channel_id = channel["id"].as_str().unwrap().to_string();
-        bea.post(
-            &format!("channels/{channel_id}/members"),
-            &json!({ "user_id": bea.id }),
-        )
-        .await;
+        let Crew {
+            anna: anna_rest,
+            bea,
+            channel: channel_id,
+            service: _service,
+            mut notices,
+            ..
+        } = crew(&server).await;
         let direct = bea
             .post("channels/direct", &json!([anna_rest.id, bea.id]))
             .await;
-
-        let (notifier, mut notices) = rpc::notifier();
-        let service = Mattermost::new(server.dir.join("data"), notifier);
-        sign_in(&service, &server, "anna", "Secret-pass1").await;
-        heard(&mut notices, |n| {
-            n["method"] == "account.changed" && n["params"]["state"]["state"] == "ready"
-        })
-        .await;
 
         // A post in a channel is one only when it mentions Anna.
         let post =
@@ -687,5 +718,114 @@ fn posts_for_you_are_alerts() {
         assert_eq!(dm["body"], "noon", "{dm}");
         assert_eq!(dm["mention"], false);
         assert_eq!(dm["direct"], true);
+    });
+}
+
+#[test]
+fn slash_commands_run_and_buttons_press() {
+    let settings = [(
+        "MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS",
+        "127.0.0.1 localhost".to_string(),
+    )];
+    let Some(server) = Server::start("commands", &settings) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let Crew {
+            bea,
+            channel: channel_id,
+            service,
+            mut notices,
+            account: anna,
+            ..
+        } = crew(&server).await;
+        let params = json!({ "account": anna, "room": channel_id });
+        call(&service, "timeline", params.clone()).await;
+
+        // The commands there are, and running one.
+        let commands = call(&service, "commands", params.clone()).await;
+        let triggers: Vec<&str> = commands
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|c| c["trigger"].as_str())
+            .collect();
+        assert!(triggers.contains(&"shrug"), "{commands}");
+        let shrug = json!({ "account": anna, "room": channel_id, "text": "/shrug fine" });
+        call(&service, "send", shrug).await;
+        heard(&mut notices, |n| {
+            n["method"] == "timeline.changed"
+                && item_with(&n["params"]["changes"], "fine ¯\\\\\\_(ツ)\\_/¯").is_some()
+        })
+        .await;
+        // What answers only you shows in the room, as a notice.
+        let away = json!({ "account": anna, "room": channel_id, "text": "/away" });
+        let answered = call(&service, "send", away).await;
+        let notice = heard(&mut notices, |n| {
+            n["params"]["changes"]
+                .as_array()
+                .is_some_and(|changes| changes.iter().any(|c| c["item"]["kind"] == "notice"))
+        })
+        .await;
+        assert_eq!(answered["text"], "You are now away");
+        let said = item_with(&notice["changes"], "You are now away").expect("the notice");
+        assert!(said["event"].is_null(), "{said}");
+
+        // An integration's post, with a button and a menu.
+        let integration = json_service(|target, asked| {
+            let picked = asked["context"]["selected_option"].as_str().unwrap_or("");
+            json!({ "update": { "message": format!("{target} {picked}").trim() } })
+        });
+        let action = |id: &str, extra: Value| {
+            let mut action = json!({ "id": id, "name": id, "integration": { "url": format!("{integration}/{id}"), "context": {} } });
+            for (key, value) in extra.as_object().unwrap() {
+                action[key] = value.clone();
+            }
+            action
+        };
+        let attachment = json!({
+            "title": "Release 1.2",
+            "text": "Deploy it?",
+            "fields": [{ "title": "Where", "value": "prod" }],
+            "actions": [
+                action("approve", json!({})),
+                action("place", json!({ "type": "select", "options": [{ "text": "Prod", "value": "prod" }] })),
+            ],
+        });
+        let release = bea
+            .post(
+                "posts",
+                &json!({ "channel_id": channel_id, "message": "", "props": { "attachments": [attachment] } }),
+            )
+            .await;
+        // The item of the release post, once its text starts with `start`.
+        let release_id = release["id"].clone();
+        let release_now = |n: &Value, start: &str| -> Option<Value> {
+            n["params"]["changes"].as_array()?.iter().find_map(|c| {
+                let item = &c["item"];
+                (item["event"] == release_id
+                    && item["text"].as_str().is_some_and(|t| t.starts_with(start)))
+                .then(|| item.clone())
+            })
+        };
+        let shown = heard(&mut notices, |n| release_now(n, "**Release").is_some()).await;
+        let item = release_now(&json!({ "params": shown }), "**Release").unwrap();
+        assert_eq!(
+            item["text"], "**Release 1.2**\n\nDeploy it?\n\n**Where**: prod",
+            "{item}"
+        );
+        assert_eq!(item["actions"][0]["name"], "approve", "{item}");
+        assert_eq!(item["actions"][1]["options"][0]["value"], "prod", "{item}");
+
+        let press = json!({ "account": anna, "room": channel_id, "event": release["id"],
+                            "action": item["actions"][0]["id"] });
+        call(&service, "press", press).await;
+        heard(&mut notices, |n| release_now(n, "/approve").is_some()).await;
+        let pick = json!({ "account": anna, "room": channel_id, "event": release["id"],
+                           "action": item["actions"][1]["id"], "option": "prod" });
+        call(&service, "press", pick).await;
+        heard(&mut notices, |n| release_now(n, "/place prod").is_some()).await;
     });
 }

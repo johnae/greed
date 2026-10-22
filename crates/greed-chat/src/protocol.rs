@@ -6,7 +6,10 @@
 //! Requests every service answers: `hello`, `accounts`, `restore`,
 //! `login.methods`, `login.start`, `login.answer`, `login.cancel`, `logout`,
 //! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`, `edit`,
-//! `redact`, `react`, `read`, `typing`, `media.get`, `upload`.
+//! `redact`, `react`, `read`, `typing`, `media.get`, `upload`. Those that
+//! can ("commands" in `hello`) also answer `commands` and `press`: a
+//! `send` starting with `/` runs a command, and a message's `actions` are
+//! pressed or picked from.
 //! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
 //! `timeline.changed`, `typing.changed`, `login.step`, `alert`.
 //!
@@ -241,6 +244,35 @@ pub struct Item {
     /// for joining a call there.
     #[serde(default)]
     pub link: Option<String>,
+    /// Buttons and menus an integration put in it, pressed with `press`.
+    #[serde(default)]
+    pub actions: Vec<Action>,
+}
+
+/// A button or menu in a message.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Action {
+    pub id: String,
+    pub name: String,
+    /// What's picked from, for a menu; none for a button.
+    #[serde(default)]
+    pub options: Vec<Choice>,
+}
+
+/// One thing a menu offers.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Choice {
+    pub text: String,
+    pub value: String,
+}
+
+/// A command `commands` lists, run by sending `/trigger`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Command {
+    pub trigger: String,
+    /// What follows it, like "[message]".
+    pub hint: String,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -420,6 +452,18 @@ pub struct MessageParams {
     pub text: String,
     #[serde(default)]
     pub key: String,
+}
+
+/// `press`'s parameters: the message's `action`, and for a menu the
+/// `option` picked, by its value.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PressParams {
+    pub account: String,
+    pub room: String,
+    pub event: String,
+    pub action: String,
+    #[serde(default)]
+    pub option: Option<String>,
 }
 
 /// `send`'s parameters: `text` is Markdown; `reply_to` and `thread`

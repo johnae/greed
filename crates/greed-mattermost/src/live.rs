@@ -139,6 +139,12 @@ impl Mattermost {
                     self.posted(id, &post).await;
                 }
             }
+            "ephemeral_message" => {
+                if let Some(mut post) = post() {
+                    post.kind = crate::timeline::EPHEMERAL.into();
+                    self.posted(id, &post).await;
+                }
+            }
             "post_deleted" => {
                 if let Some(mut post) = post() {
                     post.delete_at = post.delete_at.max(1);

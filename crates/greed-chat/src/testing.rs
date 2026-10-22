@@ -1,6 +1,6 @@
 //! For the services' tests against real servers: finding the servers'
 //! programs, a free port, a browser that follows redirects (curl), and a
-//! stand-in OAuth provider to sign in through.
+//! stand-in OAuth provider to sign in through and web services to call.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -68,7 +68,7 @@ pub fn oauth_provider() -> String {
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
-            let target = read_request(&mut stream);
+            let (target, _) = read_request(&mut stream);
             let reply = if target.starts_with("/oauth/authorize") {
                 let query = loopback::query(&format!("http://x{target}"));
                 let state: String =
@@ -109,8 +109,33 @@ pub fn oauth_provider() -> String {
     address
 }
 
-/// Reads a request off `stream`, body and all, and gives its target.
-fn read_request(stream: &mut std::net::TcpStream) -> String {
+/// A stand-in web service, like an integration, answering on a thread until
+/// the test ends: `answer` gets each request's target and body (JSON, or
+/// null) and gives the JSON to answer. Gives its address.
+pub fn json_service(
+    answer: impl Fn(&str, &serde_json::Value) -> serde_json::Value + Send + 'static,
+) -> String {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let address = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let (target, body) = read_request(&mut stream);
+            let asked = serde_json::from_slice(&body).unwrap_or_default();
+            let body = answer(&target, &asked).to_string();
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(reply.as_bytes());
+        }
+    });
+    address
+}
+
+/// Reads a request off `stream`, body and all: its target and body.
+fn read_request(stream: &mut std::net::TcpStream) -> (String, Vec<u8>) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut line = String::new();
     let _ = reader.read_line(&mut line);
@@ -124,8 +149,10 @@ fn read_request(stream: &mut std::net::TcpStream) -> String {
             length = n.trim().parse().unwrap_or(0);
         }
     }
-    let _ = reader.read_exact(&mut vec![0; length]);
-    line.split_whitespace().nth(1).unwrap_or("/").to_string()
+    let mut body = vec![0; length];
+    let _ = reader.read_exact(&mut body);
+    let target = line.split_whitespace().nth(1).unwrap_or("/").to_string();
+    (target, body)
 }
 
 /// Waits for a service's notifications until one satisfies `wanted`, and

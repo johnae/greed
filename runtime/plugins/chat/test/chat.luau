@@ -712,3 +712,112 @@ test("a direct message is titled by who sent it; long ones are cut", function()
 	assert(title == "Bea", title)
 	assert(#text < 300 and string.sub(text, -3) == "…", text)
 end)
+
+-- A Mattermost service with one channel, Ops, whose one post has a button
+-- and a menu; what it was pressed and sent goes in `asked`.
+local function integration(): (method: string, params: any) -> ()
+	table.clear(asked)
+	backend.reset()
+	local notify = backend.use("mattermost", {
+		rooms = function(): any
+			return {
+				{
+					id = "ops",
+					account = "anna",
+					name = "Ops",
+					kind = "room",
+					unread = 0,
+					mentions = 0,
+					favourite = false,
+					muted = false,
+					encrypted = false,
+				},
+			}
+		end,
+		timeline = function(): any
+			return {
+				items = {
+					{
+						id = "p1",
+						event = "p1",
+						kind = "message",
+						at = 1792660000000,
+						sender = { id = "bot", name = "deploys" },
+						text = "**Release 1.2**",
+						replies = 0,
+						reactions = {},
+						edited = false,
+						mine = false,
+						actions = {
+							{ id = "approve", name = "Approve" },
+							{
+								id = "where",
+								name = "Where",
+								options = { { text = "Prod", value = "prod" } },
+							},
+						},
+					},
+				},
+			}
+		end,
+		commands = function(): any
+			return { { trigger = "away", hint = "", description = "Set your status to away" } }
+		end,
+		send = function(params: any)
+			table.insert(asked, { method = "send", params = params })
+			return nil
+		end,
+		press = function(params: any)
+			table.insert(asked, { method = "press", params = params })
+			return nil
+		end,
+		read = function()
+			return nil
+		end,
+		["timeline.close"] = function()
+			return nil
+		end,
+	}, { "commands" })
+	notify("account.changed", {
+		id = "anna",
+		server = "https://mm",
+		name = "anna",
+		state = { state = "ready" },
+	})
+	return notify
+end
+
+test("a message's buttons show; enter presses one, or picks from a menu", function(t)
+	integration()
+	local buffer = on_message(t, "p1")
+	local text = buffer:text()
+	assert(string.find(text, "[ Approve ] [ Where ▾ ]  (enter)", 1, true), text)
+	t:keys("enter")
+	t:keys("enter") -- Approve, the first
+	t:wait(50)
+	local pressed = calls("press")
+	assert(
+		#pressed == 1 and pressed[1].event == "p1" and pressed[1].action == "approve",
+		greed.json.encode(asked)
+	)
+	t:keys("alt-b")
+	t:keys("down")
+	t:keys("enter") -- Where: Prod
+	t:wait(50)
+	pressed = calls("press")
+	assert(
+		#pressed == 2 and pressed[2].action == "where" and pressed[2].option == "prod",
+		greed.json.encode(asked)
+	)
+end)
+
+test("alt-/ picks a command into the box", function(t)
+	integration()
+	on_message(t, "p1")
+	t:keys("alt-/")
+	t:wait(50)
+	t:keys("enter")
+	t:wait(50)
+	local r = chat.rooms.of(greed.view():buffer())
+	assert(r and r.view:input() == "/away ", r and r.view:input())
+end)

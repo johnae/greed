@@ -81,7 +81,12 @@ export type Item = {
 	media: Media?,
 	--- Where it opens in the service's own app, as for joining a call.
 	link: string?,
+	--- Buttons and menus an integration put in it (Mattermost).
+	actions: { Action }?,
 }
+
+--- A button, or with `options` a menu, in a message.
+export type Action = { id: string, name: string, options: { { text: string, value: string } }? }
 
 --- A new message for you (`alert`).
 export type Alert = {

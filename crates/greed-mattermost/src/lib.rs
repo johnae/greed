@@ -5,6 +5,7 @@
 
 mod alerts;
 mod api;
+mod commands;
 mod live;
 mod login;
 mod media;
@@ -18,7 +19,8 @@ use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use greed_chat::protocol::{
-    Account, AccountParams, AccountState, Hello, Item, PROTOCOL, SecretParams, ServerParams,
+    Account, AccountParams, AccountState, Hello, Item, PROTOCOL, SecretParams, SendParams,
+    ServerParams,
 };
 use greed_chat::rpc::{self, Failure, Notifier, Service};
 use serde::{Deserialize, Serialize};
@@ -194,7 +196,9 @@ impl Service for Mattermost {
                 protocol: PROTOCOL,
                 service: "mattermost".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                can: ["threads", "presence"].map(String::from).to_vec(),
+                can: ["threads", "presence", "commands"]
+                    .map(String::from)
+                    .to_vec(),
             })),
             "accounts" => Ok(json!(self.accounts())),
             "restore" => {
@@ -227,9 +231,15 @@ impl Service for Mattermost {
                 Ok(Value::Null)
             }
             "send" => {
-                self.send(&rpc::parse(params)?).await?;
+                let send: SendParams = rpc::parse(params)?;
+                if send.text.starts_with('/') {
+                    return self.run_command(&send).await;
+                }
+                self.send(&send).await?;
                 Ok(Value::Null)
             }
+            "commands" => Ok(json!(self.commands(&rpc::parse(params)?).await?)),
+            "press" => self.press(&rpc::parse(params)?).await.map(|()| Value::Null),
             "edit" => self.edit(&rpc::parse(params)?).await.map(|()| Value::Null),
             "redact" => self
                 .redact(&rpc::parse(params)?)

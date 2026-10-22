@@ -18,6 +18,10 @@ use crate::api::{Api, Post, Posts};
 /// How many posts a timeline fetches at a time.
 const PAGE: usize = 60;
 
+/// The kind a post only you see is given here, as it comes over the
+/// WebSocket (`ephemeral_message`), like what a command answered.
+pub(crate) const EPHEMERAL: &str = "system_ephemeral";
+
 /// The emoji Mattermost knows by these names, both ways: reactions are
 /// named there, and shown as the emoji here.
 const EMOJI: &[(&str, &str)] = &[
@@ -376,6 +380,8 @@ impl Mattermost {
             ItemKind::Deleted
         } else if post.kind == "custom_calls" {
             ItemKind::Call
+        } else if post.kind == EPHEMERAL {
+            ItemKind::Notice
         } else if post.kind.starts_with("system_") {
             ItemKind::Change
         } else if let Some(file) = post.metadata.files.first() {
@@ -387,9 +393,11 @@ impl Mattermost {
         } else {
             ItemKind::Message
         };
+        // One only you see isn't on the server to answer or link to.
+        let on_server = post.kind != EPHEMERAL;
         Item {
             id: post.id.clone(),
-            event: Some(post.id.clone()),
+            event: on_server.then(|| post.id.clone()),
             sender: Person {
                 id: post.user_id.clone(),
                 name: self.name_of(account, &post.user_id),
@@ -411,7 +419,9 @@ impl Mattermost {
             link: self
                 .signed(account)
                 .ok()
+                .filter(|_| on_server)
                 .map(|(api, _)| format!("{}/_redirect/pl/{}", api.address(), post.id)),
+            actions: crate::commands::actions(post),
         }
     }
 }
@@ -424,9 +434,15 @@ fn now() -> i64 {
         })
 }
 
-/// What a post says: its message, or what it holds when that's empty.
+/// What a post says: its message and its attachments' text, or the files
+/// it holds when that's empty.
 fn text(post: &Post) -> String {
-    if post.message.is_empty() {
+    let attached = crate::commands::attachments_text(post);
+    let said: Vec<&str> = [post.message.as_str(), attached.as_str()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect();
+    if said.is_empty() {
         let names: Vec<&str> = post
             .metadata
             .files
@@ -435,7 +451,7 @@ fn text(post: &Post) -> String {
             .collect();
         names.join(", ")
     } else {
-        post.message.clone()
+        said.join("\n\n")
     }
 }
 
