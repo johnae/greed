@@ -8,7 +8,6 @@ mod login;
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
-use std::fmt::Write;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
@@ -197,16 +196,6 @@ fn secret(client: &Client, store: &Store) -> Option<String> {
         session,
     };
     serde_json::to_string(&secret).ok()
-}
-
-/// `n` random bytes as hex.
-fn random(n: usize) -> String {
-    let mut bytes = vec![0; n];
-    getrandom::fill(&mut bytes).expect("the system has random numbers");
-    bytes.iter().fold(String::new(), |mut hex, b| {
-        let _ = write!(hex, "{b:02x}");
-        hex
-    })
 }
 
 #[derive(Deserialize)]

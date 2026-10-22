@@ -53,6 +53,9 @@
   ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
     # A Matrix homeserver for greed-matrix's tests (crates/greed-matrix/tests)
     pkgs.matrix-tuwunel
+    # Mattermost and the PostgreSQL it needs, for greed-mattermost's tests
+    pkgs.mattermostLatest
+    pkgs.postgresql
   ];
 
   # What the window client (`greed --gui`) loads at run time: the display

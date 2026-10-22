@@ -7,9 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-getrandom = "0.3"
 greed-chat.workspace = true
-greed-dirs.workspace = true
 matrix-sdk = { version = "0.19", features = ["sso-login", "qrcode", "markdown", "local-server", "experimental-search"] }
 matrix-sdk-ui = "0.19"
 serde.workspace = true

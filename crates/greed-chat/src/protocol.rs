@@ -105,6 +105,25 @@ pub struct Field {
     pub secret: bool,
 }
 
+impl Field {
+    /// A field that shows what's typed.
+    pub fn text(name: &str, label: &str) -> Self {
+        Self {
+            name: name.into(),
+            label: label.into(),
+            secret: false,
+        }
+    }
+
+    /// A field that shows dots, for passwords.
+    pub fn secret(name: &str, label: &str) -> Self {
+        Self {
+            secret: true,
+            ..Self::text(name, label)
+        }
+    }
+}
+
 /// A room, channel or direct message.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Room {

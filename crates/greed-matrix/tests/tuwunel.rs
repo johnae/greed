@@ -126,11 +126,7 @@ fn free_port() -> u16 {
 
 /// Runs `test` on a runtime with a `LocalSet`, as `greed-matrix serve` does.
 fn run(test: impl Future<Output = ()>) {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    tokio::task::LocalSet::new().block_on(&runtime, test);
+    greed_chat::program::run(test).unwrap();
 }
 
 async fn call(matrix: &Matrix, method: &str, params: Value) -> Value {

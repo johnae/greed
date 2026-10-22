@@ -3,13 +3,14 @@
 use std::collections::HashMap;
 
 use greed_chat::protocol::{Field, Method, Step};
+use greed_chat::random;
 use greed_chat::rpc::Failure;
 use matrix_sdk::Client;
 use matrix_sdk::ruma::api::client::session::get_login_types::v3::LoginType;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::{Matrix, Store, random, secret};
+use crate::{Matrix, Store, secret};
 
 /// The name a new device gets on the server, as its other sessions list it.
 const DEVICE: &str = "Greed";
@@ -84,16 +85,8 @@ pub(crate) struct Cancel {
 fn password_fields(why: Option<String>) -> Step {
     Step::Ask {
         fields: vec![
-            Field {
-                name: "user".into(),
-                label: "Username".into(),
-                secret: false,
-            },
-            Field {
-                name: "password".into(),
-                label: "Password".into(),
-                secret: true,
-            },
+            Field::text("user", "Username"),
+            Field::secret("password", "Password"),
         ],
         why,
     }

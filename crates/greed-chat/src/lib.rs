@@ -6,5 +6,18 @@
 //! know which service it talks to, except for what a service says it can
 //! do.
 
+pub mod program;
 pub mod protocol;
 pub mod rpc;
+
+use std::fmt::Write;
+
+/// `n` random bytes as hex, for ids and passphrases.
+pub fn random(n: usize) -> String {
+    let mut bytes = vec![0; n];
+    getrandom::fill(&mut bytes).expect("the system has random numbers");
+    bytes.iter().fold(String::new(), |mut hex, b| {
+        let _ = write!(hex, "{b:02x}");
+        hex
+    })
+}
