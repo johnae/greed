@@ -31,8 +31,8 @@ pub struct Check {
     pub warnings: Vec<String>,
 }
 
-/// What a plugin's registry added for another plugin, to take away when
-/// that plugin goes: see `greed.plugin.tie`.
+/// Cleanup tied to a plugin's lifetime: either its own resources, or what
+/// it added through another plugin's registry. See `greed.plugin.tie`.
 pub(crate) struct Tie {
     /// The plugin whose code added it.
     by: PluginId,
@@ -336,7 +336,7 @@ pub(super) fn to_lua(lua: &Lua, check: Check) -> LuaResult<Table> {
     Ok(report)
 }
 
-/// `caller` and `tie`, for registries other plugins add to.
+/// `caller` and `tie`, for registries and plugin-owned cleanup.
 fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaResult<()> {
     let o = owner.clone();
     plugin.set(
@@ -356,15 +356,14 @@ fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaRes
     plugin.set(
         "tie",
         lua.create_function(move |lua, remove: Function| {
-            let Some(by) = capabilities::caller(lua, Some(&o)) else {
-                return Ok(None);
-            };
+            let caller = capabilities::caller(lua, Some(&o));
+            let by = caller.as_ref().unwrap_or(&o);
             state_mut(lua).ties.push(Tie {
                 by: by.clone(),
                 owner: o.clone(),
                 remove,
             });
-            Ok(Some(by.to_string()))
+            Ok(caller.map(|name| name.to_string()))
         })?,
     )
 }

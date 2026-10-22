@@ -1646,9 +1646,31 @@ fn unregister(lua: &Lua, name: &str) -> mlua::Result<()> {
     let label: Arc<str> = format!("removing what {name} added").into();
     let mut first_error = None;
     for (owner, remove) in removes {
-        if let Err(err) = tasks::spawn_labelled(lua, remove, (), owner, label.clone()) {
+        let result = if &*owner == name {
+            // Self-owned cleanup must finish before its grant is removed.
+            capabilities::running_as(lua, Some(&owner), &label, || remove.call::<()>(()))
+        } else {
+            tasks::spawn_labelled(lua, remove, (), owner, label.clone())
+        };
+        if let Err(err) = result {
             first_error.get_or_insert(err);
         }
+    }
+    // Cleanup may restore external state, but nothing it creates for the
+    // unloading plugin may survive with a removed grant.
+    let closed = {
+        let state = &mut *state_mut(lua);
+        let closed = remove_owned_by(state, name);
+        drop(plugin::untie(&mut state.ties, name));
+        closed
+    };
+    for view in closed {
+        if let Err(err) = handles::view_closed(lua, view) {
+            first_error.get_or_insert(err);
+        }
+    }
+    if let Err(err) = tasks::stop_owned_by(lua, name) {
+        first_error.get_or_insert(err);
     }
     first_error.map_or(Ok(()), Err)
 }

@@ -1779,7 +1779,7 @@ export type Plugins = {
 	started_within: (capability: string) -> boolean,
 	--- Runs `f` with `...` within the limit of the plugin `name` too, as if it had started it: for running what a plugin registered (a formatter, a runner, a source) later, from your plugin, so it can do no more than its plugin may. Config and unknown names add nothing. It can wait.
 	within: <A..., R...>(name: string?, f: (A...) -> R..., A...) -> R...,
-	--- For registries: runs `remove` when the plugin whose code called yours (see `caller`) is unloaded or reloaded, so what it added goes with it. Returns that plugin's name, or nil (and does nothing) if none but yours called.
+	--- Runs `remove` when the calling plugin unloads or reloads. Returns the foreign caller's name, or nil for your own calls, which tie cleanup to your plugin. Self-owned cleanup runs synchronously with your capabilities, cannot wait, and cannot leave owned resources behind.
 	tie: (remove: () -> ()) -> string?,
 }
 

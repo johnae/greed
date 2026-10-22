@@ -8,6 +8,7 @@
 --     core.autosave.on_quiet("mail-compose", function(buffer) ... end)
 
 local greed = require("@greed")
+local file = require("./file")
 
 local M = {}
 
@@ -52,8 +53,7 @@ function M.on_quiet(
 	end)
 end
 
-greed.on("buffer.changed", function(event: greed.BufferChanged)
-	local buffer = event.buffer
+local function schedule(buffer: greed.Buffer)
 	local keeper = keepers[buffer:kind()]
 	if keeper == nil or (keeper.wanted and not keeper.wanted(buffer)) then
 		return
@@ -71,6 +71,10 @@ greed.on("buffer.changed", function(event: greed.BufferChanged)
 			keeper.keep(buffer)
 		end
 	end)
+end
+
+greed.on("buffer.changed", function(event: greed.BufferChanged)
+	schedule(event.buffer)
 end)
 
 greed.on("buffer.closed", function(event: greed.BufferClosed)
@@ -86,7 +90,7 @@ M.on_quiet("file", function(buffer: greed.Buffer)
 			and buffer:modified()
 			and not buffer:readonly()
 		then
-			buffer:save()
+			file.save(buffer)
 		end
 	end)
 	if not ok then
@@ -95,5 +99,23 @@ M.on_quiet("file", function(buffer: greed.Buffer)
 end, function(buffer: greed.Buffer): boolean
 	return greed.option.get("auto-save") == true and buffer:path() ~= nil
 end)
+
+-- Dirty files may predate enabling auto-save, startup, or a core reload.
+local function seed()
+	for _, buffer in greed.buffers() do
+		if buffer:kind() == "file" and buffer:modified() then
+			schedule(buffer)
+		end
+	end
+end
+
+greed.on("editor.started", seed)
+greed.on("option.changed", function(event: greed.OptionChanged)
+	if event.name == "auto-save" and event.value == true then
+		seed()
+	end
+end)
+-- Reloads run the module again without necessarily emitting plugin.loaded.
+seed()
 
 return M

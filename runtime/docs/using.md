@@ -889,6 +889,19 @@ a burst of typing is one save; `:set auto-save-delay 3000` waits three
 seconds. To keep it, in your `init.luau`:
 `require("@greed").option.set("auto-save", true)`.
 
+Idle saves run the same before-save hooks as manual saves. Turning auto-save
+on, starting the editor or reloading core also schedules files that already
+have changes. Buffers kept through `core.autosave.on_quiet` keep their
+existing kind-specific behavior.
+
+Plugins can call `require("@core").file.save(buffer, path, force, forced)`
+to use the same hooks and per-buffer serialization as `:save`. Overlapping
+requests share a successful write when it satisfies them; failures reach
+every waiting caller. Unloading a save's owner cancels its pending operation;
+unloading core also releases callers waiting on core-owned saves. The optional
+`force` creates missing parent folders, and `forced` names the command
+suggested when a folder is missing.
+
 ### Icons
 
 The file tree's icons and the status line's rounded ends come from

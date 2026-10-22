@@ -355,6 +355,169 @@ fn reloading_keeps_the_options_a_plugin_defines() {
     );
 }
 
+#[test]
+fn reloading_core_seeds_already_dirty_files_for_autosave() {
+    let h = host();
+    let dir = plugin_folder("autosave-reload", &[("a.txt", "one")]);
+    let path = dir.join("a.txt");
+    h.load_dir(&runtime("core")).unwrap();
+    h.eval(&format!(
+        r#"
+local greed = require("@greed")
+greed.open({:?})
+greed.option.set("auto-save-delay", 30)
+greed.option.set("auto-save", true)
+greed.view():buffer():edit(function(e) e:insert(0, "new ") end)
+"#,
+        path.to_str().unwrap()
+    ))
+    .unwrap();
+    h.reload("core").unwrap();
+    pass(&h, Instant::now(), 1000);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "new one");
+    assert_eq!(
+        h.eval("require('@greed').view():buffer():modified()")
+            .unwrap(),
+        "false"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn unloading_core_cancels_its_pending_save_and_releases_foreign_waiters() {
+    let h = host();
+    let dir = plugin_folder("pending-save", &[("a.txt", "one")]);
+    let path = dir.join("a.txt");
+    h.load_dir(&runtime("core")).unwrap();
+    h.eval(&format!(
+        r#"
+local greed = require("@greed")
+greed.open({:?})
+greed.view():buffer():edit(function(e) e:insert(0, "new ") end)
+require("@core").file.before_save("slow", function()
+    greed.sleep(1000)
+    greed.echo("escaped save")
+end)
+"#,
+        path.to_str().unwrap()
+    ))
+    .unwrap();
+    h.run(FIRST_CLIENT, "save").unwrap();
+    h.load_str(
+        "waiters",
+        r#"
+local greed = require("@greed")
+local file = require("@core").file
+for _ = 1, 2 do
+    greed.spawn(function()
+        local ok = pcall(file.save, greed.view():buffer())
+        greed.echo(if ok then "unexpected save" else "cancelled")
+    end)
+end
+"#,
+    )
+    .unwrap();
+    h.unload("core").unwrap();
+    assert_eq!(messages(&h), ["cancelled", "cancelled"]);
+    h.fire_timers(Instant::now() + Duration::from_secs(2))
+        .unwrap();
+    assert!(messages(&h).is_empty());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "one");
+    assert_eq!(
+        h.eval("require('@greed').view():buffer():modified()")
+            .unwrap(),
+        "true"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn init_cleanup_runs_synchronously_and_keeps_nil_caller_return() {
+    let h = host();
+    h.load_str(
+        "cleanup",
+        r#"
+local greed = require("@greed")
+assert(greed.plugin.tie(function() greed.echo("cleaned") end) == nil)
+"#,
+    )
+    .unwrap();
+    h.unload("cleanup").unwrap();
+    assert_eq!(messages(&h), ["cleaned"]);
+    h.fire_timers(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    assert!(messages(&h).is_empty());
+}
+
+#[test]
+fn self_owned_cleanup_cannot_leave_a_yielded_task() {
+    let h = host();
+    h.load_str(
+        "cleanup",
+        r#"
+local greed = require("@greed")
+greed.plugin.tie(function()
+    greed.command { name = "failed-cleanup", run = function() greed.echo("escaped command") end }
+    greed.sleep(1)
+    greed.echo("escaped cleanup")
+end)
+greed.plugin.tie(function() greed.echo("other cleanup") end)
+"#,
+    )
+    .unwrap();
+    assert!(h.unload("cleanup").is_err());
+    assert_eq!(messages(&h), ["other cleanup"]);
+    assert!(h.next_timer().is_none());
+    assert!(h.run(FIRST_CLIENT, "failed-cleanup").is_err());
+    h.fire_timers(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    assert!(messages(&h).is_empty());
+    // The failed unload leaves the plugin loaded, but the rejected cleanup
+    // must not be resumable even after a subsequent successful unload.
+    h.unload("cleanup").unwrap();
+    h.fire_timers(Instant::now() + Duration::from_secs(2))
+        .unwrap();
+    assert!(messages(&h).is_empty());
+}
+
+#[test]
+fn self_owned_cleanup_cannot_create_surviving_resources() {
+    let h = host();
+    h.load_str(
+        "observer",
+        r#"
+local child
+return {
+    keep = function(value) child = value end,
+    writable = function() return child:write("still alive") end,
+}
+"#,
+    )
+    .unwrap();
+    h.load_str(
+        "cleanup",
+        r#"
+local greed = require("@greed")
+greed.plugin.tie(function()
+    greed.command { name = "escaped-cleanup", run = function() greed.echo("escaped command") end }
+    greed.spawn(function() greed.sleep(1); greed.echo("escaped task") end)
+    greed.plugin.tie(function() greed.echo("escaped tie") end)
+    local child = greed.process.spawn({ "cat" })
+    assert(child:write("alive"))
+    require("@observer").keep(child)
+end)
+"#,
+    )
+    .unwrap();
+    h.unload("cleanup").unwrap();
+    assert!(h.run(FIRST_CLIENT, "escaped-cleanup").is_err());
+    assert_eq!(h.eval("require('@observer').writable()").unwrap(), "false");
+    assert!(h.next_timer().is_none());
+    h.fire_timers(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    assert!(messages(&h).is_empty());
+}
+
 const REGISTRY: &str = r#"
 local greed = require("@greed")
 local names: { string } = {}

@@ -1,6 +1,7 @@
 -- Opening, saving and quitting.
 
 local greed = require("@greed")
+local atomic = require("./atomic")
 local project = require("./project")
 local prompt = require("./prompt")
 local recent = require("./recent")
@@ -46,12 +47,11 @@ end
 
 -- Saves `buffer`, to `path` if given. A folder it goes in that isn't there
 -- is made with `force`; without, saving refuses, saying `forced` makes it.
-local function save(buffer: greed.Buffer, path: string?, force: boolean?, forced: string?)
-	path = path and project.resolve(path)
+local function write(buffer: greed.Buffer, path: string?, force: boolean?, forced: string?): nil
 	local saver = savers[buffer:kind()]
 	if saver and path == nil then
 		saver(buffer)
-		return
+		return nil
 	end
 	if path == nil and buffer:path() == nil then
 		-- An untitled buffer asks where to go, as "Save As" does.
@@ -72,9 +72,121 @@ local function save(buffer: greed.Buffer, path: string?, force: boolean?, forced
 		assert(greed.fs.mkdir(folder))
 	end
 	registry.tell(before_save, buffer)
+	if not buffer:valid() then
+		error("buffer closed while saving", 0)
+	end
 	buffer:save(path)
 	greed.echo("wrote " .. project.name(buffer))
+	return nil
 end
+
+-- Serialize the entire save, including hooks that wait.
+type Save = {
+	thread: thread,
+	owner: string?,
+	path: string?,
+	force: boolean,
+	waiters: { greed.Signal },
+}
+local saving: { [number]: Save } = {}
+local owners: { [string]: boolean } = {}
+local stopped = false
+
+type SaveResult = { ok: boolean, err: any }
+
+local function send_result(done: greed.Signal, result: SaveResult): nil
+	done:send(result)
+	return nil
+end
+
+local function notify_waiters(waiters: { greed.Signal }, result: SaveResult)
+	for _, done in waiters do
+		-- Sending resumes the waiter; one failing caller must not strand others.
+		local ok, err = pcall(send_result, done, result)
+		if not ok then
+			greed.echo(tostring(err))
+		end
+	end
+end
+
+local function cancel(owner: string?)
+	for id, pending in saving do
+		if owner == nil or pending.owner == owner then
+			saving[id] = nil
+			notify_waiters(pending.waiters, { ok = false, err = "save cancelled: plugin unloaded" })
+		end
+	end
+end
+
+greed.plugin.tie(function()
+	stopped = true
+	cancel(nil)
+end)
+
+local function save(buffer: greed.Buffer, path: string?, force: boolean?, forced: string?)
+	if stopped then
+		error("save cancelled: plugin unloaded", 0)
+	end
+	path = path and project.resolve(path)
+	local id = buffer:id()
+	local thread = coroutine.running()
+	local owner = greed.plugin.caller()
+	if owner and not owners[owner] then
+		owners[owner] = true
+		greed.plugin.tie(function()
+			owners[owner] = nil
+			cancel(owner)
+		end)
+	end
+	local state: Save = {
+		thread = thread,
+		owner = owner,
+		path = path or buffer:path(),
+		force = force == true,
+		waiters = {},
+	}
+	local active, waiter = atomic(function()
+		local pending = saving[id]
+		if pending == nil then
+			saving[id] = state
+			return nil
+		elseif pending.thread == thread then
+			return pending
+		end
+		local done = greed.signal()
+		table.insert(pending.waiters, done)
+		return pending, done
+	end)
+	if active then
+		if active.thread == thread then
+			error("recursive save of the same buffer", 0)
+		end
+		local result = waiter:wait()
+		local same_request = (path == nil or path == active.path) and (not force or active.force)
+		if not result.ok and same_request then
+			error(result.err, 0)
+		end
+		if not buffer:valid() then
+			return
+		end
+		if (path == nil or path == buffer:path()) and not buffer:modified() then
+			return
+		end
+		return save(buffer, path, force, forced)
+	end
+	local ok, err = pcall(write, buffer, path, force, forced)
+	if saving[id] == state then
+		saving[id] = nil
+	end
+	notify_waiters(state.waiters, { ok = ok, err = err })
+	if not ok then
+		error(err, 0)
+	end
+end
+
+--- Saves through the same hooks and serialization as :save. With `force`,
+--- makes missing parent folders; `forced` names the command to suggest.
+M.save = save
 
 -- The names of `buffers`, joined for a message.
 local function names(buffers: { greed.Buffer }): string
