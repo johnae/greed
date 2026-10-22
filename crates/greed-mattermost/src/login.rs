@@ -9,7 +9,7 @@ use greed_chat::rpc::Failure;
 use serde_json::{Value, json};
 
 use crate::api::Api;
-use crate::{Mattermost, Signed};
+use crate::{Mattermost, secret};
 
 /// A sign-in going on.
 pub(crate) struct Login {
@@ -167,12 +167,9 @@ impl Mattermost {
             }
         };
         self.logins.borrow_mut().remove(&answer.login);
-        let signed = Signed {
-            api: api.with_token(token),
-            user,
-        };
-        let secret = signed.secret();
-        let account = self.signed_in(signed);
+        let api = api.with_token(token);
+        let secret = secret(&api);
+        let account = self.signed_in(api, user);
         Ok(json!(Step::Done { account, secret }))
     }
 

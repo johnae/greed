@@ -70,7 +70,12 @@ pub fn run<T>(work: impl Future<Output = T>) -> Option<T> {
         .ok()?;
     let local = tokio::task::LocalSet::new();
     let done = local.block_on(&runtime, work);
-    let _inside = runtime.enter();
-    drop(local);
+    {
+        let _inside = runtime.enter();
+        drop(local);
+    }
+    // Libraries leave work on the blocking threads (a sync's long poll);
+    // it's not waited for.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
     Some(done)
 }

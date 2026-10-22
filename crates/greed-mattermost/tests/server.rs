@@ -302,3 +302,191 @@ fn signs_in_through_the_browser_with_a_desktop_token() {
         assert_eq!(done["account"]["name"], "Bea Berg");
     });
 }
+
+/// Someone on the server, through its REST API, for the other side of a
+/// test.
+struct Rest {
+    http: reqwest::Client,
+    url: String,
+    token: String,
+    id: String,
+}
+
+impl Rest {
+    async fn login(server: &Server, user: &str, password: &str) -> Rest {
+        let http = reqwest::Client::new();
+        let response = http
+            .post(format!("{}/api/v4/users/login", server.url()))
+            .json(&json!({ "login_id": user, "password": password }))
+            .send()
+            .await
+            .unwrap();
+        let token = response.headers()["token"].to_str().unwrap().to_string();
+        let me: Value = response.json().await.unwrap();
+        Rest {
+            http,
+            url: server.url(),
+            token,
+            id: me["id"].as_str().unwrap().to_string(),
+        }
+    }
+
+    async fn post(&self, path: &str, body: &Value) -> Value {
+        let response = self
+            .http
+            .post(format!("{}/api/v4/{path}", self.url))
+            .bearer_auth(&self.token)
+            .json(body)
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            response.status().is_success(),
+            "{path}: {}",
+            response.status()
+        );
+        response.json().await.unwrap()
+    }
+}
+
+/// Waits for notifications until one satisfies `wanted`, giving its params.
+async fn heard(
+    notices: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    wanted: impl Fn(&Value) -> bool,
+) -> Value {
+    let waiting = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let line = notices.recv().await.expect("the service is there");
+            let notice: Value = serde_json::from_str(&line).unwrap();
+            if wanted(&notice) {
+                return notice["params"].clone();
+            }
+        }
+    });
+    waiting.await.expect("the notification comes")
+}
+
+/// The item whose text is `text` among `changes`.
+fn item_with(changes: &Value, text: &str) -> Option<Value> {
+    changes
+        .as_array()?
+        .iter()
+        .map(|change| change["item"].clone())
+        .find(|item| item["text"] == text)
+}
+
+/// Signs `user` in through the service with a password: their account.
+async fn sign_in(service: &Mattermost, server: &Server, user: &str, password: &str) -> String {
+    let started = call(
+        service,
+        "login.start",
+        json!({ "server": server.url(), "method": { "kind": "password" } }),
+    )
+    .await;
+    let values = json!({ "user": user, "password": password });
+    let done = call(
+        service,
+        "login.answer",
+        json!({ "login": started["login"], "values": values }),
+    )
+    .await;
+    done["account"]["id"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn lists_channels_and_keeps_a_timeline() {
+    let Some(server) = Server::start("channels", &[]) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let anna_rest = Rest::login(&server, "anna", "Secret-pass1").await;
+        let bea = Rest::login(&server, "bea", "Secret-pass1").await;
+        let team = anna_rest
+            .post(
+                "teams",
+                &json!({ "name": "crew", "display_name": "Crew", "type": "O" }),
+            )
+            .await;
+        let team_id = team["id"].as_str().unwrap();
+        anna_rest
+            .post(
+                &format!("teams/{team_id}/members"),
+                &json!({ "team_id": team_id, "user_id": bea.id }),
+            )
+            .await;
+        let channel = anna_rest
+            .post(
+                "channels",
+                &json!({ "team_id": team_id, "name": "plans", "display_name": "Plans", "type": "O" }),
+            )
+            .await;
+        let channel_id = channel["id"].as_str().unwrap().to_string();
+        bea.post(
+            &format!("channels/{channel_id}/members"),
+            &json!({ "user_id": bea.id }),
+        )
+        .await;
+
+        let (notifier, mut notices) = rpc::notifier();
+        let service = Mattermost::new(server.dir.join("data"), notifier);
+        let anna = sign_in(&service, &server, "anna", "Secret-pass1").await;
+        heard(&mut notices, |n| {
+            n["method"] == "account.changed" && n["params"]["state"]["state"] == "ready"
+        })
+        .await;
+
+        let rooms = call(&service, "rooms", json!({ "account": anna })).await;
+        let find = |id: &str| {
+            rooms
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == id)
+                .cloned()
+                .unwrap_or_else(|| panic!("no {id} in {rooms}"))
+        };
+        assert_eq!(find(team_id)["kind"], "space");
+        let plans = find(&channel_id);
+        assert_eq!(plans["name"], "Plans");
+        assert_eq!(plans["parent"], team_id);
+
+        let params = json!({ "account": anna, "room": channel_id });
+        let opened = call(&service, "timeline", params.clone()).await;
+        assert!(opened["items"].is_array(), "{opened}");
+
+        let lunch = bea
+            .post(
+                "posts",
+                &json!({ "channel_id": channel_id, "message": "lunch at noon?" }),
+            )
+            .await;
+        let changed = heard(&mut notices, |n| {
+            n["method"] == "timeline.changed"
+                && item_with(&n["params"]["changes"], "lunch at noon?").is_some()
+        })
+        .await;
+        let item = item_with(&changed["changes"], "lunch at noon?").unwrap();
+        assert_eq!(item["sender"]["name"], "bea");
+        assert_eq!(item["mine"], false);
+        assert_eq!(item["event"], lunch["id"]);
+
+        call(
+            &service,
+            "send",
+            json!({ "account": anna, "room": channel_id, "text": "yes", "reply_to": lunch["id"] }),
+        )
+        .await;
+        let sent = heard(&mut notices, |n| {
+            n["method"] == "timeline.changed"
+                && item_with(&n["params"]["changes"], "yes")
+                    .is_some_and(|yes| yes["sending"].is_null())
+        })
+        .await;
+        let yes = item_with(&sent["changes"], "yes").unwrap();
+        assert_eq!(yes["mine"], true);
+        assert_eq!(yes["thread"], lunch["id"], "a reply goes in the thread");
+        assert!(yes["event"].is_string());
+    });
+}

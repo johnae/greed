@@ -4,36 +4,56 @@
 //! `restore`; nothing secret stays here.
 
 mod api;
+mod live;
 mod login;
+mod rooms;
+mod timeline;
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use greed_chat::protocol::{
-    Account, AccountParams, AccountState, Hello, PROTOCOL, SecretParams, ServerParams,
+    Account, AccountParams, AccountState, Hello, Item, PROTOCOL, SecretParams, ServerParams,
 };
 use greed_chat::rpc::{self, Failure, Notifier, Service};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tokio::task::AbortHandle;
 
 use api::{Api, User};
 
 /// The Mattermost service: the accounts signed in and the sign-ins going on.
 pub struct Mattermost {
-    #[allow(dead_code, reason = "the local store comes with the timeline")]
+    #[allow(dead_code, reason = "a local store comes later")]
     data: PathBuf,
-    #[allow(dead_code, reason = "events from the WebSocket come next")]
     notifier: Notifier,
+    /// For the tasks it starts, which end when it's gone.
+    me: Weak<Mattermost>,
     accounts: RefCell<BTreeMap<String, Signed>>,
     logins: RefCell<HashMap<String, login::Login>>,
+    /// The people accounts have come across, by "account user".
+    people: RefCell<HashMap<String, User>>,
+    /// The timelines the client has open, by "account channel".
+    timelines: RefCell<HashMap<String, Vec<Item>>>,
 }
 
 /// A signed-in account: its server with the token, and who it is.
 struct Signed {
     api: Api,
     user: User,
+    state: AccountState,
+    /// Its WebSocket, kept connected.
+    live: Option<AbortHandle>,
+}
+
+impl Drop for Signed {
+    fn drop(&mut self) {
+        if let Some(live) = &self.live {
+            live.abort();
+        }
+    }
 }
 
 /// What an account's secret holds.
@@ -47,11 +67,14 @@ impl Mattermost {
     /// Keeps what it stores in `data`, and sends notifications with
     /// `notifier`.
     pub fn new(data: PathBuf, notifier: Notifier) -> Rc<Self> {
-        Rc::new(Self {
+        Rc::new_cyclic(|me| Self {
             data,
             notifier,
+            me: me.clone(),
             accounts: RefCell::default(),
             logins: RefCell::default(),
+            people: RefCell::default(),
+            timelines: RefCell::default(),
         })
     }
 
@@ -77,16 +100,39 @@ impl Mattermost {
                 Failure::new(format!("can't reach {}: {e}", api.address()))
             }
         })?;
-        Ok(self.signed_in(Signed { api, user }))
+        Ok(self.signed_in(api, user))
     }
 
-    /// Takes on an account just signed in.
-    fn signed_in(&self, signed: Signed) -> Account {
+    /// Takes on an account just signed in, and keeps it connected.
+    fn signed_in(&self, api: Api, user: User) -> Account {
+        let mut signed = Signed {
+            api,
+            user,
+            state: AccountState::Syncing,
+            live: None,
+        };
         let account = signed.account();
+        signed.live = Some(self.connect(&account.id, &signed.api));
         self.accounts
             .borrow_mut()
             .insert(account.id.clone(), signed);
         account
+    }
+
+    /// Notes account `id`'s new state, and tells the client.
+    fn changed(&self, id: &str, state: AccountState) {
+        let account = {
+            let mut accounts = self.accounts.borrow_mut();
+            let Some(signed) = accounts.get_mut(id) else {
+                return;
+            };
+            if signed.state == state {
+                return;
+            }
+            signed.state = state;
+            signed.account()
+        };
+        self.notifier.notify("account.changed", &json!(account));
     }
 
     /// Signs `id` out.
@@ -96,6 +142,9 @@ impl Mattermost {
             .borrow_mut()
             .remove(id)
             .ok_or_else(|| Failure::new(format!("no account {id}")))?;
+        self.timelines
+            .borrow_mut()
+            .retain(|key, _| !key.starts_with(&format!("{id} ")));
         signed
             .api
             .post::<Value>("api/v4/users/logout", &json!({}))
@@ -114,17 +163,18 @@ impl Signed {
             id: format!("{}@{host}", self.user.id),
             server: self.api.address(),
             name: Some(self.user.name()),
-            state: AccountState::Ready,
+            state: self.state.clone(),
         }
     }
+}
 
-    fn secret(&self) -> String {
-        let secret = Secret {
-            server: self.api.address(),
-            token: self.api.token.clone().unwrap_or_default(),
-        };
-        json!(secret).to_string()
-    }
+/// The secret for a session with `api`.
+fn secret(api: &Api) -> String {
+    let secret = Secret {
+        server: api.address(),
+        token: api.token.clone().unwrap_or_default(),
+    };
+    json!(secret).to_string()
 }
 
 impl Service for Mattermost {
@@ -154,6 +204,20 @@ impl Service for Mattermost {
             "logout" => {
                 let AccountParams { account } = rpc::parse(params)?;
                 self.logout(&account).await?;
+                Ok(Value::Null)
+            }
+            "rooms" => {
+                let AccountParams { account } = rpc::parse(params)?;
+                Ok(json!(self.rooms(&account).await?))
+            }
+            "timeline" => self.open_timeline(&rpc::parse(params)?).await,
+            "timeline.back" => self.back(&rpc::parse(params)?).await,
+            "timeline.close" => {
+                self.close_timeline(&rpc::parse(params)?);
+                Ok(Value::Null)
+            }
+            "send" => {
+                self.send(&rpc::parse(params)?).await?;
                 Ok(Value::Null)
             }
             _ => Err(Failure::unknown(method)),

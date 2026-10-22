@@ -4,12 +4,19 @@
 //! account's tokens make up its secret, which goes to the client for the
 //! keyring and comes back with `restore`; nothing secret stays here.
 
+// matrix-sdk's futures nest deeper than the compiler's default allows.
+#![recursion_limit = "256"]
+
 mod login;
+mod rooms;
+mod timeline;
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
 
 use greed_chat::protocol::{
     Account, AccountParams, AccountState, Hello, PROTOCOL, SecretParams, ServerParams,
@@ -17,6 +24,7 @@ use greed_chat::protocol::{
 use greed_chat::rpc::{self, Failure, Notifier, Service};
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::{AuthSession, Client, ClientBuilder, SessionChange};
+use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
@@ -29,6 +37,8 @@ pub struct Matrix {
     me: Weak<Matrix>,
     accounts: RefCell<BTreeMap<String, Signed>>,
     logins: RefCell<HashMap<String, login::Login>>,
+    /// The timelines the client has open, by "account room".
+    timelines: RefCell<HashMap<String, timeline::Open>>,
 }
 
 /// A signed-in account.
@@ -36,6 +46,9 @@ struct Signed {
     client: Client,
     store: Store,
     name: Option<String>,
+    state: AccountState,
+    /// Its sync, once started.
+    sync: Option<Arc<SyncService>>,
 }
 
 /// An account's store: its folder under the data folder, and the
@@ -63,6 +76,7 @@ impl Matrix {
             me: me.clone(),
             accounts: RefCell::default(),
             logins: RefCell::default(),
+            timelines: RefCell::default(),
         })
     }
 
@@ -91,20 +105,41 @@ impl Matrix {
         Ok(self.signed_in(client, secret.store).await)
     }
 
-    /// Takes on `client`, just signed in, and says who it is.
+    /// Takes on `client`, just signed in, starts syncing it, and says who
+    /// it is.
     async fn signed_in(&self, client: Client, store: Store) -> Account {
         let name = client.account().get_display_name().await.ok().flatten();
         let signed = Signed {
-            client,
+            client: client.clone(),
             store,
             name,
+            state: AccountState::Syncing,
+            sync: None,
         };
-        let account = signed.account();
-        self.watch(&account.id, &signed.client);
-        self.accounts
-            .borrow_mut()
-            .insert(account.id.clone(), signed);
-        account
+        let id = signed.account().id;
+        self.watch(&id, &client);
+        self.accounts.borrow_mut().insert(id.clone(), signed);
+        let sync = self.sync(&id, &client).await;
+        let mut accounts = self.accounts.borrow_mut();
+        let signed = accounts.get_mut(&id).expect("just taken on");
+        signed.sync = sync;
+        signed.account()
+    }
+
+    /// Notes account `id`'s new state, and tells the client.
+    fn changed(&self, id: &str, state: AccountState) {
+        let account = {
+            let mut accounts = self.accounts.borrow_mut();
+            let Some(signed) = accounts.get_mut(id) else {
+                return;
+            };
+            if signed.state == state {
+                return;
+            }
+            signed.state = state;
+            signed.account()
+        };
+        self.notifier.notify("account.changed", &json!(account));
     }
 
     /// Passes on new tokens as `account.secret`, and a session the server
@@ -121,13 +156,14 @@ impl Matrix {
                     Err(RecvError::Closed) => break,
                 };
                 let Some(me) = me.upgrade() else { break };
-                let accounts = me.accounts.borrow();
-                let Some(signed) = accounts.get(&id) else {
-                    continue;
-                };
                 match change {
                     SessionChange::TokensRefreshed => {
-                        if let Some(secret) = secret(&signed.client, &signed.store) {
+                        let secret = me
+                            .accounts
+                            .borrow()
+                            .get(&id)
+                            .and_then(|signed| secret(&signed.client, &signed.store));
+                        if let Some(secret) = secret {
                             me.notifier.notify(
                                 "account.secret",
                                 &json!({ "account": id, "secret": secret }),
@@ -135,11 +171,10 @@ impl Matrix {
                         }
                     }
                     SessionChange::UnknownToken(_) => {
-                        let account = Account {
-                            state: AccountState::Trouble("the server signed you out".into()),
-                            ..signed.account()
-                        };
-                        me.notifier.notify("account.changed", &json!(account));
+                        me.changed(
+                            &id,
+                            AccountState::Trouble("the server signed you out".into()),
+                        );
                     }
                 }
             }
@@ -153,6 +188,11 @@ impl Matrix {
             .borrow_mut()
             .remove(id)
             .ok_or_else(|| Failure::new(format!("no account {id}")))?;
+        self.timelines
+            .borrow_mut()
+            .retain(|key, _| !key.starts_with(&format!("{id} ")));
+        // Its sync ends once the server has ended the session. Stopping it
+        // first (`SyncService::stop`) never finished against Tuwunel 1.9.
         let done = signed.client.logout().await;
         drop(signed.client);
         self.forget(&signed.store);
@@ -182,7 +222,7 @@ impl Signed {
                 .unwrap_or_default(),
             server: self.client.homeserver().to_string(),
             name: self.name.clone(),
-            state: AccountState::Ready,
+            state: self.state.clone(),
         }
     }
 }
@@ -201,7 +241,18 @@ fn secret(client: &Client, store: &Store) -> Option<String> {
 }
 
 impl Service for Matrix {
-    async fn call(&self, method: &str, params: Value) -> Result<Value, Failure> {
+    fn call(&self, method: &str, params: Value) -> impl Future<Output = Result<Value, Failure>> {
+        // Boxed and unnamed: the futures matrix-sdk makes nest too deep for
+        // the crates awaiting this to work out.
+        let method = method.to_string();
+        let answer: Pin<Box<dyn Future<Output = _> + '_>> =
+            Box::pin(async move { self.handle(&method, params).await });
+        answer
+    }
+}
+
+impl Matrix {
+    async fn handle(&self, method: &str, params: Value) -> Result<Value, Failure> {
         match method {
             "hello" => Ok(json!(Hello {
                 protocol: PROTOCOL,
@@ -227,6 +278,23 @@ impl Service for Matrix {
             "logout" => {
                 let AccountParams { account } = rpc::parse(params)?;
                 self.logout(&account).await?;
+                Ok(Value::Null)
+            }
+            "rooms" => {
+                let AccountParams { account } = rpc::parse(params)?;
+                let rooms = self.rooms(&account).await;
+                rooms
+                    .map(|rooms| json!(rooms))
+                    .ok_or_else(|| Failure::new(format!("no account {account}")))
+            }
+            "timeline" => self.open_timeline(&rpc::parse(params)?).await,
+            "timeline.back" => self.back(&rpc::parse(params)?).await,
+            "timeline.close" => {
+                self.close_timeline(&rpc::parse(params)?);
+                Ok(Value::Null)
+            }
+            "send" => {
+                self.send(&rpc::parse(params)?).await?;
                 Ok(Value::Null)
             }
             _ => Err(Failure::unknown(method)),

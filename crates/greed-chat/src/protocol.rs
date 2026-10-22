@@ -5,8 +5,16 @@
 //!
 //! Requests every service answers: `hello`, `accounts`, `restore`,
 //! `login.methods`, `login.start`, `login.answer`, `login.cancel`, `logout`,
-//! `rooms`, `timeline`, `send`. Notifications: `account.changed`,
-//! `account.secret`, `rooms.changed`, `timeline.changed`, `login.step`.
+//! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`.
+//! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
+//! `timeline.changed`, `login.step`.
+//!
+//! Rooms: `rooms {account}` answers the account's rooms, and
+//! `rooms.changed {account}` says to ask again. A timeline: `timeline
+//! {account, room}` answers `{items}` and keeps it open, sending
+//! `timeline.changed {account, room, changes}` until `timeline.close`;
+//! `timeline.back` fetches older items into it, answering whether there are
+//! more.
 //!
 //! Signing in: `login.start {server, method}` answers `{login, step}`, the
 //! first `Step`; `login.answer {login, values}` answers the next one, until
@@ -174,9 +182,12 @@ pub struct Person {
 /// An item in a room's timeline: a message, or something that happened.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Item {
-    /// Stays the same from sending (a local id) to sent (the server's id
-    /// replaces it through `timeline.changed`).
+    /// The item's id in the timeline, which stays the same from sending to
+    /// sent and for things that aren't messages (a day starting).
     pub id: String,
+    /// The server's id for the message once it has one: what replies,
+    /// reactions and links name.
+    pub event: Option<String>,
     pub sender: Person,
     /// Milliseconds since 1970.
     pub at: i64,
@@ -214,6 +225,12 @@ pub enum ItemKind {
     Deleted,
     /// Encrypted, and the key isn't here (yet).
     Unreadable,
+    /// A new day starts here (`at`).
+    Day,
+    /// What's after this you haven't read.
+    ReadMarker,
+    /// The room's very first item: nothing comes before it.
+    Start,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -249,6 +266,10 @@ pub enum Change {
     },
     Remove {
         at: usize,
+    },
+    /// Only the first `len` items stay.
+    Truncate {
+        len: usize,
     },
     Clear,
 }
@@ -297,6 +318,26 @@ pub struct SecretParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountParams {
     pub account: String,
+}
+
+/// `timeline`, `timeline.back` and `timeline.close`'s parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomParams {
+    pub account: String,
+    pub room: String,
+}
+
+/// `send`'s parameters: `text` is Markdown; `reply_to` and `thread`
+/// name messages by their `event`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SendParams {
+    pub account: String,
+    pub room: String,
+    pub text: String,
+    #[serde(default)]
+    pub reply_to: Option<String>,
+    #[serde(default)]
+    pub thread: Option<String>,
 }
 
 #[cfg(test)]

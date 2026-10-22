@@ -2522,6 +2522,7 @@ dependencies = [
 name = "greed-matrix"
 version = "0.3.0"
 dependencies = [
+ "futures-util",
  "greed-chat",
  "matrix-sdk",
  "matrix-sdk-ui",
@@ -2534,11 +2535,15 @@ dependencies = [
 name = "greed-mattermost"
 version = "0.3.0"
 dependencies = [
+ "futures-util",
  "greed-chat",
  "reqwest",
+ "rustls",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
  "url",
 ]
 
@@ -6188,7 +6193,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7428,6 +7433,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+ "tungstenite",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7793,6 +7814,8 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.10.3",
+ "rustls",
+ "rustls-pki-types",
  "sha1",
  "thiserror 2.0.21",
 ]

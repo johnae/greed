@@ -195,7 +195,10 @@ fn signs_in_with_a_password_restores_and_signs_out() {
         assert_eq!(call(&matrix, "accounts", Value::Null).await, json!([]));
         let restored = call(&matrix, "restore", json!({ "secret": secret })).await;
         assert_eq!(restored["id"], "@anna:localhost", "{restored}");
-        assert_eq!(restored["state"]["state"], "ready");
+        assert_eq!(
+            restored["state"]["state"], "syncing",
+            "until its sync is running"
+        );
 
         call(&matrix, "logout", json!({ "account": "@anna:localhost" })).await;
         assert_eq!(call(&matrix, "accounts", Value::Null).await, json!([]));
@@ -316,5 +319,169 @@ fn signs_in_through_the_browser_with_the_link_pasted() {
         .await;
         assert_eq!(done["step"], "done", "{done}");
         assert_eq!(done["account"]["id"], "@bea:localhost");
+    });
+}
+
+/// A plain client signed in as `user`, for the other side of a test.
+async fn other(server: &Tuwunel, user: &str, password: &str) -> Client {
+    let client = Client::builder()
+        .homeserver_url(server.url())
+        .build()
+        .await
+        .unwrap();
+    client
+        .matrix_auth()
+        .login_username(user, password)
+        .send()
+        .await
+        .unwrap();
+    client
+}
+
+/// Waits for notifications until one satisfies `wanted`, giving its params.
+async fn heard(
+    notices: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    wanted: impl Fn(&Value) -> bool,
+) -> Value {
+    let waiting = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let line = notices.recv().await.expect("the service is there");
+            let notice: Value = serde_json::from_str(&line).unwrap();
+            if wanted(&notice) {
+                return notice["params"].clone();
+            }
+        }
+    });
+    waiting.await.expect("the notification comes")
+}
+
+/// The item whose text is `text` among `changes`, inserted, set or reset.
+fn item_with(changes: &Value, text: &str) -> Option<Value> {
+    changes.as_array()?.iter().find_map(|change| {
+        let items = match change["items"].as_array() {
+            Some(items) => items.clone(),
+            None => vec![change["item"].clone()],
+        };
+        items.into_iter().find(|item| item["text"] == text)
+    })
+}
+
+/// Signs `user` in through the service with a password.
+async fn sign_in(matrix: &Matrix, server: &Tuwunel, user: &str, password: &str) {
+    let started = call(
+        matrix,
+        "login.start",
+        json!({ "server": server.url(), "method": { "kind": "password" } }),
+    )
+    .await;
+    let done = call(
+        matrix,
+        "login.answer",
+        json!({ "login": started["login"], "values": { "user": user, "password": password } }),
+    )
+    .await;
+    assert_eq!(done["step"], "done", "{done}");
+}
+
+/// Asks `method` again until its answer satisfies `wanted`, giving it.
+async fn until(
+    matrix: &Matrix,
+    method: &str,
+    params: &Value,
+    wanted: impl Fn(&Value) -> bool,
+) -> Value {
+    for _ in 0..100 {
+        if let Ok(answer) = matrix.call(method, params.clone()).await
+            && wanted(&answer)
+        {
+            return answer;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("{method} {params} never came to what was wanted");
+}
+
+#[test]
+fn lists_rooms_and_keeps_a_timeline() {
+    use matrix_sdk::ruma::api::client::room::create_room;
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+
+    let Some(server) = Tuwunel::start("rooms", None) else {
+        return;
+    };
+    run(async {
+        server.register("anna", "secret").await;
+        server.register("bea", "secret").await;
+        let bea = other(&server, "bea", "secret").await;
+        let mut request = create_room::v3::Request::new();
+        request.name = Some("Plans".into());
+        request.invite = vec!["@anna:localhost".try_into().unwrap()];
+        let room = bea.create_room(request).await.unwrap();
+        let room_id = room.room_id().to_string();
+
+        let (notifier, mut notices) = rpc::notifier();
+        let matrix = Matrix::new(server.dir.join("data"), notifier);
+        sign_in(&matrix, &server, "anna", "secret").await;
+        let anna = "@anna:localhost";
+
+        // The invite shows once the sync brings it.
+        let account = json!({ "account": anna });
+        let rooms = until(&matrix, "rooms", &account, |rooms| {
+            rooms
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == room_id.as_str())
+        })
+        .await;
+        let invite = rooms
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == room_id.as_str())
+            .unwrap();
+        assert_eq!(invite["kind"], "invite", "{invite}");
+        assert_eq!(invite["name"], "Plans");
+
+        // Joined (from another client for now), it has a timeline.
+        other(&server, "anna", "secret")
+            .await
+            .join_room_by_id(room.room_id())
+            .await
+            .unwrap();
+        let params = json!({ "account": anna, "room": room_id });
+        let opened = until(&matrix, "timeline", &params, |_| true).await;
+        assert!(opened["items"].is_array(), "{opened}");
+
+        bea.get_room(room.room_id())
+            .unwrap()
+            .send(RoomMessageEventContent::text_plain("lunch at noon?"))
+            .await
+            .unwrap();
+        let changed = heard(&mut notices, |n| {
+            n["method"] == "timeline.changed"
+                && item_with(&n["params"]["changes"], "lunch at noon?").is_some()
+        })
+        .await;
+        assert_eq!(changed["room"], room_id.as_str());
+        let lunch = item_with(&changed["changes"], "lunch at noon?").unwrap();
+        assert_eq!(lunch["sender"]["id"], "@bea:localhost");
+        assert_eq!(lunch["mine"], false);
+        let event = lunch["event"].as_str().unwrap().to_string();
+
+        let reply =
+            json!({ "account": anna, "room": room_id, "text": "**yes**", "reply_to": event });
+        call(&matrix, "send", reply).await;
+        let sent = heard(&mut notices, |n| {
+            n["method"] == "timeline.changed"
+                && item_with(&n["params"]["changes"], "**yes**")
+                    .is_some_and(|yes| yes["sending"].is_null() && yes["event"].is_string())
+        })
+        .await;
+        let yes = item_with(&sent["changes"], "**yes**").unwrap();
+        assert_eq!(yes["mine"], true);
+        assert_eq!(yes["reply_to"], event.as_str());
+
+        call(&matrix, "timeline.close", params).await;
     });
 }

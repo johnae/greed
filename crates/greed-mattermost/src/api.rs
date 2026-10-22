@@ -76,6 +76,115 @@ impl User {
     }
 }
 
+/// A team, which holds channels.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct Team {
+    pub(crate) id: String,
+    pub(crate) display_name: String,
+}
+
+/// A channel: public (`O`), private (`P`), direct (`D`) or group (`G`).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct Channel {
+    pub(crate) id: String,
+    #[serde(default)]
+    pub(crate) team_id: String,
+    #[serde(rename = "type")]
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) display_name: String,
+    /// For a direct channel, the two users' ids joined by `__`.
+    #[serde(default)]
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) header: String,
+    #[serde(default)]
+    pub(crate) last_post_at: i64,
+    #[serde(default)]
+    pub(crate) total_msg_count: u64,
+}
+
+/// Your membership of a channel: how much of it you've read.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct Member {
+    pub(crate) channel_id: String,
+    #[serde(default)]
+    pub(crate) msg_count: u64,
+    #[serde(default)]
+    pub(crate) mention_count: u64,
+    #[serde(default)]
+    pub(crate) notify_props: Value,
+}
+
+/// A message.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct Post {
+    pub(crate) id: String,
+    pub(crate) channel_id: String,
+    pub(crate) user_id: String,
+    #[serde(default)]
+    pub(crate) root_id: String,
+    #[serde(default)]
+    pub(crate) message: String,
+    #[serde(default, rename = "type")]
+    pub(crate) kind: String,
+    #[serde(default)]
+    pub(crate) create_at: i64,
+    #[serde(default)]
+    pub(crate) edit_at: i64,
+    #[serde(default)]
+    pub(crate) delete_at: i64,
+    #[serde(default)]
+    pub(crate) reply_count: u64,
+    /// The id it had while it was being sent, from the one who sent it.
+    #[serde(default)]
+    pub(crate) pending_post_id: String,
+    #[serde(default)]
+    pub(crate) metadata: Metadata,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct Metadata {
+    #[serde(default)]
+    pub(crate) reactions: Vec<PostReaction>,
+    #[serde(default)]
+    pub(crate) files: Vec<File>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct PostReaction {
+    pub(crate) user_id: String,
+    pub(crate) emoji_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct File {
+    #[serde(default)]
+    pub(crate) name: String,
+    #[serde(default)]
+    pub(crate) mime_type: String,
+}
+
+/// Posts as the server lists them: their ids newest first.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct Posts {
+    #[serde(default)]
+    pub(crate) order: Vec<String>,
+    #[serde(default)]
+    pub(crate) posts: std::collections::HashMap<String, Post>,
+}
+
+impl Posts {
+    /// The posts, oldest first.
+    pub(crate) fn oldest_first(mut self) -> Vec<Post> {
+        self.order
+            .iter()
+            .rev()
+            .filter_map(|id| self.posts.remove(id))
+            .collect()
+    }
+}
+
 impl Api {
     /// The server at `server`: a URL, or a host name for https.
     pub(crate) fn new(server: &str) -> Result<Api, String> {
