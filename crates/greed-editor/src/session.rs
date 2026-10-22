@@ -745,7 +745,7 @@ fn restore_flags() -> impl Iterator<Item = &'static str> {
 /// Starts `greed serve` for the session called `name` in the background, its
 /// output going to a log, and waits until it listens.
 fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, Error> {
-    std::fs::create_dir_all(control::sessions_dir())?;
+    control::make_sessions_dir(&control::sessions_dir())?;
     let log_path = log_path(name);
     let log = std::fs::File::create(&log_path)?;
     let mut command = Command::new(std::env::current_exe()?);

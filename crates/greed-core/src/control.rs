@@ -393,6 +393,22 @@ pub fn check_sessions_dir(dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Makes `dir`, a sessions folder, closed to others whatever the umask
+/// (Ubuntu's 002 leaves new folders open to the group), then fails as
+/// [`check_sessions_dir`] does. One of yours that others can write in, as
+/// greed 0.3.0 made them there, is closed again rather than refused.
+pub fn make_sessions_dir(dir: &Path) -> io::Result<()> {
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
+    let meta = std::fs::symlink_metadata(dir)?;
+    if meta.is_dir() && meta.uid() == nix::unistd::getuid().as_raw() && meta.mode() & 0o022 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    check_sessions_dir(dir)
+}
+
 /// The socket and token files of the session called `name`.
 pub fn session_files(name: &str) -> (PathBuf, PathBuf) {
     let dir = sessions_dir();
@@ -562,11 +578,7 @@ pub fn sessions() -> io::Result<Vec<SessionInfo>> {
 /// find it.
 pub fn listen(name: &str, root: Option<&Path>) -> io::Result<Session> {
     let dir = sessions_dir();
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&dir)?;
-    check_sessions_dir(&dir)?;
+    make_sessions_dir(&dir)?;
     // Editors that crashed leave sockets behind, which would also stop a
     // new one with the same name from taking their place.
     prune(&dir);

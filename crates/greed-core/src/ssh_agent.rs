@@ -8,7 +8,7 @@
 //! type. Requests on one connection are answered in order.
 
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -87,11 +87,7 @@ pub fn listen(path: &Path) -> io::Result<Listener> {
     let dir = path
         .parent()
         .ok_or_else(|| io::Error::other("the agent socket needs a folder"))?;
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)?;
-    crate::control::check_sessions_dir(dir)?;
+    crate::control::make_sessions_dir(dir)?;
     if UnixStream::connect(path).is_ok() {
         return Err(io::Error::new(
             io::ErrorKind::AddrInUse,

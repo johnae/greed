@@ -369,3 +369,26 @@ fn a_sessions_folder_others_can_write_in_or_a_link_is_refused() {
     assert!(control::check_sessions_dir(&link).is_err(), "a link");
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn a_sessions_folder_is_made_closed_to_others_and_one_left_open_is_closed() {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let base = std::env::temp_dir().join(format!("greed-make-sessions-{}", std::process::id()));
+    let mode = |dir: &std::path::Path| std::fs::metadata(dir).unwrap().mode() & 0o777;
+    let new = base.join("new/run");
+    control::make_sessions_dir(&new).unwrap();
+    assert_eq!(mode(&new), 0o700);
+    // As greed 0.3.0 left it under a umask of 002, as Ubuntu's is.
+    let left = base.join("left");
+    std::fs::create_dir_all(&left).unwrap();
+    std::fs::set_permissions(&left, std::fs::Permissions::from_mode(0o775)).unwrap();
+    control::make_sessions_dir(&left).unwrap();
+    assert_eq!(mode(&left), 0o700, "closed again");
+    let link = base.join("link");
+    std::os::unix::fs::symlink(&new, &link).unwrap();
+    assert!(
+        control::make_sessions_dir(&link).is_err(),
+        "a link stays refused"
+    );
+    std::fs::remove_dir_all(&base).unwrap();
+}
