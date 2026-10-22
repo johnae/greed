@@ -6,7 +6,9 @@
 //! Requests every service answers: `hello`, `accounts`, `restore`,
 //! `login.methods`, `login.start`, `login.answer`, `login.cancel`, `logout`,
 //! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`, `edit`,
-//! `redact`, `react`, `read`, `typing`, `media.get`, `upload`, `search`.
+//! `redact`, `react`, `read`, `typing`, `media.get`, `upload`, `search`,
+//! `join` (a room by its id or address, or an invite), `leave` (or decline
+//! an invite) and `directory` (rooms you could join).
 //! Those that can ("commands" in `hello`) also answer `commands` and
 //! `press`: a `send` starting with `/` runs a command, and a message's
 //! `actions` are pressed or picked from. With "previews", `preview` says
@@ -500,6 +502,28 @@ pub struct MessageParams {
     pub text: String,
     #[serde(default)]
     pub key: String,
+}
+
+/// A room `directory` lists, one you can join.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Listed {
+    /// What `join` takes: its id.
+    pub id: String,
+    pub name: String,
+    pub topic: Option<String>,
+    /// How many have joined it, where the service says.
+    pub members: Option<u64>,
+    /// Its address, where it has one (`#garden:example.org`), or the team
+    /// it's in (Mattermost).
+    pub address: Option<String>,
+}
+
+/// `directory`'s parameters: the words its rooms' names or topics have.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectoryParams {
+    pub account: String,
+    #[serde(default)]
+    pub query: String,
 }
 
 /// `search`'s parameters: the words to find, in `room` or else everywhere.

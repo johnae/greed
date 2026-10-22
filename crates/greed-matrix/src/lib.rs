@@ -381,6 +381,9 @@ impl Matrix {
             "media.get" => self.media_get(&rpc::parse(params)?).await,
             "preview" => Ok(json!(self.preview(&rpc::parse(params)?).await?)),
             "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
+            "join" => self.join(&rpc::parse(params)?).await,
+            "leave" => self.leave(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "directory" => Ok(json!(self.directory(&rpc::parse(params)?).await?)),
             "upload" => self
                 .upload(&rpc::parse(params)?)
                 .await

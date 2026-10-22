@@ -96,6 +96,17 @@ encrypted rooms. The room list says when this device isn't verified yet.
   recovery key yet it sets one up and shows it once: keep it somewhere
   safe, Greed doesn't keep it.
 
+## Joining and leaving
+
+`+` in the list (or `:chat-join`) offers the rooms you could join: on
+Matrix the rooms your server lists publicly, on Mattermost your teams'
+public channels you aren't in. Or pick "By its address or id" and type one,
+like `#garden:example.org`. The room opens once you've joined.
+
+An invite shows in the list with `+` before it; `enter` on it asks: `y`
+joins, `n` says no. `-` in the list (or `:chat-leave` in a room) leaves a
+room after asking.
+
 ## Searching
 
 `/` in the list (or `:chat-search`) searches the messages of every account;
@@ -145,7 +156,7 @@ counts in the list.
 | Read receipts | "seen by" on Matrix. Mattermost has none to show. |
 | Polls, locations, live locations | Shown as what they are, without voting or a map. |
 | Mattermost Boards, Playbooks, and interactive dialogs a command or button opens | Not supported; open the message in the browser (`space .`) to use them. |
-| Spaces and teams | Listed with their rooms; no browsing a space's rooms you haven't joined, nor joining by address, yet. |
+| Spaces and teams | Listed with their rooms. A Matrix space's rooms you haven't joined aren't browsed; the server's directory and joining by address are (`+`). |
 | Discord, Slack and others | Not supported. |
 
 ## The programs

@@ -3,11 +3,17 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use greed_chat::protocol::{AccountState, Person, Room, RoomKind};
+use greed_chat::protocol::{
+    AccountState, DirectoryParams, Listed, Person, Room, RoomKind, RoomParams,
+};
+use greed_chat::rpc::Failure;
 use matrix_sdk::ruma::UserId;
+use matrix_sdk::ruma::api::client::directory::get_public_rooms_filtered;
+use matrix_sdk::ruma::directory::Filter;
+use matrix_sdk::ruma::{RoomId, RoomOrAliasId, UInt};
 use matrix_sdk::{Client, RoomState};
 use matrix_sdk_ui::sync_service::{State, SyncService};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::Matrix;
@@ -15,6 +21,9 @@ use crate::Matrix;
 /// How long changes to rooms gather before the client hears of them: a
 /// sync brings many at once.
 const GATHER: Duration = Duration::from_millis(100);
+
+/// The most rooms `directory` lists.
+const LISTED: u32 = 50;
 
 impl Matrix {
     /// Starts syncing `client` (account `id`), saying how that goes as
@@ -86,6 +95,69 @@ impl Matrix {
             rooms.push(room_of(id, &room, kind).await);
         }
         Some(rooms)
+    }
+
+    /// Joins a room by its id or address (`#garden:example.org`), or the
+    /// one you're asked to: `{room}`, its id.
+    pub(crate) async fn join(&self, params: &RoomParams) -> Result<Value, Failure> {
+        let client = self.client_of(&params.account)?;
+        let target = RoomOrAliasId::parse(params.room.trim())
+            .map_err(|_| Failure::new(format!("{} isn't a room's id or address", params.room)))?;
+        let room = client
+            .join_room_by_id_or_alias(&target, &[])
+            .await
+            .map_err(|e| Failure::new(format!("can't join it: {e}")))?;
+        Ok(json!({ "room": room.room_id() }))
+    }
+
+    /// Leaves a room, or says no to being asked to one.
+    pub(crate) async fn leave(&self, params: &RoomParams) -> Result<(), Failure> {
+        let client = self.client_of(&params.account)?;
+        let room = RoomId::parse(&params.room)
+            .ok()
+            .and_then(|id| client.get_room(&id))
+            .ok_or_else(|| Failure::new(format!("not in {}", params.room)))?;
+        room.leave()
+            .await
+            .map_err(|e| Failure::new(format!("can't leave it: {e}")))
+    }
+
+    /// The rooms the server lists publicly whose names or topics have
+    /// `params.query`, but those you're in.
+    pub(crate) async fn directory(&self, params: &DirectoryParams) -> Result<Vec<Listed>, Failure> {
+        let client = self.client_of(&params.account)?;
+        let mut filter = Filter::new();
+        filter.generic_search_term =
+            Some(params.query.trim().to_string()).filter(|query| !query.is_empty());
+        let mut request = get_public_rooms_filtered::v3::Request::new();
+        request.filter = filter;
+        request.limit = Some(UInt::from(LISTED));
+        let listed = client
+            .public_rooms_filtered(request)
+            .await
+            .map_err(|e| Failure::new(format!("can't list the server's rooms: {e}")))?;
+        Ok(listed
+            .chunk
+            .into_iter()
+            .filter(|room| {
+                client
+                    .get_room(&room.room_id)
+                    .is_none_or(|known| known.state() != RoomState::Joined)
+            })
+            .map(|room| {
+                let address = room.canonical_alias.map(|alias| alias.to_string());
+                Listed {
+                    id: room.room_id.to_string(),
+                    name: room
+                        .name
+                        .or_else(|| address.clone())
+                        .unwrap_or_else(|| room.room_id.to_string()),
+                    topic: room.topic,
+                    members: Some(u64::from(room.num_joined_members)),
+                    address,
+                }
+            })
+            .collect())
     }
 }
 

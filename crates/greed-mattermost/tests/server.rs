@@ -946,3 +946,81 @@ fn previews_links() {
         assert_eq!(preview["url"], url.as_str());
     });
 }
+
+#[test]
+fn joins_and_leaves_channels_from_the_directory() {
+    let Some(server) = Server::start("join", &[]) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let Crew {
+            bea,
+            service,
+            account,
+            ..
+        } = crew(&server).await;
+        let teams = reqwest::Client::new()
+            .get(format!("{}/api/v4/users/me/teams", server.url()))
+            .bearer_auth(&bea.token)
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap();
+        let team = teams[0]["id"].as_str().unwrap();
+        let garden = bea
+            .post(
+                "channels",
+                &json!({ "team_id": team, "name": "garden", "display_name": "Garden",
+                         "purpose": "Beds and tomatoes", "type": "O" }),
+            )
+            .await;
+        let garden = garden["id"].as_str().unwrap().to_string();
+        let in_list = |listed: &Value| {
+            listed
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == garden.as_str())
+                .cloned()
+        };
+
+        let listed = call(
+            &service,
+            "directory",
+            json!({ "account": account, "query": "tomato" }),
+        )
+        .await;
+        let found = in_list(&listed).unwrap_or_else(|| panic!("no Garden in {listed}"));
+        assert_eq!(found["name"], "Garden");
+        assert_eq!(found["topic"], "Beds and tomatoes");
+        assert_eq!(found["address"], "Crew");
+
+        let joined = call(
+            &service,
+            "join",
+            json!({ "account": account, "room": garden }),
+        )
+        .await;
+        assert_eq!(joined["room"], garden.as_str());
+        let listed = call(&service, "directory", json!({ "account": account })).await;
+        assert!(
+            in_list(&listed).is_none(),
+            "joined, it isn't listed: {listed}"
+        );
+        let rooms = call(&service, "rooms", json!({ "account": account })).await;
+        assert!(in_list(&rooms).is_some(), "{rooms}");
+
+        call(
+            &service,
+            "leave",
+            json!({ "account": account, "room": garden }),
+        )
+        .await;
+        let rooms = call(&service, "rooms", json!({ "account": account })).await;
+        assert!(in_list(&rooms).is_none(), "{rooms}");
+    });
+}

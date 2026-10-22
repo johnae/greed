@@ -7,52 +7,20 @@
 
 local greed = require("@greed")
 local core = require("@core")
-local picker = require("@picker")
 local backend = require("./backend")
+local accounts = require("./accounts")
 
 local M = {}
 
--- The accounts whose service encrypts, by "service id".
-local function encrypting(): { string }
-	local out = {}
-	for key, account in backend.accounts do
-		local can = backend.can[account.service]
-		if can and can.encryption then
-			table.insert(out, key)
-		end
-	end
-	table.sort(out)
-	return out
-end
+local ask = accounts.ask
 
 -- Runs `f` with the one account that encrypts, or the one picked.
 local function with_account(f: (key: string) -> ())
-	local keys = encrypting()
-	if #keys == 0 then
-		greed.echo("no account here has encrypted rooms (Matrix): :chat-login signs in")
-		return
-	elseif #keys == 1 then
-		greed.spawn(f, keys[1])
-		return
-	end
-	local items = {}
-	for _, key in keys do
-		table.insert(items, { label = key, value = key })
-	end
-	picker.pick("Which account", items, function(chosen)
-		greed.spawn(f, chosen.value)
-	end)
-end
-
--- Asks account `key`'s service `method` with `extra`.
-local function ask(key: string, method: string, extra: { [string]: any }?): (any, string?)
-	local service, id = backend.split(key)
-	local params: { [string]: any } = { account = id }
-	local more: { [string]: any } = extra or {}
-	for name, value in more do
-		params[name] = value
-	end
-	return backend.ask(service, method, params)
+	accounts.with_account(
+		accounts.keys("encryption"),
+		"no account here has encrypted rooms (Matrix): :chat-login signs in",
+		f
+	)
 end
 
 --- How an account's encryption stands, in words, or nil when all is well.

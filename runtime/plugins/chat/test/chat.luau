@@ -932,3 +932,137 @@ test("a link is previewed by a service that can; once for each link", function(t
 	local text = greed.view():buffer():text()
 	assert(string.find(text, "▎ plots.example · Plots of land", 1, true), text)
 end)
+
+-- A Matrix service whose one room is `shown` (an invite or a room), with a
+-- directory listing Garden; what it's asked to join and leave goes in
+-- `asked`.
+local function joining(shown: { [string]: any }): (method: string, params: any) -> ()
+	table.clear(asked)
+	backend.reset()
+	local function room(fields: { [string]: any }): { [string]: any }
+		local made: { [string]: any } = {
+			account = "@anna:x",
+			unread = 0,
+			mentions = 0,
+			favourite = false,
+			muted = false,
+			encrypted = false,
+		}
+		for key, value in fields do
+			made[key] = value
+		end
+		return made
+	end
+	local notify = backend.use("matrix", {
+		rooms = function(): any
+			return { room(shown) }
+		end,
+		directory = function(): any
+			return {
+				{
+					id = "!garden:x",
+					name = "Garden",
+					topic = "Beds",
+					members = 3,
+					address = "#garden:x",
+				},
+			}
+		end,
+		join = function(params: any): any
+			table.insert(asked, { method = "join", params = params })
+			return { room = "!garden:x" }
+		end,
+		leave = function(params: any)
+			table.insert(asked, { method = "leave", params = params })
+			return nil
+		end,
+		timeline = function(): any
+			return { items = {} }
+		end,
+		read = function()
+			return nil
+		end,
+		["timeline.close"] = function()
+			return nil
+		end,
+	})
+	notify("account.changed", {
+		id = "@anna:x",
+		server = "https://x",
+		name = "Anna",
+		state = { state = "ready" },
+	})
+	return notify
+end
+
+test("+ offers the rooms you could join; the one picked is joined and opens", function(t)
+	joining({ id = "!quiet:x", name = "Quiet", kind = "room" })
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	t:keys("+")
+	t:wait(50)
+	t:keys("down")
+	t:keys("enter") -- Garden
+	t:wait(100)
+	local joined = calls("join")
+	assert(#joined == 1 and joined[1].room == "!garden:x", greed.json.encode(asked))
+	local r = chat.rooms.of(greed.view():buffer())
+	assert(r and r.room == "!garden:x" and r.name == "Garden", "Garden opens")
+	assert(chat.join.label({
+		id = "!g",
+		name = "Garden",
+		topic = "Beds",
+		members = 3,
+		address = "#garden:x",
+	}) == "Garden · Beds · 3 members · #garden:x")
+end)
+
+test("+ joins a room by its address", function(t)
+	joining({ id = "!quiet:x", name = "Quiet", kind = "room" })
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	t:keys("+")
+	t:wait(50)
+	t:keys("enter") -- by its address or id
+	t:wait(50)
+	t:type("#garden:x")
+	t:keys("enter")
+	t:wait(100)
+	local joined = calls("join")
+	assert(#joined == 1 and joined[1].room == "#garden:x", greed.json.encode(asked))
+end)
+
+test("enter on an invite: n says no, y joins", function(t)
+	joining({ id = "!plans:x", name = "Plans", kind = "invite" })
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	t:keys("enter")
+	t:keys("n")
+	t:wait(50)
+	local left = calls("leave")
+	assert(#left == 1 and left[1].room == "!plans:x", greed.json.encode(asked))
+	t:keys("enter")
+	t:keys("y")
+	t:wait(50)
+	local joined = calls("join")
+	assert(#joined == 1 and joined[1].room == "!plans:x", greed.json.encode(asked))
+end)
+
+test("- leaves the room under the cursor after asking", function(t)
+	joining({ id = "!quiet:x", name = "Quiet", kind = "room" })
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	t:keys("-")
+	t:keys("x")
+	t:wait(50)
+	assert(#calls("leave") == 0, "anything but y keeps it")
+	t:keys("-")
+	t:keys("y")
+	t:wait(50)
+	local left = calls("leave")
+	assert(#left == 1 and left[1].room == "!quiet:x", greed.json.encode(asked))
+end)

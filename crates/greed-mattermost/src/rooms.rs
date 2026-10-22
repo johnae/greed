@@ -3,8 +3,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use greed_chat::protocol::{Room, RoomKind};
+use greed_chat::protocol::{DirectoryParams, Listed, Room, RoomKind, RoomParams};
 use greed_chat::rpc::Failure;
+use serde_json::{Value, json};
 
 use crate::Mattermost;
 use crate::api::{Api, Channel, Member, Team, User};
@@ -133,6 +134,71 @@ impl Mattermost {
         for user in users {
             people.insert(format!("{id} {}", user.id), user);
         }
+    }
+
+    /// Joins a channel by its id: `{room}`.
+    pub(crate) async fn join(&self, params: &RoomParams) -> Result<Value, Failure> {
+        let (api, me) = self.signed(&params.account)?;
+        let room = params.room.trim();
+        let _: Value = api
+            .post(
+                &format!("api/v4/channels/{room}/members"),
+                &json!({ "user_id": me }),
+            )
+            .await
+            .map_err(|e| Failure::new(format!("can't join it: {e}")))?;
+        Ok(json!({ "room": room }))
+    }
+
+    /// Leaves a channel.
+    pub(crate) async fn leave(&self, params: &RoomParams) -> Result<(), Failure> {
+        let (api, me) = self.signed(&params.account)?;
+        api.delete(&format!("api/v4/channels/{}/members/{me}", params.room))
+            .await
+            .map_err(|e| Failure::new(format!("can't leave it: {e}")))
+    }
+
+    /// The public channels of your teams whose names or purposes have
+    /// `params.query`, but those you're in.
+    pub(crate) async fn directory(&self, params: &DirectoryParams) -> Result<Vec<Listed>, Failure> {
+        let (api, me) = self.signed(&params.account)?;
+        let failed = |e: crate::api::Error| Failure::new(format!("can't list channels: {e}"));
+        let teams: Vec<Team> = api.get("api/v4/users/me/teams").await.map_err(failed)?;
+        let mine: HashSet<String> = api
+            .get::<Vec<Channel>>(&format!("api/v4/users/{me}/channels"))
+            .await
+            .map_err(failed)?
+            .into_iter()
+            .map(|channel| channel.id)
+            .collect();
+        let query = params.query.trim().to_lowercase();
+        let mut listed = Vec::new();
+        for team in teams {
+            let channels: Vec<Value> = api
+                .get(&format!(
+                    "api/v4/teams/{}/channels?page=0&per_page={MEMBERS}",
+                    team.id
+                ))
+                .await
+                .map_err(failed)?;
+            for channel in channels {
+                let field = |name: &str| channel[name].as_str().unwrap_or_default().to_string();
+                let (id, name, purpose) = (field("id"), field("display_name"), field("purpose"));
+                let wanted = query.is_empty()
+                    || name.to_lowercase().contains(&query)
+                    || purpose.to_lowercase().contains(&query);
+                if wanted && !mine.contains(&id) {
+                    listed.push(Listed {
+                        id,
+                        name,
+                        topic: Some(purpose).filter(|purpose| !purpose.is_empty()),
+                        members: None,
+                        address: Some(team.display_name.clone()),
+                    });
+                }
+            }
+        }
+        Ok(listed)
     }
 
     /// The name account `id` shows for user `user`.

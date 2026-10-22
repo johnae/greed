@@ -10,6 +10,7 @@ local core = require("@core")
 local picker = require("@picker")
 local backend = require("./backend")
 local room = require("./room")
+local accounts = require("./accounts")
 
 local M = {}
 
@@ -21,22 +22,10 @@ export type Found = { account: string, room: string, room_name: string, item: ba
 function M.search(query: string, only: { account: string, room: string }?): ({ Found }, { string })
 	local found: { Found } = {}
 	local troubles: { string } = {}
-	local keys: { string } = {}
-	if only then
-		table.insert(keys, only.account)
-	else
-		for key in backend.accounts do
-			table.insert(keys, key)
-		end
-		table.sort(keys)
-	end
+	local keys: { string } = if only then { only.account } else accounts.keys()
 	for _, key in keys do
-		local service, id = backend.split(key)
-		local hits, why = backend.ask(
-			service,
-			"search",
-			{ account = id, query = query, room = if only then only.room else nil }
-		)
+		local hits, why =
+			accounts.ask(key, "search", { query = query, room = if only then only.room else nil })
 		if hits == nil then
 			table.insert(troubles, `{key}: {why}`)
 		else

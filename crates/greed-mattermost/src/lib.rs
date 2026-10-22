@@ -242,6 +242,9 @@ impl Service for Mattermost {
             "commands" => Ok(json!(self.commands(&rpc::parse(params)?).await?)),
             "press" => self.press(&rpc::parse(params)?).await.map(|()| Value::Null),
             "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
+            "join" => self.join(&rpc::parse(params)?).await,
+            "leave" => self.leave(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "directory" => Ok(json!(self.directory(&rpc::parse(params)?).await?)),
             "edit" => self.edit(&rpc::parse(params)?).await.map(|()| Value::Null),
             "redact" => self
                 .redact(&rpc::parse(params)?)

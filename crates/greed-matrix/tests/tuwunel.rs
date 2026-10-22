@@ -1148,3 +1148,114 @@ fn previews_links_but_not_in_encrypted_rooms() {
         assert_eq!(call(&matrix, "preview", hidden).await, Value::Null);
     });
 }
+
+#[test]
+fn joins_by_address_and_from_the_directory_leaves_and_answers_invites() {
+    use matrix_sdk::ruma::api::client::room::{Visibility, create_room};
+
+    let Some(server) = Tuwunel::start("join", None) else {
+        return;
+    };
+    run(async {
+        server.register("anna", "secret").await;
+        server.register("bea", "secret").await;
+        let bea = other(&server, "bea", "secret").await;
+        let (notifier, _notices) = rpc::notifier();
+        let matrix = Matrix::new(server.dir.join("data"), notifier);
+        sign_in(&matrix, &server, "anna", "secret").await;
+        let anna = "@anna:localhost";
+        let account = json!({ "account": anna });
+        // The kind room `id` has in Anna's list, or null when it isn't there.
+        let kind_of = |rooms: &Value, id: &str| {
+            rooms
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == id)
+                .map_or(Value::Null, |r| r["kind"].clone())
+        };
+
+        let mut request = create_room::v3::Request::new();
+        request.name = Some("Garden".into());
+        request.topic = Some("Beds and tomatoes".into());
+        request.room_alias_name = Some("garden".into());
+        request.visibility = Visibility::Public;
+        let garden = bea.create_room(request).await.unwrap();
+        let garden = garden.room_id().to_string();
+
+        let listed = call(
+            &matrix,
+            "directory",
+            json!({ "account": anna, "query": "garden" }),
+        )
+        .await;
+        let found = listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == garden.as_str())
+            .unwrap_or_else(|| panic!("no Garden in {listed}"));
+        assert_eq!(found["name"], "Garden");
+        assert_eq!(found["topic"], "Beds and tomatoes");
+        assert_eq!(found["address"], "#garden:localhost");
+        assert_eq!(found["members"], 1);
+
+        let joined = call(
+            &matrix,
+            "join",
+            json!({ "account": anna, "room": "#garden:localhost" }),
+        )
+        .await;
+        assert_eq!(joined["room"], garden.as_str());
+        until(&matrix, "rooms", &account, |rooms| {
+            kind_of(rooms, &garden) == "room"
+        })
+        .await;
+        let listed = call(
+            &matrix,
+            "directory",
+            json!({ "account": anna, "query": "" }),
+        )
+        .await;
+        assert!(
+            listed
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["id"] != garden.as_str()),
+            "rooms you're in aren't listed: {listed}"
+        );
+        call(&matrix, "leave", json!({ "account": anna, "room": garden })).await;
+        until(&matrix, "rooms", &account, |rooms| {
+            kind_of(rooms, &garden).is_null()
+        })
+        .await;
+
+        // Asked to a room: no, then yes.
+        for answer in ["leave", "join"] {
+            let mut request = create_room::v3::Request::new();
+            request.name = Some("Plans".into());
+            request.invite = vec![anna.try_into().unwrap()];
+            let plans = bea
+                .create_room(request)
+                .await
+                .unwrap()
+                .room_id()
+                .to_string();
+            until(&matrix, "rooms", &account, |rooms| {
+                kind_of(rooms, &plans) == "invite"
+            })
+            .await;
+            call(&matrix, answer, json!({ "account": anna, "room": plans })).await;
+            let wanted = if answer == "join" {
+                json!("room")
+            } else {
+                Value::Null
+            };
+            until(&matrix, "rooms", &account, |rooms| {
+                kind_of(rooms, &plans) == wanted
+            })
+            .await;
+        }
+    });
+}

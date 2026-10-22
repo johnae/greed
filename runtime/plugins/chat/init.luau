@@ -14,6 +14,7 @@ local backend = require("@self/backend")
 local encryption = require("@self/encryption")
 local alerts = require("@self/alerts")
 local search = require("@self/search")
+local join = require("@self/join")
 local room = require("@self/room")
 
 local ui = core.ui
@@ -23,6 +24,7 @@ local M = {}
 M.backend = backend
 M.alerts = alerts
 M.search = search
+M.join = join
 
 -- The list of rooms, while it's open.
 type List = {
@@ -243,15 +245,38 @@ greed.command({
 
 greed.command({
 	name = "chat-open",
-	doc = "In the list of rooms: open the room under the cursor",
+	doc = "In the list of rooms: open the room under the cursor, or answer its invite",
 	run = function(ctx)
 		local o = list
 		if o == nil or o.buffer ~= ctx.buffer then
 			return
 		end
 		local value = o.view:value_at(ctx.view:cursor())
-		if value then
+		if value == nil then
+			return
+		elseif value.room.kind == "invite" then
+			greed.spawn(join.answer, value.account, value.room.id, value.room.name, ctx.view)
+		else
 			M.room(value.account, value.room, ctx.view)
+		end
+	end,
+})
+
+greed.command({
+	name = "chat-leave",
+	doc = "Leave the room under the cursor in the list, or the room you're in, after asking",
+	run = function(ctx)
+		local o = list
+		local r = room.of(ctx.buffer)
+		if r then
+			greed.spawn(join.leave, r.account, r.room, r.name, function()
+				room.on_leave(ctx.view)
+			end)
+		elseif o and o.buffer == ctx.buffer then
+			local value = o.view:value_at(ctx.view:cursor())
+			if value then
+				greed.spawn(join.leave, value.account, value.room.id, value.room.name)
+			end
 		end
 	end,
 })
@@ -459,6 +484,8 @@ greed.command({
 greed.keymap.bind({ kind = "chat" }, {
 	enter = "chat-open",
 	["/"] = "chat-search",
+	["+"] = "chat-join",
+	["-"] = "chat-leave",
 	q = "chat-close",
 })
 
