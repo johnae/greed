@@ -4,7 +4,7 @@
 #
 #   dist/homebrew.sh 0.2.0 SHA256SUMS ../homebrew-greed
 #
-# The formula installs the greed binary from the release tarballs (macOS
+# The formula installs greed and its programs from the release tarballs (macOS
 # universal, Linux x86_64 and aarch64); the cask installs Greed.app.
 set -euo pipefail
 
@@ -43,7 +43,7 @@ class Greed < Formula
   end
 
   def install
-    bin.install "bin/greed", "bin/greed-mail"
+    bin.install "bin/greed", "bin/greed-mail", "bin/greed-matrix", "bin/greed-mattermost"
     share.install Dir["share/*"] if OS.linux?
   end
 

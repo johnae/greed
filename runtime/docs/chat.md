@@ -66,18 +66,20 @@ and forgets it.
 ### Letting the browser hand links to Greed
 
 `greed link URL` hands a link to the chat session, which finishes the
-sign-in waiting for it. On Linux, the desktop entry `greed-link.desktop`
-(in `dist/`) does that for `mattermost://` links and Greed's own
-(`io.github.johnae:`); copy it to `~/.local/share/applications/` and make
-it their handler:
+sign-in waiting for it. On Linux, Greed's packages install the desktop
+entry `greed-link.desktop`, which does that for `mattermost://` links and
+Greed's own (`io.github.johnae:`). Make it their handler once:
 
 ```sh
 xdg-mime default greed-link.desktop x-scheme-handler/mattermost
 xdg-mime default greed-link.desktop x-scheme-handler/io.github.johnae
 ```
 
-That takes `mattermost://` links from Mattermost's own desktop app, if
-you have it. On macOS, paste the link.
+From the tarball, unpacked into `~/.local`, run
+`update-desktop-database ~/.local/share/applications` first. Without the
+handler, or on macOS, paste the link the browser ends on when Greed asks.
+Making `greed-link.desktop` the handler for `mattermost://` also takes
+those links from Mattermost's own desktop app, if you have it.
 
 ## Encrypted rooms (Matrix)
 
@@ -165,5 +167,7 @@ counts in the list.
 Greed talks to each service through a program of its own,
 `greed-matrix` and `greed-mattermost`, that keeps your accounts connected
 and stores what Matrix needs locally (rooms, encryption keys, files it
-fetched), locked with a key kept with your sign-in. Greed starts them; the
-`chat-matrix-program` and `chat-mattermost-program` options name others.
+fetched), locked with a key kept with your sign-in. They come with Greed:
+its packages put them beside `greed`, and Greed starts them from there (or
+your `PATH`); the `chat-matrix-program` and `chat-mattermost-program`
+options name others.

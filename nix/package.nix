@@ -41,6 +41,7 @@ rustPlatform.buildRustPackage {
       ../crates
       ../runtime
       ../vendor
+      ../dist/greed-link.desktop
     ];
   };
 
@@ -58,13 +59,16 @@ rustPlatform.buildRustPackage {
   };
   # The release profile with full link-time optimization (Cargo.toml).
   buildType = "dist";
-  # Greed, and greed-mail beside it, which the mail session runs: it finds
-  # it next to its own binary first.
+  # Greed, and the programs its sessions run beside it: mail, and chat.
   cargoBuildFlags = [
     "--package"
     "greed-editor"
     "--package"
     "greed-mail"
+    "--package"
+    "greed-matrix"
+    "--package"
+    "greed-mattermost"
   ];
   buildNoDefaultFeatures = !gui;
 
@@ -73,6 +77,8 @@ rustPlatform.buildRustPackage {
   postInstall = ''
     mkdir -p $out/share/greed
     cp -r runtime $out/share/greed/runtime
+    # Hands the browser's sign-in links back to the chat.
+    install -Dm644 dist/greed-link.desktop -t $out/share/applications
   '';
 
   postFixup = lib.optionalString (gui && stdenv.hostPlatform.isLinux) ''

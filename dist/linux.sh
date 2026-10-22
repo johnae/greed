@@ -29,9 +29,10 @@ export CXXSTDLIB=static=stdc++
 cxx_lib=$(dirname "$(g++ -print-file-name=libstdc++.a)")
 export RUSTFLAGS="${RUSTFLAGS:-} -L native=$cxx_lib"
 
-# Greed, and greed-mail beside it, which the mail session runs.
-cargo build --locked --profile dist -p greed-editor -p greed-mail
-bins="target/dist/greed target/dist/greed-mail"
+# Greed, and beside it the programs its sessions run: greed-mail for mail,
+# greed-matrix and greed-mattermost for chat.
+cargo build --locked --profile dist -p greed-editor -p greed-mail -p greed-matrix -p greed-mattermost
+bins="target/dist/greed target/dist/greed-mail target/dist/greed-matrix target/dist/greed-mattermost"
 
 # Only glibc's own libraries and libgcc_s, and nothing newer than glibc 2.28.
 allowed='^(libc|libm|libdl|libpthread|librt|libutil|libgcc_s|ld-linux-(x86-64|aarch64))\.so'
@@ -58,7 +59,8 @@ rm -rf "$out"
 mkdir -p "$out/bin" "$out/share/applications" "$out/share/icons/hicolor/256x256/apps"
 # shellcheck disable=SC2086
 cp $bins "$out/bin/"
-cp dist/greed.desktop "$out/share/applications/"
+# greed-link.desktop hands the browser's sign-in links back to greed's chat.
+cp dist/greed.desktop dist/greed-link.desktop "$out/share/applications/"
 cp site/assets/icon-256.png "$out/share/icons/hicolor/256x256/apps/greed.png"
 cp LICENSE README.md THIRD-PARTY.md "$out/"
 tar -C target/packages -czf "target/packages/$name.tar.gz" "$name"
