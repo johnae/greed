@@ -81,3 +81,53 @@ test("formatting next to characters of more than one byte keeps them whole", fun
 	t:run("format")
 	assert(greed.view():buffer():text() == "cafè\n", greed.view():buffer():text())
 end)
+
+test("a manual save writes intervening edits instead of stale formatting", function(t)
+	languages.set("slow", {
+		extensions = { "slow" },
+		formatter = { "sh", "-c", "sleep 0.15; tr -s ' '" },
+	})
+	local dir = t:tempdir({ ["a.slow"] = "one   two" })
+	core.project.trust(dir)
+	greed.open(dir .. "/a.slow")
+	local buffer = greed.view():buffer()
+	local finished = false
+	greed.spawn(function()
+		greed.run("save")
+		finished = true
+	end)
+	-- Do not t:wait here: it settles jobs before applying this edit.
+	buffer:edit(function(e)
+		e:replace(0, 0, "new ")
+	end)
+	t:wait_for(function()
+		return finished
+	end, 1500)
+	assert(finished)
+	assert(buffer:text() == "new one   two")
+	assert(greed.fs.read(dir .. "/a.slow") == "new one   two")
+end)
+
+test("explicit formatting reports a stale result without replacing edits", function(t)
+	languages.set("slow", {
+		extensions = { "slow" },
+		formatter = { "sh", "-c", "sleep 0.15; tr -s ' '" },
+	})
+	local dir = t:tempdir({ ["a.slow"] = "one   two" })
+	greed.open(dir .. "/a.slow")
+	local buffer = greed.view():buffer()
+	local finished, formatted, message = false, nil, nil
+	greed.spawn(function()
+		formatted, message = require("../formatter").format(buffer)
+		finished = true
+	end)
+	buffer:edit(function(e)
+		e:replace(0, 0, "new ")
+	end)
+	t:wait_for(function()
+		return finished
+	end, 1500)
+	assert(finished and formatted == false and message ~= nil)
+	assert(buffer:text() == "new one   two")
+	assert(greed.fs.read(dir .. "/a.slow") == "one   two")
+end)

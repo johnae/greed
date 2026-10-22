@@ -1401,6 +1401,10 @@ language's formatter when it's installed (`gofmt`, `ruff`, `stylua`,
 `rustfmt` through rust-analyzer). Only what the formatter changed is
 replaced, so the cursor stays put.
 
+If you edit while a formatter or language server is working, its outdated
+result is skipped and reported instead of replacing your edits. A manual
+save still writes your current text, as it does on formatter failure.
+
 ```luau
 -- A different formatter for a language
 require("@languages").set("python", { formatter = { "black", "-q", "-" } })

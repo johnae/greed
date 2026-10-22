@@ -3,6 +3,10 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## Unreleased
+
+- format: delayed formatter and language-server results no longer overwrite intervening edits; failures remain visible while saves write the current text.
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights

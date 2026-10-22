@@ -408,6 +408,88 @@ fn without_a_formatter_the_language_server_formats() {
     assert_eq!(main_text(&h), "// formatted\nlet x = bad;");
 }
 
+#[test]
+fn late_lsp_formatting_keeps_newer_edits_in_explicit_and_manual_saves() {
+    for save in [false, true] {
+        let h = with_plugin();
+        h.load_dirs(&[plugin("cmdline"), plugin("languages"), plugin("format")])
+            .unwrap();
+        h.eval("require('@languages').set('rust', { formatter = {} })")
+            .unwrap();
+        h.load_str(
+            "save-probe",
+            r#"
+            local greed = require("@greed")
+            local probe = {}
+            greed.command({ name = "probe-format", run = function()
+                probe.ok = require("@format").format(greed.view():buffer())
+            end })
+            greed.command({ name = "probe-save", run = function()
+                probe.ok = pcall(greed.run, "save", { wait = true })
+            end })
+            return probe
+            "#,
+        )
+        .unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "greed-stale-lsp-format-{}-{save}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("main.rs");
+        h.with_editor_mut(|ed| {
+            let buffer = ed.view(ed.main()).buffer;
+            ed.save_as(buffer, &path).unwrap();
+        });
+        h.sync_lsp();
+        // The fake server omits documentFormattingProvider but answers
+        // formatting requests, as supported by the existing fallback.
+        h.run(
+            FIRST_CLIENT,
+            if save { "probe-save" } else { "probe-format" },
+        )
+        .unwrap();
+        assert_eq!(
+            h.eval("return require('@save-probe').ok").unwrap(),
+            "nil",
+            "the command is still waiting for the formatting response"
+        );
+        // Do not pump the response until after this edit.
+        h.with_editor_mut(|ed| {
+            let view = ed.main();
+            let len = ed.buffer(ed.view(view).buffer).text().len_bytes();
+            let changes =
+                greed_text::ChangeSet::from_changes(len, [(0, 0, Some("// newer\n"))]).unwrap();
+            ed.apply(
+                view,
+                changes,
+                greed_text::Author::User(ClientId(1)),
+                None,
+                None,
+            )
+            .unwrap();
+        });
+        pump(&h, |h| {
+            h.eval("return require('@save-probe').ok").unwrap() != "nil"
+        });
+        assert_eq!(
+            h.eval("return require('@save-probe').ok").unwrap(),
+            if save { "true" } else { "false" },
+            "stale explicit formatting fails, but a manual save still succeeds"
+        );
+        assert_eq!(main_text(&h), "// newer\nlet x = bad;");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            if save {
+                "// newer\nlet x = bad;"
+            } else {
+                "let x = bad;"
+            }
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
 /// The items of the open picker, if there is one.
 fn picker_items(h: &Host) -> Option<Vec<String>> {
     h.with_editor(|ed| {
