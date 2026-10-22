@@ -1283,3 +1283,25 @@ test(
 		)
 	end
 )
+
+test(":chat is one float of the tab, rooms open in it, and :chat again finds it", function(t)
+	local panes = require("@panes")
+	fake()
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	local window = greed.view()
+	assert(window:buffer():kind() == "chat", window:buffer():kind())
+	assert(table.find(panes.floats.all(), window), "a float of the tab, which alt-f hides")
+	t:keys("enter")
+	t:wait(50)
+	assert(greed.view() == window and window:buffer():kind() == "chat-room", "the room opens in it")
+	panes.pane():focus()
+	assert(greed.view() ~= window, "back in the file")
+	t:run("chat")
+	assert(#panes.floats.all() == 1, "still one chat float")
+	assert(
+		greed.view() == window and window:buffer():kind() == "chat-room",
+		"it comes back as it was"
+	)
+end)

@@ -1,8 +1,8 @@
 -- Chat: Matrix and Mattermost in Greed. In the chat session (`greed chat`)
 -- the page lists your rooms and channels, those with something unread
 -- first, then each space (or team) with its rooms under it; elsewhere
--- `:chat` opens the same list in a float. `enter` opens a room: its
--- messages, kept up to date, and a box under them where `enter` sends
+-- `:chat` opens the same list in a float of the tab. `enter` opens a room:
+-- its messages, kept up to date, and a box under them where `enter` sends
 -- what's written (as Markdown) and `alt-enter` starts a new line; on a
 -- space it offers the rooms it holds. `:chat-login` signs in to a server,
 -- by password or through the browser; `:chat-logout` signs out. The
@@ -11,6 +11,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
+local panes = require("@panes")
 local backend = require("@self/backend")
 local encryption = require("@self/encryption")
 local alerts = require("@self/alerts")
@@ -213,8 +214,26 @@ local function fetch_rooms(o: List, key: string)
 	end
 end
 
---- The list of rooms in `window`, or a float when there's none.
+--- The tab's float showing chat (the list or a room), if there is one.
+local function chat_float(): greed.View?
+	for _, view in panes.floats.all() do
+		local kind = view:buffer():kind()
+		if kind == "chat" or kind == "chat-room" then
+			return view
+		end
+	end
+	return nil
+end
+
+--- The list of rooms in `window`, or else in a float of the tab, which
+--- `alt-f` hides and shows like the others; one there already (showing
+--- the list or a room) comes to the front.
 function M.list(window: greed.View?)
+	local shown = if window then nil else chat_float()
+	if shown then
+		panes.floats.focus(shown)
+		return
+	end
 	local buffer = greed.create_buffer("chat", "", { readonly = true })
 	buffer:set_line_numbers(false)
 	local o: List
@@ -234,7 +253,7 @@ function M.list(window: greed.View?)
 	if window then
 		window:show(buffer)
 	else
-		greed.float(buffer, { title = "Chat", width = "70%", height = "80%" })
+		panes.floats.show(buffer, { title = "Chat", width = "70%", height = "80%" })
 	end
 	greed.spawn(function()
 		backend.start()

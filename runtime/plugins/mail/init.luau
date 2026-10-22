@@ -13,6 +13,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local notes = require("@notes")
+local panes = require("@panes")
 local backend = require("@self/backend")
 
 local ui = core.ui
@@ -450,7 +451,9 @@ end
 local function list(query: string, window: greed.View?): Open
 	local buffer = greed.create_buffer("mail", "", { readonly = true })
 	buffer:set_line_numbers(false)
-	local shown = window or greed.float(buffer, { title = "Mail", width = "90%", height = "80%" })
+	-- A float of the tab's, which alt-f hides and shows like the others.
+	local shown = window
+		or panes.floats.show(buffer, { title = "Mail", width = "90%", height = "80%" })
 	-- The list stays while mail is written in its place.
 	buffer:set_kept(true)
 	if window then
@@ -489,12 +492,18 @@ local function list(query: string, window: greed.View?): Open
 end
 
 --- Opens a quick look at what `query` (in:inbox to start) finds in a
---- float, and the search box over it.
+--- float of the tab, and the search box over it; with one open already,
+--- brings it to the front (showing what `query` finds, when given).
 function M.open(query: string?)
 	local o = open
 	if o and o.floating then
-		if o.window:valid() then
-			o.window:close()
+		if o.window:valid() and o.buffer:valid() then
+			panes.floats.focus(o.window)
+			if query then
+				o.window:show(o.buffer)
+				M.go(query)
+			end
+			return
 		end
 		if o.buffer:valid() then
 			pcall(o.buffer.close, o.buffer)
@@ -993,9 +1002,11 @@ function M.read(key: string, found: { string }?, at: string?)
 	local buffer = greed.create_buffer("mail-thread", "", { readonly = true })
 	buffer:set_line_numbers(false)
 	local o = open
-	local page = if o and not o.floating and o.window:valid() then o.window else nil
+	-- Read where the list is, the page or its float, and `q` goes back to
+	-- it; with no list open, in a float of its own.
+	local page = if o and o.window:valid() then o.window else nil
 	local window = page
-		or greed.float(buffer, { title = thread.subject, width = "90%", height = "90%" })
+		or panes.floats.show(buffer, { title = thread.subject, width = "90%", height = "90%" })
 	if page then
 		page:show(buffer)
 	end

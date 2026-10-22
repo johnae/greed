@@ -43,7 +43,10 @@ under them.
 A link's preview shows under its message: the site, the page's title, and a
 line of what it says (see below for where they come from).
 
-Outside the chat session, `:chat` opens the same list in a float.
+Outside the chat session, `:chat` opens the same list in a floating view of
+the tab. Rooms open in it and `q` goes back to the list; `alt-f` hides it
+and shows it again like the tab's other floats, and `:chat` brings it back
+as you left it.
 
 ## Signing in
 

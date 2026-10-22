@@ -1,5 +1,5 @@
 name = "chat"
-requires = ["core", "picker", "markdown"]
+requires = ["core", "picker", "markdown", "panes"]
 # It runs greed-matrix and greed-mattermost, which keep your chat accounts
 # connected (proc), looking for them beside greed (fs.read), and keeps
 # their sign-ins in the keyring (secrets).

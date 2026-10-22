@@ -80,10 +80,12 @@ syncs, so keep it running for new mail to come in. Detach from it as from
 any session; it goes on syncing.
 
 In any other session, `:mail` opens a quick look: the same mail, in a
-float over what you're working on (`q` closes it). It works as the page
-does, and what you mark, archive, delete, write or answer there, the mail
-session does for it. It needs the mail session running, and says so when
-it isn't.
+floating view of the tab over what you're working on. `alt-f` hides it
+and shows it again like the tab's other floats, `:mail` brings it back,
+and `q` closes it. Threads open in it, and `q` goes back to the list. It
+works as the page does, and what you mark, archive, delete, write or
+answer there, the mail session does for it. It needs the mail session
+running, and says so when it isn't.
 
 After an upgrade, the mail session indexes your mail again the first time
 it starts (a minute or two for a hundred thousand messages); the list

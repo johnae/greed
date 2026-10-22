@@ -440,6 +440,30 @@ test("in the mail session the list and threads take the whole window, q goes bac
 	end)
 end)
 
+test(
+	"a quick look is one float of the tab: threads open in it, q goes back, :mail finds it",
+	function(t)
+		local panes = require("@panes")
+		fake()
+		t:buffer("|x")
+		t:run("mail")
+		t:keys("esc")
+		local window = greed.view()
+		assert(window:buffer():kind() == "mail", window:buffer():kind())
+		assert(table.find(panes.floats.all(), window), "a float of the tab, which alt-f hides")
+		t:keys("enter")
+		assert(
+			greed.view() == window and window:buffer():kind() == "mail-thread",
+			"read in the same float"
+		)
+		t:keys("q")
+		assert(window:buffer():kind() == "mail", "back in the list")
+		t:run("mail")
+		assert(#panes.floats.all() == 1, "still one mail float")
+		assert(greed.view() == window, "the one there is comes to the front")
+	end
+)
+
 test("reading a thread in the mail session marks it read", function(t)
 	fake()
 	in_the_mail_session(function()
