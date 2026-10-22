@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Greed: a modal editor with Luau plugins</title>
-<meta name="description" content="Greed is a modal text editor with Helix, Vim and VS Code keys, a shell, terminals and agent support. A small Rust core; the rest is Luau plugins. It runs in a terminal or a window, locally or over ssh.">
-<meta property="og:title" content="Greed: a modal editor with Luau plugins">
-<meta property="og:description" content="A modal text editor with Helix, Vim and VS Code keys, a shell, terminals and agent support. A small Rust core; the rest is Luau plugins.">
+<title>Greed - a modal editor you can bend</title>
+<meta name="description" content="Greed is a modal text editor - you pick the keys (Helix, Vim or VS Code) - with a shell, terminals, notes and mail, and agents in all of them. Everything outside a small Rust core is a Luau plugin. It runs in a terminal or a window, locally or over ssh.">
+<meta property="og:title" content="Greed - a modal editor you can bend">
+<meta property="og:description" content="A modal text editor - you pick the keys - with a shell, terminals, notes and mail, and agents in all of them. Everything outside a small Rust core is a Luau plugin.">
 <meta property="og:image" content="https://greed.rs/assets/social.jpg">
 <meta property="og:url" content="https://greed.rs/">
 <meta name="twitter:card" content="summary_large_image">
@@ -30,10 +30,13 @@
 <main>
   <section class="intro">
     <h1>Greed</h1>
-    <p class="lead">A modal text editor with Helix, Vim and VS Code keys, a
-    shell, terminals, notes and mail, with agents in all of them. It runs in
-    a terminal or a window, locally or over ssh, and everything outside a
-    small Rust core is a <a href="https://luau.org">Luau</a> plugin.</p>
+    <p class="lead">A modal text editor. You pick the keys (Helix, Vim or VS
+    Code), and it comes with a shell, terminals, notes and mail, with agents
+    in all of them. It runs in a terminal or a window, locally or over
+    ssh.</p>
+    <p class="why">I wanted an editor I could bend as far as Emacs, without it ever
+    freezing on me while a plugin thinks. So everything outside a small Rust
+    core is a <a href="https://luau.org">Luau</a> plugin.</p>
     <p class="actions">
       <a class="button primary" href="#install">Install</a>
       <a class="button" href="docs/using.html">Docs</a>
@@ -47,11 +50,11 @@
   <section class="showcase">
     <div class="text">
       <h2>Notes and todos</h2>
-      <p><code>greed notes</code> opens Hoard: a home page with what's due,
-      today's note and a search over all your notes. Write a todo in plain
-      words (<code>call the bank tomorrow 18:00</code>) and it gets its date
-      and reminder. Notes are Markdown files in a folder, and an Obsidian
-      vault works as it is. Ask your notes a question and the agent answers
+      <p><code>greed notes</code> opens Hoard: what's due, today's note, and a
+      search over all your notes. Write a todo the way you'd say it
+      (<code>call the bank tomorrow 18:00</code>) and it gets its date and
+      reminder. Notes are just Markdown files in a folder, so an Obsidian
+      vault works as it is. Ask your notes something and the agent answers
       with links to what it read.</p>
       <p><a href="docs/hoard.html">Hoard</a></p>
     </div>
@@ -61,11 +64,11 @@
   <section class="showcase flip">
     <div class="text">
       <h2>Mail</h2>
-      <p><code>greed mail</code> keeps a copy of your IMAP accounts (Gmail, and
-      Proton through Bridge) in one list, searched as you type, offline too.
-      Threads read in Greed, HTML laid out as text with nothing loaded from
-      elsewhere. A message becomes a todo in your notes, and the agent can
-      tell you what needs an answer.</p>
+      <p><code>greed mail</code> keeps a copy of your IMAP accounts in one
+      list, searched as you type, offline too. HTML mail is laid out as text
+      with nothing loaded from anywhere, so no tracking pixels. A message
+      becomes a todo in your notes, and the agent can tell you what needs an
+      answer this week.</p>
       <p><a href="docs/mail.html">Mail</a></p>
     </div>
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/mail.mp4" poster="https://github.com/johnae/greed/releases/download/media/mail.png" autoplay muted loop playsinline preload="metadata" aria-label="The mail list, searched for deploy, a thread read, turned into a todo due Thursday, then the agent asked which mail needs an answer this week, naming three messages"></video>
@@ -74,8 +77,9 @@
   <section class="showcase wide">
     <div class="text">
       <h2>Helix, Vim or VS Code keys</h2>
-      <p>Pick a style on first start; <code>:style</code> switches later.
-      Each style has its own modes. Commands, pickers and plugins are shared.</p>
+      <p>Pick a style on first start, and <code>:style</code> switches later.
+      Each style keeps its own modes. Commands, pickers and plugins are the
+      same for all of them.</p>
       <p><a href="docs/editing-styles.html">Editing styles</a></p>
     </div>
     <div class="styles">
@@ -100,9 +104,10 @@
   <section class="showcase flip">
     <div class="text">
       <h2>Sessions and ssh</h2>
-      <p><code>:detach</code> leaves the session running; <code>greed
-      attach</code> comes back to it. <code>greed ssh HOST</code> runs it on
-      the remote machine, with your local config.</p>
+      <p><code>:detach</code> leaves the session running, and <code>greed
+      attach</code> brings you back, here or in a window. <code>greed ssh
+      HOST</code> runs it on the other machine with your local config, which
+      is really nice for a build box.</p>
       <p><a href="docs/using.html#editing-on-another-machine">Editing on another machine</a></p>
     </div>
     <pre class="term"><code><span class="prompt">$</span> greed src/main.rs
@@ -117,9 +122,9 @@
       <h2>Shell</h2>
       <p><code>:shell</code> keeps each command's output as a block you can
       search, filter and run again. Tables from <code>kubectl</code>,
-      <code>docker</code> or <code>ps</code> can be filtered
-      (<code>where STATUS != Running</code>) and charted. A terminal pane runs
-      your own shell when you need one.</p>
+      <code>docker</code> or <code>ps</code> filter like so:
+      <code>where STATUS != Running</code>, and chart too. For anything else,
+      a terminal pane runs your own shell.</p>
       <p><a href="docs/shell.html">The shell</a></p>
     </div>
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/kubectl.mp4" poster="https://github.com/johnae/greed/releases/download/media/kubectl.png" autoplay muted loop playsinline preload="metadata" aria-label="kubectl get pods in the Greed shell, then only the pods not running, the failing pod's logs opened from its row, then a chart of block 1's restarts"></video>
@@ -128,9 +133,9 @@
   <section class="showcase flip">
     <div class="text">
       <h2>Live Markdown</h2>
-      <p>Fields, formulas and computed table columns, updated as you edit,
-      with charts under tables. Data blocks read CSV, SQLite or PostgreSQL.
-      Code blocks run on request and save their output below them. The file
+      <p>Fields, formulas and computed columns, updated as you type, with
+      charts under tables. Data blocks read CSV, SQLite or PostgreSQL, and
+      code blocks run when you ask and keep their output below them. The file
       stays plain Markdown.</p>
       <p><a href="docs/using.html#live-values">Live values</a> ·
       <a href="docs/using.html#runnable-code-blocks">Runnable blocks</a> ·
@@ -142,10 +147,10 @@
   <section class="showcase">
     <div class="text">
       <h2>Agents</h2>
-      <p>Agents that speak ACP run in a pane (Claude Code, Codex, Gemini CLI,
-      opencode), as does Greed's own, with a model from any provider you set
-      up. MCP clients connect from outside. Proposed edits show in the buffer
-      to accept or reject.</p>
+      <p>Claude Code, Codex, Gemini CLI and opencode run in a pane over ACP,
+      and so does Greed's own agent, with whatever model you set up. MCP
+      clients connect from outside. Edits they propose show up in the buffer
+      for you to accept or reject.</p>
       <p><a href="docs/agents.html">Agents</a></p>
     </div>
     <video class="shot" src="https://github.com/johnae/greed/releases/download/media/agent.mp4" poster="https://github.com/johnae/greed/releases/download/media/agent.png" autoplay muted loop playsinline preload="metadata" aria-label="Greed's own agent, asked why the worker pod keeps crashing, searches and reads the project, proposes a change that is allowed, and says what it checked"></video>
@@ -153,12 +158,12 @@
 
   <section class="also">
     <ul>
-      <li>Keys, modes, pickers, themes and the agent support are Luau plugins
-      on the same typed API yours use. A plugin declares what it may access:
-      files, programs, the network.</li>
+      <li>Keys, modes, pickers, themes and the agents are all Luau plugins,
+      on the same typed API yours get. A plugin says what it may touch
+      (files, programs, the network) and you decide.</li>
       <li>The window is drawn on the GPU, with ligatures, images and PDFs.
       Terminal and window show the same session.</li>
-      <li>Splits, tabs, layouts and floating panes, with zellij's
+      <li>Splits, tabs, layouts and floating panes on zellij's
       <code>alt</code> keys, inside terminals too.</li>
     </ul>
   </section>
@@ -166,9 +171,9 @@
   <section class="example">
     <div class="text">
       <h2>A plugin</h2>
-      <p>A folder with an <code>init.luau</code>. This one adds a command and
-      binds it to <kbd>space U</kbd>. <code>greed new NAME</code> makes one
-      with a test, and <code>greed test NAME</code> runs it.</p>
+      <p>A folder with an <code>init.luau</code> - that's it. This one adds a
+      command and puts it on <kbd>space U</kbd>. <code>greed new NAME</code>
+      gets you one with a test, and <code>greed test NAME</code> runs it.</p>
       <p><a href="docs/plugins.html">Writing plugins</a> ·
       <a href="docs/reference/api.html">Luau API</a></p>
     </div>
@@ -204,8 +209,8 @@ greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span 
 <span class="prompt">$</span> tar -xzf greed-*-linux-x86_64.tar.gz -C ~/.local --strip-components=1</code></pre>
     <p>The <a href="https://github.com/johnae/greed/releases/latest">releases page</a>
     also has a static terminal-only build for any Linux. The first start
-    asks for an editing style and a theme; <code>:tutor</code> teaches the
-    keys.</p>
+    asks for an editing style and a theme, and <code>:tutor</code> walks you
+    through the keys.</p>
   </section>
 </main>
 
@@ -230,7 +235,8 @@ greed.keymap.<span class="f">bind</span>({ layer <span class="o">=</span> <span 
 </script>
 
 <footer>
-  <p>Greed is early and changes often.</p>
+  <p>It's really early days, so expect some rough edges. That said, I use
+  it daily - for code, notes and mail.</p>
   <p><a href="docs/using.html">Using Greed</a> · <a href="docs/shell.html">The shell</a> ·
   <a href="docs/reference/plugins.html">Plugins</a> ·
   <a href="docs/reference/options.html">Options</a> · <a href="docs/agents.html">Agents</a> ·

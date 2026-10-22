@@ -112,6 +112,14 @@ h1 { font: 600 44px/1.1 var(--serif); margin: 0 0 18px; }
   font: 400 24px/1.5 var(--serif);
 }
 
+/* Why Greed exists, under the lead, in a quieter voice. */
+.why {
+  max-width: 640px;
+  margin: 16px auto 0;
+  font: 400 18px/1.55 var(--serif);
+  color: var(--muted);
+}
+
 .actions { display: flex; justify-content: center; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
 
 .button {
