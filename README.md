@@ -3,7 +3,9 @@ pick the keys - with a shell, terminals and agents built in, and it runs in a
 terminal or a window, locally or over ssh.
 
 I wanted an editor I could bend as far as Emacs, without it ever freezing on me
-while a plugin thinks. This is that editor.
+while a plugin thinks. So the core is a small Rust program, and everything else -
+the keys you edit with, modes, commands, pickers, themes, the agents - is Luau
+plugins you can read, change or swap out while it runs.
 
 [![A Rust file with the file tree beside it and a terminal below running kubectl get pods](https://github.com/johnae/greed/releases/download/media/hero.png)](https://github.com/johnae/greed/releases/download/media/hero.mp4)
 
@@ -18,13 +20,6 @@ $ greed attach               # come back to it, here or in a window (--gui)
 $ greed ctl focus            # ask the running editor what you're looking at
 { "path": "/home/you/myapp/src/main.rs", "mode": "normal", "style": "vim", "selections": [ ... ], ... }
 ```
-
-## Why
-
-Because most of what an editor does doesn't need to be in its core. The core is a
-small Rust program, and keys, modes, commands, pickers, themes and the agent
-support are Luau plugins - you can read them, change them or swap them out while
-it runs. And, of course, because it's fun.
 
 ## Pick your keys
 
