@@ -1340,3 +1340,35 @@ test("the rooms opened show as a bar over a room; tab and alt and a number go to
 	t:wait(50)
 	assert(in_room() == "!quiet:x", "alt-2 to Quiet")
 end)
+
+test(
+	"in the chat session the rooms are a sidebar; a room opens beside it, q goes back to it",
+	function(t)
+		fake()
+		t:buffer("|x")
+		chat.sidebar()
+		t:wait(50)
+		local panel = greed.view()
+		assert(panel:buffer():kind() == "chat" and not panel:is_pane(), "the list is a panel")
+		t:keys("enter") -- Plans
+		t:wait(50)
+		local main = greed.view()
+		assert(
+			main:is_pane() and main:buffer():kind() == "chat-room",
+			"the room opens in the main view"
+		)
+		assert(panel:valid() and panel:buffer():kind() == "chat", "the sidebar stays")
+		t:run("chat-close")
+		assert(greed.view() == panel, "back to the sidebar")
+		assert(main:buffer():kind() == "chat-room", "the room stays beside it")
+		chat.sidebar()
+		assert(greed.view() == panel, "one sidebar")
+		panel:close()
+	end
+)
+
+test("a server is named without its scheme or a slash at the end", function()
+	assert(chat.host("https://matrix.org/") == "matrix.org")
+	assert(chat.host("http://127.0.0.1:38411") == "127.0.0.1:38411")
+	assert(chat.host("mm.evroc.com") == "mm.evroc.com")
+end)

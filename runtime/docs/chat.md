@@ -7,15 +7,16 @@ experimental; what's there and what isn't is listed at the end.
 greed chat
 ```
 
-The page lists your rooms and channels, those that mention you first,
-then those with something unread, then the most recent; a dot beside a
-direct message says whether the other person is around (Mattermost).
-After them come your Matrix spaces and Mattermost teams (`◆`), each with
-your rooms in it under it.
-`enter` opens a room: its messages, laid out as Markdown and kept up to
-date as they come, and a box under them. The room is marked read as you
-look at it, who's writing shows under the messages, and on Matrix "seen
-by" says who has read up to where.
+The session shows your rooms and channels in a sidebar on the left, those
+that mention you first, then those with something unread, then the most
+recent; a dot beside a direct message says whether the other person is
+around (Mattermost). After them come your Matrix spaces and Mattermost
+teams (`◆`), each with your rooms in it under it. `enter` opens a room
+beside the sidebar: its messages, laid out as Markdown and kept up to date
+as they come, and a box under them, and `q` goes back to the sidebar. The
+room is marked read as you look at it, who's writing shows under the
+messages, and on Matrix "seen by" says who has read up to where.
+`:chat-sidebar` shows the same sidebar in any other session.
 
 | Key | In a room |
 | --- | --- |
@@ -30,7 +31,7 @@ by" says who has read up to where.
 | `alt-/` | pick a command into the box (Mattermost) |
 | `alt-up` | fetch older messages |
 | `tab`, `shift-tab` | the next or previous room in the bar over a room (the rooms you opened); `alt-1`…`alt-9` one of them |
-| `q`, `esc` | stop answering or changing; else back to the room or the list |
+| `q`, `esc` | stop answering or changing; else back to the room, or to the list (the sidebar) |
 
 `space .` on a message offers the same, and copying what it says.
 A room shows each thread's first message with how many replies it has;

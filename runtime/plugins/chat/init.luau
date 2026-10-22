@@ -1,12 +1,13 @@
 -- Chat: Matrix and Mattermost in Greed. In the chat session (`greed chat`)
--- the page lists your rooms and channels, those with something unread
--- first, then each space (or team) with its rooms under it; elsewhere
--- `:chat` opens the same list in a float of the tab. `enter` opens a room:
--- its messages, kept up to date, and a box under them where `enter` sends
--- what's written (as Markdown) and `alt-enter` starts a new line; on a
--- space it offers the rooms it holds. `:chat-login` signs in to a server,
--- by password or through the browser; `:chat-logout` signs out. The
--- services run as programs of their own (backend.luau).
+-- a sidebar lists your rooms and channels, those with something unread
+-- first, then each space (or team) with its rooms under it, and rooms open
+-- beside it; elsewhere `:chat` opens the same list in a float of the tab,
+-- rooms opening in its place. A room shows its messages, kept up to date,
+-- and a box under them where `enter` sends what's written (as Markdown)
+-- and `alt-enter` starts a new line; `enter` on a space offers the rooms
+-- it holds. `:chat-login` signs in to a server, by password or through the
+-- browser; `:chat-logout` signs out. The services run as programs of their
+-- own (backend.luau).
 
 local greed = require("@greed")
 local core = require("@core")
@@ -40,6 +41,14 @@ type List = {
 }
 
 local list: List? = nil
+
+--- A server as the list names it: its address without the scheme or a
+--- slash at the end ("https://matrix.org/" is "matrix.org"), so it fits
+--- a sidebar.
+function M.host(server: string): string
+	local bare = string.gsub(server, "^%a+://", "")
+	return (string.gsub(bare, "/+$", ""))
+end
 
 --- A room's marker: what kind of room it is.
 function M.marker(room: backend.Room): string
@@ -170,7 +179,7 @@ local function render_list(o: List): core.UiNode
 			parts,
 			ui.line({
 				ui.span(account.name or account.id, "keyword"),
-				ui.span(`  {account.service} · {account.server}`, "comment"),
+				ui.span(`  {account.service} · {M.host(account.server)}`, "comment"),
 				ui.span(said, if state == "trouble" then "diagnostic.error" else "comment"),
 			})
 		)
@@ -241,15 +250,9 @@ local function chat_float(): greed.View?
 	return nil
 end
 
---- The list of rooms in `window`, or else in a float of the tab, which
---- `alt-f` hides and shows like the others; one there already (showing
---- the list or a room) comes to the front.
-function M.list(window: greed.View?)
-	local shown = if window then nil else chat_float()
-	if shown then
-		panes.floats.focus(shown)
-		return
-	end
+-- A new list of rooms, filled as the services answer, its cursor put on
+-- the first room in each view showing it by then.
+local function new_list(): List
 	local buffer = greed.create_buffer("chat", "", { readonly = true })
 	buffer:set_line_numbers(false)
 	local o: List
@@ -266,11 +269,6 @@ function M.list(window: greed.View?)
 	list = o
 	view:redraw()
 	buffer:set_kept(true)
-	if window then
-		window:show(buffer)
-	else
-		panes.floats.show(buffer, { title = "Chat", width = "70%", height = "80%" })
-	end
 	greed.spawn(function()
 		backend.start()
 		for key in backend.accounts do
@@ -283,6 +281,47 @@ function M.list(window: greed.View?)
 			end
 		end
 	end)
+	return o
+end
+
+--- The list of rooms in a float of the tab, which `alt-f` hides and shows
+--- like the others; one there already (showing the list or a room) comes
+--- to the front.
+function M.list()
+	local shown = chat_float()
+	if shown then
+		panes.floats.focus(shown)
+		return
+	end
+	local o = new_list()
+	panes.floats.show(o.buffer, { title = "Chat", width = "70%", height = "80%" })
+end
+
+-- The panel showing the list of rooms, if one does.
+local function sidebar(): greed.View?
+	local o = list
+	if o == nil or not o.buffer:valid() then
+		return nil
+	end
+	for _, view in o.buffer:views() do
+		if not view:is_pane() and not table.find(panes.floats.all(), view) then
+			return view
+		end
+	end
+	return nil
+end
+
+--- The list of rooms as a sidebar, a panel on the left, with the rooms
+--- opening in the main view beside it; the one there already is focused.
+function M.sidebar()
+	local shown = sidebar()
+	if shown then
+		shown:focus()
+		return
+	end
+	local o = if list and list.buffer:valid() then list else new_list()
+	local panel = greed.panel(o.buffer, { side = "left", width = 34, title = "Chat" })
+	on_room(o, panel, nil)
 end
 
 backend.on_rooms(function(key: string)
@@ -303,9 +342,21 @@ end)
 
 greed.command({
 	name = "chat",
-	doc = "Your rooms and channels: the page in the chat session, a float elsewhere",
+	doc = "Your rooms and channels: a sidebar in the chat session, a float elsewhere",
 	run = function()
-		M.list(if backend.here() then greed.view() else nil)
+		if backend.here() then
+			M.sidebar()
+		else
+			M.list()
+		end
+	end,
+})
+
+greed.command({
+	name = "chat-sidebar",
+	doc = "Your rooms and channels as a sidebar on the left, rooms opening beside it",
+	run = function()
+		M.sidebar()
 	end,
 })
 
@@ -568,7 +619,7 @@ greed.keymap.bind({ kind = "chat" }, {
 -- The chat session opens on the list, and keeps the accounts connected.
 greed.on("editor.started", function()
 	if backend.here() then
-		M.list(greed.view())
+		M.sidebar()
 	end
 end)
 
@@ -593,14 +644,27 @@ room.unread = function(account: string, room_id: string): number
 	return 0
 end
 
--- Leaving a room goes back to the list, where there is one, on that room.
+-- Leaving a room goes back to the list, on that room: to the sidebar,
+-- the room staying beside it, or else the list in its place.
 room.on_leave = function(view: greed.View)
 	local left = room.of(view:buffer())
 	local o = list
-	if o and o.buffer:valid() and view:buffer() ~= o.buffer then
+	if o == nil or not o.buffer:valid() or view:buffer() == o.buffer then
+		return
+	end
+	local panel = sidebar()
+	if panel then
+		panel:focus()
+		on_room(o, panel, left)
+	else
 		view:show(o.buffer)
 		on_room(o, view, left)
 	end
+end
+
+-- A room asked for from the sidebar opens in the main view beside it.
+room.window_for = function(view: greed.View): greed.View
+	return if view == sidebar() then greed.tab.current().active else view
 end
 
 return M

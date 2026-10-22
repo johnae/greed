@@ -55,6 +55,12 @@ export type Line = { item: backend.Item, body: boolean }
 --- What's done when a room is left: back to the list (set by the plugin).
 M.on_leave = function(_view: greed.View) end
 
+--- Where a room asked for in `view` opens: there, or beside the list's
+--- sidebar (set by the plugin).
+M.window_for = function(view: greed.View): greed.View
+	return view
+end
+
 --- What's done when a room is marked read as you look at it (set by the
 --- alerts).
 M.on_read = function(_account: string, _room: string) end
@@ -653,7 +659,10 @@ function M.open(
 		remember(key, room, name)
 	end
 	local whole = key_of(key, room, thread)
-	local target = window or greed.view()
+	local target = M.window_for(window or greed.view())
+	if target ~= greed.view() then
+		target:focus()
+	end
 	local already = open[whole]
 	if already and already.buffer:valid() then
 		target:show(already.buffer)
