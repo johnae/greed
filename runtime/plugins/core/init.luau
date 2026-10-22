@@ -145,6 +145,8 @@ export type CompletionItem = {
 	label: string,
 	detail: string?,
 	badge: string?,
+	--- Native LSP CompletionItemKind, retained for presentation providers.
+	kind: number?,
 	text: string,
 	from: number?,
 	snippet: boolean?,

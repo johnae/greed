@@ -98,6 +98,25 @@ function M.source(source: Source, options: SourceOptions?)
 	end
 end
 
+local badge_providers: { (number?) -> string? } = {}
+
+--- Installs a kind badge provider until removed or its plugin unloads.
+function M.kind_badge(provider: (number?) -> string?): () -> ()
+	local owner: string? = nil
+	local remove = core.registry.put(badge_providers, function(kind)
+		return greed.plugin.within(owner, provider, kind)
+	end)
+	owner = greed.plugin.tie(remove)
+	return remove
+end
+
+local function badge(item: Item): string?
+	if item.kind and #badge_providers > 0 then
+		return badge_providers[#badge_providers](item.kind) or item.badge
+	end
+	return item.badge
+end
+
 type Open = {
 	view: greed.View,
 	buffer: greed.Buffer,
@@ -212,6 +231,7 @@ local function items_from(result: any, buffer: greed.Buffer): { Item }
 		end
 		table.insert(out, {
 			label = item.label,
+			kind = item.kind,
 			detail = item.detail,
 			text = text,
 			from = from,
@@ -264,7 +284,8 @@ local function draw(o: Open): core.UiNode
 		end
 		local item = o.items[index]
 		width = math.max(width, core.text.width(item.label))
-		badges = math.max(badges, if item.badge then core.text.width(item.badge) else 0)
+		local shown_badge = badge(item)
+		badges = math.max(badges, if shown_badge then core.text.width(shown_badge) else 0)
 	end
 	local shown = table.move(o.matches, 1, math.min(#o.matches, SHOWN), 1, {})
 	return ui.list(shown, function(index: number): { core.UiSpan }
@@ -277,7 +298,7 @@ local function draw(o: Open): core.UiNode
 		end
 		table.insert(spans, ui.span(string.rep(" ", width - core.text.width(label))))
 		if badges > 0 then
-			local badge = item.badge or ""
+			local badge = badge(item) or ""
 			table.insert(spans, ui.span("  "))
 			table.insert(spans, ui.span(badge, "ui.menu.badge"))
 			table.insert(spans, ui.span(string.rep(" ", badges - core.text.width(badge))))

@@ -3,6 +3,16 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## Unreleased
+
+### New
+
+- picker/lsp: lifecycle-stacked file icon, completion kind badge and diagnostic sign providers let plugins customize presentation; removing them restores previous providers.
+
+### Fixed
+
+- picker: file icons share the label's display-width budget, keeping long labels and wide icons on one row.
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights

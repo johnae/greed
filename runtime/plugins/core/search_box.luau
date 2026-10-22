@@ -32,6 +32,7 @@ type Item = {
 	label: string,
 	detail: string?,
 	badge: string?,
+	kind: number?,
 	text: string,
 	from: number?,
 	snippet: boolean?,

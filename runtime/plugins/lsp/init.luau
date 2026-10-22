@@ -316,6 +316,30 @@ local function mark_problems(buffer: greed.Buffer)
 	buffer:decorate("lsp", marks.diagnostic_marks(buffer, greed.lsp.diagnostics(buffer), messages))
 end
 
+local sign_providers: { marks.SignProvider } = {}
+
+local function redecorate()
+	marks.set_sign_provider(sign_providers[#sign_providers])
+	for _, buffer in greed.buffers() do
+		mark_problems(buffer)
+	end
+end
+
+--- Installs diagnostic signs until removed or the calling plugin unloads.
+local function set_diagnostic_sign_provider(provider: marks.SignProvider): () -> ()
+	local owner: string? = nil
+	local drop = core.registry.put(sign_providers, function(severity)
+		return greed.plugin.within(owner, provider, severity)
+	end)
+	local function remove()
+		drop()
+		redecorate()
+	end
+	owner = greed.plugin.tie(remove)
+	redecorate()
+	return remove
+end
+
 greed.on("lsp.diagnostics", function(event: greed.DiagnosticsChanged)
 	mark_problems(event.buffer)
 end)
@@ -451,6 +475,7 @@ core.objects.kind({
 
 -- Other plugins can use these with `require("@lsp")`.
 return {
+	set_diagnostic_sign_provider = set_diagnostic_sign_provider,
 	--- The language server piece of the status line, and the progress it shows.
 	status = status,
 	--- The completion menu: `completion.source(fn)` adds what to offer, in
