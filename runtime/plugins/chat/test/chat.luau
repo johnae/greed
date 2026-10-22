@@ -606,7 +606,7 @@ test("an unverified device says so; :chat-recover takes the key out of sight", f
 	assert(#recovered == 1 and recovered[1].key == "EsTc 1234 abcd", greed.json.encode(asked))
 end)
 
-test("another device asking is asked about; the emoji are shown to compare", function(t)
+test("another device asking is asked about; the emoji are shown to compare, once", function(t)
 	local notify = encrypting()
 	t:buffer("|x")
 	notify(
@@ -636,6 +636,15 @@ test("another device asking is asked about; the emoji are shown to compare", fun
 		end
 	end
 	assert(shown, "the emoji are shown")
+	-- The other device saying they match first comes as compare again: the
+	-- question already asked stays.
+	notify("verify.changed", {
+		account = "@anna:x",
+		id = "v1",
+		state = "compare",
+		emoji = { { "🐶", "Dog" }, { "🔑", "Key" } },
+	})
+	t:wait(50)
 	t:type("y")
 	t:keys("enter")
 	t:wait(50)

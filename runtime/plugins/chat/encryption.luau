@@ -123,10 +123,16 @@ function M.emoji_lines(emoji: { { string } }): { string }
 	return { table.concat(symbols, "   "), table.concat(names, ", ") }
 end
 
+-- The verifications whose emoji are being compared now, by id: each is
+-- asked about once.
+local comparing: { [string]: boolean } = {}
+
 backend.on_verify(function(key: string, about: any)
 	local id = about.id
 	local state = about.state
-	if state == "asked" then
+	if state == "compare" and comparing[id] then
+		return
+	elseif state == "asked" then
 		greed.spawn(function()
 			local from = about.from or "Another of your devices"
 			if yes(`{from} asks to verify this one. Accept? (y/n)`) then
@@ -137,10 +143,12 @@ backend.on_verify(function(key: string, about: any)
 			end
 		end)
 	elseif state == "compare" then
+		comparing[id] = true
 		greed.spawn(function()
 			local shown = show("Compare these with your other device", M.emoji_lines(about.emoji))
 			local same = yes("The same on your other device? (y/n)")
 			shown:close()
+			comparing[id] = nil
 			ask(key, "verify.confirm", { id = id, same = same })
 		end)
 	elseif state == "done" then

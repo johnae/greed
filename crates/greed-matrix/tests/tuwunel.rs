@@ -414,14 +414,14 @@ fn lists_rooms_and_keeps_a_timeline() {
         sign_in(&matrix, &server, "anna", "secret").await;
         let anna = "@anna:localhost";
 
-        // The invite shows once the sync brings it.
+        // The invite shows once the sync brings it, and its name with it.
         let account = json!({ "account": anna });
         let rooms = until(&matrix, "rooms", &account, |rooms| {
             rooms
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|r| r["id"] == room_id.as_str())
+                .any(|r| r["id"] == room_id.as_str() && r["name"] == "Plans")
         })
         .await;
         let invite = rooms
@@ -960,6 +960,14 @@ fn recovery_key_unlocks_old_messages_and_a_device_verifies() {
         })
         .await;
         assert_eq!(compare["emoji"].as_array().unwrap().len(), 7, "{compare}");
+        // The phone says they match first; that isn't another comparison.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        while let Ok(line) = notices.try_recv() {
+            assert!(
+                !line.contains("\"compare\""),
+                "asked to compare again: {line}"
+            );
+        }
         let confirm = json!({ "account": "@anna:localhost", "id": id, "same": true });
         call(&laptop, "verify.confirm", confirm).await;
         heard(&mut notices, |n| {

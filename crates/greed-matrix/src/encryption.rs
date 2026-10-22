@@ -294,10 +294,14 @@ impl Matrix {
         let (account, id) = (account.to_string(), id.to_string());
         tokio::task::spawn_local(async move {
             let mut changes = sas.changes();
+            // Keys exchanged comes again once the other device says the emoji
+            // match; they're compared once.
+            let mut compared = false;
             while let Some(state) = changes.next().await {
                 let Some(this) = me.upgrade() else { return };
                 match state {
-                    SasState::KeysExchanged { .. } => {
+                    SasState::KeysExchanged { .. } if !compared => {
+                        compared = true;
                         let emoji: Vec<Value> = sas
                             .emoji()
                             .map(|all| {
