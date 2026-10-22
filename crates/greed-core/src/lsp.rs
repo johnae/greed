@@ -170,7 +170,7 @@ struct Server {
     /// What the server said it can do, in its answer to `initialize`.
     capabilities: Value,
     /// Messages to send once the server has answered `initialize`.
-    queued: Vec<(Value, Option<BufferId>)>,
+    queued: Vec<Value>,
     documents: HashMap<BufferId, Document>,
 }
 
@@ -208,7 +208,7 @@ impl Server {
     /// `initialize`.
     fn send(&mut self, message: Value) -> io::Result<()> {
         if !self.ready {
-            self.queued.push((message, None));
+            self.queued.push(message);
             return Ok(());
         }
         self.connection.send(&message)
@@ -303,13 +303,6 @@ pub struct Running {
     pub stderr: Vec<String>,
 }
 
-/// A server that successfully completed initialization since the last drain.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ready {
-    pub language: String,
-    pub root: PathBuf,
-}
-
 pub struct Lsp {
     configs: Vec<ServerConfig>,
     launcher: Launcher,
@@ -325,8 +318,6 @@ pub struct Lsp {
     stops: HashMap<Key, usize>,
     /// Servers given up on since the last sync, to say so.
     given_up: Vec<LspError>,
-    ready: Vec<Ready>,
-    attached: Vec<BufferId>,
     /// Every file's latest problems, by URI, including files not open, with
     /// how their server counts positions.
     problems: HashMap<String, (Encoding, Vec<Problem>)>,
@@ -352,8 +343,6 @@ impl Default for Lsp {
             failed: HashSet::new(),
             stops: HashMap::new(),
             given_up: Vec::new(),
-            ready: Vec::new(),
-            attached: Vec::new(),
             problems: HashMap::new(),
             trusted: None,
             held: HashSet::new(),
@@ -440,12 +429,6 @@ impl Lsp {
     /// Messages from servers, to pass to [`Lsp::handle`].
     pub fn events(&self) -> &Receiver<Event> {
         &self.events
-    }
-
-    /// Buffers newly sent to a server since the last drain, including reuse of
-    /// an already initialized server.
-    pub fn take_attached(&mut self) -> Vec<BufferId> {
-        std::mem::take(&mut self.attached)
     }
 
     /// Opens new documents, sends changed ones and closes those whose buffer
@@ -575,16 +558,7 @@ impl Lsp {
             let params = json!({ "textDocument": {
                 "uri": uri, "languageId": language, "version": version, "text": text,
             }});
-            if server.ready {
-                server.notify("textDocument/didOpen", &params)?;
-                self.attached.push(buffer.id());
-            } else {
-                server.queued.push((
-                    Connection::notification("textDocument/didOpen", &params),
-                    Some(buffer.id()),
-                ));
-            }
-            return Ok(());
+            return Ok(server.notify("textDocument/didOpen", &params)?);
         };
         if document.version == version {
             return Ok(());
@@ -773,11 +747,6 @@ impl Lsp {
         list
     }
 
-    /// Takes each successful initialization once, for `lsp.ready` dispatch.
-    pub fn take_ready(&mut self) -> Vec<Ready> {
-        std::mem::take(&mut self.ready)
-    }
-
     /// Deals with one event from a server: finishes starting it, answers its
     /// requests, marks diagnostics, and passes responses back.
     pub fn handle(&mut self, event: Event, editor: &mut Editor) -> Handled {
@@ -895,34 +864,21 @@ impl Lsp {
     }
 
     fn finish_initialize(&mut self, server: ServerId, result: Option<&Value>) {
-        let Some(result) = result else {
-            return;
-        };
         let Some(server) = self.servers.get_mut(&server) else {
             return;
         };
-        if server.ready {
-            return;
+        if let Some(capabilities) = result.map(|r| &r["capabilities"]) {
+            if capabilities["positionEncoding"].as_str() == Some("utf-8") {
+                server.encoding = Encoding::Utf8;
+            }
+            server.sync = SyncKind::of(capabilities);
+            server.capabilities = capabilities.clone();
         }
-        let capabilities = &result["capabilities"];
-        if capabilities["positionEncoding"].as_str() == Some("utf-8") {
-            server.encoding = Encoding::Utf8;
-        }
-        server.sync = SyncKind::of(capabilities);
-        server.capabilities = capabilities.clone();
         server.ready = true;
         let _ = server.notify("initialized", &json!({}));
-        for (message, attached) in std::mem::take(&mut server.queued) {
-            if server.send(message).is_ok()
-                && let Some(buffer) = attached
-            {
-                self.attached.push(buffer);
-            }
+        for message in std::mem::take(&mut server.queued) {
+            let _ = server.send(message);
         }
-        self.ready.push(Ready {
-            language: server.language.clone(),
-            root: server.root.clone(),
-        });
     }
 
     fn store_diagnostics(

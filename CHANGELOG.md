@@ -7,7 +7,7 @@ the repository's history.
 
 ### Added
 
-- Plugin events for ordered native messages, accepted background syntax parses, and language-server readiness and document attachment, delivered without waiting for input. Attachment callbacks obey plugin deadlines; callback edits and custom status changes redraw while idle, and asynchronous test messages follow the last active client.
+- A `message` plugin event delivers ordered native messages without waiting for input, preserving duplicates, multiline text and recipient context. Handler echoes are delivered in the next batch, and observer failures preserve ordinary status messages.
 
 ## 0.3.0 - 2026-10-22
 

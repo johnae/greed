@@ -1357,7 +1357,6 @@ end)
 | `buffer.opened` | A buffer was opened | `buffer` |
 | `buffer.saved` | A buffer was written to its file | `buffer` |
 | `buffer.closed` | A buffer was closed | `id`, the closed buffer's |
-| `syntax.updated` | A current background parse was accepted for a buffer; stale results are ignored | `buffer` |
 | `file.changed` | A file watched with `greed.fs.watch(path)` was written, created or removed, by anything | `path` |
 | `mode.changed` | A client's mode changed | `from`, `to` |
 | `command.run` | A command is about to run | `name`, the `keys` that ran it, `count` |
@@ -1366,8 +1365,6 @@ end)
 | `keys.pending` | A key sequence is under way, e.g. after `space`; `""` once it's done | `keys` |
 | `option.changed` | An option was set | `name`, `value`, and `client` when it was set for one client alone |
 | `lsp.diagnostics` | A language server reported problems for a buffer | `buffer`; read them with `greed.lsp.diagnostics(buffer)` |
-| `lsp.attached` | A buffer was sent to a server, including a new file reusing an already initialized server | `buffer`; emitted after a successful `textDocument/didOpen` send |
-| `lsp.ready` | A language server successfully initialized, once per startup or restart; dispatched when its response arrives without waiting for input | `language`, `root` |
 | `message` | An ordinary echo or known native error, in delivery order; duplicates and multiline text are preserved | `text`, optional recipient `client`, optional known `level` (`"error"` for native failures) |
 | `view.resized` | A view has room, for a client, for a different number of rows or columns | `view`, `rows`, `cols` |
 | `view.scrolled` | A view starts, for a client, at a different line; what the handler changes shows in the same frame, so one view can scroll another along | `view`, `line` |

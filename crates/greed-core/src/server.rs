@@ -627,22 +627,19 @@ impl Server<'_> {
         }
     }
 
-    fn sync_background(&mut self) -> (bool, Receiver<Instant>) {
+    fn sync_background(&mut self) -> Receiver<Instant> {
         let mut problems = self.host.update_syntax();
-        let (lsp_problems, attachment_callbacks) = self.host.sync_lsp_callbacks();
-        problems.extend(lsp_problems);
+        problems.extend(self.host.sync_lsp());
         if let Some(problem) = problems.pop() {
             self.say_error(problem);
         }
         // Echoes produced by handlers belong to a new turn. Wake only
         // while the queue has work, without a timer/history poll.
-        let messages =
-            if attachment_callbacks || self.host.with_editor(|ed| !ed.messages().is_empty()) {
-                crossbeam_channel::at(Instant::now())
-            } else {
-                crossbeam_channel::never()
-            };
-        (attachment_callbacks, messages)
+        if self.host.with_editor(|ed| !ed.messages().is_empty()) {
+            crossbeam_channel::at(Instant::now())
+        } else {
+            crossbeam_channel::never()
+        }
     }
 
     fn run(
@@ -665,7 +662,7 @@ impl Server<'_> {
         let started = self.host.report_selections();
         self.report(started);
         loop {
-            let (attachment_callbacks, messages) = self.sync_background();
+            let messages = self.sync_background();
             // Wake up in time for the next timer a command is waiting on.
             let timer = self
                 .host
@@ -694,7 +691,8 @@ impl Server<'_> {
                 }
                 recv(trees) -> parsed => {
                     if let Ok(parsed) = parsed {
-                        only_parsed = !self.host.receive_parse(parsed);
+                        self.host.receive_parse(parsed);
+                        only_parsed = true;
                     }
                 }
                 recv(lsp_events) -> event => {
@@ -750,7 +748,6 @@ impl Server<'_> {
                 recv(self.held_timer()) -> _ => {}
                 recv(messages) -> _ => {}
             }
-            only_parsed &= !attachment_callbacks;
             if !self.carry_on(typed, only_parsed) {
                 return;
             }
