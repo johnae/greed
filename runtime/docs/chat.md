@@ -93,6 +93,20 @@ encrypted rooms. The room list says when this device isn't verified yet.
   recovery key yet it sets one up and shows it once: keep it somewhere
   safe, Greed doesn't keep it.
 
+## Searching
+
+`/` in the list (or `:chat-search`) searches the messages of every account;
+`alt-s` in a room searches that room. What it finds comes newest first, and
+the message you pick opens in its room, older messages fetched until it
+shows.
+
+- Mattermost searches on the server, with its own words: `from:bea`,
+  `in:town-square`, `before:2026-10-01`, `"a phrase"`.
+- Matrix searches what Greed has seen on this device, encrypted rooms
+  included (kept locked beside the account's other data), and asks the
+  server too, which reaches further back in rooms that aren't encrypted.
+  An encrypted room's older messages are found once they've been shown.
+
 ## Alerts
 
 A new message that mentions you, or any message in a direct message, alerts
@@ -129,7 +143,6 @@ counts in the list.
 | Polls, locations, live locations | Shown as what they are, without voting or a map. |
 | Mattermost Boards, Playbooks, and interactive dialogs a command or button opens | Not supported; open the message in the browser (`space .`) to use them. |
 | Spaces and teams | Listed with their rooms; no browsing a space's rooms you haven't joined, nor joining by address, yet. |
-| Search | Not yet. |
 | Discord, Slack and others | Not supported. |
 
 ## The programs

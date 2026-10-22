@@ -6,10 +6,10 @@
 //! Requests every service answers: `hello`, `accounts`, `restore`,
 //! `login.methods`, `login.start`, `login.answer`, `login.cancel`, `logout`,
 //! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`, `edit`,
-//! `redact`, `react`, `read`, `typing`, `media.get`, `upload`. Those that
-//! can ("commands" in `hello`) also answer `commands` and `press`: a
-//! `send` starting with `/` runs a command, and a message's `actions` are
-//! pressed or picked from.
+//! `redact`, `react`, `read`, `typing`, `media.get`, `upload`, `search`.
+//! Those that can ("commands" in `hello`) also answer `commands` and
+//! `press`: a `send` starting with `/` runs a command, and a message's
+//! `actions` are pressed or picked from.
 //! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
 //! `timeline.changed`, `typing.changed`, `login.step`, `alert`.
 //!
@@ -452,6 +452,23 @@ pub struct MessageParams {
     pub text: String,
     #[serde(default)]
     pub key: String,
+}
+
+/// `search`'s parameters: the words to find, in `room` or else everywhere.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchParams {
+    pub account: String,
+    pub query: String,
+    #[serde(default)]
+    pub room: Option<String>,
+}
+
+/// A message `search` found, newest first: where, and the message.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Found {
+    pub room: String,
+    pub room_name: String,
+    pub item: Item,
 }
 
 /// `press`'s parameters: the message's `action`, and for a menu the

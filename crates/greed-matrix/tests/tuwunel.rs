@@ -1016,3 +1016,78 @@ fn new_messages_for_you_are_alerts() {
         assert_eq!(named["mention"], true);
     });
 }
+
+#[test]
+fn searches_messages() {
+    use matrix_sdk::ruma::api::client::room::create_room;
+    use matrix_sdk::ruma::events::InitialStateEvent;
+    use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+
+    let Some(server) = Tuwunel::start("search", None) else {
+        return;
+    };
+    run(async {
+        let (matrix, _notices, bea, room_id) = plans(&server).await;
+        let anna = "@anna:localhost";
+        let bea_room = bea
+            .get_room(&matrix_sdk::ruma::RoomId::parse(&room_id).unwrap())
+            .unwrap();
+        for message in [
+            "the tomatoes are ripe",
+            "nothing to see",
+            "more tomatoes soon",
+        ] {
+            bea_room
+                .send(RoomMessageEventContent::text_plain(message))
+                .await
+                .unwrap();
+        }
+        let query = json!({ "account": anna, "query": "tomatoes" });
+        let found = until(&matrix, "search", &query, |found| {
+            found.as_array().is_some_and(|hits| hits.len() == 2) && found[0]["room_name"] == "Plans"
+        })
+        .await;
+        assert_eq!(found[0]["item"]["text"], "more tomatoes soon", "{found}");
+        assert_eq!(found[1]["item"]["text"], "the tomatoes are ripe");
+        assert_eq!(found[0]["room"], room_id.as_str());
+        assert_eq!(found[0]["item"]["sender"]["id"], "@bea:localhost");
+
+        let elsewhere =
+            json!({ "account": anna, "query": "tomatoes", "room": "!nowhere:localhost" });
+        assert!(matrix.call("search", elsewhere).await.is_err());
+
+        // An encrypted room the server can't search: this device's index can.
+        let mut request = create_room::v3::Request::new();
+        request.name = Some("Secrets".into());
+        request.invite = vec![anna.try_into().unwrap()];
+        request.initial_state = vec![
+            InitialStateEvent::with_empty_state_key(
+                RoomEncryptionEventContent::with_recommended_defaults(),
+            )
+            .to_raw_any(),
+        ];
+        let secrets = bea.create_room(request).await.unwrap();
+        other(&server, "anna", "secret")
+            .await
+            .join_room_by_id(secrets.room_id())
+            .await
+            .unwrap();
+        bea.sync_once(matrix_sdk::config::SyncSettings::default())
+            .await
+            .unwrap();
+        secrets
+            .send(RoomMessageEventContent::text_plain(
+                "tomatoes under the floor",
+            ))
+            .await
+            .unwrap();
+        let hidden = json!({ "account": anna, "query": "floor" });
+        // Once the room's name has come too.
+        until(&matrix, "search", &hidden, |found| {
+            found.as_array().is_some_and(|hits| hits.len() == 1)
+                && found[0]["room_name"] == "Secrets"
+        })
+        .await;
+    });
+}

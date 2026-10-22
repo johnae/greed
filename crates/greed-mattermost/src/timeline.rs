@@ -354,7 +354,13 @@ impl Mattermost {
     }
 
     /// `posts` as items, with their senders' names fetched.
-    async fn items(&self, account: &str, api: &Api, me: &str, posts: &[Post]) -> Vec<Item> {
+    pub(crate) async fn items(
+        &self,
+        account: &str,
+        api: &Api,
+        me: &str,
+        posts: &[Post],
+    ) -> Vec<Item> {
         let senders: Vec<String> = posts.iter().map(|post| post.user_id.clone()).collect();
         self.people(account, api, &senders).await;
         posts

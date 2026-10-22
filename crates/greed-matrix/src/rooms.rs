@@ -3,7 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use greed_chat::protocol::{AccountState, Room, RoomKind};
+use greed_chat::protocol::{AccountState, Person, Room, RoomKind};
+use matrix_sdk::ruma::UserId;
 use matrix_sdk::{Client, RoomState};
 use matrix_sdk_ui::sync_service::{State, SyncService};
 use serde_json::json;
@@ -103,11 +104,29 @@ async fn joined_kind(room: &matrix_sdk::Room) -> RoomKind {
     }
 }
 
-async fn room_of(account: &str, room: &matrix_sdk::Room, kind: RoomKind) -> Room {
-    let name = match room.display_name().await {
+/// `room`'s name, as the list shows it.
+pub(crate) async fn name_of(room: &matrix_sdk::Room) -> String {
+    match room.display_name().await {
         Ok(name) => name.to_string(),
         Err(_) => room.room_id().to_string(),
+    }
+}
+
+/// `user` as `room` knows them: their name there, or their id's local part.
+pub(crate) async fn person(room: &matrix_sdk::Room, user: &UserId) -> Person {
+    let name = match room.get_member_no_sync(user).await {
+        Ok(Some(member)) => member.display_name().map(str::to_string),
+        _ => None,
     };
+    Person {
+        id: user.to_string(),
+        name: name.unwrap_or_else(|| user.localpart().to_string()),
+        avatar: None,
+    }
+}
+
+async fn room_of(account: &str, room: &matrix_sdk::Room, kind: RoomKind) -> Room {
+    let name = name_of(room).await;
     Room {
         id: room.room_id().to_string(),
         account: account.to_string(),

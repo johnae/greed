@@ -121,6 +121,10 @@ local function fake(sent: { any }?): (method: string, params: any) -> ()
 			table.insert(asked, { method = "typing", params = params })
 			return nil
 		end,
+		search = function(params: any): any
+			table.insert(asked, { method = "search", params = params })
+			return { { room = "!plans:x", room_name = "Plans", item = items[2] } }
+		end,
 		["timeline.close"] = function()
 			return nil
 		end,
@@ -820,4 +824,50 @@ test("alt-/ picks a command into the box", function(t)
 	t:wait(50)
 	local r = chat.rooms.of(greed.view():buffer())
 	assert(r and r.view:input() == "/away ", r and r.view:input())
+end)
+
+test("/ in the list searches every account; the message picked opens in its room", function(t)
+	fake()
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	t:keys("/")
+	t:type("lunch")
+	t:keys("enter")
+	t:wait(100)
+	local searched = calls("search")
+	assert(
+		#searched == 1 and searched[1].query == "lunch" and searched[1].room == nil,
+		greed.json.encode(asked)
+	)
+	t:keys("enter") -- the one found
+	t:wait(100)
+	local view = greed.view()
+	local r = chat.rooms.of(view:buffer())
+	assert(r and r.room == "!plans:x", "the room opens")
+	local value = r.view:value_at(view:cursor())
+	assert(value and value.item.event == "$1", "on the message found")
+	assert(
+		string.find(
+			chat.search.label({
+				account = "matrix @anna:x",
+				room = "!plans:x",
+				room_name = "Plans",
+				item = value.item,
+			}),
+			"^Plans · Bea: lunch at noon%? · "
+		),
+		"how it reads"
+	)
+end)
+
+test("alt-s in a room searches only that room", function(t)
+	fake()
+	on_message(t, "$1")
+	t:keys("alt-s")
+	t:type("noon")
+	t:keys("enter")
+	t:wait(100)
+	local searched = calls("search")
+	assert(#searched == 1 and searched[1].room == "!plans:x", greed.json.encode(asked))
 end)

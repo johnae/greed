@@ -829,3 +829,60 @@ fn slash_commands_run_and_buttons_press() {
         heard(&mut notices, |n| release_now(n, "/place prod").is_some()).await;
     });
 }
+
+#[test]
+fn searches_posts() {
+    let Some(server) = Server::start("search", &[]) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let Crew {
+            bea,
+            channel,
+            service,
+            account,
+            ..
+        } = crew(&server).await;
+        for message in [
+            "the tomatoes are ripe",
+            "nothing to see",
+            "more tomatoes soon",
+        ] {
+            bea.post(
+                "posts",
+                &json!({ "channel_id": channel, "message": message }),
+            )
+            .await;
+        }
+        let found = call(
+            &service,
+            "search",
+            json!({ "account": account, "query": "tomatoes" }),
+        )
+        .await;
+        let texts: Vec<&str> = found
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|hit| hit["item"]["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            texts,
+            ["more tomatoes soon", "the tomatoes are ripe"],
+            "{found}"
+        );
+        assert_eq!(found[0]["room"], channel.as_str());
+        assert_eq!(found[0]["room_name"], "Plans");
+        assert_eq!(found[0]["item"]["sender"]["name"], "bea");
+
+        let elsewhere = call(
+            &service,
+            "search",
+            json!({ "account": account, "query": "tomatoes", "room": "nowhere" }),
+        )
+        .await;
+        assert_eq!(elsewhere, json!([]));
+    });
+}

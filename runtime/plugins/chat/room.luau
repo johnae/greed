@@ -2,9 +2,10 @@
 -- write in. A thread opens the same way, with the thread's replies; what's
 -- sent there goes in the thread. On a message: alt-r answers it, alt-t
 -- opens its thread, alt-k reacts, alt-e changes it (yours), alt-d deletes
--- it, alt-b presses its buttons; `space .` offers the same. alt-/ picks a
--- command (Mattermost) into the box. Whoever's writing shows under the
--- messages, and the room is marked read as you look at it.
+-- it, alt-b presses its buttons; `space .` offers the same. alt-s searches
+-- the room; alt-/ picks a command (Mattermost) into the box. Whoever's
+-- writing shows under the messages, and the room is marked read as you
+-- look at it.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -406,15 +407,59 @@ local function mark_read(r: Open)
 	end)
 end
 
+-- The most pages of older messages `go_to` fetches looking for one.
+local PAGES = 20
+
+--- Puts `window`'s cursor on message `event` in `r`, fetching older
+--- messages until it's there or there are none. Waits, so it runs in a
+--- coroutine; says so when it isn't found.
+function M.go_to(r: Open, event: string, window: greed.View)
+	local function show(): boolean
+		r.view:redraw()
+		local line = r.view:line_of(function(value: any): boolean
+			return value ~= nil and value.item.event == event
+		end)
+		if line then
+			window:set_cursor(r.buffer:line_start(line))
+		end
+		return line ~= nil
+	end
+	for _ = 1, PAGES do
+		if show() then
+			return
+		end
+		local back = ask(r, "timeline.back")
+		-- The older messages come as changes, a moment after.
+		greed.sleep(100)
+		if back == nil or not back.more then
+			break
+		end
+	end
+	if not show() then
+		greed.echo("that message isn't in the room's history here")
+	end
+end
+
 --- Opens room `room` of account `key` in `window`, or its thread `thread`
---- (by its first message's event): its messages and the box to write in.
-function M.open(key: string, room: string, name: string, thread: string?, window: greed.View?): Open
+--- (by its first message's event): its messages and the box to write in;
+--- with `at`, the cursor on that message.
+function M.open(
+	key: string,
+	room: string,
+	name: string,
+	thread: string?,
+	window: greed.View?,
+	at: string?
+): Open
 	local whole = key_of(key, room, thread)
 	local target = window or greed.view()
 	local already = open[whole]
 	if already and already.buffer:valid() then
 		target:show(already.buffer)
 		target:set_cursor(already.buffer:len())
+		if at then
+			greed.spawn(M.go_to, already, at, target)
+		end
 		return already
 	end
 	local buffer = greed.create_buffer("chat-room", "", { language = "markdown" })
@@ -469,6 +514,9 @@ function M.open(key: string, room: string, name: string, thread: string?, window
 		view:redraw()
 		target:set_cursor(buffer:len())
 		mark_read(r)
+		if at then
+			M.go_to(r, at, target)
+		end
 	end)
 	return r
 end
@@ -1045,6 +1093,7 @@ greed.keymap.bind({ kind = "chat-room" }, {
 	["alt-e"] = "chat-edit",
 	["alt-d"] = "chat-delete",
 	["alt-b"] = "chat-press",
+	["alt-s"] = "chat-search",
 	["alt-/"] = "chat-commands",
 })
 

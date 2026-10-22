@@ -1,7 +1,7 @@
 //! New messages for you, as your push rules on the server pick them
 //! (mentions, direct messages, keywords), told as `alert`.
 
-use greed_chat::protocol::{Alert, Person};
+use greed_chat::protocol::Alert;
 use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedTimelineEvent;
 use matrix_sdk::ruma::events::room::message::{MessageType, Relation};
 use matrix_sdk::ruma::events::{
@@ -15,6 +15,7 @@ use serde_json::json;
 use tokio::sync::mpsc;
 
 use crate::Matrix;
+use crate::rooms::{name_of, person};
 
 impl Matrix {
     /// Tells of new messages for account `id` from now on: not those that
@@ -85,25 +86,13 @@ async fn alert(
             | AnySyncMessageLikeEvent::RtcNotification(_) => "is calling".into(),
             _ => return None,
         };
-    let name = match room.get_member_no_sync(sender).await {
-        Ok(Some(member)) => member.display_name().map(str::to_string),
-        _ => None,
-    };
     let direct = room.is_direct().await.unwrap_or(false);
-    let room_name = match room.display_name().await {
-        Ok(name) => name.to_string(),
-        Err(_) => room.room_id().to_string(),
-    };
     Some(Alert {
         account: account.to_string(),
         room: room.room_id().to_string(),
-        room_name,
+        room_name: name_of(room).await,
         event: event.event_id().to_string(),
-        sender: Person {
-            id: sender.to_string(),
-            name: name.unwrap_or_else(|| sender.localpart().to_string()),
-            avatar: None,
-        },
+        sender: person(room, sender).await,
         body,
         mention: !direct && notification.actions.iter().any(Action::is_highlight),
         direct,

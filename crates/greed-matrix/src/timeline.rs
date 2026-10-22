@@ -457,16 +457,7 @@ fn event_item(event: &EventTimelineItem, here: &Here) -> Item {
                 .collect();
             match &like.kind {
                 MsgLikeKind::Message(message) => {
-                    item.kind = match message.msgtype() {
-                        MessageType::Notice(_) => ItemKind::Notice,
-                        MessageType::Emote(_) => ItemKind::Emote,
-                        MessageType::Image(_) => ItemKind::Image,
-                        MessageType::File(_) => ItemKind::File,
-                        MessageType::Audio(_) => ItemKind::Audio,
-                        MessageType::Video(_) => ItemKind::Video,
-                        MessageType::Location(_) => ItemKind::Location,
-                        _ => ItemKind::Message,
-                    };
+                    item.kind = kind_of(message.msgtype());
                     item.text = message.body().to_string();
                     item.edited = message.is_edited();
                     item.media = crate::media::media_of(message.msgtype());
@@ -565,5 +556,19 @@ fn sending(event: &EventTimelineItem) -> Option<Sending> {
             Some(Sending::Failed(error.to_string()))
         }
         _ => None,
+    }
+}
+
+/// What kind of item a message of type `message` is.
+pub(crate) fn kind_of(message: &MessageType) -> ItemKind {
+    match message {
+        MessageType::Notice(_) => ItemKind::Notice,
+        MessageType::Emote(_) => ItemKind::Emote,
+        MessageType::Image(_) => ItemKind::Image,
+        MessageType::File(_) => ItemKind::File,
+        MessageType::Audio(_) => ItemKind::Audio,
+        MessageType::Video(_) => ItemKind::Video,
+        MessageType::Location(_) => ItemKind::Location,
+        _ => ItemKind::Message,
     }
 }

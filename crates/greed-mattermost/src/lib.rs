@@ -10,6 +10,7 @@ mod live;
 mod login;
 mod media;
 mod rooms;
+mod search;
 mod timeline;
 
 use std::cell::RefCell;
@@ -240,6 +241,7 @@ impl Service for Mattermost {
             }
             "commands" => Ok(json!(self.commands(&rpc::parse(params)?).await?)),
             "press" => self.press(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
             "edit" => self.edit(&rpc::parse(params)?).await.map(|()| Value::Null),
             "redact" => self
                 .redact(&rpc::parse(params)?)

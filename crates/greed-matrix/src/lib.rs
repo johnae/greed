@@ -12,6 +12,7 @@ mod encryption;
 mod login;
 mod media;
 mod rooms;
+mod search;
 mod timeline;
 
 use std::cell::RefCell;
@@ -28,6 +29,7 @@ use greed_chat::rpc::{self, Failure, Notifier, Service};
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
 use matrix_sdk::encryption::{BackupDownloadStrategy, EncryptionSettings};
+use matrix_sdk::search_index::SearchIndexStoreKind;
 use matrix_sdk::{AuthSession, Client, ClientBuilder, SessionChange};
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
@@ -260,6 +262,11 @@ impl Matrix {
                 auto_enable_backups: true,
                 backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
             })
+            // What it has seen, searchable, kept locked with the store's key.
+            .search_index_store(SearchIndexStoreKind::EncryptedDirectory(
+                self.data.join(&store.name).join("search"),
+                store.passphrase.clone(),
+            ))
     }
 
     /// Removes `store`'s folder, once its client is gone.
@@ -372,6 +379,7 @@ impl Matrix {
                 .await
                 .map(|()| Value::Null),
             "media.get" => self.media_get(&rpc::parse(params)?).await,
+            "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
             "upload" => self
                 .upload(&rpc::parse(params)?)
                 .await
