@@ -247,6 +247,11 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
             let strings = |key: &str| -> LuaResult<Vec<String>> {
                 Ok(spec.get::<Option<Vec<String>>>(key)?.unwrap_or_default())
             };
+            let json = |key: &str| -> LuaResult<Option<serde_json::Value>> {
+                spec.get::<Option<Value>>(key)?
+                    .map(|value| lua.from_value(value))
+                    .transpose()
+            };
             // One `command`, or `commands` to try in order.
             let mut commands = spec
                 .get::<Option<Vec<Vec<String>>>>("commands")?
@@ -261,6 +266,9 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 commands,
                 root_markers: strings("root_markers")?,
                 reads_only: spec.get::<Option<bool>>("reads_only")?.unwrap_or(false),
+                settings: json("settings")?,
+                initialization_options: json("initialization_options")?,
+                capabilities: json("capabilities")?,
             };
             let state = &mut *state_mut(lua);
             state.owned.server(owner.clone(), config.clone());

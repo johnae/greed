@@ -206,6 +206,9 @@ fn fake_server(
     let mut documents = Documents::default();
     // How it was started, and the workspace folders the client said it has.
     let (mut started, mut folders) = (Value::Null, Value::Null);
+    let mut settings = Value::Null;
+    let mut configuration_changes = Vec::new();
+    let mut configuration_request = None;
     while let Some(message) = read(&mut input) {
         let method = message["method"]
             .as_str()
@@ -223,6 +226,26 @@ fn fake_server(
             }
             "initialized" => initialized(&mut output),
             "(response)" if id == Some(json!("folders")) => folders = message["result"].clone(),
+            "(response)" if id == Some(json!("ask")) => settings = message["result"].clone(),
+            "workspace/didChangeConfiguration" => {
+                configuration_changes.push(message["params"]["settings"].clone());
+            }
+            // Round-trip arbitrary configuration items through the real client.
+            "requestConfiguration" => {
+                configuration_request = id;
+                write(
+                    &mut output,
+                    &json!({ "jsonrpc": "2.0", "id": "configuration", "method": "workspace/configuration",
+                        "params": message["params"] }),
+                );
+            }
+            "(response)" if id == Some(json!("configuration")) => {
+                write(
+                    &mut output,
+                    &json!({ "jsonrpc": "2.0", "id": configuration_request.take(),
+                        "result": message["result"] }),
+                );
+            }
             // What the client started it with and told it since.
             "probe" => write(
                 &mut output,
@@ -230,6 +253,7 @@ fn fake_server(
                     "initialize": started, "folders": folders, "text": opened.text,
                     "ranged": documents.ranged, "whole": documents.whole,
                     "errors": documents.errors,
+                    "settings": settings, "configurationChanges": configuration_changes,
                 } }),
             ),
             "textDocument/didOpen" | "textDocument/didChange" => {
@@ -474,6 +498,9 @@ pub fn rust_server() -> greed_core::lsp::ServerConfig {
         commands: vec![vec!["sh".into()]],
         root_markers: vec!["Cargo.toml".into()],
         reads_only: false,
+        settings: None,
+        initialization_options: None,
+        capabilities: None,
     }
 }
 

@@ -17,6 +17,34 @@ decides what each one may reach ([capabilities](#capabilities), and
 types let Greed check a plugin against its API before it loads, which is
 also how a plugin an agent wrote is tried before you approve it.
 
+## Language server configuration
+
+`greed.lsp.server` accepts `settings`, `initialization_options`, and
+`capabilities` in addition to its command and root markers. Settings are
+sent once after initialization through `workspace/didChangeConfiguration`
+and returned for `workspace/configuration` requests. A section such as
+`rust-analyzer.cargo.targetDir` selects nested object keys; a missing
+section returns the whole settings object, and an unknown key returns null.
+Each requested item receives an answer in order, regardless of its scope URI.
+Initialization options go unchanged to `initialize.initializationOptions`.
+Capabilities recursively overlay Greed's native client capabilities, so
+unmentioned capabilities remain available.
+
+The bundled `@languages` plugin forwards these fields from language entries:
+
+```lua
+local languages = require("@languages")
+languages.set("rust", {
+    settings = { ["rust-analyzer"] = { cargo = { targetDir = "target/lsp" } } },
+})
+```
+
+`languages.set` merges objects recursively for these three fields and
+replaces other fields. Arrays, including `greed.json.array()` for an empty
+array, replace rather than merge. Both `set` and `get` copy configuration
+tables. Configuration changes do not mutate a running server's snapshot;
+use `greed.lsp.restart("rust")` to apply them to a new process.
+
 ## A plugin
 
 A plugin is a folder. Run in `~/.config/greed/plugins`, `greed new greet`

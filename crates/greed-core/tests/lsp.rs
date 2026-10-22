@@ -54,9 +54,13 @@ impl Setup {
     /// Asks `buffer`'s server what it was started with and knows, and waits
     /// for the answer.
     fn probe(&mut self, buffer: greed_core::BufferId) -> Value {
+        self.request(buffer, "probe", &Value::Null)
+    }
+
+    fn request(&mut self, buffer: greed_core::BufferId, method: &str, params: &Value) -> Value {
         let (_, id) = self
             .lsp
-            .request(self.editor.buffer(buffer), "probe", &Value::Null)
+            .request(self.editor.buffer(buffer), method, params)
             .unwrap();
         loop {
             match self.next() {
@@ -98,6 +102,336 @@ impl Setup {
     fn methods(&self) -> Vec<String> {
         self.methods_of(0)
     }
+}
+
+/// Exercises Luau specifications through the same request/coroutine seam as plugins.
+fn host_probe(host: &greed_core::luau::Host) -> Value {
+    host.load_str(
+        "configuration-probe",
+        r#"
+        local greed = require("@greed")
+        greed.command({ name = "configuration-probe", run = function(ctx)
+            local result, err = greed.lsp.request(ctx.buffer, "probe", {})
+            assert(result, tostring(err))
+            greed.echo("configuration-probe:" .. greed.json.encode(result))
+        end })
+    "#,
+    )
+    .unwrap();
+    host.run(greed_core::FIRST_CLIENT, "configuration-probe")
+        .unwrap();
+    let events = host.lsp_events();
+    loop {
+        for message in host.with_editor_mut(Editor::take_messages) {
+            if let Some(json) = message.strip_prefix("configuration-probe:") {
+                return serde_json::from_str(json).unwrap();
+            }
+        }
+        let event = events
+            .recv_timeout(Duration::from_secs(5))
+            .expect("server answered");
+        host.handle_lsp(event).unwrap();
+    }
+}
+
+#[test]
+fn language_configuration_overlays_preserve_defaults_and_forward_configuration_only_changes() {
+    let host = greed_core::luau::Host::new(Editor::new(ClientId(1))).unwrap();
+    let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+    host.load_dirs(&[
+        runtime.join("core"),
+        runtime.join("cmdline"),
+        runtime.join("languages"),
+    ])
+    .unwrap();
+    host.eval(
+        r#"
+        local greed = require("@greed")
+        local languages = require("@languages")
+        languages.set("rust", {
+            servers = { { "sh" } },
+            reads_only = true,
+            settings = { server = { keep = true, change = 1, list = { 1, 2 } } },
+            initialization_options = { nested = { keep = true, change = 1 } },
+            capabilities = { experimental = { keep = true, change = 1 } },
+        })
+        local changes = {
+            settings = { server = { change = 2, list = greed.json.array() } },
+            initialization_options = { nested = { change = 2 } },
+            capabilities = { experimental = { change = 2 } },
+        }
+        languages.set("rust", changes)
+        changes.settings.server.change = 99
+        local rust = languages.get("rust")
+        assert(rust.settings.server.keep and rust.settings.server.change == 2)
+        assert(greed.json.encode(rust.settings.server.list) == "[]", "empty array replaces")
+        assert(rust.initialization_options.nested.keep)
+        assert(rust.capabilities.experimental.keep)
+        rust.settings.server.change = 98
+        assert(languages.get("rust").settings.server.change == 2, "get returns a copy")
+    "#,
+    )
+    .unwrap();
+    host.with_editor_mut(|editor| {
+        editor.open(
+            "file",
+            "ok",
+            Some(std::env::temp_dir().join("greed-lsp-language/main.rs")),
+        );
+    });
+    let (launcher, _) = support::launcher();
+    host.set_lsp_launcher(launcher);
+    assert!(host.sync_lsp().is_empty());
+    let probe = host_probe(&host);
+    assert_eq!(
+        probe["initialize"]["initializationOptions"],
+        json!({
+            "nested": { "keep": true, "change": 2 },
+        })
+    );
+    assert_eq!(
+        probe["initialize"]["capabilities"]["experimental"],
+        json!({
+            "keep": true, "change": 2,
+        })
+    );
+    assert_eq!(
+        probe["initialize"]["capabilities"]["workspace"]["configuration"],
+        true
+    );
+    assert_eq!(
+        probe["configurationChanges"],
+        json!([{
+            "server": { "keep": true, "change": 2, "list": [] },
+        }])
+    );
+}
+
+#[test]
+fn unloading_a_server_override_restores_all_configuration_fields() {
+    let mut editor = Editor::new(ClientId(1));
+    editor.open(
+        "file",
+        "ok",
+        Some(std::env::temp_dir().join("greed-lsp-owned/main.rs")),
+    );
+    let host = greed_core::luau::Host::new(editor).unwrap();
+    let (launcher, _) = support::launcher();
+    host.set_lsp_launcher(launcher);
+    host.load_str(
+        "base-server",
+        r#"
+        require("@greed").lsp.server({
+            language = "rust", command = { "sh" },
+            settings = { version = 1 },
+            initialization_options = { version = 1 },
+            capabilities = { experimental = { version = 1 } },
+        })
+    "#,
+    )
+    .unwrap();
+    host.load_str(
+        "override-server",
+        r#"
+        require("@greed").lsp.server({
+            language = "rust", command = { "sh" },
+            settings = { version = 2 },
+            initialization_options = { version = 2 },
+            capabilities = { experimental = { version = 2 } },
+        })
+    "#,
+    )
+    .unwrap();
+    host.unload("override-server").unwrap();
+    assert!(host.sync_lsp().is_empty());
+    let probe = host_probe(&host);
+    assert_eq!(
+        probe["initialize"]["initializationOptions"],
+        json!({ "version": 1 })
+    );
+    assert_eq!(
+        probe["initialize"]["capabilities"]["experimental"],
+        json!({ "version": 1 })
+    );
+    assert_eq!(probe["configurationChanges"], json!([{ "version": 1 }]));
+}
+
+#[test]
+fn configuration_initializes_pushes_and_answers_dot_paths_in_order() {
+    let mut s = setup("ok");
+    let settings = json!({
+        "rust-analyzer": { "cargo": { "targetDir": "target/lsp" }, "check": false },
+        "list": [1, 2],
+        "empty": {},
+    });
+    let options = json!({ "features": { "experimental": true }, "values": [3, 4] });
+    let mut config = support::rust_server();
+    config.settings = Some(settings.clone());
+    config.initialization_options = Some(options.clone());
+    config.capabilities = Some(json!({
+        "textDocument": { "signatureHelp": { "signatureInformation": {
+            "documentationFormat": ["markdown"],
+            "activeParameterSupport": false,
+        } } },
+        "workspace": { "workspaceEdit": { "documentChanges": false } },
+        "experimental": { "custom": true },
+    }));
+    s.lsp.configure(config);
+    assert!(s.lsp.sync(&s.editor).is_empty());
+    let buffer = s.editor.buffers().next().unwrap().id();
+    let probe = s.probe(buffer);
+    assert_eq!(probe["initialize"]["initializationOptions"], options);
+    let capabilities = &probe["initialize"]["capabilities"];
+    assert_eq!(
+        capabilities["general"]["positionEncodings"],
+        json!(["utf-8", "utf-16"])
+    );
+    assert_eq!(capabilities["workspace"]["configuration"], true);
+    assert_eq!(
+        capabilities["workspace"]["workspaceEdit"]["documentChanges"],
+        false
+    );
+    let signature = &capabilities["textDocument"]["signatureHelp"]["signatureInformation"];
+    assert_eq!(signature["documentationFormat"], json!(["markdown"]));
+    assert_eq!(signature["activeParameterSupport"], false);
+    assert_eq!(
+        signature["parameterInformation"]["labelOffsetSupport"],
+        true
+    );
+    assert_eq!(capabilities["experimental"]["custom"], true);
+    assert_eq!(
+        s.probe(buffer)["settings"],
+        json!([settings.clone(), settings.clone()])
+    );
+    assert_eq!(
+        s.probe(buffer)["configurationChanges"],
+        json!([settings.clone()])
+    );
+    let answer = s.request(
+        buffer,
+        "requestConfiguration",
+        &json!({ "items": [
+        {},
+        { "section": "" },
+        { "section": "rust-analyzer.cargo.targetDir" },
+        { "section": "rust-analyzer.check", "scopeUri": "file:///other/document.rs" },
+        { "section": "missing" },
+        { "section": "rust-analyzer.cargo.missing" },
+        { "section": "list" },
+        { "section": "list.0" },
+        { "section": "empty" },
+    ] }),
+    );
+    assert_eq!(
+        answer,
+        json!([
+            settings.clone(),
+            settings,
+            "target/lsp",
+            false,
+            null,
+            null,
+            [1, 2],
+            null,
+            {},
+        ])
+    );
+    assert_eq!(
+        s.request(buffer, "requestConfiguration", &json!({ "items": [] })),
+        json!([])
+    );
+    let methods = s.methods();
+    assert_eq!(
+        &methods[..4],
+        [
+            "initialize",
+            "initialized",
+            "workspace/didChangeConfiguration",
+            "textDocument/didOpen",
+        ]
+    );
+    assert_eq!(
+        methods
+            .iter()
+            .filter(|m| *m == "workspace/didChangeConfiguration")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn omitted_configuration_preserves_default_initialize_and_null_cardinality() {
+    let mut s = setup("ok");
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    let probe = s.probe(buffer);
+    assert!(probe["initialize"].get("initializationOptions").is_none());
+    assert_eq!(
+        probe["initialize"]["capabilities"]["workspace"]["applyEdit"],
+        true
+    );
+    assert_eq!(s.probe(buffer)["settings"], json!([null, null]));
+    assert_eq!(s.probe(buffer)["configurationChanges"], json!([]));
+    assert_eq!(
+        s.request(
+            buffer,
+            "requestConfiguration",
+            &json!({ "items": [
+            {}, { "section": "" }, { "section": "missing" },
+        ] })
+        ),
+        json!([null, null, null])
+    );
+    assert!(
+        !s.methods()
+            .iter()
+            .any(|m| m == "workspace/didChangeConfiguration")
+    );
+}
+
+#[test]
+fn configuration_changes_only_on_explicit_restart() {
+    let mut s = setup("ok");
+    let mut config = support::rust_server();
+    config.settings = Some(json!({ "version": 1 }));
+    config.initialization_options = Some(json!({ "version": 1 }));
+    config.capabilities = Some(json!({ "experimental": { "version": 1 } }));
+    s.lsp.configure(config.clone());
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    let initial = s.probe(buffer);
+    config.settings = Some(json!({ "version": 2 }));
+    config.initialization_options = Some(json!({ "version": 2 }));
+    config.capabilities = Some(json!({ "experimental": { "version": 2 } }));
+    s.lsp.configure(config);
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.starts(), 1);
+    assert_eq!(s.probe(buffer)["initialize"], initial["initialize"]);
+    assert_eq!(
+        s.request(buffer, "requestConfiguration", &json!({ "items": [{}] })),
+        json!([{ "version": 1 }])
+    );
+    assert_eq!(
+        s.probe(buffer)["configurationChanges"],
+        json!([{ "version": 1 }])
+    );
+    assert_eq!(s.lsp.restart(Some("rust")), 1);
+    s.lsp.sync(&s.editor);
+    let restarted = s.probe(buffer);
+    assert_eq!(s.starts(), 2);
+    assert_eq!(
+        restarted["initialize"]["initializationOptions"],
+        json!({ "version": 2 })
+    );
+    assert_eq!(
+        restarted["initialize"]["capabilities"]["experimental"]["version"],
+        2
+    );
+    assert_eq!(restarted["configurationChanges"], json!([{ "version": 2 }]));
+    assert_eq!(
+        s.request(buffer, "requestConfiguration", &json!({ "items": [{}] })),
+        json!([{ "version": 2 }])
+    );
 }
 
 #[test]
@@ -583,6 +917,9 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
         ],
         root_markers: Vec::new(),
         reads_only: false,
+        settings: None,
+        initialization_options: None,
+        capabilities: None,
     };
     assert_eq!(
         config.installed_command(),
@@ -597,6 +934,9 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
         commands: vec![command(&["no-such-server-greed"])],
         root_markers: Vec::new(),
         reads_only: false,
+        settings: None,
+        initialization_options: None,
+        capabilities: None,
     });
     assert!(
         lsp.sync(&editor).is_empty(),

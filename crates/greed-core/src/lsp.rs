@@ -35,6 +35,13 @@ pub struct ServerConfig {
     /// its code (a build script, a config file), so it may start in a
     /// project nobody trusted (see [`Lsp::trust`]).
     pub reads_only: bool,
+    /// Settings sent after initialization and served by `workspace/configuration`.
+    /// A running server keeps its starting settings until explicitly restarted.
+    pub settings: Option<Value>,
+    /// Passed unchanged as `initialize.initializationOptions`, when present.
+    pub initialization_options: Option<Value>,
+    /// Recursive object overlay over the editor's default client capabilities.
+    pub capabilities: Option<Value>,
 }
 
 impl ServerConfig {
@@ -169,6 +176,8 @@ struct Server {
     sync: SyncKind,
     /// What the server said it can do, in its answer to `initialize`.
     capabilities: Value,
+    /// The configuration snapshot this process started with.
+    settings: Option<Value>,
     /// Messages to send once the server has answered `initialize`.
     queued: Vec<Value>,
     documents: HashMap<BufferId, Document>,
@@ -354,8 +363,9 @@ impl Default for Lsp {
 
 impl Lsp {
     /// Sets how to start the server for a language, replacing any earlier
-    /// setting. Servers that couldn't start or kept stopping are tried
-    /// again.
+    /// setting. Running processes keep their configuration snapshot until
+    /// explicitly restarted. Servers that couldn't start or kept stopping
+    /// are tried again.
     pub fn configure(&mut self, config: ServerConfig) {
         let language = config.language.clone();
         let markers = config.root_markers.clone();
@@ -622,7 +632,7 @@ impl Lsp {
             .or(config.commands.first())
             .cloned()
             .unwrap_or_default();
-        self.start(key, command, transport).map(Some)
+        self.start(key, command, transport, config).map(Some)
     }
 
     /// Talks to a new server over `transport`, and sends `initialize`.
@@ -631,6 +641,7 @@ impl Lsp {
         key: Key,
         command: Vec<String>,
         transport: Transport,
+        config: ServerConfig,
     ) -> Result<ServerId, LspError> {
         let id = self.next_server;
         self.next_server += 1;
@@ -646,20 +657,26 @@ impl Lsp {
             encoding: Encoding::Utf16,
             sync: SyncKind::Full,
             capabilities: Value::Null,
+            settings: config.settings,
             queued: Vec::new(),
             documents: HashMap::new(),
         };
-        server.initialize_id = server.connection.request(
-            "initialize",
-            &json!({
-                "processId": std::process::id(),
-                "rootUri": file_uri(&server.root),
-                "rootPath": server.root,
-                "workspaceFolders": server.workspace_folders(),
-                "clientInfo": { "name": "greed" },
-                "capabilities": client_capabilities(),
-            }),
-        )?;
+        let mut capabilities = client_capabilities();
+        if let Some(overlay) = config.capabilities {
+            overlay_json(&mut capabilities, overlay);
+        }
+        let mut params = json!({
+            "processId": std::process::id(),
+            "rootUri": file_uri(&server.root),
+            "rootPath": server.root,
+            "workspaceFolders": server.workspace_folders(),
+            "clientInfo": { "name": "greed" },
+            "capabilities": capabilities,
+        });
+        if let Some(options) = config.initialization_options {
+            params["initializationOptions"] = options;
+        }
+        server.initialize_id = server.connection.request("initialize", &params)?;
         self.servers.insert(id, server);
         self.running.insert(key, id);
         Ok(id)
@@ -786,8 +803,28 @@ impl Lsp {
                 method,
                 params,
             } if method == "workspace/configuration" => {
-                let count = params["items"].as_array().map_or(0, Vec::len);
-                self.respond(server, &id, &Value::Array(vec![Value::Null; count]));
+                let settings = self.servers[&server].settings.as_ref();
+                let values = params["items"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|item| {
+                        let Some(settings) = settings else {
+                            return Value::Null;
+                        };
+                        let section = item["section"].as_str().unwrap_or_default();
+                        if section.is_empty() {
+                            settings.clone()
+                        } else {
+                            section
+                                .split('.')
+                                .try_fold(settings, |value, key| value.as_object()?.get(key))
+                                .cloned()
+                                .unwrap_or(Value::Null)
+                        }
+                    })
+                    .collect();
+                self.respond(server, &id, &Value::Array(values));
                 Handled::Nothing
             }
             Event::Request {
@@ -864,18 +901,29 @@ impl Lsp {
     }
 
     fn finish_initialize(&mut self, server: ServerId, result: Option<&Value>) {
+        let Some(result) = result else {
+            return;
+        };
         let Some(server) = self.servers.get_mut(&server) else {
             return;
         };
-        if let Some(capabilities) = result.map(|r| &r["capabilities"]) {
-            if capabilities["positionEncoding"].as_str() == Some("utf-8") {
-                server.encoding = Encoding::Utf8;
-            }
-            server.sync = SyncKind::of(capabilities);
-            server.capabilities = capabilities.clone();
+        if server.ready {
+            return;
         }
+        let capabilities = &result["capabilities"];
+        if capabilities["positionEncoding"].as_str() == Some("utf-8") {
+            server.encoding = Encoding::Utf8;
+        }
+        server.sync = SyncKind::of(capabilities);
+        server.capabilities = capabilities.clone();
         server.ready = true;
         let _ = server.notify("initialized", &json!({}));
+        if let Some(settings) = &server.settings {
+            let _ = server.connection.notify(
+                "workspace/didChangeConfiguration",
+                &json!({ "settings": settings }),
+            );
+        }
         for message in std::mem::take(&mut server.queued) {
             let _ = server.send(message);
         }
@@ -1042,6 +1090,22 @@ fn buffer_at<'a>(editor: &'a Editor, uri: &str) -> Option<&'a Buffer> {
     editor
         .buffers()
         .find(|b| b.path().is_some_and(|p| file_uri(p) == uri))
+}
+
+/// Objects merge recursively; arrays, scalars and null replace the old value.
+fn overlay_json(base: &mut Value, overlay: Value) {
+    match (base, overlay) {
+        (Value::Object(base), Value::Object(overlay)) => {
+            for (key, value) in overlay {
+                if let Some(base) = base.get_mut(&key) {
+                    overlay_json(base, value);
+                } else {
+                    base.insert(key, value);
+                }
+            }
+        }
+        (base, overlay) => *base = overlay,
+    }
 }
 
 /// What the editor tells servers it can do. Plugins build the features on

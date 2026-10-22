@@ -3,7 +3,8 @@
 -- languages.luau. A server only starts if it's installed, so nothing needs
 -- setting up; `:health` shows what's found and what's missing.
 --
--- Change an entry from your config. Fields you give replace those fields:
+-- Change an entry from your config. Fields replace, except settings,
+-- initialization_options and capabilities: their objects merge recursively.
 --
 --     local languages = require("@languages")
 --     languages.set("python", { servers = { { "pylsp" } } })
@@ -42,6 +43,9 @@ local function apply_servers(name: string, language: Language)
 			commands = servers,
 			root_markers = language.roots,
 			reads_only = language.reads_only,
+			settings = language.settings,
+			initialization_options = language.initialization_options,
+			capabilities = language.capabilities,
 		})
 	else
 		greed.lsp.remove(name)
@@ -52,16 +56,45 @@ end
 -- nil for this one and your config.
 local set_by: { [string]: { [string]: string } } = {}
 
+-- Luau's array type does not expose the native JSON array marker.
+local array_metatable = getmetatable(greed.json.array() :: any)
+
 -- A copy of `value`, tables inside it too.
 local function copy(value: any): any
 	if type(value) ~= "table" then
 		return value
 	end
-	local out = {}
+	local out = if getmetatable(value) == array_metatable then greed.json.array() else {}
 	for k, v in value do
 		out[k] = copy(v)
 	end
 	return out
+end
+
+-- Configuration objects overlay recursively; lists and other values replace.
+local function overlay(base: any, value: any): any
+	if type(base) ~= "table" or type(value) ~= "table" then
+		return copy(value)
+	end
+	if getmetatable(base) == array_metatable or getmetatable(value) == array_metatable then
+		return copy(value)
+	end
+	-- An empty table is an object. Numeric keys identify a JSON array.
+	for key in base do
+		if type(key) ~= "string" then
+			return copy(value)
+		end
+	end
+	for key in value do
+		if type(key) ~= "string" then
+			return copy(value)
+		end
+	end
+	local result = copy(base)
+	for key, item in value do
+		result[key] = overlay(result[key], item)
+	end
+	return result
 end
 
 local M = {}
@@ -72,16 +105,29 @@ function M.get(name: string): Language?
 	return copy(languages[name])
 end
 
---- Changes language `name`, or adds it: each field given replaces that field.
+--- Changes language `name`, or adds it. Configuration objects merge recursively;
+--- other fields replace. Running servers keep their snapshot until restarted.
 --- What runs a program, its servers and formatter, runs within the limit of
 --- the plugin that set it, so it can do no more than that plugin may.
 function M.set(name: string, changes: Language)
 	local by = greed.plugin.caller()
 	local language: Language = table.clone(languages[name] or {} :: Language)
 	for key, value in changes :: { [string]: any } do
-		(language :: { [string]: any })[key] = copy(value)
+		local previous = (language :: { [string]: any })[key]
+		if key == "settings" or key == "initialization_options" or key == "capabilities" then
+			(language :: { [string]: any })[key] = overlay(previous, value)
+		else
+			(language :: { [string]: any })[key] = copy(value)
+		end
 	end
-	if changes.servers ~= nil or changes.roots ~= nil then
+	if
+		changes.servers ~= nil
+		or changes.roots ~= nil
+		or changes.reads_only ~= nil
+		or changes.settings ~= nil
+		or changes.initialization_options ~= nil
+		or changes.capabilities ~= nil
+	then
 		greed.plugin.within(by, apply_servers, name, language)
 	end
 	languages[name] = language

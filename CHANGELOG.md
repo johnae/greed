@@ -3,6 +3,12 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## Unreleased
+
+### New
+
+- lsp: configure server settings, initialization options and client capability overlays; language configuration objects merge recursively and running servers adopt changes on restart.
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights

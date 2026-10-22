@@ -16,6 +16,12 @@ export type Language = {
 	--- build the project or load its plugins (rust-analyzer, typescript)
 	--- don't: they wait until you trust it.
 	reads_only: boolean?,
+	--- Settings pushed after initialization and answered through workspace/configuration.
+	settings: { [string]: any }?,
+	--- Options passed to initialize, separate from settings.
+	initialization_options: any?,
+	--- Recursive overlay over Greed's client capabilities, applied on restart.
+	capabilities: { [string]: any }?,
 	--- What starts a line comment.
 	comment: string?,
 	--- The brackets and quotes typed in pairs, closers by their openers;
