@@ -160,9 +160,19 @@ pub(crate) struct PostReaction {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct File {
     #[serde(default)]
+    pub(crate) id: String,
+    #[serde(default)]
     pub(crate) name: String,
     #[serde(default)]
     pub(crate) mime_type: String,
+    #[serde(default)]
+    pub(crate) size: u64,
+    #[serde(default)]
+    pub(crate) width: u64,
+    #[serde(default)]
+    pub(crate) height: u64,
+    #[serde(default)]
+    pub(crate) has_preview_image: bool,
 }
 
 /// Posts as the server lists them: their ids newest first.
@@ -251,6 +261,37 @@ impl Api {
         body: &Value,
     ) -> Result<T, Error> {
         self.with_body(Method::PUT, path, body).await
+    }
+
+    /// The bytes `path` answers with, like a file's.
+    pub(crate) async fn bytes(&self, path: &str) -> Result<Vec<u8>, Error> {
+        let response = send(self.request(Method::GET, path)).await?;
+        let bytes = response.bytes().await.map_err(|e| Error::transport(&e))?;
+        Ok(bytes.to_vec())
+    }
+
+    /// Uploads the file `name` with `bytes` to channel `channel`, giving
+    /// its id there.
+    pub(crate) async fn upload(
+        &self,
+        channel: &str,
+        name: &str,
+        mime: &str,
+        bytes: Vec<u8>,
+    ) -> Result<String, Error> {
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name(name.to_string())
+            .mime_str(mime)
+            .map_err(|e| Error::transport(&e))?;
+        let form = reqwest::multipart::Form::new()
+            .text("channel_id", channel.to_string())
+            .part("files", part);
+        let response = send(self.request(Method::POST, "api/v4/files").multipart(form)).await?;
+        let uploaded: Value = response.json().await.map_err(|e| Error::transport(&e))?;
+        uploaded["file_infos"][0]["id"]
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| Error::new("the server took the file but gave no id".into()))
     }
 
     /// Deletes what `path` names; the answer doesn't matter.

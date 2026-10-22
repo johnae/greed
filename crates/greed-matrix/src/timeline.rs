@@ -84,7 +84,7 @@ impl Matrix {
 
     /// The timeline `params` names, opened if it isn't: a room's, its
     /// threads' replies left to theirs, or a thread's.
-    async fn timeline(&self, params: &RoomParams) -> Result<Arc<Timeline>, Failure> {
+    pub(crate) async fn timeline(&self, params: &RoomParams) -> Result<Arc<Timeline>, Failure> {
         if let Some(open) = self.timelines.borrow().get(&key(params)) {
             return Ok(open.timeline.clone());
         }
@@ -464,6 +464,7 @@ fn event_item(event: &EventTimelineItem, mine: &UserId) -> Item {
                     };
                     item.text = message.body().to_string();
                     item.edited = message.is_edited();
+                    item.media = crate::media::media_of(message.msgtype());
                 }
                 MsgLikeKind::Sticker(sticker) => {
                     item.kind = ItemKind::Sticker;

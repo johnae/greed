@@ -565,3 +565,50 @@ fn reactions_edits_deleting_typing_reading_and_presence() {
         call(&service, "read", params).await;
     });
 }
+
+#[test]
+fn sends_a_file_and_fetches_it_back() {
+    let Some(server) = Server::start("files", &[]) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let anna_rest = Rest::login(&server, "anna", "Secret-pass1").await;
+        let bea = Rest::login(&server, "bea", "Secret-pass1").await;
+        let direct = anna_rest
+            .post("channels/direct", &json!([anna_rest.id, bea.id]))
+            .await;
+        let room = direct["id"].as_str().unwrap().to_string();
+        let (notifier, mut notices) = rpc::notifier();
+        let service = Mattermost::new(server.dir.join("data"), notifier);
+        let anna = sign_in(&service, &server, "anna", "Secret-pass1").await;
+        let params = json!({ "account": anna, "room": room });
+        call(&service, "timeline", params).await;
+        let file = server.dir.join("notes.txt");
+        std::fs::write(&file, "tomatoes by the fence\n").unwrap();
+        call(
+            &service,
+            "upload",
+            json!({ "account": anna, "room": room, "path": file }),
+        )
+        .await;
+        let sent = heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "notes.txt").is_some_and(|it| it["kind"] == "file")
+        })
+        .await;
+        let item = item_with(&sent["changes"], "notes.txt").unwrap();
+        assert_eq!(item["media"]["name"], "notes.txt", "{item}");
+        let got = call(
+            &service,
+            "media.get",
+            json!({ "account": anna, "room": room, "event": item["event"] }),
+        )
+        .await;
+        let path = got["path"].as_str().unwrap();
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            "tomatoes by the fence\n"
+        );
+    });
+}

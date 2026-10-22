@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use greed_chat::protocol::{
-    Change, Item, ItemKind, MessageParams, Person, Reaction, RoomParams, SendParams, Sending,
+    Change, Item, ItemKind, Media, MessageParams, Person, Reaction, RoomParams, SendParams, Sending,
 };
 use greed_chat::rpc::Failure;
 use serde_json::{Value, json};
@@ -404,6 +404,7 @@ impl Mattermost {
             mine: post.user_id == me,
             sending: None,
             read_by: Vec::new(),
+            media: post.metadata.files.first().map(media_of),
         }
     }
 }
@@ -428,5 +429,18 @@ fn text(post: &Post) -> String {
         names.join(", ")
     } else {
         post.message.clone()
+    }
+}
+
+/// What a file attached to a post is.
+fn media_of(file: &crate::api::File) -> Media {
+    let pixels = |n: u64| (n > 0).then_some(n);
+    Media {
+        name: file.name.clone(),
+        mime: file.mime_type.clone(),
+        size: Some(file.size),
+        width: pixels(file.width),
+        height: pixels(file.height),
+        thumbnail: file.has_preview_image || file.mime_type.starts_with("image/"),
     }
 }

@@ -24,3 +24,18 @@ pub fn random(n: usize) -> String {
         hex
     })
 }
+
+/// `name` made safe to be a file's name, like a fetched file's.
+pub fn safe_file_name(name: &str) -> String {
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || ".-_".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    safe.trim_start_matches('.').chars().take(120).collect()
+}

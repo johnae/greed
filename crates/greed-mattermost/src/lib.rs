@@ -6,6 +6,7 @@
 mod api;
 mod live;
 mod login;
+mod media;
 mod rooms;
 mod timeline;
 
@@ -28,7 +29,6 @@ use api::{Api, User};
 
 /// The Mattermost service: the accounts signed in and the sign-ins going on.
 pub struct Mattermost {
-    #[allow(dead_code, reason = "a local store comes later")]
     data: PathBuf,
     notifier: Notifier,
     /// For the tasks it starts, which end when it's gone.
@@ -237,6 +237,11 @@ impl Service for Mattermost {
             "react" => self.react(&rpc::parse(params)?).await.map(|()| Value::Null),
             "read" => self.read(&rpc::parse(params)?).await.map(|()| Value::Null),
             "typing" => self.typing(&rpc::parse(params)?).map(|()| Value::Null),
+            "media.get" => self.media_get(&rpc::parse(params)?).await,
+            "upload" => self
+                .upload(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
             _ => Err(Failure::unknown(method)),
         }
     }

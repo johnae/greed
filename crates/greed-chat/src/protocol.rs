@@ -6,9 +6,9 @@
 //! Requests every service answers: `hello`, `accounts`, `restore`,
 //! `login.methods`, `login.start`, `login.answer`, `login.cancel`, `logout`,
 //! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`, `edit`,
-//! `redact`, `react`, `read`, `typing`. Notifications: `account.changed`,
-//! `account.secret`, `rooms.changed`, `timeline.changed`, `typing.changed`,
-//! `login.step`.
+//! `redact`, `react`, `read`, `typing`, `media.get`, `upload`.
+//! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
+//! `timeline.changed`, `typing.changed`, `login.step`.
 //!
 //! Rooms: `rooms {account}` answers the account's rooms, and
 //! `rooms.changed {account}` says to ask again. A timeline: `timeline
@@ -212,6 +212,9 @@ pub struct Item {
     /// Who has read up to here, as far as the service says (Matrix).
     #[serde(default)]
     pub read_by: Vec<Person>,
+    /// The file it carries, for a picture, a file and the like.
+    #[serde(default)]
+    pub media: Option<Media>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -240,6 +243,20 @@ pub enum ItemKind {
     ReadMarker,
     /// The room's very first item: nothing comes before it.
     Start,
+}
+
+/// A file a message carries: a picture, a video, a recording or any file.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Media {
+    pub name: String,
+    /// Its type, like `image/png`.
+    pub mime: String,
+    pub size: Option<u64>,
+    /// A picture's or video's size in pixels.
+    pub width: Option<u64>,
+    pub height: Option<u64>,
+    /// Whether there's a small picture of it (`media.get` with `thumbnail`).
+    pub thumbnail: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -341,6 +358,28 @@ pub struct RoomParams {
     pub thread: Option<String>,
     #[serde(default)]
     pub on: bool,
+}
+
+/// `media.get`'s parameters: the message's file, or with `thumbnail` a
+/// small picture of it, fetched to where it can be opened; answers `{path}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaParams {
+    pub account: String,
+    pub room: String,
+    pub event: String,
+    #[serde(default)]
+    pub thumbnail: bool,
+}
+
+/// `upload`'s parameters: the file at `path` sent to the room, or into
+/// `thread`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadParams {
+    pub account: String,
+    pub room: String,
+    pub path: String,
+    #[serde(default)]
+    pub thread: Option<String>,
 }
 
 /// `edit`, `redact` and `react`'s parameters: the message by its `event`,

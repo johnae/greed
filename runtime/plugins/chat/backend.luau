@@ -51,6 +51,16 @@ export type Room = {
 	presence: string?,
 }
 
+--- A file a message carries.
+export type Media = {
+	name: string,
+	mime: string,
+	size: number?,
+	width: number?,
+	height: number?,
+	thumbnail: boolean,
+}
+
 export type Item = {
 	id: string,
 	event: string?,
@@ -67,6 +77,8 @@ export type Item = {
 	sending: { state: string, why: string? }?,
 	--- Who has read up to here (Matrix).
 	read_by: { { id: string, name: string } }?,
+	--- The file it carries.
+	media: Media?,
 }
 
 --- What a service answers with: `request(method, params)` gives the result

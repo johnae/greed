@@ -8,6 +8,7 @@
 #![recursion_limit = "256"]
 
 mod login;
+mod media;
 mod rooms;
 mod timeline;
 
@@ -306,6 +307,11 @@ impl Matrix {
             "read" => self.read(&rpc::parse(params)?).await.map(|()| Value::Null),
             "typing" => self
                 .typing(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
+            "media.get" => self.media_get(&rpc::parse(params)?).await,
+            "upload" => self
+                .upload(&rpc::parse(params)?)
                 .await
                 .map(|()| Value::Null),
             _ => Err(Failure::unknown(method)),

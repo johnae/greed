@@ -112,25 +112,93 @@ function M.runs_on(text: string): boolean
 		or string.match(last, "^    ") ~= nil
 end
 
---- Whether `item` is a file, a picture or the like.
-function M.attached(item: backend.Item): boolean
-	local kind = item.kind
-	return kind == "image"
-		or kind == "file"
-		or kind == "video"
-		or kind == "audio"
-		or kind == "sticker"
-end
-
---- What an attachment shows as.
+--- What a file a message carries shows as: what kind, its name, how big.
 function M.attachment_spans(item: backend.Item): { core.UiSpan }
+	local media = item.media :: backend.Media
 	local icons =
 		{ image = "🖼", video = "🎞", audio = "🔊", sticker = "🖼", file = "📄" }
-	return { ui.span(`{icons[item.kind] or "📄"} {item.kind}`, "markdown.link") }
+	local spans = { ui.span(`{icons[item.kind] or "📄"} {media.name}`, "markdown.link") }
+	if media.size then
+		table.insert(spans, ui.span(`  {core.text.bytes(media.size)}`, "comment"))
+	end
+	table.insert(spans, ui.span("  enter opens", "comment"))
+	return spans
+end
+
+-- Asks `r`'s service `method`, with the room (and thread) and `extra`.
+local function ask(r: Open, method: string, extra: { [string]: any }?): (any, string?)
+	local service, id = backend.split(r.account)
+	local params: { [string]: any } = { account = id, room = r.room, thread = r.thread }
+	local more: { [string]: any } = extra or {}
+	for name, value in more do
+		params[name] = value
+	end
+	return backend.ask(service, method, params)
+end
+
+-- Small pictures of what messages carry, by "account room event": the
+-- image to draw once it's fetched and read, or none while it's fetched.
+local thumbnails: { [string]: { image: number? } } = {}
+
+-- How wide a picture in a room is drawn at most, in cells.
+local PICTURE_COLS = 40
+
+-- The picture `item` carries, drawn over the rows under its line, once
+-- it's here; until then nothing, and it's fetched.
+local function picture(r: Open, item: backend.Item): core.UiNode?
+	local media = item.media
+	if media == nil or not media.thumbnail or item.event == nil then
+		return nil
+	end
+	local key = `{r.account} {r.room} {item.event}`
+	local known = thumbnails[key]
+	if known == nil then
+		thumbnails[key] = {}
+		greed.spawn(function()
+			local got = ask(r, "media.get", { event = item.event, thumbnail = true })
+			local image = if got then greed.image.load(got.path) else nil
+			thumbnails[key] = { image = image }
+			if image and r.buffer:valid() then
+				r.view:soon()
+			end
+		end)
+		return nil
+	end
+	local image = known.image
+	if image == nil then
+		return nil
+	end
+	local natural_cols, natural_rows = greed.image.cells(image)
+	if natural_cols == nil or natural_rows == nil then
+		return nil
+	end
+	local scale = math.min(1, PICTURE_COLS / math.max(natural_cols, 1))
+	local cols = math.max(1, math.round(natural_cols * scale))
+	local rows = math.max(1, math.round(natural_rows * scale))
+	local mark: greed.Mark = {
+		from = 0,
+		to = 0,
+		style = "image.image",
+		image = { id = image, cols = cols, rows = rows },
+	}
+	local lines: { core.UiLine } = { { { text = "", marks = { mark } } } }
+	for _ = 2, rows do
+		table.insert(lines, { ui.span("", nil) })
+	end
+	return {
+		lay = function(_cells: number): { core.UiLine }
+			return table.clone(lines)
+		end,
+	}
 end
 
 --- How an item reads in a room.
-function M.item_node(item: backend.Item, previous: backend.Item?, in_thread: boolean): core.UiNode?
+function M.item_node(
+	item: backend.Item,
+	previous: backend.Item?,
+	in_thread: boolean,
+	shown: core.UiNode?
+): core.UiNode?
 	if item.kind == "day" then
 		return ui.line({
 			ui.span(`── {os.date("%A %d %B", item.at // 1000)} ──`, "comment"),
@@ -167,10 +235,16 @@ function M.item_node(item: backend.Item, previous: backend.Item?, in_thread: boo
 			)
 		)
 	end
-	if M.attached(item) then
+	local media = item.media
+	if media then
 		table.insert(parts, valued(ui.line(M.attachment_spans(item)), item, false))
+		if shown then
+			table.insert(parts, valued(shown, item, false))
+		end
 	end
-	if item.text ~= "" or item.kind ~= "message" then
+	-- A file's text is its name, shown already, unless it's a caption.
+	local caption = media == nil or item.text ~= media.name
+	if caption and (item.text ~= "" or item.kind ~= "message") then
 		table.insert(parts, valued(ui.text(said(item)), item, true))
 	end
 	local notes: { core.UiSpan } = {}
@@ -235,11 +309,12 @@ local function render(r: Open): core.UiNode
 		shown = shown and item.event ~= (first :: backend.Item).event
 	end
 	if shown then
-		table.insert(parts, M.item_node(first :: backend.Item, nil, true) :: core.UiNode)
+		local started = first :: backend.Item
+		table.insert(parts, M.item_node(started, nil, true, picture(r, started)) :: core.UiNode)
 		previous = first
 	end
 	for _, item in r.items do
-		local node = M.item_node(item, previous, r.thread ~= nil)
+		local node = M.item_node(item, previous, r.thread ~= nil, picture(r, item))
 		if node then
 			table.insert(parts, node)
 		end
@@ -292,17 +367,6 @@ function M.of(buffer: greed.Buffer): Open?
 		end
 	end
 	return nil
-end
-
--- Asks `r`'s service `method`, with the room (and thread) and `extra`.
-local function ask(r: Open, method: string, extra: { [string]: any }?): (any, string?)
-	local service, id = backend.split(r.account)
-	local params: { [string]: any } = { account = id, room = r.room, thread = r.thread }
-	local more: { [string]: any } = extra or {}
-	for name, value in more do
-		params[name] = value
-	end
-	return backend.ask(service, method, params)
 end
 
 -- Marks a room read, at most every couple of seconds, when it's shown.
@@ -630,6 +694,52 @@ greed.command({
 	end),
 })
 
+--- Opens the file `item` carries: a picture or a PDF in Greed, the rest in
+--- the program that opens it (a video or a recording in a player).
+function M.open_file(r: Open, item: backend.Item)
+	greed.echo("fetching it…")
+	greed.spawn(function()
+		local got, why = ask(r, "media.get", { event = item.event })
+		if got == nil then
+			greed.echo(`chat: {why}`)
+			return
+		end
+		greed.echo("")
+		core.file.open(got.path)
+	end)
+end
+
+greed.command({
+	name = "chat-enter",
+	doc = "In a room: open the file of the message under the cursor, or its thread",
+	run = on_message(function(r, item, ctx)
+		if item.media then
+			M.open_file(r, item)
+		elseif item.replies > 0 and r.thread == nil then
+			M.thread(r, item, ctx.view)
+		end
+	end),
+})
+
+greed.command({
+	name = "chat-attach",
+	doc = "In a room: send a file, picked by its path",
+	args = { { name = "path", doc = "the file", type = "string", optional = true } },
+	run = function(ctx)
+		local r = M.of(ctx.buffer)
+		if r == nil then
+			greed.echo("open a room first")
+			return
+		end
+		local path = ctx.values.path or core.prompt.ask("The file to send")
+		if path == nil or path == "" then
+			return
+		end
+		local _, why = ask(r, "upload", { path = core.project.resolve(path) })
+		greed.echo(if why then `chat: {why}` else "sent")
+	end,
+})
+
 greed.command({
 	name = "chat-older",
 	doc = "In a room: fetch older messages",
@@ -708,11 +818,21 @@ local ACTIONS: {
 		name: string,
 		doc: string,
 		mine: boolean?,
+		--- Only for a message that carries a file.
+		media: boolean?,
 		danger: boolean?,
 		run: (r: Open, item: backend.Item, view: greed.View) -> (),
 	}
 } =
 	{
+		{
+			name = "open",
+			doc = "Open its file: a picture in Greed, the rest in its program",
+			media = true,
+			run = function(r, item)
+				M.open_file(r, item)
+			end,
+		},
 		{
 			name = "reply",
 			doc = "Answer it with what's sent next",
@@ -767,7 +887,8 @@ for _, a in ACTIONS do
 		doc = a.doc,
 		danger = a.danger,
 		offers = function(target: core.Target): boolean
-			return not a.mine or target.value.item.mine
+			local item = target.value.item
+			return (not a.mine or item.mine) and (not a.media or item.media ~= nil)
 		end,
 		run = function(target: core.Target)
 			a.run(target.value.room, target.value.item, greed.view())
@@ -788,6 +909,7 @@ greed.keymap.bind({ kind = "chat-room" }, {
 -- Out of the box only, so esc while writing leaves writing as it does.
 greed.keymap.bind({ role = "command", kind = "chat-room" }, {
 	q = "chat-close",
+	enter = "chat-enter",
 	esc = "chat-close",
 })
 

@@ -625,3 +625,63 @@ async fn writing_and_reading(
     })
     .await;
 }
+
+/// A 1×1 PNG, red.
+const PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+    0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xdd, 0x8d, 0xb0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+    0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+#[test]
+fn sends_a_picture_and_fetches_it_back() {
+    let Some(server) = Tuwunel::start("media", None) else {
+        return;
+    };
+    run(async {
+        let (matrix, mut notices, _bea, room_id) = plans(&server).await;
+        let anna = "@anna:localhost";
+        let params = json!({ "account": anna, "room": room_id });
+        until(&matrix, "timeline", &params, |_| true).await;
+        let file = server.dir.join("beds.png");
+        std::fs::write(&file, PNG).unwrap();
+        let upload = json!({ "account": anna, "room": room_id, "path": file });
+        call(&matrix, "upload", upload).await;
+        let sent = heard(&mut notices, |n| {
+            n["params"]["changes"].as_array().is_some_and(|changes| {
+                changes.iter().any(|c| {
+                    c["item"]["kind"] == "image"
+                        && c["item"]["event"].is_string()
+                        && c["item"]["sending"].is_null()
+                })
+            })
+        })
+        .await;
+        let picture = sent["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["item"]["kind"] == "image")
+            .unwrap()["item"]
+            .clone();
+        assert_eq!(picture["media"]["name"], "beds.png", "{picture}");
+        assert_eq!(picture["media"]["mime"], "image/png");
+        let event = picture["event"].clone();
+        let got = call(
+            &matrix,
+            "media.get",
+            json!({ "account": anna, "room": room_id, "event": event }),
+        )
+        .await;
+        let path = got["path"].as_str().unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), PNG, "the same picture");
+        let small = json!({ "account": anna, "room": room_id, "event": event, "thumbnail": true });
+        let got = call(&matrix, "media.get", small).await;
+        assert!(
+            std::path::Path::new(got["path"].as_str().unwrap()).is_file(),
+            "{got}"
+        );
+    });
+}

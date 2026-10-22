@@ -2526,6 +2526,7 @@ dependencies = [
  "greed-chat",
  "matrix-sdk",
  "matrix-sdk-ui",
+ "mime_guess",
  "serde",
  "serde_json",
  "tokio",
@@ -2537,6 +2538,7 @@ version = "0.3.0"
 dependencies = [
  "futures-util",
  "greed-chat",
+ "mime_guess",
  "reqwest",
  "rustls",
  "rustls-platform-verifier",

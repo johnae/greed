@@ -420,3 +420,80 @@ test("alt-t opens the thread; what's sent there goes in it; q goes back", functi
 		greed.view():buffer():kind() .. " " .. greed.view():buffer():text()
 	)
 end)
+
+test("enter on a file fetches and opens it; :chat-attach sends one", function(t)
+	fake()
+	local dir = t:tempdir({ ["notes.txt"] = "tomatoes by the fence\n", ["beds.txt"] = "beans\n" })
+	backend.use("matrix", {
+		timeline = function(): any
+			return {
+				items = {
+					{
+						id = "5",
+						event = "$5",
+						kind = "file",
+						at = 1792660000000,
+						sender = { id = "@bea:x", name = "Bea" },
+						text = "notes.txt",
+						replies = 0,
+						reactions = {},
+						edited = false,
+						mine = false,
+						media = {
+							name = "notes.txt",
+							mime = "text/plain",
+							size = 22,
+							thumbnail = false,
+						},
+					},
+				},
+			}
+		end,
+		rooms = function(): any
+			return {
+				{
+					id = "!plans:x",
+					account = "@anna:x",
+					name = "Plans",
+					kind = "room",
+					unread = 0,
+					mentions = 0,
+					favourite = false,
+					muted = false,
+					encrypted = false,
+					active = 2,
+				},
+			}
+		end,
+		["media.get"] = function(params: any): any
+			table.insert(asked, { method = "media.get", params = params })
+			return { path = dir .. "/notes.txt" }
+		end,
+		upload = function(params: any)
+			table.insert(asked, { method = "upload", params = params })
+			return nil
+		end,
+		read = function()
+			return nil
+		end,
+	})
+	local room = on_message(t, "$5")
+	local text = room:text()
+	assert(string.find(text, "📄 notes.txt", 1, true), text)
+	assert(string.find(text, "22 B", 1, true), "its size: " .. text)
+	t:keys("enter")
+	t:wait(100)
+	local fetched = calls("media.get")
+	assert(#fetched == 1 and fetched[1].event == "$5", greed.json.encode(asked))
+	local shown = greed.view():buffer()
+	assert(
+		string.find(shown:text(), "tomatoes by the fence", 1, true),
+		"it opened: " .. shown:text()
+	)
+
+	greed.view():show(room)
+	t:run("chat-attach", { dir .. "/beds.txt" })
+	t:wait(50)
+	local sent = calls("upload")
+	assert(#sent == 1 and sent[1].path == dir .. "/beds.txt", greed.json.encode(asked))
+end)
