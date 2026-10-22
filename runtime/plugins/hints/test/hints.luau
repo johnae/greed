@@ -58,7 +58,7 @@ test("the hint is as wide as what it lists, at the bottom right", function(t)
 	local border = screen[#screen - 1]
 	local left = utf8.len(string.match(border, "^ *") :: string) :: number
 	assert(left > 80, "leaves the left free: " .. border)
-	assert(string.find(border, "┘$"), "reaches the right edge: " .. border)
+	assert(not string.find(border, "%s$"), "reaches the right edge: " .. border)
 	t:keys("esc")
 end)
 

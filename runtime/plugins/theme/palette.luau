@@ -84,7 +84,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.statusline.tab.number"] = { bg = p.yellow, fg = p.bg, bold = true },
 		["ui.statusline.host"] = { bg = p.cyan, fg = p.bg },
 		["ui.statusline.session"] = { bg = p.blue, fg = p.bg, bold = true },
-		["ui.float"] = { bg = p.bg_alt, fg = p.fg, gui = { rounded = true, shadow = true } },
+		["ui.float"] = { bg = p.bg_alt, fg = p.fg, rounded = true, gui = { shadow = true } },
 		["ui.float.border"] = { bg = p.bg_alt, fg = p.gutter },
 		["ui.float.title"] = { bg = p.bg_alt, fg = p.fg, bold = true },
 		["ui.float.hint"] = { bg = p.bg_alt, fg = p.comment },

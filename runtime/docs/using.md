@@ -251,14 +251,14 @@ Buttons, fields and choices light up as the mouse goes over them. With an
 input method (for Japanese, Chinese or Korean, say), what you're composing
 shows underlined at the cursor until it's typed.
 
-In the window, floats (pickers, prompts, hover info) have rounded corners
-and a shadow (lighter on a light background) unless the theme turns them
-off; terminals draw box lines. The window draws the round ends of the
+Floats (pickers, prompts, hover info) have rounded corners in both the
+terminal and window unless the theme turns them off. The window also draws
+a shadow (lighter on a light background). The window draws the round ends of the
 status line's pills itself, so they need no Powerline font. Square floats
 without shadows:
 
 ```luau
-greed.theme.set({ ["ui.float"] = { gui = { rounded = false, shadow = false } } })
+greed.theme.set({ ["ui.float"] = { rounded = false, gui = { shadow = false } } })
 ```
 
 ## Projects
@@ -2801,22 +2801,18 @@ their palette, with selections underlined.
 
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
-`["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
+`["ui.float"] = { bg = "black", gui = { bg = "#25282c" } }`.
+Set `["ui.float"] = { rounded = true }` for rounded corners in both clients,
+or `rounded = false` for square corners. Terminals use rounded line glyphs;
+the window draws a rounded outline. Built-in themes enable this common
+flag by default. Shadows remain window-only.
 
-Border styles (`ui.float`, `ui.panel.border`, `ui.pane.border`) accept
-`gradient = { from = "#00ced1", to = "#4169e1" }`. Both endpoints are required
-RGB `#rrggbb` colors; named, indexed and default colors are not endpoints.
-The foreground runs vertically over each border's full extent, even when
-clipped; a horizontal divider uses `from`. Without `gradient`, borders keep
-their solid foreground. The window interpolates rounded float outlines too.
-`["ui.float"] = { tui = { rounded = true } }` selects rounded terminal corner
-glyphs; it does not change the window's corner setting.
-
-These rendering fields are primarily for the window (`rounded` also works in terminals):
+These fields control rendering:
 
 | Field | |
 |---|---|
-| `rounded`, `shadow` | Rounded float outlines and soft shadows (`rounded` also selects rounded terminal corner glyphs) |
+| `rounded` | Common float corner setting: rounded terminal glyphs and window outlines |
+| `shadow` | Window-only soft float shadow |
 | `badge` | The style's background as a small box with rounded corners, like a key cap (motion hints and buttons use it) |
 | `hover` | Light up what's under the mouse (buttons, fields, choices, tabs) |
 | `checkbox = "empty"` or `"checked"` | A checkbox over the text (todo boxes use it) |

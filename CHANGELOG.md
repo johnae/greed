@@ -5,7 +5,7 @@ the repository's history.
 
 ## Unreleased
 
-- Borders: opt-in RGB vertical gradients for floats, panels and pane separators in the terminal and window, with optional rounded terminal float corners.
+- Floats: the common `ui.float.rounded` theme flag now selects rounded or square corners in both terminal and window clients; built-in themes enable rounded corners, while shadows remain window-only.
 
 ## 0.3.0 - 2026-10-22
 

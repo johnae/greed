@@ -22,7 +22,6 @@ use greed_core::render::{
 use greed_core::theme::{Color, Entry, Medium, Style, Theme};
 use greed_core::{CursorShape, ViewId};
 use greed_gui::Palette;
-use greed_gui::columns::Columns;
 use greed_gui::draw::{Chrome, Hovered, build, hoverable, hovered};
 use greed_gui::gpu::Gpu;
 use greed_gui::text::{Atlas, Fonts};
@@ -141,67 +140,6 @@ fn save(name: &str, size: (u32, u32), rgba: &[u8]) {
 fn pixel(rgba: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
     let i = ((y * width + x) * 4) as usize;
     [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
-}
-
-#[test]
-fn outline_shader_interpolates_full_geometry_before_clipping_and_keeps_solids() {
-    use greed_gui::draw::{Instance, ROUND, Scene};
-
-    let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
-        return;
-    };
-    let outline = Instance {
-        pos: [8.0, 8.0],
-        size: [48.0, 80.0],
-        uv: [8.0, 4.0, 8.0, 4.0],
-        color: [1.0, 0.0, 0.0, 1.0],
-        bottom_color: [0.0, 0.0, 1.0, 1.0],
-        kind: ROUND,
-        clip: [0.0, 0.0, 64.0, 48.0],
-    };
-    let mut scene = Scene {
-        background: [0.0, 0.0, 0.0, 1.0],
-        instances: vec![outline],
-        backgrounds: 1,
-        under: Vec::new(),
-        images: Vec::new(),
-        columns: Columns::default(),
-    };
-    let rgba = gpu.snapshot((64, 64), &scene);
-    for y in [20, 40] {
-        let actual = pixel(&rgba, 64, 9, y);
-        let fraction = (y as f32 + 0.5 - 8.0) / 80.0;
-        let expected = [
-            (255.0 * (1.0 - fraction)).round() as u8,
-            0,
-            (255.0 * fraction).round() as u8,
-        ];
-        for channel in 0..3 {
-            assert!(
-                actual[channel].abs_diff(expected[channel]) <= 2,
-                "{actual:?} at {y}"
-            );
-        }
-    }
-    assert_eq!(
-        pixel(&rgba, 64, 9, 50),
-        [0, 0, 0, 255],
-        "clip cuts the outline"
-    );
-    assert_eq!(
-        pixel(&rgba, 64, 8, 8),
-        [0, 0, 0, 255],
-        "rounded corner stays clear"
-    );
-    assert_eq!(
-        pixel(&rgba, 64, 32, 30),
-        [0, 0, 0, 255],
-        "outline has no fill"
-    );
-    scene.instances[0].bottom_color = outline.color;
-    let solid = gpu.snapshot((64, 64), &scene);
-    assert_eq!(pixel(&solid, 64, 9, 20), [255, 0, 0, 255]);
-    assert_eq!(pixel(&solid, 64, 9, 40), [255, 0, 0, 255]);
 }
 
 #[test]
@@ -594,6 +532,39 @@ fn a_pane_beside_scaled_text_draws_its_own_rows() {
 }
 
 #[test]
+fn the_common_float_corner_setting_controls_window_shapes() {
+    let mut frame = frame();
+    for rounded in [true, false] {
+        Arc::make_mut(&mut frame.theme).set(
+            "ui.float",
+            Entry {
+                style: Style {
+                    rounded: Some(rounded),
+                    ..Style::default()
+                },
+                gui: Style {
+                    shadow: Some(true),
+                    ..Style::default()
+                },
+                ..Entry::default()
+            },
+        );
+        let chrome = Chrome::of(&frame);
+        assert_eq!(chrome.rounded, rounded);
+        assert!(
+            chrome.shadows,
+            "the common corner flag leaves GUI shadows alone"
+        );
+        let grid = compose(&frame, Medium::Tui);
+        let float = frame.bordered_floats().next().unwrap();
+        assert_eq!(
+            grid[usize::from(float.y - 1)][usize::from(float.x - 1)].text,
+            if rounded { "╭" } else { "┌" }
+        );
+    }
+}
+
+#[test]
 fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     let Some(mut gpu) = Gpu::headless(wgpu::TextureFormat::Rgba8Unorm, 1024) else {
         return;
@@ -646,9 +617,12 @@ fn floats_are_rounded_boxes_with_shadows_and_pill_ends_are_half_circles() {
     theme.set(
         "ui.float",
         Entry {
+            style: Style {
+                rounded: Some(true),
+                ..Style::default()
+            },
             gui: Style {
                 bg: Some(Color::Rgb(0x41, 0x45, 0x59)),
-                rounded: Some(true),
                 shadow: Some(true),
                 ..Style::default()
             },
