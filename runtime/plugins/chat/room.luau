@@ -208,7 +208,11 @@ function M.item_node(
 	elseif item.kind == "start" then
 		return ui.line({ ui.span("The start of the room", "comment") })
 	elseif item.kind == "change" or item.kind == "call" then
-		local what = if item.kind == "call" then `{item.sender.name} started a call` else item.text
+		local what = if item.kind == "call"
+			then `{item.sender.name} started a call{if item.link
+				then " · enter joins it in the browser"
+				else ""}`
+			else item.text
 		return valued(ui.text(`{M.when(item.at)}  {what}`, "comment"), item, false)
 	end
 	local parts: { core.UiNode } = {}
@@ -713,7 +717,10 @@ greed.command({
 	name = "chat-enter",
 	doc = "In a room: open the file of the message under the cursor, or its thread",
 	run = on_message(function(r, item, ctx)
-		if item.media then
+		if item.kind == "call" and item.link then
+			-- Calls happen in the service's own app; Greed shows them start.
+			core.file.open_link(item.link)
+		elseif item.media then
 			M.open_file(r, item)
 		elseif item.replies > 0 and r.thread == nil then
 			M.thread(r, item, ctx.view)
@@ -820,6 +827,8 @@ local ACTIONS: {
 		mine: boolean?,
 		--- Only for a message that carries a file.
 		media: boolean?,
+		--- Only for a message with a link.
+		link: boolean?,
 		danger: boolean?,
 		run: (r: Open, item: backend.Item, view: greed.View) -> (),
 	}
@@ -871,6 +880,23 @@ local ACTIONS: {
 			end,
 		},
 		{
+			name = "browser",
+			doc = "Open it in the service's own app or web client (to join a call, say)",
+			link = true,
+			run = function(_r, item)
+				core.file.open_link(item.link :: string)
+			end,
+		},
+		{
+			name = "copy link",
+			doc = "Copy the link to it",
+			link = true,
+			run = function(_r, item)
+				greed.clipboard.set(item.link :: string)
+				greed.echo("copied the link")
+			end,
+		},
+		{
 			name = "copy",
 			doc = "Copy what it says",
 			run = function(_r, item)
@@ -888,7 +914,9 @@ for _, a in ACTIONS do
 		danger = a.danger,
 		offers = function(target: core.Target): boolean
 			local item = target.value.item
-			return (not a.mine or item.mine) and (not a.media or item.media ~= nil)
+			return (not a.mine or item.mine == true)
+				and (not a.media or item.media ~= nil)
+				and (not a.link or item.link ~= nil)
 		end,
 		run = function(target: core.Target)
 			a.run(target.value.room, target.value.item, greed.view())

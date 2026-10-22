@@ -48,6 +48,9 @@ client_id = "greed"
 client_secret = "secret"
 issuer_url = "{at}"
 callback_url = "http://127.0.0.1:{port}/_matrix/client/unstable/login/sso/callback/greed"
+
+[global.well_known]
+client = "http://127.0.0.1:{port}"
 "#
             )
         });
@@ -249,7 +252,7 @@ async fn start_sso(matrix: &Matrix, server: &Tuwunel) -> (Value, String) {
         .as_array()
         .unwrap()
         .iter()
-        .find(|m| m["kind"] == "browser")
+        .find(|m| m["id"].as_str().is_some_and(|id| id.starts_with("sso")))
         .unwrap_or_else(|| panic!("no single sign-on in {methods}"))
         .clone();
     assert_eq!(sso["name"], "Bea's provider", "{sso}");
@@ -515,6 +518,12 @@ fn reactions_edits_deleting_threads_typing_and_reading() {
         .await;
         let lunch = item_with(&lunch["changes"], "lunch?").unwrap();
         let lunch_event = lunch["event"].as_str().unwrap().to_string();
+        assert!(
+            lunch["link"]
+                .as_str()
+                .is_some_and(|link| link.starts_with("https://matrix.to/#/!")),
+            "{lunch}"
+        );
         let message = |event: &str| json!({ "account": anna, "room": room_id, "event": event });
 
         // A reaction, mine.
@@ -684,4 +693,88 @@ fn sends_a_picture_and_fetches_it_back() {
             "{got}"
         );
     });
+}
+
+#[test]
+fn signs_in_with_oauth_and_restores_that_session() {
+    let provider = oauth_provider();
+    let Some(server) = Tuwunel::start("oauth", Some(&provider)) else {
+        return;
+    };
+    let jar = server.dir.join("cookies");
+    let data = server.dir.join("data");
+    run(async {
+        let (notifier, _notices) = rpc::notifier();
+        let matrix = Matrix::new(data.clone(), notifier);
+        let methods = call(&matrix, "login.methods", json!({ "server": server.url() })).await;
+        let oauth = methods
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["id"] == "oauth")
+            .unwrap_or_else(|| panic!("no OAuth in {methods}"))
+            .clone();
+        let started = call(
+            &matrix,
+            "login.start",
+            json!({ "server": server.url(), "method": oauth }),
+        )
+        .await;
+        assert_eq!(started["step"]["step"], "open", "{started}");
+        let url = started["step"]["url"].as_str().unwrap().to_string();
+        let back = greed_chat::loopback::query(&url)["redirect_uri"].clone();
+        let link = tokio::task::spawn_blocking(move || browse(&url, &jar, Some(&back)))
+            .await
+            .unwrap();
+        // Tuwunel asks you to approve Greed first; the answer sends the
+        // browser on to Greed with the code.
+        let link = approve(&link, &server.dir.join("cookies"));
+        assert!(link.contains("code="), "{link}");
+        let done = call(
+            &matrix,
+            "login.answer",
+            json!({ "login": started["login"], "values": { "link": link } }),
+        )
+        .await;
+        assert_eq!(done["step"], "done", "{done}");
+        let id = done["account"]["id"].clone();
+        let secret = done["secret"].as_str().unwrap().to_string();
+        assert!(secret.contains("\"oauth\""), "an OAuth session: {secret}");
+        drop(matrix);
+
+        let (notifier, _notices) = rpc::notifier();
+        let matrix = Matrix::new(data, notifier);
+        let restored = call(&matrix, "restore", json!({ "secret": secret })).await;
+        assert_eq!(restored["id"], id, "{restored}");
+    });
+}
+
+/// Presses Approve on Tuwunel's page asking whether to let Greed sign in,
+/// at `page`, and gives the link its next page continues to: back to
+/// Greed, by Greed's own scheme.
+fn approve(page: &str, jar: &std::path::Path) -> String {
+    let query = greed_chat::loopback::query(page);
+    let action = page.split_once('?').map_or(page, |(path, _)| path);
+    let out = Command::new("curl")
+        .args(["-s", "-b"])
+        .arg(jar)
+        .args(["-XPOST", action])
+        .args([
+            "--data-urlencode",
+            &format!("oidc_req_id={}", query["oidc_req_id"]),
+        ])
+        .args([
+            "--data-urlencode",
+            &format!("loginToken={}", query["loginToken"]),
+        ])
+        .args(["--data-urlencode", "action=approve"])
+        .output()
+        .unwrap();
+    let html = String::from_utf8(out.stdout).unwrap();
+    let start = html
+        .find("href=\"io.github.johnae:")
+        .expect("a link back to Greed")
+        + 6;
+    let end = start + html[start..].find('"').unwrap();
+    html[start..end].replace("&amp;", "&")
 }

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use futures_util::{SinkExt, StreamExt};
 use greed_chat::protocol::{AccountState, RoomParams};
 use greed_chat::rpc::Failure;
-use rustls_platform_verifier::ConfigVerifierExt;
+use rustls_platform_verifier::BuilderVerifierExt;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
@@ -227,7 +227,13 @@ async fn listen(api: &Api) -> Result<Socket, String> {
         .parse()
         .map_err(|_| "the token isn't a header".to_string())?;
     request.headers_mut().insert("Authorization", bearer);
-    let tls = rustls::ClientConfig::with_platform_verifier()
+    // The crypto named, not left to rustls to pick: in a build with more than
+    // one of its backends (Greed's whole workspace) it can't.
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let tls = rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .and_then(BuilderVerifierExt::with_platform_verifier)
+        .map(rustls::ConfigBuilder::<rustls::ClientConfig, rustls::client::WantsClientCert>::with_no_client_auth)
         .map_err(|e| format!("setting up TLS: {e}"))?;
     let connector = Connector::Rustls(Arc::new(tls));
     let (socket, _) =

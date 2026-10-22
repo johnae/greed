@@ -24,11 +24,15 @@ use greed_chat::protocol::{
 };
 use greed_chat::rpc::{self, Failure, Notifier, Service};
 use matrix_sdk::authentication::matrix::MatrixSession;
+use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
 use matrix_sdk::{AuthSession, Client, ClientBuilder, SessionChange};
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
+
+/// How long a sync is waited for to stop, at signing out.
+const STOPPING: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// The Matrix service: the accounts signed in and the sign-ins going on.
 pub struct Matrix {
@@ -65,7 +69,22 @@ struct Store {
 struct Secret {
     homeserver: String,
     store: Store,
-    session: MatrixSession,
+    session: Session,
+}
+
+/// An account's session: signed in with Matrix's own sign-in (a password,
+/// single sign-on), or through OAuth with the client id it registered.
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "auth", rename_all = "snake_case")]
+enum Session {
+    Matrix {
+        session: MatrixSession,
+    },
+    #[serde(rename = "oauth")]
+    OAuth {
+        client_id: String,
+        user: UserSession,
+    },
 }
 
 impl Matrix {
@@ -99,8 +118,16 @@ impl Matrix {
             .build()
             .await
             .map_err(|e| Failure::new(format!("can't open the account's store: {e}")))?;
+        let session: AuthSession = match secret.session {
+            Session::Matrix { session } => session.into(),
+            Session::OAuth { client_id, user } => OAuthSession {
+                client_id: ClientId::new(client_id),
+                user,
+            }
+            .into(),
+        };
         client
-            .restore_session(secret.session)
+            .restore_session(session)
             .await
             .map_err(|e| Failure::new(format!("can't restore the session: {e}")))?;
         Ok(self.signed_in(client, secret.store).await)
@@ -192,8 +219,12 @@ impl Matrix {
         self.timelines
             .borrow_mut()
             .retain(|key, _| !key.starts_with(&format!("{id} ")));
-        // Its sync ends once the server has ended the session. Stopping it
-        // first (`SyncService::stop`) never finished against Tuwunel 1.9.
+        // Its sync is asked to stop, but not waited for long: stopping waits
+        // for the sync's request in flight, which a server may hold open.
+        // Ending the session below ends the sync anyway.
+        if let Some(sync) = &signed.sync {
+            let _ = tokio::time::timeout(STOPPING, sync.stop()).await;
+        }
         let done = signed.client.logout().await;
         drop(signed.client);
         self.forget(&signed.store);
@@ -230,8 +261,13 @@ impl Signed {
 
 /// The secret for `client`'s session in `store`, while it has one.
 fn secret(client: &Client, store: &Store) -> Option<String> {
-    let Some(AuthSession::Matrix(session)) = client.session() else {
-        return None;
+    let session = match client.session()? {
+        AuthSession::Matrix(session) => Session::Matrix { session },
+        AuthSession::OAuth(session) => Session::OAuth {
+            client_id: session.client_id.as_str().to_string(),
+            user: session.user,
+        },
+        _ => return None,
     };
     let secret = Secret {
         homeserver: client.homeserver().to_string(),

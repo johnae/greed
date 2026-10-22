@@ -51,7 +51,7 @@ const MAIL_SESSION: &str = "mail";
 /// The session `greed chat` shows, where the chat plugin lists your rooms.
 const CHAT_SESSION: &str = "chat";
 
-const USAGE: &str = "usage: greed [FILE]\n       greed --session NAME [FILE]\n                            show the session NAME, starting it if it isn't running\n       greed --new [FILE]   start another session for the project, with this greed\n       greed notes          Hoard: your notes, todos and today, in a session of their own\n       greed mail           your mail, searched and read, in a session of its own\n       greed chat           Matrix and Mattermost rooms, in a session of their own\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed check [PLUGIN_DIR...]\n                            a plugin's types, tests and warnings, as Greed checks it\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed ssh HOST ctl ARGS\n                            greed ctl on another machine, asking nothing (for programs)\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--run COMMAND] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --fresh              with greed [FILE] or greed ssh: a session started now opens nothing it had open before\n       --restore            with greed [FILE] or greed ssh: a session started now opens what it had open, even after it was quit\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed --session NAME [FILE]\n                            show the session NAME, starting it if it isn't running\n       greed --new [FILE]   start another session for the project, with this greed\n       greed notes          Hoard: your notes, todos and today, in a session of their own\n       greed mail           your mail, searched and read, in a session of its own\n       greed chat           Matrix and Mattermost rooms, in a session of their own\n       greed link URL       hand the chat session a link a sign-in in the browser ended on\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed check [PLUGIN_DIR...]\n                            a plugin's types, tests and warnings, as Greed checks it\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed ssh HOST ctl ARGS\n                            greed ctl on another machine, asking nothing (for programs)\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--run COMMAND] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --fresh              with greed [FILE] or greed ssh: a session started now opens nothing it had open before\n       --restore            with greed [FILE] or greed ssh: a session started now opens what it had open, even after it was quit\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -134,9 +134,8 @@ fn main() -> ExitCode {
             named.and_then(|name| session::bridge(name.as_deref(), file.map(Path::new)))
         }
         [cmd, host, rest @ ..] if cmd == "ssh" => ssh(host, rest, opening),
-        [cmd] if cmd == "notes" => edit(Some(NOTES_SESSION), None, opening),
-        [cmd] if cmd == "mail" => edit(Some(MAIL_SESSION), None, opening),
-        [cmd] if cmd == "chat" => edit(Some(CHAT_SESSION), None, opening),
+        [cmd] if let Some(session) = own_session(cmd) => edit(Some(session), None, opening),
+        [cmd, link] if cmd == "link" => chat_link(link),
         [cmd] if cmd == "repl" => repl(None),
         [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
         [cmd] if cmd == "test" => runtime::dir()
@@ -739,4 +738,27 @@ fn opening_flag(args: &mut Vec<String>) -> Opening {
     };
     args.retain(|arg| arg != "--terminal" && arg != "--shell");
     opening
+}
+
+/// Hands the chat session `link`, the one a sign-in in the browser ended
+/// on (`mattermost://…`), as a system URL handler does with `greed link`.
+fn chat_link(link: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let call = serde_json::json!({ "name": "chat-link", "args": [link] });
+    ctl::run(&[
+        "--session".into(),
+        CHAT_SESSION.into(),
+        "run_command".into(),
+        call.to_string(),
+    ])
+}
+
+/// The session `greed CMD` shows for the commands that have one of their
+/// own: notes, mail, chat.
+fn own_session(cmd: &str) -> Option<&'static str> {
+    match cmd {
+        "notes" => Some(NOTES_SESSION),
+        "mail" => Some(MAIL_SESSION),
+        "chat" => Some(CHAT_SESSION),
+        _ => None,
+    }
 }

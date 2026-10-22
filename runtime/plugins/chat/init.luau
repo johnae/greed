@@ -256,6 +256,10 @@ local function ask_fields(fields: { any }, why: string?): { [string]: string }?
 	return values
 end
 
+-- Sign-ins whose browser may come back by themselves, or whose link may
+-- come through `greed link`, by login id.
+local waiting: { [string]: string } = {}
+
 -- Goes through a sign-in's steps from `step` until it's done or given up.
 local function follow(service: string, login: string, first: any)
 	local step = first
@@ -275,9 +279,15 @@ local function follow(service: string, login: string, first: any)
 				`Signing in in the browser. If it doesn't come back by itself, paste {step.paste or "the link it ends on"}`
 			)
 			if link == nil or link == "" then
-				-- It may come back by itself; `login.step` says so.
+				-- It may come back by itself (`login.step`) or through
+				-- `greed link`.
 				return
 			end
+			if waiting[login] == nil then
+				-- The link came another way meanwhile.
+				return
+			end
+			waiting[login] = nil
 			answer = { link = link }
 		elseif kind == "code" then
 			greed.echo(`Go to {step.url} and enter {step.code}`)
@@ -303,9 +313,6 @@ local function follow(service: string, login: string, first: any)
 	end
 end
 
--- Sign-ins whose browser may come back by themselves, by login id.
-local waiting: { [string]: string } = {}
-
 backend.on_step(function(login: string, step: any)
 	local service = waiting[login]
 	if service then
@@ -315,6 +322,55 @@ backend.on_step(function(login: string, step: any)
 		end)
 	end
 end)
+
+--- Hands `link`, the one a browser sign-in ended on, to the sign-in
+--- waiting for it: a `mattermost:` link to Mattermost's, one of Greed's own
+--- (`io.github.johnae:`, as OAuth may end on) to Matrix's, any other to the
+--- first waiting. Whether one took it.
+function M.link(link: string): boolean
+	local wanted = if string.match(link, "^mattermost:")
+		then "mattermost"
+		elseif string.match(link, "^io%.github%.johnae:") then "matrix"
+		else nil
+	for login, service in waiting do
+		if wanted == nil or service == wanted then
+			waiting[login] = nil
+			greed.spawn(function()
+				local values = { link = link }
+				local step, why =
+					backend.ask(service, "login.answer", { login = login, values = values })
+				if step then
+					follow(service, login, step)
+				else
+					greed.echo(`chat: {why}`)
+				end
+			end)
+			return true
+		end
+	end
+	return false
+end
+
+greed.command({
+	name = "chat-link",
+	doc = "Finish signing in with the link the browser ended on (what `greed link` hands over)",
+	args = { { name = "link", doc = "the link", type = "string" } },
+	run = function(ctx)
+		if not M.link(ctx.values.link) then
+			greed.echo("no sign-in is waiting for a link: :chat-login starts one")
+		end
+	end,
+})
+
+-- A mattermost: link, or one of Greed's own, opened in Greed as a sign-in
+-- in the browser ends on, finishes signing in.
+for _, scheme in { "mattermost", "io.github.johnae" } do
+	core.file.link_scheme(scheme, function(uri: string)
+		if not M.link(uri) then
+			greed.echo("no sign-in is waiting for that link")
+		end
+	end)
+end
 
 greed.command({
 	name = "chat-login",

@@ -445,6 +445,13 @@ fn lists_channels_and_keeps_a_timeline() {
         assert_eq!(item["sender"]["name"], "bea");
         assert_eq!(item["mine"], false);
         assert_eq!(item["event"], lunch["id"]);
+        assert!(
+            item["link"]
+                .as_str()
+                .is_some_and(|link| link
+                    .ends_with(&format!("/_redirect/pl/{}", lunch["id"].as_str().unwrap()))),
+            "{item}"
+        );
 
         call(
             &service,

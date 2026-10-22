@@ -79,6 +79,8 @@ export type Item = {
 	read_by: { { id: string, name: string } }?,
 	--- The file it carries.
 	media: Media?,
+	--- Where it opens in the service's own app, as for joining a call.
+	link: string?,
 }
 
 --- What a service answers with: `request(method, params)` gives the result

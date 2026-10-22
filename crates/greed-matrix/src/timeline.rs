@@ -121,12 +121,12 @@ impl Matrix {
             params.room.clone(),
             params.thread.clone(),
         );
-        let mine = room_owner(&timeline);
+        let here = Here::new(&timeline, &params.room);
         let (items, mut diffs) = timeline.subscribe().await;
         let mut len = items.len();
         let forwarding = tokio::task::spawn_local(async move {
             while let Some(batch) = diffs.next().await {
-                let changes = changes(&mut len, batch, &mine);
+                let changes = changes(&mut len, batch, &here);
                 let Some(me) = me.upgrade() else { break };
                 let params = json!({
                     "account": account,
@@ -193,12 +193,12 @@ impl Matrix {
     /// Opens a room's timeline: `{items}`, then `timeline.changed`.
     pub(crate) async fn open_timeline(&self, params: &RoomParams) -> Result<Value, Failure> {
         let timeline = self.timeline(params).await?;
-        let mine = room_owner(&timeline);
+        let here = Here::new(&timeline, &params.room);
         let items: Vec<Item> = timeline
             .items()
             .await
             .iter()
-            .map(|it| item(it, &mine))
+            .map(|it| item(it, &here))
             .collect();
         Ok(json!({ "items": items }))
     }
@@ -307,18 +307,25 @@ impl Matrix {
     }
 }
 
-/// Who's signed in to the timeline's room: whose reactions are "mine".
-fn room_owner(timeline: &Timeline) -> OwnedUserId {
-    timeline.room().own_user_id().to_owned()
+/// Where a timeline's items are: who's signed in (whose reactions are
+/// "mine") and the room.
+struct Here {
+    me: OwnedUserId,
+    room: String,
+}
+
+impl Here {
+    fn new(timeline: &Timeline, room: &str) -> Self {
+        Here {
+            me: timeline.room().own_user_id().to_owned(),
+            room: room.to_string(),
+        }
+    }
 }
 
 /// A batch of the timeline's diffs as the protocol's changes, keeping
 /// `len` the number of items the client has.
-fn changes(
-    len: &mut usize,
-    batch: Vec<VectorDiff<Arc<TimelineItem>>>,
-    mine: &UserId,
-) -> Vec<Change> {
+fn changes(len: &mut usize, batch: Vec<VectorDiff<Arc<TimelineItem>>>, here: &Here) -> Vec<Change> {
     let mut changes = Vec::new();
     for diff in batch {
         match diff {
@@ -326,7 +333,7 @@ fn changes(
                 for value in values {
                     changes.push(Change::Insert {
                         at: *len,
-                        item: item(&value, mine),
+                        item: item(&value, here),
                     });
                     *len += 1;
                 }
@@ -338,14 +345,14 @@ fn changes(
             VectorDiff::PushFront { value } => {
                 changes.push(Change::Insert {
                     at: 0,
-                    item: item(&value, mine),
+                    item: item(&value, here),
                 });
                 *len += 1;
             }
             VectorDiff::PushBack { value } => {
                 changes.push(Change::Insert {
                     at: *len,
-                    item: item(&value, mine),
+                    item: item(&value, here),
                 });
                 *len += 1;
             }
@@ -360,13 +367,13 @@ fn changes(
             VectorDiff::Insert { index, value } => {
                 changes.push(Change::Insert {
                     at: index,
-                    item: item(&value, mine),
+                    item: item(&value, here),
                 });
                 *len += 1;
             }
             VectorDiff::Set { index, value } => changes.push(Change::Set {
                 at: index,
-                item: item(&value, mine),
+                item: item(&value, here),
             }),
             VectorDiff::Remove { index } => {
                 changes.push(Change::Remove { at: index });
@@ -379,7 +386,7 @@ fn changes(
             VectorDiff::Reset { values } => {
                 *len = values.len();
                 changes.push(Change::Reset {
-                    items: values.iter().map(|value| item(value, mine)).collect(),
+                    items: values.iter().map(|value| item(value, here)).collect(),
                 });
             }
         }
@@ -387,8 +394,8 @@ fn changes(
     changes
 }
 
-/// A timeline item as the client shows it; `mine` is the user signed in.
-fn item(it: &TimelineItem, mine: &UserId) -> Item {
+/// A timeline item as the client shows it, `here`.
+fn item(it: &TimelineItem, here: &Here) -> Item {
     let id = it.unique_id().0.clone();
     match it.kind() {
         TimelineItemKind::Virtual(virtual_item) => {
@@ -406,12 +413,12 @@ fn item(it: &TimelineItem, mine: &UserId) -> Item {
         }
         TimelineItemKind::Event(event) => Item {
             id,
-            ..event_item(event, mine)
+            ..event_item(event, here)
         },
     }
 }
 
-fn event_item(event: &EventTimelineItem, mine: &UserId) -> Item {
+fn event_item(event: &EventTimelineItem, here: &Here) -> Item {
     let sender = event.sender();
     let (name, avatar) = match event.sender_profile() {
         TimelineDetails::Ready(profile) => (
@@ -429,7 +436,10 @@ fn event_item(event: &EventTimelineItem, mine: &UserId) -> Item {
         },
         at: i64::from(event.timestamp().0),
         mine: event.is_own(),
-        read_by: readers(event, mine, sender),
+        read_by: readers(event, &here.me, sender),
+        link: event
+            .event_id()
+            .map(|id| format!("https://matrix.to/#/{}/{id}", here.room)),
         sending: sending(event),
         ..Item::default()
     };
@@ -447,7 +457,7 @@ fn event_item(event: &EventTimelineItem, mine: &UserId) -> Item {
                 .map(|(key, senders)| Reaction {
                     key: key.clone(),
                     count: senders.len() as u64,
-                    mine: senders.contains_key(mine),
+                    mine: senders.contains_key(&here.me),
                 })
                 .collect();
             match &like.kind {

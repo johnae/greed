@@ -497,3 +497,50 @@ test("enter on a file fetches and opens it; :chat-attach sends one", function(t)
 	local sent = calls("upload")
 	assert(#sent == 1 and sent[1].path == dir .. "/beds.txt", greed.json.encode(asked))
 end)
+
+test("a browser sign-in finishes with the link :chat-link hands over", function(t)
+	backend.reset()
+	local answered: any = nil
+	backend.use("mattermost", {
+		["login.methods"] = function(): any
+			return { { kind = "browser", id = "openid", name = "Keycloak" } }
+		end,
+		["login.start"] = function(): any
+			return {
+				login = "l2",
+				step = {
+					step = "open",
+					url = "https://mm.example.com/oauth/openid/login",
+					paste = "the link",
+				},
+			}
+		end,
+		["login.answer"] = function(params: any): any
+			answered = params
+			return {
+				step = "done",
+				account = {
+					id = "u1@mm.example.com",
+					server = "https://mm.example.com",
+					state = { state = "syncing" },
+				},
+				secret = "token",
+			}
+		end,
+	})
+	greed.option.set("link-opener", "true")
+	t:buffer("|x")
+	t:run("chat-login")
+	t:type("mattermost")
+	t:keys("enter")
+	t:type("mm.example.com")
+	t:keys("enter")
+	t:keys("enter") -- in the browser
+	t:wait(50)
+	local link = "mattermost://mm.example.com/login/desktop?client_token=a&server_token=b"
+	t:run("chat-link", { link })
+	t:wait(100)
+	assert(answered and answered.values.link == link, greed.json.encode(answered))
+	assert(backend.accounts["mattermost u1@mm.example.com"], "signed in")
+	t:keys("esc") -- the paste prompt, not needed now
+end)

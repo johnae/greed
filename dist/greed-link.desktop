@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Greed (links)
+Comment=Hands sign-in links from the browser to Greed's chat
+Exec=greed link %u
+Icon=greed
+Terminal=false
+NoDisplay=true
+MimeType=x-scheme-handler/mattermost;x-scheme-handler/io.github.johnae;

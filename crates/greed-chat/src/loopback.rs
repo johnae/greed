@@ -86,6 +86,8 @@ mod tests {
         let local = query(" http://127.0.0.1:4000/?loginToken=xyz\n");
         assert_eq!(local["loginToken"], "xyz");
         assert_eq!(query("?code=1&state=2")["state"], "2");
+        let own = query("io.github.johnae:/greed?state=s&code=c");
+        assert_eq!(own.get("code").map(String::as_str), Some("c"), "{own:?}");
     }
 
     #[test]

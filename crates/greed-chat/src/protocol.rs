@@ -215,6 +215,10 @@ pub struct Item {
     /// The file it carries, for a picture, a file and the like.
     #[serde(default)]
     pub media: Option<Media>,
+    /// Where the message opens in the service's own app or web client, as
+    /// for joining a call there.
+    #[serde(default)]
+    pub link: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

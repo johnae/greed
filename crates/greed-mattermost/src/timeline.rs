@@ -374,6 +374,8 @@ impl Mattermost {
         }
         let kind = if post.delete_at > 0 {
             ItemKind::Deleted
+        } else if post.kind == "custom_calls" {
+            ItemKind::Call
         } else if post.kind.starts_with("system_") {
             ItemKind::Change
         } else if let Some(file) = post.metadata.files.first() {
@@ -405,6 +407,11 @@ impl Mattermost {
             sending: None,
             read_by: Vec::new(),
             media: post.metadata.files.first().map(media_of),
+            // The server sends a permalink on to the post's team and channel.
+            link: self
+                .signed(account)
+                .ok()
+                .map(|(api, _)| format!("{}/_redirect/pl/{}", api.address(), post.id)),
         }
     }
 }
