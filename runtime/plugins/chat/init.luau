@@ -11,6 +11,7 @@ local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local backend = require("@self/backend")
+local markdown = require("@markdown")
 
 local ui = core.ui
 
@@ -201,19 +202,37 @@ function M.when(at: number): string
 	return os.date("%b %d %H:%M", seconds) :: string
 end
 
--- `node`'s lines, each standing for `value`.
-local function valued(node: core.UiNode, value: any): core.UiNode
+-- What a line of a room stands for: its item, and whether it's the
+-- message's text (Markdown) rather than who sent it, when, and the like.
+export type Line = { item: backend.Item, body: boolean }
+
+-- `node`'s lines, each standing for `item`; `body` when they're its text.
+local function valued(node: core.UiNode, item: backend.Item, body: boolean): core.UiNode
+	local value: Line = { item = item, body = body }
 	return {
 		lay = function(cells: number): { core.UiLine }
 			local lines = node.lay(cells)
 			for _, line in lines do
-				if line[1] then
-					line[1].value = value
+				if not line[1] then
+					table.insert(line, ui.span("", nil))
 				end
+				line[1].value = value
 			end
 			return lines
 		end,
 	}
+end
+
+-- What a message that isn't text says instead, or its text.
+local function said(item: backend.Item): string
+	if item.kind == "deleted" then
+		return "*(deleted)*"
+	elseif item.kind == "unreadable" then
+		return "*(can't be read here yet: its key hasn't come)*"
+	elseif item.kind == "emote" then
+		return `*{item.sender.name}* {item.text}`
+	end
+	return item.text
 end
 
 --- How an item reads in a room.
@@ -227,47 +246,36 @@ function M.item_node(item: backend.Item, previous: backend.Item?): core.UiNode?
 	elseif item.kind == "start" then
 		return ui.line({ ui.span("The start of the room", "comment") })
 	elseif item.kind == "change" or item.kind == "call" then
-		local said = if item.kind == "call" then `{item.sender.name} called` else item.text
-		return valued(ui.text(`{M.when(item.at)}  {said}`, "comment"), item)
+		local what = if item.kind == "call" then `{item.sender.name} started a call` else item.text
+		return valued(ui.text(`{M.when(item.at)}  {what}`, "comment"), item, false)
 	end
 	local parts: { core.UiNode } = {}
 	-- The sender over a run of their messages, as chat clients show it.
 	local same = previous ~= nil
+		and M.is_message(previous)
 		and previous.sender.id == item.sender.id
-		and previous.kind ~= "day"
 		and item.at - previous.at < 5 * 60 * 1000
-	if not same then
-		table.insert(
-			parts,
-			ui.line({
-				ui.span(item.sender.name, if item.mine then "function" else "keyword"),
-				ui.span(`  {M.when(item.at)}`, "comment"),
-			})
-		)
+	-- A blank line between people, and after Markdown that would run on
+	-- into what comes next (a quote, a list, code).
+	if previous and (not same or M.runs_on(said(previous))) then
+		table.insert(parts, ui.gap())
 	end
-	local text = item.text
-	if item.kind == "deleted" then
-		text = "(deleted)"
-	elseif item.kind == "unreadable" then
-		text = "(can't be read here yet: its key hasn't come)"
-	elseif
-		item.kind == "image"
-		or item.kind == "file"
-		or item.kind == "video"
-		or item.kind == "audio"
-	then
-		text = `[{item.kind}] {text}`
-	elseif item.kind == "emote" then
-		text = `* {item.sender.name} {text}`
+	if not same or item.thread then
+		local head = {
+			ui.span(item.sender.name, if item.mine then "function" else "keyword"),
+			ui.span(`  {M.when(item.at)}`, "comment"),
+		}
+		if item.thread then
+			table.insert(head, ui.span("  ↳ in a thread", "comment"))
+		end
+		table.insert(parts, valued(ui.line(head), item, false))
 	end
-	if item.thread then
-		text = `↳ {text}`
+	if M.attached(item) then
+		table.insert(parts, valued(ui.line(M.attachment_spans(item)), item, false))
 	end
-	if item.edited then
-		text ..= " (edited)"
+	if item.text ~= "" or item.kind ~= "message" then
+		table.insert(parts, valued(ui.text(said(item)), item, true))
 	end
-	local style = if item.kind == "deleted" or item.kind == "unreadable" then "comment" else nil
-	table.insert(parts, ui.text(text, style))
 	local notes: { core.UiSpan } = {}
 	for _, reaction in item.reactions do
 		table.insert(
@@ -277,6 +285,9 @@ function M.item_node(item: backend.Item, previous: backend.Item?): core.UiNode?
 				if reaction.mine then "function" else "comment"
 			)
 		)
+	end
+	if item.edited then
+		table.insert(notes, ui.span(" (edited)", "comment"))
 	end
 	if item.replies > 0 then
 		table.insert(notes, ui.span(` {item.replies} replies`, "comment"))
@@ -292,9 +303,52 @@ function M.item_node(item: backend.Item, previous: backend.Item?): core.UiNode?
 		)
 	end
 	if #notes > 0 then
-		table.insert(parts, ui.line(notes))
+		table.insert(parts, valued(ui.line(notes), item, false))
 	end
-	return valued(ui.column(parts), item)
+	return ui.column(parts)
+end
+
+--- Whether `item` is something someone wrote or sent, rather than a day
+--- starting or the room changing.
+function M.is_message(item: backend.Item): boolean
+	local kind = item.kind
+	return kind ~= "day"
+		and kind ~= "read_marker"
+		and kind ~= "start"
+		and kind ~= "change"
+		and kind ~= "call"
+end
+
+--- Whether Markdown `text` ends in what the next line would join: a
+--- quote, a list's item, indented code.
+function M.runs_on(text: string): boolean
+	local last = string.match(text, "([^\n]*)%s*$") or ""
+	return string.match(last, "^%s*>") ~= nil
+		or string.match(last, "^%s*[-*+] ") ~= nil
+		or string.match(last, "^%s*%d+[.)] ") ~= nil
+		or string.match(last, "^    ") ~= nil
+end
+
+--- Whether `item` is a file, a picture or the like.
+function M.attached(item: backend.Item): boolean
+	local kind = item.kind
+	return kind == "image"
+		or kind == "file"
+		or kind == "video"
+		or kind == "audio"
+		or kind == "sticker"
+end
+
+--- What an attachment shows as.
+function M.attachment_spans(item: backend.Item): { core.UiSpan }
+	local icon = ({
+		image = "🖼",
+		video = "🎞",
+		audio = "🔊",
+		sticker = "🖼",
+		file = "📄",
+	})[item.kind] or "📄"
+	return { ui.span(`{icon} {item.kind}`, "markdown.link") }
 end
 
 local function render_room(r: Open): core.UiNode
@@ -346,6 +400,16 @@ function M.apply(items: { backend.Item }, changes: { any })
 	end
 end
 
+-- The view of the open room in `buffer`, if it's one.
+local function open_view(buffer: greed.Buffer): core.UiView?
+	for _, r in open do
+		if r.buffer == buffer then
+			return r.view
+		end
+	end
+	return nil
+end
+
 --- Opens room `room` of account `key` in `window`: its messages and the
 --- box to write in.
 function M.room(key: string, room: backend.Room, window: greed.View?)
@@ -357,8 +421,23 @@ function M.room(key: string, room: backend.Room, window: greed.View?)
 		target:set_cursor(already.buffer:len())
 		return
 	end
-	local buffer = greed.create_buffer("chat-room", "")
+	local buffer = greed.create_buffer("chat-room", "", { language = "markdown" })
 	buffer:set_line_numbers(false)
+	-- Only what people wrote is Markdown; who, when and the rest show as
+	-- they are. What you write in the box is Markdown too.
+	markdown.plain(
+		buffer,
+		setmetatable({}, {
+			__index = function(_, line: number): boolean?
+				local shown = open_view(buffer)
+				if shown == nil or line >= buffer:line_of(shown:input_start()) then
+					return nil
+				end
+				local value: Line? = shown:value_on(line)
+				return not (value and value.body)
+			end,
+		}) :: any
+	)
 	local r: Open
 	local view = ui.mount(buffer, function()
 		return render_room(r)
@@ -505,7 +584,8 @@ greed.command({
 		if r == nil then
 			return
 		end
-		local item = r.view:value_at(ctx.view:cursor())
+		local line: Line? = r.view:value_at(ctx.view:cursor())
+		local item = line and line.item
 		if item and item.event then
 			r.replying = item
 			r.view:redraw()

@@ -13,8 +13,9 @@ use matrix_sdk::ruma::{EventId, OwnedUserId, RoomId, UserId};
 use matrix_sdk_ui::Timeline;
 use matrix_sdk_ui::eyeball_im::VectorDiff;
 use matrix_sdk_ui::timeline::{
-    EventSendState, EventTimelineItem, MsgLikeKind, TimelineBuilder, TimelineDetails, TimelineItem,
-    TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, TimelineBuilder,
+    TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
+    default_event_filter,
 };
 use serde_json::{Value, json};
 use tokio::task::AbortHandle;
@@ -23,6 +24,18 @@ use crate::Matrix;
 
 /// How many older events `timeline.back` asks the server for.
 const PAGE: u16 = 50;
+
+/// How a room is set up, which Matrix clients don't show among its
+/// messages.
+const HIDDEN: &[&str] = &[
+    "m.room.create",
+    "m.room.power_levels",
+    "m.room.join_rules",
+    "m.room.history_visibility",
+    "m.room.guest_access",
+    "m.room.server_acl",
+    "m.room.canonical_alias",
+];
 
 /// A timeline the client has open, and the task telling it what changes.
 pub(crate) struct Open {
@@ -62,10 +75,21 @@ impl Matrix {
         }
         let room = self.room(params)?;
         let timeline = TimelineBuilder::new(&room)
+            .event_filter(|event, rules| {
+                default_event_filter(event, rules)
+                    && !HIDDEN.contains(&event.event_type().to_string().as_str())
+            })
             .build()
             .await
             .map_err(|e| Failure::new(format!("can't open the room: {e}")))?;
         let timeline = Arc::new(timeline);
+        // A room comes from the sync with its latest event only: some
+        // history first, before what changes is followed, so the first
+        // answer has it.
+        timeline
+            .paginate_backwards(PAGE)
+            .await
+            .map_err(|e| Failure::new(format!("can't fetch the room's messages: {e}")))?;
         let me = self.me.clone();
         let (account, room) = (params.account.clone(), params.room.clone());
         let mine = room_owner(&timeline);
@@ -320,10 +344,9 @@ fn event_item(event: &EventTimelineItem, mine: &UserId) -> Item {
             let who = change
                 .display_name()
                 .unwrap_or_else(|| change.user_id().to_string());
-            let what = change.change().map_or_else(
-                || "changed".to_string(),
-                |change| format!("{change:?}").to_lowercase(),
-            );
+            let what = change
+                .change()
+                .map_or("changed their membership", membership);
             item.text = format!("{who} {what}");
         }
         TimelineItemContent::ProfileChange(_) => {
@@ -332,7 +355,8 @@ fn event_item(event: &EventTimelineItem, mine: &UserId) -> Item {
         }
         TimelineItemContent::OtherState(state) => {
             item.kind = ItemKind::Change;
-            item.text = state.content().event_type().to_string();
+            let what = state_change(&state.content().event_type().to_string());
+            item.text = format!("{} {what}", item.sender.name);
         }
         TimelineItemContent::CallInvite | TimelineItemContent::RtcNotification { .. } => {
             item.kind = ItemKind::Call;
@@ -341,4 +365,37 @@ fn event_item(event: &EventTimelineItem, mine: &UserId) -> Item {
         | TimelineItemContent::FailedToParseState { .. } => item.kind = ItemKind::Unreadable,
     }
     item
+}
+
+/// A change to someone's membership of a room, in words.
+fn membership(change: MembershipChange) -> &'static str {
+    match change {
+        MembershipChange::Joined | MembershipChange::InvitationAccepted => "joined",
+        MembershipChange::Left => "left",
+        MembershipChange::Banned | MembershipChange::KickedAndBanned => "was banned",
+        MembershipChange::Unbanned => "was let back in",
+        MembershipChange::Kicked => "was removed",
+        MembershipChange::Invited => "was invited",
+        MembershipChange::InvitationRejected => "turned down the invite",
+        MembershipChange::InvitationRevoked => "was uninvited",
+        MembershipChange::Knocked => "asked to join",
+        MembershipChange::KnockAccepted => "was let in",
+        MembershipChange::KnockRetracted => "stopped asking to join",
+        MembershipChange::KnockDenied => "wasn't let in",
+        _ => "changed their membership",
+    }
+}
+
+/// A change to a room's state, in words, by its event type.
+fn state_change(event_type: &str) -> String {
+    match event_type {
+        "m.room.name" => "named the room".into(),
+        "m.room.topic" => "changed the topic".into(),
+        "m.room.avatar" => "changed the room's picture".into(),
+        "m.room.encryption" => "turned on encryption".into(),
+        "m.room.pinned_events" => "changed the pinned messages".into(),
+        "m.room.tombstone" => "moved the room to a new one".into(),
+        "m.space.child" | "m.space.parent" => "changed the space".into(),
+        other => format!("changed {other}"),
+    }
 }
