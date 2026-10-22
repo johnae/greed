@@ -309,7 +309,10 @@ pub const EVENTS: &[&str] = &[
     "editor.started",
     "file.changed",
     "keys.pending",
+    "lsp.attached",
     "lsp.diagnostics",
+    "lsp.ready",
+    "message",
     "mode.changed",
     "mouse",
     "option.changed",
@@ -318,6 +321,7 @@ pub const EVENTS: &[&str] = &[
     "plugin.unloaded",
     "selection.changed",
     "ssh_agent.use",
+    "syntax.updated",
     "terminal.exited",
     "terminal.output",
     "view.closed",
@@ -362,6 +366,44 @@ pub(super) fn emit(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
 pub(super) fn emit_for_client(lua: &Lua, event: &str, payload: &Table) -> LuaResult<()> {
     payload.set("client", state(lua).editor.client().0)?;
     emit(lua, event, payload)
+}
+
+/// Delivers a whole message without holding an editor borrow. The optional
+/// client is its actual recipient, not the client that originally echoed.
+pub(super) fn emit_message(
+    lua: &Lua,
+    client: Option<ClientId>,
+    text: &str,
+    level: Option<&str>,
+) -> LuaResult<()> {
+    if state(lua).registry.handlers("message").is_empty() {
+        return Ok(());
+    }
+    let payload = lua.create_table()?;
+    payload.set("text", text)?;
+    payload.set("client", client.map(|id| id.0))?;
+    payload.set("level", level)?;
+    let outer = client.map(|id| state_mut(lua).editor.act_as(id));
+    let result = emit(lua, "message", &payload);
+    if let Some(outer) = outer {
+        state_mut(lua).editor.act_as(outer);
+    }
+    result
+}
+
+/// Dispatches a detached batch in order, continuing after handler errors.
+pub(super) fn emit_messages(
+    lua: &Lua,
+    client: Option<ClientId>,
+    messages: &[String],
+) -> LuaResult<()> {
+    let mut first_error = None;
+    for message in messages {
+        if let Err(err) = emit_message(lua, client, message, None) {
+            first_error.get_or_insert(err);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 /// `greed.on(event, handler)` and `greed.off(event, handler)`, which removes

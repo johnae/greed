@@ -506,10 +506,33 @@ fn mouse(
     end_frame(lua)
 }
 
+/// Echoes already delivered to handlers, retained for `t:messages`.
+#[derive(Default)]
+struct ObservedMessages(Vec<String>);
+
+/// One turn's detached echo batch. Handler echoes stay queued until the
+/// next frame or explicit `t:messages`, just as in the session loop.
+fn report_messages(lua: &Lua) -> mlua::Result<()> {
+    let (client, messages) = {
+        let editor = &mut state_mut(lua).editor;
+        (editor.last_active(), editor.take_messages())
+    };
+    let reported = api::emit_messages(lua, Some(client), &messages);
+    if lua.app_data_ref::<ObservedMessages>().is_none() {
+        lua.set_app_data(ObservedMessages::default());
+    }
+    lua.app_data_mut::<ObservedMessages>()
+        .expect("it was just set")
+        .0
+        .extend(messages);
+    reported
+}
+
 /// Tells plugins what the server tells them before drawing the next frame:
 /// selections and focus that changed. Each `t:keys`, `t:run`, `t:mouse`,
 /// `t:wait` and `t:draw` ends one.
 fn end_frame(lua: &Lua) -> mlua::Result<()> {
+    report_messages(lua)?;
     super::report_selections(lua)?;
     jobs::settle(lua)
 }
@@ -962,7 +985,13 @@ impl UserData for TestContext {
         });
         add_client_methods(methods);
         methods.add_method("messages", |lua, _, NoArgs| {
-            Ok(state_mut(lua).editor.take_messages())
+            report_messages(lua)?;
+            Ok(std::mem::take(
+                &mut lua
+                    .app_data_mut::<ObservedMessages>()
+                    .expect("report_messages set it")
+                    .0,
+            ))
         });
     }
 }

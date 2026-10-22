@@ -953,6 +953,9 @@ export type BufferChanged = {
 	to_line: number?,
 }
 
+--- This buffer was sent to its server, which may already have initialized.
+export type LspAttached = { buffer: Buffer }
+
 --- A request from the session socket, e.g. from `greed ctl` or an agent.
 --- Answer it with `greed.control.reply`.
 export type ControlRequest = {
@@ -1348,6 +1351,25 @@ export type ViewFocused = {
 	from: View?,
 	--- The focus was moved under the client rather than by it: what it had focused went out of sight by another client's doing (another tab or project shown, a pane closed), or it followed the others again. Its half-typed keys were dropped.
 	moved: boolean,
+}
+
+--- An ordinary echo or known native error, in delivery order. Handlers run as
+--- the recipient when there is one, not necessarily the echo's origin.
+export type Message = {
+	text: string,
+	client: number?,
+	level: string?,
+}
+
+--- A server completed initialization, once per actual server instance.
+export type LspReady = {
+	language: string,
+	root: string,
+}
+
+--- A background syntax result became current for the buffer's text.
+export type SyntaxUpdated = {
+	buffer: Buffer,
 }
 
 --- An option was set, with `greed.option.set` or `:set`.
@@ -1883,7 +1905,11 @@ export type EventName =
 	| "buffer.changed"
 	| "keys.pending"
 	| "command.run"
+	| "lsp.attached"
 	| "lsp.diagnostics"
+	| "lsp.ready"
+	| "syntax.updated"
+	| "message"
 	| "control.request"
 	| "control.closed"
 	| "client.attached"
@@ -1933,7 +1959,11 @@ export type Greed = {
 		& ((event: "buffer.changed", handler: (event: BufferChanged) -> ()) -> ())
 		& ((event: "keys.pending", handler: (event: KeysPending) -> ()) -> ())
 		& ((event: "command.run", handler: (event: CommandRun) -> ()) -> ())
+		& ((event: "lsp.attached", handler: (event: LspAttached) -> ()) -> ())
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
+		& ((event: "lsp.ready", handler: (event: LspReady) -> ()) -> ())
+		& ((event: "syntax.updated", handler: (event: SyntaxUpdated) -> ()) -> ())
+		& ((event: "message", handler: (event: Message) -> ()) -> ())
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
 		& ((event: "control.closed", handler: (event: ControlClosed) -> ()) -> ())
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())

@@ -66,3 +66,26 @@ test("view.focused comes when a pane or a float takes focus", function(t)
 	t:wait(0)
 	assert(#heard == 2, "nothing more")
 end)
+
+test("asynchronous messages belong to the last active client, not the drawing client", function(t)
+	t:buffer("|text")
+	local second = t:client()
+	local recipient = nil
+	greed.on("message", function(event)
+		if event.text == "later" then
+			recipient = event.client
+		end
+	end)
+	greed.command({
+		name = "test-later-message",
+		run = function()
+			greed.spawn(function()
+				greed.sleep(10)
+				greed.echo("later")
+			end)
+		end,
+	})
+	second:run("test-later-message")
+	t:wait(20)
+	assert(recipient == second:id(), `recipient {recipient}`)
+end)

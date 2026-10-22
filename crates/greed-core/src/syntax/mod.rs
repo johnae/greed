@@ -316,8 +316,9 @@ struct Request {
 
 /// A finished parse from the worker.
 pub struct Parsed {
-    buffer: BufferId,
-    version: usize,
+    pub(crate) buffer: BufferId,
+    pub(crate) version: usize,
+    pub(crate) language: &'static str,
     tree: Tree,
     text: Rope,
     layers: Vec<Layer>,
@@ -575,11 +576,12 @@ impl Syntax {
     /// version. One of the same version is a parse again, after the
     /// injections changed. One older than the text is brought up to it by
     /// the next [`Syntax::update`].
-    pub fn receive(&mut self, parsed: Parsed) {
+    pub fn receive(&mut self, parsed: Parsed) -> bool {
         for layer in &parsed.layers {
             self.prepare(&layer.language);
         }
         if let Some(state) = self.buffers.get_mut(&parsed.buffer)
+            && state.language.name == parsed.language
             && state
                 .held
                 .as_ref()
@@ -591,7 +593,9 @@ impl Syntax {
                 parsed.tree,
                 parsed.layers,
             ));
+            return true;
         }
+        false
     }
 
     /// The syntax tree of `buffer` as its text is now, and its language.
@@ -846,6 +850,7 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
             let parsed = Parsed {
                 buffer: request.buffer,
                 version: request.version,
+                language: request.language.name,
                 tree,
                 text: request.text,
                 layers,

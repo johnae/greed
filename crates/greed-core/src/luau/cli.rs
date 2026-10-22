@@ -83,8 +83,14 @@ pub(super) fn run(
     })?;
     let finished = state(lua).jobs.finished().clone();
     loop {
-        for message in state_mut(lua).editor.take_messages() {
-            say(&message);
+        let messages = state_mut(lua).editor.take_messages();
+        let reported = super::budgeted(lua, || super::api::emit_messages(lua, None, &messages));
+        for message in &messages {
+            say(message);
+        }
+        reported?;
+        if !state(lua).editor.messages().is_empty() {
+            continue;
         }
         if let Some(returned) = ended.borrow_mut().take() {
             return Ok(returned);

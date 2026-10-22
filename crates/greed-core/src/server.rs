@@ -627,6 +627,24 @@ impl Server<'_> {
         }
     }
 
+    fn sync_background(&mut self) -> (bool, Receiver<Instant>) {
+        let mut problems = self.host.update_syntax();
+        let (lsp_problems, attachment_callbacks) = self.host.sync_lsp_callbacks();
+        problems.extend(lsp_problems);
+        if let Some(problem) = problems.pop() {
+            self.say_error(problem);
+        }
+        // Echoes produced by handlers belong to a new turn. Wake only
+        // while the queue has work, without a timer/history poll.
+        let messages =
+            if attachment_callbacks || self.host.with_editor(|ed| !ed.messages().is_empty()) {
+                crossbeam_channel::at(Instant::now())
+            } else {
+                crossbeam_channel::never()
+            };
+        (attachment_callbacks, messages)
+    }
+
     fn run(
         &mut self,
         inbox: &Receiver<Input>,
@@ -647,11 +665,7 @@ impl Server<'_> {
         let started = self.host.report_selections();
         self.report(started);
         loop {
-            let mut problems = self.host.update_syntax();
-            problems.extend(self.host.sync_lsp());
-            if let Some(problem) = problems.pop() {
-                self.say(problem);
-            }
+            let (attachment_callbacks, messages) = self.sync_background();
             // Wake up in time for the next timer a command is waiting on.
             let timer = self
                 .host
@@ -680,8 +694,7 @@ impl Server<'_> {
                 }
                 recv(trees) -> parsed => {
                     if let Ok(parsed) = parsed {
-                        self.host.receive_parse(parsed);
-                        only_parsed = true;
+                        only_parsed = !self.host.receive_parse(parsed);
                     }
                 }
                 recv(lsp_events) -> event => {
@@ -735,7 +748,9 @@ impl Server<'_> {
                 recv(look) -> _ => {}
                 recv(self.frame_timer()) -> _ => {}
                 recv(self.held_timer()) -> _ => {}
+                recv(messages) -> _ => {}
             }
+            only_parsed &= !attachment_callbacks;
             if !self.carry_on(typed, only_parsed) {
                 return;
             }
@@ -758,8 +773,15 @@ impl Server<'_> {
         if !self.handle_held(&mut typed) {
             return false;
         }
-        if let Some(latest) = self.host.with_editor_mut(|ed| ed.take_messages().pop()) {
-            self.say(latest);
+        let mut messages = self.host.with_editor_mut(Editor::take_messages);
+        let recipient = self.last_active();
+        let reported = self.host.report_messages(recipient, &messages);
+        self.report(reported);
+        // Preserve the ordinary status even when a message handler fails.
+        if let Some(latest) = messages.pop()
+            && let Some(client) = recipient.and_then(|id| self.clients.get_mut(&id))
+        {
+            client.message = Some(latest);
         }
         if !self.follow_requests() {
             return false;
@@ -799,11 +821,20 @@ impl Server<'_> {
         self.clients.keys().next_back().copied()
     }
 
-    /// Shows `message` on the status line of the client used last.
-    fn say(&mut self, message: String) {
-        if let Some(client) = self.last_active().and_then(|id| self.clients.get_mut(&id)) {
+    /// Direct server failures have a known level. A failing notification
+    /// handler is logged, not reported recursively, and cannot hide the
+    /// original status. Echoes it produces are drained on the next turn.
+    fn say_error_to(&mut self, recipient: Option<ClientId>, message: String) {
+        if let Err(err) = self.host.report_message(recipient, &message, Some("error")) {
+            self.log(&err.to_string());
+        }
+        if let Some(client) = recipient.and_then(|id| self.clients.get_mut(&id)) {
             client.message = Some(message);
         }
+    }
+
+    fn say_error(&mut self, message: String) {
+        self.say_error_to(self.last_active(), message);
     }
 
     /// Does what the editor asked for: quitting, notifying, switching a
@@ -955,7 +986,7 @@ impl Server<'_> {
                         let pasted = self.host.paste(id, &text);
                         self.report(pasted);
                     }
-                    Err(why) => self.say(why),
+                    Err(why) => self.say_error(why),
                 }
             }
             Input::SshAgentReply(ask, ref answer) => self.agent_reply(id, ask, answer.as_deref()),
@@ -963,9 +994,7 @@ impl Server<'_> {
             Input::Refresh => self.send_whole(id),
             Input::Problem(ref text) => {
                 self.log(&format!("client {}: {text}", id.0));
-                if let Some(client) = self.clients.get_mut(&id) {
-                    client.message = Some(text.clone());
-                }
+                self.say_error_to(Some(id), text.clone());
             }
             Input::Ping => {}
             // The client in this process ends the editor; another leaves it.
@@ -982,7 +1011,7 @@ impl Server<'_> {
             Ok(go_on) => go_on,
             Err(panic) => {
                 self.log(&panic.to_string());
-                self.say(first_line(&panic.to_string()));
+                self.say_error(first_line(&panic.to_string()));
                 true
             }
         }
@@ -1014,7 +1043,7 @@ impl Server<'_> {
                 Some(source) => format!("{source}: {line}"),
                 None => line,
             };
-            self.say(message);
+            self.say_error(message);
         }
     }
 
@@ -1322,7 +1351,7 @@ impl Server<'_> {
             reported = host.report_views();
         }
         if let Err(err) = reported {
-            self.say(first_line(&err.to_string()));
+            self.say_error(first_line(&err.to_string()));
         }
         for (id, mut frame) in frames {
             frame.gui = host.gui_options(id);
@@ -1353,6 +1382,12 @@ impl Server<'_> {
                 built
             }
         };
+        if let Err(err) = &built {
+            self.say_error_to(
+                Some(id),
+                format!("status line: {}", first_line(&err.to_string())),
+            );
+        }
         let client = self.clients.get_mut(&id)?;
         let status = match built {
             Ok(Some(line)) => {
@@ -1365,8 +1400,7 @@ impl Server<'_> {
                     message: client.message.as_deref(),
                 }
             }
-            Err(err) => {
-                client.message = Some(format!("status line: {}", first_line(&err.to_string())));
+            Err(_) => {
                 // The last one stays a while, rather than waiting on the
                 // builder again next frame.
                 client.status_stale = Some(Instant::now() + STATUS_STALE);

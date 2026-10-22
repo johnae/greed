@@ -3,6 +3,12 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## Unreleased
+
+### Added
+
+- Plugin events for ordered native messages, accepted background syntax parses, and language-server readiness and document attachment, delivered without waiting for input. Attachment callbacks obey plugin deadlines; callback edits and custom status changes redraw while idle, and asynchronous test messages follow the last active client.
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights

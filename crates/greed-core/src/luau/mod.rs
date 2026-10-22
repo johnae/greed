@@ -648,9 +648,41 @@ impl Host {
         state(&self.lua).syntax.results().clone()
     }
 
-    /// Keeps a finished parse.
-    pub fn receive_parse(&self, parsed: crate::syntax::Parsed) {
-        state_mut(&self.lua).syntax.receive(parsed);
+    /// Keeps a finished parse. Returns whether current-syntax handlers ran,
+    /// so callers can invalidate status lines only when plugin code ran.
+    pub fn receive_parse(&self, parsed: crate::syntax::Parsed) -> bool {
+        let buffer = parsed.buffer;
+        let current = {
+            let state = &mut *state_mut(&self.lua);
+            let current = state.editor.find_buffer(buffer).is_some_and(|buffer| {
+                buffer.history().applied() == parsed.version
+                    && buffer.language() == Some(parsed.language)
+            });
+            state.syntax.receive(parsed) && current
+        };
+        let callbacks = current
+            && !state(&self.lua)
+                .registry
+                .handlers("syntax.updated")
+                .is_empty();
+        if callbacks {
+            let result = budgeted(&self.lua, || {
+                let payload = self.lua.create_table()?;
+                payload.set(
+                    "buffer",
+                    handles::BufferRef {
+                        buffer,
+                        view: None,
+                        author: greed_text::Author::User(state(&self.lua).editor.client()),
+                    },
+                )?;
+                api::emit(&self.lua, "syntax.updated", &payload).map_err(HostError::from)
+            });
+            if let Err(error) = result {
+                state_mut(&self.lua).editor.echo(error.to_string());
+            }
+        }
+        callbacks
     }
 
     pub fn with_registry<R>(&self, f: impl FnOnce(&Registry<Function>) -> R) -> R {
@@ -1079,6 +1111,31 @@ impl Host {
         state(&self.lua).lsp.events().clone()
     }
 
+    /// Tells plugins about every ordinary echo in an already drained batch.
+    /// Keep the batch until after this call so handler failures cannot lose
+    /// the normal status output. Handler echoes belong to the next batch.
+    pub fn report_messages(
+        &self,
+        client: Option<ClientId>,
+        messages: &[String],
+    ) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            api::emit_messages(&self.lua, client, messages).map_err(HostError::from)
+        })
+    }
+
+    /// Tells plugins about a direct status message with its known severity.
+    pub fn report_message(
+        &self,
+        client: Option<ClientId>,
+        text: &str,
+        level: Option<&str>,
+    ) -> Result<(), HostError> {
+        budgeted(&self.lua, || {
+            api::emit_message(&self.lua, client, text, level).map_err(HostError::from)
+        })
+    }
+
     /// Tells plugins about views drawn at a new size since the last call,
     /// with "view.resized", and scrolled to a new line, with
     /// "view.scrolled". Call it after drawing a frame. Returns whether a
@@ -1129,20 +1186,73 @@ impl Host {
     /// Handles a message from a language server.
     pub fn handle_lsp(&self, event: crate::lsp::Event) -> Result<(), HostError> {
         budgeted(&self.lua, || {
-            lsp::handle(&self.lua, event).map_err(HostError::from)
+            let handled = lsp::handle(&self.lua, event).map_err(HostError::from);
+            let ready = state_mut(&self.lua).lsp.take_ready();
+            let mut result = handled;
+            for server in ready {
+                let emitted = (|| {
+                    let payload = self.lua.create_table()?;
+                    payload.set("language", server.language)?;
+                    payload.set("root", server.root.to_string_lossy().as_ref())?;
+                    api::emit(&self.lua, "lsp.ready", &payload)
+                })()
+                .map_err(HostError::from);
+                if result.is_ok() {
+                    result = emitted;
+                }
+            }
+            result
         })
     }
 
     /// Sends open buffers to their language servers, starting servers as
     /// needed. Returns what went wrong, each problem once.
     pub fn sync_lsp(&self) -> Vec<String> {
-        let state = &mut *state_mut(&self.lua);
-        state
-            .lsp
-            .sync(&state.editor)
-            .iter()
-            .map(ToString::to_string)
-            .collect()
+        self.sync_lsp_callbacks().0
+    }
+
+    /// Also reports whether attachment handlers ran and need an end-of-turn.
+    pub(crate) fn sync_lsp_callbacks(&self) -> (Vec<String>, bool) {
+        let (mut errors, attached) = {
+            let state = &mut *state_mut(&self.lua);
+            let errors = state
+                .lsp
+                .sync(&state.editor)
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            (errors, state.lsp.take_attached())
+        };
+        let mut callbacks = false;
+        for buffer in attached {
+            if state(&self.lua).editor.find_buffer(buffer).is_none() {
+                continue;
+            }
+            if state(&self.lua)
+                .registry
+                .handlers("lsp.attached")
+                .is_empty()
+            {
+                continue;
+            }
+            callbacks = true;
+            let emitted = budgeted(&self.lua, || {
+                let payload = self.lua.create_table()?;
+                payload.set(
+                    "buffer",
+                    handles::BufferRef {
+                        buffer,
+                        view: None,
+                        author: greed_text::Author::User(state(&self.lua).editor.client()),
+                    },
+                )?;
+                api::emit(&self.lua, "lsp.attached", &payload).map_err(HostError::from)
+            });
+            if let Err(error) = emitted {
+                errors.push(error.to_string());
+            }
+        }
+        (errors, callbacks)
     }
 
     /// Starts language servers with `launcher` instead of running their
