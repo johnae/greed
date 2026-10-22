@@ -127,3 +127,33 @@ fn read_request(stream: &mut std::net::TcpStream) -> String {
     let _ = reader.read_exact(&mut vec![0; length]);
     line.split_whitespace().nth(1).unwrap_or("/").to_string()
 }
+
+/// Waits for a service's notifications until one satisfies `wanted`, and
+/// gives its params; fails after 30 seconds.
+pub async fn heard(
+    notices: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    wanted: impl Fn(&serde_json::Value) -> bool,
+) -> serde_json::Value {
+    let waiting = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            let line = notices.recv().await.expect("the service is there");
+            let notice: serde_json::Value = serde_json::from_str(&line).unwrap();
+            if wanted(&notice) {
+                return notice["params"].clone();
+            }
+        }
+    });
+    waiting.await.expect("the notification comes")
+}
+
+/// The item whose text is `text` among a timeline's `changes`, inserted,
+/// set or reset.
+pub fn item_with(changes: &serde_json::Value, text: &str) -> Option<serde_json::Value> {
+    changes.as_array()?.iter().find_map(|change| {
+        let items = match change["items"].as_array() {
+            Some(items) => items.clone(),
+            None => vec![change["item"].clone()],
+        };
+        items.into_iter().find(|item| item["text"] == text)
+    })
+}

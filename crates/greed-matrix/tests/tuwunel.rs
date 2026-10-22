@@ -8,7 +8,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use greed_chat::rpc::{self, Service};
-use greed_chat::testing::{browse, find, free_port, oauth_provider};
+use greed_chat::testing::{browse, find, free_port, heard, item_with, oauth_provider};
 use greed_matrix::Matrix;
 use matrix_sdk::Client;
 use matrix_sdk::ruma::api::client::account::register;
@@ -336,34 +336,6 @@ async fn other(server: &Tuwunel, user: &str, password: &str) -> Client {
         .await
         .unwrap();
     client
-}
-
-/// Waits for notifications until one satisfies `wanted`, giving its params.
-async fn heard(
-    notices: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
-    wanted: impl Fn(&Value) -> bool,
-) -> Value {
-    let waiting = tokio::time::timeout(Duration::from_secs(30), async {
-        loop {
-            let line = notices.recv().await.expect("the service is there");
-            let notice: Value = serde_json::from_str(&line).unwrap();
-            if wanted(&notice) {
-                return notice["params"].clone();
-            }
-        }
-    });
-    waiting.await.expect("the notification comes")
-}
-
-/// The item whose text is `text` among `changes`, inserted, set or reset.
-fn item_with(changes: &Value, text: &str) -> Option<Value> {
-    changes.as_array()?.iter().find_map(|change| {
-        let items = match change["items"].as_array() {
-            Some(items) => items.clone(),
-            None => vec![change["item"].clone()],
-        };
-        items.into_iter().find(|item| item["text"] == text)
-    })
 }
 
 /// Signs `user` in through the service with a password.

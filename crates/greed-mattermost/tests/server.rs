@@ -7,7 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use greed_chat::rpc::{self, Service};
-use greed_chat::testing::{browse, find, free_port, oauth_provider};
+use greed_chat::testing::{browse, find, free_port, heard, item_with, oauth_provider};
 use greed_mattermost::Mattermost;
 use serde_json::{Value, json};
 
@@ -347,32 +347,6 @@ impl Rest {
         );
         response.json().await.unwrap()
     }
-}
-
-/// Waits for notifications until one satisfies `wanted`, giving its params.
-async fn heard(
-    notices: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
-    wanted: impl Fn(&Value) -> bool,
-) -> Value {
-    let waiting = tokio::time::timeout(Duration::from_secs(30), async {
-        loop {
-            let line = notices.recv().await.expect("the service is there");
-            let notice: Value = serde_json::from_str(&line).unwrap();
-            if wanted(&notice) {
-                return notice["params"].clone();
-            }
-        }
-    });
-    waiting.await.expect("the notification comes")
-}
-
-/// The item whose text is `text` among `changes`.
-fn item_with(changes: &Value, text: &str) -> Option<Value> {
-    changes
-        .as_array()?
-        .iter()
-        .map(|change| change["item"].clone())
-        .find(|item| item["text"] == text)
 }
 
 /// Signs `user` in through the service with a password: their account.
