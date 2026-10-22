@@ -15,7 +15,10 @@ end
 
 -- An option's value as you'd write it in Luau.
 local function literal(value: greed.OptionValue): string
-	return if type(value) == "string" then string.format("%q", value) else tostring(value)
+	return if type(value) == "string"
+		then string.format("%q", value)
+		elseif type(value) == "table" then "{" .. table.concat(value, ", ") .. "}"
+		else tostring(value)
 end
 
 -- A keymap layer's mode part in words: a mode ("vim"), a role in every

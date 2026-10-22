@@ -175,6 +175,22 @@ test(":set parses the value, and text can have spaces", function(t)
 	end), "an option is needed")
 end)
 
+test(":set and :get inspect and clear integer-list options", function(t)
+	t:run("set", { "rulers", "100,80,80" })
+	local value = greed.option.get("rulers") :: { number }
+	assert(#value == 2 and value[1] == 80 and value[2] == 100)
+	t:run("get-option", { "rulers" })
+	local messages = t:messages()
+	assert(messages[#messages] == "rulers is {80, 100}", messages[#messages])
+	assert(not pcall(function()
+		t:run("set", { "rulers", "80,0" })
+	end))
+	value = greed.option.get("rulers") :: { number }
+	assert(#value == 2 and value[1] == 80 and value[2] == 100)
+	t:run("set", { "rulers", "{}" })
+	assert(#(greed.option.get("rulers") :: { number }) == 0)
+end)
+
 test(":set turns yes-or-no options on, off and over as Vim does", function(t)
 	t:buffer("|x")
 	greed.option.define({ name = "test-flag", default = false })

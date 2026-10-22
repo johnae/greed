@@ -23,6 +23,16 @@ fn frame(ed: &mut Editor, width: u16, height: u16) -> Frame {
     )
 }
 
+fn ruled_frame(ed: &mut Editor, width: u16, height: u16, columns: &[usize]) -> Frame {
+    let columns: std::sync::Arc<[usize]> = columns.into();
+    Renderer::new(CellWidth).frame(
+        ed,
+        Size { width, height },
+        &Status::Default { message: None },
+        &columns,
+    )
+}
+
 /// The text of each row of the panes and tab line, as one row per screen
 /// row (see `screen_rows`), without the status line.
 fn rows(frame: &Frame) -> Vec<String> {
@@ -78,8 +88,7 @@ fn rulers_follow_wrapped_text_columns_through_empty_lines_and_eof() {
             .flat_map(|s| &s.rows)
             .all(|row| row.guides.is_empty())
     );
-    ed.set_rulers(vec![4, 4, 1, 100]);
-    let after = frame(&mut ed, 12, 8);
+    let after = ruled_frame(&mut ed, 12, 8, &[1, 4, 100]);
     assert_eq!(rows(&before), rows(&after));
     let panes = having(&after, |role| matches!(role, Role::Pane { .. }));
     for row in &panes[0].rows {
@@ -93,8 +102,7 @@ fn rulers_follow_wrapped_text_columns_through_empty_lines_and_eof() {
             .flat_map(|s| &s.rows)
             .all(|row| row.guides.is_empty())
     );
-    ed.set_rulers(vec![4]);
-    let one = frame(&mut ed, 12, 8);
+    let one = ruled_frame(&mut ed, 12, 8, &[4]);
     assert!(
         having(&one, |role| matches!(role, Role::Pane { .. }))[0]
             .rows
@@ -106,8 +114,7 @@ fn rulers_follow_wrapped_text_columns_through_empty_lines_and_eof() {
 #[test]
 fn offscreen_huge_ruler_keeps_visible_gutter_columns() {
     let mut ed = editor("|hello\nworld");
-    ed.set_rulers(vec![1, usize::MAX]);
-    let f = frame(&mut ed, 20, 4);
+    let f = ruled_frame(&mut ed, 20, 4, &[1, usize::MAX]);
     let panes = having(&f, |role| matches!(role, Role::Pane { .. }));
     for row in &panes[0].rows {
         assert_eq!(row.guides.as_slice(), &[2]);
@@ -2054,9 +2061,8 @@ fn rulers_scroll_only_with_unwrapped_lines() {
             ..Mark::default()
         }],
     );
-    ed.set_rulers(vec![4, 20]);
     ed.view_mut(main).selection = Selection::point(25);
-    let f = frame(&mut ed, 12, 8);
+    let f = ruled_frame(&mut ed, 12, 8, &[4, 20]);
     let pane = having(&f, |role| matches!(role, Role::Pane { .. }))[0];
     assert_eq!(ed.view(main).columns, 17);
     assert_eq!(pane.rows[0].guides.as_slice(), &[4]);

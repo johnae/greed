@@ -19,7 +19,11 @@ local function exists(name: string): boolean
 end
 
 local function show(name: string)
-	greed.echo(`{name} is {tostring(greed.option.get(name))}`)
+	local value = greed.option.get(name)
+	local text = if type(value) == "table"
+		then "{" .. table.concat(value, ", ") .. "}"
+		else tostring(value)
+	greed.echo(`{name} is {text}`)
 end
 
 -- What a word means for a yes-or-no thing: on, off, flip or show.
@@ -114,6 +118,21 @@ end
 -- The value typed for an option, as the type it takes: a number for
 -- indent is that many spaces.
 local function value_of(text: string, option: string?): greed.OptionValue
+	if option and type(greed.option.get(option)) == "table" then
+		local body = string.match(text, "^%s*{(.-)}%s*$") or text
+		if string.match(body, "^%s*$") then
+			return {}
+		end
+		local values: { number } = {}
+		for _, word in string.split(body, ",") do
+			local number = tonumber(word)
+			if not number then
+				error(`{option} takes comma-separated positive whole numbers`, 0)
+			end
+			table.insert(values, number)
+		end
+		return values
+	end
 	local value: greed.OptionValue = if text == "true"
 		then true
 		elseif text == "false" then false

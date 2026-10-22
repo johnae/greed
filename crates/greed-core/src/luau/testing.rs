@@ -837,19 +837,19 @@ fn frame_table(
 
 /// A frame drawn at this size, for the acting client, with its renderer.
 fn draw(lua: &Lua, width: u16, height: u16) -> mlua::Result<crate::render::Frame> {
-    use crate::render::{Plain, Size, Status};
+    use crate::render::{Size, Status};
     let frame = || -> mlua::Result<_> {
         let status = match api::status_line(lua, None, width)? {
             Some(line) => Status::Line(line),
             None => Status::Default { message: None },
         };
         Ok(with_renderer(lua, |r| {
-            r.frame(
-                &mut state_mut(lua).editor,
-                Size { width, height },
-                &status,
-                &Plain,
-            )
+            let state = &mut *state_mut(lua);
+            let rulers = match state.registry.option_for(state.editor.client(), "rulers") {
+                Some(crate::registry::Value::PositiveInts(columns)) => columns.clone(),
+                _ => std::sync::Arc::from([]),
+            };
+            r.frame(&mut state.editor, Size { width, height }, &status, &rulers)
         }))
     };
     restart_deadline(lua);

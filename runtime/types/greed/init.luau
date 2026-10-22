@@ -514,7 +514,8 @@ export type Mode = {
 	cursor_of: (mode: string?) -> "block" | "bar" | "underline",
 }
 
-export type OptionValue = boolean | number | string
+--- Lists contain positive whole numbers, sorted and deduplicated.
+export type OptionValue = boolean | number | string | { number }
 
 export type Options = {
 	--- Defines an option. With `choices`, it takes only those values (the default among them), and `:set` completes them. With `needs`, a capability like "proc", only code that has it, or you yourself (`:set`, your config), may set it: for an option whose value is run, like a command line. A plugin can't define an option another plugin defined.
@@ -1973,10 +1974,6 @@ export type Greed = {
 	--- number, "relative" to the cursor's line (0 on it), or "hybrid", relative
 	--- with the cursor's line showing its own.
 	line_numbers: (style: "absolute" | "relative" | "hybrid") -> (),
-	--- Positive one-based file-pane display columns, sorted and deduplicated; empty clears.
-	--- Wrapped rows use text-area columns; nowrap follows horizontal scrolling.
-	--- Requires an explicit `ui.ruler` theme background; disabled by default.
-	rulers: (columns: { number }) -> (),
 	--- When text hidden by marks whose `reveal` is "auto" shows: "line" (on a cursor's line, the default), "cursor" or "never", as for a mark's own `reveal`; `typing`, the same for those whose `reveal` is "typing" (as `how` without it). Core sets them as the mode changes (see `core.reveal`).
 	reveal: (how: "line" | "cursor" | "never", typing: ("line" | "cursor" | "never")?) -> (),
 	--- Lets the attached terminal go and keeps the editor running in the

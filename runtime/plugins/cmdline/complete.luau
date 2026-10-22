@@ -72,10 +72,12 @@ end)
 M.register("option", function()
 	local items = {}
 	for _, option in greed.option.list() do
-		table.insert(
-			items,
-			{ text = option.name, doc = option.doc .. " (now " .. tostring(option.value) .. ")" }
-		)
+		table.insert(items, {
+			text = option.name,
+			doc = option.doc .. " (now " .. (if type(option.value) == "table"
+				then "{" .. table.concat(option.value, ", ") .. "}"
+				else tostring(option.value)) .. ")",
+		})
 	end
 	return items
 end)
@@ -91,7 +93,10 @@ M.register("option-value", function(_, args)
 				elseif type(option.default) == "boolean" then { true, false }
 				else {}
 			for _, choice in choices do
-				table.insert(items, { text = tostring(choice) })
+				local text = if type(choice) == "table"
+					then "{" .. table.concat(choice, ", ") .. "}"
+					else tostring(choice)
+				table.insert(items, { text = text })
 			end
 			return items
 		end

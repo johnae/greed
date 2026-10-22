@@ -129,6 +129,8 @@ pub enum Value {
     Int(i64),
     Float(f64),
     String(Arc<str>),
+    /// A list of positive whole numbers, such as text-column positions.
+    PositiveInts(Arc<[usize]>),
 }
 
 impl Value {
@@ -137,6 +139,7 @@ impl Value {
             Value::Bool(_) => "true or false value",
             Value::Int(_) | Value::Float(_) => "number",
             Value::String(_) => "string",
+            Value::PositiveInts(_) => "positive integer list",
         }
     }
 }
@@ -148,6 +151,16 @@ impl fmt::Display for Value {
             Value::Int(i) => write!(f, "{i}"),
             Value::Float(x) => write!(f, "{x}"),
             Value::String(s) => f.write_str(s),
+            Value::PositiveInts(values) => {
+                f.write_str("{")?;
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{value}")?;
+                }
+                f.write_str("}")
+            }
         }
     }
 }

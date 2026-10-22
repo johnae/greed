@@ -101,6 +101,12 @@ local function commands(): { Entry }
 	return out
 end
 
+local function option_text(value: greed.OptionValue): string
+	return if type(value) == "table"
+		then "{" .. table.concat(value, ", ") .. "}"
+		else tostring(value)
+end
+
 local function options(): { Entry }
 	local out: { Entry } = {}
 	for _, option in greed.option.list() do
@@ -114,13 +120,13 @@ local function options(): { Entry }
 				local lines = {
 					doc_or_none(option.doc),
 					"",
-					`Value: {tostring(option.value)}`,
-					`Default: {tostring(option.default)}`,
+					`Value: {option_text(option.value)}`,
+					`Default: {option_text(option.default)}`,
 				}
 				if #option.choices > 0 then
 					local choices = {}
 					for _, choice in option.choices do
-						table.insert(choices, `"{tostring(choice)}"`)
+						table.insert(choices, `"{option_text(choice)}"`)
 					end
 					table.insert(lines, `Choices: {table.concat(choices, ", ")}`)
 				end

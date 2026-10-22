@@ -268,9 +268,12 @@ fn host(text: &str, path: Option<PathBuf>) -> Host {
 }
 
 /// Syntax highlights, drawn as the server draws them.
-struct Shown<'a>(&'a Syntax);
+struct Shown<'a>(&'a Syntax, &'a [usize]);
 
 impl Decorations for Shown<'_> {
+    fn rulers(&self) -> &[usize] {
+        self.1
+    }
     fn highlights(&self, buffer: BufferId, text: &Rope, range: Range<usize>) -> Vec<Highlight> {
         self.0.highlights(buffer, text, range)
     }
@@ -302,9 +305,16 @@ impl Driven {
             None => Status::Default { message: None },
         };
         let renderer = &self.renderer;
-        let frame = self
-            .host
-            .with_editor_and_syntax(|ed, syntax| renderer.frame(ed, SIZE, &status, &Shown(syntax)));
+        let rulers =
+            self.host.with_registry(
+                |registry| match registry.option_for(FIRST_CLIENT, "rulers") {
+                    Some(greed_core::registry::Value::PositiveInts(columns)) => columns.clone(),
+                    _ => std::sync::Arc::from([]),
+                },
+            );
+        let frame = self.host.with_editor_and_syntax(|ed, syntax| {
+            renderer.frame(ed, SIZE, &status, &Shown(syntax, &rulers))
+        });
         self.host.report_views().unwrap();
         frame
     }
@@ -398,6 +408,59 @@ fn startup_empty() {
             ("first_frame_cpu_ms", 400.0, 650.0),
             ("peak_mb", 80.0, 100.0),
         ],
+    );
+}
+
+/// Rulers on real frames: a long wrapped line, short lines, empty lines and
+/// the unused space below EOF. Setup is outside the per-frame measurement.
+#[test]
+fn column_rulers() {
+    budget(
+        "column_rulers",
+        |found| {
+            let text = format!("{}\nshort\n\nend", "word ".repeat(80));
+            let mut driven = Driven::new(host(&text, None));
+            driven.eval("local g = require('@greed'); g.option.set('rulers', {80, 100}); g.theme.set({['ui.ruler'] = {bg = '#303040'}})");
+            let frame = driven.frame();
+            assert!(
+                frame
+                    .surfaces
+                    .iter()
+                    .flat_map(|s| &s.rows)
+                    .any(|row| row.guides.len() == 2)
+            );
+            for medium in [
+                greed_core::theme::Medium::Tui,
+                greed_core::theme::Medium::Gui,
+            ] {
+                let grid = greed_core::render::grid::compose(&frame, medium);
+                assert_eq!(
+                    grid[46][81].style.bg,
+                    frame.theme.style("ui.ruler", medium).bg
+                );
+                assert_ne!(grid[46][81].style.bg, grid[46][80].style.bg);
+            }
+            let times = (0..5)
+                .map(|_| {
+                    let ((), cpu, _) = timed(|| {
+                        for _ in 0..100 {
+                            let frame = driven.frame();
+                            for medium in [
+                                greed_core::theme::Medium::Tui,
+                                greed_core::theme::Medium::Gui,
+                            ] {
+                                std::hint::black_box(greed_core::render::grid::compose(
+                                    &frame, medium,
+                                ));
+                            }
+                        }
+                    });
+                    per(ms(cpu), 100)
+                })
+                .collect();
+            found.set("frame_cpu_ms", median(times));
+        },
+        &[("frame_cpu_ms", 5.0, 10.0)],
     );
 }
 

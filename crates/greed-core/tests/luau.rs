@@ -15,16 +15,44 @@ fn host(text: &str) -> Host {
 #[test]
 fn rulers_reject_invalid_columns_without_changing_configuration() {
     let h = host("");
-    h.eval("require('@greed').rulers({100, 80, 80})").unwrap();
-    for values in ["{0}", "{-1}", "{1.5}", "{0/0}", "{math.huge}", "{true}"] {
+    h.eval(include_str!("../../../runtime/plugins/core/numbers.luau"))
+        .unwrap();
+    h.eval("local g = require('@greed'); assert(#g.option.get('rulers') == 0); g.option.set('rulers', {100, 80, 80})").unwrap();
+    for values in [
+        "{0}",
+        "{-1}",
+        "{1.5}",
+        "{0/0}",
+        "{math.huge}",
+        "{true}",
+        "{'80'}",
+        "{[2] = 80}",
+        "{[1.5] = 80}",
+        "{x = 80}",
+        "{80, 0}",
+        "{18446744073709551616}",
+    ] {
         assert!(
-            h.eval(&format!("require('@greed').rulers({values})"))
+            h.eval(&format!("require('@greed').option.set('rulers', {values})"))
                 .is_err()
         );
-        h.with_editor(|ed| assert_eq!(ed.rulers(), &[80, 100]));
+        h.eval("local v = require('@greed').option.get('rulers'); assert(#v == 2 and v[1] == 80 and v[2] == 100)").unwrap();
     }
-    h.eval("require('@greed').rulers({})").unwrap();
-    h.with_editor(|ed| assert!(ed.rulers().is_empty()));
+    h.eval(
+        "local g = require('@greed')
+         for _, option in g.option.list() do
+             if option.name == 'rulers' then
+                 assert(#option.default == 0 and #option.value == 2)
+             end
+         end
+         g.option.set('rulers', {4}, {client = true})
+         assert(g.option.get('rulers')[1] == 4)
+         g.option.set('rulers', nil, {client = true})
+         assert(g.option.get('rulers')[1] == 80)
+         g.option.set('rulers', {})
+         assert(#g.option.get('rulers') == 0)",
+    )
+    .unwrap();
 }
 
 fn text(host: &Host) -> String {

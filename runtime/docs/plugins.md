@@ -1452,8 +1452,10 @@ trimming example does, or it goes round forever.
 
 `greed.option.define({ name, doc, default })` adds an option users set
 with `:set name value` or `greed.option.set(name, value)` in their config.
-The default fixes its type, a boolean, a number or a string, and setting it
-to anything else is refused, as is a name no plugin defined (the error
+The default fixes its type: a boolean, a number, a string, or a dense list
+of positive whole numbers (sorted and deduplicated, with `{}` its empty
+default). Setting it to anything else is refused, as is a name no plugin
+defined (the error
 names options with names like it). `greed.option.get(name)` reads it, and
 `option.changed` says when it changes. When a plugin is reloaded, an option
 it defines again with the same type keeps the value it was set to.

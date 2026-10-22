@@ -32,11 +32,22 @@ use crate::{
     Panel, Reveal, ScreenSize, Scroll, Side, View, ViewId, VirtualLine,
 };
 
-/// Syntax highlights drawn over a buffer's text, under its marks.
+/// Appearance supplied when rendering: syntax highlights and text-column guides.
 pub trait Decorations {
+    /// Positive one-based text columns to guide in file panes.
+    fn rulers(&self) -> &[usize] {
+        &[]
+    }
+
     /// Syntax highlights overlapping `range` of `buffer`.
     fn highlights(&self, _buffer: BufferId, _text: &Rope, _range: Range<usize>) -> Vec<Highlight> {
         Vec::new()
+    }
+}
+
+impl Decorations for std::sync::Arc<[usize]> {
+    fn rulers(&self) -> &[usize] {
+        self
     }
 }
 
@@ -655,6 +666,7 @@ fn ruler_guides(
 /// Selects file-pane guides using the same horizontal scroll as the line.
 fn view_ruler_guides(
     editor: &Editor,
+    decorations: &dyn Decorations,
     view: &View,
     line: usize,
     pane: bool,
@@ -662,7 +674,7 @@ fn view_ruler_guides(
     width: usize,
 ) -> SmallVec<[usize; 1]> {
     let rulers = if pane && editor.buffer(view.buffer).kind() == "file" {
-        editor.rulers()
+        decorations.rulers()
     } else {
         &[]
     };
@@ -692,6 +704,7 @@ fn pad_view_rows(
     rows: &mut Vec<Row>,
     height: usize,
     editor: &Editor,
+    decorations: &dyn Decorations,
     view: &View,
     pane: bool,
     (gutter, width): (usize, usize),
@@ -703,7 +716,7 @@ fn pad_view_rows(
         .text()
         .len_lines()
         .saturating_sub(1);
-    let guides = view_ruler_guides(editor, view, line, pane, gutter, width);
+    let guides = view_ruler_guides(editor, decorations, view, line, pane, gutter, width);
     for row in rows.iter_mut().skip(filled) {
         row.guides.clone_from(&guides);
     }
@@ -1112,7 +1125,8 @@ impl<M: Measure> Renderer<M> {
             let on_line = |m: &&&Mark| m.range.start < lines.end && m.range.end >= lines.start;
             let line_gutter = Gutter::for_line(gutter, signs, &styled, &lines);
             let mut overlay = Overlay::default();
-            let guides = view_ruler_guides(editor, view, line, pane, gutter, text_width);
+            let guides =
+                view_ruler_guides(editor, decorations, view, line, pane, gutter, text_width);
             for (i, cells) in layout.into_iter().enumerate().skip(skip) {
                 if rows.len() == text_rows {
                     break 'lines;
@@ -1176,6 +1190,7 @@ impl<M: Measure> Renderer<M> {
             &mut rows,
             text_rows,
             editor,
+            decorations,
             view,
             pane,
             (gutter, text_width),

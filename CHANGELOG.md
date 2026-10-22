@@ -5,7 +5,7 @@ the repository's history.
 
 ## Unreleased
 
-- core: optional file-pane column rulers with `greed.rulers`, drawn beneath text backgrounds in terminals and windows; guides remain cell-aligned across scaled text and ignore offscreen columns without overflow.
+- core: optional file-pane column rulers with `greed.option.set("rulers", {80, 100})`, empty by default and drawn beneath text backgrounds in terminals and windows; guides stay aligned to one-based text columns through horizontal scrolling, scaled text and offscreen columns. Options also support sorted, unique positive integer lists.
 
 ## 0.3.0 - 2026-10-22
 

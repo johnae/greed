@@ -6,6 +6,12 @@
 local greed = require("@greed")
 
 greed.option.define({
+	name = "rulers",
+	default = {},
+	doc = "Positive one-based text columns for file-pane rulers, excluding the gutter; empty disables them. Requires an explicit ui.ruler background.",
+})
+
+greed.option.define({
 	name = "line-numbers",
 	default = "absolute",
 	choices = { "absolute", "relative", "hybrid" },

@@ -1379,9 +1379,21 @@ impl Server<'_> {
             }
         };
         let render = || {
+            let rulers = host.with_registry(|registry| match registry.option_for(id, "rulers") {
+                Some(crate::registry::Value::PositiveInts(columns)) => columns.clone(),
+                _ => std::sync::Arc::from([]),
+            });
             host.with_editor_and_syntax(|ed, syntax| {
                 let outer = ed.act_as(id);
-                let frame = client.renderer.frame(ed, size, &status, &Shown { syntax });
+                let frame = client.renderer.frame(
+                    ed,
+                    size,
+                    &status,
+                    &Shown {
+                        syntax,
+                        rulers: &rulers,
+                    },
+                );
                 ed.act_as(outer);
                 frame
             })
@@ -1469,9 +1481,13 @@ fn first_line(text: &str) -> String {
 /// What's drawn over buffer text: syntax highlighting.
 struct Shown<'a> {
     syntax: &'a Syntax,
+    rulers: &'a [usize],
 }
 
 impl Decorations for Shown<'_> {
+    fn rulers(&self) -> &[usize] {
+        self.rulers
+    }
     fn highlights(&self, buffer: BufferId, text: &Rope, range: Range<usize>) -> Vec<Highlight> {
         self.syntax.highlights(buffer, text, range)
     }

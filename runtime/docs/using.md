@@ -2746,17 +2746,21 @@ require("@todo-comments").words.PERF = "comment.note"
 
 ### Column rulers
 
-`greed.rulers({ 80, 100 })` enables file-pane rulers at positive one-based
-display columns, excluding the line-number gutter. Columns are sorted and
-deduplicated; `greed.rulers({})` clears them. Invalid columns raise an error
-without changing the current configuration.
+`greed.option.set("rulers", { 80, 100 })` enables file-pane rulers at
+positive one-based text columns, excluding the line-number gutter. Columns
+are sorted and deduplicated; `greed.option.set("rulers", {})` clears them.
+`greed.option.get("rulers")` and `:get rulers` inspect them. Invalid columns
+raise an error without changing the current configuration.
+The command-line form is `:set rulers 80,100` (`:set rulers {}` clears it).
 
 Rulers are off by default. To see configured rulers, give `ui.ruler` an
 explicit background with `greed.theme.set`; no color is supplied by default.
 Only its background is used. Selections, cursors, explicit text/line
 backgrounds and floating windows cover rulers. Wrapped rows keep the same
 text-area columns, including empty rows and the area below the file's end;
-unwrapped lines move rulers with horizontal scrolling. Rulers never change
+unwrapped lines move rulers on screen with horizontal scrolling, keeping
+each guide aligned with its configured text column rather than a fixed
+screen cell. Rulers never change
 buffer text or add rows, and do not appear in panels or floats.
 
 ### Themes

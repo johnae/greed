@@ -514,26 +514,6 @@ fn command_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     })
 }
 
-fn rulers_function(lua: &Lua) -> LuaResult<Function> {
-    lua.create_function(|lua, columns: Table| {
-        let columns = columns
-            .sequence_values::<f64>()
-            .map(|column| {
-                let column = column?;
-                if !column.is_finite() || column <= 0.0 || column.fract() != 0.0 {
-                    return Err(mlua::Error::runtime(
-                        "ruler columns must be positive integers",
-                    ));
-                }
-                lua.unpack::<usize>(Value::Number(column))
-                    .map_err(|_| mlua::Error::runtime("ruler columns must be positive integers"))
-            })
-            .collect::<LuaResult<Vec<_>>>()?;
-        state_mut(lua).editor.set_rulers(columns);
-        Ok(())
-    })
-}
-
 pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let greed = lua.create_table()?;
 
@@ -602,7 +582,6 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     greed.set("quit", quit_function(lua)?)?;
 
     greed.set("line_numbers", line_numbers_function(lua)?)?;
-    greed.set("rulers", rulers_function(lua)?)?;
     greed.set("reveal", reveal_function(lua)?)?;
 
     greed.set(
@@ -1449,12 +1428,12 @@ fn option_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 /// `greed.option.define(spec)` for `o`'s code.
 fn define_option(lua: &Lua, o: &PluginId, spec: &Table) -> LuaResult<()> {
     let name: String = spec.get("name")?;
-    let default = option_value(spec.get("default")?)?;
+    let default = option_value(lua, spec.get("default")?)?;
     let choices = spec
         .get::<Option<Vec<Value>>>("choices")?
         .unwrap_or_default()
         .into_iter()
-        .map(option_value)
+        .map(|value| option_value(lua, value))
         .collect::<LuaResult<Vec<_>>>()?;
     if let Some(odd) = choices
         .iter()
@@ -1530,7 +1509,7 @@ fn set_option(lua: &Lua, (name, value, opts): (String, Value, Option<Table>)) ->
         let state = &mut *state_mut(lua);
         let client = state.editor.client();
         if own {
-            let value = (!value.is_nil()).then(|| option_value(value.clone()));
+            let value = (!value.is_nil()).then(|| option_value(lua, value.clone()));
             state
                 .registry
                 .set_option_for(client, &name, value.transpose()?)
@@ -1539,7 +1518,7 @@ fn set_option(lua: &Lua, (name, value, opts): (String, Value, Option<Table>)) ->
             let by = state.running.clone();
             state
                 .registry
-                .set_option_by(&name, option_value(value.clone())?, by)
+                .set_option_by(&name, option_value(lua, value.clone())?, by)
                 .map_err(mlua::Error::external)?;
         }
         client
@@ -1554,7 +1533,7 @@ fn set_option(lua: &Lua, (name, value, opts): (String, Value, Option<Table>)) ->
     emit(lua, "option.changed", &payload)
 }
 
-fn option_value(value: Value) -> LuaResult<OptionValue> {
+fn option_value(lua: &Lua, value: Value) -> LuaResult<OptionValue> {
     Ok(match value {
         Value::Boolean(b) => OptionValue::Bool(b),
         Value::Integer(i) => OptionValue::Int(i),
@@ -1568,9 +1547,51 @@ fn option_value(value: Value) -> LuaResult<OptionValue> {
         }
         Value::Number(n) => OptionValue::Float(n),
         Value::String(s) => OptionValue::String(s.to_str()?.as_ref().into()),
+        Value::Table(table) => {
+            let mut values = Vec::with_capacity(table.raw_len());
+            let mut count = 0;
+            for pair in table.pairs::<Value, Value>() {
+                let (key, value) = pair?;
+                count += 1;
+                if !matches!(key, Value::Integer(_) | Value::Number(_))
+                    || !matches!(value, Value::Integer(_) | Value::Number(_))
+                {
+                    return Err(mlua::Error::runtime(
+                        "options take dense positive integer lists",
+                    ));
+                }
+                let index = lua.unpack::<f64>(key)?;
+                if !index.is_finite()
+                    || index.fract() != 0.0
+                    || index < 1.0
+                    || lua.unpack::<usize>(Value::Number(index))? > table.raw_len()
+                {
+                    return Err(mlua::Error::runtime(
+                        "options take dense positive integer lists",
+                    ));
+                }
+                let number = lua.unpack::<f64>(value)?;
+                if !number.is_finite()
+                    || number <= 0.0
+                    || number.fract() != 0.0
+                    || number >= 2_f64.powi(i32::try_from(usize::BITS).expect("pointer width fits"))
+                {
+                    return Err(mlua::Error::runtime("options take positive integer lists"));
+                }
+                values.push(lua.unpack::<usize>(Value::Number(number))?);
+            }
+            if count != table.raw_len() {
+                return Err(mlua::Error::runtime(
+                    "options take dense positive integer lists",
+                ));
+            }
+            values.sort_unstable();
+            values.dedup();
+            OptionValue::PositiveInts(values.into())
+        }
         other => {
             return Err(mlua::Error::runtime(format!(
-                "options can be booleans, numbers or strings, not {}",
+                "options can be booleans, numbers, strings or positive integer lists, not {}",
                 other.type_name()
             )));
         }
@@ -1584,6 +1605,9 @@ fn option_to_lua(lua: &Lua, value: OptionValue) -> LuaResult<Value> {
         OptionValue::Int(i) => Value::Number(i as f64),
         OptionValue::Float(f) => Value::Number(f),
         OptionValue::String(s) => Value::String(lua.create_string(&*s)?),
+        OptionValue::PositiveInts(values) => {
+            Value::Table(lua.create_sequence_from(values.iter().copied())?)
+        }
     })
 }
 

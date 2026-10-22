@@ -67,10 +67,17 @@ fn changed_rows(surface: &SurfaceDelta) -> Vec<u16> {
 fn changing_only_rulers_survives_delta_serialization_and_clear() {
     let mut ed = editor("|one\n");
     let before = frame(&mut ed);
-    ed.set_rulers(vec![5]);
-    let after = frame(&mut ed);
+    let columns: std::sync::Arc<[usize]> = [5].into();
+    let after = Renderer::new(CellWidth).frame(
+        &mut ed,
+        Size {
+            width: 30,
+            height: 40,
+        },
+        &Status::Default { message: None },
+        &columns,
+    );
     delta(&before, &after);
-    ed.set_rulers(Vec::new());
     let cleared = frame(&mut ed);
     delta(&after, &cleared);
     assert_eq!(before.surfaces, cleared.surfaces);
