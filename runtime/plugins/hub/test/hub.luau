@@ -66,6 +66,48 @@ test("an agent waiting is told with what it waits on, and once per time it waits
 	assert(hub.waiting(statuses)[2].key == "greed-2|terminal:5|200")
 end)
 
+test("what asks to be told of needing you is told, once each time it starts", function()
+	local statuses: any = {
+		chat = {
+			attention = {
+				{
+					id = "chat-room:x|!plans",
+					label = "Bea in Plans",
+					reason = "lunch?",
+					since = 300,
+					tell = true,
+				},
+				{ id = "terminal:3", label = "make", reason = "finished", since = 310 } :: any,
+			},
+		},
+	}
+	local waiting = hub.waiting(statuses)
+	assert(#waiting == 1, "only what asks to be told: " .. tostring(#waiting))
+	assert(
+		waiting[1].title == "Bea in Plans" and waiting[1].body == "lunch? · chat",
+		waiting[1].body
+	)
+	assert(waiting[1].key == "chat|chat-room:x|!plans|300", waiting[1].key)
+	statuses.chat.attention[1].since = 320
+	assert(
+		hub.waiting(statuses)[1].key == "chat|chat-room:x|!plans|320",
+		"a new message is told again"
+	)
+end)
+
+test("the status line counts what's for you in your other sessions", function()
+	local function told(attention: { any }, session: string?): any
+		return { session = session or "chat", status = { attention = attention } }
+	end
+	local tell =
+		{ id = "chat-room:x|!plans", label = "Bea in Plans", reason = "lunch?", tell = true }
+	local quiet = { id = "terminal:3", label = "make", reason = "finished" }
+	assert(hub.told({ told({ quiet }) }) == nil, "only what asks to be told")
+	assert(hub.told({ told({ tell, tell, quiet }) }) == "● 2 for you in chat")
+	local said = hub.told({ told({ tell }), told({ tell }, "greed-2") })
+	assert(said == "● 2 for you elsewhere", said)
+end)
+
 test("hub_notify tells the client of this session it names, and says when there's none", function(t)
 	local greed = require("@greed")
 	local agent = require("@agent")

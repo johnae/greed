@@ -679,6 +679,7 @@ test("an alert marks its room until you look; :chat-alerted goes there", functio
 	assert(needs_you(), "the room needs you")
 	local need = core.attention.list()[1]
 	assert(need.label == "Bea in Plans" and need.reason == "anna, lunch?", need.label)
+	assert(need.tell == true, "the hub tells you of it")
 
 	t:run("chat-alerted")
 	t:wait(50)

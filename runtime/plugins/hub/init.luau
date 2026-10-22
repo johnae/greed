@@ -782,6 +782,48 @@ statusline.add("right", "elsewhere", function()
 	return { text = `{said} {text}`, style = "ui.statusline.message" }
 end, "agents")
 
+-- What needs you in `status` and asks to be told (`core.attention`'s `tell`).
+local function to_tell(status: Status?): { { [string]: any } }
+	local out = {}
+	local attention = status and status.attention
+	if type(attention) == "table" then
+		for _, need in attention do
+			if need.tell == true then
+				table.insert(out, need)
+			end
+		end
+	end
+	return out
+end
+
+--- What asks to be told of needing you in `sessions` (your other ones, as
+--- `M.sessions` gives them), as the status line says it: "● 2 for you in
+--- chat", or "elsewhere" for several sessions; nil when there's nothing.
+function M.told(sessions: { Session }): string?
+	local count = 0
+	local places: { [string]: boolean } = {}
+	for _, found in sessions do
+		local needs = to_tell(found.status)
+		if #needs > 0 then
+			count += #needs
+			places[M.place(found)] = true
+		end
+	end
+	if count == 0 then
+		return nil
+	end
+	local place = next(places)
+	local where = if place and next(places, place) == nil then `in {place}` else "elsewhere"
+	return `● {count} for you {where}`
+end
+
+-- What's for you in your other sessions, like chat messages, while you're
+-- in this one: a window or terminal you're looking at isn't told.
+statusline.add("right", "told", function()
+	local said = M.told(M.sessions())
+	return if said then { text = said, style = "ui.statusline.message" } else nil
+end, "agents")
+
 greed.command({
 	name = "machine",
 	doc = "The agents of every other session, here and on the machines the hub follows: enter goes there, ctrl-a answers or stops it (space i A)",
@@ -832,12 +874,13 @@ greed.command({
 
 -- Telling you ----------------------------------------------------------------
 --
--- The hub tells you when an agent starts waiting, here or on a machine it
--- follows: each machine you're attached from gets it once, through one of
--- its clients, so two windows on one machine don't both say it. An agent on
--- another machine is that machine's hub's to tell where it can, so this hub
--- tells only the machines that one doesn't reach. What it told is kept, so
--- a restart or a new hub doesn't tell it again.
+-- The hub tells you when an agent starts waiting, or something that asks
+-- to be told starts needing you (a chat message for you), here or on a
+-- machine it follows: each machine you're attached from gets it once,
+-- through one of its clients, so two windows on one machine don't both say
+-- it. An agent on another machine is that machine's hub's to tell where it
+-- can, so this hub tells only the machines that one doesn't reach. What it
+-- told is kept, so a restart or a new hub doesn't tell it again.
 
 --- Where you can be told: for each machine with a client attached in any
 --- of `statuses` (by session), a session it's attached to and that client's
@@ -864,12 +907,14 @@ function M.reachable(
 	return out
 end
 
---- An agent waiting in one of `statuses`, with what tells this time apart
---- from another time it waits (`key`), and the words to tell you with.
+--- An agent waiting in one of `statuses`, or what else asks to be told of
+--- needing you, with what tells this time apart from another time it
+--- waits (`key`), and the words to tell you with.
 export type Waiting = { key: string, session: string, title: string, body: string }
 
 --- The agents waiting for you in `statuses`, by session name, on this
---- machine or the one `machine` names.
+--- machine or the one `machine` names, and what else needing you asks to
+--- be told (`core.attention`'s `tell`).
 function M.waiting(
 	statuses: { [string]: Status },
 	machine: { id: string, name: string }?
@@ -914,6 +959,16 @@ function M.waiting(
 					if first then tostring(first.question) else tostring(asked.title)
 				)
 			end
+		end
+		-- What else needs you and asks to be told, like a chat message for
+		-- you; each time it starts needing you again is another to tell.
+		for _, need in to_tell(status) do
+			add(
+				name,
+				`{name}|{need.id}|{need.since or ""}`,
+				tostring(need.label),
+				tostring(need.reason)
+			)
 		end
 	end
 	table.sort(out, function(a: Waiting, b: Waiting): boolean

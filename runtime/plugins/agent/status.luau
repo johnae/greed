@@ -57,6 +57,7 @@ function M.status(): { [string]: any }
 			label = need.label,
 			reason = need.reason,
 			since = need.since,
+			tell = need.tell,
 		})
 	end
 	-- What can be done to an agent now, by action name, so a view elsewhere

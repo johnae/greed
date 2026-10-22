@@ -955,7 +955,10 @@ the hub](sessions.md) explains how this works.
 When an agent starts waiting for you in any session here, each machine
 you're attached from gets one desktop notification, whichever session its
 windows or terminals show. Each wait is notified once, also after a
-restart.
+restart. The same goes for what else asks to be told, like a chat
+message for you; while those wait, the status line of your other
+sessions says so (`● 2 for you in chat`), for when the window or terminal
+you're looking at isn't told.
 
 ### Agents on your other machines
 

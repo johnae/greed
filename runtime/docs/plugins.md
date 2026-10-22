@@ -997,7 +997,9 @@ greed.tab.set_layout({
   user with `core.attention.set(key, { label, reason, buffer })`, where
   `key` is the thing's object id (`terminal:12`) and `buffer` where to
   look; its float gets a dot, and `core.attention.list()` gives everything
-  waiting, oldest first. `core.attention.set(key, nil)` takes it off.
+  waiting, oldest first. With `tell = true` the hub tells the user of it
+  wherever they are, as it does an agent waiting (a chat message for them,
+  say). `core.attention.set(key, nil)` takes it off.
 - Pickers (`require("@picker").pick(title, items, choose, options)`)
   filter a list as you type, with an optional preview, or ask a function
   for items as the query changes. `on_move` hears each item as it becomes

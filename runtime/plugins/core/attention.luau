@@ -1,7 +1,8 @@
 -- What needs you: an agent waiting for an answer, a command that finished
 -- out of sight. The plugin that knows the thing says so and takes it off
 -- again; floats get a colored dot, and the session's status lists them,
--- oldest first.
+-- oldest first. What asks to be told (`tell`, like a chat message for you)
+-- the hub tells you of wherever you are, as it does an agent waiting.
 
 local greed = require("@greed")
 local registry = require("./registry")
@@ -10,13 +11,15 @@ local M = {}
 
 --- Something that needs you. `key` is the thing's object id, like
 --- "terminal:12"; `buffer` is where to look at it, when it has one; `since`
---- is when it started needing you, in seconds since the epoch.
+--- is when it started needing you, in seconds since the epoch; `tell`
+--- asks the hub to tell you of it wherever you are.
 export type Need = {
 	key: string,
 	label: string,
 	reason: string,
 	since: number,
 	buffer: greed.Buffer?,
+	tell: boolean?,
 }
 
 local needs: { [string]: Need } = {}
@@ -29,9 +32,13 @@ local function tell()
 end
 
 --- Says the thing `key` needs you, why (`reason`) and where to look
---- (`buffer`), or with nil that it no longer does. Saying it again with the
---- same reason keeps when it started.
-function M.set(key: string, need: { label: string, reason: string, buffer: greed.Buffer? }?)
+--- (`buffer`), and whether to `tell` you wherever you are; or with nil
+--- that it no longer does. Saying it again with the same reason keeps when
+--- it started.
+function M.set(
+	key: string,
+	need: { label: string, reason: string, buffer: greed.Buffer?, tell: boolean? }?
+)
 	local had = needs[key]
 	if need == nil then
 		if had then
@@ -45,6 +52,7 @@ function M.set(key: string, need: { label: string, reason: string, buffer: greed
 		and had.reason == need.reason
 		and had.label == need.label
 		and had.buffer == need.buffer
+		and had.tell == need.tell
 	then
 		return
 	end
@@ -54,6 +62,7 @@ function M.set(key: string, need: { label: string, reason: string, buffer: greed
 		reason = need.reason,
 		since = if had and had.reason == need.reason then had.since else os.time(),
 		buffer = need.buffer,
+		tell = need.tell,
 	}
 	tell()
 end

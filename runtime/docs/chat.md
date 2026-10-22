@@ -128,19 +128,20 @@ shows.
 A new message that mentions you, or any message in a direct message, alerts
 you:
 
-- the room shows as needing you in the session's status until you look
-  at it,
-- your desktop shows a notification, through the attached Greed window or
-  terminal and with `notify-send` (Linux) or `osascript` (macOS) where
-  they're installed.
+- the room shows as needing you in the chat session's status until you
+  look at it,
+- you get one notification wherever you are: the hub tells the Greed
+  window or terminal on each machine you're attached from, whichever
+  session it shows, as it does when an agent waits for you.
 
 A room you're looking at doesn't alert. `:chat-alerted` goes to the room of
 the latest alert.
 
 `:set chat-alerts all` alerts of everything the service would notify you of
 (on Matrix, what your push rules on the server notify of),
-`:set chat-alerts off` of nothing. `:set chat-alerts-desktop false` keeps
-alerts off the desktop's own notifications.
+`:set chat-alerts off` of nothing. `:set chat-alerts-desktop true` sends
+them to the desktop's own notifications too (`notify-send` on Linux,
+`osascript` on macOS), for when no Greed is attached anywhere.
 
 Only new messages alert: what came while Greed was away shows as unread
 counts in the list.

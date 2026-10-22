@@ -1,9 +1,10 @@
 -- New messages for you, as the services say (`alert`): mentions and direct
--- messages by default. One marks its room as needing you (a dot, the
--- session's status) until you look at the room, and shows on your desktop
--- through the attached client and with notify-send or osascript. A room
--- you're looking at doesn't alert. `:chat-alerted` goes to the room of the
--- latest.
+-- messages by default. One marks its room as needing you (the session's
+-- status) until you look at the room, and the hub tells you of it wherever
+-- you are, through the Greed window or terminal on the machine you're at.
+-- With `chat-alerts-desktop` it goes to the desktop's own notifications too
+-- (notify-send or osascript), for when no Greed is attached. A room you're
+-- looking at doesn't alert. `:chat-alerted` goes to the room of the latest.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -21,8 +22,8 @@ greed.option.define({
 
 greed.option.define({
 	name = "chat-alerts-desktop",
-	doc = "Show chat alerts as desktop notifications with notify-send or osascript, where installed",
-	default = true,
+	doc = "Show chat alerts as the desktop's own notifications too (notify-send or osascript), for when no Greed is attached to tell you",
+	default = false,
 })
 
 -- The most cells a message shows in a notification.
@@ -62,8 +63,7 @@ backend.on_alert(function(account: string, alert: backend.Alert)
 	end
 	latest = { account = account, alert = alert }
 	local title, text = M.said(alert)
-	core.attention.set(M.key(account, alert.room), { label = title, reason = text })
-	greed.client.notify(title, text)
+	core.attention.set(M.key(account, alert.room), { label = title, reason = text, tell = true })
 	if greed.option.get("chat-alerts-desktop") == true then
 		core.desktop.notify(title, text)
 	end
