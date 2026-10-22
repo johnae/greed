@@ -5,8 +5,7 @@ the repository's history.
 
 ## Unreleased
 
-- core: auto-save runs the manual save hooks and schedules existing dirty files on startup, enable and core reload; overlapping saves share one operation and release waiters on failure or unload.
-- core: `greed.plugin.tie` supports synchronous init-time cleanup, allowing pending core-owned saves to cancel safely on unload; caller-name return values are unchanged.
+- core: auto-save runs the manual save hooks and schedules existing dirty files on startup, enable and core reload.
 
 ## 0.3.0 - 2026-10-22
 
