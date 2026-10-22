@@ -1611,7 +1611,7 @@ dependencies = [
 
 [[package]]
 name = "greed-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "alacritty_terminal",
  "base64 0.22.1",
@@ -1665,11 +1665,11 @@ dependencies = [
 
 [[package]]
 name = "greed-dirs"
-version = "0.2.1"
+version = "0.3.0"
 
 [[package]]
 name = "greed-editor"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",
@@ -1689,7 +1689,7 @@ dependencies = [
 
 [[package]]
 name = "greed-gui"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "arboard",
  "base64 0.22.1",
@@ -1709,7 +1709,7 @@ dependencies = [
 
 [[package]]
 name = "greed-index"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "regex",
  "rusqlite",
@@ -1719,7 +1719,7 @@ dependencies = [
 
 [[package]]
 name = "greed-mail"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-imap",
  "futures",
@@ -1742,7 +1742,7 @@ dependencies = [
 
 [[package]]
 name = "greed-text"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "ropey",

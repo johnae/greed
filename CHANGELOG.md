@@ -3,6 +3,183 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## 0.3.0 - 2026-10-22
+
+### Highlights
+
+- Hoard (`greed notes`): your notes and todos on a home page with today, the agenda and a search over everything; todos in plain words (`call the bank tomorrow 18:00`), repeats, habits and reminders.
+- An Obsidian vault works as it is: links, aliases, embeds and pictures, callouts, front matter, daily notes, templates and the Tasks plugin's dates.
+- Mail (`greed mail`): your IMAP accounts (Gmail, and Proton through Bridge) in a local copy, searched as you type, offline too; threads, HTML laid out with nothing loaded, writing in Markdown, invites, rules and undo.
+- One query language for notes, mail and the shell's filters (`is:todo due:..+7d`, `in:inbox from:anna`), checked as you type, and notes blocks that keep a list of what a query finds.
+- Agents in both: ask your notes a question, pull the todos out of a meeting, sum up the week, ask which mail needs an answer; jobs can run on a schedule, and what they change waits for your review.
+- A mail becomes a todo in your notes, linking back to its thread.
+- The shell reads more commands as tables (free, ss, ip, mount, uptime, ping, test runs, git's branches and stashes), and `parse` turns any text into a table with a sikt program.
+- A session that crashed or was upgraded comes back as it was; one you quit starts clean.
+
+### New
+
+- core: greed.sikt reads rows out of text with sikt programs, on other threads for many texts
+- core: a sikt program's rows can hold each capture as the text it matched
+- shell: parse reads text as a table with a sikt program, and a parser can be one
+- shell: free, ss, ip, mount, uptime, ping, test runs, who, env and git's branches, remotes and stashes read as tables
+- core: :w! makes a folder that isn't there, as :wa!, :wq! and :wqa! do
+- core: reading dates in plain words moves to core, for notes, queries and the rest
+- core: one query language: a query parsed into a tree, with its mistakes, and printed back
+- core: a date in a query read as the days it covers: today, 2w, eow, monday, last week, 2026-10
+- core: a query checked against its source and run over items: fields, flags, dates, places, sorting
+- index: queries run over rows in Rust, with maybe for what only Luau can tell
+- index: an index on SQLite: items in items, fields and flags, words in FTS5, searched with the same rules
+- index: greed.index: indexes Luau reads and writes, on another thread
+- core: a search box for queries: colours, the live *, mistakes, counts, tab and history
+- index: words and values match without minding accents: cafe finds Café
+- core: in: naming nothing says so, with the name likely meant; tab completes names
+- query: an item can be in several places, as a mail in its labels, and in: finds it there
+- core: greed.fs.scan lists a folder's files with sizes and times, and reads them, in the background
+- core: core.file.on_changed hears what Greed writes, moves and removes
+- notes: an index of every note, kept current: titles, outline, todos, tags, links, fields, reminders
+- hoard: greed notes opens Hoard, a home for your notes: search, today, the agenda, adding todos
+- notes: todos say when in plain words, like tomorrow 18:00 or every monday, and repeating todos come back
+- hoard: greed capture adds to today's note from any shell, and today's note starts from a template
+- lsp: a completion source can ask to be asked first
+- hoard: / in a note offers a todo, dates, a reminder, a repeat, a link, a heading, a table or a tag
+- notes: links go to headings, blocks and aliases as Obsidian writes them, and the Tasks plugin's due dates count
+- notes: embeds show the note, section or block in place
+- notes: :notes-link links to a heading, list item or block, giving it an id
+- notes: renaming a note or folder changes the links to it
+- hoard: [[ completes notes, their headings and blocks as you type
+- hoard: modeless and without line numbers or spelling servers, unless set otherwise
+- hoard: the status line and going back lead home from a note
+- hoard: the home is a box to write in, adding to today and searching as you type
+- hoard: :hoard goes to Hoard's session from anywhere, :hoard-window in a window of its own
+- hoard: the arrows move about the home, and the widget you're on lights up
+- hoard: esc in a note goes back to the home
+- hoard: todos written today are on the agenda, and the box fits its width
+- hoard: a todo on the agenda moves to another day with its when button or alt-d
+- notes: repeats on several days or every few, habits, from and until, and reminders at a time alone
+- core: quick-fix asks plugins first, then the language server
+- notes: a line names the notes it mentions, the quick fix links them, and notes list where they're mentioned
+- hoard: the home brings back old notes and waiting todos, and the week gets a review
+- markdown: list items and sections move, indent and zoom with what's under them
+- notes: notes, todos and headings answer queries, and agents can ask them
+- notes: a notes block in a note lists what its query finds, as the notes change
+- hoard: the home's search reads an index of everything the notes say, and takes queries
+- core: greed.fs.write can write in the background, so a slow disk doesn't hold the editor
+- hoard: the first time, the home says where notes are and how to add to them
+- notes: a todo a notes block lists is ticked from its row, as a data source's row offers what can be done with it
+- hoard: the agenda as a note of queries, made the first time and then yours to change
+- markdown: Obsidian's callouts show their sign and title, their bar in their kind's colour
+- notes: front matter's lists and links are fields queries read, and its date is the note's
+- notes: in an Obsidian vault, today's note goes where its daily notes settings say, from their template
+- notes: note kinds from templates, and front matter completion
+- notes: agent jobs: pull out todos, ask your notes, sum up the week
+- notes: rename a tag in every note
+- notes: picture embeds, found as Obsidian finds attachments
+- notes: a tag naming a note kind offers its missing fields
+- notes: agent jobs on a schedule, skipped when there's nothing new
+- restore: a session that was quit starts clean, one that crashed or was upgraded comes back
+- mail: greed-mail: accounts, logging in over TLS, what a server can do, its mailboxes
+- mail: the store and the first sync: headers newest first, by UID range, a batch at a time
+- mail: flags and labels kept up to date, messages gone from the server go, Bridge's labels as places
+- mail: bodies: each message's text, its HTML packed and what's attached, unread first
+- mail: threads: replies join what they reply to, in whichever order they come
+- mail: the index: messages and threads by words, places, fields and flags, kept up with the store
+- mail: greed-mail serve: syncs in the background, answers search results and threads over JSON-RPC
+- mail: :mail searches your mail as you type and reads its threads, from greed-mail
+- mail: new mail comes at once through IDLE; a failing account is tried again, later each time
+- mail: greed mail opens mail in a session of its own on a full page; a quick look elsewhere
+- mail: mark read, flag, archive and trash; changes show at once and go to the server each round
+- mail: write, reply and send mail over SMTP; a copy in Sent, the original marked answered
+- mail: tags: keywords on plain IMAP, shown in the list, t to set or take off; Proton and Gmail wait
+- mail: HTML mail laid out as styled text in Greed, its links opened from it; h for its text, b for a browser that loads nothing
+- mail: attachments open from a thread or save where you say, fetched whole the first time
+- mail: a list shows a thread once, its changes made to the messages found
+- mail: saved searches over the list, their unread counted as mail comes; g 1 to g 9
+- mail: rules for new mail: a query and what to do with what it finds, in Luau
+- mail: T makes a todo of a message, linking back; mail: links open its thread
+- mail: invites read as a card; accept, maybe or decline answers the organizer
+- mail: the quick look elsewhere changes mail through the mail session
+- mail: z undoes the last change or takes back mail just sent; deleting for good asks
+- mail: a thread opens on what's new, older messages and long quotes folded; o shows all
+- mail: writing mail: From by who it went to, aliases, addresses completed from your mail, attachments
+- mail: tags set as Gmail labels, and Proton labels once an account turns them on
+- mail: aliases are you: is:mine, invites to them, and never offered as contacts
+- mail: the list says what greed-mail is busy with: a bar while indexing, how much is in while syncing
+- mail: what's written is kept as a draft as you go; :mail-drafts writes one again, z reopens mail taken back
+- mail: space . acts on the mail at the cursor, and on the draft being written
+- core: files open by type: in Greed, outside it as open_with says, never a program
+- mail: what's attached shows in the list and under each message, with how it opens
+- mail: space . on what's attached: open, open outside, save, save all, copy its path
+- mail: search what's attached by its name and kind: file:invoice type:pdf
+- mail: what's attached to recent and flagged mail is fetched ahead, so it opens at once
+- mail: g s picks any saved search by name, however many there are
+- mail: tab and shift-tab go through the saved searches, alt-1 to alt-9 to one
+- mail: identities: a signature, Reply-To and Bcc to yourself for each address you send from
+- mail: mail is written in Markdown and goes as its text and the HTML it makes
+- mail: a default From for new mail, and :mail-from picks who it's from with that identity's signature
+- mail: greed-mail and the plugin say which protocol they speak, and a mismatch says what to rebuild
+- mail: rules can be tried on the mail you have, then run over it; and a rule can be kept for mail of an age
+- mail: ctrl-enter or alt-enter sends the mail being written
+- agent: what you're in says what it is: mail and its search, a shell, Hoard, a terminal
+- mail: agents search and read your mail, show a thread, and mark or archive it, with mail tools
+- mail: a mail: link opens its thread at that message, unfolded
+
+### Fixed
+
+- core: greed.sikt.compile gives nil and why, as assert takes them, and check lists a program's mistakes and warnings
+- notes: a [[link]] in Markdown outside the notes opens the file beside it
+- session: greed FILE opens a file not there yet, also with another version's session
+- index: taking an item out finds its field words by rowid, without reading them all
+- ui: a list leaves a span its own press, like a box to tick
+- render: text after a line's end reaches the last column and stays put under the cursor
+- core: numbers come back from greed.json as they went, to the last bit
+- data: a table without rows says so, rather than drawing an empty one
+- notes: links find notes as Obsidian does, by file name in any folder and any case, front matter's too
+- mail: the index searches only a message's text fields by word
+- mail: an index made again gets every message again; a search finding nothing lists nothing
+- mail: is:mine is mail from your address, not one that ends like it
+- mail: flagged mail shows a flag in the list
+- mail: an index from an older greed-mail says what makes it again
+- mail: a list of threads copies greed-mail's tags, a JSON array, without cloning it
+- rpc: sending to a program never waits on it reading: a writer thread per connection
+- cmdline: fewer matches than before all show, none left scrolled out of sight
+- mail: mail with nothing attached sends: an empty table from Luau is an empty list
+- mail: mail due goes out between batches of a long index catch-up, not after it
+- mail: \Recent isn't kept as a flag, so Bridge's mail isn't indexed again every round
+- mail: changes and fetched bodies index only themselves, never waiting on a long catch-up
+- mail: a message cut short only in what's attached doesn't say its text goes on
+- mail: b opens the message in the browser, not as its HTML in Greed
+- mail: new mail shows in all its places at once, the inbox too, before a round's slow part
+- agent: mail being read reaches an agent marked as from outside
+- agent: an agent sending mail asks you first, every time
+- agent: an agent sees the mail, shell or list you're in, and reads a buffer by its id
+- test: waiting lets time pass when a timer woke the test, so timers started meanwhile fire
+- hoard: question-only job prompts, no templates in recent, links as words
+- mail: search and todo prompts end in a space, rows cut in a narrow pane
+
+### Faster
+
+- index: candidates load a thousand at a time, a limit stops early, and numbers narrow in SQL
+- index: statements are prepared once, and only text fields get word rows
+- index: a search sorted by date walks it in order and stops at a page; text only read for words
+- notes: the notes' index is written in slices and batches, searches reuse what they worked out, and budgets measure both
+- notes: what the notes' indexes worked out is saved, so a new session reads only notes that changed
+- notes: the index's rows read each note's days once, labels reuse the parsed text, and today is read once a second
+- notes: notes' lines are read with sikt, and lines with anything rarer with syntax as before
+- markdown: empty lines and lines starting with a mark no block starts with read as prose at once, and table cells are found a bar at a time
+- mail: a thread's subject found by an index, the index written 2000 at a time, dates in UTC
+- mail: saved searches count their unread from the index alone, asking greed-mail nothing
+
+### Documentation
+
+- sessions, machines and the hub
+- shell: filters mind neither case nor accents
+- hoard: where notes are and Obsidian vaults up front; README says what Hoard does
+- mail: setting it up, several accounts, the mail session and the quick look, mail.toml for Gmail and Proton
+- mail: a guide to mail in Greed: setting up, keys, Hoard, agents, what's there and not
+- charts: an example namespace that's nobody's
+- site: code in one font everywhere, so boxes and bars line up on every device
+- site: Hoard and Mail on the front page and their docs, with recorded demos
+
 ## 0.2.1 - 2026-10-18
 
 ### Highlights
