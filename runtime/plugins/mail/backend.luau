@@ -294,17 +294,7 @@ M.PROTOCOL = 1
 --- else the one beside this greed (as Greed's packages have it), else
 --- the one on PATH.
 function M.program(): string
-	local set = tostring(greed.option.get("mail-program"))
-	if set ~= "" then
-		return set
-	end
-	local greed_program = greed.session.program()
-	local folder = if greed_program then string.match(greed_program, "^(.*)/[^/]*$") else nil
-	local beside = if folder then `{folder}/greed-mail` else nil
-	if beside and greed.fs.stat(beside) then
-		return beside
-	end
-	return "greed-mail"
+	return core.file.companion("mail-program", "greed-mail")
 end
 
 -- greed-mail, started if it isn't running.

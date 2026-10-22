@@ -23,6 +23,23 @@ M.is_scratch = unsaved.is_scratch
 --- since it was opened or saved.
 M.unsaved = unsaved.unsaved
 
+--- A program that comes with Greed, like greed-mail: the one `option`
+--- names when it's set, else `name` beside this greed (as Greed's packages
+--- have it), else `name` on PATH.
+function M.companion(option: string, name: string): string
+	local set = tostring(greed.option.get(option))
+	if set ~= "" then
+		return set
+	end
+	local greed_program = greed.session.program()
+	local folder = if greed_program then string.match(greed_program, "^(.*)/[^/]*$") else nil
+	local beside = if folder then `{folder}/{name}` else nil
+	if beside and greed.fs.stat(beside) then
+		return beside
+	end
+	return name
+end
+
 -- How buffers that aren't files save, by kind.
 local savers: { [string]: (buffer: greed.Buffer) -> () } = {}
 

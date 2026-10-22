@@ -42,6 +42,7 @@
 		"kubernetes": "./plugins/kubernetes",
 		"board": "./plugins/board",
 		"mail": "./plugins/mail",
+		"chat": "./plugins/chat",
 		"scene": "./plugins/scene",
 		"chart": "./plugins/chart",
 		"data": "./plugins/data",

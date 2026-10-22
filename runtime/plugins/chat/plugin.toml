@@ -1,0 +1,6 @@
+name = "chat"
+requires = ["core", "picker"]
+# It runs greed-matrix and greed-mattermost, which keep your chat accounts
+# connected (proc), looking for them beside greed (fs.read), and keeps
+# their sign-ins in the keyring (secrets).
+capabilities = ["proc", "fs.read", "secrets"]

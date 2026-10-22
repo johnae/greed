@@ -10,6 +10,7 @@
   - [Boards](boards.md)
   - [Charts](charts.md)
   - [Mail](mail.md)
+  - [Chat](chat.md)
 - [Editing styles](editing-styles.md)
 - [Keys](keys.md)
 - [Highlighting](highlighting.md)
