@@ -12,6 +12,21 @@ fn host(text: &str) -> Host {
     Host::new(editor).unwrap()
 }
 
+#[test]
+fn rulers_reject_invalid_columns_without_changing_configuration() {
+    let h = host("");
+    h.eval("require('@greed').rulers({100, 80, 80})").unwrap();
+    for values in ["{0}", "{-1}", "{1.5}", "{0/0}", "{math.huge}", "{true}"] {
+        assert!(
+            h.eval(&format!("require('@greed').rulers({values})"))
+                .is_err()
+        );
+        h.with_editor(|ed| assert_eq!(ed.rulers(), &[80, 100]));
+    }
+    h.eval("require('@greed').rulers({})").unwrap();
+    h.with_editor(|ed| assert!(ed.rulers().is_empty()));
+}
+
 fn text(host: &Host) -> String {
     host.with_editor(|ed| ed.buffer(ed.view(ed.focus()).buffer).text().to_string())
 }

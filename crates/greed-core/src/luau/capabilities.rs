@@ -973,6 +973,7 @@ mod tests {
         "hostname",
         "language_of",
         "line_numbers",
+        "rulers",
         "messages",
         "next_key",
         "now",

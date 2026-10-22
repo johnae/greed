@@ -514,6 +514,26 @@ fn command_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     })
 }
 
+fn rulers_function(lua: &Lua) -> LuaResult<Function> {
+    lua.create_function(|lua, columns: Table| {
+        let columns = columns
+            .sequence_values::<f64>()
+            .map(|column| {
+                let column = column?;
+                if !column.is_finite() || column <= 0.0 || column.fract() != 0.0 {
+                    return Err(mlua::Error::runtime(
+                        "ruler columns must be positive integers",
+                    ));
+                }
+                lua.unpack::<usize>(Value::Number(column))
+                    .map_err(|_| mlua::Error::runtime("ruler columns must be positive integers"))
+            })
+            .collect::<LuaResult<Vec<_>>>()?;
+        state_mut(lua).editor.set_rulers(columns);
+        Ok(())
+    })
+}
+
 pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let greed = lua.create_table()?;
 
@@ -582,6 +602,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     greed.set("quit", quit_function(lua)?)?;
 
     greed.set("line_numbers", line_numbers_function(lua)?)?;
+    greed.set("rulers", rulers_function(lua)?)?;
     greed.set("reveal", reveal_function(lua)?)?;
 
     greed.set(

@@ -68,6 +68,53 @@ fn tagged(frame: &Frame, tag: &Tag) -> Vec<String> {
 }
 
 #[test]
+fn rulers_follow_wrapped_text_columns_through_empty_lines_and_eof() {
+    let mut ed = editor("|the quick brown fox\n\nend");
+    let before = frame(&mut ed, 12, 8);
+    assert!(
+        before
+            .surfaces
+            .iter()
+            .flat_map(|s| &s.rows)
+            .all(|row| row.guides.is_empty())
+    );
+    ed.set_rulers(vec![4, 4, 1, 100]);
+    let after = frame(&mut ed, 12, 8);
+    assert_eq!(rows(&before), rows(&after));
+    let panes = having(&after, |role| matches!(role, Role::Pane { .. }));
+    for row in &panes[0].rows {
+        assert_eq!(row.guides.as_slice(), &[2, 5]);
+    }
+    assert!(
+        after
+            .surfaces
+            .iter()
+            .filter(|s| !matches!(s.role, Role::Pane { .. }))
+            .flat_map(|s| &s.rows)
+            .all(|row| row.guides.is_empty())
+    );
+    ed.set_rulers(vec![4]);
+    let one = frame(&mut ed, 12, 8);
+    assert!(
+        having(&one, |role| matches!(role, Role::Pane { .. }))[0]
+            .rows
+            .iter()
+            .all(|row| !row.guides.spilled())
+    );
+}
+
+#[test]
+fn offscreen_huge_ruler_keeps_visible_gutter_columns() {
+    let mut ed = editor("|hello\nworld");
+    ed.set_rulers(vec![1, usize::MAX]);
+    let f = frame(&mut ed, 20, 4);
+    let panes = having(&f, |role| matches!(role, Role::Pane { .. }));
+    for row in &panes[0].rows {
+        assert_eq!(row.guides.as_slice(), &[2]);
+    }
+}
+
+#[test]
 fn lines_get_numbers_and_empty_rows_stay_empty() {
     let mut ed = editor("|hello\nworld");
     let f = frame(&mut ed, 20, 4);
@@ -1990,6 +2037,32 @@ fn a_narrowed_view_shows_only_its_lines_wherever_the_cursor_is() {
     ed.narrow(main, None);
     ed.view_mut(main).scroll = Scroll::default();
     assert_eq!(body(&frame(&mut ed, 20, 6))[..5], ["a", "b", "c", "d", "e"]);
+}
+
+#[test]
+fn rulers_scroll_only_with_unwrapped_lines() {
+    use greed_core::Mark;
+    let mut ed = editor("|abcdefghijklmnopqrstuvwxyz\nwrapped words go on and on\n");
+    let main = ed.main();
+    let buffer = ed.view(main).buffer;
+    ed.decorate(
+        buffer,
+        "table",
+        vec![Mark {
+            range: 0..26,
+            nowrap: true,
+            ..Mark::default()
+        }],
+    );
+    ed.set_rulers(vec![4, 20]);
+    ed.view_mut(main).selection = Selection::point(25);
+    let f = frame(&mut ed, 12, 8);
+    let pane = having(&f, |role| matches!(role, Role::Pane { .. }))[0];
+    assert_eq!(ed.view(main).columns, 17);
+    assert_eq!(pane.rows[0].guides.as_slice(), &[4]);
+    for row in pane.rows.iter().skip(1) {
+        assert_eq!(row.guides.as_slice(), &[5]);
+    }
 }
 
 #[test]

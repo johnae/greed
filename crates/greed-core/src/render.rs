@@ -266,6 +266,10 @@ pub struct Row {
     pub spans: Vec<Span>,
     /// Styles for the whole row, under its spans and across its empty end.
     pub tags: SmallVec<[Tag; 1]>,
+    /// Sparse zero-based surface columns, including the gutter offset.
+    /// Only the theme's `ui.ruler` background is used, below explicit styles.
+    #[serde(default, skip_serializing_if = "SmallVec::is_empty")]
+    pub guides: SmallVec<[usize; 1]>,
     /// How many rows below this one its scaled text also takes; those rows
     /// come empty.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -632,13 +636,85 @@ impl Cell {
     }
 }
 
-/// Adds `row`, `height` screen rows tall as far as `limit` rows allow, and
-/// the empty rows its scaled text covers, which keep the line's styles so
-/// a whole-line background still fills them.
+/// Converts positive one-based display columns to visible surface cells.
+fn ruler_guides(
+    rulers: &[usize],
+    gutter: usize,
+    width: usize,
+    side_scroll: usize,
+) -> SmallVec<[usize; 1]> {
+    rulers
+        .iter()
+        .filter_map(|column| {
+            let column = column.checked_sub(1)?.checked_sub(side_scroll)?;
+            (column < width).then(|| gutter + column)
+        })
+        .collect()
+}
+
+/// Selects file-pane guides using the same horizontal scroll as the line.
+fn view_ruler_guides(
+    editor: &Editor,
+    view: &View,
+    line: usize,
+    pane: bool,
+    gutter: usize,
+    width: usize,
+) -> SmallVec<[usize; 1]> {
+    let rulers = if pane && editor.buffer(view.buffer).kind() == "file" {
+        editor.rulers()
+    } else {
+        &[]
+    };
+    let scroll = if nowrap(editor, view, line) {
+        view.columns
+    } else {
+        0
+    };
+    ruler_guides(rulers, gutter, width, scroll)
+}
+
+/// Starts a text row with its line styles and background guides.
+fn styled_row(styled: &[&Mark], lines: &Range<usize>, guides: &SmallVec<[usize; 1]>) -> Row {
+    Row {
+        tags: styled
+            .iter()
+            .filter(|m| m.line && m.range.start < lines.end && m.range.end >= lines.start)
+            .map(|m| Tag::from(m.style.clone()))
+            .collect(),
+        guides: guides.clone(),
+        ..Row::default()
+    }
+}
+
+/// Extends a view below its text, retaining the final line's guide scroll.
+fn pad_view_rows(
+    rows: &mut Vec<Row>,
+    height: usize,
+    editor: &Editor,
+    view: &View,
+    pane: bool,
+    (gutter, width): (usize, usize),
+) {
+    let filled = rows.len();
+    rows.resize_with(height, Row::default);
+    let line = editor
+        .buffer(view.buffer)
+        .text()
+        .len_lines()
+        .saturating_sub(1);
+    let guides = view_ruler_guides(editor, view, line, pane, gutter, width);
+    for row in rows.iter_mut().skip(filled) {
+        row.guides.clone_from(&guides);
+    }
+}
+
+/// Adds a row and the empty rows covered by its scaled text.
 fn push_covering(rows: &mut Vec<Row>, mut row: Row, height: usize, limit: usize) {
     let height = height.min(limit - rows.len());
     let covered = Row {
         tags: row.tags.clone(),
+        guides: row.guides.clone(),
         ..Row::default()
     };
     row.covers = u8::try_from(height - 1).unwrap_or(u8::MAX);
@@ -740,7 +816,7 @@ impl<M: Measure> Renderer<M> {
         ));
 
         for (view, rect, role) in placed {
-            let laid = self.view_rows(editor, view, rect, false, decorations);
+            let laid = self.view_rows(editor, view, rect, false, false, decorations);
             if let Some(cursor) = laid.cursor {
                 cursors.push((view, cursor));
             }
@@ -761,7 +837,7 @@ impl<M: Measure> Renderer<M> {
             let anchor = cursor_of(&cursors, float.return_to)
                 .or_else(|| cursor_of(&cursors, editor.focus()));
             let rect = place(&float.options, screen, anchor);
-            let laid = self.view_rows(editor, float.view, rect, false, decorations);
+            let laid = self.view_rows(editor, float.view, rect, false, false, decorations);
             if let Some(cursor) = laid.cursor {
                 cursors.push((float.view, cursor));
             }
@@ -949,7 +1025,7 @@ impl<M: Measure> Renderer<M> {
         let mut cursors = Vec::new();
         for (view, rect) in panes {
             let numbers = editor.buffer(editor.view(view).buffer).line_numbers();
-            let laid = self.view_rows(editor, view, rect, numbers, decorations);
+            let laid = self.view_rows(editor, view, rect, numbers, true, decorations);
             if let Some(cursor) = laid.cursor {
                 cursors.push((view, cursor));
             }
@@ -998,6 +1074,7 @@ impl<M: Measure> Renderer<M> {
         view_id: ViewId,
         room: Rect,
         line_numbers: bool,
+        pane: bool,
         decorations: &dyn Decorations,
     ) -> Laid {
         let (gutter, signs) = gutter_width(editor, editor.view(view_id), line_numbers);
@@ -1024,10 +1101,7 @@ impl<M: Measure> Renderer<M> {
         let mut cursor = None;
         let (mut first_shown, mut last_shown) = (None, None);
 
-        'lines: for line in scroll.line..text.len_lines() {
-            if is_hidden(&hidden, line) {
-                continue;
-            }
+        'lines: for line in (scroll.line..text.len_lines()).filter(|&at| !is_hidden(&hidden, at)) {
             let skip = if line == scroll.line { scroll.row } else { 0 };
             let layout = self.layout(editor, view, line, text_width);
             let last = layout.len() - 1;
@@ -1038,18 +1112,12 @@ impl<M: Measure> Renderer<M> {
             let on_line = |m: &&&Mark| m.range.start < lines.end && m.range.end >= lines.start;
             let line_gutter = Gutter::for_line(gutter, signs, &styled, &lines);
             let mut overlay = Overlay::default();
+            let guides = view_ruler_guides(editor, view, line, pane, gutter, text_width);
             for (i, cells) in layout.into_iter().enumerate().skip(skip) {
                 if rows.len() == text_rows {
                     break 'lines;
                 }
-                let mut row = Row {
-                    tags: styled
-                        .iter()
-                        .filter(|m| m.line && on_line(m))
-                        .map(|m| Tag::from(m.style.clone()))
-                        .collect(),
-                    ..Row::default()
-                };
+                let mut row = styled_row(&styled, &lines, &guides);
                 if line_numbers {
                     line_gutter.push(&mut row, (i == 0).then(|| number(line)));
                 }
@@ -1095,7 +1163,7 @@ impl<M: Measure> Renderer<M> {
             let room = usize::from(area.width).saturating_sub(gutter);
             let lines = virtual_lines(editor, view, line);
             let gutter = line_numbers.then_some(&line_gutter);
-            if !self.push_virtual_lines(&mut rows, text_rows, lines, gutter, room) {
+            if !self.push_virtual_lines(&mut rows, text_rows, lines, gutter, room, &guides) {
                 break 'lines;
             }
         }
@@ -1104,8 +1172,15 @@ impl<M: Measure> Renderer<M> {
         let shown = shown_bytes(text, first_shown, last_shown);
         // The view's own room is what it says it has, so the client the
         // screen size is for can tell its own changing.
+        pad_view_rows(
+            &mut rows,
+            text_rows,
+            editor,
+            view,
+            pane,
+            (gutter, text_width),
+        );
         editor.view_mut(view_id).drawn(shown, room, gutter);
-        rows.resize_with(text_rows, Row::default);
         Laid::new(rows, cursor, sized)
     }
 
@@ -1561,12 +1636,16 @@ impl<M: Measure> Renderer<M> {
         lines: impl Iterator<Item = (&'a Mark, &'a VirtualLine)>,
         gutter: Option<&Gutter>,
         room: usize,
+        guides: &[usize],
     ) -> bool {
         for (mark, line) in lines {
             if rows.len() == limit {
                 return false;
             }
-            let mut row = Row::default();
+            let mut row = Row {
+                guides: SmallVec::from_slice(guides),
+                ..Row::default()
+            };
             if let Some(gutter) = gutter {
                 gutter.push(&mut row, None);
             }

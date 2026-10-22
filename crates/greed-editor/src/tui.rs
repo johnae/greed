@@ -1138,7 +1138,7 @@ mod tests {
                     .collect(),
             )],
             tags: [Tag::from("current")].into_iter().collect(),
-            covers: 0,
+            ..Row::default()
         };
         let mut frame = frame_of(4, 1, Vec::new(), row, Vec::new());
         frame.theme = std::sync::Arc::new(theme);

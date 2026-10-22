@@ -153,6 +153,7 @@ fn compose_layers(frame: &Frame, medium: Medium, scaled: bool, floats: bool) -> 
         if !matches!(surface.role, Role::Tabline | Role::Status) {
             spread_scaled(&mut grid, y..y + h, x..x + w);
         }
+        paint_guides(&mut grid, surface, cropped, paint);
     }
     grid
 }
@@ -464,6 +465,73 @@ fn put_row(
     }
 }
 
+/// Paint guides only after glyph backgrounds have spread to covered rows.
+fn paint_guides(grid: &mut [Vec<Cell>], surface: &Surface, cropped: u16, paint: Paint) {
+    if paint.medium == Medium::Gui && surface.content.is_some() {
+        return;
+    }
+    if paint.theme.entry("ui.ruler").is_none() {
+        return;
+    }
+    let Some(bg) = paint.theme.style("ui.ruler", paint.medium).bg else {
+        return;
+    };
+    let x = usize::from(surface.rect.x);
+    let y = usize::from(surface.rect.y);
+    let width = usize::from(surface.rect.width);
+    let rows = &surface.rows[usize::from(cropped).min(surface.rows.len())..];
+    for (offset, row) in rows
+        .iter()
+        .take(usize::from(surface.rect.height))
+        .enumerate()
+    {
+        for &column in &row.guides {
+            if column >= width || y + offset >= grid.len() || x + column >= grid[y + offset].len() {
+                continue;
+            }
+            let mut source = offset;
+            if paint.scaled && grid[y + offset][x + column].scale == 0 {
+                // A covered glyph owns its explicit background, but never
+                // carries a synthetic guide into adjacent cells.
+                'source: for above in (0..offset).rev().take(usize::from(u8::MAX) - 1) {
+                    for (left, cell) in grid[y + above].iter().enumerate().skip(x).take(column + 1)
+                    {
+                        let scale = usize::from(cell.scale);
+                        if scale > offset - above
+                            && left + cell.text.width().max(1) * scale > x + column
+                        {
+                            source = above;
+                            break 'source;
+                        }
+                    }
+                }
+            }
+            let source_row = &rows[source];
+            let mut explicit = Style::default();
+            for tag in &source_row.tags {
+                explicit = explicit.patch(&paint.theme.style(tag.name(), paint.medium));
+            }
+            let mut used = 0;
+            for span in &source_row.spans {
+                for grapheme in span.text.graphemes(true) {
+                    let cells = visible(grapheme).width().max(1) * usize::from(span.scale.max(1));
+                    if used + cells > width {
+                        break;
+                    }
+                    used += cells;
+                }
+                if column < used {
+                    for tag in &span.tags {
+                        explicit = explicit.patch(&paint.theme.style(tag.name(), paint.medium));
+                    }
+                    break;
+                }
+            }
+            grid[y + offset][x + column].style.bg = explicit.bg.or(Some(bg));
+        }
+    }
+}
+
 /// `grapheme` as it can safely be shown: control characters, which a
 /// terminal would act on (an escape sequence in a file could set the
 /// clipboard or hide lines), become their Unicode pictures, like `␛`.
@@ -602,6 +670,21 @@ fn merged_rows(frame: &Frame, panes: &[&Surface], tabline: Option<&Surface>) -> 
 /// Adds `piece` to the end of `row`, padded to `width` cells, with its
 /// row-wide tags on each of its spans so they stay within its width.
 fn append(row: &mut Row, piece: Row, width: usize) {
+    if !piece.guides.is_empty() {
+        let offset: usize = row
+            .spans
+            .iter()
+            .map(|span| span.text.width() * usize::from(span.scale.max(1)))
+            .sum();
+        row.guides.extend(
+            piece
+                .guides
+                .iter()
+                .copied()
+                .filter(|column| *column < width)
+                .map(|column| offset + column),
+        );
+    }
     let mut used = 0;
     for span in piece.spans {
         used += span.text.graphemes(true).map(str::width).sum::<usize>();
@@ -669,6 +752,99 @@ mod tests {
     use crate::render::{Separator, Size, Span};
     use crate::theme::{Color, Entry};
     use crate::{CursorShape, ViewId};
+
+    #[test]
+    fn rulers_stay_one_cell_wide_across_scaled_glyphs() {
+        for medium in [Medium::Tui, Medium::Gui] {
+            for column in [0, 1] {
+                for background in [false, true] {
+                    let mut span = Span::new(
+                        "a",
+                        if background {
+                            smallvec![Tag::from("big")]
+                        } else {
+                            smallvec![]
+                        },
+                    );
+                    span.scale = 2;
+                    let mut f = frame(vec![
+                        Row {
+                            spans: vec![span],
+                            guides: smallvec![column],
+                            ..Row::default()
+                        },
+                        Row {
+                            guides: smallvec![column],
+                            ..Row::default()
+                        },
+                    ]);
+                    Arc::make_mut(&mut f.theme).set(
+                        "ui.ruler",
+                        Entry::new(Style {
+                            bg: Some(Color::Ansi(5)),
+                            ..Style::default()
+                        }),
+                    );
+                    let grid = compose_with(&f, medium, true);
+                    for row in grid.iter().take(2) {
+                        for (cell_column, cell) in row.iter().take(2).enumerate() {
+                            let expected = if background {
+                                Some(Color::Ansi(4))
+                            } else if cell_column == column {
+                                Some(Color::Ansi(5))
+                            } else {
+                                None
+                            };
+                            assert_eq!(cell.style.bg, expected);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rulers_fill_sparse_cells_below_explicit_backgrounds_on_both_clients() {
+        let row = Row {
+            spans: vec![
+                Span::new("ab", smallvec![]),
+                Span::new("cd", smallvec![Tag::from("big")]),
+            ],
+            guides: smallvec![1, 2, 6, 99],
+            ..Row::default()
+        };
+        let mut f = frame(vec![row]);
+        Arc::make_mut(&mut f.theme).set(
+            "ui.ruler",
+            Entry::new(Style {
+                bg: Some(Color::Ansi(5)),
+                ..Style::default()
+            }),
+        );
+        for medium in [Medium::Tui, Medium::Gui] {
+            let grid = compose(&f, medium);
+            assert_eq!(grid[0][1].style.bg, Some(Color::Ansi(5)));
+            assert_eq!(grid[0][2].style.bg, Some(Color::Ansi(4)));
+            assert_eq!(grid[0][6].style.bg, Some(Color::Ansi(5)));
+            assert_eq!(grid[0][0].style.bg, None);
+        }
+        f.surfaces.push(Surface::new(
+            SurfaceId::View(ViewId(2)),
+            Role::Float {
+                border: false,
+                title: None,
+                label: Vec::new(),
+                footer: Vec::new(),
+            },
+            rect(6, 0, 1, 1),
+            vec![text_row("x")],
+        ));
+        for medium in [Medium::Tui, Medium::Gui] {
+            let grid = compose(&f, medium);
+            assert_eq!(grid[0][6].text, "x");
+            assert_ne!(grid[0][6].style.bg, Some(Color::Ansi(5)));
+        }
+    }
 
     fn rect(x: u16, y: u16, width: u16, height: u16) -> Rect {
         Rect {

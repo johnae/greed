@@ -467,6 +467,8 @@ pub struct Editor {
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
     /// How line numbers count, where buffers show them.
     line_numbers: LineNumbers,
+    /// Positive one-based display columns for file-pane rulers.
+    rulers: Vec<usize>,
     /// When marks whose `reveal` is `Auto` show the text they hide.
     reveal: Reveal,
     /// When marks whose `reveal` is `Typing` show the text they hide.
@@ -510,6 +512,7 @@ impl Editor {
             clipboard: Vec::new(),
             cursor_shapes: HashMap::new(),
             line_numbers: LineNumbers::default(),
+            rulers: Vec::new(),
             reveal: Reveal::Line,
             typing_reveal: Reveal::Line,
             file_types: FileTypes::bundled(),
@@ -1851,6 +1854,18 @@ impl Editor {
 
     pub fn set_line_numbers_style(&mut self, style: LineNumbers) {
         self.line_numbers = style;
+    }
+
+    /// Sorted unique positive display columns for file-pane rulers.
+    pub fn rulers(&self) -> &[usize] {
+        &self.rulers
+    }
+
+    pub fn set_rulers(&mut self, mut columns: Vec<usize>) {
+        columns.retain(|column| *column > 0);
+        columns.sort_unstable();
+        columns.dedup();
+        self.rulers = columns;
     }
 
     /// When concealing marks whose `reveal` is [`Reveal::Auto`] show their

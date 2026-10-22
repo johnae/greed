@@ -3,6 +3,10 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## Unreleased
+
+- core: optional file-pane column rulers with `greed.rulers`, drawn beneath text backgrounds in terminals and windows; guides remain cell-aligned across scaled text and ignore offscreen columns without overflow.
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights

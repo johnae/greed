@@ -63,6 +63,19 @@ fn changed_rows(surface: &SurfaceDelta) -> Vec<u16> {
     surface.rows.iter().map(|(i, _)| *i).collect()
 }
 
+#[test]
+fn changing_only_rulers_survives_delta_serialization_and_clear() {
+    let mut ed = editor("|one\n");
+    let before = frame(&mut ed);
+    ed.set_rulers(vec![5]);
+    let after = frame(&mut ed);
+    delta(&before, &after);
+    ed.set_rulers(Vec::new());
+    let cleared = frame(&mut ed);
+    delta(&after, &cleared);
+    assert_eq!(before.surfaces, cleared.surfaces);
+}
+
 /// Whether `surface` changed in its rows and nothing else.
 fn only_rows(surface: &SurfaceDelta) -> bool {
     surface.role.is_none()
