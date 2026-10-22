@@ -39,11 +39,14 @@ end
 --- Joins `target` (an id or an address) in account `key`, and opens it in
 --- `window` as `name`. Waits, so it runs in a coroutine.
 function M.join(key: string, target: string, name: string, window: greed.View)
+	-- A room on another server can take its server a minute or more.
+	greed.echo(`joining {name}…`)
 	local joined, why = accounts.ask(key, "join", { room = target })
 	if joined == nil then
 		greed.echo(`chat: {why}`)
 		return
 	end
+	greed.echo("")
 	room.open(key, joined.room, name, nil, window)
 end
 

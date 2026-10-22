@@ -8,8 +8,10 @@ use greed_chat::protocol::{
 };
 use greed_chat::rpc::Failure;
 use greed_chat::why;
+use matrix_sdk::config::RequestConfig;
 use matrix_sdk::ruma::UserId;
 use matrix_sdk::ruma::api::client::directory::get_public_rooms_filtered;
+use matrix_sdk::ruma::api::client::membership::join_room_by_id_or_alias;
 use matrix_sdk::ruma::directory::Filter;
 use matrix_sdk::ruma::{RoomId, RoomOrAliasId, UInt};
 use matrix_sdk::{Client, RoomState};
@@ -25,6 +27,9 @@ const GATHER: Duration = Duration::from_millis(100);
 
 /// The most rooms `directory` lists.
 const LISTED: u32 = 50;
+
+/// How long joining a room may take the server.
+const JOINING: Duration = Duration::from_secs(300);
 
 impl Matrix {
     /// Starts syncing `client` (account `id`), saying how that goes as
@@ -107,10 +112,20 @@ impl Matrix {
         let client = self.client_of(&params.account)?;
         let target = RoomOrAliasId::parse(params.room.trim())
             .map_err(|_| Failure::new(format!("{} isn't a room's id or address", params.room)))?;
-        let room = client
-            .join_room_by_id_or_alias(&target, &[])
+        let failed = |e: &dyn std::error::Error| Failure::new(format!("can't join it: {}", why(e)));
+        // Sent ourselves to give it longer than the usual request timeout:
+        // joining a room on another server can take minutes.
+        let joined = client
+            .send(join_room_by_id_or_alias::v3::Request::new(target))
+            .with_request_config(RequestConfig::new().timeout(JOINING))
             .await
-            .map_err(|e| Failure::new(format!("can't join it: {}", why(&e))))?;
+            .map_err(|e| failed(&e))?;
+        // Already joined, so this returns at once; it lets the client know
+        // the room now rather than at the next sync.
+        let room = client
+            .join_room_by_id(&joined.room_id)
+            .await
+            .map_err(|e| failed(&e))?;
         Ok(json!({ "room": room.room_id() }))
     }
 
