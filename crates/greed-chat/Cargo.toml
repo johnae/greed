@@ -1,0 +1,15 @@
+[package]
+name = "greed-chat"
+description = "What Greed's chat services share: the protocol Greed's chat client speaks, and the JSON-RPC loop each service answers it with"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true
