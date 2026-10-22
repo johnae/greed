@@ -131,8 +131,6 @@ local function update_preview(o: Open)
 	end
 end
 
-local file_icons: { (string) -> string? } = {}
-
 -- The picker open for each client, by its id.
 local opened: { [number]: Open } = {}
 
@@ -159,19 +157,7 @@ local function draw(o: Open): core.UiNode
 	local shown = table.move(o.matches, 1, math.min(#o.matches, LIMIT), 1, {})
 	return ui.list(shown, function(index: number): { core.UiSpan }
 		local label = o.labels[index]
-		local item = o.items[index]
-		local icon = if item.kind == "file" and #file_icons > 0
-			then file_icons[#file_icons](item.value)
-			else nil
-		local budget = if cols then math.max(cols - 2, 1) else nil
-		-- Leave room for the label even when a provider returns a long icon.
-		if icon and budget then
-			icon = if budget >= 3 then core.text.clip(icon, budget - 2) else nil
-		end
-		local prefix = if icon then icon .. " " else ""
-		local cut = if budget
-			then core.text.clip(label, budget - core.text.width(prefix))
-			else label
+		local cut = if cols then core.text.clip(label, math.max(cols - 2, 1)) else label
 		local kept = if cut == label then #label else #cut - #"…"
 		local matched: { number } = if o.source
 			then {}
@@ -187,9 +173,6 @@ local function draw(o: Open): core.UiNode
 			end
 		end
 		local spans: { core.UiSpan } = { ui.span(" ") }
-		if prefix ~= "" then
-			table.insert(spans, ui.span(prefix, "ui.menu.badge"))
-		end
 		for _, span in ui.matched(cut, visible) do
 			table.insert(spans, span)
 		end
@@ -489,16 +472,6 @@ greed.command({
 local bound: { [string]: boolean } = {}
 
 local M = {}
-
---- Installs a file icon provider until removed or its plugin unloads.
-function M.file_icon(provider: (string) -> string?): () -> ()
-	local owner: string? = nil
-	local remove = core.registry.put(file_icons, function(path)
-		return greed.plugin.within(owner, provider, path)
-	end)
-	owner = greed.plugin.tie(remove)
-	return remove
-end
 
 M.KEYS = KEYS
 

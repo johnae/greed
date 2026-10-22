@@ -8,19 +8,15 @@ local SIGNS = { "E", "W", "I", "H" }
 
 local M = {}
 
-export type SignProvider = (severity: number) -> string?
-local sign_provider: SignProvider? = nil
-
-function M.set_sign_provider(provider: SignProvider?)
-	sign_provider = provider
-end
+export type Signs = { [string]: string }
 
 -- The marks for `diagnostics` in `buffer`; `messages` says whether to show
 -- their text after each line.
 function M.diagnostic_marks(
 	buffer: greed.Buffer,
 	diagnostics: { greed.Diagnostic },
-	messages: boolean
+	messages: boolean,
+	signs: Signs?
 ): { greed.Mark }
 	local worst: { [number]: greed.Diagnostic } = {}
 	for _, d in diagnostics do
@@ -36,7 +32,6 @@ function M.diagnostic_marks(
 	end
 	table.sort(lines)
 	local marks: { greed.Mark } = {}
-	local provider = sign_provider
 	for _, line in lines do
 		local d = worst[line]
 		local name = NAMES[d.severity] or "hint"
@@ -45,7 +40,7 @@ function M.diagnostic_marks(
 			from = at,
 			to = at,
 			style = "diagnostic.sign." .. name,
-			sign = (if provider then provider(d.severity) else nil) or SIGNS[d.severity] or "H",
+			sign = (if signs then signs[name] else nil) or SIGNS[d.severity] or "H",
 		})
 		if messages then
 			local message = string.split(d.message, "\n")[1]

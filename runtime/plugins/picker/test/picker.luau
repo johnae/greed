@@ -570,42 +570,6 @@ test("a label too long for the float is cut with an ellipsis, keeping one row", 
 	t:keys("esc")
 end)
 
-test("file icons and long labels keep subsequent picker entries on their rows", function(t)
-	local picker = require("@picker")
-	for _, icon in { "F", "界", string.rep("界", 60) } do
-		t:buffer("|x")
-		local remove = picker.file_icon(function(path)
-			return if path == "one" then icon else "F"
-		end)
-		picker.pick("Icons", {
-			{ kind = "file", label = "long-item" .. string.rep("a", 29), value = "one" },
-			{ kind = "file", label = "second", value = "two" },
-			{ kind = "file", label = "third", value = "three" },
-		}, function() end)
-		-- Let the float acquire its narrow list width before checking wrapping.
-		t:screen(80, 20)
-		local rows = t:screen(80, 20)
-		local positions = {}
-		for row, line in rows do
-			for index, label in
-				{ if icon == string.rep("界", 60) then "界" else "long-item", "second", "third" }
-			do
-				if string.find(line, label, 1, true) then
-					positions[index] = row
-				end
-			end
-		end
-		assert(positions[1] and positions[2] == positions[1] + 1, table.concat(rows, "\n"))
-		if icon ~= string.rep("界", 60) then
-			t:type("long")
-			assert(matched() == "long", matched())
-		end
-		assert(positions[3] == positions[2] + 1, table.concat(rows, "\n"))
-		t:keys("esc")
-		remove()
-	end
-end)
-
 test("the actions say what they're for in the title", function(t)
 	local core = require("@core")
 	core.actions.action({ kind = "test-thing", name = "test-poke", run = function() end })

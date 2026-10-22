@@ -29,6 +29,12 @@ local status = require("@self/status")
 
 local ask, describe = common.ask, common.describe
 
+local M = {}
+
+--- Signs for diagnostic severities. Assign a table to customize them;
+--- missing entries use the bundled E/W/I/H signs.
+M.signs = { error = "E", warning = "W", info = "I", hint = "H" } :: marks.Signs
+
 -- Hover contents come as a string, a { value } table, or a list of those.
 local function hover_text(contents: any): string
 	if type(contents) == "string" then
@@ -313,31 +319,10 @@ greed.option.define({
 -- Signs beside lines with problems, and their messages after the line.
 local function mark_problems(buffer: greed.Buffer)
 	local messages = greed.option.get("diagnostic-messages") == true
-	buffer:decorate("lsp", marks.diagnostic_marks(buffer, greed.lsp.diagnostics(buffer), messages))
-end
-
-local sign_providers: { marks.SignProvider } = {}
-
-local function redecorate()
-	marks.set_sign_provider(sign_providers[#sign_providers])
-	for _, buffer in greed.buffers() do
-		mark_problems(buffer)
-	end
-end
-
---- Installs diagnostic signs until removed or the calling plugin unloads.
-local function set_diagnostic_sign_provider(provider: marks.SignProvider): () -> ()
-	local owner: string? = nil
-	local drop = core.registry.put(sign_providers, function(severity)
-		return greed.plugin.within(owner, provider, severity)
-	end)
-	local function remove()
-		drop()
-		redecorate()
-	end
-	owner = greed.plugin.tie(remove)
-	redecorate()
-	return remove
+	buffer:decorate(
+		"lsp",
+		marks.diagnostic_marks(buffer, greed.lsp.diagnostics(buffer), messages, M.signs)
+	)
 end
 
 greed.on("lsp.diagnostics", function(event: greed.DiagnosticsChanged)
@@ -474,11 +459,9 @@ core.objects.kind({
 })
 
 -- Other plugins can use these with `require("@lsp")`.
-return {
-	set_diagnostic_sign_provider = set_diagnostic_sign_provider,
-	--- The language server piece of the status line, and the progress it shows.
-	status = status,
-	--- The completion menu: `completion.source(fn)` adds what to offer, in
-	--- any buffer, before the language server is asked.
-	completion = completion,
-}
+--- The language server piece of the status line, and the progress it shows.
+M.status = status
+--- The completion menu: `completion.source(fn)` adds what to offer, in
+--- any buffer, before the language server is asked.
+M.completion = completion
+return M

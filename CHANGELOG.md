@@ -7,11 +7,7 @@ the repository's history.
 
 ### New
 
-- picker/lsp: lifecycle-stacked file icon, completion kind badge and diagnostic sign providers let plugins customize presentation; removing them restores previous providers.
-
-### Fixed
-
-- picker: file icons share the label's display-width budget, keeping long labels and wide icons on one row.
+- lsp: customize diagnostic signs with the plain `require("@lsp").signs` table; missing entries keep the bundled severity signs.
 
 ## 0.3.0 - 2026-10-22
 

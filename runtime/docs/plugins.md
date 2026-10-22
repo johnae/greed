@@ -1028,26 +1028,14 @@ greed.tab.set_layout({
   paths. A plugin that binds `tab`, `enter` or the arrows for typing in
   its own kind of buffer calls `completion.keys_over(kind)` so the menu
   keeps those keys while it's open.
-- Presentation providers change the bundled menus and diagnostic signs without
-  replacing their implementations. From a plugin that requires `picker` or
-  `lsp`, install one with
-  `local remove = require("@picker").file_icon(function(path) return "F" end)`,
-  `require("@lsp").completion.kind_badge(function(kind) return "K" end)`, or
-  `require("@lsp").set_diagnostic_sign_provider(function(severity) return "!" end)`.
-  Each returns a removal function and is also removed when its calling plugin
-  unloads or reloads. The newest installed provider wins; removing it restores
-  the previous still-installed provider, even if older entries were removed
-  out of order. Callbacks run within their owner's capability limits, not with
-  the picker or LSP plugin's grants, and must return promptly without waiting.
-  File icons receive the value (path) of items with `kind = "file"`; nil omits
-  the icon. They do not change labels, matching or the chosen value.
-  Completion retains the server's numeric `CompletionItemKind` as `item.kind`
-  (custom sources may supply it too); only items with a kind ask the provider,
-  and nil falls back to the item's own `badge`. Diagnostic providers receive
-  numeric LSP severity (1 error through 4 hint); nil uses the bundled sign.
-  Installing or removing one immediately redecorates open buffers, preserving
-  diagnostic severity styles and messages, including hints and the
-  `diagnostic-messages` option. Without providers, presentation is unchanged.
+- Diagnostic signs are a plain table on the LSP plugin, like the tree's icons:
+  `require("@lsp").signs = { error = "!", warning = "?", info = "i", hint = "." }`.
+  Missing entries fall back to the bundled `E`, `W`, `I`, `H` signs; assigning
+  `{}` restores all defaults. Assignment affects marks when diagnostics next
+  arrive for a buffer, or when `diagnostic-messages` changes (which redraws
+  all open buffers), not immediately. Severity styles, diagnostic messages
+  and hints are unchanged. The table is ordinary shared configuration, not
+  a registration: plugin unload does not restore an earlier assignment.
 - The theme maps style names to looks, as in
   `greed.theme.set({ ["my-plugin.match"] = { fg = "yellow" } })`. Use your own
   names so users can restyle them. Themes themselves go under those
