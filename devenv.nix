@@ -47,6 +47,12 @@
 
     # The data plugin's sqlite source runs it, and its tests do
     pkgs.sqlite
+  ]
+  # Servers the chat programs' tests run against, which skip without them;
+  # they don't build on macOS.
+  ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+    # A Matrix homeserver for greed-matrix's tests (crates/greed-matrix/tests)
+    pkgs.matrix-tuwunel
   ];
 
   # What the window client (`greed --gui`) loads at run time: the display

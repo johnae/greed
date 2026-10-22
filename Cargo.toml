@@ -23,6 +23,7 @@ rustls-platform-verifier = "0.7"
 tokio = { version = "1", features = ["rt", "net", "time", "macros", "io-util", "io-std", "process", "sync"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
 greed-core = { path = "crates/greed-core" }
+greed-chat = { path = "crates/greed-chat" }
 greed-dirs = { path = "crates/greed-dirs" }
 greed-index = { path = "crates/greed-index" }
 greed-text = { path = "crates/greed-text" }

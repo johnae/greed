@@ -7,6 +7,7 @@
 use std::future::Future;
 use std::rc::Rc;
 
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
@@ -43,6 +44,11 @@ impl Failure {
             message: format!("wrong parameters: {why}"),
         }
     }
+}
+
+/// A request's parameters as what the method takes.
+pub fn parse<T: DeserializeOwned>(params: Value) -> Result<T, Failure> {
+    serde_json::from_value(params).map_err(Failure::params)
 }
 
 /// Sends notifications to the client: `method` with `params`.

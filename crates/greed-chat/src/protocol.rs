@@ -3,10 +3,19 @@
 //! the same across restarts; a service fills in what it has and leaves the
 //! rest out.
 //!
-//! Requests every service answers: `hello`, `accounts`, `login.methods`,
-//! `login.start`, `login.answer`, `logout`, `rooms`, `timeline`, `send`.
-//! Notifications: `account.changed`, `rooms.changed`, `timeline.changed`,
-//! `login.step`.
+//! Requests every service answers: `hello`, `accounts`, `restore`,
+//! `login.methods`, `login.start`, `login.answer`, `login.cancel`, `logout`,
+//! `rooms`, `timeline`, `send`. Notifications: `account.changed`,
+//! `account.secret`, `rooms.changed`, `timeline.changed`, `login.step`.
+//!
+//! Signing in: `login.start {server, method}` answers `{login, step}`, the
+//! first `Step`; `login.answer {login, values}` answers the next one, until
+//! `Done` or `Failed`. Steps that wait on something else, like the browser
+//! coming back, arrive as `login.step {login, step}`. `Done` carries the
+//! account's secret (its tokens and its store's key), which the client keeps
+//! in the keyring and hands back with `restore {secret}` the next time. A
+//! service keeps no secrets itself, and sends `account.secret {account,
+//! secret}` when they change, as when tokens are refreshed.
 
 use serde::{Deserialize, Serialize};
 
@@ -68,8 +77,12 @@ pub enum Method {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "step")]
 pub enum Step {
-    /// Fill these in (`name`, `password`, `code`...); secret ones aren't shown.
-    Ask { fields: Vec<Field> },
+    /// Fill these in (`name`, `password`, `code`...); secret ones aren't
+    /// shown. `why` says what was wrong with the last answers.
+    Ask {
+        fields: Vec<Field>,
+        why: Option<String>,
+    },
     /// Open this in the browser. Where the browser can't come back by
     /// itself (over ssh), `paste` says to paste the link it ends on.
     Open { url: String, paste: Option<String> },
@@ -79,8 +92,8 @@ pub enum Step {
     Qr { data: String },
     /// Compare these with the other device (emoji verification).
     Compare { emoji: Vec<(String, String)> },
-    /// Signed in.
-    Done { account: Account },
+    /// Signed in. `secret` is for the keyring, and `restore`.
+    Done { account: Account, secret: String },
     /// It didn't work; why.
     Failed { why: String },
 }

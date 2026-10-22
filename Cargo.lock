@@ -2510,8 +2510,13 @@ dependencies = [
 name = "greed-matrix"
 version = "0.3.0"
 dependencies = [
+ "getrandom 0.3.4",
+ "greed-chat",
+ "greed-dirs",
  "matrix-sdk",
  "matrix-sdk-ui",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
