@@ -1235,6 +1235,21 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
         })?,
     )?;
     client.set(
+        "with",
+        lua.create_function(|lua, (id, callback): (u32, Function)| {
+            let id = ClientId(id);
+            if state(lua).editor.client_state(id).is_none() {
+                return Err(mlua::Error::runtime(format!("there is no client {}", id.0)));
+            }
+            let outer = state_mut(lua).editor.act_as(id);
+            // A direct call through this Rust callback cannot yield. Restore
+            // the context on errors too; nested calls restore their caller.
+            let result = callback.call::<mlua::MultiValue>(());
+            state_mut(lua).editor.act_as(outer);
+            result
+        })?,
+    )?;
+    client.set(
         "notify",
         lua.create_function(
             |lua, (title, body, to): (String, Option<String>, Option<u32>)| {

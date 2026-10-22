@@ -3,6 +3,10 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## Unreleased
+
+- Target decorations to a view, a client, or both without leaking their layout, pointer scrolling, concealed-text movement or buttons into other panes; run synchronous plugin callbacks in a scoped client context with `greed.client.with`.
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights

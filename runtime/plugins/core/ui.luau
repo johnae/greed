@@ -1385,7 +1385,12 @@ greed.command({
 		end
 		for _, mark in ctx.buffer:marks_at(ctx.view:cursor()) do
 			local data = mark.data
-			if mark.action == "ui-press" and type(data) == "table" then
+			if
+				mark.action == "ui-press"
+				and type(data) == "table"
+				and (mark.view == nil or mark.view == ctx.view:id())
+				and (mark.client == nil or mark.client == ctx.client)
+			then
 				local press = entry.presses[data.ui]
 				if press then
 					press()
@@ -1450,7 +1455,11 @@ greed.on("selection.changed", function(event: greed.SelectionChanged)
 	end
 	local marks: { greed.Mark } = {}
 	for _, mark in buffer:marks_at(event.view:cursor()) do
-		if mark.action == "ui-press" then
+		if
+			mark.action == "ui-press"
+			and (mark.view == nil or mark.view == event.view:id())
+			and (mark.client == nil or mark.client == event.client)
+		then
 			-- A row's mark (a list's) is empty: the whole row lights up.
 			local from, to = mark.from, mark.to
 			if from == to then

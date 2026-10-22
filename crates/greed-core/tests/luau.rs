@@ -3023,3 +3023,52 @@ fn a_plugins_menus_and_claude_code_connection_go_with_it() {
     assert!(h.with_editor(|ed| ed.menus().is_empty()));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn scoped_client_callbacks_restore_context_on_errors_and_nesting() {
+    let h = host("");
+    h.with_editor_mut(|ed| assert!(ed.add_client(ClientId(2))));
+    h.eval(
+        r#"
+        local g = require("@greed")
+        local a, b = g.client.with(2, function()
+            assert(g.client.id() == 2)
+            g.client.with(1, function() assert(g.client.id() == 1) end)
+            assert(g.client.id() == 2)
+            return 7, "value"
+        end)
+        assert(a == 7 and b == "value" and g.client.id() == 1)
+        assert(not pcall(function()
+            g.client.with(2, function() error("failure") end)
+        end))
+        assert(g.client.id() == 1)
+        assert(not pcall(function()
+            g.client.with(9999, function() error("must not run") end)
+        end))
+        assert(g.client.id() == 1)
+    "#,
+    )
+    .unwrap();
+}
+
+#[test]
+fn decoration_targets_round_trip_without_filtering_storage() {
+    let h = host("hello");
+    h.eval(
+        r#"
+        local g = require("@greed")
+        local b = g.view():buffer()
+        b:decorate("local", {{
+            from = 0, to = 3, style = "local", view = g.view():id(), client = 2
+        }})
+        local m = b:decorations("local")[1]
+        local at = b:marks_at(1)[1]
+        assert(m.view == g.view():id() and m.client == 2)
+        assert(at.view == m.view and at.client == m.client)
+        m.view = nil; m.client = nil
+        b:decorate("local", {m})
+        assert(b:decorations("local")[1].client == nil)
+    "#,
+    )
+    .unwrap();
+}

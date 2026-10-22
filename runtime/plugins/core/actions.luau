@@ -452,7 +452,7 @@ M.finder({
 	name = "button",
 	find = function(view, range)
 		local found = {}
-		for _, button in require("./buttons").at(view:buffer(), range.head) do
+		for _, button in require("./buttons").at(view, range.head) do
 			table.insert(found, { kind = "button", label = button.text, value = button.action })
 		end
 		return found

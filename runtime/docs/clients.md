@@ -103,6 +103,7 @@ command, or the one an event is about.
 |---|---|
 | `ctx.client`, `greed.client.id()` | Which client is acting |
 | `greed.client.current()` | Its name, kind, size and layout |
+| `greed.client.with(id, callback)` | Run a synchronous callback as an existing client, returning its results; restore the previous client on errors or nesting. The callback cannot yield or wait |
 | `greed.client.list()` | Every attached client |
 | `greed.client.set_layout("independent" \| "follow", id?)` | What the two commands above use |
 | `greed.option.set(name, value, { client = true })` | A value of its own for the acting client |
@@ -113,6 +114,14 @@ a table keyed by `greed.client.id()`. A float is shown only to the client
 it opened for unless its spec says `shared = true`; sizes and places like
 `"37.5%"` keep it in proportion on every client. [Writing plugins](plugins.md)
 has more.
+
+Buffer decorations are shared unless a mark supplies `view = view:id()`,
+`client = greed.client.id()`, or both. When both are set, both must match.
+These targets apply to styling, signs, folds, virtual text and layout, as
+well as actionable buttons; an invisible button does not hide offered actions.
+`buffer:decorations()` and `buffer:marks_at()` still return all stored marks,
+including their targets, so plugins can inspect or replace shared storage.
+
 
 A client that attaches over the session socket can ask to be laid out on
 its own with `"layout": "independent"` in its attach request.

@@ -58,6 +58,8 @@ pub enum Answer {
 /// scroll position. Each client has its own of every view.
 #[derive(Debug, Clone)]
 pub struct View {
+    /// Session-local identity, shared by the clients following this view.
+    pub id: ViewId,
     pub buffer: BufferId,
     pub selection: Selection,
     pub scroll: Scroll,
@@ -2212,6 +2214,7 @@ impl Editor {
     /// Opens a view of `buffer` for every client, all with `selection`.
     fn new_view(&mut self, buffer: BufferId, selection: Selection) -> ViewId {
         self.open_view(&View {
+            id: ViewId(self.next_id),
             buffer,
             selection,
             scroll: Scroll::default(),
@@ -2228,7 +2231,7 @@ impl Editor {
     fn open_view(&mut self, view: &View) -> ViewId {
         let id = ViewId(self.next_id());
         for client in self.clients.values_mut() {
-            client.views.insert(id, view.clone());
+            client.views.insert(id, View { id, ..view.clone() });
         }
         id
     }

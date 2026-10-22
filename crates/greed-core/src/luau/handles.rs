@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use greed_text::{Author, ChangeSet, Range, Rope, Selection, line_content, line_end};
+use greed_text::{Author, ChangeSet, ClientId, Range, Rope, Selection, line_content, line_end};
 use mlua::{
     Function, IntoLuaMulti, Lua, LuaSerdeExt, MetaMethod, Table, UserData, UserDataMethods,
     UserDataRef, Value,
@@ -761,6 +761,8 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                     Ok(Mark {
                         range: t.get("from")?..t.get("to")?,
                         style: style.into(),
+                        view: t.get::<Option<u32>>("view")?.map(ViewId),
+                        client: t.get::<Option<u32>>("client")?.map(ClientId),
                         line: flag("line")?,
                         text: t.get::<Option<String>>("text")?.map(Into::into),
                         eol: flag("eol")?,
@@ -869,6 +871,8 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("from", mark.range.start)?;
     t.set("to", mark.range.end)?;
     t.set("style", &*mark.style)?;
+    t.set("view", mark.view.map(|id| id.0))?;
+    t.set("client", mark.client.map(|id| id.0))?;
     t.set("line", mark.line)?;
     t.set("text", mark.text.as_deref())?;
     t.set("eol", mark.eol)?;

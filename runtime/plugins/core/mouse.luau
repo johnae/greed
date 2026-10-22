@@ -69,7 +69,12 @@ function M.side_scroll(view: greed.View, columns: number)
 	local pos = view:cursor()
 	local nowrap = false
 	for _, mark in buffer:marks_at(pos) do
-		nowrap = nowrap or mark.nowrap == true
+		if
+			(mark.view == nil or mark.view == view:id())
+			and (mark.client == nil or mark.client == greed.client.id())
+		then
+			nowrap = nowrap or mark.nowrap == true
+		end
 	end
 	local _, width = view:size()
 	if not nowrap or width == nil then

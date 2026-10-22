@@ -64,3 +64,37 @@ test("marks_at finds marks in every namespace, with their namespace", function(t
 	assert(at(3) == "", "a range's end is outside it: " .. at(3))
 	assert(at(5) == "two:z", at(5))
 end)
+
+test("invisible scoped buttons leave offered actions available", function(t)
+	t:buffer("|plain")
+	local buttons = require("../buttons")
+	local view = greed.view()
+	local buffer = view:buffer()
+	buttons.offer(function(b, pos)
+		if b:id() == buffer:id() and pos == 0 then
+			return { text = "offered", action = "offered-action", from = 0 }
+		end
+		return nil
+	end)
+	local mark: greed.Mark = {
+		from = 0,
+		to = 3,
+		style = "ui.button",
+		action = "marked-action",
+		view = view:id(),
+		client = greed.client.id(),
+	}
+	buffer:decorate("scoped", { mark })
+	assert(buttons.at(view, 0)[1].action == "marked-action")
+	mark.view = view:id() + 100000
+	buffer:decorate("scoped", { mark })
+	assert(buttons.at(view, 0)[1].action == "offered-action")
+	mark.view = view:id()
+	mark.client = greed.client.id() + 100000
+	buffer:decorate("scoped", { mark })
+	assert(buttons.at(view, 0)[1].action == "offered-action")
+	mark.view = nil
+	mark.client = nil
+	buffer:decorate("scoped", { mark })
+	assert(buttons.at(view, 0)[1].action == "marked-action")
+end)

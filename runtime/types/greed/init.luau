@@ -257,6 +257,9 @@ export type Mark = {
 	from: number,
 	to: number,
 	style: string,
+	--- Restrict layout and drawing to this view/client; both filters must match when supplied.
+	view: number?,
+	client: number?,
 	--- Style every whole line the mark touches, not just its text.
 	line: boolean?,
 	--- Text to show that isn't in the buffer, like an inlay hint, before the
@@ -1458,6 +1461,8 @@ export type Client = {
 	current: () -> ClientInfo,
 	--- The id of the client the running code acts for: `current().id`, without building the rest. For keeping what each client has open apart, like a picker of its own.
 	id: () -> number,
+	--- Runs a synchronous callback as an existing client, returning its results. Restores the caller on error or nesting; the callback cannot yield or wait.
+	with: <T...>(id: number, callback: () -> T...) -> T...,
 	--- Every client, in the order they attached.
 	list: () -> { ClientInfo },
 	--- Sends a notification to your desktop through a client: `client` (an id from `list`), or the one used last; a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.

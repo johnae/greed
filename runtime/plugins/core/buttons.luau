@@ -47,13 +47,18 @@ function M.offer(offer: Offer)
 	greed.plugin.tie(registry.put(offers, offer))
 end
 
---- The buttons over `pos` in `buffer`, in the order their marks start, or
---- else the one offered there.
-function M.at(buffer: greed.Buffer, pos: number): { Button }
+--- The visible buttons over `pos` in `view`, in mark order, or else the
+--- one offered there.
+function M.at(view: greed.View, pos: number): { Button }
+	local buffer = view:buffer()
 	local buttons: { Button } = {}
 	for _, mark in buffer:marks_at(pos) do
 		local action = mark.action
-		if action then
+		if
+			action
+			and (mark.view == nil or mark.view == view:id())
+			and (mark.client == nil or mark.client == greed.client.id())
+		then
 			local text = mark.text or buffer:slice(mark.from, mark.to)
 			table.insert(buttons, { text = text, action = action, from = mark.from })
 		end
@@ -77,7 +82,7 @@ greed.command({
 	doc = "Run the button under the cursor, as clicking it does",
 	run = function(ctx)
 		local view = ctx.view
-		local buttons = M.at(ctx.buffer, view:cursor())
+		local buttons = M.at(view, view:cursor())
 		-- The cursor goes to the button first, as a click puts it.
 		local function press(button: Button)
 			view:set_selection({
