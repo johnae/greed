@@ -3,6 +3,10 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## Unreleased
+
+- Borders: opt-in RGB vertical gradients for floats, panels and pane separators in the terminal and window, with optional rounded terminal float corners.
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights

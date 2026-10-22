@@ -31,6 +31,8 @@ pub struct Instance {
     /// The box it's drawn within, as left, top, right, bottom; what's
     /// outside isn't drawn, like the rows of a pane gliding past its edge.
     pub clip: [f32; 4],
+    /// The bottom edge's color for `ROUND`; other quads keep `color`.
+    pub bottom_color: [f32; 4],
 }
 
 /// A clip that cuts nothing.
@@ -86,6 +88,7 @@ fn images(placements: &[ImagePlacement], cell_w: f32, cell_h: f32) -> Vec<(Image
                 color: [1.0; 4],
                 kind: COLOR,
                 clip: NO_CLIP,
+                bottom_color: [1.0; 4],
             };
             (p.id, instance)
         })
@@ -100,6 +103,7 @@ fn rect(x: f32, y: f32, w: f32, h: f32, color: Rgba) -> Instance {
         color,
         kind: RECT,
         clip: NO_CLIP,
+        bottom_color: color,
     }
 }
 
@@ -300,7 +304,7 @@ pub fn build(
     let mut columns = lay_out(grid, &looks, &snaps(grid, &regions), fonts);
     let beneath = beneath_looks(chrome, &regions, palette);
     let hidden = beside_floats(&mut columns, chrome, &beneath, &regions, fonts);
-    let boxes = float_boxes(chrome, &looks, (cw, ch));
+    let boxes = float_boxes(chrome, grid, &looks, palette, (cw, ch));
     let mut instances = Vec::new();
     let fill = |pass: Pass, out: &mut Vec<Instance>| {
         backgrounds(&looks, &regions, pass, &columns, ch, background, out);
@@ -575,6 +579,7 @@ fn glyph_quad(physical: &PhysicalGlyph, slot: &Slot, size: f32, color: Rgba) -> 
         color,
         kind: if slot.color { COLOR } else { MASK },
         clip: NO_CLIP,
+        bottom_color: color,
     }
 }
 
@@ -709,6 +714,7 @@ fn rounded(x: f32, y: f32, w: f32, h: f32, radius: f32, outline: f32, color: Rgb
         color,
         kind: ROUND,
         clip: NO_CLIP,
+        bottom_color: color,
     }
 }
 
@@ -743,7 +749,8 @@ struct FloatBox {
     /// How far its shadow fades out.
     blur: f32,
     fill: Rgba,
-    border: Rgba,
+    border_top: Rgba,
+    border_bottom: Rgba,
 }
 
 impl FloatBox {
@@ -759,6 +766,7 @@ impl FloatBox {
             color: [0.0, 0.0, 0.0, depth],
             kind: SHADOW,
             clip: NO_CLIP,
+            bottom_color: [0.0, 0.0, 0.0, depth],
         }
     }
 
@@ -767,9 +775,11 @@ impl FloatBox {
         self.shape(0.0, self.fill)
     }
 
-    /// Its rounded outline, in its border's color.
+    /// Its rounded outline, interpolating between its border's edge colors.
     fn outline(&self, out: &mut Vec<Instance>) {
-        out.push(self.shape(self.line, self.border));
+        let mut shape = self.shape(self.line, self.border_top);
+        shape.bottom_color = self.border_bottom;
+        out.push(shape);
     }
 
     fn shape(&self, outline: f32, color: Rgba) -> Instance {
@@ -778,7 +788,13 @@ impl FloatBox {
 }
 
 /// The boxes of `chrome`'s floats, colored as their cells are.
-fn float_boxes(chrome: &Chrome, looks: &[Vec<Look>], (cw, ch): (f32, f32)) -> Vec<FloatBox> {
+fn float_boxes(
+    chrome: &Chrome,
+    grid: &[Vec<Cell>],
+    looks: &[Vec<Look>],
+    palette: &Palette,
+    (cw, ch): (f32, f32),
+) -> Vec<FloatBox> {
     let line = (ch / 16.0).round().max(1.0);
     chrome
         .floats
@@ -786,7 +802,25 @@ fn float_boxes(chrome: &Chrome, looks: &[Vec<Look>], (cw, ch): (f32, f32)) -> Ve
         .filter_map(|r| {
             let (x, y) = (usize::from(r.x), usize::from(r.y));
             let fill = looks.get(y)?.get(x)?.bg;
-            let border = looks.get(y)?.get(x.checked_sub(1)?)?.fg;
+            let border_x = x.checked_sub(1)?;
+            let border = looks.get(y)?.get(border_x)?.fg;
+            let style = &grid.get(y)?.get(border_x)?.style;
+            // Use the full geometry's endpoints, not the last visible row:
+            // a float can extend below the grid. Resolve attributes exactly
+            // as for its cells, including dim and reverse.
+            let (border_top, border_bottom) = style.gradient.map_or((border, border), |gradient| {
+                let edge = |row| {
+                    look(
+                        &Style {
+                            fg: Some(gradient.color_at(row, 2)),
+                            ..*style
+                        },
+                        palette,
+                    )
+                    .fg
+                };
+                (edge(0), edge(1))
+            });
             // The border is the cells around the text.
             let (left, top) = ((f32::from(r.x) - 1.0) * cw, (f32::from(r.y) - 1.0) * ch);
             let (w, h) = (
@@ -807,7 +841,8 @@ fn float_boxes(chrome: &Chrome, looks: &[Vec<Look>], (cw, ch): (f32, f32)) -> Ve
                 line,
                 blur: ch * 0.6,
                 fill,
-                border,
+                border_top,
+                border_bottom,
             })
         })
         .collect()
@@ -1102,6 +1137,101 @@ mod tests {
 
     fn text(row: &[Cell]) -> String {
         row.iter().map(|c| c.text.as_str()).collect()
+    }
+
+    /// A float whose bottom border is below the visible grid.
+    fn float_inputs(style: Style, rounded: bool) -> Vec<Instance> {
+        let mut grid = vec![cells("    "); 3];
+        grid[1][0].style = style;
+        let palette = Palette::default();
+        let looks: Vec<Vec<Look>> = grid
+            .iter()
+            .map(|row| row.iter().map(|cell| look(&cell.style, &palette)).collect())
+            .collect();
+        let chrome = Chrome {
+            floats: vec![Rect {
+                x: 1,
+                y: 1,
+                width: 2,
+                height: 6,
+            }],
+            rounded,
+            shadows: false,
+            ..Chrome::default()
+        };
+        let boxes = float_boxes(&chrome, &grid, &looks, &palette, (10.0, 20.0));
+        let mut out = Vec::new();
+        float_shapes(&boxes, &chrome, palette.background(), &mut out);
+        out
+    }
+
+    #[test]
+    fn rounded_outline_sends_true_gradient_endpoints_even_when_clipped() {
+        use greed_core::theme::{BorderGradient, Color};
+
+        let style = Style {
+            // The visible side cell already has a row-resolved foreground;
+            // neither this nor its row can replace the full endpoints.
+            fg: Some(Color::Rgb(110, 80, 140)),
+            bg: Some(Color::Rgb(0, 0, 0)),
+            dim: Some(true),
+            gradient: Some(BorderGradient {
+                from: [200, 100, 40],
+                to: [20, 60, 240],
+            }),
+            ..Style::default()
+        };
+        let inputs = float_inputs(style, true);
+        assert_eq!(inputs.len(), 2, "one fill and one actual rounded outline");
+        let outline = &inputs[1];
+        assert_eq!(outline.kind, ROUND);
+        assert_eq!(outline.pos, [5.0, 10.0]);
+        assert_eq!(outline.size, [30.0, 140.0], "retain offscreen geometry");
+        assert_eq!(outline.uv, [8.0, 1.0, 8.0, 1.0]);
+        assert_eq!(
+            outline.color,
+            [100.0 / 255.0, 50.0 / 255.0, 20.0 / 255.0, 1.0]
+        );
+        assert_eq!(
+            outline.bottom_color,
+            [10.0 / 255.0, 30.0 / 255.0, 120.0 / 255.0, 1.0]
+        );
+        assert_eq!(inputs[0].color, inputs[0].bottom_color, "fill stays solid");
+        assert_eq!(inputs[0].uv[1], 0.0);
+    }
+
+    #[test]
+    fn solid_and_reversed_borders_keep_their_resolved_colors() {
+        use greed_core::theme::{BorderGradient, Color};
+
+        let mut style = Style {
+            fg: Some(Color::Rgb(200, 100, 40)),
+            bg: Some(Color::Rgb(20, 60, 240)),
+            reverse: Some(true),
+            dim: Some(true),
+            ..Style::default()
+        };
+        let expected = look(&style, &Palette::default()).fg;
+        let solid = float_inputs(style, true);
+        assert_eq!(solid[1].color, expected);
+        assert_eq!(solid[1].bottom_color, expected);
+        style.gradient = Some(BorderGradient {
+            from: [200, 100, 40],
+            to: [20, 60, 240],
+        });
+        let reversed = float_inputs(style, true);
+        let mut top_style = style;
+        top_style.fg = Some(Color::Rgb(200, 100, 40));
+        let mut bottom_style = style;
+        bottom_style.fg = Some(Color::Rgb(20, 60, 240));
+        assert_eq!(reversed[1].color, look(&top_style, &Palette::default()).fg);
+        assert_eq!(
+            reversed[1].bottom_color,
+            look(&bottom_style, &Palette::default()).fg
+        );
+        let square = float_inputs(style, false);
+        assert_eq!(square.len(), 1, "square floats keep their grid border");
+        assert_eq!(square[0].color, square[0].bottom_color);
     }
 
     #[test]

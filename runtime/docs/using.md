@@ -2802,11 +2802,21 @@ their palette, with selections underlined.
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
 `["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
-These fields are for the window only:
+
+Border styles (`ui.float`, `ui.panel.border`, `ui.pane.border`) accept
+`gradient = { from = "#00ced1", to = "#4169e1" }`. Both endpoints are required
+RGB `#rrggbb` colors; named, indexed and default colors are not endpoints.
+The foreground runs vertically over each border's full extent, even when
+clipped; a horizontal divider uses `from`. Without `gradient`, borders keep
+their solid foreground. The window interpolates rounded float outlines too.
+`["ui.float"] = { tui = { rounded = true } }` selects rounded terminal corner
+glyphs; it does not change the window's corner setting.
+
+These rendering fields are primarily for the window (`rounded` also works in terminals):
 
 | Field | |
 |---|---|
-| `rounded`, `shadow` | Floats as boxes with rounded corners and a soft shadow |
+| `rounded`, `shadow` | Rounded float outlines and soft shadows (`rounded` also selects rounded terminal corner glyphs) |
 | `badge` | The style's background as a small box with rounded corners, like a key cap (motion hints and buttons use it) |
 | `hover` | Light up what's under the mouse (buttons, fields, choices, tabs) |
 | `checkbox = "empty"` or `"checked"` | A checkbox over the text (todo boxes use it) |

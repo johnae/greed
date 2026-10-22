@@ -75,17 +75,7 @@ fn compose_layers(frame: &Frame, medium: Medium, scaled: bool, floats: bool) -> 
     };
     let mut grid = vec![vec![blank; width]; usize::from(size.height)];
     let pane_border = text.patch(&look(&Tag::PANE_BORDER));
-    for line in &frame.lines {
-        let (x, y) = (usize::from(line.x), usize::from(line.y));
-        let len = usize::from(line.len);
-        if line.down {
-            for row in grid.iter_mut().skip(y).take(len) {
-                put(row, x, 1, "│", pane_border, 1);
-            }
-        } else if let Some(row) = grid.get_mut(y) {
-            put(row, x, len, &"─".repeat(len), pane_border, 1);
-        }
-    }
+    draw_pane_borders(&mut grid, frame, pane_border);
     let inactive = text.patch(&look(&Tag::PANE_INACTIVE));
     let panel = text.patch(&look(&Tag::PANEL));
     let separator = panel.patch(&look(&Tag::PANEL_BORDER));
@@ -118,8 +108,15 @@ fn compose_layers(frame: &Frame, medium: Medium, scaled: bool, floats: bool) -> 
                 title,
             } => {
                 let top = y.saturating_sub(usize::from(title.is_some()));
-                for line in grid.iter_mut().take(y + h).skip(top) {
-                    put(line, usize::from(*column), 1, "│", separator, 1);
+                for (offset, line) in grid.iter_mut().take(y + h).skip(top).enumerate() {
+                    put(
+                        line,
+                        usize::from(*column),
+                        1,
+                        "│",
+                        border_row(separator, offset, y + h - top),
+                        1,
+                    );
                 }
                 if let (Some(title), Some(line)) = (title, grid.get_mut(top)) {
                     let style = panel.patch(&look(&Tag::PANEL_TITLE));
@@ -155,6 +152,21 @@ fn compose_layers(frame: &Frame, medium: Medium, scaled: bool, floats: bool) -> 
         }
     }
     grid
+}
+
+/// Draws pane dividers with each gradient spanning its complete line.
+fn draw_pane_borders(grid: &mut [Vec<Cell>], frame: &Frame, style: Style) {
+    for line in &frame.lines {
+        let (x, y) = (usize::from(line.x), usize::from(line.y));
+        let len = usize::from(line.len);
+        if line.down {
+            for (offset, row) in grid.iter_mut().skip(y).take(len).enumerate() {
+                put(row, x, 1, "│", border_row(style, offset, len), 1);
+            }
+        } else if let Some(row) = grid.get_mut(y) {
+            put(row, x, len, &"─".repeat(len), border_row(style, 0, 1), 1);
+        }
+    }
 }
 
 /// Draws `surface`'s rows in its rect over `base`; with `fill`, each to
@@ -328,6 +340,14 @@ struct Edges<'a> {
     footer: &'a [Span],
 }
 
+/// Resolve once per border row, without inventing theme names or allocating.
+fn border_row(mut style: Style, row: usize, height: usize) -> Style {
+    if let Some(gradient) = style.gradient {
+        style.fg = Some(gradient.color_at(row, height));
+    }
+    style
+}
+
 /// Draws a border around `r`, blanking what's inside, with the title at
 /// the left of the top border, the label at the right and the footer in
 /// the middle of the bottom border. `looks` are the border's, the inside's
@@ -349,12 +369,22 @@ fn draw_border(
     if x == 0 || y == 0 {
         return;
     }
+    let rounded = border.rounded == Some(true);
     for (dy, line) in grid.iter_mut().enumerate().skip(y - 1).take(h + 2) {
         let (left, fill, right) = match dy {
-            d if d == y - 1 => ('┌', '─', '┐'),
-            d if d == y + h => ('└', '─', '┘'),
+            d if d == y - 1 => (
+                if rounded { '╭' } else { '┌' },
+                '─',
+                if rounded { '╮' } else { '┐' },
+            ),
+            d if d == y + h => (
+                if rounded { '╰' } else { '└' },
+                '─',
+                if rounded { '╯' } else { '┘' },
+            ),
             _ => ('│', ' ', '│'),
         };
+        let row_border = border_row(border, dy - (y - 1), h + 2);
         let mut cells = std::iter::once(left)
             .chain(std::iter::repeat_n(fill, w))
             .chain(std::iter::once(right));
@@ -362,7 +392,7 @@ fn draw_border(
             let c = cells.next().unwrap_or(' ');
             *cell = Cell {
                 text: c.to_string(),
-                style: if c == ' ' { body } else { border },
+                style: if c == ' ' { body } else { row_border },
                 scale: 1,
             };
         }
@@ -381,7 +411,7 @@ fn draw_border(
     if let Some(top) = grid.get_mut(y - 1) {
         let room = w - label - usize::from(label > 0);
         if let Some(title) = edges.title.filter(|t| !t.is_empty()) {
-            let style = border.patch(&title_look);
+            let style = border_row(border, 0, h + 2).patch(&title_look);
             put(
                 top,
                 x + 1,
@@ -392,7 +422,14 @@ fn draw_border(
             );
         }
         if label > 0 {
-            put_spans(top, x + w - 1 - label, label, edges.label, border, paint);
+            put_spans(
+                top,
+                x + w - 1 - label,
+                label,
+                edges.label,
+                border_row(border, 0, h + 2),
+                paint,
+            );
         }
     }
     let footer = padded(edges.footer);
@@ -405,7 +442,7 @@ fn draw_border(
             x + (w - footer) / 2,
             footer,
             edges.footer,
-            border,
+            border_row(border, h + 1, h + 2),
             paint,
         );
     }
@@ -995,5 +1032,113 @@ mod tests {
         );
         let shown: String = line[..used].iter().map(|c| c.text.as_str()).collect();
         assert_eq!(shown, "a␛]52;␇�␡é");
+    }
+    #[test]
+    fn panel_and_pane_separators_use_their_own_vertical_extent() {
+        use crate::theme::BorderGradient;
+        let mut f = frame(Vec::new());
+        f.surfaces.clear();
+        let gradient = BorderGradient {
+            from: [0, 206, 209],
+            to: [65, 105, 225],
+        };
+        let style = Style {
+            gradient: Some(gradient),
+            ..Style::default()
+        };
+        for name in ["ui.panel.border", "ui.pane.border"] {
+            Arc::make_mut(&mut f.theme).set(name, Entry::new(style));
+        }
+        f.lines.push(Separator {
+            x: 6,
+            y: 1,
+            len: 3,
+            down: true,
+        });
+        f.surfaces.push(Surface::new(
+            SurfaceId::View(ViewId(2)),
+            Role::Panel {
+                separator: 1,
+                title: Some("panel".into()),
+            },
+            rect(2, 1, 3, 2),
+            Vec::new(),
+        ));
+        let grid = compose(&f, Medium::Tui);
+        for row in 0..3 {
+            assert_eq!(grid[row][1].style.fg, Some(gradient.color_at(row, 3)));
+            assert_eq!(grid[row + 1][6].style.fg, Some(gradient.color_at(row, 3)));
+        }
+        assert_eq!(grid[0][6].text, " ");
+    }
+
+    #[test]
+    fn rounded_float_borders_follow_their_geometry_even_when_clipped() {
+        use crate::theme::BorderGradient;
+        let theme = Theme::default();
+        let blank = Cell {
+            text: " ".into(),
+            style: Style::default(),
+            scale: 1,
+        };
+        let mut grid = vec![vec![blank; 7]; 5];
+        let gradient = BorderGradient {
+            from: [0, 206, 209],
+            to: [65, 105, 225],
+        };
+        let border = Style {
+            gradient: Some(gradient),
+            rounded: Some(true),
+            ..Style::default()
+        };
+        let edges = Edges {
+            title: None,
+            label: &[],
+            footer: &[],
+        };
+        let paint = Paint {
+            theme: &theme,
+            medium: Medium::Tui,
+            scaled: false,
+        };
+        draw_border(
+            &mut grid,
+            rect(1, 1, 3, 3),
+            &edges,
+            (border, Style::default(), Style::default()),
+            paint,
+        );
+        assert_eq!(grid[0][0].text, "╭");
+        assert_eq!(grid[0][4].text, "╮");
+        assert_eq!(grid[4][0].text, "╰");
+        assert_eq!(grid[4][4].text, "╯");
+        assert_eq!(grid[0][0].style.fg, Some(gradient.color_at(0, 5)));
+        assert_eq!(grid[2][0].style.fg, Some(gradient.color_at(2, 5)));
+        assert_eq!(grid[4][0].style.fg, Some(gradient.color_at(4, 5)));
+        // A clipped bottom must not stretch the gradient to its visible rows.
+        grid.truncate(3);
+        draw_border(
+            &mut grid,
+            rect(1, 1, 3, 3),
+            &edges,
+            (border, Style::default(), Style::default()),
+            paint,
+        );
+        assert_eq!(grid[2][0].style.fg, Some(gradient.color_at(2, 5)));
+        // Existing solid square borders remain square and retain their foreground.
+        let solid = Style {
+            fg: Some(Color::Ansi(4)),
+            ..Style::default()
+        };
+        draw_border(
+            &mut grid,
+            rect(1, 1, 0, 0),
+            &edges,
+            (solid, Style::default(), Style::default()),
+            paint,
+        );
+        assert_eq!(grid[0][0].text, "┌");
+        assert_eq!(grid[1][1].text, "┘");
+        assert_eq!(grid[0][0].style.fg, solid.fg);
     }
 }

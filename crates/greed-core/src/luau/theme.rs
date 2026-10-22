@@ -14,7 +14,7 @@ use mlua::{Lua, Table, Value};
 
 use super::{State, state, state_mut};
 use crate::registry::PluginId;
-use crate::theme::{Checkbox, Color, Entry, Font, Style, Underline};
+use crate::theme::{BorderGradient, Checkbox, Color, Entry, Font, Style, Underline};
 
 type LuaResult<T> = mlua::Result<T>;
 
@@ -112,7 +112,7 @@ fn entry_from_lua(spec: &Table) -> LuaResult<Entry> {
     })
 }
 
-const KEYS: [&str; 15] = [
+const KEYS: [&str; 16] = [
     "fg",
     "bg",
     "underline",
@@ -128,6 +128,7 @@ const KEYS: [&str; 15] = [
     "hover",
     "checkbox",
     "font",
+    "gradient",
 ];
 
 fn style_from_lua(t: &Table, media: bool) -> LuaResult<Style> {
@@ -167,9 +168,34 @@ fn style_from_lua(t: &Table, media: bool) -> LuaResult<Style> {
             )));
         }
     };
+    let gradient = t
+        .get::<Option<Table>>("gradient")?
+        .map(|gradient| {
+            for pair in gradient.pairs::<String, Value>() {
+                let (key, _) = pair?;
+                if key != "from" && key != "to" {
+                    return Err(mlua::Error::runtime("gradient accepts only from and to"));
+                }
+            }
+            let endpoint = |key: &str| -> LuaResult<[u8; 3]> {
+                let value = gradient.get::<String>(key)?;
+                match Color::parse(&value) {
+                    Some(Color::Rgb(r, g, b)) => Ok([r, g, b]),
+                    _ => Err(mlua::Error::runtime(
+                        "gradient endpoints must be RGB #rrggbb colors",
+                    )),
+                }
+            };
+            Ok(BorderGradient {
+                from: endpoint("from")?,
+                to: endpoint("to")?,
+            })
+        })
+        .transpose()?;
     Ok(Style {
         fg: color("fg")?,
         bg: color("bg")?,
+        gradient,
         underline,
         underline_color: color("underline_color")?,
         bold: t.get("bold")?,
@@ -210,6 +236,13 @@ fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
     let t = lua.create_table()?;
     t.set("fg", style.fg.map(|c| c.to_string()))?;
     t.set("bg", style.bg.map(|c| c.to_string()))?;
+    if let Some(gradient) = style.gradient {
+        let endpoints = lua.create_table()?;
+        let color = |[r, g, b]: [u8; 3]| Color::Rgb(r, g, b).to_string();
+        endpoints.set("from", color(gradient.from))?;
+        endpoints.set("to", color(gradient.to))?;
+        t.set("gradient", endpoints)?;
+    }
     t.set(
         "underline_color",
         style.underline_color.map(|c| c.to_string()),
@@ -241,4 +274,43 @@ fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
         }),
     )?;
     Ok(t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rgb_gradients_roundtrip_through_lua() {
+        let lua = Lua::new();
+        let table: Table = lua
+            .load("return {gradient={from='#00CED1',to='#4169E1'},rounded=true}")
+            .eval()
+            .unwrap();
+        let style = style_from_lua(&table, false).unwrap();
+        assert_eq!(
+            style.gradient,
+            Some(BorderGradient {
+                from: [0, 206, 209],
+                to: [65, 105, 225]
+            })
+        );
+        assert_eq!(
+            style_from_lua(&style_to_lua(&lua, &style).unwrap(), false).unwrap(),
+            style
+        );
+    }
+
+    #[test]
+    fn gradient_endpoints_require_rgb_and_reject_unknown_fields() {
+        let lua = Lua::new();
+        for source in [
+            "return {gradient={from='cyan',to='#4169e1'}}",
+            "return {gradient={from='#00ced1'}}",
+            "return {gradient={from='#00ced1',to='#4169e1',animate=true}}",
+        ] {
+            let table: Table = lua.load(source).eval().unwrap();
+            assert!(style_from_lua(&table, false).is_err());
+        }
+    }
 }

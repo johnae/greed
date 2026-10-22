@@ -25,6 +25,7 @@ struct Quad {
     @location(3) color: vec4<f32>,
     @location(4) kind: u32,
     @location(5) clip: vec4<f32>,
+    @location(6) bottom_color: vec4<f32>,
 };
 
 struct Out {
@@ -45,6 +46,11 @@ fn vs(@builtin(vertex_index) v: u32, q: Quad) -> Out {
     o.pos = vec4<f32>(p.x / screen.size.x * 2.0 - 1.0, 1.0 - p.y / screen.size.y * 2.0, 0.0, 1.0);
     o.uv = mix(q.uv.xy, q.uv.zw, corner);
     o.color = q.color;
+    if q.kind == 3u {
+        // Vertex colors interpolate over the whole rounded geometry, so
+        // clipping never shortens or restarts a vertical border gradient.
+        o.color = mix(q.color, q.bottom_color, corner.y);
+    }
     o.kind = q.kind;
     o.local = corner * q.size;
     o.size = q.size;
@@ -172,7 +178,7 @@ impl Gpu {
         });
         let attributes = wgpu::vertex_attr_array![
             0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Uint32,
-            5 => Float32x4
+            5 => Float32x4, 6 => Float32x4
         ];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("greed"),

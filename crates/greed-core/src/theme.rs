@@ -24,6 +24,11 @@
 //!   picker's, drawn by plugins
 //! - `diagnostic.<severity>`: `error`, `warning`, `info` or `hint`
 //! - tree-sitter captures for syntax, e.g. `keyword` or `function.macro`
+//!
+//! Border styles accept `gradient = { from = "#00CED1", to = "#4169E1" }`
+//! in Luau. Its RGB foreground runs vertically over the actual float,
+//! side-panel separator or pane divider; ordinary styles remain solid.
+//! `ui.float.tui.rounded = true` chooses rounded terminal corner glyphs.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -136,12 +141,43 @@ impl Underline {
     }
 }
 
+/// A static vertical border foreground gradient with RGB endpoints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BorderGradient {
+    pub from: [u8; 3],
+    pub to: [u8; 3],
+}
+
+impl BorderGradient {
+    /// The color at a row of the complete border, even when it is clipped.
+    /// A single-row border uses the first endpoint.
+    pub fn color_at(self, row: usize, height: usize) -> Color {
+        let steps = height.saturating_sub(1);
+        let row = row.min(steps);
+        let channel = |index: usize| {
+            if steps == 0 {
+                return self.from[index];
+            }
+            let from = u64::from(self.from[index]);
+            let to = u64::from(self.to[index]);
+            let steps = steps as u64;
+            let row = row as u64;
+            let value = (from * (steps - row) + to * row + steps / 2) / steps;
+            u8::try_from(value).expect("interpolated channel stays within its u8 endpoints")
+        };
+        Color::Rgb(channel(0), channel(1), channel(2))
+    }
+}
+
 /// How text looks. Fields left as `None` leave whatever is underneath, so
 /// styles layer: a selection's background over a keyword's color.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Style {
     pub fg: Option<Color>,
     pub bg: Option<Color>,
+    /// Border foreground, interpolated over its own geometry's rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gradient: Option<BorderGradient>,
     pub underline: Option<Underline>,
     pub underline_color: Option<Color>,
     pub bold: Option<bool>,
@@ -149,8 +185,8 @@ pub struct Style {
     pub dim: Option<bool>,
     pub reverse: Option<bool>,
     pub strikethrough: Option<bool>,
-    /// For floats in the window: rounded corners and an outline instead of
-    /// box lines, and a soft shadow. Terminals draw neither.
+    /// Rounded float corners: line glyphs in terminals, an outline in the
+    /// window. Shadow is window-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rounded: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -182,6 +218,7 @@ impl Style {
         Style {
             fg: over.fg.or(self.fg),
             bg: over.bg.or(self.bg),
+            gradient: over.gradient.or(self.gradient),
             underline: over.underline.or(self.underline),
             underline_color: over.underline_color.or(self.underline_color),
             bold: over.bold.or(self.bold),
@@ -345,6 +382,46 @@ fn lineage(name: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gradient_style_patches_and_roundtrips_without_changing_legacy_styles() {
+        let legacy = serde_json::to_value(Style::default()).unwrap();
+        assert!(legacy.get("gradient").is_none());
+        let base: Style = serde_json::from_value(legacy).unwrap();
+        assert_eq!(base.gradient, None);
+        let gradient = BorderGradient {
+            from: [0, 200, 255],
+            to: [255, 0, 20],
+        };
+        let styled = base.patch(&Style {
+            gradient: Some(gradient),
+            ..Style::default()
+        });
+        let patched = styled.patch(&Style {
+            bold: Some(true),
+            ..Style::default()
+        });
+        assert_eq!(patched.gradient, Some(gradient));
+        let encoded = serde_json::to_vec(&patched).unwrap();
+        assert_eq!(serde_json::from_slice::<Style>(&encoded).unwrap(), patched);
+        let replacement = BorderGradient {
+            from: [255, 0, 20],
+            to: [0, 200, 255],
+        };
+        assert_eq!(
+            patched
+                .patch(&Style {
+                    gradient: Some(replacement),
+                    ..Style::default()
+                })
+                .gradient,
+            Some(replacement)
+        );
+        assert_eq!(gradient.color_at(0, 5), Color::Rgb(0, 200, 255));
+        assert_eq!(gradient.color_at(2, 5), Color::Rgb(128, 100, 138));
+        assert_eq!(gradient.color_at(4, 5), Color::Rgb(255, 0, 20));
+        assert_eq!(gradient.color_at(0, 1), Color::Rgb(0, 200, 255));
+    }
 
     #[test]
     fn inline_names_spell_out_their_style_and_skip_the_theme() {

@@ -580,6 +580,7 @@ mod tests {
                     color: [1.0; 4],
                     kind: draw::RECT,
                     clip: draw::NO_CLIP,
+                    bottom_color: [1.0; 4],
                 }
             })
             .collect()

@@ -1800,6 +1800,8 @@ export type PluginInfo = {
 export type Style = {
 	fg: string?,
 	bg: string?,
+	--- Vertical border foreground; both endpoints must be RGB "#rrggbb" colors.
+	gradient: { from: string, to: string }?,
 	--- true, or "line", "curl", "dotted", "dashed" or "double".
 	underline: (boolean | string)?,
 	underline_color: string?,
@@ -1808,7 +1810,7 @@ export type Style = {
 	dim: boolean?,
 	reverse: boolean?,
 	strikethrough: boolean?,
-	--- For floats in the window (`ui.float`, in its `gui` part): rounded corners and an outline instead of box lines, and a soft shadow.
+	--- Rounded float corners: terminal line glyphs or a window outline. Shadow is window-only.
 	rounded: boolean?,
 	shadow: boolean?,
 	--- For text in the window: its background as a badge, a box with rounded corners a little inside its cells, as motion hints have.
