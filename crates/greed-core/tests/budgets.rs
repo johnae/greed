@@ -1025,6 +1025,9 @@ greed.command({ name = 'budget-layout', run = function()
     greed.run('terminal', { args = { 'cat' } })
     greed.float(greed.create_buffer('scratch', 'a float\\nof two lines'), { width = '40%', height = '30%', focus = false })
     main:focus()
+    -- Out of the terminal's mode now, not when the focus event comes round:
+    -- on a slow machine the keys that follow could reach the terminal first.
+    greed.mode.set(require('@core').style.home_for(greed.view()))
 end })";
 
 /// Three clients attached over the socket, one typing into a file the
@@ -1062,6 +1065,9 @@ fn clients() {
                 client.frame();
             }
             clients[0].send(&Input::Run("budget-layout".into()));
+            for client in &clients {
+                client.drain(Duration::from_millis(500));
+            }
             for key in Key::parse_sequence("g g 1 0 0 j o").unwrap() {
                 clients[0].send(&Input::Key(key));
             }
