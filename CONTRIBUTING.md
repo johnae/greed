@@ -54,5 +54,40 @@ It needs a GPU, or software Vulkan like Mesa's lavapipe.
 - Commits follow conventional commits, `type(scope): what it does`, kept
   short. Git or jj, either is fine.
 
+### Keep it small
+
+A PR I can read in one sitting gets in. One that changes 900 lines to add
+an event probably doesn't, however good the idea - I can't tell what it
+does to the rest. So:
+
+- One change a PR. A fix found along the way is its own PR.
+- The smallest diff that does it. Don't move, rename or reformat code
+  you're not changing, and don't split a file to fix ten lines in it.
+- Extend what's there before writing something new: an option on the
+  existing function, not a second one that does nearly the same. If you
+  find two copies, merge them. Look in `greed.*`, `core.*` and the plugin
+  that owns the thing first.
+- No machinery the change doesn't need: no extra checks "just in case", no
+  provider or registry layers, no new abstraction for one caller.
+- Don't change a default unless the issue asked for it.
+- Don't touch `CHANGELOG.md`. It's written from the commits at release.
+- Tests are short, one claim each, named as a sentence:
+  `"a todo in a notes block is ticked from its row"`.
+- Docs in plain words, where a user looks: settings in `using.md`, plugin
+  APIs in `plugins.md`. A sentence or two is usually enough.
+- The PR description says what and why in a few lines. Skip the
+  validation logs - CI and the tests do that.
+
+For a feature, open an issue with a sketch of the call first (a few lines
+of Luau showing how you'd use it), and wait until we agree on the shape
+before writing it.
+
+Like these: [the sessions folder fix](https://github.com/johnae/greed/commit/ccca8be6)
+and [waiting in tests](https://github.com/johnae/greed/commit/f6a28bb6), each
+a few dozen lines with the test that shows it.
+
+Using an agent is fine. Say so in the PR, make it read this file and
+`AGENTS.md`, and read its diff yourself before you send it.
+
 By contributing, you agree that your work is licensed under the
 [Mozilla Public License 2.0](LICENSE), like the rest of Greed.
