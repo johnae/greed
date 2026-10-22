@@ -133,6 +133,9 @@ impl Mattermost {
         match name {
             "posted" | "post_edited" => {
                 if let Some(post) = post() {
+                    if name == "posted" {
+                        self.alert(id, event, &post);
+                    }
                     self.posted(id, &post).await;
                 }
             }

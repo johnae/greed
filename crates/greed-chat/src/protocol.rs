@@ -8,7 +8,11 @@
 //! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`, `edit`,
 //! `redact`, `react`, `read`, `typing`, `media.get`, `upload`.
 //! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
-//! `timeline.changed`, `typing.changed`, `login.step`.
+//! `timeline.changed`, `typing.changed`, `login.step`, `alert`.
+//!
+//! `alert` is an `Alert`: a new message for you, as the service decides by
+//! your settings there (a mention, a direct message, a keyword), for the
+//! client to tell you about.
 //!
 //! Rooms: `rooms {account}` answers the account's rooms, and
 //! `rooms.changed {account}` says to ask again. A timeline: `timeline
@@ -183,6 +187,24 @@ pub struct Person {
     pub name: String,
     /// Media id of their picture.
     pub avatar: Option<String>,
+}
+
+/// A new message for you, sent as `alert`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Alert {
+    pub account: String,
+    pub room: String,
+    /// The room's name, as the list shows it.
+    pub room_name: String,
+    /// The message's id, to go to it.
+    pub event: String,
+    pub sender: Person,
+    /// The message's text, or what it is ("sent a picture").
+    pub body: String,
+    /// Whether it names you, outside a direct message.
+    pub mention: bool,
+    /// Whether it's in a direct message, with one person or several.
+    pub direct: bool,
 }
 
 /// An item in a room's timeline: a message, or something that happened.

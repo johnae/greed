@@ -619,3 +619,73 @@ fn sends_a_file_and_fetches_it_back() {
         );
     });
 }
+
+#[test]
+fn posts_for_you_are_alerts() {
+    let Some(server) = Server::start("alerts", &[]) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let anna_rest = Rest::login(&server, "anna", "Secret-pass1").await;
+        let bea = Rest::login(&server, "bea", "Secret-pass1").await;
+        let team = anna_rest
+            .post(
+                "teams",
+                &json!({ "name": "crew", "display_name": "Crew", "type": "O" }),
+            )
+            .await;
+        let team_id = team["id"].as_str().unwrap();
+        anna_rest
+            .post(
+                &format!("teams/{team_id}/members"),
+                &json!({ "team_id": team_id, "user_id": bea.id }),
+            )
+            .await;
+        let channel = anna_rest
+            .post(
+                "channels",
+                &json!({ "team_id": team_id, "name": "plans", "display_name": "Plans", "type": "O" }),
+            )
+            .await;
+        let channel_id = channel["id"].as_str().unwrap().to_string();
+        bea.post(
+            &format!("channels/{channel_id}/members"),
+            &json!({ "user_id": bea.id }),
+        )
+        .await;
+        let direct = bea
+            .post("channels/direct", &json!([anna_rest.id, bea.id]))
+            .await;
+
+        let (notifier, mut notices) = rpc::notifier();
+        let service = Mattermost::new(server.dir.join("data"), notifier);
+        sign_in(&service, &server, "anna", "Secret-pass1").await;
+        heard(&mut notices, |n| {
+            n["method"] == "account.changed" && n["params"]["state"]["state"] == "ready"
+        })
+        .await;
+
+        // A post in a channel is one only when it mentions Anna.
+        let post =
+            |channel: &str, message: &str| json!({ "channel_id": channel, "message": message });
+        bea.post("posts", &post(&channel_id, "anyone?")).await;
+        bea.post("posts", &post(&channel_id, "@anna lunch?")).await;
+        let named = heard(&mut notices, |n| n["method"] == "alert").await;
+        assert_eq!(named["body"], "@anna lunch?", "{named}");
+        assert_eq!(named["mention"], true);
+        assert_eq!(named["room"], channel_id.as_str());
+        assert_eq!(named["room_name"], "Plans");
+        assert_eq!(named["sender"]["name"], "bea");
+        assert_eq!(named["direct"], false);
+
+        // Every direct message is.
+        bea.post("posts", &post(direct["id"].as_str().unwrap(), "noon"))
+            .await;
+        let dm = heard(&mut notices, |n| n["method"] == "alert").await;
+        assert_eq!(dm["body"], "noon", "{dm}");
+        assert_eq!(dm["mention"], false);
+        assert_eq!(dm["direct"], true);
+    });
+}

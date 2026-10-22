@@ -1,5 +1,6 @@
 local test = require("@greed/test")
 local greed = require("@greed")
+local core = require("@core")
 local chat = require("@chat")
 
 local backend = chat.backend
@@ -628,4 +629,86 @@ test("another device asking is asked about; the emoji are shown to compare", fun
 	t:wait(50)
 	local confirmed = calls("verify.confirm")
 	assert(#confirmed == 1 and confirmed[1].same == true, greed.json.encode(asked))
+end)
+
+-- An alert from the fake in Plans, from Bea.
+local function alert(notify: (method: string, params: any) -> (), extra: { [string]: any })
+	local params: { [string]: any } = {
+		account = "@anna:x",
+		room = "!plans:x",
+		room_name = "Plans",
+		event = "$9",
+		sender = { id = "@bea:x", name = "Bea" },
+		body = "anna, lunch?",
+		mention = true,
+		direct = false,
+	}
+	for key, value in extra do
+		params[key] = value
+	end
+	notify("alert", params)
+end
+
+local function needs_you(): boolean
+	for _, need in core.attention.list() do
+		if need.key == chat.alerts.key("matrix @anna:x", "!plans:x") then
+			return true
+		end
+	end
+	return false
+end
+
+test("an alert marks its room until you look; :chat-alerted goes there", function(t)
+	greed.option.set("chat-alerts-desktop", false)
+	greed.option.set("chat-alerts", "mentions")
+	local notify = fake()
+	t:buffer("|x")
+	alert(notify, {})
+	assert(needs_you(), "the room needs you")
+	local need = core.attention.list()[1]
+	assert(need.label == "Bea in Plans" and need.reason == "anna, lunch?", need.label)
+
+	t:run("chat-alerted")
+	t:wait(50)
+	assert(chat.rooms.of(greed.view():buffer()), "the room is open")
+	assert(not needs_you(), "looked at, it no longer needs you")
+
+	-- A room you're looking at doesn't alert.
+	alert(notify, { body = "here?" })
+	assert(not needs_you(), "shown rooms don't alert")
+end)
+
+test("chat-alerts picks which messages alert", function()
+	local function wanted(which: string, mention: boolean, direct: boolean): boolean
+		greed.option.set("chat-alerts", which)
+		return chat.alerts.wanted({
+			room = "!r",
+			room_name = "R",
+			event = "$e",
+			sender = { id = "@b:x", name = "B" },
+			body = "hi",
+			mention = mention,
+			direct = direct,
+		})
+	end
+	assert(wanted("mentions", true, false), "a mention")
+	assert(wanted("mentions", false, true), "a direct message")
+	assert(not wanted("mentions", false, false), "neither")
+	assert(wanted("all", false, false), "all")
+	assert(not wanted("off", true, true), "off")
+	greed.option.set("chat-alerts", "mentions")
+end)
+
+test("a direct message is titled by who sent it; long ones are cut", function()
+	local title, text = chat.alerts.said({
+		room = "!d",
+		room_name = "Bea",
+		event = "$e",
+		sender = { id = "@bea:x", name = "Bea" },
+		body = string.rep("a", 300),
+		mention = false,
+		direct = true,
+	})
+	assert(title == "Bea", title)
+	assert(#text < 300 and string.sub(text, -3) == "…", text)
 end)

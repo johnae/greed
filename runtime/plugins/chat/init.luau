@@ -12,6 +12,7 @@ local core = require("@core")
 local picker = require("@picker")
 local backend = require("@self/backend")
 local encryption = require("@self/encryption")
+local alerts = require("@self/alerts")
 local room = require("@self/room")
 
 local ui = core.ui
@@ -19,6 +20,7 @@ local ui = core.ui
 local M = {}
 
 M.backend = backend
+M.alerts = alerts
 
 -- The list of rooms, while it's open.
 type List = {

@@ -3,6 +3,7 @@
 //! session token, which go to the client for the keyring and come back with
 //! `restore`; nothing secret stays here.
 
+mod alerts;
 mod api;
 mod live;
 mod login;

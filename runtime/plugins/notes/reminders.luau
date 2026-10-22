@@ -144,27 +144,6 @@ local function save_fired(reminders: { Reminder })
 	greed.fs.write(file, table.concat(keys, "\n") .. "\n")
 end
 
---- The program that shows a desktop notification here, if one is
---- installed: notify-send (Linux and the BSDs), or osascript (macOS).
-function M.desktop_command(title: string, body: string): { string }?
-	if greed.which("notify-send") then
-		return { "notify-send", "--app-name=Greed", title, body }
-	elseif greed.which("osascript") then
-		return {
-			"osascript",
-			"-e",
-			"on run argv",
-			"-e",
-			"display notification (item 2 of argv) with title (item 1 of argv)",
-			"-e",
-			"end run",
-			title,
-			body,
-		}
-	end
-	return nil
-end
-
 -- What a reminder shows as: when, if that isn't today, what, and where.
 local function describe(reminder: Reminder): string
 	local day = if dates.days(reminder.date) == 0 then "" else `{dates.day(reminder.date)} `
@@ -257,14 +236,8 @@ function M.notify(reminders: { Reminder })
 	local title = if #reminders == 1 then "Reminder" else `{#reminders} reminders`
 	local body = table.concat(bodies, "\n")
 	greed.client.notify(title, body)
-	local command = if greed.option.get("notes-remind-desktop") == true
-		then M.desktop_command(title, body)
-		else nil
-	if command then
-		-- A desktop without notifications isn't worth an error.
-		pcall(function()
-			greed.process.run(command)
-		end)
+	if greed.option.get("notes-remind-desktop") == true then
+		core.desktop.notify(title, body)
 	end
 end
 

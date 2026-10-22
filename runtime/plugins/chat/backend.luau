@@ -83,6 +83,19 @@ export type Item = {
 	link: string?,
 }
 
+--- A new message for you (`alert`).
+export type Alert = {
+	room: string,
+	room_name: string,
+	event: string,
+	sender: { id: string, name: string },
+	body: string,
+	--- Whether it names you, outside a direct message.
+	mention: boolean,
+	--- Whether it's in a direct message.
+	direct: boolean,
+}
+
 --- What a service answers with: `request(method, params)` gives the result
 --- or nil and why. Tests put a table of functions by method instead.
 export type Service = { request: (method: string, params: any) -> (any, string?) }
@@ -103,6 +116,7 @@ local timeline_listeners: { (account: string, room: string, thread: string?, cha
 local typing_listeners: { (account: string, room: string, who: { string }) -> () } = {}
 local step_listeners: { (login: string, step: any) -> () } = {}
 local verify_listeners: { (account: string, about: any) -> () } = {}
+local alert_listeners: { (account: string, alert: Alert) -> () } = {}
 
 --- Calls `listener` when an account comes, goes or changes state.
 function M.on_accounts(listener: () -> ())
@@ -131,6 +145,11 @@ end
 --- (`verify.changed`: asked, compare with its emoji, done, cancelled).
 function M.on_verify(listener: (account: string, about: any) -> ())
 	greed.plugin.cleanup(core.registry.put(verify_listeners, listener))
+end
+
+--- Calls `listener` with a new message for you, as the service decides.
+function M.on_alert(listener: (account: string, alert: Alert) -> ())
+	greed.plugin.cleanup(core.registry.put(alert_listeners, listener))
 end
 
 --- An account's service and its id there, from its key "service id".
@@ -229,6 +248,8 @@ local function heard(service: string, method: string, params: any)
 		core.registry.tell(typing_listeners, `{service} {params.account}`, params.room, params.who)
 	elseif method == "verify.changed" then
 		core.registry.tell(verify_listeners, `{service} {params.account}`, params)
+	elseif method == "alert" then
+		core.registry.tell(alert_listeners, `{service} {params.account}`, params)
 	elseif method == "login.step" then
 		core.registry.tell(step_listeners, params.login, params.step)
 	end

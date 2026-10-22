@@ -7,6 +7,7 @@
 // matrix-sdk's futures nest deeper than the compiler's default allows.
 #![recursion_limit = "256"]
 
+mod alerts;
 mod encryption;
 mod login;
 mod media;
@@ -161,6 +162,7 @@ impl Matrix {
         let id = signed.account().id;
         self.watch(&id, &client);
         self.hear_verifications(&id, &client);
+        self.hear_alerts(&id, &client).await;
         self.accounts.borrow_mut().insert(id.clone(), signed);
         let sync = self.sync(&id, &client).await;
         let mut accounts = self.accounts.borrow_mut();

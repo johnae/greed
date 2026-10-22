@@ -209,6 +209,8 @@ return {
 	floats = floats,
 	--- What needs you, and why, for floats' dots and the status (attention.luau).
 	attention = require("@self/attention"),
+	--- Notifications the desktop shows itself, with no client (desktop.luau).
+	desktop = require("@self/desktop"),
 	registers = registers,
 	--- Where the thing under the cursor is defined, and what it is (lookup.luau).
 	lookup = lookup,

@@ -970,3 +970,49 @@ fn recovery_key_unlocks_old_messages_and_a_device_verifies() {
         .await;
     });
 }
+
+#[test]
+fn new_messages_for_you_are_alerts() {
+    use matrix_sdk::ruma::events::Mentions;
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+
+    let Some(server) = Tuwunel::start("alerts", None) else {
+        return;
+    };
+    run(async {
+        let (matrix, mut notices, bea, room_id) = plans(&server).await;
+        let anna = "@anna:localhost";
+        let params = json!({ "account": anna, "room": room_id });
+        until(&matrix, "timeline", &params, |_| true).await;
+        // Anna's own message isn't one.
+        call(
+            &matrix,
+            "send",
+            json!({ "account": anna, "room": room_id, "text": "hi" }),
+        )
+        .await;
+        let bea_room = bea
+            .get_room(&matrix_sdk::ruma::RoomId::parse(&room_id).unwrap())
+            .unwrap();
+        bea_room
+            .send(RoomMessageEventContent::text_plain("lunch?"))
+            .await
+            .unwrap();
+        let lunch = heard(&mut notices, |n| n["method"] == "alert").await;
+        assert_eq!(lunch["body"], "lunch?", "{lunch}");
+        assert_eq!(lunch["room"], room_id.as_str());
+        assert_eq!(lunch["room_name"], "Plans");
+        assert_eq!(lunch["sender"]["id"], "@bea:localhost");
+        assert_eq!(lunch["mention"], false);
+        assert_eq!(lunch["direct"], false);
+        assert!(lunch["event"].as_str().unwrap().starts_with('$'), "{lunch}");
+
+        let named = RoomMessageEventContent::text_plain("anna, are you in?").add_mentions(
+            Mentions::with_user_ids([matrix_sdk::ruma::OwnedUserId::try_from(anna).unwrap()]),
+        );
+        bea_room.send(named).await.unwrap();
+        let named = heard(&mut notices, |n| n["method"] == "alert").await;
+        assert_eq!(named["body"], "anna, are you in?", "{named}");
+        assert_eq!(named["mention"], true);
+    });
+}

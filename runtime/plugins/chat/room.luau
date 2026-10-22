@@ -53,6 +53,16 @@ export type Line = { item: backend.Item, body: boolean }
 --- What's done when a room is left: back to the list (set by the plugin).
 M.on_leave = function(_view: greed.View) end
 
+--- What's done when a room is marked read as you look at it (set by the
+--- alerts).
+M.on_read = function(_account: string, _room: string) end
+
+--- Whether room `room` of account `key` is open and shown somewhere.
+function M.shown(key: string, room: string): boolean
+	local r = open[key_of(key, room, nil)]
+	return r ~= nil and r.buffer:valid() and #r.buffer:views() > 0
+end
+
 --- A message's time of day, or its day too when it isn't today's.
 function M.when(at: number): string
 	local seconds = at // 1000
@@ -379,6 +389,7 @@ local function mark_read(r: Open)
 		return
 	end
 	r.marked = os.time()
+	M.on_read(r.account, r.room)
 	greed.spawn(function()
 		ask(r, "read")
 	end)

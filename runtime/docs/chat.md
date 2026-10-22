@@ -86,6 +86,28 @@ encrypted rooms. The room list says when this device isn't verified yet.
   recovery key yet it sets one up and shows it once: keep it somewhere
   safe, Greed doesn't keep it.
 
+## Alerts
+
+A new message that mentions you, or any message in a direct message, alerts
+you:
+
+- the room shows as needing you in the session's status until you look
+  at it,
+- your desktop shows a notification, through the attached Greed window or
+  terminal and with `notify-send` (Linux) or `osascript` (macOS) where
+  they're installed.
+
+A room you're looking at doesn't alert. `:chat-alerted` goes to the room of
+the latest alert.
+
+`:set chat-alerts all` alerts of everything the service would notify you of
+(on Matrix, what your push rules on the server notify of),
+`:set chat-alerts off` of nothing. `:set chat-alerts-desktop false` keeps
+alerts off the desktop's own notifications.
+
+Only new messages alert: what came while Greed was away shows as unread
+counts in the list.
+
 ## What isn't here, and what happens instead
 
 | Thing | What Greed does |
@@ -101,7 +123,6 @@ encrypted rooms. The room list says when this device isn't verified yet.
 | Mattermost slash commands, buttons in messages, Boards, Playbooks | Not yet; open the message in the browser (`space .`) to use them. |
 | Spaces and teams | Listed with their rooms; no browsing a space's rooms you haven't joined, nor joining by address, yet. |
 | Search | Not yet. |
-| Notifications | Not yet: unread and mention counts show in the list, nothing pops up. |
 | Discord, Slack and others | Not supported. |
 
 ## The programs
