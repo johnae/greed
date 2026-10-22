@@ -29,6 +29,7 @@ by" says who has read up to where.
 | `alt-b`, `enter` | press one of its buttons, or pick from its menu (Mattermost) |
 | `alt-/` | pick a command into the box (Mattermost) |
 | `alt-up` | fetch older messages |
+| `tab`, `shift-tab` | the next or previous room in the bar over a room (the rooms you opened); `alt-1`…`alt-9` one of them |
 | `q`, `esc` | stop answering or changing; else back to the room or the list |
 
 `space .` on a message offers the same, and copying what it says.

@@ -289,19 +289,19 @@ end
 -- The saved searches over the list: each with its number and unread
 -- count, the one shown picked out, pressing one going to it.
 local function tabs(o: Open): core.UiNode
-	local spans: { core.UiSpan } = {}
-	for i, saved in M.searches do
+	local shown: { core.UiTab } = {}
+	for _, saved in M.searches do
 		local n = o.unread[saved.query] or 0
 		local unread = if n > COUNTED then ` {COUNTED}+` elseif n > 0 then ` {n}` else ""
-		table.insert(spans, {
-			text = ` {i} {saved.name}{unread} `,
-			style = if o.query == saved.query then "markup.bold" else "comment",
+		table.insert(shown, {
+			label = `{saved.name}{unread}`,
+			current = o.query == saved.query,
 			press = function()
 				M.go(saved.query)
 			end,
 		})
 	end
-	return ui.line(spans)
+	return ui.tabs(shown)
 end
 
 local function render(o: Open): core.UiNode

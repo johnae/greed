@@ -1305,3 +1305,38 @@ test(":chat is one float of the tab, rooms open in it, and :chat again finds it"
 		"it comes back as it was"
 	)
 end)
+
+test("the rooms opened show as a bar over a room; tab and alt and a number go to them", function(t)
+	fake()
+	chat.rooms.forget_recent()
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	local window = greed.view()
+	local function in_room(): string?
+		local r = chat.rooms.of(window:buffer())
+		return if r then r.room else nil
+	end
+	t:keys("enter") -- Plans, with three unread
+	t:wait(50)
+	assert(not string.find(window:buffer():text(), " 1 Plans", 1, true), "no bar for one room")
+	t:run("chat-close")
+	local buffer = window:buffer()
+	local plans = string.find(buffer:text(), "Plans", 1, true)
+	assert(plans, "Plans is listed")
+	assert(window:cursor() == buffer:line_start(buffer:line_of(plans - 1)), "back on the room left")
+	local quiet = string.find(buffer:text(), "Quiet", 1, true)
+	assert(quiet, "Quiet is listed")
+	window:set_cursor(quiet - 1)
+	t:keys("enter") -- Quiet
+	t:wait(50)
+	local text = window:buffer():text()
+	assert(string.find(text, " 1 Plans 3  2 Quiet ", 1, true), text)
+	assert(in_room() == "!quiet:x", "in Quiet")
+	t:keys("tab")
+	t:wait(50)
+	assert(in_room() == "!plans:x", "tab goes round to Plans")
+	t:keys("alt-2")
+	t:wait(50)
+	assert(in_room() == "!quiet:x", "alt-2 to Quiet")
+end)

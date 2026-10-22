@@ -438,8 +438,81 @@ function M.writing(who: { string }): string?
 	return `{#who} people are writing…`
 end
 
+--- How many unread messages room `room` of account `key` has, as the list
+--- knows it (set by the plugin).
+M.unread = function(_account: string, _room: string): number
+	return 0
+end
+
+-- How many rooms the bar over a room keeps.
+local RECENT = 9
+
+-- The rooms opened, in the order they were, as the bar over a room shows
+-- them: the oldest goes once there are more than `RECENT`.
+local recent: { { account: string, room: string, name: string } } = {}
+
+local function remember(account: string, room: string, name: string)
+	for _, one in recent do
+		if one.account == account and one.room == room then
+			return
+		end
+	end
+	table.insert(recent, { account = account, room = room, name = name })
+	if #recent > RECENT then
+		table.remove(recent, 1)
+	end
+end
+
+--- Forgets the rooms the bar keeps, for tests.
+function M.forget_recent()
+	table.clear(recent)
+end
+
+--- Opens the bar's `n`th room in `window`.
+function M.go_recent(n: number, window: greed.View)
+	local one = recent[n]
+	if one then
+		M.open(one.account, one.room, one.name, nil, window)
+	end
+end
+
+-- Where room `r` is in the bar, if it's there.
+local function recent_index(r: Open): number?
+	for i, one in recent do
+		if one.account == r.account and one.room == r.room then
+			return i
+		end
+	end
+	return nil
+end
+
+-- The bar over a room: the rooms opened, each with what's unread, `r`'s
+-- picked out; none in a thread, or with only the one room.
+local function bar(r: Open): core.UiNode?
+	if r.thread or #recent < 2 then
+		return nil
+	end
+	local tabs: { core.UiTab } = {}
+	for i, one in recent do
+		local n = M.unread(one.account, one.room)
+		table.insert(tabs, {
+			label = if n > 0 then `{one.name} {n}` else one.name,
+			current = one.account == r.account and one.room == r.room,
+			press = function()
+				M.go_recent(i, greed.view())
+			end,
+		})
+	end
+	return ui.tabs(tabs)
+end
+
 local function render(r: Open): core.UiNode
 	local parts: { core.UiNode } = {}
+	local top = bar(r)
+	if top then
+		table.insert(parts, top)
+		table.insert(parts, ui.gap())
+	end
 	local previous: backend.Item? = nil
 	local first = r.first
 	local shown = first ~= nil
@@ -497,6 +570,15 @@ function M.apply(items: { backend.Item }, changes: { any })
 			end
 		elseif op == "clear" then
 			table.clear(items)
+		end
+	end
+end
+
+--- Draws the shown rooms again soon, as when what's unread changed.
+function M.redraw()
+	for _, r in open do
+		if r.buffer:valid() and #r.buffer:views() > 0 then
+			r.view:soon()
 		end
 	end
 end
@@ -567,6 +649,9 @@ function M.open(
 	window: greed.View?,
 	at: string?
 ): Open
+	if thread == nil then
+		remember(key, room, name)
+	end
 	local whole = key_of(key, room, thread)
 	local target = window or greed.view()
 	local already = open[whole]
@@ -1092,6 +1177,42 @@ greed.command({
 	end,
 })
 
+-- Goes `by` rooms on in the bar from the one in `ctx`, round the ends.
+local function step(ctx: greed.Context, by: number)
+	local r = M.of(ctx.buffer)
+	if r == nil or #recent == 0 then
+		return
+	end
+	local at = recent_index(r) or 0
+	M.go_recent((at - 1 + by) % #recent + 1, ctx.view)
+end
+
+greed.command({
+	name = "chat-room-next",
+	doc = "In a room: the next room in the bar over it",
+	run = function(ctx)
+		step(ctx, 1)
+	end,
+})
+
+greed.command({
+	name = "chat-room-previous",
+	doc = "In a room: the room before in the bar over it",
+	run = function(ctx)
+		step(ctx, -1)
+	end,
+})
+
+for i = 1, 9 do
+	greed.command({
+		name = `chat-room-{i}`,
+		doc = `In a room: room {i} of the bar over it`,
+		run = function(ctx)
+			M.go_recent(i, ctx.view)
+		end,
+	})
+end
+
 greed.command({
 	name = "chat-older",
 	doc = "In a room: fetch older messages",
@@ -1329,12 +1450,21 @@ greed.keymap.bind({ kind = "chat-room" }, {
 	["alt-/"] = "chat-commands",
 })
 
--- Out of the box only, so esc while writing leaves writing as it does.
+-- Out of the box only, so esc while writing leaves writing as it does; tab
+-- and shift-tab go through the bar's rooms as mail's go through its
+-- searches, alt and a number to one.
 greed.keymap.bind({ role = "command", kind = "chat-room" }, {
 	q = "chat-close",
 	enter = "chat-enter",
 	esc = "chat-close",
+	tab = "chat-room-next",
+	["shift-tab"] = "chat-room-previous",
+	["]"] = "chat-room-next",
+	["["] = "chat-room-previous",
 })
+for i = 1, 9 do
+	greed.keymap.bind({ kind = "chat-room" }, { [`alt-{i}`] = `chat-room-{i}` })
+end
 
 greed.keymap.bind({ role = "typing", kind = "chat-room" }, {
 	enter = "chat-send",

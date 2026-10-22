@@ -118,6 +118,7 @@ ends.
 | `ui.text(text, style?)` | Text, wrapped to the width |
 | `ui.span(text, style?)` | A piece of a line, for `line`, `list` and `grid` |
 | `ui.line(spans)` | One line of spans |
+| `ui.tabs(tabs)` | A line of tabs, each `{ label, current, press }`, numbered from 1; the current one picked out |
 | `ui.column(nodes)` | Nodes one under another |
 | `ui.row(nodes)` | Nodes side by side |
 | `ui.gap()` | An empty line |

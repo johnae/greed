@@ -113,6 +113,24 @@ function M.line(spans: { Span }): Node
 	}
 end
 
+--- A tab: what it says, whether it's the one shown, and what pressing it
+--- does.
+export type Tab = { label: string, current: boolean, press: () -> () }
+
+--- A line of tabs, like mail's saved searches over its list: each with
+--- its number (as `alt` and the number go to it), the one shown picked out.
+function M.tabs(tabs: { Tab }): Node
+	local spans: { Span } = {}
+	for i, tab in tabs do
+		table.insert(spans, {
+			text = ` {i} {tab.label} `,
+			style = if tab.current then "markup.bold" else "comment",
+			press = tab.press,
+		})
+	end
+	return M.line(spans)
+end
+
 -- `line` cut at `cells` wide.
 local function fit(line: Line, cells: number): Line
 	local out: Line = {}

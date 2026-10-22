@@ -212,6 +212,22 @@ local function fetch_rooms(o: List, key: string)
 	if o.buffer:valid() then
 		o.view:redraw()
 	end
+	-- The bar over a room shows what's unread in each.
+	room.redraw()
+end
+
+-- Puts `window`'s cursor in list `o` on room `left` (the one just left),
+-- or else on the first room, rather than an account's name.
+local function on_room(o: List, window: greed.View, left: { account: string, room: string }?)
+	local line = o.view:line_of(function(value: any): boolean
+		return value ~= nil
+			and (left == nil or (value.account == left.account and value.room.id == left.room))
+	end) or o.view:line_of(function(value: any): boolean
+		return value ~= nil
+	end)
+	if line then
+		window:set_cursor(o.buffer:line_start(line))
+	end
 end
 
 --- The tab's float showing chat (the list or a room), if there is one.
@@ -261,13 +277,9 @@ function M.list(window: greed.View?)
 			fetch_rooms(o, key)
 		end
 		view:redraw()
-		-- On the first room, rather than an account's name.
-		local first = view:line_of(function(value: any): boolean
-			return value ~= nil
-		end)
 		for _, shown in buffer:views() do
-			if first and view:value_at(shown:cursor()) == nil then
-				shown:set_cursor(buffer:line_start(first))
+			if view:value_at(shown:cursor()) == nil then
+				on_room(o, shown, nil)
 			end
 		end
 	end)
@@ -569,11 +581,25 @@ M.rooms = room
 M.apply = room.apply
 M.runs_on = room.runs_on
 
--- Leaving a room goes back to the list, where there is one.
+-- What's unread in a room, for the bar over a room, as the list knows it.
+room.unread = function(account: string, room_id: string): number
+	local o = list
+	local rooms: { backend.Room } = if o then o.rooms[account] or {} else {}
+	for _, one in rooms do
+		if one.id == room_id then
+			return one.unread
+		end
+	end
+	return 0
+end
+
+-- Leaving a room goes back to the list, where there is one, on that room.
 room.on_leave = function(view: greed.View)
+	local left = room.of(view:buffer())
 	local o = list
 	if o and o.buffer:valid() and view:buffer() ~= o.buffer then
 		view:show(o.buffer)
+		on_room(o, view, left)
 	end
 end
 

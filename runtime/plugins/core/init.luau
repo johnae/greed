@@ -118,6 +118,7 @@ export type UiNode = ui.Node
 export type UiSpan = ui.Span
 export type UiLine = ui.Line
 export type UiGridRow = ui.GridRow
+export type UiTab = ui.Tab
 --- A walk back through what was typed before (recall.luau).
 export type RecallWalk = recall.Walk
 --- A float being typed in, from `floats.typing`.
