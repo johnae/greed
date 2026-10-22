@@ -17,6 +17,8 @@
 //! service keeps no secrets itself, and sends `account.secret {account,
 //! secret}` when they change, as when tokens are refreshed.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 /// What the protocol is at: a client and a service that disagree say so,
@@ -83,8 +85,9 @@ pub enum Step {
         fields: Vec<Field>,
         why: Option<String>,
     },
-    /// Open this in the browser. Where the browser can't come back by
-    /// itself (over ssh), `paste` says to paste the link it ends on.
+    /// Open this in the browser. When it comes back by itself, the next
+    /// step arrives as `login.step`; where it can't (over ssh, or with no
+    /// URL handler), `paste` says what link to paste, the answer's `link`.
     Open { url: String, paste: Option<String> },
     /// Go to `url` on any device and enter `code`.
     Code { url: String, code: String },
@@ -248,6 +251,52 @@ pub enum Change {
         at: usize,
     },
     Clear,
+}
+
+/// `login.methods`'s parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerParams {
+    pub server: String,
+}
+
+/// `login.start`'s parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Start {
+    pub server: String,
+    pub method: Method,
+}
+
+/// `login.answer`'s parameters: the values of the fields asked for.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Answer {
+    pub login: String,
+    #[serde(default)]
+    pub values: HashMap<String, String>,
+}
+
+impl Answer {
+    /// The value of field `name`, empty when it wasn't given.
+    pub fn value(&self, name: &str) -> &str {
+        self.values.get(name).map_or("", String::as_str)
+    }
+}
+
+/// `login.cancel`'s parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginParams {
+    pub login: String,
+}
+
+/// `restore`'s parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecretParams {
+    pub secret: String,
+}
+
+/// `logout`'s parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccountParams {
+    pub account: String,
 }
 
 #[cfg(test)]

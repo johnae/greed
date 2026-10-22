@@ -2,12 +2,13 @@
 //! a folder of its own. Skipped, saying so, when there's no `tuwunel` (devenv
 //! has it; `GREED_MATRIX_TUWUNEL` names another).
 
-use std::net::{TcpListener, TcpStream};
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use greed_chat::rpc::{self, Service};
+use greed_chat::testing::{browse, find, free_port, oauth_provider};
 use greed_matrix::Matrix;
 use matrix_sdk::Client;
 use matrix_sdk::ruma::api::client::account::register;
@@ -22,8 +23,9 @@ struct Tuwunel {
 }
 
 impl Tuwunel {
-    /// Starts one, or None when there's no Tuwunel to start.
-    fn start(name: &str) -> Option<Tuwunel> {
+    /// Starts one, signing in through `provider` too when given, or None
+    /// when there's no Tuwunel to start.
+    fn start(name: &str, provider: Option<&str>) -> Option<Tuwunel> {
         let program = std::env::var_os("GREED_MATRIX_TUWUNEL")
             .map(PathBuf::from)
             .or_else(|| find("tuwunel"));
@@ -35,6 +37,19 @@ impl Tuwunel {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let port = free_port();
+        let provider = provider.map_or_else(String::new, |at| {
+            format!(
+                r#"
+[[global.identity_provider]]
+brand = "custom"
+name = "Bea's provider"
+client_id = "greed"
+client_secret = "secret"
+issuer_url = "{at}"
+callback_url = "http://127.0.0.1:{port}/_matrix/client/unstable/login/sso/callback/greed"
+"#
+            )
+        });
         let config = format!(
             r#"[global]
 server_name = "localhost"
@@ -47,7 +62,7 @@ allow_federation = false
 allow_check_for_updates = false
 startup_netburst = false
 log = "warn"
-"#,
+{provider}"#,
             db = dir.join("db").display()
         );
         std::fs::write(dir.join("tuwunel.toml"), config).unwrap();
@@ -110,20 +125,6 @@ impl Drop for Tuwunel {
     }
 }
 
-fn find(program: &str) -> Option<PathBuf> {
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|dir| dir.join(program))
-        .find(|path| path.is_file())
-}
-
-fn free_port() -> u16 {
-    TcpListener::bind(("127.0.0.1", 0))
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 /// Runs `test` on a runtime with a `LocalSet`, as `greed-matrix serve` does.
 fn run(test: impl Future<Output = ()>) {
     greed_chat::program::run(test).unwrap();
@@ -138,7 +139,7 @@ async fn call(matrix: &Matrix, method: &str, params: Value) -> Value {
 
 #[test]
 fn signs_in_with_a_password_restores_and_signs_out() {
-    let Some(server) = Tuwunel::start("password") else {
+    let Some(server) = Tuwunel::start("password", None) else {
         return;
     };
     let data = server.dir.join("data");
@@ -205,7 +206,7 @@ fn signs_in_with_a_password_restores_and_signs_out() {
 
 #[test]
 fn a_cancelled_sign_in_leaves_no_store() {
-    let Some(server) = Tuwunel::start("cancel") else {
+    let Some(server) = Tuwunel::start("cancel", None) else {
         return;
     };
     let data = server.dir.join("data");
@@ -233,5 +234,87 @@ fn a_cancelled_sign_in_leaves_no_store() {
             )
             .await;
         assert!(over.is_err());
+    });
+}
+
+/// Starts single sign-on with Tuwunel's provider, giving the sign-in's id
+/// and the address to open.
+async fn start_sso(matrix: &Matrix, server: &Tuwunel) -> (Value, String) {
+    let methods = call(matrix, "login.methods", json!({ "server": server.url() })).await;
+    let sso = methods
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["kind"] == "browser")
+        .unwrap_or_else(|| panic!("no single sign-on in {methods}"))
+        .clone();
+    assert_eq!(sso["name"], "Bea's provider", "{sso}");
+    let started = call(
+        matrix,
+        "login.start",
+        json!({ "server": server.url(), "method": sso }),
+    )
+    .await;
+    assert_eq!(started["step"]["step"], "open", "{started}");
+    let url = started["step"]["url"].as_str().unwrap().to_string();
+    (started["login"].clone(), url)
+}
+
+#[test]
+fn signs_in_through_the_browser_coming_back_by_itself() {
+    let provider = oauth_provider();
+    let Some(server) = Tuwunel::start("sso", Some(&provider)) else {
+        return;
+    };
+    let jar = server.dir.join("cookies");
+    run(async {
+        let (notifier, mut notices) = rpc::notifier();
+        let matrix = Matrix::new(server.dir.join("data"), notifier);
+        let (login, url) = start_sso(&matrix, &server).await;
+        // The browser goes on its own; curl would hold up the listener.
+        let browser = tokio::task::spawn_blocking(move || browse(&url, &jar, None));
+        let notice = tokio::time::timeout(std::time::Duration::from_secs(30), notices.recv())
+            .await
+            .expect("the sign-in finishes")
+            .unwrap();
+        let notice: Value = serde_json::from_str(&notice).unwrap();
+        assert_eq!(notice["method"], "login.step", "{notice}");
+        assert_eq!(notice["params"]["login"], login);
+        let step = &notice["params"]["step"];
+        assert_eq!(step["step"], "done", "{step}");
+        assert_eq!(step["account"]["id"], "@bea:localhost");
+        browser.await.unwrap();
+    });
+}
+
+#[test]
+fn signs_in_through_the_browser_with_the_link_pasted() {
+    let provider = oauth_provider();
+    let Some(server) = Tuwunel::start("paste", Some(&provider)) else {
+        return;
+    };
+    let jar = server.dir.join("cookies");
+    run(async {
+        let (notifier, _notices) = rpc::notifier();
+        let matrix = Matrix::new(server.dir.join("data"), notifier);
+        let (login, url) = start_sso(&matrix, &server).await;
+        // As from another machine: the redirect to Greed goes nowhere.
+        let loopback = greed_chat::loopback::query(&url)["redirectUrl"].clone();
+        let link = tokio::task::spawn_blocking(move || browse(&url, &jar, Some(&loopback)))
+            .await
+            .unwrap();
+        assert!(
+            link.contains("loginToken="),
+            "{link}: {}",
+            std::fs::read_to_string(server.dir.join("log")).unwrap_or_default()
+        );
+        let done = call(
+            &matrix,
+            "login.answer",
+            json!({ "login": login, "values": { "link": link } }),
+        )
+        .await;
+        assert_eq!(done["step"], "done", "{done}");
+        assert_eq!(done["account"]["id"], "@bea:localhost");
     });
 }

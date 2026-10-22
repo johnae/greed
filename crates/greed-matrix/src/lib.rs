@@ -11,7 +11,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
-use greed_chat::protocol::{Account, AccountState, Hello, PROTOCOL};
+use greed_chat::protocol::{
+    Account, AccountParams, AccountState, Hello, PROTOCOL, SecretParams, ServerParams,
+};
 use greed_chat::rpc::{self, Failure, Notifier, Service};
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::{AuthSession, Client, ClientBuilder, SessionChange};
@@ -198,21 +200,6 @@ fn secret(client: &Client, store: &Store) -> Option<String> {
     serde_json::to_string(&secret).ok()
 }
 
-#[derive(Deserialize)]
-struct Server {
-    server: String,
-}
-
-#[derive(Deserialize)]
-struct SecretParams {
-    secret: String,
-}
-
-#[derive(Deserialize)]
-struct AccountParams {
-    account: String,
-}
-
 impl Service for Matrix {
     async fn call(&self, method: &str, params: Value) -> Result<Value, Failure> {
         match method {
@@ -228,11 +215,11 @@ impl Service for Matrix {
                 Ok(json!(self.restore(&secret).await?))
             }
             "login.methods" => {
-                let Server { server } = rpc::parse(params)?;
+                let ServerParams { server } = rpc::parse(params)?;
                 Ok(json!(login::methods(&server).await?))
             }
-            "login.start" => self.start(rpc::parse(params)?).await,
-            "login.answer" => self.answer(rpc::parse(params)?).await,
+            "login.start" => self.start(&rpc::parse(params)?).await,
+            "login.answer" => self.answer(&rpc::parse(params)?).await,
             "login.cancel" => {
                 self.cancel(&rpc::parse(params)?);
                 Ok(Value::Null)

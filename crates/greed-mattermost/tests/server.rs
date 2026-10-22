@@ -2,12 +2,12 @@
 //! PostgreSQL of its own in a temporary folder. Skipped, saying so, when
 //! `mattermost`, `initdb` or `pg_ctl` isn't on PATH (devenv has them).
 
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use greed_chat::rpc::{self, Service};
+use greed_chat::testing::{browse, find, free_port, oauth_provider};
 use greed_mattermost::Mattermost;
 use serde_json::{Value, json};
 
@@ -21,7 +21,7 @@ struct Server {
 
 impl Server {
     /// Starts one, or None when there's no Mattermost or PostgreSQL.
-    fn start(name: &str) -> Option<Server> {
+    fn start(name: &str, settings: &[(&str, String)]) -> Option<Server> {
         let (Some(mattermost), Some(initdb), Some(pg_ctl)) =
             (find("mattermost"), find("initdb"), find("pg_ctl"))
         else {
@@ -55,9 +55,10 @@ impl Server {
         let port = free_port();
         let url = format!("http://127.0.0.1:{port}");
         let log = std::fs::File::create(dir.join("mattermost.log")).unwrap();
-        let mattermost = Command::new(mattermost)
+        let mattermost = Command::new(&mattermost)
             .arg("server")
-            .current_dir(&dir)
+            // Where its web app is, for the pages it serves.
+            .current_dir(mattermost.parent().and_then(Path::parent).unwrap())
             .env("MM_CONFIG", dir.join("config.json"))
             .env("MM_SQLSETTINGS_DRIVERNAME", "postgres")
             .env("MM_SQLSETTINGS_DATASOURCE", postgres)
@@ -72,6 +73,7 @@ impl Server {
             .env("MM_PLUGINSETTINGS_ENABLE", "false")
             .env("MM_TEAMSETTINGS_ENABLEOPENSERVER", "true")
             .env("MM_SERVICESETTINGS_ENABLEDEVELOPER", "false")
+            .envs(settings.iter().map(|(key, value)| (key, value)))
             .stdout(Stdio::null())
             .stderr(log)
             .spawn()
@@ -159,20 +161,6 @@ fn quiet(command: &mut Command) {
     );
 }
 
-fn find(program: &str) -> Option<PathBuf> {
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|dir| dir.join(program))
-        .find(|path| path.is_file())
-}
-
-fn free_port() -> u16 {
-    TcpListener::bind(("127.0.0.1", 0))
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
-}
-
 fn run(test: impl Future<Output = ()>) {
     greed_chat::program::run(test).unwrap();
 }
@@ -186,7 +174,7 @@ async fn call(service: &Mattermost, method: &str, params: Value) -> Value {
 
 #[test]
 fn signs_in_with_a_password_restores_and_signs_out() {
-    let Some(server) = Server::start("password") else {
+    let Some(server) = Server::start("password", &[]) else {
         return;
     };
     server.user("anna", "Secret-pass1");
@@ -242,5 +230,75 @@ fn signs_in_with_a_password_restores_and_signs_out() {
             again.is_err_and(|e| e.message.contains("signed out")),
             "the token is gone with the session"
         );
+    });
+}
+
+#[test]
+fn signs_in_through_the_browser_with_a_desktop_token() {
+    let gitlab = oauth_provider();
+    let settings = [
+        ("MM_GITLABSETTINGS_ENABLE", "true".to_string()),
+        ("MM_GITLABSETTINGS_ID", "greed".to_string()),
+        ("MM_GITLABSETTINGS_SECRET", "secret".to_string()),
+        (
+            "MM_GITLABSETTINGS_AUTHENDPOINT",
+            format!("{gitlab}/oauth/authorize"),
+        ),
+        (
+            "MM_GITLABSETTINGS_TOKENENDPOINT",
+            format!("{gitlab}/oauth/token"),
+        ),
+        (
+            "MM_GITLABSETTINGS_USERAPIENDPOINT",
+            format!("{gitlab}/api/v4/user"),
+        ),
+        (
+            "MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS",
+            "127.0.0.1".to_string(),
+        ),
+    ];
+    let Some(server) = Server::start("browser", &settings) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    let data = server.dir.join("data");
+    let jar = server.dir.join("cookies");
+    run(async {
+        let (notifier, _notices) = rpc::notifier();
+        let service = Mattermost::new(data, notifier);
+        // Only licensed servers say they have GitLab (or OpenID) in their
+        // public config, so this one isn't asked; its sign-in works all the same.
+        let started = call(
+            &service,
+            "login.start",
+            json!({ "server": server.url(),
+                    "method": { "kind": "browser", "id": "gitlab", "name": "GitLab" } }),
+        )
+        .await;
+        assert_eq!(started["step"]["step"], "open", "{started}");
+        let login = started["login"].clone();
+
+        let ended = browse(started["step"]["url"].as_str().unwrap(), &jar, None);
+        assert!(ended.contains("/login/desktop?"), "{ended}");
+
+        let other = ended.replace("client_token=", "client_token=x");
+        let refused = service
+            .call(
+                "login.answer",
+                json!({ "login": login, "values": { "link": other } }),
+            )
+            .await;
+        assert!(refused.is_err(), "a link from another sign-in is refused");
+
+        // As the desktop page hands it on, under Mattermost's own scheme.
+        let link = ended.replacen("http:", "mattermost:", 1);
+        let done = call(
+            &service,
+            "login.answer",
+            json!({ "login": login, "values": { "link": link } }),
+        )
+        .await;
+        assert_eq!(done["step"], "done", "{done}");
+        assert_eq!(done["account"]["name"], "Bea Berg");
     });
 }

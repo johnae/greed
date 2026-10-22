@@ -6,9 +6,12 @@
 //! know which service it talks to, except for what a service says it can
 //! do.
 
+pub mod loopback;
 pub mod program;
 pub mod protocol;
 pub mod rpc;
+#[doc(hidden)]
+pub mod testing;
 
 use std::fmt::Write;
 
