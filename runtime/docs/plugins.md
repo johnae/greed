@@ -2640,9 +2640,15 @@ and the like. There's no need to pass your plugin's name or to clean up on
 A plugin that lets others add to it, like a list of handlers, does the
 same with `greed.plugin.tie(remove)`: called in the function others call,
 it runs `remove` when the plugin that called it is unloaded or reloaded,
-and returns that plugin's name. Calls from your own plugin aren't tied,
-since what they added goes with your plugin anyway. `greed.plugin.caller()`
-just says who called. `require("@core").registry` makes the `remove`: `set`
+and returns that plugin's name. Called directly by your own plugin, including
+in its init, it instead runs when your plugin unloads or reloads and returns
+your plugin's name. This self-owned cleanup runs synchronously with your
+plugin's capabilities, before its grant is removed, and cannot yield or wait.
+Tasks, processes and registrations it creates for your plugin are removed
+before unloading finishes, even if cleanup fails. Use it to restore external
+state or cancel shared work, not start new work.
+`greed.plugin.caller()` just says who called.
+`require("@core").registry` makes the `remove`: `set`
 puts a value in a table under a key, `put` adds to a list, and each returns
 a function that takes the entry out unless it was replaced since. For an
 entry you put in a list yourself, `remover(list, entry)` makes that

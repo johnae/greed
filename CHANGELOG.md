@@ -3,6 +3,10 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## Unreleased
+
+- Plugins: `greed.plugin.tie` also registers self-owned cleanup during init and returns the plugin's own name when there is no foreign caller. Self-owned cleanup runs synchronously before grant removal, cannot yield, and cannot leave owned resources behind.
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights

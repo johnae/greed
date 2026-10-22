@@ -355,6 +355,147 @@ fn reloading_keeps_the_options_a_plugin_defines() {
     );
 }
 
+#[test]
+fn init_cleanup_returns_its_owner_and_cancels_shared_work_synchronously() {
+    let h = host();
+    h.load_str(
+        "observer",
+        r#"
+local greed = require("@greed")
+local pending = true
+local cleaned_by
+return {
+    cancel = function()
+        cleaned_by = greed.plugin.caller()
+        pending = false
+    end,
+    pending = function() return pending end,
+    cleaned_by = function() return cleaned_by end,
+}
+"#,
+    )
+    .unwrap();
+    h.load_str(
+        "cleanup",
+        r#"
+local greed = require("@greed")
+local observer = require("@observer")
+local owner = greed.plugin.tie(observer.cancel)
+assert(owner == "cleanup")
+greed.spawn(function()
+    greed.sleep(100)
+    assert(not observer.pending())
+end)
+"#,
+    )
+    .unwrap();
+    h.unload("cleanup").unwrap();
+    assert_eq!(h.eval("require('@observer').pending()").unwrap(), "false");
+    assert_eq!(
+        h.eval("require('@observer').cleaned_by()").unwrap(),
+        "cleanup"
+    );
+    assert!(h.next_timer().is_none());
+}
+
+#[test]
+fn self_owned_cleanup_keeps_its_capability_limits() {
+    let h = host();
+    let dir = plugin_folder(
+        "limited-cleanup",
+        &[
+            (
+                "plugin.toml",
+                "name = \"limited-cleanup\"\ncapabilities = []\n",
+            ),
+            (
+                "init.luau",
+                r#"
+local greed = require("@greed")
+greed.plugin.tie(function()
+    local ok = pcall(greed.process.spawn, { "cat" })
+    assert(not ok)
+    greed.echo("capability limit kept")
+end)
+"#,
+            ),
+        ],
+    );
+    h.load_dir(&dir).unwrap();
+    h.unload("limited-cleanup").unwrap();
+    assert_eq!(messages(&h), ["capability limit kept"]);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn self_owned_cleanup_cannot_leave_a_yielded_task() {
+    let h = host();
+    h.load_str(
+        "cleanup",
+        r#"
+local greed = require("@greed")
+greed.plugin.tie(function()
+    greed.command { name = "failed-cleanup", run = function() greed.echo("escaped command") end }
+    greed.sleep(1)
+    greed.echo("escaped cleanup")
+end)
+greed.plugin.tie(function() greed.echo("other cleanup") end)
+"#,
+    )
+    .unwrap();
+    assert!(h.unload("cleanup").is_err());
+    assert_eq!(messages(&h), ["other cleanup"]);
+    assert!(h.next_timer().is_none());
+    assert!(h.run(FIRST_CLIENT, "failed-cleanup").is_err());
+    h.fire_timers(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    assert!(messages(&h).is_empty());
+    // The failed unload leaves the plugin loaded, but the rejected cleanup
+    // must not be resumable even after a subsequent successful unload.
+    h.unload("cleanup").unwrap();
+    h.fire_timers(Instant::now() + Duration::from_secs(2))
+        .unwrap();
+    assert!(messages(&h).is_empty());
+}
+
+#[test]
+fn self_owned_cleanup_cannot_create_surviving_resources() {
+    let h = host();
+    h.load_str(
+        "observer",
+        r#"
+local child
+return {
+    keep = function(value) child = value end,
+    writable = function() return child:write("still alive") end,
+}
+"#,
+    )
+    .unwrap();
+    h.load_str(
+        "cleanup",
+        r#"
+local greed = require("@greed")
+greed.plugin.tie(function()
+    greed.command { name = "escaped-cleanup", run = function() greed.echo("escaped command") end }
+    greed.spawn(function() greed.sleep(1); greed.echo("escaped task") end)
+    greed.plugin.tie(function() greed.echo("escaped tie") end)
+    local child = greed.process.spawn({ "cat" })
+    assert(child:write("alive"))
+    require("@observer").keep(child)
+end)
+"#,
+    )
+    .unwrap();
+    h.unload("cleanup").unwrap();
+    assert!(h.run(FIRST_CLIENT, "escaped-cleanup").is_err());
+    assert_eq!(h.eval("require('@observer').writable()").unwrap(), "false");
+    assert!(h.next_timer().is_none());
+    h.fire_timers(Instant::now() + Duration::from_secs(1))
+        .unwrap();
+    assert!(messages(&h).is_empty());
+}
+
 const REGISTRY: &str = r#"
 local greed = require("@greed")
 local names: { string } = {}
@@ -390,7 +531,11 @@ fn what_a_plugin_adds_to_anothers_registry_goes_when_it_does() {
     h.reload("adder").unwrap();
     assert_eq!(names(&h), "own,mine", "reloading adds it once");
     h.unload("adder").unwrap();
-    assert_eq!(names(&h), "own", "the registry's own entry isn't tied");
+    assert_eq!(
+        names(&h),
+        "own",
+        "the registry's own entry stays until it unloads"
+    );
 }
 
 #[test]

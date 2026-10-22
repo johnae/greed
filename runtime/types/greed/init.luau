@@ -1779,8 +1779,8 @@ export type Plugins = {
 	started_within: (capability: string) -> boolean,
 	--- Runs `f` with `...` within the limit of the plugin `name` too, as if it had started it: for running what a plugin registered (a formatter, a runner, a source) later, from your plugin, so it can do no more than its plugin may. Config and unknown names add nothing. It can wait.
 	within: <A..., R...>(name: string?, f: (A...) -> R..., A...) -> R...,
-	--- For registries: runs `remove` when the plugin whose code called yours (see `caller`) is unloaded or reloaded, so what it added goes with it. Returns that plugin's name, or nil (and does nothing) if none but yours called.
-	tie: (remove: () -> ()) -> string?,
+	--- Runs `remove` when the calling plugin unloads or reloads and returns its name. Without a foreign caller, ties cleanup to your own plugin and returns its name. Self-owned cleanup runs synchronously with your capabilities before grant removal, cannot wait, and cannot leave owned resources behind.
+	tie: (remove: () -> ()) -> string,
 }
 
 --- A plugin, as `greed.plugin.describe` tells it, for a review.
