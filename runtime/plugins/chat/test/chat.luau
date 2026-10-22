@@ -6,7 +6,11 @@ local backend = chat.backend
 
 -- A Matrix service with one account and two rooms; what it was asked to
 -- send goes in `sent`. Gives the way to send its notifications.
+-- What the fake service was asked, other than rooms: {method, params}.
+local asked: { { method: string, params: any } } = {}
+
 local function fake(sent: { any }?): (method: string, params: any) -> ()
+	table.clear(asked)
 	backend.reset()
 	local items = {
 		{
@@ -31,6 +35,18 @@ local function fake(sent: { any }?): (method: string, params: any) -> ()
 			reactions = { { key = "👍", count = 2, mine = true } },
 			edited = false,
 			mine = false,
+		},
+		{
+			id = "3",
+			event = "$3",
+			kind = "message",
+			at = 1792660030000,
+			sender = { id = "@anna:x", name = "Anna" },
+			text = "noon is fine",
+			replies = 2,
+			reactions = {},
+			edited = false,
+			mine = true,
 		},
 	}
 	local notify = backend.use("matrix", {
@@ -74,13 +90,34 @@ local function fake(sent: { any }?): (method: string, params: any) -> ()
 				},
 			}
 		end,
-		timeline = function(): any
+		timeline = function(params: any): any
+			table.insert(asked, { method = "timeline", params = params })
 			return { items = items }
 		end,
 		send = function(params: any)
 			if sent then
 				table.insert(sent, params)
 			end
+			return nil
+		end,
+		["react"] = function(params: any)
+			table.insert(asked, { method = "react", params = params })
+			return nil
+		end,
+		["edit"] = function(params: any)
+			table.insert(asked, { method = "edit", params = params })
+			return nil
+		end,
+		["redact"] = function(params: any)
+			table.insert(asked, { method = "redact", params = params })
+			return nil
+		end,
+		["read"] = function(params: any)
+			table.insert(asked, { method = "read", params = params })
+			return nil
+		end,
+		["typing"] = function(params: any)
+			table.insert(asked, { method = "typing", params = params })
 			return nil
 		end,
 		["timeline.close"] = function()
@@ -259,4 +296,127 @@ test("messages are Markdown; a quote or list that would run on gets a blank line
 	t:wait(50)
 	local room = greed.view():buffer()
 	assert(room:language() == "markdown", room:language())
+end)
+
+-- Opens the fake's Plans room, with the cursor on the message `event`.
+local function on_message(t: any, event: string): greed.Buffer
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	t:keys("enter")
+	t:wait(50)
+	local buffer = greed.view():buffer()
+	local r = chat.rooms.of(buffer)
+	assert(r, "a room is open")
+	local line = r.view:line_of(function(value: any): boolean
+		return value ~= nil and value.item.event == event
+	end)
+	assert(line, `no message {event}`)
+	greed.view():set_cursor(buffer:line_start(line :: number))
+	return buffer
+end
+
+-- The calls the fake service had of `method`.
+local function calls(method: string): { any }
+	local out = {}
+	for _, call in asked do
+		if call.method == method then
+			table.insert(out, call.params)
+		end
+	end
+	return out
+end
+
+test("a room is marked read as it opens, and says who's writing", function(t)
+	local notify = fake()
+	on_message(t, "$1")
+	t:wait(50)
+	assert(#calls("read") == 1 and calls("read")[1].room == "!plans:x", "marked read")
+	notify("typing.changed", { account = "@anna:x", room = "!plans:x", who = { "Bea" } })
+	t:wait(50)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "Bea is writing…", 1, true), text)
+	assert(string.find(text, "2 replies", 1, true), "how many replies a thread has: " .. text)
+end)
+
+test("alt-k reacts with an emoji picked", function(t)
+	fake()
+	on_message(t, "$1")
+	t:keys("alt-k")
+	t:keys("enter") -- 👍, the first
+	t:wait(50)
+	local reacted = calls("react")
+	assert(
+		#reacted == 1 and reacted[1].event == "$1" and reacted[1].key == "👍",
+		greed.json.encode(asked)
+	)
+end)
+
+test("alt-e puts your message in the box; enter sends the change", function(t)
+	fake()
+	local buffer = on_message(t, "$3")
+	t:keys("alt-e")
+	assert(string.find(buffer:text(), "changing your message", 1, true), buffer:text())
+	t:keys("i")
+	t:type(", or one")
+	t:keys("enter")
+	t:wait(50)
+	local edits = calls("edit")
+	assert(#edits == 1 and edits[1].event == "$3", greed.json.encode(asked))
+	assert(edits[1].text == "noon is fine, or one", edits[1].text)
+end)
+
+test("alt-e on someone else's message changes nothing", function(t)
+	fake()
+	on_message(t, "$1")
+	t:keys("alt-e")
+	t:wait(50)
+	local messages = t:messages()
+	assert(string.find(messages[#messages], "only your own", 1, true), messages[#messages])
+end)
+
+test("alt-d deletes after asking; anything but y keeps it", function(t)
+	fake()
+	on_message(t, "$3")
+	t:keys("alt-d")
+	t:keys("n")
+	t:wait(50)
+	assert(#calls("redact") == 0, "kept")
+	t:keys("alt-d")
+	t:keys("y")
+	t:wait(50)
+	local deleted = calls("redact")
+	assert(#deleted == 1 and deleted[1].event == "$3", greed.json.encode(asked))
+end)
+
+test("alt-t opens the thread; what's sent there goes in it; q goes back", function(t)
+	local sent = {}
+	fake(sent)
+	local room = on_message(t, "$3")
+	t:keys("alt-t")
+	t:wait(50)
+	local thread = greed.view():buffer()
+	assert(thread:id() ~= room:id(), "the thread is a view of its own")
+	local opened = calls("timeline")
+	assert(opened[#opened].thread == "$3", greed.json.encode(opened))
+	assert(string.find(thread:text(), "in the thread", 1, true), thread:text())
+	t:keys("i")
+	t:type("sure")
+	t:keys("enter")
+	t:wait(50)
+	assert(
+		#sent == 1 and sent[1].thread == "$3" and sent[1].text == "sure",
+		greed.json.encode(sent)
+	)
+	-- Still writing after sending: esc stops, then q goes back.
+	t:keys("esc")
+	assert(
+		greed.view():buffer():id() == thread:id(),
+		"esc only stops writing: " .. greed.view():buffer():kind()
+	)
+	t:keys("q")
+	assert(
+		greed.view():buffer():id() == room:id(),
+		greed.view():buffer():kind() .. " " .. greed.view():buffer():text()
+	)
 end)

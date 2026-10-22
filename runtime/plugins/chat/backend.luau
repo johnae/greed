@@ -47,6 +47,8 @@ export type Room = {
 	muted: boolean,
 	encrypted: boolean,
 	active: number?,
+	--- For a direct message: "online", "away", "dnd" or "offline".
+	presence: string?,
 }
 
 export type Item = {
@@ -63,6 +65,8 @@ export type Item = {
 	edited: boolean,
 	mine: boolean,
 	sending: { state: string, why: string? }?,
+	--- Who has read up to here (Matrix).
+	read_by: { { id: string, name: string } }?,
 }
 
 --- What a service answers with: `request(method, params)` gives the result
@@ -80,7 +84,9 @@ end
 -- Who wants to know what.
 local account_listeners: { () -> () } = {}
 local room_listeners: { (account: string) -> () } = {}
-local timeline_listeners: { (account: string, room: string, changes: { any }) -> () } = {}
+local timeline_listeners: { (account: string, room: string, thread: string?, changes: { any }) -> () } =
+	{}
+local typing_listeners: { (account: string, room: string, who: { string }) -> () } = {}
 local step_listeners: { (login: string, step: any) -> () } = {}
 
 --- Calls `listener` when an account comes, goes or changes state.
@@ -93,9 +99,23 @@ function M.on_rooms(listener: (account: string) -> ())
 	greed.plugin.cleanup(core.registry.put(room_listeners, listener))
 end
 
---- Calls `listener` with the changes to an open timeline.
-function M.on_timeline(listener: (account: string, room: string, changes: { any }) -> ())
+--- Calls `listener` with the changes to an open timeline, a room's or
+--- (with `thread`) a thread's.
+function M.on_timeline(
+	listener: (account: string, room: string, thread: string?, changes: { any }) -> ()
+)
 	greed.plugin.cleanup(core.registry.put(timeline_listeners, listener))
+end
+
+--- Calls `listener` with who's writing in a room whose timeline is open.
+function M.on_typing(listener: (account: string, room: string, who: { string }) -> ())
+	greed.plugin.cleanup(core.registry.put(typing_listeners, listener))
+end
+
+--- An account's service and its id there, from its key "service id".
+function M.split(key: string): (string, string)
+	local service, id = string.match(key, "^(%S+) (.*)$")
+	return service or key, id or ""
 end
 
 --- Calls `listener` with a sign-in's next step when it comes by itself,
@@ -167,8 +187,11 @@ local function heard(service: string, method: string, params: any)
 			timeline_listeners,
 			`{service} {params.account}`,
 			params.room,
+			params.thread,
 			params.changes
 		)
+	elseif method == "typing.changed" then
+		core.registry.tell(typing_listeners, `{service} {params.account}`, params.room, params.who)
 	elseif method == "login.step" then
 		core.registry.tell(step_listeners, params.login, params.step)
 	end

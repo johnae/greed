@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
+use std::time::Instant;
 
 use greed_chat::protocol::{
     Account, AccountParams, AccountState, Hello, Item, PROTOCOL, SecretParams, ServerParams,
@@ -20,6 +21,7 @@ use greed_chat::protocol::{
 use greed_chat::rpc::{self, Failure, Notifier, Service};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 
 use api::{Api, User};
@@ -37,6 +39,8 @@ pub struct Mattermost {
     people: RefCell<HashMap<String, User>>,
     /// The timelines the client has open, by "account channel".
     timelines: RefCell<HashMap<String, Vec<Item>>>,
+    /// Who's writing where, by "account channel", and when they last said so.
+    typing: RefCell<HashMap<String, HashMap<String, Instant>>>,
 }
 
 /// A signed-in account: its server with the token, and who it is.
@@ -46,6 +50,8 @@ struct Signed {
     state: AccountState,
     /// Its WebSocket, kept connected.
     live: Option<AbortHandle>,
+    /// What goes to the WebSocket, like saying you're writing.
+    outgoing: mpsc::UnboundedSender<Value>,
 }
 
 impl Drop for Signed {
@@ -75,6 +81,7 @@ impl Mattermost {
             logins: RefCell::default(),
             people: RefCell::default(),
             timelines: RefCell::default(),
+            typing: RefCell::default(),
         })
     }
 
@@ -105,14 +112,16 @@ impl Mattermost {
 
     /// Takes on an account just signed in, and keeps it connected.
     fn signed_in(&self, api: Api, user: User) -> Account {
+        let (outgoing, sent) = mpsc::unbounded_channel();
         let mut signed = Signed {
             api,
             user,
             state: AccountState::Syncing,
             live: None,
+            outgoing,
         };
         let account = signed.account();
-        signed.live = Some(self.connect(&account.id, &signed.api));
+        signed.live = Some(self.connect(&account.id, &signed.api, sent));
         self.accounts
             .borrow_mut()
             .insert(account.id.clone(), signed);
@@ -220,6 +229,14 @@ impl Service for Mattermost {
                 self.send(&rpc::parse(params)?).await?;
                 Ok(Value::Null)
             }
+            "edit" => self.edit(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "redact" => self
+                .redact(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
+            "react" => self.react(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "read" => self.read(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "typing" => self.typing(&rpc::parse(params)?).map(|()| Value::Null),
             _ => Err(Failure::unknown(method)),
         }
     }

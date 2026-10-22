@@ -1,10 +1,13 @@
-//! Channels' timelines as the client shows them: kept here while open, so
-//! what comes over the WebSocket can change them, and sending to them.
+//! Channels' and threads' timelines as the client shows them: kept here
+//! while open, so what comes over the WebSocket can change them; and what
+//! you do to messages. A channel shows each thread's first message with
+//! how many replies it has, as Mattermost's collapsed threads do; a
+//! thread's timeline shows the replies.
 
 use std::collections::BTreeMap;
 
 use greed_chat::protocol::{
-    Change, Item, ItemKind, Person, Reaction, RoomParams, SendParams, Sending,
+    Change, Item, ItemKind, MessageParams, Person, Reaction, RoomParams, SendParams, Sending,
 };
 use greed_chat::rpc::Failure;
 use serde_json::{Value, json};
@@ -15,40 +18,87 @@ use crate::api::{Api, Post, Posts};
 /// How many posts a timeline fetches at a time.
 const PAGE: usize = 60;
 
-fn key(account: &str, room: &str) -> String {
-    format!("{account} {room}")
+/// The emoji Mattermost knows by these names, both ways: reactions are
+/// named there, and shown as the emoji here.
+const EMOJI: &[(&str, &str)] = &[
+    ("👍", "+1"),
+    ("👎", "-1"),
+    ("❤️", "heart"),
+    ("😄", "smile"),
+    ("😂", "joy"),
+    ("🎉", "tada"),
+    ("👀", "eyes"),
+    ("✅", "white_check_mark"),
+    ("🙏", "pray"),
+    ("🚀", "rocket"),
+    ("🔥", "fire"),
+    ("😢", "cry"),
+    ("🤔", "thinking_face"),
+    ("👏", "clap"),
+];
+
+/// The name Mattermost knows reaction `key` by: an emoji, or a name as is.
+fn emoji_name(key: &str) -> String {
+    let bare = key.trim_matches(':');
+    EMOJI
+        .iter()
+        .find(|(emoji, _)| *emoji == bare)
+        .map_or_else(|| bare.to_string(), |(_, name)| (*name).to_string())
+}
+
+/// How reaction `name` shows: its emoji, or `:name:` for one without.
+fn emoji_shown(name: &str) -> String {
+    EMOJI
+        .iter()
+        .find(|(_, known)| *known == name)
+        .map_or_else(|| format!(":{name}:"), |(emoji, _)| (*emoji).to_string())
+}
+
+fn key(account: &str, room: &str, thread: Option<&str>) -> String {
+    format!("{account} {room} {}", thread.unwrap_or(""))
+}
+
+fn key_of(params: &RoomParams) -> String {
+    key(&params.account, &params.room, params.thread.as_deref())
 }
 
 impl Mattermost {
-    /// Opens a channel's timeline: `{items}`, then `timeline.changed`.
+    /// Opens a channel's timeline, or a thread's: `{items}`, then
+    /// `timeline.changed`.
     pub(crate) async fn open_timeline(&self, params: &RoomParams) -> Result<Value, Failure> {
         let (api, me) = self.signed(&params.account)?;
-        let posts: Posts = api
-            .get(&format!(
-                "api/v4/channels/{}/posts?per_page={PAGE}",
+        let path = match &params.thread {
+            Some(root) => format!("api/v4/posts/{root}/thread"),
+            None => format!(
+                "api/v4/channels/{}/posts?per_page={PAGE}&collapsedThreads=true",
                 params.room
-            ))
+            ),
+        };
+        let posts: Posts = api
+            .get(&path)
             .await
             .map_err(|e| Failure::new(format!("can't open the channel: {e}")))?;
         let posts = posts.oldest_first();
         let items = self.items(&params.account, &api, &me, &posts).await;
         self.timelines
             .borrow_mut()
-            .insert(key(&params.account, &params.room), items.clone());
+            .insert(key_of(params), items.clone());
         Ok(json!({ "items": items }))
     }
 
-    /// Stops keeping a channel's timeline.
+    /// Stops keeping a timeline.
     pub(crate) fn close_timeline(&self, params: &RoomParams) {
-        self.timelines
-            .borrow_mut()
-            .remove(&key(&params.account, &params.room));
+        self.timelines.borrow_mut().remove(&key_of(params));
     }
 
-    /// Fetches older posts into an open timeline: `{more}`.
+    /// Fetches older posts into an open channel's timeline: `{more}`. A
+    /// thread comes whole.
     pub(crate) async fn back(&self, params: &RoomParams) -> Result<Value, Failure> {
+        if params.thread.is_some() {
+            return Ok(json!({ "more": false }));
+        }
         let (api, me) = self.signed(&params.account)?;
-        let timeline = key(&params.account, &params.room);
+        let timeline = key_of(params);
         let oldest = self
             .timelines
             .borrow()
@@ -57,7 +107,7 @@ impl Mattermost {
             .ok_or_else(|| Failure::new("that timeline isn't open"))?;
         let posts: Posts = api
             .get(&format!(
-                "api/v4/channels/{}/posts?per_page={PAGE}&before={oldest}",
+                "api/v4/channels/{}/posts?per_page={PAGE}&before={oldest}&collapsedThreads=true",
                 params.room
             ))
             .await
@@ -76,19 +126,21 @@ impl Mattermost {
         if let Some(items) = self.timelines.borrow_mut().get_mut(&timeline) {
             items.splice(0..0, older);
         }
-        self.tell(&params.account, &params.room, &changes);
+        self.tell(&params.account, &params.room, None, &changes);
         Ok(json!({ "more": more }))
     }
 
     /// Sends a message, shown at once and changed when the server has it.
+    /// A reply goes to the thread of what it answers, as Mattermost has it.
     pub(crate) async fn send(&self, send: &SendParams) -> Result<(), Failure> {
         let (api, me) = self.signed(&send.account)?;
         let pending = format!("{me}:{}", greed_chat::random(8));
-        // A reply in Mattermost goes to the thread of what it answers.
-        let root = match send.thread.as_ref().or(send.reply_to.as_ref()) {
-            Some(post) => self.thread_of(&send.account, &send.room, post),
-            None => String::new(),
+        let root = match (&send.thread, &send.reply_to) {
+            (Some(thread), _) => thread.clone(),
+            (None, Some(post)) => self.thread_of(&send.account, &send.room, post),
+            (None, None) => String::new(),
         };
+        let thread = Some(root.as_str()).filter(|root| !root.is_empty());
         let echo = Item {
             id: pending.clone(),
             sender: Person {
@@ -98,12 +150,12 @@ impl Mattermost {
             },
             at: now(),
             text: send.text.clone(),
-            thread: Some(root.clone()).filter(|root| !root.is_empty()),
+            thread: thread.map(str::to_string),
             mine: true,
             sending: Some(Sending::Sending),
             ..Item::default()
         };
-        self.upsert(&send.account, &send.room, echo.clone());
+        self.upsert(&send.account, &send.room, thread, echo.clone());
         let body = json!({
             "channel_id": send.room,
             "message": send.text,
@@ -120,34 +172,95 @@ impl Mattermost {
                     sending: Some(Sending::Failed(e.message.clone())),
                     ..echo
                 };
-                self.upsert(&send.account, &send.room, failed);
+                self.upsert(&send.account, &send.room, thread, failed);
                 Err(Failure::new(format!("can't send: {e}")))
             }
         }
     }
 
-    /// The thread a post in an open timeline is in, by its root.
+    /// The thread a post in an open timeline is in, by its root: its own
+    /// when it starts one or isn't in one.
     fn thread_of(&self, account: &str, room: &str, post: &str) -> String {
+        let prefix = format!("{account} {room} ");
         self.timelines
             .borrow()
-            .get(&key(account, room))
-            .and_then(|items| {
-                items
-                    .iter()
-                    .find(|item| item.event.as_deref() == Some(post))
-            })
+            .iter()
+            .filter(|(key, _)| key.starts_with(&prefix))
+            .flat_map(|(_, items)| items.iter())
+            .find(|item| item.event.as_deref() == Some(post))
             .and_then(|item| item.thread.clone())
             .unwrap_or_else(|| post.to_string())
     }
 
+    /// Changes what one of your messages says.
+    pub(crate) async fn edit(&self, message: &MessageParams) -> Result<(), Failure> {
+        let (api, _) = self.signed(&message.account)?;
+        let path = format!("api/v4/posts/{}/patch", message.event);
+        let post: Post = api
+            .put(&path, &json!({ "message": message.text }))
+            .await
+            .map_err(|e| Failure::new(format!("can't change it: {e}")))?;
+        self.posted(&message.account, &post).await;
+        Ok(())
+    }
+
+    /// Deletes a message.
+    pub(crate) async fn redact(&self, message: &MessageParams) -> Result<(), Failure> {
+        let (api, _) = self.signed(&message.account)?;
+        api.delete(&format!("api/v4/posts/{}", message.event))
+            .await
+            .map_err(|e| Failure::new(format!("can't delete it: {e}")))
+    }
+
+    /// Adds your reaction to a message, or takes it back if it's there.
+    pub(crate) async fn react(&self, message: &MessageParams) -> Result<(), Failure> {
+        let (api, me) = self.signed(&message.account)?;
+        let name = emoji_name(&message.key);
+        let post: Post = api
+            .get(&format!("api/v4/posts/{}", message.event))
+            .await
+            .map_err(|e| Failure::new(format!("can't react: {e}")))?;
+        let mine = post
+            .metadata
+            .reactions
+            .iter()
+            .any(|reaction| reaction.user_id == me && reaction.emoji_name == name);
+        let done = if mine {
+            api.delete(&format!(
+                "api/v4/users/me/posts/{}/reactions/{name}",
+                message.event
+            ))
+            .await
+        } else {
+            let body = json!({ "user_id": me, "post_id": message.event, "emoji_name": name });
+            api.post::<Value>("api/v4/reactions", &body).await.map(drop)
+        };
+        done.map_err(|e| Failure::new(format!("can't react: {e}")))
+    }
+
+    /// Marks the channel read.
+    pub(crate) async fn read(&self, params: &RoomParams) -> Result<(), Failure> {
+        let (api, _) = self.signed(&params.account)?;
+        api.post::<Value>(
+            "api/v4/channels/members/me/view",
+            &json!({ "channel_id": params.room }),
+        )
+        .await
+        .map(drop)
+        .map_err(|e| Failure::new(format!("can't mark it read: {e}")))
+    }
+
     /// Takes in a post that's new or changed, in whatever timeline shows
-    /// its channel: its local echo, or the post as it was, is replaced.
+    /// it: its local echo, or the post as it was, is replaced. A reply
+    /// changes its thread's first message in the channel too (how many
+    /// replies it has).
     pub(crate) async fn posted(&self, account: &str, post: &Post) {
-        if !self
-            .timelines
-            .borrow()
-            .contains_key(&key(account, &post.channel_id))
-        {
+        let thread = Some(post.root_id.as_str()).filter(|root| !root.is_empty());
+        if let Some(root) = thread {
+            self.refresh(account, &post.channel_id, root).await;
+        }
+        let shown = key(account, &post.channel_id, thread);
+        if !self.timelines.borrow().contains_key(&shown) {
             return;
         }
         let Ok((api, me)) = self.signed(account) else {
@@ -165,20 +278,45 @@ impl Mattermost {
             && self
                 .timelines
                 .borrow()
-                .get(&key(account, &post.channel_id))
+                .get(&shown)
                 .is_some_and(|items| items.iter().any(|it| it.id == post.pending_post_id));
         if echoed {
             item.id.clone_from(&post.pending_post_id);
         }
-        self.upsert(account, &post.channel_id, item);
+        self.upsert(account, &post.channel_id, thread, item);
+    }
+
+    /// Fetches a thread's first message again into its channel's open
+    /// timeline, for its count of replies.
+    async fn refresh(&self, account: &str, room: &str, first: &str) {
+        if !self
+            .timelines
+            .borrow()
+            .contains_key(&key(account, room, None))
+        {
+            return;
+        }
+        let Ok((api, me)) = self.signed(account) else {
+            return;
+        };
+        let Ok(post) = api.get::<Post>(&format!("api/v4/posts/{first}")).await else {
+            return;
+        };
+        if let Some(item) = self
+            .items(account, &api, &me, std::slice::from_ref(&post))
+            .await
+            .pop()
+        {
+            self.upsert(account, room, None, item);
+        }
     }
 
     /// Puts `item` in its place in a timeline, by id or by the post it
     /// is, or at the end, and tells the client.
-    fn upsert(&self, account: &str, room: &str, item: Item) {
+    fn upsert(&self, account: &str, room: &str, thread: Option<&str>, item: Item) {
         let change = {
             let mut timelines = self.timelines.borrow_mut();
-            let Some(items) = timelines.get_mut(&key(account, room)) else {
+            let Some(items) = timelines.get_mut(&key(account, room, thread)) else {
                 return;
             };
             let at = items.iter().position(|it| {
@@ -199,14 +337,15 @@ impl Mattermost {
                 }
             }
         };
-        self.tell(account, room, &[change]);
+        self.tell(account, room, thread, &[change]);
     }
 
-    fn tell(&self, account: &str, room: &str, changes: &[Change]) {
+    fn tell(&self, account: &str, room: &str, thread: Option<&str>, changes: &[Change]) {
         if changes.is_empty() {
             return;
         }
-        let params = json!({ "account": account, "room": room, "changes": changes });
+        let params =
+            json!({ "account": account, "room": room, "thread": thread, "changes": changes });
         self.notifier.notify("timeline.changed", &params);
     }
 
@@ -226,7 +365,7 @@ impl Mattermost {
             let entry = reactions
                 .entry(&reaction.emoji_name)
                 .or_insert_with(|| Reaction {
-                    key: reaction.emoji_name.clone(),
+                    key: emoji_shown(&reaction.emoji_name),
                     count: 0,
                     mine: false,
                 });
@@ -264,6 +403,7 @@ impl Mattermost {
             edited: post.edit_at > 0,
             mine: post.user_id == me,
             sending: None,
+            read_by: Vec::new(),
         }
     }
 }

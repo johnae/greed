@@ -452,15 +452,116 @@ fn lists_channels_and_keeps_a_timeline() {
             json!({ "account": anna, "room": channel_id, "text": "yes", "reply_to": lunch["id"] }),
         )
         .await;
-        let sent = heard(&mut notices, |n| {
-            n["method"] == "timeline.changed"
-                && item_with(&n["params"]["changes"], "yes")
-                    .is_some_and(|yes| yes["sending"].is_null())
+        // The reply goes in the thread; the channel counts it.
+        heard(&mut notices, |n| {
+            n["params"]["thread"].is_null()
+                && item_with(&n["params"]["changes"], "lunch at noon?")
+                    .is_some_and(|lunch| lunch["replies"] == 1)
         })
         .await;
-        let yes = item_with(&sent["changes"], "yes").unwrap();
+        let thread = json!({ "account": anna, "room": channel_id, "thread": lunch["id"] });
+        let opened = call(&service, "timeline", thread).await;
+        let yes = item_with(&json!([{ "items": opened["items"] }]), "yes")
+            .expect("the thread has the reply");
         assert_eq!(yes["mine"], true);
-        assert_eq!(yes["thread"], lunch["id"], "a reply goes in the thread");
-        assert!(yes["event"].is_string());
+        assert_eq!(yes["thread"], lunch["id"]);
+    });
+}
+
+#[test]
+fn reactions_edits_deleting_typing_reading_and_presence() {
+    let Some(server) = Server::start("step4", &[]) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let anna_rest = Rest::login(&server, "anna", "Secret-pass1").await;
+        let bea = Rest::login(&server, "bea", "Secret-pass1").await;
+        let direct = anna_rest
+            .post("channels/direct", &json!([anna_rest.id, bea.id]))
+            .await;
+        let room = direct["id"].as_str().unwrap().to_string();
+
+        let (notifier, mut notices) = rpc::notifier();
+        let service = Mattermost::new(server.dir.join("data"), notifier);
+        let anna = sign_in(&service, &server, "anna", "Secret-pass1").await;
+        heard(&mut notices, |n| {
+            n["method"] == "account.changed" && n["params"]["state"]["state"] == "ready"
+        })
+        .await;
+
+        // Bea as a direct message, with whether she's around.
+        let rooms = call(&service, "rooms", json!({ "account": anna })).await;
+        let dm = rooms
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == room.as_str())
+            .unwrap_or_else(|| panic!("no direct message in {rooms}"))
+            .clone();
+        assert_eq!(dm["kind"], "direct");
+        assert_eq!(dm["name"], "bea");
+        assert!(dm["presence"].is_string(), "{dm}");
+
+        let params = json!({ "account": anna, "room": room });
+        call(&service, "timeline", params.clone()).await;
+        let send = json!({ "account": anna, "room": room, "text": "noon" });
+        call(&service, "send", send).await;
+        let noon = heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "noon").is_some_and(|it| it["sending"].is_null())
+        })
+        .await;
+        let event = item_with(&noon["changes"], "noon").unwrap()["event"].clone();
+        let message = |extra: Value| {
+            let mut message = json!({ "account": anna, "room": room, "event": event });
+            for (key, value) in extra.as_object().unwrap() {
+                message[key] = value.clone();
+            }
+            message
+        };
+
+        call(&service, "react", message(json!({ "key": "👍" }))).await;
+        heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "noon").is_some_and(|it| {
+                it["reactions"][0]["key"] == "👍" && it["reactions"][0]["mine"] == true
+            })
+        })
+        .await;
+        call(&service, "react", message(json!({ "key": "👍" }))).await;
+        heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "noon")
+                .is_some_and(|it| it["reactions"].as_array().unwrap().is_empty())
+        })
+        .await;
+
+        call(&service, "edit", message(json!({ "text": "one" }))).await;
+        heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "one").is_some_and(|it| it["edited"] == true)
+        })
+        .await;
+        call(&service, "redact", message(json!({}))).await;
+        heard(&mut notices, |n| {
+            n["params"]["changes"].as_array().is_some_and(|changes| {
+                changes
+                    .iter()
+                    .any(|c| c["item"]["event"] == event && c["item"]["kind"] == "deleted")
+            })
+        })
+        .await;
+
+        // Bea writing.
+        bea.post(
+            &format!("users/{}/typing", bea.id),
+            &json!({ "channel_id": room }),
+        )
+        .await;
+        let typing = heard(&mut notices, |n| n["method"] == "typing.changed").await;
+        assert_eq!(typing["who"], json!(["bea"]), "{typing}");
+
+        let mut typing_on = params.clone();
+        typing_on["on"] = json!(true);
+        call(&service, "typing", typing_on).await;
+        call(&service, "read", params).await;
     });
 }

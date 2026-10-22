@@ -297,6 +297,17 @@ impl Matrix {
                 self.send(&rpc::parse(params)?).await?;
                 Ok(Value::Null)
             }
+            "edit" => self.edit(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "redact" => self
+                .redact(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
+            "react" => self.react(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "read" => self.read(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "typing" => self
+                .typing(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
             _ => Err(Failure::unknown(method)),
         }
     }

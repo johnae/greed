@@ -124,5 +124,7 @@ async fn room_of(account: &str, room: &matrix_sdk::Room, kind: RoomKind) -> Room
         ),
         encrypted: room.encryption_state().is_encrypted(),
         active: room.latest_event_timestamp().map(|at| i64::from(at.0)),
+        // Presence isn't in what the sync brings.
+        presence: None,
     }
 }

@@ -242,7 +242,29 @@ impl Api {
         path: &str,
         body: &Value,
     ) -> Result<T, Error> {
-        let response = send(self.request(Method::POST, path).json(body)).await?;
+        self.with_body(Method::POST, path, body).await
+    }
+
+    pub(crate) async fn put<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &Value,
+    ) -> Result<T, Error> {
+        self.with_body(Method::PUT, path, body).await
+    }
+
+    /// Deletes what `path` names; the answer doesn't matter.
+    pub(crate) async fn delete(&self, path: &str) -> Result<(), Error> {
+        send(self.request(Method::DELETE, path)).await.map(drop)
+    }
+
+    async fn with_body<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: &Value,
+    ) -> Result<T, Error> {
+        let response = send(self.request(method, path).json(body)).await?;
         response.json().await.map_err(|e| Error::transport(&e))
     }
 

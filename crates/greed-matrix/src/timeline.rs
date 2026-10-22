@@ -5,19 +5,23 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use greed_chat::protocol::{
-    Change, Item, ItemKind, Person, Reaction, RoomParams, SendParams, Sending,
+    Change, Item, ItemKind, MessageParams, Person, Reaction, RoomParams, SendParams, Sending,
 };
 use greed_chat::rpc::Failure;
+use matrix_sdk::event_handler::EventHandlerDropGuard;
+use matrix_sdk::room::edit::EditedContent;
+use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
 use matrix_sdk::ruma::events::room::message::{MessageType, RoomMessageEventContent};
 use matrix_sdk::ruma::{EventId, OwnedUserId, RoomId, UserId};
 use matrix_sdk_ui::Timeline;
 use matrix_sdk_ui::eyeball_im::VectorDiff;
 use matrix_sdk_ui::timeline::{
     EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, TimelineBuilder,
-    TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
-    default_event_filter,
+    TimelineDetails, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent,
+    TimelineItemKind, TimelineReadReceiptTracking, VirtualTimelineItem, default_event_filter,
 };
 use serde_json::{Value, json};
+use tokio::sync::broadcast::error::RecvError;
 use tokio::task::AbortHandle;
 
 use crate::Matrix;
@@ -37,20 +41,30 @@ const HIDDEN: &[&str] = &[
     "m.room.canonical_alias",
 ];
 
-/// A timeline the client has open, and the task telling it what changes.
+/// A timeline the client has open, and the tasks telling it what changes:
+/// the items, and who's writing (for a room's).
 pub(crate) struct Open {
     timeline: Arc<Timeline>,
     forwarding: AbortHandle,
+    typing: Option<(AbortHandle, EventHandlerDropGuard)>,
 }
 
 impl Drop for Open {
     fn drop(&mut self) {
         self.forwarding.abort();
+        if let Some((typing, _)) = &self.typing {
+            typing.abort();
+        }
     }
 }
 
 fn key(params: &RoomParams) -> String {
-    format!("{} {}", params.account, params.room)
+    format!(
+        "{} {} {}",
+        params.account,
+        params.room,
+        params.thread.as_deref().unwrap_or("")
+    )
 }
 
 impl Matrix {
@@ -68,13 +82,24 @@ impl Matrix {
             .ok_or_else(|| Failure::new(format!("{} has no room {}", params.account, params.room)))
     }
 
-    /// The timeline `params` names, opened if it isn't.
+    /// The timeline `params` names, opened if it isn't: a room's, its
+    /// threads' replies left to theirs, or a thread's.
     async fn timeline(&self, params: &RoomParams) -> Result<Arc<Timeline>, Failure> {
         if let Some(open) = self.timelines.borrow().get(&key(params)) {
             return Ok(open.timeline.clone());
         }
         let room = self.room(params)?;
+        let focus = match &params.thread {
+            Some(thread) => TimelineFocus::Thread {
+                root_event_id: EventId::parse(thread).map_err(Failure::params)?,
+            },
+            None => TimelineFocus::Live {
+                hide_threaded_events: true,
+            },
+        };
         let timeline = TimelineBuilder::new(&room)
+            .with_focus(focus)
+            .track_read_marker_and_receipts(TimelineReadReceiptTracking::MessageLikeEvents)
             .event_filter(|event, rules| {
                 default_event_filter(event, rules)
                     && !HIDDEN.contains(&event.event_type().to_string().as_str())
@@ -91,7 +116,11 @@ impl Matrix {
             .await
             .map_err(|e| Failure::new(format!("can't fetch the room's messages: {e}")))?;
         let me = self.me.clone();
-        let (account, room) = (params.account.clone(), params.room.clone());
+        let (account, room_id, thread) = (
+            params.account.clone(),
+            params.room.clone(),
+            params.thread.clone(),
+        );
         let mine = room_owner(&timeline);
         let (items, mut diffs) = timeline.subscribe().await;
         let mut len = items.len();
@@ -99,19 +128,66 @@ impl Matrix {
             while let Some(batch) = diffs.next().await {
                 let changes = changes(&mut len, batch, &mine);
                 let Some(me) = me.upgrade() else { break };
-                let params = json!({ "account": account, "room": room, "changes": changes });
+                let params = json!({
+                    "account": account,
+                    "room": room_id,
+                    "thread": thread,
+                    "changes": changes,
+                });
                 me.notifier.notify("timeline.changed", &params);
             }
         })
         .abort_handle();
+        let typing = params
+            .thread
+            .is_none()
+            .then(|| self.follow_typing(params, &room));
         self.timelines.borrow_mut().insert(
             key(params),
             Open {
                 timeline: timeline.clone(),
                 forwarding,
+                typing,
             },
         );
         Ok(timeline)
+    }
+
+    /// Says `typing.changed` whenever who's writing in `room` changes.
+    fn follow_typing(
+        &self,
+        params: &RoomParams,
+        room: &matrix_sdk::Room,
+    ) -> (AbortHandle, EventHandlerDropGuard) {
+        let (guard, mut typing) = room.subscribe_to_typing_notifications();
+        let me = self.me.clone();
+        let (account, room_id) = (params.account.clone(), params.room.clone());
+        let room = room.clone();
+        let task = tokio::task::spawn_local(async move {
+            loop {
+                let who = match typing.recv().await {
+                    Ok(who) => who,
+                    Err(RecvError::Lagged(_)) => continue,
+                    Err(RecvError::Closed) => break,
+                };
+                let mut names = Vec::new();
+                for user in who
+                    .iter()
+                    .filter(|user| Some(user.as_ref()) != room.client().user_id())
+                {
+                    let name = match room.get_member_no_sync(user).await {
+                        Ok(Some(member)) => member.name().to_string(),
+                        _ => user.localpart().to_string(),
+                    };
+                    names.push(name);
+                }
+                let Some(me) = me.upgrade() else { break };
+                let params = json!({ "account": account, "room": room_id, "who": names });
+                me.notifier.notify("typing.changed", &params);
+            }
+        })
+        .abort_handle();
+        (task, guard)
     }
 
     /// Opens a room's timeline: `{items}`, then `timeline.changed`.
@@ -144,11 +220,13 @@ impl Matrix {
     }
 
     /// Sends a message, which shows in the timeline at once and changes
-    /// there as it's sent.
+    /// there as it's sent. In a thread, it's one of the thread's replies.
     pub(crate) async fn send(&self, send: &SendParams) -> Result<(), Failure> {
         let params = RoomParams {
             account: send.account.clone(),
             room: send.room.clone(),
+            thread: send.thread.clone(),
+            on: false,
         };
         let timeline = self.timeline(&params).await?;
         let content = RoomMessageEventContent::text_markdown(&send.text);
@@ -162,6 +240,70 @@ impl Matrix {
         outcome
             .map(drop)
             .map_err(|e| Failure::new(format!("can't send: {e}")))
+    }
+
+    /// The room's timeline (opened if it isn't) and the message `event`
+    /// as the timeline names it.
+    async fn message(
+        &self,
+        message: &MessageParams,
+    ) -> Result<(Arc<Timeline>, TimelineEventItemId), Failure> {
+        let params = RoomParams {
+            account: message.account.clone(),
+            room: message.room.clone(),
+            thread: None,
+            on: false,
+        };
+        let timeline = self.timeline(&params).await?;
+        let event = EventId::parse(&message.event).map_err(Failure::params)?;
+        Ok((timeline, TimelineEventItemId::EventId(event)))
+    }
+
+    /// Changes what one of your messages says.
+    pub(crate) async fn edit(&self, message: &MessageParams) -> Result<(), Failure> {
+        let (timeline, id) = self.message(message).await?;
+        let content = RoomMessageEventContent::text_markdown(&message.text);
+        timeline
+            .edit(&id, EditedContent::RoomMessage(content.into()))
+            .await
+            .map_err(|e| Failure::new(format!("can't change it: {e}")))
+    }
+
+    /// Deletes a message (yours, or anyone's where you may).
+    pub(crate) async fn redact(&self, message: &MessageParams) -> Result<(), Failure> {
+        let (timeline, id) = self.message(message).await?;
+        timeline
+            .redact(&id, None)
+            .await
+            .map_err(|e| Failure::new(format!("can't delete it: {e}")))
+    }
+
+    /// Adds your reaction `key` to a message, or takes it back.
+    pub(crate) async fn react(&self, message: &MessageParams) -> Result<(), Failure> {
+        let (timeline, id) = self.message(message).await?;
+        timeline
+            .toggle_reaction(&id, &message.key)
+            .await
+            .map(drop)
+            .map_err(|e| Failure::new(format!("can't react: {e}")))
+    }
+
+    /// Marks the room read up to its latest message.
+    pub(crate) async fn read(&self, params: &RoomParams) -> Result<(), Failure> {
+        let timeline = self.timeline(params).await?;
+        timeline
+            .mark_as_read(ReceiptType::Read)
+            .await
+            .map(drop)
+            .map_err(|e| Failure::new(format!("can't mark it read: {e}")))
+    }
+
+    /// Says you're writing in the room, or not any more.
+    pub(crate) async fn typing(&self, params: &RoomParams) -> Result<(), Failure> {
+        self.room(params)?
+            .typing_notice(params.on)
+            .await
+            .map_err(|e| Failure::new(format!("can't say you're writing: {e}")))
     }
 }
 
@@ -287,13 +429,8 @@ fn event_item(event: &EventTimelineItem, mine: &UserId) -> Item {
         },
         at: i64::from(event.timestamp().0),
         mine: event.is_own(),
-        sending: match event.send_state() {
-            Some(EventSendState::NotSentYet { .. }) => Some(Sending::Sending),
-            Some(EventSendState::SendingFailed { error, .. }) => {
-                Some(Sending::Failed(error.to_string()))
-            }
-            _ => None,
-        },
+        read_by: readers(event, mine, sender),
+        sending: sending(event),
         ..Item::default()
     };
     match event.content() {
@@ -397,5 +534,30 @@ fn state_change(event_type: &str) -> String {
         "m.room.tombstone" => "moved the room to a new one".into(),
         "m.space.child" | "m.space.parent" => "changed the space".into(),
         other => format!("changed {other}"),
+    }
+}
+
+/// Who, besides you and whoever sent it, has read up to `event`.
+fn readers(event: &EventTimelineItem, mine: &UserId, sender: &UserId) -> Vec<Person> {
+    event
+        .read_receipts()
+        .keys()
+        .filter(|user| *user != mine && *user != sender)
+        .map(|user| Person {
+            id: user.to_string(),
+            name: user.localpart().to_string(),
+            avatar: None,
+        })
+        .collect()
+}
+
+/// How sending `event` goes, while it's yours and not sent.
+fn sending(event: &EventTimelineItem) -> Option<Sending> {
+    match event.send_state() {
+        Some(EventSendState::NotSentYet { .. }) => Some(Sending::Sending),
+        Some(EventSendState::SendingFailed { error, .. }) => {
+            Some(Sending::Failed(error.to_string()))
+        }
+        _ => None,
     }
 }

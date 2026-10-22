@@ -3,12 +3,14 @@
 //! the account is connected.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use futures_util::StreamExt;
-use greed_chat::protocol::AccountState;
+use futures_util::{SinkExt, StreamExt};
+use greed_chat::protocol::{AccountState, RoomParams};
+use greed_chat::rpc::Failure;
 use rustls_platform_verifier::ConfigVerifierExt;
 use serde_json::{Value, json};
+use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
 use tokio_tungstenite::Connector;
 use tokio_tungstenite::tungstenite::Message;
@@ -19,6 +21,9 @@ use crate::api::{Api, Post};
 
 /// The longest wait before connecting again.
 const PATIENCE: Duration = Duration::from_secs(30);
+
+/// How long someone writing is shown after they last said so.
+const TYPING: Duration = Duration::from_secs(6);
 
 /// Events that change what a list of channels shows.
 const ROOM_EVENTS: &[&str] = &[
@@ -36,17 +41,24 @@ const ROOM_EVENTS: &[&str] = &[
     "user_removed",
     "added_to_team",
     "leave_team",
+    "status_change",
 ];
 
 impl Mattermost {
-    /// Keeps account `id` connected to its server's WebSocket, until the
-    /// handle is aborted.
-    pub(crate) fn connect(&self, id: &str, api: &Api) -> AbortHandle {
+    /// Keeps account `id` connected to its server's WebSocket, sending it
+    /// what comes on `outgoing`, until the handle is aborted.
+    pub(crate) fn connect(
+        &self,
+        id: &str,
+        api: &Api,
+        mut outgoing: mpsc::UnboundedReceiver<Value>,
+    ) -> AbortHandle {
         let me = self.me.clone();
         let id = id.to_string();
         let api = api.clone();
         tokio::task::spawn_local(async move {
             let mut wait = Duration::from_secs(1);
+            let mut seq = 1;
             loop {
                 let failed = match listen(&api).await {
                     Ok(mut socket) => {
@@ -54,15 +66,27 @@ impl Mattermost {
                         let Some(this) = me.upgrade() else { return };
                         this.changed(&id, AccountState::Ready);
                         drop(this);
-                        while let Some(message) = socket.next().await {
-                            let Ok(Message::Text(text)) = message else {
-                                continue;
-                            };
-                            let Ok(event) = serde_json::from_str::<Value>(&text) else {
-                                continue;
-                            };
-                            let Some(this) = me.upgrade() else { return };
-                            this.heard(&id, &event).await;
+                        loop {
+                            tokio::select! {
+                                message = socket.next() => {
+                                    let Some(message) = message else { break };
+                                    let Ok(Message::Text(text)) = message else {
+                                        continue;
+                                    };
+                                    let Ok(event) = serde_json::from_str::<Value>(&text) else {
+                                        continue;
+                                    };
+                                    let Some(this) = me.upgrade() else { return };
+                                    this.heard(&id, &event).await;
+                                }
+                                Some(mut action) = outgoing.recv() => {
+                                    seq += 1;
+                                    action["seq"] = json!(seq);
+                                    if socket.send(Message::text(action.to_string())).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
                         }
                         "the connection to the server dropped".to_string()
                     }
@@ -78,6 +102,26 @@ impl Mattermost {
         .abort_handle()
     }
 
+    /// Says over the WebSocket that you're writing in a channel; Mattermost
+    /// has no saying you've stopped, it forgets after a few seconds.
+    pub(crate) fn typing(&self, params: &RoomParams) -> Result<(), Failure> {
+        if !params.on {
+            return Ok(());
+        }
+        let accounts = self.accounts.borrow();
+        let signed = accounts
+            .get(&params.account)
+            .ok_or_else(|| Failure::new(format!("no account {}", params.account)))?;
+        let action = json!({
+            "action": "user_typing",
+            "data": { "channel_id": params.room, "parent_id": params.thread.as_deref().unwrap_or_default() },
+        });
+        signed
+            .outgoing
+            .send(action)
+            .map_err(|_| Failure::new("not connected"))
+    }
+
     /// Acts on an event from account `id`'s server.
     async fn heard(&self, id: &str, event: &Value) {
         let name = event["event"].as_str().unwrap_or_default();
@@ -87,8 +131,14 @@ impl Mattermost {
                 .and_then(|post| serde_json::from_str::<Post>(post).ok())
         };
         match name {
-            "posted" | "post_edited" | "post_deleted" => {
+            "posted" | "post_edited" => {
                 if let Some(post) = post() {
+                    self.posted(id, &post).await;
+                }
+            }
+            "post_deleted" => {
+                if let Some(mut post) = post() {
+                    post.delete_at = post.delete_at.max(1);
                     self.posted(id, &post).await;
                 }
             }
@@ -103,12 +153,56 @@ impl Mattermost {
                     self.posted(id, &post).await;
                 }
             }
+            "typing" => {
+                let room = event["broadcast"]["channel_id"]
+                    .as_str()
+                    .unwrap_or_default();
+                let user = event["data"]["user_id"].as_str().unwrap_or_default();
+                self.someone_typing(id, room, user);
+            }
             _ => {}
         }
         if ROOM_EVENTS.contains(&name) {
             self.notifier
                 .notify("rooms.changed", &json!({ "account": id }));
         }
+    }
+
+    /// Notes that `user` is writing in `room`, says who is, and forgets them
+    /// once they've said nothing for a while.
+    fn someone_typing(&self, account: &str, room: &str, user: &str) {
+        let key = format!("{account} {room}");
+        self.typing
+            .borrow_mut()
+            .entry(key.clone())
+            .or_default()
+            .insert(user.to_string(), Instant::now());
+        self.tell_typing(account, room);
+        let me = self.me.clone();
+        let (account, room) = (account.to_string(), room.to_string());
+        tokio::task::spawn_local(async move {
+            tokio::time::sleep(TYPING).await;
+            let Some(this) = me.upgrade() else { return };
+            let forgot = this.typing.borrow_mut().get_mut(&key).is_some_and(|who| {
+                let before = who.len();
+                who.retain(|_, at| at.elapsed() < TYPING);
+                who.len() != before
+            });
+            if forgot {
+                this.tell_typing(&account, &room);
+            }
+        });
+    }
+
+    fn tell_typing(&self, account: &str, room: &str) {
+        let names: Vec<String> = self
+            .typing
+            .borrow()
+            .get(&format!("{account} {room}"))
+            .map(|who| who.keys().map(|user| self.name_of(account, user)).collect())
+            .unwrap_or_default();
+        let params = json!({ "account": account, "room": room, "who": names });
+        self.notifier.notify("typing.changed", &params);
     }
 }
 

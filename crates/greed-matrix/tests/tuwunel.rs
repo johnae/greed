@@ -5,6 +5,7 @@
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use greed_chat::rpc::{self, Service};
@@ -456,4 +457,171 @@ fn lists_rooms_and_keeps_a_timeline() {
 
         call(&matrix, "timeline.close", params).await;
     });
+}
+
+/// Anna signed in through the service, and Bea (a plain client) in room
+/// "Plans" with her: the service, its notifications, Bea, the room's id.
+async fn plans(
+    server: &Tuwunel,
+) -> (
+    Rc<Matrix>,
+    tokio::sync::mpsc::UnboundedReceiver<String>,
+    Client,
+    String,
+) {
+    use matrix_sdk::ruma::api::client::room::create_room;
+
+    server.register("anna", "secret").await;
+    server.register("bea", "secret").await;
+    let bea = other(server, "bea", "secret").await;
+    let mut request = create_room::v3::Request::new();
+    request.name = Some("Plans".into());
+    request.invite = vec!["@anna:localhost".try_into().unwrap()];
+    let room = bea.create_room(request).await.unwrap();
+    other(server, "anna", "secret")
+        .await
+        .join_room_by_id(room.room_id())
+        .await
+        .unwrap();
+    let (notifier, notices) = rpc::notifier();
+    let matrix = Matrix::new(server.dir.join("data"), notifier);
+    sign_in(&matrix, server, "anna", "secret").await;
+    (matrix, notices, bea, room.room_id().to_string())
+}
+
+#[test]
+fn reactions_edits_deleting_threads_typing_and_reading() {
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+
+    let Some(server) = Tuwunel::start("step4", None) else {
+        return;
+    };
+    run(async {
+        let (matrix, mut notices, bea, room_id) = plans(&server).await;
+        let anna = "@anna:localhost";
+        let params = json!({ "account": anna, "room": room_id });
+        until(&matrix, "timeline", &params, |_| true).await;
+        let bea_room = bea
+            .get_room(&matrix_sdk::ruma::RoomId::parse(&room_id).unwrap())
+            .unwrap();
+        bea_room
+            .send(RoomMessageEventContent::text_plain("lunch?"))
+            .await
+            .unwrap();
+        let lunch = heard(&mut notices, |n| {
+            n["method"] == "timeline.changed"
+                && item_with(&n["params"]["changes"], "lunch?").is_some()
+        })
+        .await;
+        let lunch = item_with(&lunch["changes"], "lunch?").unwrap();
+        let lunch_event = lunch["event"].as_str().unwrap().to_string();
+        let message = |event: &str| json!({ "account": anna, "room": room_id, "event": event });
+
+        // A reaction, mine.
+        let mut react = message(&lunch_event);
+        react["key"] = json!("👍");
+        call(&matrix, "react", react).await;
+        heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "lunch?").is_some_and(|it| {
+                it["reactions"][0]["key"] == "👍" && it["reactions"][0]["mine"] == true
+            })
+        })
+        .await;
+
+        // Sent, changed, then deleted.
+        let send = json!({ "account": anna, "room": room_id, "text": "noon" });
+        call(&matrix, "send", send).await;
+        let noon = heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "noon").is_some_and(|it| it["event"].is_string())
+        })
+        .await;
+        let noon_event = item_with(&noon["changes"], "noon").unwrap()["event"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let mut edit = message(&noon_event);
+        edit["text"] = json!("one");
+        call(&matrix, "edit", edit).await;
+        heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "one").is_some_and(|it| it["edited"] == true)
+        })
+        .await;
+        call(&matrix, "redact", message(&noon_event)).await;
+        heard(&mut notices, |n| {
+            n["params"]["changes"].as_array().is_some_and(|changes| {
+                changes.iter().any(|c| {
+                    c["item"]["event"] == noon_event.as_str() && c["item"]["kind"] == "deleted"
+                })
+            })
+        })
+        .await;
+
+        // A reply in lunch's thread: the thread has it, the room counts it.
+        let in_thread =
+            json!({ "account": anna, "room": room_id, "text": "at one", "thread": lunch_event });
+        call(&matrix, "send", in_thread).await;
+        heard(&mut notices, |n| {
+            n["params"]["thread"].is_null()
+                && item_with(&n["params"]["changes"], "lunch?").is_some_and(|it| it["replies"] == 1)
+        })
+        .await;
+        let thread = json!({ "account": anna, "room": room_id, "thread": lunch_event });
+        let opened = until(&matrix, "timeline", &thread, |t| {
+            t["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|it| it["text"] == "at one")
+        })
+        .await;
+        assert!(opened["items"].is_array());
+
+        writing_and_reading(&matrix, &mut notices, &bea_room, &room_id).await;
+        call(&matrix, "read", params).await;
+    });
+}
+
+/// Bea writing in the room shows; then Anna's message shows Bea read it.
+async fn writing_and_reading(
+    matrix: &Matrix,
+    notices: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    bea_room: &matrix_sdk::Room,
+    room_id: &str,
+) {
+    use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+    use matrix_sdk::ruma::events::receipt::ReceiptThread;
+
+    bea_room.typing_notice(true).await.unwrap();
+    let typing = heard(notices, |n| n["method"] == "typing.changed").await;
+    let who = typing["who"].as_array().unwrap();
+    assert!(
+        who.len() == 1 && who[0].as_str().unwrap().starts_with("bea"),
+        "{typing}"
+    );
+    let bye = json!({ "account": "@anna:localhost", "room": room_id, "text": "see you" });
+    call(matrix, "send", bye).await;
+    let said = heard(notices, |n| {
+        item_with(&n["params"]["changes"], "see you").is_some_and(|it| it["event"].is_string())
+    })
+    .await;
+    let latest: matrix_sdk::ruma::OwnedEventId =
+        item_with(&said["changes"], "see you").unwrap()["event"]
+            .as_str()
+            .unwrap()
+            .try_into()
+            .unwrap();
+    bea_room
+        .send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, latest)
+        .await
+        .unwrap();
+    heard(notices, |n| {
+        n["params"]["changes"].as_array().is_some_and(|changes| {
+            changes.iter().any(|c| {
+                c["item"]["read_by"]
+                    .as_array()
+                    .is_some_and(|by| by.iter().any(|p| p["id"] == "@bea:localhost"))
+            })
+        })
+    })
+    .await;
 }

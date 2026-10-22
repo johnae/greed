@@ -1,24 +1,35 @@
 # Chat
 
 Matrix and Mattermost rooms in Greed, in a session of their own. This is
-experimental: rooms, messages, replies and sending work; reactions,
-threads, files, encryption setup and the rest are still to come.
+experimental; what's there and what isn't is listed at the end.
 
 ```sh
 greed chat
 ```
 
 The page lists your rooms and channels, those that mention you first,
-then those with something unread, then the most recent. `enter` opens a
-room: its messages, kept up to date as they come, and a box under them.
+then those with something unread, then the most recent; a dot beside a
+direct message says whether the other person is around (Mattermost).
+`enter` opens a room: its messages, laid out as Markdown and kept up to
+date as they come, and a box under them. The room is marked read as you
+look at it, who's writing shows under the messages, and on Matrix "seen
+by" says who has read up to where.
 
 | Key | In a room |
 | --- | --- |
 | `enter` (writing) | send what's in the box, as Markdown |
 | `alt-enter` | a new line in the box |
 | `alt-r` | answer the message under the cursor |
+| `alt-t` | open its thread; what you send there goes in the thread |
+| `alt-k` | react to it, or take your reaction back |
+| `alt-e` | change it (your own); `enter` sends the change |
+| `alt-d` | delete it, after asking |
 | `alt-up` | fetch older messages |
-| `q`, `esc` | back to the list |
+| `q`, `esc` | stop answering or changing; else back to the room or the list |
+
+`space .` on a message offers the same, and copying what it says.
+A room shows each thread's first message with how many replies it has;
+the replies are in the thread.
 
 Outside the chat session, `:chat` opens the same list in a float.
 

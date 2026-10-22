@@ -9,6 +9,9 @@ use greed_chat::rpc::Failure;
 use crate::Mattermost;
 use crate::api::{Api, Channel, Member, Team, User};
 
+/// How many channel memberships come a page.
+const MEMBERS: usize = 200;
+
 impl Mattermost {
     /// The api and user id of account `id`.
     pub(crate) fn signed(&self, id: &str) -> Result<(Api, String), Failure> {
@@ -19,56 +22,66 @@ impl Mattermost {
             .ok_or_else(|| Failure::new(format!("no account {id}")))
     }
 
-    /// Account `id`'s teams, as spaces, and their channels.
+    /// Account `id`'s teams, as spaces, and all its channels, direct
+    /// messages too.
     pub(crate) async fn rooms(&self, id: &str) -> Result<Vec<Room>, Failure> {
         let (api, me) = self.signed(id)?;
         let failed = |e: crate::api::Error| Failure::new(format!("can't list channels: {e}"));
         let teams: Vec<Team> = api.get("api/v4/users/me/teams").await.map_err(failed)?;
-        let mut rooms = Vec::new();
-        let mut seen = HashSet::new();
-        for team in &teams {
-            rooms.push(Room {
+        let channels: Vec<Channel> = api
+            .get(&format!("api/v4/users/{me}/channels"))
+            .await
+            .map_err(failed)?;
+        let mut members: Vec<Member> = Vec::new();
+        for page in 0.. {
+            let more: Vec<Member> = api
+                .get(&format!(
+                    "api/v4/users/{me}/channel_members?page={page}&per_page={MEMBERS}"
+                ))
+                .await
+                .map_err(failed)?;
+            let last = more.len() < MEMBERS;
+            members.extend(more);
+            if last {
+                break;
+            }
+        }
+        let members: HashMap<&str, &Member> = members
+            .iter()
+            .map(|member| (member.channel_id.as_str(), member))
+            .collect();
+        let others: Vec<String> = channels
+            .iter()
+            .filter(|channel| channel.kind == "D")
+            .filter_map(|channel| other_in(channel, &me))
+            .collect();
+        self.people(id, &api, &others).await;
+        let statuses = statuses(&api, &others).await;
+        let mut rooms: Vec<Room> = teams
+            .iter()
+            .map(|team| Room {
                 id: team.id.clone(),
                 account: id.to_string(),
                 name: team.display_name.clone(),
                 kind: RoomKind::Space,
                 ..Room::default()
-            });
-            let channels: Vec<Channel> = api
-                .get(&format!("api/v4/users/me/teams/{}/channels", team.id))
-                .await
-                .map_err(failed)?;
-            let members: Vec<Member> = api
-                .get(&format!(
-                    "api/v4/users/me/teams/{}/channels/members",
-                    team.id
-                ))
-                .await
-                .map_err(failed)?;
-            let members: HashMap<&str, &Member> = members
-                .iter()
-                .map(|member| (member.channel_id.as_str(), member))
-                .collect();
-            // Direct and group channels belong to no team, and come with
-            // every team's.
-            let others: Vec<String> = channels
-                .iter()
-                .filter(|channel| channel.kind == "D")
-                .filter_map(|channel| other_in(channel, &me))
-                .collect();
-            self.people(id, &api, &others).await;
-            for channel in channels {
-                if !seen.insert(channel.id.clone()) {
-                    continue;
-                }
-                let member = members.get(channel.id.as_str()).copied();
-                rooms.push(self.room_of(id, &me, &channel, member));
-            }
+            })
+            .collect();
+        for channel in &channels {
+            let member = members.get(channel.id.as_str()).copied();
+            rooms.push(self.room_of(id, &me, channel, member, &statuses));
         }
         Ok(rooms)
     }
 
-    fn room_of(&self, account: &str, me: &str, channel: &Channel, member: Option<&Member>) -> Room {
+    fn room_of(
+        &self,
+        account: &str,
+        me: &str,
+        channel: &Channel,
+        member: Option<&Member>,
+        statuses: &HashMap<String, String>,
+    ) -> Room {
         let kind = match channel.kind.as_str() {
             "D" => RoomKind::Direct,
             "G" => RoomKind::Group,
@@ -90,6 +103,9 @@ impl Mattermost {
             mentions: member.map_or(0, |member| member.mention_count),
             muted: member.is_some_and(|member| member.notify_props["mark_unread"] == "mention"),
             active: Some(channel.last_post_at).filter(|at| *at > 0),
+            presence: other_in(channel, me)
+                .filter(|_| kind == RoomKind::Direct)
+                .and_then(|other| statuses.get(&other).cloned()),
             ..Room::default()
         }
     }
@@ -132,4 +148,24 @@ impl Mattermost {
 fn other_in(channel: &Channel, me: &str) -> Option<String> {
     let (a, b) = channel.name.split_once("__")?;
     Some(if a == me { b } else { a }.to_string())
+}
+
+/// Whether each of `users` is online, away, dnd or offline, by id; empty
+/// when the server won't say.
+async fn statuses(api: &Api, users: &[String]) -> HashMap<String, String> {
+    #[derive(serde::Deserialize)]
+    struct Status {
+        user_id: String,
+        status: String,
+    }
+    if users.is_empty() {
+        return HashMap::new();
+    }
+    let said: Vec<Status> = api
+        .post("api/v4/users/status/ids", &serde_json::json!(users))
+        .await
+        .unwrap_or_default();
+    said.into_iter()
+        .map(|status| (status.user_id, status.status))
+        .collect()
 }

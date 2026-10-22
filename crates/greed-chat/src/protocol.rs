@@ -5,16 +5,18 @@
 //!
 //! Requests every service answers: `hello`, `accounts`, `restore`,
 //! `login.methods`, `login.start`, `login.answer`, `login.cancel`, `logout`,
-//! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`.
-//! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
-//! `timeline.changed`, `login.step`.
+//! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`, `edit`,
+//! `redact`, `react`, `read`, `typing`. Notifications: `account.changed`,
+//! `account.secret`, `rooms.changed`, `timeline.changed`, `typing.changed`,
+//! `login.step`.
 //!
 //! Rooms: `rooms {account}` answers the account's rooms, and
 //! `rooms.changed {account}` says to ask again. A timeline: `timeline
-//! {account, room}` answers `{items}` and keeps it open, sending
-//! `timeline.changed {account, room, changes}` until `timeline.close`;
-//! `timeline.back` fetches older items into it, answering whether there are
-//! more.
+//! {account, room, thread?}` answers `{items}` and keeps it open, sending
+//! `timeline.changed {account, room, thread, changes}` until
+//! `timeline.close`; `timeline.back` fetches older items into it,
+//! answering whether there are more. While a room's timeline is open,
+//! `typing.changed {account, room, who}` names who's writing.
 //!
 //! Signing in: `login.start {server, method}` answers `{login, step}`, the
 //! first `Step`; `login.answer {login, values}` answers the next one, until
@@ -153,6 +155,10 @@ pub struct Room {
     pub encrypted: bool,
     /// When something last happened in it, in milliseconds since 1970.
     pub active: Option<i64>,
+    /// For a direct message: whether the other person is "online", "away",
+    /// "dnd" or "offline", where the service says.
+    #[serde(default)]
+    pub presence: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -203,6 +209,9 @@ pub struct Item {
     pub edited: bool,
     pub mine: bool,
     pub sending: Option<Sending>,
+    /// Who has read up to here, as far as the service says (Matrix).
+    #[serde(default)]
+    pub read_by: Vec<Person>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -320,11 +329,32 @@ pub struct AccountParams {
     pub account: String,
 }
 
-/// `timeline`, `timeline.back` and `timeline.close`'s parameters.
+/// `timeline`, `timeline.back`, `timeline.close`, `read` and `typing`'s
+/// parameters. With `thread`, by its first message's `event`, the timeline
+/// is that thread's; without, the room's, which shows each thread's first
+/// message with how many replies it has. `on` is for `typing`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomParams {
     pub account: String,
     pub room: String,
+    #[serde(default)]
+    pub thread: Option<String>,
+    #[serde(default)]
+    pub on: bool,
+}
+
+/// `edit`, `redact` and `react`'s parameters: the message by its `event`,
+/// and the new `text` (Markdown) or the reaction's `key` (an emoji, or a
+/// Mattermost emoji's name).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageParams {
+    pub account: String,
+    pub room: String,
+    pub event: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub key: String,
 }
 
 /// `send`'s parameters: `text` is Markdown; `reply_to` and `thread`
