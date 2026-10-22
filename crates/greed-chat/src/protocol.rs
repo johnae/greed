@@ -12,7 +12,8 @@
 //! Those that can ("commands" in `hello`) also answer `commands` and
 //! `press`: a `send` starting with `/` runs a command, and a message's
 //! `actions` are pressed or picked from. With "previews", `preview` says
-//! what a link leads to; others give a message's `preview` with it.
+//! what a link leads to; others give a message's `preview` with it. With
+//! "polls", `vote` answers a message's `poll`.
 //! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
 //! `timeline.changed`, `typing.changed`, `login.step`, `alert`.
 //!
@@ -254,6 +255,49 @@ pub struct Item {
     /// message (Mattermost).
     #[serde(default)]
     pub preview: Option<Preview>,
+    /// For a poll: its question, answers and votes.
+    #[serde(default)]
+    pub poll: Option<Poll>,
+    /// For a location: where.
+    #[serde(default)]
+    pub location: Option<Location>,
+}
+
+/// A poll: what it asks, and how it stands.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Poll {
+    pub question: String,
+    pub answers: Vec<PollAnswer>,
+    /// How many answers one may pick.
+    pub picks: u64,
+    /// Whether it's over, so no more votes count.
+    pub ended: bool,
+}
+
+/// One of a poll's answers: its votes, and whether one of them is yours.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PollAnswer {
+    pub id: String,
+    pub text: String,
+    pub votes: u64,
+    pub mine: bool,
+}
+
+/// Where a location message points.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Location {
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+/// `vote`'s parameters: the poll by its `event`, and the answers picked
+/// by their ids.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoteParams {
+    pub account: String,
+    pub room: String,
+    pub event: String,
+    pub answers: Vec<String>,
 }
 
 /// A button or menu in a message.

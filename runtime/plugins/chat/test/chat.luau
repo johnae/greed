@@ -121,6 +121,10 @@ local function fake(sent: { any }?): (method: string, params: any) -> ()
 			table.insert(asked, { method = "typing", params = params })
 			return nil
 		end,
+		vote = function(params: any)
+			table.insert(asked, { method = "vote", params = params })
+			return nil
+		end,
 		preview = function(params: any): any
 			table.insert(asked, { method = "preview", params = params })
 			return { url = params.url, title = "Plots of land" }
@@ -1065,4 +1069,95 @@ test("- leaves the room under the cursor after asking", function(t)
 	t:wait(50)
 	local left = calls("leave")
 	assert(#left == 1 and left[1].room == "!quiet:x", greed.json.encode(asked))
+end)
+
+-- Puts `item` (with what `extra` adds) into the fake's open Plans room.
+local function arrives(notify: (method: string, params: any) -> (), extra: { [string]: any })
+	local item: { [string]: any } = {
+		id = "9",
+		event = "$9",
+		kind = "message",
+		at = 1792660060000,
+		sender = { id = "@bea:x", name = "Bea" },
+		text = "",
+		replies = 0,
+		reactions = {},
+		edited = false,
+		mine = false,
+	}
+	for key, value in extra do
+		item[key] = value
+	end
+	notify("timeline.changed", {
+		account = "@anna:x",
+		room = "!plans:x",
+		changes = { { op = "insert", at = 3, item = item } },
+	})
+end
+
+test("a poll shows its answers and votes; enter votes for the one picked", function(t)
+	local notify = fake()
+	on_message(t, "$1")
+	arrives(notify, {
+		kind = "poll",
+		text = "What to plant?",
+		poll = {
+			question = "What to plant?",
+			answers = {
+				{ id = "t", text = "Tomatoes", votes = 2, mine = false },
+				{ id = "b", text = "Beans", votes = 1, mine = true },
+			},
+			picks = 1,
+			ended = false,
+		},
+	})
+	t:wait(50)
+	local buffer = greed.view():buffer()
+	local text = buffer:text()
+	assert(
+		string.find(text, "○ Tomatoes  2 votes\n  ● Beans  1 vote\n  enter votes", 1, true),
+		text
+	)
+	local r = chat.rooms.of(buffer)
+	assert(r, "the room is open")
+	local line = r.view:line_of(function(value: any): boolean
+		return value ~= nil and value.item.event == "$9"
+	end)
+	greed.view():set_cursor(buffer:line_start(line :: number))
+	t:keys("enter")
+	t:keys("enter") -- Tomatoes
+	t:wait(50)
+	local voted = calls("vote")
+	assert(
+		#voted == 1 and voted[1].event == "$9" and voted[1].answers[1] == "t",
+		greed.json.encode(asked)
+	)
+end)
+
+test("a location shows where, and opens on OpenStreetMap", function(t)
+	local notify = fake()
+	on_message(t, "$1")
+	arrives(notify, {
+		kind = "location",
+		text = "The allotment",
+		location = { latitude = 59.3293, longitude = 18.0686 },
+	})
+	t:wait(50)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "📍 59.3293, 18.0686  enter opens the map", 1, true), text)
+	assert(
+		chat.rooms.map_link({ latitude = 59.3293, longitude = 18.0686 })
+			== "https://www.openstreetmap.org/?mlat=59.3293&mlon=18.0686#map=16/59.3293/18.0686"
+	)
+end)
+
+test("recordings play with mpv, else ffplay, where one is installed", function()
+	local command = chat.rooms.player("/tmp/x.ogg")
+	if greed.which("mpv") then
+		assert(command and command[1] == "mpv" and command[#command] == "/tmp/x.ogg")
+	elseif greed.which("ffplay") then
+		assert(command and command[1] == "ffplay" and command[#command] == "/tmp/x.ogg")
+	else
+		assert(command == nil)
+	end
 end)

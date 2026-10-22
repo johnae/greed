@@ -5,18 +5,20 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use greed_chat::protocol::{
-    Change, Item, ItemKind, MessageParams, Person, Reaction, RoomParams, SendParams, Sending,
+    Change, Item, ItemKind, Location, MessageParams, Person, Poll, PollAnswer, Reaction,
+    RoomParams, SendParams, Sending, VoteParams,
 };
 use greed_chat::rpc::Failure;
 use matrix_sdk::event_handler::EventHandlerDropGuard;
 use matrix_sdk::room::edit::EditedContent;
 use matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType;
+use matrix_sdk::ruma::events::poll::unstable_response::UnstablePollResponseEventContent;
 use matrix_sdk::ruma::events::room::message::{MessageType, RoomMessageEventContent};
 use matrix_sdk::ruma::{EventId, OwnedUserId, RoomId, UserId};
 use matrix_sdk_ui::Timeline;
 use matrix_sdk_ui::eyeball_im::VectorDiff;
 use matrix_sdk_ui::timeline::{
-    EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, TimelineBuilder,
+    EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, PollResult, TimelineBuilder,
     TimelineDetails, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent,
     TimelineItemKind, TimelineReadReceiptTracking, VirtualTimelineItem, default_event_filter,
 };
@@ -283,6 +285,24 @@ impl Matrix {
             .map_err(|e| Failure::new(format!("can't react: {e}")))
     }
 
+    /// Votes in a poll for the answers picked, by their ids.
+    pub(crate) async fn vote(&self, vote: &VoteParams) -> Result<(), Failure> {
+        let params = RoomParams {
+            account: vote.account.clone(),
+            room: vote.room.clone(),
+            thread: None,
+            on: false,
+        };
+        let timeline = self.timeline(&params).await?;
+        let poll = EventId::parse(&vote.event).map_err(Failure::params)?;
+        let content = UnstablePollResponseEventContent::new(vote.answers.clone(), poll);
+        timeline
+            .send(content.into())
+            .await
+            .map(drop)
+            .map_err(|e| Failure::new(format!("can't vote: {e}")))
+    }
+
     /// Marks the room read up to its latest message.
     pub(crate) async fn read(&self, params: &RoomParams) -> Result<(), Failure> {
         let timeline = self.timeline(params).await?;
@@ -461,12 +481,18 @@ fn event_item(event: &EventTimelineItem, here: &Here) -> Item {
                     item.text = message.body().to_string();
                     item.edited = message.is_edited();
                     item.media = crate::media::media_of(message.msgtype());
+                    item.location = location_of(message.msgtype());
                 }
                 MsgLikeKind::Sticker(sticker) => {
                     item.kind = ItemKind::Sticker;
                     item.text.clone_from(&sticker.content().body);
                 }
-                MsgLikeKind::Poll(_) => item.kind = ItemKind::Poll,
+                MsgLikeKind::Poll(poll) => {
+                    let poll = poll_of(&poll.results(), &here.me);
+                    item.kind = ItemKind::Poll;
+                    item.text.clone_from(&poll.question);
+                    item.poll = Some(poll);
+                }
                 MsgLikeKind::Redacted => item.kind = ItemKind::Deleted,
                 MsgLikeKind::UnableToDecrypt(_) => item.kind = ItemKind::Unreadable,
                 MsgLikeKind::LiveLocation(_) => item.kind = ItemKind::Location,
@@ -571,4 +597,44 @@ pub(crate) fn kind_of(message: &MessageType) -> ItemKind {
         MessageType::Location(_) => ItemKind::Location,
         _ => ItemKind::Message,
     }
+}
+
+/// A poll as it stands, `me` being the one who asks.
+fn poll_of(results: &PollResult, me: &UserId) -> Poll {
+    let me = me.as_str();
+    let answers = results
+        .answers
+        .iter()
+        .map(|answer| {
+            let votes = results.votes.get(&answer.id);
+            PollAnswer {
+                id: answer.id.clone(),
+                text: answer.text.clone(),
+                votes: votes.map_or(0, |votes| votes.len() as u64),
+                mine: votes.is_some_and(|votes| votes.iter().any(|voter| voter == me)),
+            }
+        })
+        .collect();
+    Poll {
+        question: results.question.clone(),
+        answers,
+        picks: results.max_selections,
+        ended: results.end_time.is_some(),
+    }
+}
+
+/// Where a location message points, from its `geo:` URI.
+fn location_of(message: &MessageType) -> Option<Location> {
+    let MessageType::Location(location) = message else {
+        return None;
+    };
+    let place = location.geo_uri.strip_prefix("geo:")?;
+    let place = place.split(';').next()?;
+    let mut parts = place.split(',');
+    let latitude = parts.next()?.trim().parse().ok()?;
+    let longitude = parts.next()?.trim().parse().ok()?;
+    Some(Location {
+        latitude,
+        longitude,
+    })
 }

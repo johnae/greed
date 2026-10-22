@@ -429,6 +429,8 @@ impl Mattermost {
                 .map(|(api, _)| format!("{}/_redirect/pl/{}", api.address(), post.id)),
             actions: crate::commands::actions(post),
             preview: crate::media::preview(post),
+            poll: None,
+            location: None,
         }
     }
 }

@@ -1259,3 +1259,75 @@ fn joins_by_address_and_from_the_directory_leaves_and_answers_invites() {
         }
     });
 }
+
+#[test]
+fn shows_polls_and_votes_and_locations() {
+    use matrix_sdk::ruma::events::poll::unstable_start::{
+        NewUnstablePollStartEventContent, UnstablePollAnswer, UnstablePollAnswers,
+        UnstablePollStartContentBlock, UnstablePollStartEventContent,
+    };
+    use matrix_sdk::ruma::events::room::message::{
+        LocationMessageEventContent, MessageType, RoomMessageEventContent,
+    };
+
+    let Some(server) = Tuwunel::start("polls", None) else {
+        return;
+    };
+    run(async {
+        let (matrix, mut notices, bea, room_id) = plans(&server).await;
+        let anna = "@anna:localhost";
+        let params = json!({ "account": anna, "room": room_id });
+        until(&matrix, "timeline", &params, |_| true).await;
+        let bea_room = bea
+            .get_room(&matrix_sdk::ruma::RoomId::parse(&room_id).unwrap())
+            .unwrap();
+        let answers = UnstablePollAnswers::try_from(vec![
+            UnstablePollAnswer::new("t", "Tomatoes"),
+            UnstablePollAnswer::new("b", "Beans"),
+        ])
+        .unwrap();
+        let start =
+            UnstablePollStartEventContent::from(NewUnstablePollStartEventContent::plain_text(
+                "What to plant?",
+                UnstablePollStartContentBlock::new("What to plant?", answers),
+            ));
+        bea_room.send(start).await.unwrap();
+        let shown = heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "What to plant?").is_some()
+        })
+        .await;
+        let poll = item_with(&shown["changes"], "What to plant?").unwrap();
+        assert_eq!(poll["kind"], "poll", "{poll}");
+        assert_eq!(poll["poll"]["answers"][0]["text"], "Tomatoes");
+        assert_eq!(poll["poll"]["answers"][1]["id"], "b");
+        assert_eq!(poll["poll"]["picks"], 1);
+        assert_eq!(poll["poll"]["ended"], false);
+
+        let vote =
+            json!({ "account": anna, "room": room_id, "event": poll["event"], "answers": ["t"] });
+        call(&matrix, "vote", vote).await;
+        heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "What to plant?").is_some_and(|it| {
+                it["poll"]["answers"][0]["votes"] == 1 && it["poll"]["answers"][0]["mine"] == true
+            })
+        })
+        .await;
+
+        let place = LocationMessageEventContent::new(
+            "The allotment".into(),
+            "geo:59.3293,18.0686;u=10".into(),
+        );
+        bea_room
+            .send(RoomMessageEventContent::new(MessageType::Location(place)))
+            .await
+            .unwrap();
+        let shown = heard(&mut notices, |n| {
+            item_with(&n["params"]["changes"], "The allotment").is_some()
+        })
+        .await;
+        let place = item_with(&shown["changes"], "The allotment").unwrap();
+        assert_eq!(place["kind"], "location", "{place}");
+        assert_eq!(place["location"]["latitude"], 59.3293);
+        assert_eq!(place["location"]["longitude"], 18.0686);
+    });
+}

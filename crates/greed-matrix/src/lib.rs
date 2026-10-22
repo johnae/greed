@@ -326,7 +326,7 @@ impl Matrix {
                 protocol: PROTOCOL,
                 service: "matrix".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                can: ["threads", "encryption", "receipts", "previews"]
+                can: ["threads", "encryption", "receipts", "previews", "polls"]
                     .map(String::from)
                     .to_vec(),
             })),
@@ -373,6 +373,7 @@ impl Matrix {
                 .await
                 .map(|()| Value::Null),
             "react" => self.react(&rpc::parse(params)?).await.map(|()| Value::Null),
+            "vote" => self.vote(&rpc::parse(params)?).await.map(|()| Value::Null),
             "read" => self.read(&rpc::parse(params)?).await.map(|()| Value::Null),
             "typing" => self
                 .typing(&rpc::parse(params)?)

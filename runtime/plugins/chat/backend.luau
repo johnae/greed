@@ -83,12 +83,27 @@ export type Item = {
 	link: string?,
 	--- What its first link leads to, where the service gives it (Mattermost).
 	preview: Preview?,
+	--- For a poll: what it asks, and how it stands (Matrix).
+	poll: Poll?,
+	--- For a location: where.
+	location: Location?,
 	--- Buttons and menus an integration put in it (Mattermost).
 	actions: { Action }?,
 }
 
 --- What a link leads to, as the page says of itself.
 export type Preview = { url: string, title: string?, description: string?, site: string? }
+
+--- Where a location message points.
+export type Location = { latitude: number, longitude: number }
+
+--- A poll: its answers with their votes, and whether one is yours.
+export type Poll = {
+	question: string,
+	answers: { { id: string, text: string, votes: number, mine: boolean } },
+	picks: number,
+	ended: boolean,
+}
 
 --- A button, or with `options` a menu, in a message.
 export type Action = { id: string, name: string, options: { { text: string, value: string } }? }

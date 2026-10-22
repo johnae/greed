@@ -272,6 +272,32 @@ function M.preview_lines(preview: backend.Preview): { { core.UiSpan } }
 	return lines
 end
 
+--- The lines a poll shows as: each answer with its votes, yours marked,
+--- then whether it's over.
+function M.poll_lines(poll: backend.Poll): { { core.UiSpan } }
+	local lines = {}
+	for _, answer in poll.answers do
+		local votes = if answer.votes == 1 then "1 vote" else `{answer.votes} votes`
+		table.insert(lines, {
+			ui.span(
+				if answer.mine then "  ● " else "  ○ ",
+				if answer.mine then "function" else "comment"
+			),
+			ui.span(answer.text, nil),
+			ui.span(`  {votes}`, "comment"),
+		})
+	end
+	local how = if poll.ended then "  the poll is over" else "  enter votes"
+	table.insert(lines, { ui.span(how, "comment") })
+	return lines
+end
+
+--- Where a location opens: OpenStreetMap, at it.
+function M.map_link(location: backend.Location): string
+	local lat, lon = location.latitude, location.longitude
+	return `https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=16/{lat}/{lon}`
+end
+
 --- How an item reads in a room.
 function M.item_node(
 	item: backend.Item,
@@ -336,6 +362,18 @@ function M.item_node(
 		for _, line in M.preview_lines(preview) do
 			table.insert(parts, valued(ui.line(line), item, false))
 		end
+	end
+	local poll = item.poll
+	if poll then
+		for _, line in M.poll_lines(poll) do
+			table.insert(parts, valued(ui.line(line), item, false))
+		end
+	end
+	local location = item.location
+	if location then
+		local at = `📍 {location.latitude}, {location.longitude}`
+		local spans = { ui.span(at, "markdown.link"), ui.span("  enter opens the map", "comment") }
+		table.insert(parts, valued(ui.line(spans), item, false))
 	end
 	local notes: { core.UiSpan } = {}
 	for _, reaction in item.reactions do
@@ -896,9 +934,8 @@ greed.command({
 	end),
 })
 
---- Opens the file `item` carries: a picture or a PDF in Greed, the rest in
---- the program that opens it (a video or a recording in a player).
-function M.open_file(r: Open, item: backend.Item)
+-- Fetches the file `item` carries, then gives `done` its local path.
+local function fetch(r: Open, item: backend.Item, done: (path: string) -> ())
 	greed.echo("fetching it…")
 	greed.spawn(function()
 		local got, why = ask(r, "media.get", { event = item.event })
@@ -906,20 +943,101 @@ function M.open_file(r: Open, item: backend.Item)
 			greed.echo(`chat: {why}`)
 			return
 		end
+		done(got.path)
+	end)
+end
+
+--- Opens the file `item` carries: a picture or a PDF in Greed, the rest in
+--- the program that opens it (a video or a recording in a player).
+function M.open_file(r: Open, item: backend.Item)
+	fetch(r, item, function(path)
 		greed.echo("")
-		core.file.open(got.path)
+		core.file.open(path)
+	end)
+end
+
+--- Votes in `item`'s poll for the answer picked.
+function M.vote(r: Open, item: backend.Item)
+	local poll = item.poll
+	if poll == nil then
+		return
+	elseif poll.ended then
+		greed.echo("the poll is over")
+		return
+	end
+	local items = {}
+	for _, answer in poll.answers do
+		table.insert(items, { label = answer.text, value = answer.id })
+	end
+	picker.pick(poll.question, items, function(chosen)
+		greed.spawn(function()
+			local _, why = ask(r, "vote", { event = item.event, answers = { chosen.value } })
+			if why then
+				greed.echo(`chat: {why}`)
+			end
+		end)
+	end)
+end
+
+--- The command that plays the recording at `path` in the background, if
+--- a player is installed: mpv, else ffplay.
+function M.player(path: string): { string }?
+	if greed.which("mpv") then
+		return { "mpv", "--no-video", "--really-quiet", path }
+	elseif greed.which("ffplay") then
+		return { "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path }
+	end
+	return nil
+end
+
+-- The recording playing, by its message's event, and its player.
+local playing: { event: string?, child: greed.Child }? = nil
+
+--- Plays the recording `item` carries in the background (with mpv or
+--- ffplay), or opens it in your system's player where neither is there.
+--- Playing another stops the one before; the same one again stops it.
+function M.play(r: Open, item: backend.Item)
+	local was = playing
+	if was then
+		playing = nil
+		pcall(was.child.kill, was.child)
+		if was.event == item.event then
+			greed.echo("stopped")
+			return
+		end
+	end
+	fetch(r, item, function(path)
+		local command = M.player(path)
+		if command == nil then
+			greed.echo("")
+			core.file.open(path)
+			return
+		end
+		local child, failed = greed.vouch(greed.process.spawn, command, nil)
+		if child == nil then
+			greed.echo(`chat: can't play it: {failed}`)
+			return
+		end
+		playing = { event = item.event, child = child }
+		greed.echo("playing: enter on it again stops")
 	end)
 end
 
 greed.command({
 	name = "chat-enter",
-	doc = "In a room: open the file of the message under the cursor, press its buttons, or open its thread",
+	doc = "In a room: open the file of the message under the cursor (play a recording), vote in its poll, open its place on the map, press its buttons, or open its thread",
 	run = on_message(function(r, item, ctx)
 		if item.kind == "call" and item.link then
 			-- Calls happen in the service's own app; Greed shows them start.
 			core.file.open_link(item.link)
+		elseif item.media and item.kind == "audio" then
+			M.play(r, item)
 		elseif item.media then
 			M.open_file(r, item)
+		elseif item.poll then
+			M.vote(r, item)
+		elseif item.location then
+			core.file.open_link(M.map_link(item.location))
 		elseif item.actions and #item.actions > 0 then
 			M.press(r, item)
 		elseif item.replies > 0 and r.thread == nil then
@@ -1056,6 +1174,8 @@ local ACTIONS: {
 		media: boolean?,
 		--- Only for a message with buttons or menus.
 		actions: boolean?,
+		--- Only for a message it says yes for.
+		offers: ((item: backend.Item) -> boolean)?,
 		--- Only for a message with a link.
 		link: boolean?,
 		danger: boolean?,
@@ -1069,6 +1189,39 @@ local ACTIONS: {
 			media = true,
 			run = function(r, item)
 				M.open_file(r, item)
+			end,
+		},
+		{
+			name = "play",
+			doc = "Play the recording, or stop it",
+			offers = function(item)
+				return item.kind == "audio" and item.media ~= nil
+			end,
+			run = function(r, item)
+				M.play(r, item)
+			end,
+		},
+		{
+			name = "vote",
+			doc = "Vote in the poll",
+			offers = function(item)
+				return item.poll ~= nil and not item.poll.ended
+			end,
+			run = function(r, item)
+				M.vote(r, item)
+			end,
+		},
+		{
+			name = "map",
+			doc = "Open the place on OpenStreetMap",
+			offers = function(item)
+				return item.location ~= nil
+			end,
+			run = function(_r, item)
+				local location = item.location
+				if location then
+					core.file.open_link(M.map_link(location))
+				end
 			end,
 		},
 		{
@@ -1155,6 +1308,7 @@ for _, a in ACTIONS do
 				and (not a.media or item.media ~= nil)
 				and (not a.link or item.link ~= nil)
 				and (not a.actions or (item.actions ~= nil and #item.actions > 0))
+				and (a.offers == nil or a.offers(item))
 		end,
 		run = function(target: core.Target)
 			a.run(target.value.room, target.value.item, greed.view())

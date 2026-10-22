@@ -148,13 +148,14 @@ counts in the list.
 | Thing | What Greed does |
 | --- | --- |
 | Voice and video calls | Greed shows a call starting; `enter` on it opens it in the service's own app or web client to join. Greed doesn't do calls itself. |
-| Videos and recordings | Shown as files with their size; `enter` fetches one and opens it in your system's player. Videos with a small picture show it. Nothing plays inside Greed. |
+| Videos and recordings | Shown as files with their size. `enter` on a recording or voice message plays it in the background with `mpv` or `ffplay` where one is installed (again stops it), else opens it in your system's player; a video opens in your system's player. Videos with a small picture show it. |
 | Pictures and stickers | Drawn in the room where the window or terminal can show images (Greed's window, kitty); elsewhere a line with the name. `enter` opens the picture in Greed. |
 | Other files | `enter` fetches and opens it: a PDF or picture in Greed, the rest in the program your system opens it with. `:chat-attach PATH` sends one. |
 | Link previews | The page's site, title and a line of what it says, under the message, as the server fetched it: Mattermost where the server has link previews on, Matrix where the server allows them. None in encrypted Matrix rooms, so the server doesn't learn their links. `:set chat-previews false` turns them off. No pictures from the pages. |
 | Presence | Mattermost's dot beside a direct message. Matrix servers don't send it the way Greed syncs, so none there. |
 | Read receipts | "seen by" on Matrix. Mattermost has none to show. |
-| Polls, locations, live locations | Shown as what they are, without voting or a map. |
+| Polls | Matrix polls show their answers, votes and yours; `enter` votes for one (one answer a vote). Mattermost polls are made of buttons, which work as buttons. Making a poll isn't here. |
+| Locations | A place shows its coordinates; `enter` opens it on OpenStreetMap in the browser. A live location is named as one, without where it is. |
 | Mattermost Boards, Playbooks, and interactive dialogs a command or button opens | Not supported; open the message in the browser (`space .`) to use them. |
 | Spaces and teams | Listed with their rooms. A Matrix space's rooms you haven't joined aren't browsed; the server's directory and joining by address are (`+`). |
 | Discord, Slack and others | Not supported. |
