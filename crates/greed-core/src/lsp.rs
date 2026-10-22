@@ -39,9 +39,7 @@ pub struct ServerConfig {
     /// A running server keeps its starting settings until explicitly restarted.
     pub settings: Option<Value>,
     /// Passed unchanged as `initialize.initializationOptions`, when present.
-    pub initialization_options: Option<Value>,
-    /// Recursive object overlay over the editor's default client capabilities.
-    pub capabilities: Option<Value>,
+    pub init_options: Option<Value>,
 }
 
 impl ServerConfig {
@@ -661,19 +659,15 @@ impl Lsp {
             queued: Vec::new(),
             documents: HashMap::new(),
         };
-        let mut capabilities = client_capabilities();
-        if let Some(overlay) = config.capabilities {
-            overlay_json(&mut capabilities, overlay);
-        }
         let mut params = json!({
             "processId": std::process::id(),
             "rootUri": file_uri(&server.root),
             "rootPath": server.root,
             "workspaceFolders": server.workspace_folders(),
             "clientInfo": { "name": "greed" },
-            "capabilities": capabilities,
+            "capabilities": client_capabilities(),
         });
-        if let Some(options) = config.initialization_options {
+        if let Some(options) = config.init_options {
             params["initializationOptions"] = options;
         }
         server.initialize_id = server.connection.request("initialize", &params)?;
@@ -1090,22 +1084,6 @@ fn buffer_at<'a>(editor: &'a Editor, uri: &str) -> Option<&'a Buffer> {
     editor
         .buffers()
         .find(|b| b.path().is_some_and(|p| file_uri(p) == uri))
-}
-
-/// Objects merge recursively; arrays, scalars and null replace the old value.
-fn overlay_json(base: &mut Value, overlay: Value) {
-    match (base, overlay) {
-        (Value::Object(base), Value::Object(overlay)) => {
-            for (key, value) in overlay {
-                if let Some(base) = base.get_mut(&key) {
-                    overlay_json(base, value);
-                } else {
-                    base.insert(key, value);
-                }
-            }
-        }
-        (base, overlay) => *base = overlay,
-    }
 }
 
 /// What the editor tells servers it can do. Plugins build the features on

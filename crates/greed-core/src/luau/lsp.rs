@@ -267,8 +267,7 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 root_markers: strings("root_markers")?,
                 reads_only: spec.get::<Option<bool>>("reads_only")?.unwrap_or(false),
                 settings: json("settings")?,
-                initialization_options: json("initialization_options")?,
-                capabilities: json("capabilities")?,
+                init_options: json("init_options")?,
             };
             let state = &mut *state_mut(lua);
             state.owned.server(owner.clone(), config.clone());

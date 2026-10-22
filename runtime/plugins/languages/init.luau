@@ -4,7 +4,7 @@
 -- setting up; `:health` shows what's found and what's missing.
 --
 -- Change an entry from your config. Fields replace, except settings,
--- initialization_options and capabilities: their objects merge recursively.
+-- init_options: their objects merge recursively.
 --
 --     local languages = require("@languages")
 --     languages.set("python", { servers = { { "pylsp" } } })
@@ -44,8 +44,7 @@ local function apply_servers(name: string, language: Language)
 			root_markers = language.roots,
 			reads_only = language.reads_only,
 			settings = language.settings,
-			initialization_options = language.initialization_options,
-			capabilities = language.capabilities,
+			init_options = language.init_options,
 		})
 	else
 		greed.lsp.remove(name)
@@ -114,7 +113,7 @@ function M.set(name: string, changes: Language)
 	local language: Language = table.clone(languages[name] or {} :: Language)
 	for key, value in changes :: { [string]: any } do
 		local previous = (language :: { [string]: any })[key]
-		if key == "settings" or key == "initialization_options" or key == "capabilities" then
+		if key == "settings" or key == "init_options" then
 			(language :: { [string]: any })[key] = overlay(previous, value)
 		else
 			(language :: { [string]: any })[key] = copy(value)
@@ -125,8 +124,7 @@ function M.set(name: string, changes: Language)
 		or changes.roots ~= nil
 		or changes.reads_only ~= nil
 		or changes.settings ~= nil
-		or changes.initialization_options ~= nil
-		or changes.capabilities ~= nil
+		or changes.init_options ~= nil
 	then
 		greed.plugin.within(by, apply_servers, name, language)
 	end

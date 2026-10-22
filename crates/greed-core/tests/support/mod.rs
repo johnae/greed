@@ -499,8 +499,7 @@ pub fn rust_server() -> greed_core::lsp::ServerConfig {
         root_markers: vec!["Cargo.toml".into()],
         reads_only: false,
         settings: None,
-        initialization_options: None,
-        capabilities: None,
+        init_options: None,
     }
 }
 

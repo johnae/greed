@@ -152,21 +152,18 @@ fn language_configuration_overlays_preserve_defaults_and_forward_configuration_o
             servers = { { "sh" } },
             reads_only = true,
             settings = { server = { keep = true, change = 1, list = { 1, 2 } } },
-            initialization_options = { nested = { keep = true, change = 1 } },
-            capabilities = { experimental = { keep = true, change = 1 } },
+            init_options = { nested = { keep = true, change = 1 } },
         })
         local changes = {
             settings = { server = { change = 2, list = greed.json.array() } },
-            initialization_options = { nested = { change = 2 } },
-            capabilities = { experimental = { change = 2 } },
+            init_options = { nested = { change = 2 } },
         }
         languages.set("rust", changes)
         changes.settings.server.change = 99
         local rust = languages.get("rust")
         assert(rust.settings.server.keep and rust.settings.server.change == 2)
         assert(greed.json.encode(rust.settings.server.list) == "[]", "empty array replaces")
-        assert(rust.initialization_options.nested.keep)
-        assert(rust.capabilities.experimental.keep)
+        assert(rust.init_options.nested.keep and rust.init_options.nested.change == 2)
         rust.settings.server.change = 98
         assert(languages.get("rust").settings.server.change == 2, "get returns a copy")
     "#,
@@ -187,12 +184,6 @@ fn language_configuration_overlays_preserve_defaults_and_forward_configuration_o
         probe["initialize"]["initializationOptions"],
         json!({
             "nested": { "keep": true, "change": 2 },
-        })
-    );
-    assert_eq!(
-        probe["initialize"]["capabilities"]["experimental"],
-        json!({
-            "keep": true, "change": 2,
         })
     );
     assert_eq!(
@@ -224,8 +215,7 @@ fn unloading_a_server_override_restores_all_configuration_fields() {
         require("@greed").lsp.server({
             language = "rust", command = { "sh" },
             settings = { version = 1 },
-            initialization_options = { version = 1 },
-            capabilities = { experimental = { version = 1 } },
+            init_options = { version = 1 },
         })
     "#,
     )
@@ -236,8 +226,7 @@ fn unloading_a_server_override_restores_all_configuration_fields() {
         require("@greed").lsp.server({
             language = "rust", command = { "sh" },
             settings = { version = 2 },
-            initialization_options = { version = 2 },
-            capabilities = { experimental = { version = 2 } },
+            init_options = { version = 2 },
         })
     "#,
     )
@@ -247,10 +236,6 @@ fn unloading_a_server_override_restores_all_configuration_fields() {
     let probe = host_probe(&host);
     assert_eq!(
         probe["initialize"]["initializationOptions"],
-        json!({ "version": 1 })
-    );
-    assert_eq!(
-        probe["initialize"]["capabilities"]["experimental"],
         json!({ "version": 1 })
     );
     assert_eq!(probe["configurationChanges"], json!([{ "version": 1 }]));
@@ -267,15 +252,7 @@ fn configuration_initializes_pushes_and_answers_dot_paths_in_order() {
     let options = json!({ "features": { "experimental": true }, "values": [3, 4] });
     let mut config = support::rust_server();
     config.settings = Some(settings.clone());
-    config.initialization_options = Some(options.clone());
-    config.capabilities = Some(json!({
-        "textDocument": { "signatureHelp": { "signatureInformation": {
-            "documentationFormat": ["markdown"],
-            "activeParameterSupport": false,
-        } } },
-        "workspace": { "workspaceEdit": { "documentChanges": false } },
-        "experimental": { "custom": true },
-    }));
+    config.init_options = Some(options.clone());
     s.lsp.configure(config);
     assert!(s.lsp.sync(&s.editor).is_empty());
     let buffer = s.editor.buffers().next().unwrap().id();
@@ -287,18 +264,6 @@ fn configuration_initializes_pushes_and_answers_dot_paths_in_order() {
         json!(["utf-8", "utf-16"])
     );
     assert_eq!(capabilities["workspace"]["configuration"], true);
-    assert_eq!(
-        capabilities["workspace"]["workspaceEdit"]["documentChanges"],
-        false
-    );
-    let signature = &capabilities["textDocument"]["signatureHelp"]["signatureInformation"];
-    assert_eq!(signature["documentationFormat"], json!(["markdown"]));
-    assert_eq!(signature["activeParameterSupport"], false);
-    assert_eq!(
-        signature["parameterInformation"]["labelOffsetSupport"],
-        true
-    );
-    assert_eq!(capabilities["experimental"]["custom"], true);
     assert_eq!(
         s.probe(buffer)["settings"],
         json!([settings.clone(), settings.clone()])
@@ -394,15 +359,13 @@ fn configuration_changes_only_on_explicit_restart() {
     let mut s = setup("ok");
     let mut config = support::rust_server();
     config.settings = Some(json!({ "version": 1 }));
-    config.initialization_options = Some(json!({ "version": 1 }));
-    config.capabilities = Some(json!({ "experimental": { "version": 1 } }));
+    config.init_options = Some(json!({ "version": 1 }));
     s.lsp.configure(config.clone());
     s.lsp.sync(&s.editor);
     let buffer = s.editor.buffers().next().unwrap().id();
     let initial = s.probe(buffer);
     config.settings = Some(json!({ "version": 2 }));
-    config.initialization_options = Some(json!({ "version": 2 }));
-    config.capabilities = Some(json!({ "experimental": { "version": 2 } }));
+    config.init_options = Some(json!({ "version": 2 }));
     s.lsp.configure(config);
     s.lsp.sync(&s.editor);
     assert_eq!(s.starts(), 1);
@@ -422,10 +385,6 @@ fn configuration_changes_only_on_explicit_restart() {
     assert_eq!(
         restarted["initialize"]["initializationOptions"],
         json!({ "version": 2 })
-    );
-    assert_eq!(
-        restarted["initialize"]["capabilities"]["experimental"]["version"],
-        2
     );
     assert_eq!(restarted["configurationChanges"], json!([{ "version": 2 }]));
     assert_eq!(
@@ -918,8 +877,7 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
         root_markers: Vec::new(),
         reads_only: false,
         settings: None,
-        initialization_options: None,
-        capabilities: None,
+        init_options: None,
     };
     assert_eq!(
         config.installed_command(),
@@ -935,8 +893,7 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
         root_markers: Vec::new(),
         reads_only: false,
         settings: None,
-        initialization_options: None,
-        capabilities: None,
+        init_options: None,
     });
     assert!(
         lsp.sync(&editor).is_empty(),

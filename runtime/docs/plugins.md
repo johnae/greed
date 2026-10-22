@@ -19,16 +19,14 @@ also how a plugin an agent wrote is tried before you approve it.
 
 ## Language server configuration
 
-`greed.lsp.server` accepts `settings`, `initialization_options`, and
-`capabilities` in addition to its command and root markers. Settings are
+`greed.lsp.server` accepts `settings` and `init_options`
+in addition to its command and root markers. Settings are
 sent once after initialization through `workspace/didChangeConfiguration`
 and returned for `workspace/configuration` requests. A section such as
 `rust-analyzer.cargo.targetDir` selects nested object keys; a missing
 section returns the whole settings object, and an unknown key returns null.
 Each requested item receives an answer in order, regardless of its scope URI.
 Initialization options go unchanged to `initialize.initializationOptions`.
-Capabilities recursively overlay Greed's native client capabilities, so
-unmentioned capabilities remain available.
 
 The bundled `@languages` plugin forwards these fields from language entries:
 

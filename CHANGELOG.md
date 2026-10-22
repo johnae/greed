@@ -7,7 +7,7 @@ the repository's history.
 
 ### New
 
-- lsp: configure server settings, initialization options and client capability overlays; language configuration objects merge recursively and running servers adopt changes on restart.
+- lsp: configure server settings and `init_options`; language configuration objects merge recursively and running servers adopt changes on restart.
 
 ## 0.3.0 - 2026-10-22
 

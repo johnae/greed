@@ -19,9 +19,7 @@ export type Language = {
 	--- Settings pushed after initialization and answered through workspace/configuration.
 	settings: { [string]: any }?,
 	--- Options passed to initialize, separate from settings.
-	initialization_options: any?,
-	--- Recursive overlay over Greed's client capabilities, applied on restart.
-	capabilities: { [string]: any }?,
+	init_options: any?,
 	--- What starts a line comment.
 	comment: string?,
 	--- The brackets and quotes typed in pairs, closers by their openers;

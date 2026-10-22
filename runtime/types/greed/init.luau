@@ -1502,8 +1502,8 @@ export type Lsp = {
 	--- A server runs in the topmost folder with one of `root_markers` inside
 	--- the file's project, or the project's root without one. With
 	--- `reads_only`, the server only reads the project's files, never running its code, so it starts in a project nobody trusted (see `trust`).
-	--- `settings` are pushed after initialization and answer workspace/configuration (including dotted sections). `initialization_options` go unchanged to initialize; `capabilities` recursively overlay native client capabilities. Running servers keep their configuration until restart.
-	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean?, settings: { [string]: any }?, initialization_options: any?, capabilities: { [string]: any }? }) -> (),
+	--- `settings` are pushed after initialization and answer workspace/configuration, including dotted sections. `init_options` go unchanged to initialize. Running servers keep their configuration until restart.
+	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean?, settings: { [string]: any }?, init_options: any? }) -> (),
 	--- Stops starting a server for a language; one running keeps running.
 	remove: (language: string) -> (),
 	--- Stops the servers running for `language` (every language without one) and starts them again, as after they got stuck. Returns how many were running. Needs "proc".
