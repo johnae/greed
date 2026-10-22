@@ -146,19 +146,22 @@ local function fake(sent: { any }?): (method: string, params: any) -> ()
 	return notify
 end
 
-test("the list shows each account's rooms, those with mentions and unread first", function(t)
-	fake()
-	t:buffer("|x")
-	t:run("chat")
-	t:wait(50)
-	local text = greed.view():buffer():text()
-	assert(string.find(text, "Anna", 1, true), text)
-	local plans = string.find(text, "Plans", 1, true)
-	local quiet = string.find(text, "Quiet", 1, true)
-	assert(plans and quiet and plans < quiet, text)
-	assert(string.find(text, "@1", 1, true), "its mentions: " .. text)
-	assert(not string.find(text, "Crew", 1, true), "spaces aren't rooms to open")
-end)
+test(
+	"the list shows each account's rooms, those with mentions and unread first, then spaces",
+	function(t)
+		fake()
+		t:buffer("|x")
+		t:run("chat")
+		t:wait(50)
+		local text = greed.view():buffer():text()
+		assert(string.find(text, "Anna", 1, true), text)
+		local plans = string.find(text, "Plans", 1, true)
+		local quiet = string.find(text, "Quiet", 1, true)
+		assert(plans and quiet and plans < quiet, text)
+		local crew = string.find(text, "◆  Crew", 1, true)
+		assert(crew and crew > quiet, "spaces come after the rooms in none: " .. text)
+	end
+)
 
 test("enter opens a room: its messages, kept up to date, and a box that sends", function(t)
 	local sent = {}
@@ -1171,3 +1174,112 @@ test("recordings play with mpv, else ffplay, where one is installed", function()
 		assert(command == nil)
 	end
 end)
+
+-- A Matrix service with the space Allotments, holding Beds (joined, so
+-- listed under it) and Paths (not joined), and a room in no space.
+local function allotments(): (method: string, params: any) -> ()
+	table.clear(asked)
+	backend.reset()
+	local function room(fields: { [string]: any }): { [string]: any }
+		local made: { [string]: any } = {
+			account = "@anna:x",
+			kind = "room",
+			unread = 0,
+			mentions = 0,
+			favourite = false,
+			muted = false,
+			encrypted = false,
+		}
+		for key, value in fields do
+			made[key] = value
+		end
+		return made
+	end
+	local notify = backend.use("matrix", {
+		rooms = function(): any
+			return {
+				room({ id = "!kitchen:x", name = "Kitchen" }),
+				room({ id = "!allot:x", name = "Allotments", kind = "space" }),
+				room({ id = "!beds:x", name = "Beds", parent = "!allot:x" }),
+			}
+		end,
+		space = function(params: any): any
+			table.insert(asked, { method = "space", params = params })
+			return {
+				{ id = "!beds:x", name = "Beds", members = 4, joined = true, via = {} },
+				{
+					id = "!paths:x",
+					name = "Paths",
+					topic = "Gravel",
+					members = 2,
+					joined = false,
+					via = { "far.example" },
+				},
+			}
+		end,
+		join = function(params: any): any
+			table.insert(asked, { method = "join", params = params })
+			return { room = params.room }
+		end,
+		timeline = function(): any
+			return { items = {} }
+		end,
+		read = function()
+			return nil
+		end,
+		["timeline.close"] = function()
+			return nil
+		end,
+	})
+	notify("account.changed", {
+		id = "@anna:x",
+		server = "https://x",
+		name = "Anna",
+		state = { state = "ready" },
+	})
+	return notify
+end
+
+test("rooms in a space are listed under it, after the rooms in none", function(t)
+	allotments()
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	local text = greed.view():buffer():text()
+	local kitchen = string.find(text, "#  Kitchen", 1, true)
+	local space = string.find(text, "◆  Allotments", 1, true)
+	local beds = string.find(text, "#    Beds", 1, true)
+	assert(kitchen and space and beds and kitchen < space and space < beds, text)
+end)
+
+test(
+	"enter on a space offers its rooms; one you're not in is joined through its servers",
+	function(t)
+		allotments()
+		t:buffer("|x")
+		t:run("chat")
+		t:wait(50)
+		local buffer = greed.view():buffer()
+		local line = string.find(buffer:text(), "◆  Allotments", 1, true)
+		assert(line, "the space is listed")
+		greed.view():set_cursor(line - 1)
+		t:keys("enter")
+		t:wait(50)
+		local listed = calls("space")
+		assert(#listed == 1 and listed[1].room == "!allot:x", greed.json.encode(asked))
+		t:keys("down")
+		t:keys("enter") -- Paths, not joined
+		t:wait(100)
+		local joined = calls("join")
+		assert(
+			#joined == 1 and joined[1].room == "!paths:x" and joined[1].via[1] == "far.example",
+			greed.json.encode(asked)
+		)
+		local r = chat.rooms.of(greed.view():buffer())
+		assert(r and r.room == "!paths:x", "Paths opens")
+		assert(
+			chat.join.held_label({ id = "!b", name = "Beds", members = 4, joined = true })
+				== "✓ Beds · 4 members"
+		)
+	end
+)

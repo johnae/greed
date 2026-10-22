@@ -1,11 +1,12 @@
 -- Chat: Matrix and Mattermost in Greed. In the chat session (`greed chat`)
 -- the page lists your rooms and channels, those with something unread
--- first; elsewhere `:chat` opens the same list in a float. `enter` opens a
--- room: its messages, kept up to date, and a box under them where `enter`
--- sends what's written (as Markdown) and `alt-enter` starts a new line.
--- `:chat-login` signs in to a server, by password or through the browser;
--- `:chat-logout` signs out. The services run as programs of their own
--- (backend.luau).
+-- first, then each space (or team) with its rooms under it; elsewhere
+-- `:chat` opens the same list in a float. `enter` opens a room: its
+-- messages, kept up to date, and a box under them where `enter` sends
+-- what's written (as Markdown) and `alt-enter` starts a new line; on a
+-- space it offers the rooms it holds. `:chat-login` signs in to a server,
+-- by password or through the browser; `:chat-logout` signs out. The
+-- services run as programs of their own (backend.luau).
 
 local greed = require("@greed")
 local core = require("@core")
@@ -47,6 +48,8 @@ function M.marker(room: backend.Room): string
 		return "@@"
 	elseif room.kind == "invite" then
 		return "+"
+	elseif room.kind == "space" then
+		return "◆"
 	end
 	return "#"
 end
@@ -69,7 +72,7 @@ function M.room(key: string, shown: backend.Room, window: greed.View?)
 	room.open(key, shown.id, shown.name, nil, window)
 end
 
---- The rooms to list, unread and recent first; spaces aren't listed.
+--- The rooms to list, unread and recent first; spaces are `grouped`'s.
 function M.sorted(rooms: { backend.Room }): { backend.Room }
 	local out: { backend.Room } = {}
 	for _, room in rooms do
@@ -90,6 +93,56 @@ function M.sorted(rooms: { backend.Room }): { backend.Room }
 		return a.name < b.name
 	end)
 	return out
+end
+
+--- A space (or team) with the rooms of yours in it, as the list shows it;
+--- the first group, with no space, has the rooms in none.
+export type Group = { space: backend.Room?, rooms: { backend.Room } }
+
+--- `rooms` grouped by the space they're in: those in none first, then
+--- each space by name, each group's rooms as `sorted` orders them.
+function M.grouped(rooms: { backend.Room }): { Group }
+	local spaces: { backend.Room } = {}
+	local by: { [string]: Group } = {}
+	for _, one in rooms do
+		if one.kind == "space" then
+			table.insert(spaces, one)
+			by[one.id] = { space = one, rooms = {} }
+		end
+	end
+	table.sort(spaces, function(a: backend.Room, b: backend.Room): boolean
+		return a.name < b.name
+	end)
+	local loose: Group = { space = nil, rooms = {} }
+	for _, one in M.sorted(rooms) do
+		local group = if one.parent then by[one.parent] else nil
+		table.insert((group or loose).rooms, one)
+	end
+	local out = { loose }
+	for _, space in spaces do
+		table.insert(out, by[space.id])
+	end
+	return out
+end
+
+-- A room's row in the list, its name indented under a space's.
+local function room_row(key: string, one: backend.Room, under: boolean): core.UiGridRow
+	local name = if under then `  {one.name}` else one.name
+	local strong = one.unread > 0 or one.kind == "space"
+	return {
+		cells = {
+			{
+				ui.span(M.marker(one), "comment"),
+				ui.span(M.presence(one.presence)),
+			},
+			{ ui.span(name, if strong then "keyword" else nil) },
+			{
+				ui.span(if one.mentions > 0 then `@{one.mentions}` else "", "diagnostic.warning"),
+				ui.span(if one.unread > 0 then ` {one.unread}` else "", "function"),
+			},
+		},
+		value = { account = key, room = one },
+	}
 end
 
 local function render_list(o: List): core.UiNode
@@ -125,25 +178,15 @@ local function render_list(o: List): core.UiNode
 			table.insert(parts, ui.text(unverified, "diagnostic.warning"))
 		end
 		local rows: { core.UiGridRow } = {}
-		for _, room in M.sorted(o.rooms[key] or {}) do
-			local value = { account = key, room = room }
-			table.insert(rows, {
-				cells = {
-					{
-						ui.span(M.marker(room), "comment"),
-						ui.span(M.presence(room.presence)),
-					},
-					{ ui.span(room.name, if room.unread > 0 then "keyword" else nil) },
-					{
-						ui.span(
-							if room.mentions > 0 then `@{room.mentions}` else "",
-							"diagnostic.warning"
-						),
-						ui.span(if room.unread > 0 then ` {room.unread}` else "", "function"),
-					},
-				},
-				value = value,
-			})
+		local rooms: { backend.Room } = o.rooms[key] or {}
+		for _, group in M.grouped(rooms) do
+			local space = group.space
+			if space then
+				table.insert(rows, room_row(key, space, false))
+			end
+			for _, one in group.rooms do
+				table.insert(rows, room_row(key, one, space ~= nil))
+			end
 		end
 		table.insert(parts, ui.grid(rows))
 		table.insert(parts, ui.gap())
@@ -245,7 +288,7 @@ greed.command({
 
 greed.command({
 	name = "chat-open",
-	doc = "In the list of rooms: open the room under the cursor, or answer its invite",
+	doc = "In the list of rooms: open the room under the cursor, answer its invite, or offer a space's rooms",
 	run = function(ctx)
 		local o = list
 		if o == nil or o.buffer ~= ctx.buffer then
@@ -256,6 +299,8 @@ greed.command({
 			return
 		elseif value.room.kind == "invite" then
 			greed.spawn(join.answer, value.account, value.room.id, value.room.name, ctx.view)
+		elseif value.room.kind == "space" then
+			greed.spawn(join.browse, value.account, value.room.id, value.room.name, ctx.view)
 		else
 			M.room(value.account, value.room, ctx.view)
 		end

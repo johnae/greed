@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use greed_chat::protocol::{
-    AccountState, DirectoryParams, Listed, Person, Room, RoomKind, RoomParams,
+    AccountState, DirectoryParams, JoinParams, Listed, Person, Room, RoomKind, RoomParams,
 };
 use greed_chat::rpc::Failure;
 use greed_chat::why;
@@ -13,7 +13,8 @@ use matrix_sdk::ruma::UserId;
 use matrix_sdk::ruma::api::client::directory::get_public_rooms_filtered;
 use matrix_sdk::ruma::api::client::membership::join_room_by_id_or_alias;
 use matrix_sdk::ruma::directory::Filter;
-use matrix_sdk::ruma::{RoomId, RoomOrAliasId, UInt};
+use matrix_sdk::ruma::room::RoomType;
+use matrix_sdk::ruma::{OwnedServerName, RoomId, RoomOrAliasId, UInt};
 use matrix_sdk::{Client, RoomState};
 use matrix_sdk_ui::sync_service::{State, SyncService};
 use serde_json::{Value, json};
@@ -93,7 +94,11 @@ impl Matrix {
 
     /// The rooms of account `id`, invites included.
     pub(crate) async fn rooms(&self, id: &str) -> Option<Vec<Room>> {
-        let client = self.accounts.borrow().get(id)?.client.clone();
+        let (client, spaces) = {
+            let accounts = self.accounts.borrow();
+            let signed = accounts.get(id)?;
+            (signed.client.clone(), signed.spaces.clone())
+        };
         let mut rooms = Vec::new();
         for room in client.rooms() {
             let kind = match room.state() {
@@ -101,22 +106,38 @@ impl Matrix {
                 RoomState::Invited => RoomKind::Invite,
                 _ => continue,
             };
-            rooms.push(room_of(id, &room, kind).await);
+            let mut shown = room_of(id, &room, kind).await;
+            if let Some(spaces) = &spaces {
+                // Listed under the first space of yours it's in.
+                shown.parent = spaces
+                    .joined_parent_ids_of_child(room.room_id())
+                    .await
+                    .first()
+                    .map(ToString::to_string);
+            }
+            rooms.push(shown);
         }
         Some(rooms)
     }
 
-    /// Joins a room by its id or address (`#garden:example.org`), or the
+    /// Joins a room by its id or address (`#garden:example.org`), through
+    /// the servers in `via` where it's on another, or the
     /// one you're asked to: `{room}`, its id.
-    pub(crate) async fn join(&self, params: &RoomParams) -> Result<Value, Failure> {
+    pub(crate) async fn join(&self, params: &JoinParams) -> Result<Value, Failure> {
         let client = self.client_of(&params.account)?;
         let target = RoomOrAliasId::parse(params.room.trim())
             .map_err(|_| Failure::new(format!("{} isn't a room's id or address", params.room)))?;
         let failed = |e: &dyn std::error::Error| Failure::new(format!("can't join it: {}", why(e)));
+        let mut request = join_room_by_id_or_alias::v3::Request::new(target);
+        request.via = params
+            .via
+            .iter()
+            .filter_map(|server| OwnedServerName::try_from(server.as_str()).ok())
+            .collect();
         // Sent ourselves to give it longer than the usual request timeout:
         // joining a room on another server can take minutes.
         let joined = client
-            .send(join_room_by_id_or_alias::v3::Request::new(target))
+            .send(request)
             .with_request_config(RequestConfig::new().timeout(JOINING))
             .await
             .map_err(|e| failed(&e))?;
@@ -174,6 +195,8 @@ impl Matrix {
                     topic: room.topic,
                     members: Some(u64::from(room.num_joined_members)),
                     address,
+                    space: room.room_type == Some(RoomType::Space),
+                    ..Listed::default()
                 }
             })
             .collect())

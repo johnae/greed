@@ -999,6 +999,18 @@ fn joins_and_leaves_channels_from_the_directory() {
         assert_eq!(found["topic"], "Beds and tomatoes");
         assert_eq!(found["address"], "Crew");
 
+        // The team lists all its public channels, those Anna is in marked.
+        let team_room = json!({ "account": account, "room": team });
+        let in_team = call(&service, "space", team_room.clone()).await;
+        assert_eq!(in_list(&in_team).unwrap()["joined"], false, "{in_team}");
+        let plans = in_team
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["name"] == "Plans")
+            .cloned();
+        assert_eq!(plans.unwrap()["joined"], true, "{in_team}");
+
         let joined = call(
             &service,
             "join",
@@ -1007,6 +1019,8 @@ fn joins_and_leaves_channels_from_the_directory() {
         .await;
         assert_eq!(joined["room"], garden.as_str());
         let listed = call(&service, "directory", json!({ "account": account })).await;
+        let in_team = call(&service, "space", team_room).await;
+        assert_eq!(in_list(&in_team).unwrap()["joined"], true, "{in_team}");
         assert!(
             in_list(&listed).is_none(),
             "joined, it isn't listed: {listed}"

@@ -1,8 +1,10 @@
 -- Joining and leaving rooms. `:chat-join` (`+` in the list) offers the
 -- rooms you could join, the server's directory on Matrix and your teams'
--- public channels on Mattermost, or joining one by its address or id. An
--- invite is answered when it's opened; `:chat-leave` (`-` in the list)
--- leaves a room after asking.
+-- public channels on Mattermost, or joining one by its address or id.
+-- `enter` on a space (or team) in the list offers the rooms it holds: one
+-- you're in opens, another is joined, a space inside it opens the same
+-- way. An invite is answered when it's opened; `:chat-leave` (`-` in the
+-- list) leaves a room after asking.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -12,13 +14,16 @@ local room = require("./room")
 
 local M = {}
 
---- A room `directory` lists.
+--- A room `directory` or `space` lists.
 export type Listed = {
 	id: string,
 	name: string,
 	topic: string?,
 	members: number?,
 	address: string?,
+	joined: boolean?,
+	space: boolean?,
+	via: { string }?,
 }
 
 --- How a room you could join reads in the picker.
@@ -36,18 +41,60 @@ function M.label(listed: Listed): string
 	return table.concat(parts, " · ")
 end
 
---- Joins `target` (an id or an address) in account `key`, and opens it in
---- `window` as `name`. Waits, so it runs in a coroutine.
-function M.join(key: string, target: string, name: string, window: greed.View)
+--- Joins `target` (an id or an address) in account `key`, through the
+--- servers in `via` where it's on another, and opens it in `window` as
+--- `name`. Waits, so it runs in a coroutine.
+function M.join(key: string, target: string, name: string, window: greed.View, via: { string }?)
 	-- A room on another server can take its server a minute or more.
 	greed.echo(`joining {name}…`)
-	local joined, why = accounts.ask(key, "join", { room = target })
+	local joined, why = accounts.ask(key, "join", { room = target, via = via })
 	if joined == nil then
 		greed.echo(`chat: {why}`)
 		return
 	end
 	greed.echo("")
 	room.open(key, joined.room, name, nil, window)
+end
+
+--- How a room a space holds reads in the picker: ✓ before one you're in,
+--- ◆ before a space.
+function M.held_label(listed: Listed): string
+	local mark = if listed.space then "◆ " elseif listed.joined then "✓ " else "  "
+	return mark .. M.label(listed)
+end
+
+--- Offers the rooms space `id` (`name`) of account `key` holds, in
+--- `window`: one you're in opens, another is joined, a space opens the
+--- same way. Waits, so it runs in a coroutine.
+function M.browse(key: string, id: string, name: string, window: greed.View)
+	greed.echo(`listing {name}…`)
+	local held, why = accounts.ask(key, "space", { room = id })
+	if held == nil then
+		greed.echo(`chat: {why}`)
+		return
+	end
+	greed.echo("")
+	local rooms: { Listed } = held
+	if #rooms == 0 then
+		greed.echo(`{name} holds no rooms you can see`)
+		return
+	end
+	local items = {}
+	for _, one in rooms do
+		table.insert(items, { label = M.held_label(one), value = one })
+	end
+	picker.pick(name, items, function(chosen)
+		local one: Listed = chosen.value
+		greed.spawn(function()
+			if one.space then
+				M.browse(key, one.id, one.name, window)
+			elseif one.joined then
+				room.open(key, one.id, one.name, nil, window)
+			else
+				M.join(key, one.id, one.name, window, one.via)
+			end
+		end)
+	end)
 end
 
 --- Leaves room `id` (`name`) of account `key` after asking, or says no to

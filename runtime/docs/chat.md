@@ -10,6 +10,8 @@ greed chat
 The page lists your rooms and channels, those that mention you first,
 then those with something unread, then the most recent; a dot beside a
 direct message says whether the other person is around (Mattermost).
+After them come your Matrix spaces and Mattermost teams (`◆`), each with
+your rooms in it under it.
 `enter` opens a room: its messages, laid out as Markdown and kept up to
 date as they come, and a box under them. The room is marked read as you
 look at it, who's writing shows under the messages, and on Matrix "seen
@@ -105,6 +107,14 @@ Matrix the rooms your server lists publicly, on Mattermost your teams'
 public channels you aren't in. Or pick "By its address or id" and type one,
 like `#garden:example.org`. The room opens once you've joined.
 
+A Matrix space is a list of rooms rather than a room to talk in. Join one
+like any room (`+`, `#space:nixos.org`), and it shows in the list with
+`◆`. `enter` on it offers the rooms it holds, `✓` before those you're in:
+pick one to open it or join it, or a space inside it (`◆`) to see that
+one's. Rooms on another server are joined through the servers the space
+names, and joining one there can take a minute. A Mattermost team works
+the same way: `enter` on it offers its public channels.
+
 An invite shows in the list with `+` before it; `enter` on it asks: `y`
 joins, `n` says no. `-` in the list (or `:chat-leave` in a room) leaves a
 room after asking.
@@ -160,7 +170,6 @@ counts in the list.
 | Polls | Matrix polls show their answers, votes and yours; `enter` votes for one (one answer a vote). Mattermost polls are made of buttons, which work as buttons. Making a poll isn't here. |
 | Locations | A place shows its coordinates; `enter` opens it on OpenStreetMap in the browser. A live location is named as one, without where it is. |
 | Mattermost Boards, Playbooks, and interactive dialogs a command or button opens | Not supported; open the message in the browser (`space .`) to use them. |
-| Spaces and teams | Listed with their rooms. A Matrix space's rooms you haven't joined aren't browsed; the server's directory and joining by address are (`+`). |
 | Discord, Slack and others | Not supported. |
 
 ## The programs

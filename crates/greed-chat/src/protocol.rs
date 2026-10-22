@@ -8,7 +8,8 @@
 //! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`, `edit`,
 //! `redact`, `react`, `read`, `typing`, `media.get`, `upload`, `search`,
 //! `join` (a room by its id or address, or an invite), `leave` (or decline
-//! an invite) and `directory` (rooms you could join).
+//! an invite), `directory` (rooms you could join) and `space` (the rooms
+//! of a space or team, `{account, room}`).
 //! Those that can ("commands" in `hello`) also answer `commands` and
 //! `press`: a `send` starting with `/` runs a command, and a message's
 //! `actions` are pressed or picked from. With "previews", `preview` says
@@ -548,7 +549,7 @@ pub struct MessageParams {
     pub key: String,
 }
 
-/// A room `directory` lists, one you can join.
+/// A room `directory` or `space` lists.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Listed {
     /// What `join` takes: its id.
@@ -560,6 +561,25 @@ pub struct Listed {
     /// Its address, where it has one (`#garden:example.org`), or the team
     /// it's in (Mattermost).
     pub address: Option<String>,
+    /// Whether you're in it already.
+    #[serde(default)]
+    pub joined: bool,
+    /// Whether it's a space (or team) of its own, listed with `space`.
+    #[serde(default)]
+    pub space: bool,
+    /// The servers to join it through, for `join` (Matrix).
+    #[serde(default)]
+    pub via: Vec<String>,
+}
+
+/// `join`'s parameters: the room by its id or address, and the servers to
+/// join it through where it's on another (from `space`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JoinParams {
+    pub account: String,
+    pub room: String,
+    #[serde(default)]
+    pub via: Vec<String>,
 }
 
 /// `directory`'s parameters: the words its rooms' names or topics have.

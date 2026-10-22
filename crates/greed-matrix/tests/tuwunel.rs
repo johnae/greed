@@ -1339,3 +1339,113 @@ fn shows_polls_and_votes_and_locations() {
         assert_eq!(place["location"]["longitude"], 18.0686);
     });
 }
+
+#[test]
+fn lists_a_spaces_rooms_joins_one_and_lists_it_under_the_space() {
+    use matrix_sdk::ruma::api::client::room::create_room;
+    use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+    use matrix_sdk::ruma::room::RoomType;
+    use matrix_sdk::ruma::serde::Raw;
+
+    let Some(server) = Tuwunel::start("spaces", None) else {
+        return;
+    };
+    run(async {
+        server.register("anna", "secret").await;
+        server.register("bea", "secret").await;
+        let bea = other(&server, "bea", "secret").await;
+        let (notifier, _notices) = rpc::notifier();
+        let matrix = Matrix::new(server.dir.join("data"), notifier);
+        sign_in(&matrix, &server, "anna", "secret").await;
+        let anna = "@anna:localhost";
+        let account = json!({ "account": anna });
+
+        // Bea's space Allotments, inviting Anna, holding the room Beds.
+        let mut request = create_room::v3::Request::new();
+        request.name = Some("Beds".into());
+        let beds = bea.create_room(request).await.unwrap();
+        let mut creation = create_room::v3::CreationContent::new();
+        creation.room_type = Some(RoomType::Space);
+        let mut request = create_room::v3::Request::new();
+        request.name = Some("Allotments".into());
+        request.creation_content = Some(Raw::new(&creation).unwrap());
+        request.invite = vec![anna.try_into().unwrap()];
+        request.preset = Some(create_room::v3::RoomPreset::PublicChat);
+        let space = bea.create_room(request).await.unwrap();
+        let child = SpaceChildEventContent::new(vec!["localhost".try_into().unwrap()]);
+        space
+            .send_state_event_for_key(beds.room_id(), child)
+            .await
+            .unwrap();
+        let space_id = space.room_id().to_string();
+        let beds_id = beds.room_id().to_string();
+        // Beds is public, so anyone in the space may join it.
+        beds.send_state_event(
+            matrix_sdk::ruma::events::room::join_rules::RoomJoinRulesEventContent::new(
+                matrix_sdk::ruma::events::room::join_rules::JoinRule::Public,
+            ),
+        )
+        .await
+        .unwrap();
+
+        let join = |room: &str, via: Value| json!({ "account": anna, "room": room, "via": via });
+        call(&matrix, "join", join(&space_id, json!([]))).await;
+        let rooms = until(&matrix, "rooms", &account, |rooms| {
+            rooms
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == space_id.as_str() && r["kind"] == "space")
+        })
+        .await;
+        assert!(
+            rooms
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["id"] != beds_id.as_str())
+        );
+
+        let held = call(
+            &matrix,
+            "space",
+            json!({ "account": anna, "room": space_id }),
+        )
+        .await;
+        let listed = held
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == beds_id.as_str())
+            .unwrap_or_else(|| panic!("no Beds in {held}"))
+            .clone();
+        assert_eq!(listed["name"], "Beds", "{listed}");
+        assert_eq!(listed["joined"], false);
+        assert_eq!(listed["space"], false);
+        assert_eq!(listed["via"], json!(["localhost"]));
+
+        call(&matrix, "join", join(&beds_id, listed["via"].clone())).await;
+        until(&matrix, "rooms", &account, |rooms| {
+            rooms
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == beds_id.as_str() && r["parent"] == space_id.as_str())
+        })
+        .await;
+        let held = call(
+            &matrix,
+            "space",
+            json!({ "account": anna, "room": space_id }),
+        )
+        .await;
+        let listed = held
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == beds_id.as_str())
+            .unwrap()
+            .clone();
+        assert_eq!(listed["joined"], true, "{listed}");
+    });
+}

@@ -13,6 +13,7 @@ mod login;
 mod media;
 mod rooms;
 mod search;
+mod spaces;
 mod timeline;
 
 use std::cell::RefCell;
@@ -32,6 +33,7 @@ use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
 use matrix_sdk::encryption::{BackupDownloadStrategy, EncryptionSettings};
 use matrix_sdk::search_index::SearchIndexStoreKind;
 use matrix_sdk::{AuthSession, Client, ClientBuilder, SessionChange};
+use matrix_sdk_ui::spaces::SpaceService;
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -62,6 +64,8 @@ struct Signed {
     state: AccountState,
     /// Its sync, once started.
     sync: Option<Arc<SyncService>>,
+    /// Which of its rooms are in which of its spaces, kept up to date.
+    spaces: Option<Arc<SpaceService>>,
 }
 
 /// An account's store: its folder under the data folder, and the
@@ -161,6 +165,7 @@ impl Matrix {
             name,
             state: AccountState::Syncing,
             sync: None,
+            spaces: None,
         };
         let id = signed.account().id;
         self.watch(&id, &client);
@@ -168,9 +173,11 @@ impl Matrix {
         self.hear_alerts(&id, &client).await;
         self.accounts.borrow_mut().insert(id.clone(), signed);
         let sync = self.sync(&id, &client).await;
+        let spaces = Arc::new(SpaceService::new(client.clone()).await);
         let mut accounts = self.accounts.borrow_mut();
         let signed = accounts.get_mut(&id).expect("just taken on");
         signed.sync = sync;
+        signed.spaces = Some(spaces);
         signed.account()
     }
 
@@ -384,6 +391,7 @@ impl Matrix {
             "preview" => Ok(json!(self.preview(&rpc::parse(params)?).await?)),
             "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
             "join" => self.join(&rpc::parse(params)?).await,
+            "space" => Ok(json!(self.space(&rpc::parse(params)?).await?)),
             "leave" => self.leave(&rpc::parse(params)?).await.map(|()| Value::Null),
             "directory" => Ok(json!(self.directory(&rpc::parse(params)?).await?)),
             "upload" => self

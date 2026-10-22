@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use greed_chat::protocol::{DirectoryParams, Listed, Room, RoomKind, RoomParams};
+use greed_chat::protocol::{DirectoryParams, JoinParams, Listed, Room, RoomKind, RoomParams};
 use greed_chat::rpc::Failure;
 use serde_json::{Value, json};
 
@@ -137,7 +137,7 @@ impl Mattermost {
     }
 
     /// Joins a channel by its id: `{room}`.
-    pub(crate) async fn join(&self, params: &RoomParams) -> Result<Value, Failure> {
+    pub(crate) async fn join(&self, params: &JoinParams) -> Result<Value, Failure> {
         let (api, me) = self.signed(&params.account)?;
         let room = params.room.trim();
         let _: Value = api
@@ -162,43 +162,36 @@ impl Mattermost {
     /// `params.query`, but those you're in.
     pub(crate) async fn directory(&self, params: &DirectoryParams) -> Result<Vec<Listed>, Failure> {
         let (api, me) = self.signed(&params.account)?;
-        let failed = |e: crate::api::Error| Failure::new(format!("can't list channels: {e}"));
-        let teams: Vec<Team> = api.get("api/v4/users/me/teams").await.map_err(failed)?;
-        let mine: HashSet<String> = api
-            .get::<Vec<Channel>>(&format!("api/v4/users/{me}/channels"))
+        let teams: Vec<Team> = api
+            .get("api/v4/users/me/teams")
             .await
-            .map_err(failed)?
-            .into_iter()
-            .map(|channel| channel.id)
-            .collect();
+            .map_err(|e| Failure::new(format!("can't list channels: {e}")))?;
         let query = params.query.trim().to_lowercase();
         let mut listed = Vec::new();
         for team in teams {
-            let channels: Vec<Value> = api
-                .get(&format!(
-                    "api/v4/teams/{}/channels?page=0&per_page={MEMBERS}",
-                    team.id
-                ))
-                .await
-                .map_err(failed)?;
-            for channel in channels {
-                let field = |name: &str| channel[name].as_str().unwrap_or_default().to_string();
-                let (id, name, purpose) = (field("id"), field("display_name"), field("purpose"));
+            for channel in team_channels(&api, &me, &team).await? {
                 let wanted = query.is_empty()
-                    || name.to_lowercase().contains(&query)
-                    || purpose.to_lowercase().contains(&query);
-                if wanted && !mine.contains(&id) {
-                    listed.push(Listed {
-                        id,
-                        name,
-                        topic: Some(purpose).filter(|purpose| !purpose.is_empty()),
-                        members: None,
-                        address: Some(team.display_name.clone()),
-                    });
+                    || channel.name.to_lowercase().contains(&query)
+                    || channel
+                        .topic
+                        .as_ref()
+                        .is_some_and(|topic| topic.to_lowercase().contains(&query));
+                if wanted && !channel.joined {
+                    listed.push(channel);
                 }
             }
         }
         Ok(listed)
+    }
+
+    /// The public channels of team `params.room`, those you're in marked.
+    pub(crate) async fn space(&self, params: &RoomParams) -> Result<Vec<Listed>, Failure> {
+        let (api, me) = self.signed(&params.account)?;
+        let team: Team = api
+            .get(&format!("api/v4/teams/{}", params.room))
+            .await
+            .map_err(|e| Failure::new(format!("can't find the team: {e}")))?;
+        team_channels(&api, &me, &team).await
     }
 
     /// The name account `id` shows for user `user`.
@@ -234,4 +227,39 @@ async fn statuses(api: &Api, users: &[String]) -> HashMap<String, String> {
     said.into_iter()
         .map(|status| (status.user_id, status.status))
         .collect()
+}
+
+/// Team `team`'s public channels, marked where `me` is in them.
+async fn team_channels(api: &Api, me: &str, team: &Team) -> Result<Vec<Listed>, Failure> {
+    let failed = |e: crate::api::Error| Failure::new(format!("can't list channels: {e}"));
+    let mine: HashSet<String> = api
+        .get::<Vec<Channel>>(&format!("api/v4/users/{me}/teams/{}/channels", team.id))
+        .await
+        .map_err(failed)?
+        .into_iter()
+        .map(|channel| channel.id)
+        .collect();
+    let channels: Vec<Value> = api
+        .get(&format!(
+            "api/v4/teams/{}/channels?page=0&per_page={MEMBERS}",
+            team.id
+        ))
+        .await
+        .map_err(failed)?;
+    Ok(channels
+        .iter()
+        .map(|channel| {
+            let field = |name: &str| channel[name].as_str().unwrap_or_default().to_string();
+            let (id, purpose) = (field("id"), field("purpose"));
+            Listed {
+                joined: mine.contains(&id),
+                id,
+                name: field("display_name"),
+                topic: Some(purpose).filter(|purpose| !purpose.is_empty()),
+                members: None,
+                address: Some(team.display_name.clone()),
+                ..Listed::default()
+            }
+        })
+        .collect())
 }
