@@ -115,16 +115,29 @@ pub fn oauth_provider() -> String {
 pub fn json_service(
     answer: impl Fn(&str, &serde_json::Value) -> serde_json::Value + Send + 'static,
 ) -> String {
+    web_service(move |target, body| {
+        let asked = serde_json::from_slice(body).unwrap_or_default();
+        ("application/json", answer(target, &asked).to_string())
+    })
+}
+
+/// A web page at `/` with `html`, for links to lead to. Gives its address.
+pub fn web_page(html: &'static str) -> String {
+    web_service(move |_, _| ("text/html; charset=utf-8", html.to_string()))
+}
+
+/// Answers each request on a thread until the test ends: `answer` gets its
+/// target and body and gives the content type and body. Gives its address.
+fn web_service(answer: impl Fn(&str, &[u8]) -> (&'static str, String) + Send + 'static) -> String {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let address = format!("http://{}", listener.local_addr().unwrap());
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
             let (target, body) = read_request(&mut stream);
-            let asked = serde_json::from_slice(&body).unwrap_or_default();
-            let body = answer(&target, &asked).to_string();
+            let (kind, body) = answer(&target, &body);
             let reply = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\n\
                  Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
             );

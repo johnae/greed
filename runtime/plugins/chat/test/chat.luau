@@ -121,6 +121,10 @@ local function fake(sent: { any }?): (method: string, params: any) -> ()
 			table.insert(asked, { method = "typing", params = params })
 			return nil
 		end,
+		preview = function(params: any): any
+			table.insert(asked, { method = "preview", params = params })
+			return { url = params.url, title = "Plots of land" }
+		end,
 		search = function(params: any): any
 			table.insert(asked, { method = "search", params = params })
 			return { { room = "!plans:x", room_name = "Plans", item = items[2] } }
@@ -760,6 +764,12 @@ local function integration(): (method: string, params: any) -> ()
 								options = { { text = "Prod", value = "prod" } },
 							},
 						},
+						preview = {
+							url = "https://plots.example/beds",
+							title = "Garden plans",
+							description = "Beds,\n tomatoes and compost",
+							site = "Plots",
+						},
 					},
 				},
 			}
@@ -870,4 +880,55 @@ test("alt-s in a room searches only that room", function(t)
 	t:wait(100)
 	local searched = calls("search")
 	assert(#searched == 1 and searched[1].room == "!plans:x", greed.json.encode(asked))
+end)
+
+test("the first link in a message, without what ends the sentence", function()
+	local first = chat.rooms.first_link
+	assert(
+		first("see https://a.example/x.") == "https://a.example/x",
+		first("see https://a.example/x.")
+	)
+	assert(first("(https://a.example/y) and http://b.example") == "https://a.example/y")
+	assert(first("no link here") == nil)
+end)
+
+test("a preview that came with a message shows under it", function(t)
+	integration()
+	local buffer = on_message(t, "p1")
+	local text = buffer:text()
+	assert(
+		string.find(text, "▎ Plots · Garden plans\n▎ Beds, tomatoes and compost", 1, true),
+		text
+	)
+end)
+
+test("a link is previewed by a service that can; once for each link", function(t)
+	local notify = fake()
+	backend.can.matrix = { previews = true }
+	on_message(t, "$1")
+	local item = {
+		id = "9",
+		event = "$9",
+		kind = "message",
+		at = 1792660060000,
+		sender = { id = "@bea:x", name = "Bea" },
+		text = "plots: https://plots.example/beds.",
+		replies = 0,
+		reactions = {},
+		edited = false,
+		mine = false,
+	}
+	notify("timeline.changed", {
+		account = "@anna:x",
+		room = "!plans:x",
+		changes = { { op = "insert", at = 3, item = item } },
+	})
+	t:wait(100)
+	local asked_for = calls("preview")
+	assert(
+		#asked_for == 1 and asked_for[1].url == "https://plots.example/beds",
+		greed.json.encode(asked)
+	)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "▎ plots.example · Plots of land", 1, true), text)
 end)

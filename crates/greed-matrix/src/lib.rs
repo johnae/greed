@@ -326,7 +326,7 @@ impl Matrix {
                 protocol: PROTOCOL,
                 service: "matrix".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                can: ["threads", "encryption", "receipts"]
+                can: ["threads", "encryption", "receipts", "previews"]
                     .map(String::from)
                     .to_vec(),
             })),
@@ -379,6 +379,7 @@ impl Matrix {
                 .await
                 .map(|()| Value::Null),
             "media.get" => self.media_get(&rpc::parse(params)?).await,
+            "preview" => Ok(json!(self.preview(&rpc::parse(params)?).await?)),
             "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
             "upload" => self
                 .upload(&rpc::parse(params)?)

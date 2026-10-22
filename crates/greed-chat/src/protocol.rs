@@ -9,7 +9,8 @@
 //! `redact`, `react`, `read`, `typing`, `media.get`, `upload`, `search`.
 //! Those that can ("commands" in `hello`) also answer `commands` and
 //! `press`: a `send` starting with `/` runs a command, and a message's
-//! `actions` are pressed or picked from.
+//! `actions` are pressed or picked from. With "previews", `preview` says
+//! what a link leads to; others give a message's `preview` with it.
 //! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
 //! `timeline.changed`, `typing.changed`, `login.step`, `alert`.
 //!
@@ -247,6 +248,10 @@ pub struct Item {
     /// Buttons and menus an integration put in it, pressed with `press`.
     #[serde(default)]
     pub actions: Vec<Action>,
+    /// What its first link leads to, where the service gives it with the
+    /// message (Mattermost).
+    #[serde(default)]
+    pub preview: Option<Preview>,
 }
 
 /// A button or menu in a message.
@@ -416,6 +421,49 @@ pub struct RoomParams {
     pub thread: Option<String>,
     #[serde(default)]
     pub on: bool,
+}
+
+/// `preview`'s parameters: a link in a message in `room`. Answers a
+/// `Preview`, or null where there's none or it isn't asked for (an
+/// encrypted room, whose links the server shouldn't learn).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreviewParams {
+    pub account: String,
+    pub room: String,
+    pub url: String,
+}
+
+/// What a link leads to, as the page says of itself.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Preview {
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    /// The site's name, like "GitHub".
+    pub site: Option<String>,
+}
+
+impl Preview {
+    /// The preview of `url` from what a server says of the page: its title,
+    /// description and site under the names `names` gives. None when it
+    /// has neither a title nor a description.
+    pub fn from_page(url: &str, page: &serde_json::Value, names: [&str; 3]) -> Option<Self> {
+        let field = |name: &str| {
+            page[name]
+                .as_str()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(str::to_string)
+        };
+        let [title, description, site] = names;
+        let preview = Self {
+            url: url.to_string(),
+            title: field(title),
+            description: field(description),
+            site: field(site),
+        };
+        (preview.title.is_some() || preview.description.is_some()).then_some(preview)
+    }
 }
 
 /// `media.get`'s parameters: the message's file, or with `thumbnail` a

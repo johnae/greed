@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use greed_chat::rpc::{self, Service};
 use greed_chat::testing::{
-    browse, find, free_port, heard, item_with, json_service, oauth_provider,
+    browse, find, free_port, heard, item_with, json_service, oauth_provider, web_page,
 };
 use greed_mattermost::Mattermost;
 use serde_json::{Value, json};
@@ -884,5 +884,65 @@ fn searches_posts() {
         )
         .await;
         assert_eq!(elsewhere, json!([]));
+    });
+}
+
+#[test]
+fn previews_links() {
+    let settings = [
+        (
+            "MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS",
+            "127.0.0.1 localhost".to_string(),
+        ),
+        ("MM_SERVICESETTINGS_ENABLELINKPREVIEWS", "true".to_string()),
+    ];
+    let Some(server) = Server::start("preview", &settings) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let Crew {
+            bea,
+            channel,
+            service,
+            account,
+            mut notices,
+            ..
+        } = crew(&server).await;
+        let page = web_page(
+            r#"<html><head><title>x</title>
+<meta property="og:title" content="Garden plans">
+<meta property="og:description" content="Beds, tomatoes and compost">
+<meta property="og:site_name" content="Plots">
+</head><body>beds</body></html>"#,
+        );
+        let url = format!("{page}/beds");
+        let params = json!({ "account": account, "room": channel });
+        call(&service, "timeline", params).await;
+        bea.post(
+            "posts",
+            &json!({ "channel_id": channel, "message": format!("see {url}") }),
+        )
+        .await;
+        let shown = heard(&mut notices, |n| {
+            n["params"]["changes"].as_array().is_some_and(|changes| {
+                changes
+                    .iter()
+                    .any(|c| c["item"]["preview"]["title"].is_string())
+            })
+        })
+        .await;
+        let item = shown["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find_map(|c| c["item"]["preview"].is_object().then(|| c["item"].clone()))
+            .unwrap();
+        let preview = &item["preview"];
+        assert_eq!(preview["title"], "Garden plans", "{item}");
+        assert_eq!(preview["description"], "Beds, tomatoes and compost");
+        assert_eq!(preview["site"], "Plots");
+        assert_eq!(preview["url"], url.as_str());
     });
 }

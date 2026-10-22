@@ -38,6 +38,9 @@ an integration's; what it answers only you shows in the room. Posts from
 integrations show their attachments' text, and their buttons and menus
 under them.
 
+A link's preview shows under its message: the site, the page's title, and a
+line of what it says (see below for where they come from).
+
 Outside the chat session, `:chat` opens the same list in a float.
 
 ## Signing in
@@ -137,7 +140,7 @@ counts in the list.
 | Videos and recordings | Shown as files with their size; `enter` fetches one and opens it in your system's player. Videos with a small picture show it. Nothing plays inside Greed. |
 | Pictures and stickers | Drawn in the room where the window or terminal can show images (Greed's window, kitty); elsewhere a line with the name. `enter` opens the picture in Greed. |
 | Other files | `enter` fetches and opens it: a PDF or picture in Greed, the rest in the program your system opens it with. `:chat-attach PATH` sends one. |
-| Links in messages | Shown in the text; no previews of the pages they lead to. |
+| Link previews | The page's site, title and a line of what it says, under the message, as the server fetched it: Mattermost where the server has link previews on, Matrix where the server allows them. None in encrypted Matrix rooms, so the server doesn't learn their links. `:set chat-previews false` turns them off. No pictures from the pages. |
 | Presence | Mattermost's dot beside a direct message. Matrix servers don't send it the way Greed syncs, so none there. |
 | Read receipts | "seen by" on Matrix. Mattermost has none to show. |
 | Polls, locations, live locations | Shown as what they are, without voting or a map. |

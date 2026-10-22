@@ -81,9 +81,14 @@ export type Item = {
 	media: Media?,
 	--- Where it opens in the service's own app, as for joining a call.
 	link: string?,
+	--- What its first link leads to, where the service gives it (Mattermost).
+	preview: Preview?,
 	--- Buttons and menus an integration put in it (Mattermost).
 	actions: { Action }?,
 }
+
+--- What a link leads to, as the page says of itself.
+export type Preview = { url: string, title: string?, description: string?, site: string? }
 
 --- A button, or with `options` a menu, in a message.
 export type Action = { id: string, name: string, options: { { text: string, value: string } }? }

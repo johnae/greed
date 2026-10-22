@@ -3,13 +3,13 @@
 
 use std::path::PathBuf;
 
-use greed_chat::protocol::{Media, MediaParams, RoomParams, UploadParams};
+use greed_chat::protocol::{Media, MediaParams, Preview, PreviewParams, RoomParams, UploadParams};
 use greed_chat::rpc::Failure;
 use greed_chat::safe_file_name;
 use matrix_sdk::media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings};
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::room::message::MessageType;
-use matrix_sdk::ruma::{EventId, UInt};
+use matrix_sdk::ruma::{EventId, RoomId, UInt};
 use matrix_sdk_ui::timeline::{AttachmentConfig, MsgLikeKind, TimelineItemContent};
 use serde_json::{Value, json};
 
@@ -177,5 +177,29 @@ impl Matrix {
             .send_attachment(path, mime, AttachmentConfig::default())
             .await
             .map_err(|e| Failure::new(format!("can't send it: {e}")))
+    }
+}
+
+impl Matrix {
+    /// What a link in `params.room` leads to, as the server fetches it;
+    /// none in an encrypted room, whose links the server shouldn't learn.
+    pub(crate) async fn preview(&self, params: &PreviewParams) -> Result<Option<Preview>, Failure> {
+        let client = self.client_of(&params.account)?;
+        let room = RoomId::parse(&params.room)
+            .ok()
+            .and_then(|id| client.get_room(&id))
+            .ok_or_else(|| Failure::new(format!("not in {}", params.room)))?;
+        if room.encryption_state().is_encrypted() {
+            return Ok(None);
+        }
+        let Ok(Some(data)) = client.media().get_media_preview(&params.url, None).await else {
+            return Ok(None);
+        };
+        let page: Value = serde_json::from_str(data.get()).unwrap_or_default();
+        Ok(Preview::from_page(
+            &params.url,
+            &page,
+            ["og:title", "og:description", "og:site_name"],
+        ))
     }
 }

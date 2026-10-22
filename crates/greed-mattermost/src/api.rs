@@ -152,6 +152,9 @@ pub(crate) struct Metadata {
     pub(crate) reactions: Vec<PostReaction>,
     #[serde(default)]
     pub(crate) files: Vec<File>,
+    /// What links in it lead to, as the server read them.
+    #[serde(default)]
+    pub(crate) embeds: Vec<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use greed_chat::protocol::{MediaParams, UploadParams};
+use greed_chat::protocol::{MediaParams, Preview, UploadParams};
 use greed_chat::rpc::Failure;
 use greed_chat::safe_file_name;
 use serde_json::{Value, json};
@@ -69,4 +69,20 @@ impl Mattermost {
         self.posted(&params.account, &post).await;
         Ok(())
     }
+}
+
+/// The preview of the first link in `post`, from the page the server read
+/// (where it has link previews on).
+pub(crate) fn preview(post: &Post) -> Option<Preview> {
+    post.metadata
+        .embeds
+        .iter()
+        .filter(|embed| embed["type"] == "opengraph")
+        .find_map(|embed| {
+            Preview::from_page(
+                embed["url"].as_str().unwrap_or_default(),
+                &embed["data"],
+                ["title", "description", "site_name"],
+            )
+        })
 }

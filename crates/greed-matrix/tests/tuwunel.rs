@@ -66,6 +66,9 @@ allow_federation = false
 allow_check_for_updates = false
 startup_netburst = false
 log = "warn"
+# Link previews, of pages tests serve here.
+url_preview_domain_contains_allowlist = ["*"]
+ip_range_denylist = []
 {provider}"#,
             db = dir.join("db").display()
         );
@@ -1089,5 +1092,59 @@ fn searches_messages() {
                 && found[0]["room_name"] == "Secrets"
         })
         .await;
+    });
+}
+
+#[test]
+fn previews_links_but_not_in_encrypted_rooms() {
+    use matrix_sdk::ruma::api::client::room::create_room;
+    use matrix_sdk::ruma::events::InitialStateEvent;
+    use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
+
+    let Some(server) = Tuwunel::start("preview", None) else {
+        return;
+    };
+    run(async {
+        let (matrix, _notices, bea, room_id) = plans(&server).await;
+        let anna = "@anna:localhost";
+        let page = greed_chat::testing::web_page(
+            r#"<html><head><title>x</title>
+<meta property="og:title" content="Garden plans">
+<meta property="og:description" content="Beds, tomatoes and compost">
+<meta property="og:site_name" content="Plots">
+</head><body>beds</body></html>"#,
+        );
+        let url = format!("{page}/beds");
+        let asked = json!({ "account": anna, "room": room_id, "url": url });
+        let preview = until(&matrix, "preview", &asked, |p| p["title"].is_string()).await;
+        assert_eq!(preview["title"], "Garden plans", "{preview}");
+        assert_eq!(preview["description"], "Beds, tomatoes and compost");
+        assert_eq!(preview["url"], url.as_str());
+
+        let mut request = create_room::v3::Request::new();
+        request.invite = vec![anna.try_into().unwrap()];
+        request.initial_state = vec![
+            InitialStateEvent::with_empty_state_key(
+                RoomEncryptionEventContent::with_recommended_defaults(),
+            )
+            .to_raw_any(),
+        ];
+        let secrets = bea.create_room(request).await.unwrap();
+        other(&server, "anna", "secret")
+            .await
+            .join_room_by_id(secrets.room_id())
+            .await
+            .unwrap();
+        let secrets = secrets.room_id().to_string();
+        until(&matrix, "rooms", &json!({ "account": anna }), |rooms| {
+            rooms.as_array().is_some_and(|rooms| {
+                rooms
+                    .iter()
+                    .any(|r| r["id"] == secrets.as_str() && r["encrypted"] == true)
+            })
+        })
+        .await;
+        let hidden = json!({ "account": anna, "room": secrets, "url": url });
+        assert_eq!(call(&matrix, "preview", hidden).await, Value::Null);
     });
 }

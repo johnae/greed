@@ -204,12 +204,81 @@ local function picture(r: Open, item: backend.Item): core.UiNode?
 	}
 end
 
+greed.option.define({
+	name = "chat-previews",
+	doc = "Show what links in chat messages lead to, under them, where the service can say",
+	default = true,
+})
+
+--- The first link in `text`, without what ends the sentence after it.
+function M.first_link(text: string): string?
+	local link = string.match(text, "https?://[^%s<>()%[%]\"'`]+")
+	if link == nil then
+		return nil
+	end
+	return (string.gsub(link, "[.,;:!?]+$", ""))
+end
+
+-- What links lead to, by URL: the preview once it's come (none for a
+-- link with none), or nothing while it's asked.
+local previews: { [string]: { preview: backend.Preview? } } = {}
+
+-- What `item`'s first link leads to: as it came with the message, or
+-- asked of a service that previews; nothing until it's come.
+local function link_preview(r: Open, item: backend.Item): backend.Preview?
+	if greed.option.get("chat-previews") ~= true then
+		return nil
+	elseif item.preview then
+		return item.preview
+	end
+	local service = backend.split(r.account)
+	local can = backend.can[service]
+	if not (can and can.previews) then
+		return nil
+	end
+	local link = M.first_link(item.text)
+	if link == nil then
+		return nil
+	end
+	local url: string = link
+	local known = previews[url]
+	if known == nil then
+		previews[url] = {}
+		greed.spawn(function()
+			local preview = ask(r, "preview", { url = url })
+			previews[url] = { preview = preview }
+			if preview and r.buffer:valid() then
+				r.view:soon()
+			end
+		end)
+		return nil
+	end
+	return known.preview
+end
+
+--- The lines a link's preview shows as: where and what, then a little of
+--- what it says.
+function M.preview_lines(preview: backend.Preview): { { core.UiSpan } }
+	local site = preview.site or string.match(preview.url, "^%a+://([^/]+)") or preview.url
+	local head = { ui.span("▎ ", "comment"), ui.span(site, "comment") }
+	if preview.title then
+		table.insert(head, ui.span(` · {preview.title}`, "markdown.link"))
+	end
+	local lines = { head }
+	if preview.description then
+		local text = string.gsub(preview.description, "%s+", " ")
+		table.insert(lines, { ui.span(`▎ {core.text.clip(text, 120)}`, "comment") })
+	end
+	return lines
+end
+
 --- How an item reads in a room.
 function M.item_node(
 	item: backend.Item,
 	previous: backend.Item?,
 	in_thread: boolean,
-	shown: core.UiNode?
+	shown: core.UiNode?,
+	preview: backend.Preview?
 ): core.UiNode?
 	if item.kind == "day" then
 		return ui.line({
@@ -262,6 +331,11 @@ function M.item_node(
 	local caption = media == nil or item.text ~= media.name
 	if caption and (item.text ~= "" or item.kind ~= "message") then
 		table.insert(parts, valued(ui.text(said(item)), item, true))
+	end
+	if preview then
+		for _, line in M.preview_lines(preview) do
+			table.insert(parts, valued(ui.line(line), item, false))
+		end
 	end
 	local notes: { core.UiSpan } = {}
 	for _, reaction in item.reactions do
@@ -336,11 +410,15 @@ local function render(r: Open): core.UiNode
 	end
 	if shown then
 		local started = first :: backend.Item
-		table.insert(parts, M.item_node(started, nil, true, picture(r, started)) :: core.UiNode)
+		table.insert(
+			parts,
+			M.item_node(started, nil, true, picture(r, started), link_preview(r, started)) :: core.UiNode
+		)
 		previous = first
 	end
 	for _, item in r.items do
-		local node = M.item_node(item, previous, r.thread ~= nil, picture(r, item))
+		local node =
+			M.item_node(item, previous, r.thread ~= nil, picture(r, item), link_preview(r, item))
 		if node then
 			table.insert(parts, node)
 		end
