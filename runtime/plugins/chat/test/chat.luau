@@ -544,3 +544,88 @@ test("a browser sign-in finishes with the link :chat-link hands over", function(
 	assert(backend.accounts["mattermost u1@mm.example.com"], "signed in")
 	t:keys("esc") -- the paste prompt, not needed now
 end)
+
+-- A Matrix service that encrypts, with one account whose device isn't
+-- verified; what it's asked goes in `asked`.
+local function encrypting(): (method: string, params: any) -> ()
+	table.clear(asked)
+	backend.reset()
+	local function record(method: string): (params: any) -> any
+		return function(params: any): any
+			table.insert(asked, { method = method, params = params })
+			return nil
+		end
+	end
+	local notify = backend.use("matrix", {
+		rooms = function(): any
+			return {}
+		end,
+		["encryption.state"] = function(): any
+			return { recovery = "incomplete", verified = false }
+		end,
+		["encryption.recover"] = record("encryption.recover"),
+		["verify.accept"] = record("verify.accept"),
+		["verify.confirm"] = record("verify.confirm"),
+		["verify.cancel"] = record("verify.cancel"),
+	}, { "encryption" })
+	notify("account.changed", {
+		id = "@anna:x",
+		server = "https://x",
+		name = "Anna",
+		state = { state = "ready" },
+	})
+	return notify
+end
+
+test("an unverified device says so; :chat-recover takes the key out of sight", function(t)
+	encrypting()
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	local text = greed.view():buffer():text()
+	assert(string.find(text, "isn't verified", 1, true), text)
+	t:keys("esc")
+	t:run("chat-recover")
+	t:type("EsTc 1234 abcd")
+	t:keys("enter")
+	t:wait(50)
+	local recovered = calls("encryption.recover")
+	assert(#recovered == 1 and recovered[1].key == "EsTc 1234 abcd", greed.json.encode(asked))
+end)
+
+test("another device asking is asked about; the emoji are shown to compare", function(t)
+	local notify = encrypting()
+	t:buffer("|x")
+	notify(
+		"verify.changed",
+		{ account = "@anna:x", id = "v1", state = "asked", from = "Anna's phone" }
+	)
+	t:wait(50)
+	t:type("y")
+	t:keys("enter")
+	t:wait(50)
+	assert(
+		#calls("verify.accept") == 1 and calls("verify.accept")[1].id == "v1",
+		greed.json.encode(asked)
+	)
+	notify("verify.changed", {
+		account = "@anna:x",
+		id = "v1",
+		state = "compare",
+		emoji = { { "🐶", "Dog" }, { "🔑", "Key" } },
+	})
+	t:wait(50)
+	local floats = t:floats()
+	local shown = false
+	for _, float in floats do
+		if string.find(float, "🐶   🔑", 1, true) then
+			shown = true
+		end
+	end
+	assert(shown, "the emoji are shown")
+	t:type("y")
+	t:keys("enter")
+	t:wait(50)
+	local confirmed = calls("verify.confirm")
+	assert(#confirmed == 1 and confirmed[1].same == true, greed.json.encode(asked))
+end)

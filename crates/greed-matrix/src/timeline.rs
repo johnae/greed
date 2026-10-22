@@ -70,12 +70,7 @@ fn key(params: &RoomParams) -> String {
 impl Matrix {
     /// The room `params` names.
     fn room(&self, params: &RoomParams) -> Result<matrix_sdk::Room, Failure> {
-        let client = self
-            .accounts
-            .borrow()
-            .get(&params.account)
-            .map(|signed| signed.client.clone())
-            .ok_or_else(|| Failure::new(format!("no account {}", params.account)))?;
+        let client = self.client_of(&params.account)?;
         let id = RoomId::parse(&params.room).map_err(Failure::params)?;
         client
             .get_room(&id)

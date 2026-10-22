@@ -107,13 +107,24 @@ log = "warn"
         request.username = Some(user.into());
         request.password = Some(password.into());
         request.inhibit_login = true;
-        let session = match client.matrix_auth().register(request.clone()).await {
-            Ok(_) => return,
-            Err(e) => e
-                .as_uiaa_response()
-                .and_then(|info| info.session.clone())
-                .expect("the server asks for the registration token"),
-        };
+        // The server can be up before it takes registrations; it's asked
+        // again for a while.
+        let mut session = None;
+        let mut said = String::new();
+        for _ in 0..50 {
+            match client.matrix_auth().register(request.clone()).await {
+                Ok(_) => return,
+                Err(e) => match e.as_uiaa_response().and_then(|info| info.session.clone()) {
+                    Some(asked) => {
+                        session = Some(asked);
+                        break;
+                    }
+                    None => said = e.to_string(),
+                },
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let session = session.unwrap_or_else(|| panic!("can't register {user}: {said}"));
         let mut token = RegistrationToken::new("greed".into());
         token.session = Some(session);
         request.auth = Some(AuthData::RegistrationToken(token));
@@ -777,4 +788,185 @@ fn approve(page: &str, jar: &std::path::Path) -> String {
         + 6;
     let end = start + html[start..].find('"').unwrap();
     html[start..end].replace("&amp;", "&")
+}
+
+/// Anna's phone: a plain client signed in as her, setting up cross-signing
+/// and a key backup as Element does, accepting what asks to verify against
+/// it, and syncing in the background.
+async fn phone(server: &Tuwunel) -> Client {
+    use matrix_sdk::config::SyncSettings;
+    use matrix_sdk::encryption::{BackupDownloadStrategy, EncryptionSettings};
+
+    let client = Client::builder()
+        .homeserver_url(server.url())
+        .with_encryption_settings(EncryptionSettings {
+            auto_enable_cross_signing: true,
+            auto_enable_backups: true,
+            backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
+        })
+        .build()
+        .await
+        .unwrap();
+    client
+        .matrix_auth()
+        .login_username("anna", "secret")
+        .initial_device_display_name("Anna's phone")
+        .send()
+        .await
+        .unwrap();
+    client
+        .encryption()
+        .wait_for_e2ee_initialization_tasks()
+        .await;
+    // Before the sync starts, or it isn't heard.
+    phone_accepts(&client);
+    let syncing = client.clone();
+    tokio::task::spawn_local(async move {
+        let _ = syncing.sync(SyncSettings::default()).await;
+    });
+    client
+}
+
+/// The phone accepts whatever asks to verify against it, and confirms the
+/// emoji: as you would, having checked them.
+fn phone_accepts(client: &Client) {
+    use futures_util::StreamExt;
+    use matrix_sdk::encryption::verification::{SasState, Verification, VerificationRequestState};
+    use matrix_sdk::ruma::events::AnyToDeviceEvent;
+    use matrix_sdk::ruma::serde::Raw;
+
+    let handle = client.clone();
+    client.add_event_handler(move |event: Raw<AnyToDeviceEvent>| {
+        let client = handle.clone();
+        async move {
+            let Ok(AnyToDeviceEvent::KeyVerificationRequest(event)) = event.deserialize() else {
+                return;
+            };
+            let Some(request) = client
+                .encryption()
+                .get_verification_request(&event.sender, &event.content.transaction_id)
+                .await
+            else {
+                return;
+            };
+            // Followed apart from the handler: the sync waits for handlers,
+            // and what comes next comes with the sync.
+            tokio::spawn(async move {
+                request.accept().await.unwrap();
+                let mut changes = request.changes();
+                while let Some(state) = changes.next().await {
+                    if let VerificationRequestState::Transitioned {
+                        verification: Verification::SasV1(sas),
+                    } = state
+                    {
+                        sas.accept().await.unwrap();
+                        let mut sas_changes = sas.changes();
+                        while let Some(sas_state) = sas_changes.next().await {
+                            match sas_state {
+                                SasState::KeysExchanged { .. } => sas.confirm().await.unwrap(),
+                                SasState::Done { .. } | SasState::Cancelled(_) => return,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+}
+
+#[test]
+fn recovery_key_unlocks_old_messages_and_a_device_verifies() {
+    use matrix_sdk::ruma::api::client::room::create_room;
+    use matrix_sdk::ruma::events::InitialStateEvent;
+    use matrix_sdk::ruma::events::room::encryption::RoomEncryptionEventContent;
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+
+    let Some(server) = Tuwunel::start("encryption", None) else {
+        return;
+    };
+    run(async {
+        server.register("anna", "secret").await;
+        let phone = phone(&server).await;
+        let key = phone.encryption().recovery().enable().await.unwrap();
+        let mut request = create_room::v3::Request::new();
+        request.name = Some("Secrets".into());
+        request.initial_state = vec![
+            InitialStateEvent::with_empty_state_key(
+                RoomEncryptionEventContent::with_recommended_defaults(),
+            )
+            .to_raw_any(),
+        ];
+        let room = phone.create_room(request).await.unwrap();
+        room.send(RoomMessageEventContent::text_plain(
+            "the plans are in the shed",
+        ))
+        .await
+        .unwrap();
+        let room_id = room.room_id().to_string();
+        // The room's key reaches the backup before Greed asks for it.
+        phone
+            .encryption()
+            .backups()
+            .wait_for_steady_state()
+            .await
+            .unwrap();
+
+        // Greed, a new device: unverified until the recovery key.
+        let (notifier, _notices) = rpc::notifier();
+        let matrix = Matrix::new(server.dir.join("data"), notifier);
+        sign_in(&matrix, &server, "anna", "secret").await;
+        let anna = json!({ "account": "@anna:localhost" });
+        let state = call(&matrix, "encryption.state", anna.clone()).await;
+        assert_eq!(state["verified"], false, "{state}");
+        let mut recover = anna.clone();
+        recover["key"] = json!(key);
+        call(&matrix, "encryption.recover", recover).await;
+        // The key verifies this device, once its signature is up.
+        until(&matrix, "encryption.state", &anna, |state| {
+            state["verified"] == true
+        })
+        .await;
+        let params = json!({ "account": "@anna:localhost", "room": room_id });
+        until(&matrix, "timeline", &params, |t| {
+            t["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|it| it["text"] == "the plans are in the shed")
+        })
+        .await;
+
+        // Another new device, verified against the phone by emoji.
+        let (notifier, mut notices) = rpc::notifier();
+        let laptop = Matrix::new(server.dir.join("laptop"), notifier);
+        sign_in(&laptop, &server, "anna", "secret").await;
+        // The phone takes a request only from a device it has heard of.
+        let me = matrix_sdk::ruma::user_id!("@anna:localhost");
+        for _ in 0..100 {
+            let devices = phone.encryption().get_user_devices(me).await.unwrap();
+            if devices.devices().count() >= 3 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let started = call(&laptop, "verify.start", anna.clone()).await;
+        let id = started["id"].clone();
+        let compare = heard(&mut notices, |n| {
+            n["method"] == "verify.changed" && n["params"]["state"] == "compare"
+        })
+        .await;
+        assert_eq!(compare["emoji"].as_array().unwrap().len(), 7, "{compare}");
+        let confirm = json!({ "account": "@anna:localhost", "id": id, "same": true });
+        call(&laptop, "verify.confirm", confirm).await;
+        heard(&mut notices, |n| {
+            n["method"] == "verify.changed" && n["params"]["state"] == "done"
+        })
+        .await;
+        // The phone signs this device's keys once the emoji match.
+        until(&laptop, "encryption.state", &anna, |state| {
+            state["verified"] == true
+        })
+        .await;
+    });
 }

@@ -69,6 +69,23 @@ xdg-mime default greed-link.desktop x-scheme-handler/io.github.johnae
 That takes `mattermost://` links from Mattermost's own desktop app, if
 you have it. On macOS, paste the link.
 
+## Encrypted rooms (Matrix)
+
+Greed signs in as a device of its own, which needs your keys to read
+encrypted rooms. The room list says when this device isn't verified yet.
+
+- `:chat-recover` takes your recovery key (Element calls it a security
+  key) and unlocks the keys kept on the server: older messages decrypt and
+  this device counts as verified.
+- `:chat-verify` asks your other devices (your phone, Element) to verify
+  this one. Accept there, and Greed shows seven emoji to compare with what
+  the other device shows; say whether they're the same.
+- When another device asks to verify this one, Greed asks you to accept,
+  then shows the emoji the same way.
+- `:chat-encryption` says how an account stands. For an account with no
+  recovery key yet it sets one up and shows it once: keep it somewhere
+  safe, Greed doesn't keep it.
+
 ## What isn't here, and what happens instead
 
 | Thing | What Greed does |
@@ -78,7 +95,6 @@ you have it. On macOS, paste the link.
 | Pictures and stickers | Drawn in the room where the window or terminal can show images (Greed's window, kitty); elsewhere a line with the name. `enter` opens the picture in Greed. |
 | Other files | `enter` fetches and opens it: a PDF or picture in Greed, the rest in the program your system opens it with. `:chat-attach PATH` sends one. |
 | Links in messages | Shown in the text; no previews of the pages they lead to. |
-| Encrypted Matrix rooms | Messages decrypt when this device has the keys. Verifying this device against another, and the recovery key that unlocks old messages, aren't here yet: until then, older messages may show as unreadable. |
 | Presence | Mattermost's dot beside a direct message. Matrix servers don't send it the way Greed syncs, so none there. |
 | Read receipts | "seen by" on Matrix. Mattermost has none to show. |
 | Polls, locations, live locations | Shown as what they are, without voting or a map. |

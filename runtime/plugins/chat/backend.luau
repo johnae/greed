@@ -102,6 +102,7 @@ local timeline_listeners: { (account: string, room: string, thread: string?, cha
 	{}
 local typing_listeners: { (account: string, room: string, who: { string }) -> () } = {}
 local step_listeners: { (login: string, step: any) -> () } = {}
+local verify_listeners: { (account: string, about: any) -> () } = {}
 
 --- Calls `listener` when an account comes, goes or changes state.
 function M.on_accounts(listener: () -> ())
@@ -126,6 +127,12 @@ function M.on_typing(listener: (account: string, room: string, who: { string }) 
 	greed.plugin.cleanup(core.registry.put(typing_listeners, listener))
 end
 
+--- Calls `listener` with how a verification of an account's device goes
+--- (`verify.changed`: asked, compare with its emoji, done, cancelled).
+function M.on_verify(listener: (account: string, about: any) -> ())
+	greed.plugin.cleanup(core.registry.put(verify_listeners, listener))
+end
+
 --- An account's service and its id there, from its key "service id".
 function M.split(key: string): (string, string)
 	local service, id = string.match(key, "^(%S+) (.*)$")
@@ -136,6 +143,20 @@ end
 --- as when the browser came back.
 function M.on_step(listener: (login: string, step: any) -> ())
 	greed.plugin.cleanup(core.registry.put(step_listeners, listener))
+end
+
+--- What each service can do beyond what all do, as it says in `hello`:
+--- "encryption", "threads"...
+M.can = {} :: { [string]: { [string]: boolean } }
+
+-- Notes that `service` can do what `can` lists.
+local function set_can(service: string, can: { string }?)
+	local set: { [string]: boolean } = {}
+	local listed: { string } = can or {}
+	for _, one in listed do
+		set[one] = true
+	end
+	M.can[service] = set
 end
 
 --- The accounts signed in, by "service id".
@@ -206,6 +227,8 @@ local function heard(service: string, method: string, params: any)
 		)
 	elseif method == "typing.changed" then
 		core.registry.tell(typing_listeners, `{service} {params.account}`, params.room, params.who)
+	elseif method == "verify.changed" then
+		core.registry.tell(verify_listeners, `{service} {params.account}`, params)
 	elseif method == "login.step" then
 		core.registry.tell(step_listeners, params.login, params.step)
 	end
@@ -239,6 +262,7 @@ function M.service(service: string): (Service?, string?)
 		return nil,
 			`{program} speaks chat protocol {speaks or "?"}, this Greed {M.PROTOCOL}: use the one that came with this Greed`
 	end
+	set_can(service, hello.can)
 	local wrapped: Service = {
 		request = function(method: string, params: any): (any, string?)
 			local result, trouble = connection:request(method, params)
@@ -303,11 +327,14 @@ function M.logout(key: string): string?
 end
 
 --- Puts `fake` in `service`'s place, for tests: its methods answer by
---- name. Gives a function that sends a notification as the service would.
+--- name, and it can do what `can` says. Gives a function that sends a
+--- notification as the service would.
 function M.use(
 	service: string,
-	fake: { [string]: (params: any) -> (any, string?) }
+	fake: { [string]: (params: any) -> (any, string?) },
+	can: { string }?
 ): (method: string, params: any) -> ()
+	set_can(service, can)
 	running[service] = {
 		request = function(method: string, params: any): (any, string?)
 			local answer = fake[method]
@@ -326,6 +353,7 @@ end
 function M.reset()
 	running = {}
 	M.accounts = {}
+	M.can = {}
 end
 
 return M

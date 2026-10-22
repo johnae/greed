@@ -193,7 +193,7 @@ impl Service for Mattermost {
                 protocol: PROTOCOL,
                 service: "mattermost".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                can: Vec::new(),
+                can: ["threads", "presence"].map(String::from).to_vec(),
             })),
             "accounts" => Ok(json!(self.accounts())),
             "restore" => {

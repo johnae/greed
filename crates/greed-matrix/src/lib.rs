@@ -7,6 +7,7 @@
 // matrix-sdk's futures nest deeper than the compiler's default allows.
 #![recursion_limit = "256"]
 
+mod encryption;
 mod login;
 mod media;
 mod rooms;
@@ -25,6 +26,7 @@ use greed_chat::protocol::{
 use greed_chat::rpc::{self, Failure, Notifier, Service};
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
+use matrix_sdk::encryption::{BackupDownloadStrategy, EncryptionSettings};
 use matrix_sdk::{AuthSession, Client, ClientBuilder, SessionChange};
 use matrix_sdk_ui::sync_service::SyncService;
 use serde::{Deserialize, Serialize};
@@ -44,6 +46,8 @@ pub struct Matrix {
     logins: RefCell<HashMap<String, login::Login>>,
     /// The timelines the client has open, by "account room".
     timelines: RefCell<HashMap<String, timeline::Open>>,
+    /// Verifications of this device going on.
+    verifications: RefCell<encryption::Verifications>,
 }
 
 /// A signed-in account.
@@ -97,6 +101,7 @@ impl Matrix {
             accounts: RefCell::default(),
             logins: RefCell::default(),
             timelines: RefCell::default(),
+            verifications: RefCell::default(),
         })
     }
 
@@ -106,6 +111,15 @@ impl Matrix {
             .values()
             .map(Signed::account)
             .collect()
+    }
+
+    /// The client of account `account`.
+    fn client_of(&self, account: &str) -> Result<Client, Failure> {
+        self.accounts
+            .borrow()
+            .get(account)
+            .map(|signed| signed.client.clone())
+            .ok_or_else(|| Failure::new(format!("no account {account}")))
     }
 
     /// Signs in again with a secret `Done` gave.
@@ -146,6 +160,7 @@ impl Matrix {
         };
         let id = signed.account().id;
         self.watch(&id, &client);
+        self.hear_verifications(&id, &client);
         self.accounts.borrow_mut().insert(id.clone(), signed);
         let sync = self.sync(&id, &client).await;
         let mut accounts = self.accounts.borrow_mut();
@@ -236,6 +251,13 @@ impl Matrix {
         Client::builder()
             .sqlite_store(self.data.join(&store.name), Some(&store.passphrase))
             .handle_refresh_tokens()
+            // Cross-signing and a key backup set up after signing in, as
+            // Element does; keys fetched from the backup as they're missing.
+            .with_encryption_settings(EncryptionSettings {
+                auto_enable_cross_signing: true,
+                auto_enable_backups: true,
+                backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
+            })
     }
 
     /// Removes `store`'s folder, once its client is gone.
@@ -295,7 +317,9 @@ impl Matrix {
                 protocol: PROTOCOL,
                 service: "matrix".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                can: Vec::new(),
+                can: ["threads", "encryption", "receipts"]
+                    .map(String::from)
+                    .to_vec(),
             })),
             "accounts" => Ok(json!(self.accounts())),
             "restore" => {
@@ -348,6 +372,25 @@ impl Matrix {
             "media.get" => self.media_get(&rpc::parse(params)?).await,
             "upload" => self
                 .upload(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
+            "encryption.state" => self.encryption_state(&rpc::parse(params)?).await,
+            "encryption.setup" => self.encryption_setup(&rpc::parse(params)?).await,
+            "encryption.recover" => self
+                .encryption_recover(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
+            "verify.start" => self.verify_start(&rpc::parse(params)?).await,
+            "verify.accept" => self
+                .verify_accept(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
+            "verify.confirm" => self
+                .verify_confirm(&rpc::parse(params)?)
+                .await
+                .map(|()| Value::Null),
+            "verify.cancel" => self
+                .verify_cancel(&rpc::parse(params)?)
                 .await
                 .map(|()| Value::Null),
             _ => Err(Failure::unknown(method)),

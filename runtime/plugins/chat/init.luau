@@ -11,6 +11,7 @@ local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local backend = require("@self/backend")
+local encryption = require("@self/encryption")
 local room = require("@self/room")
 
 local ui = core.ui
@@ -25,6 +26,8 @@ type List = {
 	view: core.UiView,
 	--- Each account's rooms, by "service id".
 	rooms: { [string]: { backend.Room } },
+	--- What's wrong with each account's encryption, where something is.
+	encryption: { [string]: string? },
 	trouble: string?,
 }
 
@@ -111,6 +114,10 @@ local function render_list(o: List): core.UiNode
 				ui.span(said, if state == "trouble" then "diagnostic.error" else "comment"),
 			})
 		)
+		local unverified = o.encryption[key]
+		if unverified then
+			table.insert(parts, ui.text(unverified, "diagnostic.warning"))
+		end
 		local rows: { core.UiGridRow } = {}
 		for _, room in M.sorted(o.rooms[key] or {}) do
 			local value = { account = key, room = room }
@@ -142,6 +149,11 @@ end
 local function fetch_rooms(o: List, key: string)
 	local service, id = backend.split(key)
 	local rooms, why = backend.ask(service, "rooms", { account = id })
+	local can = backend.can[service]
+	if can and can.encryption then
+		local state = backend.ask(service, "encryption.state", { account = id })
+		o.encryption[key] = if state then encryption.trouble(state) else nil
+	end
 	if rooms then
 		o.rooms[key] = rooms
 	else
@@ -165,7 +177,7 @@ function M.list(window: greed.View?)
 		end,
 		draw = false,
 	})
-	local made: List = { buffer = buffer, view = view, rooms = {}, trouble = nil }
+	local made: List = { buffer = buffer, view = view, rooms = {}, encryption = {}, trouble = nil }
 	o = made
 	list = o
 	view:redraw()
