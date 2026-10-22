@@ -39,7 +39,7 @@ impl Error {
     }
 
     fn transport(e: &reqwest::Error) -> Self {
-        Self::new(e.to_string())
+        Self::new(greed_chat::why(e))
     }
 
     /// Whether the token is no good (any more).

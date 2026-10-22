@@ -2,8 +2,8 @@
 
 use greed_chat::loopback::{self, Loopback};
 use greed_chat::protocol::{Answer, Field, LoginParams, Method, Start, Step};
-use greed_chat::random;
 use greed_chat::rpc::Failure;
+use greed_chat::{random, why};
 use matrix_sdk::Client;
 use matrix_sdk::authentication::oauth::registration::{
     ApplicationType, ClientMetadata, Localized, OAuthGrantType,
@@ -51,7 +51,7 @@ pub(crate) async fn methods(server: &str) -> Result<Vec<Method>, Failure> {
         .server_name_or_homeserver_url(server)
         .build()
         .await
-        .map_err(|e| reach(server, &e))?;
+        .map_err(|e| reach(server, &why(&e)))?;
     let mut methods = Vec::new();
     if client.oauth().server_metadata().await.is_ok() {
         methods.push(Method::Browser {
@@ -63,7 +63,7 @@ pub(crate) async fn methods(server: &str) -> Result<Vec<Method>, Failure> {
         .matrix_auth()
         .get_login_types()
         .await
-        .map_err(|e| reach(server, &e))?;
+        .map_err(|e| reach(server, &why(&e)))?;
     for flow in types.flows {
         match flow {
             LoginType::Password(_) => methods.push(Method::Password),
@@ -85,8 +85,8 @@ pub(crate) async fn methods(server: &str) -> Result<Vec<Method>, Failure> {
     Ok(methods)
 }
 
-fn reach(server: &str, e: &impl std::fmt::Display) -> Failure {
-    Failure::new(format!("can't reach {server}: {e}"))
+fn reach(server: &str, why: &str) -> Failure {
+    Failure::new(format!("can't reach {server}: {why}"))
 }
 
 fn password_fields(why: Option<String>) -> Step {
@@ -119,7 +119,7 @@ impl Matrix {
             Ok(client) => client,
             Err(e) => {
                 self.forget(&store);
-                return Err(reach(&start.server, &e));
+                return Err(reach(&start.server, &why(&e)));
             }
         };
         let id = random(8);
@@ -178,7 +178,7 @@ impl Matrix {
                 .matrix_auth()
                 .get_sso_login_url(&loopback.url, way.strip_prefix("sso:"))
                 .await
-                .map_err(|e| reach(&start.server, &e))?
+                .map_err(|e| reach(&start.server, &why(&e)))?
         } else {
             return Err(Failure::new(format!("{way} isn't a way to sign in here")));
         };
@@ -245,7 +245,7 @@ impl Matrix {
             .await;
         match sent {
             Ok(_) => Ok(json!(self.signed_in_by(&answer.login).await)),
-            Err(e) => Ok(json!(password_fields(Some(e.to_string())))),
+            Err(e) => Ok(json!(password_fields(Some(why(&e))))),
         }
     }
 
@@ -267,7 +267,7 @@ impl Matrix {
                 .oauth()
                 .finish_login(UrlOrQuery::Query(query.to_string()))
                 .await
-                .map_err(|e| e.to_string())
+                .map_err(|e| why(&e))
         } else {
             let query = loopback::query(link);
             let token = query.get("loginToken").map_or("", String::as_str);
@@ -278,7 +278,7 @@ impl Matrix {
                 .send()
                 .await
                 .map(drop)
-                .map_err(|e| e.to_string())
+                .map_err(|e| why(&e))
         };
         match done {
             Ok(()) => self.signed_in_by(id).await,
@@ -345,6 +345,6 @@ async fn authorize(client: &Client, redirect: Url) -> Result<String, String> {
         .login(redirect, None, Some(metadata.into()), None)
         .build()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| why(&e))?;
     Ok(authorization.url.to_string())
 }

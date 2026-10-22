@@ -7,6 +7,7 @@ use greed_chat::protocol::{
     AccountState, DirectoryParams, Listed, Person, Room, RoomKind, RoomParams,
 };
 use greed_chat::rpc::Failure;
+use greed_chat::why;
 use matrix_sdk::ruma::UserId;
 use matrix_sdk::ruma::api::client::directory::get_public_rooms_filtered;
 use matrix_sdk::ruma::directory::Filter;
@@ -32,7 +33,10 @@ impl Matrix {
         let sync = match SyncService::builder(client.clone()).build().await {
             Ok(sync) => Arc::new(sync),
             Err(e) => {
-                self.changed(id, AccountState::Trouble(format!("can't sync: {e}")));
+                self.changed(
+                    id,
+                    AccountState::Trouble(format!("can't sync: {}", why(&e))),
+                );
                 return None;
             }
         };
@@ -45,7 +49,7 @@ impl Matrix {
                 let state = match state {
                     State::Running => AccountState::Ready,
                     State::Idle | State::Terminated => AccountState::Syncing,
-                    State::Error(e) => AccountState::Trouble(e.to_string()),
+                    State::Error(e) => AccountState::Trouble(why(&e)),
                     State::Offline => AccountState::Trouble("can't reach the server".into()),
                 };
                 me.changed(&account, state);
@@ -106,7 +110,7 @@ impl Matrix {
         let room = client
             .join_room_by_id_or_alias(&target, &[])
             .await
-            .map_err(|e| Failure::new(format!("can't join it: {e}")))?;
+            .map_err(|e| Failure::new(format!("can't join it: {}", why(&e))))?;
         Ok(json!({ "room": room.room_id() }))
     }
 
@@ -119,7 +123,7 @@ impl Matrix {
             .ok_or_else(|| Failure::new(format!("not in {}", params.room)))?;
         room.leave()
             .await
-            .map_err(|e| Failure::new(format!("can't leave it: {e}")))
+            .map_err(|e| Failure::new(format!("can't leave it: {}", why(&e))))
     }
 
     /// The rooms the server lists publicly whose names or topics have
@@ -135,7 +139,7 @@ impl Matrix {
         let listed = client
             .public_rooms_filtered(request)
             .await
-            .map_err(|e| Failure::new(format!("can't list the server's rooms: {e}")))?;
+            .map_err(|e| Failure::new(format!("can't list the server's rooms: {}", why(&e))))?;
         Ok(listed
             .chunk
             .into_iter()

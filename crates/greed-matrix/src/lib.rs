@@ -26,6 +26,7 @@ use greed_chat::protocol::{
     Account, AccountParams, AccountState, Hello, PROTOCOL, SecretParams, ServerParams,
 };
 use greed_chat::rpc::{self, Failure, Notifier, Service};
+use greed_chat::why;
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::authentication::oauth::{ClientId, OAuthSession, UserSession};
 use matrix_sdk::encryption::{BackupDownloadStrategy, EncryptionSettings};
@@ -134,7 +135,7 @@ impl Matrix {
             .homeserver_url(&secret.homeserver)
             .build()
             .await
-            .map_err(|e| Failure::new(format!("can't open the account's store: {e}")))?;
+            .map_err(|e| Failure::new(format!("can't open the account's store: {}", why(&e))))?;
         let session: AuthSession = match secret.session {
             Session::Matrix { session } => session.into(),
             Session::OAuth { client_id, user } => OAuthSession {
@@ -146,7 +147,7 @@ impl Matrix {
         client
             .restore_session(session)
             .await
-            .map_err(|e| Failure::new(format!("can't restore the session: {e}")))?;
+            .map_err(|e| Failure::new(format!("can't restore the session: {}", why(&e))))?;
         Ok(self.signed_in(client, secret.store).await)
     }
 
@@ -247,7 +248,7 @@ impl Matrix {
         let done = signed.client.logout().await;
         drop(signed.client);
         self.forget(&signed.store);
-        done.map_err(|e| Failure::new(format!("signed out here, but the server said: {e}")))
+        done.map_err(|e| Failure::new(format!("signed out here, but the server said: {}", why(&e))))
     }
 
     /// A client keeping its state in `store`, refreshing its tokens.
