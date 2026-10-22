@@ -58,8 +58,8 @@ pub enum Answer {
 /// scroll position. Each client has its own of every view.
 #[derive(Debug, Clone)]
 pub struct View {
-    /// Session-local identity, shared by the clients following this view.
-    pub id: ViewId,
+    /// Decorations belonging only to this client's view.
+    pub(crate) marks: BTreeMap<Arc<str>, Vec<Mark>>,
     pub buffer: BufferId,
     pub selection: Selection,
     pub scroll: Scroll,
@@ -80,6 +80,27 @@ pub struct View {
 }
 
 impl View {
+    /// Copies view state for a new client or pane, without local decorations.
+    pub(super) fn copy_without_marks(&self) -> Self {
+        Self {
+            marks: BTreeMap::new(),
+            buffer: self.buffer,
+            selection: self.selection.clone(),
+            scroll: self.scroll,
+            visible: self.visible.clone(),
+            size: self.size,
+            area: self.area,
+            lines: self.lines.clone(),
+            columns: self.columns,
+            filter: self.filter.clone(),
+        }
+    }
+
+    /// Buffer decorations followed by this view's local decorations.
+    pub fn all_marks<'a>(&'a self, buffer: &'a Buffer) -> impl Iterator<Item = &'a Mark> {
+        buffer.all_marks().chain(self.marks.values().flatten())
+    }
+
     /// Notes what drawing it showed: the bytes on screen, and where it went,
     /// with its text right of a gutter `gutter` cells wide.
     pub(crate) fn drawn(
@@ -1016,6 +1037,38 @@ impl Editor {
         }
     }
 
+    /// Replaces a namespace of decorations belonging to a view.
+    pub fn decorate_view(
+        &mut self,
+        view: ViewId,
+        ns: &str,
+        within: Option<std::ops::Range<usize>>,
+        mut marks: Vec<Mark>,
+    ) {
+        let Some(v) = self.find_view(view) else {
+            return;
+        };
+        let len = self.buffer(v.buffer).text().len_bytes();
+        for mark in &mut marks {
+            let end = mark.range.end.min(len);
+            mark.range = mark.range.start.min(end)..end;
+        }
+        let view = self.view_mut(view);
+        let next = if let Some(range) = within {
+            let mut kept = view.marks.remove(ns).unwrap_or_default();
+            kept.retain(|m| !range.contains(&m.range.start));
+            kept.extend(marks);
+            kept
+        } else {
+            marks
+        };
+        if next.is_empty() {
+            view.marks.remove(ns);
+        } else {
+            view.marks.insert(ns.into(), next);
+        }
+    }
+
     /// Starts following `range` of `buffer` through edits; see [`crate::Tracked`].
     pub fn track(
         &mut self,
@@ -1108,6 +1161,9 @@ impl Editor {
             let Some(view) = client.views.get_mut(&view) else {
                 continue;
             };
+            if view.buffer != buffer {
+                view.marks.clear();
+            }
             view.buffer = buffer;
             view.selection = Selection::point(0);
             view.scroll = Scroll::default();
@@ -2214,8 +2270,8 @@ impl Editor {
     /// Opens a view of `buffer` for every client, all with `selection`.
     fn new_view(&mut self, buffer: BufferId, selection: Selection) -> ViewId {
         self.open_view(&View {
-            id: ViewId(self.next_id),
             buffer,
+            marks: BTreeMap::new(),
             selection,
             scroll: Scroll::default(),
             visible: None,
@@ -2231,7 +2287,7 @@ impl Editor {
     fn open_view(&mut self, view: &View) -> ViewId {
         let id = ViewId(self.next_id());
         for client in self.clients.values_mut() {
-            client.views.insert(id, View { id, ..view.clone() });
+            client.views.insert(id, view.clone());
         }
         id
     }
@@ -2292,6 +2348,17 @@ impl Editor {
         for (client, state) in &mut self.clients {
             for (id, other) in &mut state.views {
                 let skipped = *client == self.acting && Some(*id) == except;
+                if other.buffer == buffer {
+                    for marks in other.marks.values_mut() {
+                        marks.retain_mut(|mark| {
+                            let empty = mark.range.is_empty();
+                            let start = changes.map_pos(mark.range.start, Assoc::After);
+                            let end = changes.map_pos(mark.range.end, Assoc::Before);
+                            mark.range = start..end.max(start);
+                            empty || start < end
+                        });
+                    }
+                }
                 if !skipped && other.buffer == buffer {
                     other.selection = other.selection.map(changes);
                 }

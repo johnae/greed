@@ -1974,6 +1974,122 @@ fn plugins_decorate_buffers() {
 }
 
 #[test]
+fn view_decorations_follow_edits_without_leaking_between_panes() {
+    let h = host("hello world");
+    h.eval(r#"
+        local greed = require("@greed")
+        left = greed.view()
+        buffer = left:buffer()
+        buffer:decorate("same", {{from = 0, to = 5, style = "match"}})
+        left:decorate("same", {{from = 6, to = 11, style = "hint", text = " LEFT", sign = "L", action = "left"}})
+        left:show(buffer)
+        assert(#left:decorations("same") == 1)
+        right = left:split("right", buffer)
+        assert(#right:decorations("same") == 0)
+        right:decorate("same", {{from = 6, to = 11, style = "hint", text = " RIGHT", action = "right"}})
+        assert(left:marks_at(6)[1].action == "left")
+        assert(right:marks_at(6)[1].action == "right")
+        assert(#buffer:marks_at(6) == 0)
+        buffer:edit(function(e) e:insert(0, "X") end)
+        assert(left:decorations("same")[1].from == 7)
+        assert(right:decorations("same")[1].from == 7)
+        left:decorate("same", {}, {from = 7, to = 12})
+        assert(#left:decorations("same") == 0)
+        assert(#right:decorations("same") == 1)
+        assert(#buffer:decorations("same") == 1)
+        right:show(greed.create_buffer("scratch", "other"))
+        assert(#right:decorations("same") == 0)
+        right:decorate("same", {{from = 0, to = 999, style = "hint"}})
+        assert(right:decorations("same")[1].to == 5)
+        assert(right:close())
+        assert(not right:valid())
+        assert(not pcall(function() right:decorate("same", {}) end))
+    "#).unwrap();
+}
+
+#[test]
+fn unloading_a_plugin_clears_its_view_marks_but_not_buffer_marks() {
+    let h = host("hello");
+    h.eval(
+        r#"local g = require("@greed")
+        g.view():buffer():decorate("same", {{from = 0, to = 5, style = "match"}})"#,
+    )
+    .unwrap();
+    h.load_str(
+        "pane-marks",
+        r#"local g = require("@greed")
+        g.view():decorate("same", {{from = 0, to = 5, style = "hint", text = "local"}})"#,
+    )
+    .unwrap();
+    h.unload("pane-marks").unwrap();
+    assert_eq!(
+        h.eval(
+            r#"local g = require("@greed")
+        assert(#g.view():decorations("same") == 0)
+        return #g.view():buffer():decorations("same")"#
+        )
+        .unwrap(),
+        "1"
+    );
+}
+
+#[test]
+fn view_marks_belong_to_one_client_and_unload_only_their_owner() {
+    let h = host("hello");
+    h.load_str(
+        "first-marks",
+        r#"
+        local g = require("@greed")
+        g.view():buffer():decorate("same", {{from=0,to=5,style="match"}})
+        g.view():decorate("same", {{from=0,to=5,style="hint",text="first"}})
+    "#,
+    )
+    .unwrap();
+    h.with_editor_mut(|ed| {
+        assert!(ed.add_client(ClientId(2)));
+        assert!(ed.set_acting(ClientId(2)));
+    });
+    h.eval(
+        r#"
+        local g = require("@greed")
+        assert(#g.view():decorations("same") == 0)
+        assert(#g.view():buffer():decorations("same") == 1)
+    "#,
+    )
+    .unwrap();
+    h.load_str(
+        "second-marks",
+        r#"
+        require("@greed").view():decorate("same", {{from=0,to=5,style="hint",text="second"}})
+    "#,
+    )
+    .unwrap();
+    h.unload("first-marks").unwrap();
+    assert_eq!(
+        h.eval(r#"return require("@greed").view():decorations("same")[1].text"#)
+            .unwrap(),
+        "second"
+    );
+    h.with_editor_mut(|ed| {
+        ed.set_acting(ClientId(1));
+    });
+    assert_eq!(
+        h.eval(r#"return #require("@greed").view():decorations("same")"#)
+            .unwrap(),
+        "0"
+    );
+    h.unload("second-marks").unwrap();
+    h.with_editor_mut(|ed| {
+        ed.set_acting(ClientId(2));
+    });
+    assert_eq!(
+        h.eval(r#"return #require("@greed").view():decorations("same")"#)
+            .unwrap(),
+        "0"
+    );
+}
+
+#[test]
 fn fuzzy_matches_say_where_they_matched() {
     let h = host("");
     assert_eq!(
@@ -3022,53 +3138,4 @@ fn a_plugins_menus_and_claude_code_connection_go_with_it() {
     );
     assert!(h.with_editor(|ed| ed.menus().is_empty()));
     let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn scoped_client_callbacks_restore_context_on_errors_and_nesting() {
-    let h = host("");
-    h.with_editor_mut(|ed| assert!(ed.add_client(ClientId(2))));
-    h.eval(
-        r#"
-        local g = require("@greed")
-        local a, b = g.client.with(2, function()
-            assert(g.client.id() == 2)
-            g.client.with(1, function() assert(g.client.id() == 1) end)
-            assert(g.client.id() == 2)
-            return 7, "value"
-        end)
-        assert(a == 7 and b == "value" and g.client.id() == 1)
-        assert(not pcall(function()
-            g.client.with(2, function() error("failure") end)
-        end))
-        assert(g.client.id() == 1)
-        assert(not pcall(function()
-            g.client.with(9999, function() error("must not run") end)
-        end))
-        assert(g.client.id() == 1)
-    "#,
-    )
-    .unwrap();
-}
-
-#[test]
-fn decoration_targets_round_trip_without_filtering_storage() {
-    let h = host("hello");
-    h.eval(
-        r#"
-        local g = require("@greed")
-        local b = g.view():buffer()
-        b:decorate("local", {{
-            from = 0, to = 3, style = "local", view = g.view():id(), client = 2
-        }})
-        local m = b:decorations("local")[1]
-        local at = b:marks_at(1)[1]
-        assert(m.view == g.view():id() and m.client == 2)
-        assert(at.view == m.view and at.client == m.client)
-        m.view = nil; m.client = nil
-        b:decorate("local", {m})
-        assert(b:decorations("local")[1].client == nil)
-    "#,
-    )
-    .unwrap();
 }

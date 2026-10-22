@@ -226,15 +226,9 @@ end
 
 -- Whether `pos` is inside markup hidden in `buffer` that shows as written
 -- once the cursor is there, like a field's brackets in normal mode.
-local function opens(buffer: Buffer, pos: number, view: greed.View): boolean
-	for _, mark in buffer:marks_at(pos) do
-		if
-			(mark.view == nil or mark.view == view:id())
-			and (mark.client == nil or mark.client == greed.client.id())
-			and mark.conceal
-			and pos > mark.from
-			and pos < mark.to
-		then
+local function opens(view: greed.View, pos: number): boolean
+	for _, mark in view:marks_at(pos) do
+		if mark.conceal and pos > mark.from and pos < mark.to then
 			local how = if mark.reveal == "auto"
 				then style.reveal()
 				elseif mark.reveal == "typing" then style.typing_reveal()
@@ -257,7 +251,7 @@ function M.drawn(buffer: Buffer, pos: number, view: greed.View?): boolean
 		return true
 	end
 	return shown:at_drawn_column(buffer:line_of(pos), shown:drawn_column(pos)) == pos
-		or opens(buffer, pos, shown)
+		or opens(shown, pos)
 end
 
 --- One character left (`by` -1) or right (1) from `pos` in its line, past

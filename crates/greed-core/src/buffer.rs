@@ -3,11 +3,10 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use greed_text::{Assoc, Author, ChangeSet, ClientId, Rope, Selection, Transaction, TxId, TxMeta};
+use greed_text::{Assoc, Author, ChangeSet, Rope, Selection, Transaction, TxId, TxMeta};
 use smallvec::SmallVec;
 
 use crate::Error;
-use crate::editor::ViewId;
 use crate::history::{History, SavedHistory, Step};
 use crate::keymap::Key;
 
@@ -105,10 +104,6 @@ pub struct Mark {
     pub range: Range<usize>,
     /// A style name for the theme.
     pub style: Arc<str>,
-    /// Only draw in this view; absent means every view of the buffer.
-    pub view: Option<ViewId>,
-    /// Only draw for this client; absent means every client.
-    pub client: Option<ClientId>,
     /// Style the whole of every line the mark touches, not just its text.
     pub line: bool,
     /// Text shown that isn't in the buffer, like an inlay hint: at the start
@@ -266,14 +261,6 @@ impl Buffer {
     /// Every mark, by namespace.
     pub fn all_marks(&self) -> impl Iterator<Item = &Mark> {
         self.marks.values().flatten()
-    }
-
-    /// The marks visible to `client` in `view`, without copying stored marks.
-    pub fn marks_for(&self, view: ViewId, client: ClientId) -> impl Iterator<Item = &Mark> {
-        self.all_marks().filter(move |mark| {
-            mark.view.is_none_or(|target| target == view)
-                && mark.client.is_none_or(|target| target == client)
-        })
     }
 
     /// The marks over `pos`, with their namespaces: those whose range holds

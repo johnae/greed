@@ -259,7 +259,7 @@ impl Editor {
     /// A new view, for every client, seen as the acting client sees `view`
     /// but not drawn yet.
     fn copy_view(&mut self, view: ViewId) -> ViewId {
-        let mut seen = self.view(view).clone();
+        let mut seen = self.view(view).copy_without_marks();
         seen.visible = None;
         seen.size = None;
         seen.area = None;

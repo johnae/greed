@@ -76,6 +76,62 @@ fn lines_get_numbers_and_empty_rows_stay_empty() {
 }
 
 #[test]
+fn two_panes_combine_shared_and_local_marks_for_drawing_and_columns() {
+    use greed_core::{Mark, Reveal, layout::Direction};
+    let mut ed = editor("|hello world");
+    let left = ed.focus();
+    let buffer = ed.view(left).buffer;
+    let right = ed.split_pane(left, Direction::Right, None).unwrap();
+    ed.decorate(
+        buffer,
+        "shared",
+        vec![Mark {
+            range: 11..11,
+            text: Some(" BOTH".into()),
+            ..Mark::default()
+        }],
+    );
+    for (view, label, sign) in [(left, "LEFT", Some("L")), (right, "RIGHT", None)] {
+        ed.decorate_view(
+            view,
+            "local",
+            None,
+            vec![Mark {
+                range: 0..5,
+                text: Some(label.into()),
+                sign: sign.map(Into::into),
+                conceal: true,
+                reveal: Reveal::Never,
+                ..Mark::default()
+            }],
+        );
+    }
+    let f = frame(&mut ed, 60, 4);
+    let panes = having(&f, |r| matches!(r, Role::Pane { .. }));
+    assert_eq!(panes.len(), 2);
+    let drawn: Vec<String> = panes.iter().map(|p| p.rows[0].text()).collect();
+    assert!(
+        drawn
+            .iter()
+            .any(|r| r.contains("LEFT world BOTH") && r.contains('L'))
+    );
+    assert!(
+        drawn
+            .iter()
+            .any(|r| r.contains("RIGHT world BOTH") && !r.contains("LEFT"))
+    );
+    let renderer = Renderer::new(CellWidth);
+    assert_eq!(renderer.drawn_column(&ed, ed.view(left), 6), 5);
+    assert_eq!(renderer.drawn_column(&ed, ed.view(right), 6), 6);
+    ed.decorate_view(left, "local", None, Vec::new());
+    let cleared = frame(&mut ed, 60, 4);
+    let text = rows(&cleared).join("\n");
+    assert!(!text.contains("LEFT"));
+    assert!(text.contains("RIGHT world BOTH"));
+    assert_eq!(ed.buffer(buffer).marks("shared").len(), 1);
+}
+
+#[test]
 fn the_gutter_fits_the_largest_line_number() {
     let text = (1..=10)
         .map(|n| n.to_string())
@@ -2128,119 +2184,4 @@ fn a_scene_is_placed_over_its_text_only_while_every_line_of_it_shows() {
         frame(&mut ed, 20, 8).scenes.is_empty(),
         "a line between its lines"
     );
-}
-
-#[test]
-fn scoped_layout_marks_do_not_leak_between_panes_or_clients() {
-    use greed_core::layout::Direction;
-    use greed_core::{Mark, Reveal};
-
-    let cases = [
-        Mark {
-            range: 2..2,
-            text: Some("X".into()),
-            ..Mark::default()
-        },
-        Mark {
-            range: 2..3,
-            scale: 2,
-            ..Mark::default()
-        },
-        Mark {
-            range: 2..17,
-            fold: true,
-            ..Mark::default()
-        },
-        Mark {
-            range: 2..3,
-            lines: vec!["note".into()],
-            ..Mark::default()
-        },
-        Mark {
-            range: 2..4,
-            conceal: true,
-            reveal: Reveal::Never,
-            ..Mark::default()
-        },
-        Mark {
-            range: 2..12,
-            nowrap: true,
-            ..Mark::default()
-        },
-    ];
-    for mark in cases {
-        let mut ed = editor("|a\n0123456789\nlast");
-        let first = ed.focus();
-        let buffer = ed.view(first).buffer;
-        ed.set_line_numbers(buffer, false);
-        let second = ed.split_pane(first, Direction::Right, None).unwrap();
-        assert!(ed.add_client(ClientId(2)));
-        ed.decorate(
-            buffer,
-            "local",
-            vec![Mark {
-                view: Some(first),
-                client: Some(ClientId(1)),
-                style: "local".into(),
-                ..mark
-            }],
-        );
-        for client in [ClientId(1), ClientId(2)] {
-            ed.set_acting(client);
-            let f = frame(&mut ed, 17, 10);
-            let shown = |view| {
-                f.surface(SurfaceId::View(view))
-                    .unwrap()
-                    .rows
-                    .iter()
-                    .map(Row::text)
-                    .collect::<Vec<_>>()
-            };
-            let ordinary = shown(second);
-            assert_eq!(&ordinary[..4], ["a", "01234567", "89", "last"]);
-            if client == ClientId(1) {
-                assert_ne!(shown(first), ordinary);
-            } else {
-                assert_eq!(shown(first), ordinary);
-            }
-        }
-    }
-}
-
-#[test]
-fn scoped_row_styles_and_sign_columns_belong_only_to_the_target() {
-    use greed_core::Mark;
-    use greed_core::layout::Direction;
-    let mut ed = editor("|one\ntwo\nthree");
-    let first = ed.focus();
-    let buffer = ed.view(first).buffer;
-    let second = ed.split_pane(first, Direction::Right, None).unwrap();
-    assert!(ed.add_client(ClientId(2)));
-    ed.decorate(
-        buffer,
-        "local",
-        vec![Mark {
-            range: 4..7,
-            style: "local".into(),
-            line: true,
-            sign: Some("!".into()),
-            view: Some(first),
-            client: Some(ClientId(1)),
-            ..Mark::default()
-        }],
-    );
-    for client in [ClientId(1), ClientId(2)] {
-        ed.set_acting(client);
-        let f = frame(&mut ed, 41, 8);
-        for view in [first, second] {
-            let surface = f.surface(SurfaceId::View(view)).unwrap();
-            let targeted = client == ClientId(1) && view == first;
-            assert_eq!(surface.rows[1].tags.contains(&Tag::from("local")), targeted);
-            let text_width = ed.view(view).size.unwrap().1;
-            assert_eq!(
-                surface.rect.width - text_width,
-                if targeted { 4 } else { 2 }
-            );
-        }
-    }
 }

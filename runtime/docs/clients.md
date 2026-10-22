@@ -30,6 +30,18 @@ Each client keeps these to itself:
 Buffers, their undo history, the clipboard history, projects and options
 are shared. Desktop notifications go to the client you used last.
 
+Plugins can decorate one pane with `view:decorate(namespace, marks)`.
+It has the same replacement, partial replacement and edit-tracking semantics
+as `buffer:decorate`, but its marks belong to the acting client's view. Other
+clients and other panes showing its buffer do not see them. A
+namespace on a view is independent of the same namespace on its buffer.
+Buffer marks draw first, followed by view marks. `view:decorations(namespace)`
+inspects only its local marks; `view:marks_at(pos)` includes both.
+Use `view:decorate(namespace, {})` to clear a namespace. Changing its buffer,
+closing the view, or unloading the plugin that last set a namespace clears
+the view decorations too.
+
+
 ## Following, or laid out on its own
 
 A client that attaches follows the others: it shows the same project, the
@@ -103,7 +115,6 @@ command, or the one an event is about.
 |---|---|
 | `ctx.client`, `greed.client.id()` | Which client is acting |
 | `greed.client.current()` | Its name, kind, size and layout |
-| `greed.client.with(id, callback)` | Run a synchronous callback as an existing client, returning its results; restore the previous client on errors or nesting. The callback cannot yield or wait |
 | `greed.client.list()` | Every attached client |
 | `greed.client.set_layout("independent" \| "follow", id?)` | What the two commands above use |
 | `greed.option.set(name, value, { client = true })` | A value of its own for the acting client |
@@ -114,14 +125,6 @@ a table keyed by `greed.client.id()`. A float is shown only to the client
 it opened for unless its spec says `shared = true`; sizes and places like
 `"37.5%"` keep it in proportion on every client. [Writing plugins](plugins.md)
 has more.
-
-Buffer decorations are shared unless a mark supplies `view = view:id()`,
-`client = greed.client.id()`, or both. When both are set, both must match.
-These targets apply to styling, signs, folds, virtual text and layout, as
-well as actionable buttons; an invisible button does not hide offered actions.
-`buffer:decorations()` and `buffer:marks_at()` still return all stored marks,
-including their targets, so plugins can inspect or replace shared storage.
-
 
 A client that attaches over the session socket can ask to be laid out on
 its own with `"layout": "independent"` in its attach request.

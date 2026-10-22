@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use greed_text::{Author, ChangeSet, ClientId, Range, Rope, Selection, line_content, line_end};
+use greed_text::{Author, ChangeSet, Range, Rope, Selection, line_content, line_end};
 use mlua::{
     Function, IntoLuaMulti, Lua, LuaSerdeExt, MetaMethod, Table, UserData, UserDataMethods,
     UserDataRef, Value,
@@ -131,6 +131,7 @@ impl UserData for ViewRef {
             Ok(state(lua).editor.find_view(this.id).is_some())
         });
         add_selection_methods(methods);
+        add_decoration_methods(methods);
         methods.add_method("size", |lua, this, NoArgs| {
             this.with_view(lua, |v| Ok(v.size.unzip()))
         });
@@ -733,9 +734,69 @@ fn span_table(lua: &Lua, span: &std::ops::Range<usize>) -> LuaResult<Table> {
     Ok(t)
 }
 
+trait DecorationRef: UserData {
+    fn decoration_target(&self, lua: &Lua) -> LuaResult<(BufferId, Option<ViewId>)>;
+}
+
+impl DecorationRef for BufferRef {
+    fn decoration_target(&self, lua: &Lua) -> LuaResult<(BufferId, Option<ViewId>)> {
+        self.with_buffer(lua, |_| Ok((self.buffer, None)))
+    }
+}
+
+impl DecorationRef for ViewRef {
+    fn decoration_target(&self, lua: &Lua) -> LuaResult<(BufferId, Option<ViewId>)> {
+        self.with_view(lua, |view| Ok((view.buffer, Some(self.id))))
+    }
+}
+
+fn mark_from_lua(lua: &Lua, t: &Table) -> LuaResult<Mark> {
+    let style = t.get::<Option<String>>("style")?.ok_or_else(|| {
+        mlua::Error::runtime("a mark needs a style, e.g. { from = 0, to = 5, style = \"match\" }")
+    })?;
+    let flag = |key: &str| -> LuaResult<bool> { Ok(t.get::<Option<bool>>(key)?.unwrap_or(false)) };
+    Ok(Mark {
+        range: t.get("from")?..t.get("to")?,
+        style: style.into(),
+        line: flag("line")?,
+        text: t.get::<Option<String>>("text")?.map(Into::into),
+        eol: flag("eol")?,
+        sign: t.get::<Option<String>>("sign")?.map(Into::into),
+        gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
+        above: flag("above")?,
+        overlay: flag("overlay")?,
+        conceal: flag("conceal")?,
+        reveal: reveal_from_lua(t.get("reveal"))?,
+        fold: flag("fold")?,
+        peek: flag("peek")?,
+        nowrap: flag("nowrap")?,
+        plain: flag("plain")?,
+        lines: t
+            .get::<Option<Vec<Value>>>("lines")?
+            .unwrap_or_default()
+            .into_iter()
+            .map(virtual_line_from_lua)
+            .collect::<LuaResult<_>>()?,
+        image: t
+            .get::<Option<Table>>("image")?
+            .map(|i| mark_image_from_lua(&i))
+            .transpose()?,
+        scene: t
+            .get::<Option<Table>>("scene")?
+            .map(|s| mark_scene_from_lua(&s))
+            .transpose()?,
+        action: t.get::<Option<String>>("action")?.map(Into::into),
+        scale: scale_from_lua(t.get("scale"))?,
+        data: match t.get::<Value>("data")? {
+            Value::Nil => None,
+            data => Some(lua.from_value(data)?),
+        },
+    })
+}
+
 /// `buffer:decorate(ns, marks)` and `buffer:decorations(ns)`, where a mark is
 /// `{ from, to, style, line, text, eol, sign, gutter, above, overlay, ... }`.
-fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
+fn add_decoration_methods<T: DecorationRef + 'static, M: UserDataMethods<T>>(methods: &mut M) {
     methods.add_method(
         "decorate",
         |lua, this, (ns, list, within): (String, Vec<Table>, Option<Table>)| {
@@ -749,55 +810,7 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
             }
             let marks = list
                 .iter()
-                .map(|t| {
-                    let style = t.get::<Option<String>>("style")?.ok_or_else(|| {
-                        mlua::Error::runtime(
-                            "a mark needs a style, e.g. { from = 0, to = 5, style = \"match\" }",
-                        )
-                    })?;
-                    let flag = |key: &str| -> LuaResult<bool> {
-                        Ok(t.get::<Option<bool>>(key)?.unwrap_or(false))
-                    };
-                    Ok(Mark {
-                        range: t.get("from")?..t.get("to")?,
-                        style: style.into(),
-                        view: t.get::<Option<u32>>("view")?.map(ViewId),
-                        client: t.get::<Option<u32>>("client")?.map(ClientId),
-                        line: flag("line")?,
-                        text: t.get::<Option<String>>("text")?.map(Into::into),
-                        eol: flag("eol")?,
-                        sign: t.get::<Option<String>>("sign")?.map(Into::into),
-                        gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
-                        above: flag("above")?,
-                        overlay: flag("overlay")?,
-                        conceal: flag("conceal")?,
-                        reveal: reveal_from_lua(t.get("reveal"))?,
-                        fold: flag("fold")?,
-                        peek: flag("peek")?,
-                        nowrap: flag("nowrap")?,
-                        plain: flag("plain")?,
-                        lines: t
-                            .get::<Option<Vec<Value>>>("lines")?
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(virtual_line_from_lua)
-                            .collect::<LuaResult<_>>()?,
-                        image: t
-                            .get::<Option<Table>>("image")?
-                            .map(|i| mark_image_from_lua(&i))
-                            .transpose()?,
-                        scene: t
-                            .get::<Option<Table>>("scene")?
-                            .map(|s| mark_scene_from_lua(&s))
-                            .transpose()?,
-                        action: t.get::<Option<String>>("action")?.map(Into::into),
-                        scale: scale_from_lua(t.get("scale"))?,
-                        data: match t.get::<Value>("data")? {
-                            Value::Nil => None,
-                            data => Some(lua.from_value(data)?),
-                        },
-                    })
-                })
+                .map(|t| mark_from_lua(lua, t))
                 .collect::<LuaResult<Vec<_>>>()?;
             let within = within
                 .map(|t| -> LuaResult<_> {
@@ -806,33 +819,57 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
                 })
                 .transpose()?;
             // Checked last: reading the marks can run Luau that closes it.
-            this.with_buffer(lua, |_| Ok(()))?;
+            let (buffer, view) = this.decoration_target(lua)?;
             let by = super::capabilities::caller(lua, None);
             let state = &mut *state_mut(lua);
-            state.editor.decorate_in(this.buffer, &ns, within, marks);
-            let cleared = state.editor.buffer(this.buffer).marks(&ns).is_empty();
-            state.owned.marked(this.buffer, &ns, by, cleared);
+            if let Some(view) = view {
+                state.editor.decorate_view(view, &ns, within, marks);
+                let cleared = !state.editor.view(view).marks.contains_key(ns.as_str());
+                state
+                    .owned
+                    .view_marked(state.editor.client(), view, &ns, by, cleared);
+            } else {
+                state.editor.decorate_in(buffer, &ns, within, marks);
+                let cleared = state.editor.buffer(buffer).marks(&ns).is_empty();
+                state.owned.marked(buffer, &ns, by, cleared);
+            }
             Ok(())
         },
     );
     methods.add_method("decorations", |lua, this, ns: String| {
-        let marks = this.with_buffer(lua, |b| Ok(b.marks(&ns).to_vec()))?;
+        let (buffer, view) = this.decoration_target(lua)?;
+        let state = state(lua);
+        let marks = if let Some(view) = view {
+            state
+                .editor
+                .view(view)
+                .marks
+                .get(ns.as_str())
+                .map_or(&[][..], Vec::as_slice)
+        } else {
+            state.editor.buffer(buffer).marks(&ns)
+        };
         let list = lua.create_table()?;
-        for mark in &marks {
+        for mark in marks {
             list.push(mark_to_lua(lua, mark)?)?;
         }
         Ok(list)
     });
     methods.add_method("marks_at", |lua, this, pos: usize| {
-        let marks = this.with_buffer(lua, |b| {
-            Ok(b.marks_at(pos)
-                .map(|(ns, m)| (ns.to_owned(), m.clone()))
-                .collect::<Vec<_>>())
-        })?;
+        let (buffer, view) = this.decoration_target(lua)?;
+        let state = state(lua);
+        let buffer = state.editor.buffer(buffer);
         let list = lua.create_table()?;
-        for (ns, mark) in &marks {
+        let local = view
+            .into_iter()
+            .flat_map(|id| state.editor.view(id).marks.iter())
+            .flat_map(|(ns, marks)| marks.iter().map(move |m| (&**ns, m)))
+            .filter(|(_, m)| {
+                m.range.contains(&pos) || (m.range.is_empty() && m.range.start == pos)
+            });
+        for (ns, mark) in buffer.marks_at(pos).chain(local) {
             let t = mark_to_lua(lua, mark)?;
-            t.set("ns", ns.as_str())?;
+            t.set("ns", ns)?;
             list.push(t)?;
         }
         Ok(list)
@@ -871,8 +908,6 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("from", mark.range.start)?;
     t.set("to", mark.range.end)?;
     t.set("style", &*mark.style)?;
-    t.set("view", mark.view.map(|id| id.0))?;
-    t.set("client", mark.client.map(|id| id.0))?;
     t.set("line", mark.line)?;
     t.set("text", mark.text.as_deref())?;
     t.set("eol", mark.eol)?;

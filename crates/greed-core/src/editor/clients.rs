@@ -117,7 +117,11 @@ impl ClientState {
     pub(super) fn seeing_as(&self, id: ClientId) -> Self {
         Self {
             focus: self.focus,
-            views: self.views.clone(),
+            views: self
+                .views
+                .iter()
+                .map(|(&id, view)| (id, view.copy_without_marks()))
+                .collect(),
             tabs: self.tabs.clone(),
             mode: self.mode.clone(),
             cell_size: self.cell_size,

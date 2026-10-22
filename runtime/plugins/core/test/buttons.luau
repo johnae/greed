@@ -65,36 +65,27 @@ test("marks_at finds marks in every namespace, with their namespace", function(t
 	assert(at(5) == "two:z", at(5))
 end)
 
-test("invisible scoped buttons leave offered actions available", function(t)
+test("two panes have independent buttons without changing buffer lookup", function(t)
 	t:buffer("|plain")
 	local buttons = require("../buttons")
-	local view = greed.view()
-	local buffer = view:buffer()
-	buttons.offer(function(b, pos)
-		if b:id() == buffer:id() and pos == 0 then
-			return { text = "offered", action = "offered-action", from = 0 }
-		end
-		return nil
-	end)
-	local mark: greed.Mark = {
-		from = 0,
-		to = 3,
-		style = "ui.button",
-		action = "marked-action",
-		view = view:id(),
-		client = greed.client.id(),
-	}
-	buffer:decorate("scoped", { mark })
-	assert(buttons.at(view, 0)[1].action == "marked-action")
-	mark.view = view:id() + 100000
-	buffer:decorate("scoped", { mark })
-	assert(buttons.at(view, 0)[1].action == "offered-action")
-	mark.view = view:id()
-	mark.client = greed.client.id() + 100000
-	buffer:decorate("scoped", { mark })
-	assert(buttons.at(view, 0)[1].action == "offered-action")
-	mark.view = nil
-	mark.client = nil
-	buffer:decorate("scoped", { mark })
-	assert(buttons.at(view, 0)[1].action == "marked-action")
+	local left = greed.view()
+	local buffer = left:buffer()
+	local right = left:split("right", buffer)
+	buffer:decorate("shared", {
+		{ from = 0, to = 5, style = "ui.button", action = "shared" },
+	})
+	left:decorate("local", {
+		{ from = 0, to = 5, style = "ui.button", text = "LEFT", action = "left" },
+	})
+	right:decorate("local", {
+		{ from = 0, to = 5, style = "ui.button", text = "RIGHT", action = "right" },
+	})
+	assert(#buttons.at(buffer, 0) == 1)
+	assert(buttons.at(buffer, 0, left)[2].action == "left")
+	assert(buttons.at(buffer, 0, right)[2].action == "right")
+	left:decorate("local", {})
+	assert(#buttons.at(buffer, 0, left) == 1)
+	assert(#buttons.at(buffer, 0, right) == 2)
+	assert(right:close())
+	assert(not right:valid())
 end)

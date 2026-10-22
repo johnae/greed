@@ -4,6 +4,7 @@
 //! the plugin that made it, so it goes when that plugin is unloaded or
 //! reloaded.
 
+use greed_text::ClientId;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ type FileType = (String, Vec<String>, Vec<String>);
 pub(crate) struct Owned {
     /// The plugin that last set each buffer's marks in each namespace.
     marks: HashMap<(BufferId, Arc<str>), PluginId>,
+    view_marks: HashMap<(ClientId, ViewId, Arc<str>), PluginId>,
     tracked: HashMap<(BufferId, TrackId), PluginId>,
     images: HashMap<ImageId, PluginId>,
     scenes: HashMap<crate::scene::SceneId, PluginId>,
@@ -41,6 +43,25 @@ impl Owned {
             }
             _ => {
                 self.marks.remove(&key);
+            }
+        }
+    }
+
+    pub fn view_marked(
+        &mut self,
+        client: ClientId,
+        view: ViewId,
+        ns: &str,
+        by: Option<PluginId>,
+        cleared: bool,
+    ) {
+        let key = (client, view, Arc::from(ns));
+        match by {
+            Some(by) if !cleared => {
+                self.view_marks.insert(key, by);
+            }
+            _ => {
+                self.view_marks.remove(&key);
             }
         }
     }
@@ -122,6 +143,18 @@ impl Owned {
                 editor.decorate(*buffer, ns, Vec::new());
             }
             !mine(by) && editor.find_buffer(*buffer).is_some()
+        });
+        self.view_marks.retain(|(client, view, ns), by| {
+            if editor.client_state(*client).is_none() {
+                return false;
+            }
+            let before = editor.act_as(*client);
+            let exists = editor.find_view(*view).is_some();
+            if mine(by) && exists {
+                editor.decorate_view(*view, ns, None, Vec::new());
+            }
+            editor.act_as(before);
+            !mine(by) && exists
         });
         self.tracked.retain(|(buffer, id), by| {
             if mine(by) {

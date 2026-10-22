@@ -1644,7 +1644,7 @@ greed.command({
 		end
 		local buffer = s and buffers[s.id]
 		if s == nil or buffer == nil or not question.waits(s) then
-			if #core.buttons.at(ctx.view, ctx.view:cursor()) > 0 then
+			if #core.buttons.at(ctx.buffer, ctx.view:cursor(), ctx.view) > 0 then
 				greed.run("press-button")
 			else
 				greed.echo("no question waiting")

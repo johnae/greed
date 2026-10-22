@@ -257,9 +257,6 @@ export type Mark = {
 	from: number,
 	to: number,
 	style: string,
-	--- Restrict layout and drawing to this view/client; both filters must match when supplied.
-	view: number?,
-	client: number?,
 	--- Style every whole line the mark touches, not just its text.
 	line: boolean?,
 	--- Text to show that isn't in the buffer, like an inlay hint, before the
@@ -315,6 +312,12 @@ export type Mark = {
 --- A buffer shown on screen, with its own selection. Two handles to the
 --- same view are equal (`==`).
 export type View = {
+	--- Decorations belonging to the acting client's view. Like Buffer:decorate, including partial replacement; cleared when the view closes or changes buffer.
+	decorate: (self: View, ns: string, marks: { Mark }, within: { from: number, to: number? }?) -> (),
+	--- Only this view's local marks in namespace `ns`.
+	decorations: (self: View, ns: string) -> { Mark },
+	--- Buffer marks followed by this view's local marks over `pos`, with their namespace.
+	marks_at: (self: View, pos: number) -> { Mark & { ns: string } },
 	--- Its id, even after it was closed.
 	id: (self: View) -> number,
 	--- Whether it is still open. Other methods fail once it was closed.
@@ -1461,8 +1464,6 @@ export type Client = {
 	current: () -> ClientInfo,
 	--- The id of the client the running code acts for: `current().id`, without building the rest. For keeping what each client has open apart, like a picker of its own.
 	id: () -> number,
-	--- Runs a synchronous callback as an existing client, returning its results. Restores the caller on error or nesting; the callback cannot yield or wait.
-	with: <T...>(id: number, callback: () -> T...) -> T...,
 	--- Every client, in the order they attached.
 	list: () -> { ClientInfo },
 	--- Sends a notification to your desktop through a client: `client` (an id from `list`), or the one used last; a terminal shows it with its notification escape (OSC 9, or OSC 777 in foot and urxvt) and a bell, while it isn't focused. Without a client attached it goes nowhere.

@@ -3,10 +3,6 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
-## Unreleased
-
-- Target decorations to a view, a client, or both without leaking their layout, pointer scrolling, concealed-text movement or buttons into other panes; run synchronous plugin callbacks in a scoped client context with `greed.client.with`.
-
 ## 0.3.0 - 2026-10-22
 
 ### Highlights
@@ -22,6 +18,7 @@ the repository's history.
 
 ### New
 
+- core: `View:decorate` adds pane-local decorations without changing a shared buffer's marks
 - core: greed.sikt reads rows out of text with sikt programs, on other threads for many texts
 - core: a sikt program's rows can hold each capture as the text it matched
 - shell: parse reads text as a table with a sikt program, and a parser can be one
