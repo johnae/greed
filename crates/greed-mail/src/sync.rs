@@ -165,9 +165,14 @@ pub async fn mailbox<I: Imap>(
         return Ok(synced);
     }
 
-    // What changed and went among those that were in.
+    // What changed and went among those that were in, and those the
+    // server has and the store hasn't, as after it held fewer for a while.
+    // A few are fetched where they are; more, and it goes down through the
+    // mailbox again as a first sync does, which goes on from where it got
+    // to without listing it all again. Those in already are found as they
+    // come, so none is twice.
     if was_done {
-        refresh(
+        let missing = refresh(
             imap,
             store,
             &state,
@@ -178,6 +183,16 @@ pub async fn mailbox<I: Imap>(
             options,
         )
         .await?;
+        if missing.len() > options.batch {
+            low = high + 1;
+            store.put(account, state.id, &[], high, low)?;
+        } else {
+            for (first, last) in runs(&missing) {
+                let fetched = imap.fetch(first, last).await?;
+                store.put(account, state.id, &fetched, high, low)?;
+                synced.fetched += fetched.len();
+            }
+        }
     }
 
     // The first sync going down, newest first.
@@ -196,12 +211,27 @@ pub async fn mailbox<I: Imap>(
     Ok(synced)
 }
 
+/// `uids` (in order) as spans to fetch, from first to last: those close
+/// together in one, so a few far apart don't fetch all between them.
+fn runs(uids: &[u32]) -> Vec<(u32, u32)> {
+    const CLOSE: u32 = 50;
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    for &uid in uids {
+        match runs.last_mut() {
+            Some((_, last)) if uid - *last <= CLOSE => *last = uid,
+            _ => runs.push((uid, uid)),
+        }
+    }
+    runs
+}
+
 /// Brings the flags of the messages up to `high` in the store up to date,
 /// and takes out those gone from the mailbox. With CONDSTORE, only flags
 /// changed since the last time come, and the UIDs are listed only when the
 /// mailbox holds fewer messages than the store has in it; without, every
 /// message's flags come, which lists every UID too. A mailbox the server
-/// suddenly lists nearly empty is held as it is (see [`held`]).
+/// suddenly lists nearly empty is held as it is (see [`held`]). Gives the
+/// UIDs the server listed that the store hasn't got, in order.
 #[allow(clippy::too_many_arguments)]
 async fn refresh<I: Imap>(
     imap: &mut I,
@@ -212,7 +242,7 @@ async fn refresh<I: Imap>(
     synced: &mut Synced,
     name: &str,
     options: Options,
-) -> Result<(), Trouble> {
+) -> Result<Vec<u32>, Trouble> {
     let local = store.uids(state.id)?;
     let listed = if let (Some(now), Some(since)) = (opened.highest_modseq, state.modseq) {
         if now != since {
@@ -229,9 +259,17 @@ async fn refresh<I: Imap>(
         synced.changed += store.set_flags(state.id, &changes)?;
         Some(changes.iter().map(|c| c.uid).collect())
     };
+    let mut missing = Vec::new();
     if let Some(listed) = listed {
         let listed: HashSet<u32> = listed.into_iter().collect();
         hold(name, local.len() as u64, listed.len() as u64, options)?;
+        let have: HashSet<u32> = local.iter().copied().collect();
+        missing = listed
+            .iter()
+            .copied()
+            .filter(|uid| !have.contains(uid))
+            .collect();
+        missing.sort_unstable();
         let gone: Vec<u32> = local
             .into_iter()
             .filter(|uid| !listed.contains(uid))
@@ -240,7 +278,7 @@ async fn refresh<I: Imap>(
         synced.gone += gone.len();
     }
     store.set_modseq(state.id, opened.highest_modseq)?;
-    Ok(())
+    Ok(missing)
 }
 
 /// Fetches the bodies of the messages in `account`'s mailbox `name` that
@@ -721,6 +759,47 @@ mod tests {
             sync(&mut fake, &mut store, account, anyway).unwrap().gone,
             35
         );
+    }
+
+    #[test]
+    fn messages_the_store_lost_while_the_server_kept_them_come_back() {
+        // A few fetched where they are, and more than a batch going down
+        // through the mailbox again.
+        for (what, options) in [("few", Options::default()), ("many", batches_of(10))] {
+            let (mut store, account) = store(&format!("lost-{what}"));
+            let mut fake = Fake::with(1, 1..=40);
+            sync(&mut fake, &mut store, account, options).unwrap();
+            let inbox = store.mailbox(account, "INBOX", None).unwrap();
+            // Dropped here, as when the server showed it empty for a while.
+            store
+                .forget(inbox.id, &(1..=39).collect::<Vec<u32>>())
+                .unwrap();
+            assert_eq!(store.uids(inbox.id).unwrap(), [40]);
+            let synced = sync(&mut fake, &mut store, account, options).unwrap();
+            assert!(synced.done, "{what}");
+            assert_eq!(store.uids(inbox.id).unwrap().len(), 40, "{what}: all back");
+            assert_eq!(
+                store.counts(account).unwrap(),
+                (40, 40),
+                "{what}: none twice"
+            );
+            // Once they're back, the next sync has nothing to fetch.
+            let again = sync(&mut fake, &mut store, account, options).unwrap();
+            assert_eq!(again.fetched, 0, "{what}");
+        }
+    }
+
+    #[test]
+    fn a_few_lost_far_apart_dont_fetch_all_between_them() {
+        let (mut store, account) = store("far");
+        let mut fake = Fake::with(1, 1..=300);
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        let inbox = store.mailbox(account, "INBOX", None).unwrap();
+        store.forget(inbox.id, &[2, 299]).unwrap();
+        let synced = sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        assert_eq!(synced.fetched, 2);
+        assert_eq!(store.uids(inbox.id).unwrap().len(), 300);
+        assert_eq!(runs(&[1, 2, 40, 300]), [(1, 40), (300, 300)]);
     }
 
     #[test]
