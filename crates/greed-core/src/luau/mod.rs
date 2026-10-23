@@ -51,7 +51,7 @@ mod theme;
 mod track;
 mod watch;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -67,6 +67,12 @@ pub use jobs::Done as FinishedJob;
 pub use modules::keep_bytecode_in;
 pub use plugin::Check;
 pub use testing::{TestResult, run_suites, run_tests};
+
+thread_local! {
+    /// The session an editor made on this thread runs as (see
+    /// [`Host::starting_session`]).
+    static STARTING_SESSION: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 
 use crate::Editor;
 use crate::control::Opening;
@@ -548,7 +554,7 @@ impl Host {
             ssh_agent: ssh_agent::Asks::default(),
             ide: None,
             menus_owner: None,
-            session_name: None,
+            session_name: STARTING_SESSION.with_borrow(Clone::clone),
             remote: None,
             attached: true,
             dirs: None,
@@ -1057,6 +1063,13 @@ impl Host {
     /// from, as "notes (on buffer.opened)", when it's the error kept last.
     pub fn error_source(&self, message: &str) -> Option<String> {
         errors::source_of(&self.lua, message)
+    }
+
+    /// Says the editor made on this thread from now on runs as the session
+    /// `name`, so its plugins know which as they load: a service's owner
+    /// offers only in its own session.
+    pub fn starting_session(name: Option<&str>) {
+        STARTING_SESSION.set(name.map(str::to_owned));
     }
 
     /// Tells plugins which session this editor is.

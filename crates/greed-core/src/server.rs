@@ -202,6 +202,7 @@ where
     let (input, inbox) = crossbeam_channel::unbounded();
     let (outbox, output) = crossbeam_channel::unbounded();
     let server = thread::spawn(move || {
+        Host::starting_session(session.as_ref().map(|session| session.name.as_str()));
         let host = match setup() {
             Ok(host) => host,
             Err(err) => {

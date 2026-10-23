@@ -1,0 +1,6 @@
+name = "service"
+requires = ["core", "agent"]
+# Reaches a service's owner through `greed mcp` started for its session,
+# and quits it to restart it (proc), and tells views connected to this
+# session what changed (control).
+capabilities = ["proc", "control"]

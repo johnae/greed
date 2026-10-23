@@ -43,6 +43,7 @@
 		"board": "./plugins/board",
 		"mail": "./plugins/mail",
 		"chat": "./plugins/chat",
+		"service": "./plugins/service",
 		"scene": "./plugins/scene",
 		"chart": "./plugins/chart",
 		"data": "./plugins/data",

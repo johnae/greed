@@ -1,4 +1,5 @@
 local test = require("@greed/test")
+local greed = require("@greed")
 local hub = require("@hub")
 
 test("the hub is the session hub-session names, else the first of this build by name", function()
@@ -18,9 +19,9 @@ test("the hub is the session hub-session names, else the first of this build by 
 end)
 
 test("a service's session is never the hub, even named", function()
-	local sessions: any = {
-		{ name = "chat.service", build = "b1", service = "chat" },
-		{ name = "world", build = "b1" },
+	local sessions: { greed.SessionInfo } = {
+		{ name = "chat.service", build = "b1", service = "chat", current = false },
+		{ name = "world", build = "b1", current = false },
 	}
 	assert(hub.elect(sessions, "b1", nil) == "world", "first by name, of the others")
 	assert(hub.elect(sessions, "b1", "chat.service") == "world", "named")

@@ -2399,6 +2399,99 @@ the status and the answer decoded from JSON. Only the device flow is
 supported for signing in; a provider that only signs in through the browser
 on your own machine can't be added this way yet.
 
+## Keeping state in one place
+
+Some plugins keep state that has to live in one place: accounts, a store,
+programs keeping them in sync. Chat, mail and Hoard work like that. Such a
+plugin offers a service: one session, the owner's, holds the state, and
+every session shows it and acts on it through views. Like this, a counter
+you can add to from any session:
+
+```luau
+local greed = require("@greed")
+local service = require("@service")
+
+-- The service, and when its owner starts: when a view first needs it.
+service.define({ name = "counter", start = "use" })
+
+-- The owner: this part runs only in the service's own session.
+if service.owner("counter") then
+	local count = 0
+	local offer: service.Offer
+	offer = service.offer("counter", {
+		version = 1,
+		handle = function(method: string, params: any): (any, string?)
+			if method == "get" then
+				return { count = count }
+			elseif method == "add" then
+				count += params.by
+				offer:notify("count", { count = count })
+				return { count = count }
+			end
+			return nil, `no {method}`
+		end,
+	})
+end
+
+-- A view: the same in every session, the owner's too.
+local shown = 0
+local counter = service.use("counter", {
+	version = 1,
+	topics = { "count" },
+	on = function(_, params: any)
+		shown = params.count
+	end,
+	-- Called whenever the view connects, first or again: show what's there now.
+	reset = function(view: service.View)
+		local now = view:request("get")
+		if now then
+			shown = now.count
+		end
+	end,
+})
+
+greed.command({
+	name = "counter-add",
+	run = function()
+		local _, why = counter:request("add", { by = 1 })
+		if why then
+			greed.echo(why)
+		end
+	end,
+})
+```
+
+The owner runs in a session of its own, `counter.service`, so a stuck
+service only takes itself down. Greed starts it when a view first asks,
+and starts it again if it goes while a view listens. Nobody starts it by
+hand; it shows in `greed ls` and `space P`, marked as a service. A plugin
+like this lists `service` in `requires`.
+
+| Call | |
+|---|---|
+| `service.define({ name, start })` | There's a service called `name`. `start` is `"use"` (when a view first needs it), `"always"` (when Greed starts) or a function saying whether to start it then. Two can't share a name |
+| `service.owner(name)` | Whether this is the owner's session. Put the owner's half behind it |
+| `service.offer(name, { version, handle })` | Answers views: `handle(method, params, caller)` returns a result, or nil and why, and may wait. `caller.session` is the session that asked |
+| `offer:notify(topic, params)` | Tells views listening to `topic` that something changed. A topic is any name you pick |
+| `service.use(name, { version, topics, on, reset })` | A view in this session. `on(topic, params)` hears changes; `reset(view)` runs each time it connects, so fetch what you show there |
+| `view:request(method, params, { timeout })` | Asks the owner and waits (30 seconds by default): the result, or nil and why. Only where code may wait |
+| `view:listen(topic)`, `view:ignore(topic)` | What it hears from now on |
+| `view:state()` | `"idle"` (not needed yet), `"connecting"`, `"ready"` or `"unreachable"`, with since when and why |
+
+A view connects the first time it's needed; in the owner's own session
+it's ready as soon as the service is offered. Changes only reach it while
+it's connected, so after a lost link nothing is caught up; `reset` runs
+and the view fetches again. When the owner and a view speak different
+`version`s, requests fail saying which to restart, and `:service-restart
+NAME` starts a service's session again with the greed you run now.
+
+`handle` runs with what both your plugin and the ones passing the request
+on may do. When it does what only yours may, like running its program or
+reading its secrets, vouch for it:
+`handle = function(...) return greed.vouch(answer, ...) end`.
+
+Answers go as JSON, so a service sends data, never a path on its machine.
+
 ## Agents
 
 Plugins can offer tools to agents. A tool shows up for every agent: those

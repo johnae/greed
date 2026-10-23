@@ -341,7 +341,7 @@ test("what a plugin vouches for counts only against it, but not code handed to i
 	t:buffer("|x")
 	local dir = t:tempdir({})
 	greed.plugin.load(t:tempdir({
-		["plugin.toml"] = 'name = "service"\ncapabilities = ["fs.read", "fs.write"]\n',
+		["plugin.toml"] = 'name = "writer"\ncapabilities = ["fs.read", "fs.write"]\n',
 		["init.luau"] = [[
 local greed = require("@greed")
 local function write(path: string)
@@ -357,18 +357,18 @@ return {
 }
 ]],
 	}))
-	local vouched = `require("@service").write("{dir}/vouched.txt")`
-	greed.plugin.load(plugin(t, "client", "", vouched, '"service"'))
+	local vouched = `require("@writer").write("{dir}/vouched.txt")`
+	greed.plugin.load(plugin(t, "client", "", vouched, '"writer"'))
 	t:run("client-go")
 	assert(last(t) == "ok", last(t))
-	assert(greed.fs.read(`{dir}/vouched.txt`) == "x", "the service wrote it")
+	assert(greed.fs.read(`{dir}/vouched.txt`) == "x", "the writer wrote it")
 
 	-- Code handed to a vouched function still counts as its own: opening a
 	-- project through core writes a file, which sneaky may not.
 	local project = t:tempdir({ ["a.txt"] = "a\n" })
 	local handed =
-		`require("@service").run(function() require("@core").project.open("{project}") end)`
-	greed.plugin.load(plugin(t, "sneaky", '"fs.read"', handed, '"service", "core"'))
+		`require("@writer").run(function() require("@core").project.open("{project}") end)`
+	greed.plugin.load(plugin(t, "sneaky", '"fs.read"', handed, '"writer", "core"'))
 	t:run("sneaky-go")
 	local said = last(t)
 	assert(string.find(said, 'add "fs.write" to capabilities in sneaky', 1, true), said)

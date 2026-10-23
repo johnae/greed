@@ -75,3 +75,102 @@ fn a_session_starts_a_service_in_the_background_beside_a_project_of_its_name() {
     let _ = server.wait();
     kill_sessions(&world.root.join("run/greed"), |_| true);
 }
+
+/// The counter from the plugin guide, as a plugin in your config.
+const COUNTER: &str = r#"
+local greed = require("@greed")
+local service = require("@service")
+
+service.define({ name = "counter", start = "use" })
+
+if service.owner("counter") then
+	local count = 0
+	local offer: service.Offer
+	offer = service.offer("counter", {
+		version = 1,
+		handle = function(method: string, params: any): (any, string?)
+			if method == "get" then
+				return { count = count }
+			elseif method == "add" then
+				count += params.by
+				offer:notify("count", { count = count })
+				return { count = count }
+			end
+			return nil, `no {method}`
+		end,
+	})
+end
+
+local shown = -1
+local counter = service.use("counter", {
+	version = 1,
+	topics = { "count" },
+	on = function(_, params: any)
+		shown = params.count
+	end,
+	reset = function(view: service.View)
+		local now = view:request("get")
+		if now then
+			shown = now.count
+		end
+	end,
+})
+
+greed.command({
+	name = "counter-add",
+	run = function()
+		counter:request("add", { by = 1 })
+	end,
+})
+
+return {
+	shown = function(): number
+		return shown
+	end,
+}
+"#;
+
+#[test]
+fn a_view_in_a_project_starts_the_owner_asks_it_hears_it_and_comes_back_after_it_went() {
+    let Some(world) = World::new("counter") else {
+        return;
+    };
+    let plugin = world.root.join("config/greed/plugins/counter");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::fs::write(
+        plugin.join("plugin.toml"),
+        "name = \"counter\"\nrequires = [\"service\"]\n",
+    )
+    .unwrap();
+    std::fs::write(plugin.join("init.luau"), COUNTER).unwrap();
+    let project = world.project("work", &[]);
+    let mut server = serve(&world, &project);
+    world.wait_for("the project's session", running);
+    let shown = |session: &str| world.eval(session, "return require('@counter').shown()");
+
+    // Adding from the project starts the counter's session, and the change
+    // comes back to the view.
+    world.eval("work", "require('@greed').run('counter-add')");
+    world.wait_for("the count shown in the project", |_| shown("work") == "1");
+    assert!(
+        world.sessions().contains("counter.service"),
+        "{}",
+        world.sessions()
+    );
+
+    // Adding in the owner's own session reaches the project's view too.
+    world.eval("counter.service", "require('@greed').run('counter-add')");
+    world.wait_for("the owner's change shown in the project", |_| {
+        shown("work") == "2"
+    });
+    assert_eq!(shown("counter.service"), "2", "and in the owner's session");
+
+    // The owner went: the view, which listens, starts it again and fetches
+    // what's there now.
+    world.eval("counter.service", "require('@greed').quit()");
+    world.wait_for("the count fetched again", |_| shown("work") == "0");
+
+    world.eval("work", "require('@greed').quit()");
+    let _ = server.wait();
+    kill_sessions(&world.root.join("run/greed"), |_| true);
+}
