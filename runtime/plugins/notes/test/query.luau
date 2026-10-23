@@ -221,3 +221,18 @@ test("a field is a number or a date when its values are, or Obsidian says", func
 	assert(fields.rating.kind == "value" and fields.read.kind == "date", "inferred")
 	assert(fields.code.kind == "value", "as Obsidian's types say")
 end)
+
+test("search everywhere finds notes and todos with in:notes", function(t)
+	vault(t)
+	local core = require("@core")
+	local hits, troubles = core.everywhere.search("tap in:notes")
+	assert(#troubles == 0, table.concat(troubles, "; "))
+	local labels = {}
+	for _, hit in hits do
+		assert(hit.source == "notes", hit.source)
+		table.insert(labels, hit.label)
+	end
+	local said = table.concat(labels, " | ")
+	assert(string.find(said, "fix the tap", 1, true), said)
+	assert(not string.find(said, "seeds", 1, true), said)
+end)

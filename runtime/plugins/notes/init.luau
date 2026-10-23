@@ -60,6 +60,36 @@ greed.keymap.bind({ layer = "leader" }, {
 
 core.features.add("notes", notes.is_note)
 
+-- The notes, when everything that's yours is searched at once.
+core.everywhere.add({
+	name = "notes",
+	doc = "Your notes and their todos, by their words and fields",
+	search = function(text: string, limit: number): ({ core.EverywhereHit }?, string?)
+		local items, problems = query.search(text, limit)
+		if items == nil then
+			local problem = problems[1]
+			return nil, if problem then problem.message else "that query doesn't read"
+		end
+		local hits: { core.EverywhereHit } = {}
+		for _, item in items do
+			local node = item.node
+			local note = item.note
+			table.insert(hits, {
+				source = "notes",
+				kind = if node and node.task then "todo" else "note",
+				id = `note:{note.name}`,
+				label = query.label(item),
+				snippet = if node then `{note.title}: {node.text}` else note.title,
+				at = if note.modified > 0 then note.modified * 1000 else nil,
+				open = function()
+					todos.open_at(note.name, if node then node.line else 0)
+				end,
+			})
+		end
+		return hits, nil
+	end,
+})
+
 --- A note as the index knows it, and a heading or list item in it (see
 --- index.luau).
 export type Note = index.Note

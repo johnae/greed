@@ -2156,6 +2156,38 @@ With `regex = true`, a query starting with `/` is a regex for the rest, as
 the shell's filters take it, and `words` adds words of the plugin's own to
 what `tab` offers.
 
+### Searched with everything else
+
+`core.everywhere` is the search over everything that's yours (`space n s`
+and the agents' `search_everywhere`). A plugin that keeps the person's
+things adds itself as a source. Its `search` gets the query with its own
+`in:` taken out and gives back what it found:
+
+```luau
+core.everywhere.add({
+	name = "tasks",
+	doc = "Your tasks",
+	search = function(text, limit)
+		local hits = {}
+		for _, t in query.run(query.parse(text), tasks, source) or {} do
+			table.insert(hits, {
+				source = "tasks",
+				kind = "task",
+				id = `task:{t.title}`,
+				label = t.title,
+				at = os.time() * 1000, -- when, in milliseconds, to sort by
+				open = function() greed.echo(t.title) end,
+			})
+		end
+		return hits, nil -- or nil and why it couldn't search
+	end,
+})
+local hits, troubles = core.everywhere.search("plants in:tasks")
+```
+
+Hits from every source come newest first, those without `at` last. A
+source that fails says why in `troubles`, and the others still answer.
+
 ## The command line
 
 `greed.cli({ name, doc, usage, run })` adds a command to `greed` itself.

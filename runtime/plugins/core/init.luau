@@ -27,6 +27,7 @@ local scroll = require("@self/scroll")
 local goto_keys = require("@self/goto")
 local textobjects = require("@self/textobjects")
 local objects = require("@self/objects")
+local everywhere = require("@self/everywhere")
 local syntax = require("@self/syntax")
 local formula = require("@self/formula")
 local data = require("@self/data")
@@ -129,6 +130,9 @@ export type Query = query.Parsed
 export type QuerySource = query.Source
 export type QueryField = query.Field
 export type QueryProblem = query.Problem
+--- Something found searching everything, and a source of it (everywhere.luau).
+export type EverywhereHit = everywhere.Hit
+export type EverywhereSource = everywhere.Source
 --- What a search box is opened with, and a word its `tab` offers
 --- (search_box.luau).
 export type SearchBoxOptions = search_box.Options
@@ -210,6 +214,8 @@ return {
 	floats = floats,
 	--- What needs you, and why, for floats' dots and the status (attention.luau).
 	attention = require("@self/attention"),
+	--- Searching your notes, mail and chat at once (everywhere.luau).
+	everywhere = everywhere,
 	--- Notifications the desktop shows itself, with no client (desktop.luau).
 	desktop = require("@self/desktop"),
 	registers = registers,

@@ -96,6 +96,7 @@ and which [tool groups](#tool-groups) it can switch on. The tools:
 | `notes_update_todo` | Change one todo: its text, due date or reminders, or tick it |
 | `notes_remind` | Add reminders to a line of a note, or add a todo with them ("remind me this evening and tomorrow at lunch") |
 | `mail_search`, `mail_read`, `mail_show`, `mail_act` | Your mail: search it as the mail list does, read a thread (which stays unread), show one to you, and mark, flag, tag, archive or trash mail; changing mail asks you first, and nothing is deleted for good |
+| `search_everywhere` | Your notes, mail and chat at once, as `space n s` searches them, newest first; `in:notes` and the like pick some. Reading mail or chat asks you the first time in a project |
 | `plan_read`, `plan_write` | The plan you share (below): its checklist as you have it, and replacing it, which gives back the version to write with next |
 | `decisions`, `decision_read`, `decision_propose` | What was decided for the project, and proposing a decision for you to accept |
 | `memory_list`, `memory_propose` | Your standing preferences (below), and proposing one for you to accept |
@@ -129,6 +130,7 @@ groups an agent switches on with `tools`. Always offered: `focus`,
 | `web` | `web_search`, `web_fetch` |
 | `shell` | `shell_run`, `shell_read`, `shell_wait`, `shell_kill` |
 | `mail` | `mail_search`, `mail_read`, `mail_show`, `mail_act` |
+| `everywhere` | `search_everywhere` |
 
 `:set agent-tool-groups "plan notes"` gives agents those groups from the
 start (default `plan`); `"all"` gives every tool. MCP clients are told when

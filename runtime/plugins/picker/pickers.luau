@@ -1,5 +1,6 @@
 -- The pickers Greed ships with: files in the project, open buffers,
--- commands and the outline of a file.
+-- commands, the outline of a file, and your notes, mail and chat searched
+-- at once (core.everywhere).
 
 local greed = require("@greed")
 local picker = require("./picker")
@@ -255,5 +256,43 @@ greed.command({
 		end)
 	end,
 })
+
+-- How something found everywhere reads: where, what, and when.
+local function found_label(hit: core.EverywhereHit): string
+	local when = if hit.at then `  · {os.date("%Y-%m-%d", hit.at // 1000)}` else ""
+	return `{hit.source}  {hit.label}{when}`
+end
+
+greed.command({
+	name = "search-everywhere",
+	doc = "Search your notes, mail and chat at once, as you type; in:mail, in:chat or in:notes picks some",
+	run = function()
+		picker.pick("Search everywhere", {}, function(item)
+			item.value.open()
+		end, {
+			delay = 250,
+			source = function(query: string): { picker.Item }
+				if core.text.trim(query) == "" then
+					return {}
+				end
+				local hits, troubles = core.everywhere.search(query)
+				if #troubles > 0 then
+					greed.echo(table.concat(troubles, "; "))
+				end
+				local items = {}
+				for _, hit in hits do
+					table.insert(items, { label = found_label(hit), value = hit })
+				end
+				return items
+			end,
+			preview = function(item: picker.Item): picker.Preview?
+				local hit: core.EverywhereHit = item.value
+				return { text = hit.snippet or hit.label }
+			end,
+		})
+	end,
+})
+
+greed.keymap.bind({ layer = "leader" }, { ["n s"] = "search-everywhere" })
 
 return {}

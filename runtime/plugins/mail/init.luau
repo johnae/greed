@@ -1621,6 +1621,40 @@ core.file.link_scheme("mail", function(uri: string)
 	M.read(key, nil, key)
 end)
 
+-- The mail, when everything that's yours is searched at once.
+core.everywhere.add({
+	name = "mail",
+	doc = "Your mail, every account, by the mail list's search",
+	search = function(text: string, limit: number): ({ core.EverywhereHit }?, string?)
+		local parsed, why = M.query(text)
+		if parsed == nil then
+			return nil, why
+		end
+		parsed.view.limit = limit
+		local found, err = M.search(parsed)
+		if found == nil then
+			return nil, err
+		end
+		local hits: { core.EverywhereHit } = {}
+		for _, m in found do
+			local day, time = string.match(m.date or "", "^(%d+%-%d+%-%d+)T(%d+:%d+)")
+			local seconds = if day and time then core.dates.moment(day, time) else nil
+			table.insert(hits, {
+				source = "mail",
+				kind = "mail",
+				id = `mail:{m.key}`,
+				label = `{M.who(m.from)}: {m.subject}`,
+				snippet = `{m.from}\n{m.subject}`,
+				at = if seconds then seconds * 1000 else nil,
+				open = function()
+					M.read(m.key, nil, m.key)
+				end,
+			})
+		end
+		return hits, nil
+	end,
+})
+
 --- A rule for new mail: a query, and what to do with the new mail it
 --- finds: `read`, `flag`, `tag` (a tag to put on), then `archive` or
 --- `trash`.

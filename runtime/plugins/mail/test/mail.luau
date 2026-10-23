@@ -1570,3 +1570,22 @@ test("an agent shows you a thread, and marks or archives mail after asking", fun
 		assert(string.find(again, "only the user's to do", 1, true), again)
 	end)
 end)
+
+test("search everywhere finds mail with in:mail, newest first", function(t)
+	fake()
+	local labels: { string } = {}
+	local done = false
+	greed.spawn(function()
+		local hits, troubles = core.everywhere.search("in:mail tag:inbox")
+		assert(#troubles == 0, table.concat(troubles, "; "))
+		for _, hit in hits do
+			table.insert(labels, `{hit.source}:{hit.label}`)
+		end
+		done = true
+	end)
+	t:wait_for(function(): boolean
+		return done
+	end)
+	local said = table.concat(labels, " | ")
+	assert(said == "mail:Anna Berg: Invoice 41 | mail:Bob: Garden plans", said)
+end)

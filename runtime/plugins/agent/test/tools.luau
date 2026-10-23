@@ -454,3 +454,42 @@ test("debug_log turns topics on and reads what they said, newer than an id", fun
 	end
 	assert(string.find(table.concat(said, "\n"), "j runs ", 1, true), table.concat(said, "\n"))
 end)
+
+test("search_everywhere asks before reading mail or chat, once a project", function()
+	local search: agent.Tool? = nil
+	for _, tool in agent.tools() do
+		if tool.name == "search_everywhere" then
+			search = tool
+		end
+	end
+	assert(search, "there's search_everywhere")
+	local danger = assert(search.danger)
+	core.everywhere.add({
+		name = "jottings",
+		search = function(): ({ core.EverywhereHit }?, string?)
+			return {
+				{
+					source = "jottings",
+					kind = "jotting",
+					id = "jotting:1",
+					label = "plots by the fence",
+					at = 1000,
+					open = function() end,
+				},
+			},
+				nil
+		end,
+	})
+	assert(danger({ query = "plots in:jottings" }) == nil, "notes of your own don't ask")
+	local why = danger({ query = "plots in:mail in:jottings" })
+	assert(why and string.find(why, "mail", 1, true), tostring(why))
+	assert(not string.find(why or "", "chat", 1, true), "only what it reads: " .. tostring(why))
+	-- Allowed once (the tool ran), it doesn't ask again here.
+	local said = search.run({ query = "plots in:mail in:jottings" }, agent.caller())
+	local text = agent.as_text(said)
+	assert(string.find(text, "plots by the fence", 1, true), text)
+	assert(string.find(text, "untrusted", 1, true), "what it found is outside text: " .. text)
+	assert(danger({ query = "plots in:mail" }) == nil, "remembered")
+	local chat = danger({ query = "plots in:chat" })
+	assert(chat and string.find(chat, "chat", 1, true), "chat still asks: " .. tostring(chat))
+end)

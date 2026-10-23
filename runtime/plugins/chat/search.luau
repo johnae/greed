@@ -86,6 +86,36 @@ function M.ask(window: greed.View, only: { account: string, room: string }?)
 	})
 end
 
+-- The chat, when everything that's yours is searched at once.
+core.everywhere.add({
+	name = "chat",
+	doc = "Your chat messages, every account, as the chat service keeps them",
+	search = function(text: string, limit: number): ({ core.EverywhereHit }?, string?)
+		local found, why = M.search(text)
+		if found == nil then
+			return nil, why
+		end
+		local hits: { core.EverywhereHit } = {}
+		for i = 1, math.min(#found, limit) do
+			local one = found[i]
+			local item = one.item
+			local said = string.match(item.text, "^[^\n]*") or ""
+			table.insert(hits, {
+				source = "chat",
+				kind = "chat-message",
+				id = `chat:{one.account}|{one.room}|{item.event}`,
+				label = `{one.room_name} · {item.sender.name}: {said}`,
+				snippet = item.text,
+				at = item.at,
+				open = function()
+					room.open(one.account, one.room, one.room_name, nil, greed.view(), item.event)
+				end,
+			})
+		end
+		return hits, nil
+	end,
+})
+
 greed.command({
 	name = "chat-search",
 	doc = "Search your chat messages; in a room, that room's",

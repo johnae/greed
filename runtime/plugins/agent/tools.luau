@@ -430,4 +430,77 @@ agent.tool({
 	end,
 })
 
+agent.group(
+	"everywhere",
+	"Searching what's the user's own at once: their notes, mail and chat, by one query"
+)
+
+-- The projects whose user allowed searching their mail and chat, by the
+-- sources allowed: asked the first time, then remembered while Greed runs.
+local allowed: { [string]: { [string]: boolean } } = {}
+
+-- The private sources a search of `query` would read and the user hasn't
+-- allowed in this project yet: mail and chat, other people's messages.
+local function unallowed(query: string): { string }
+	local _, sources = core.everywhere.split(query)
+	local root = greed.project.current().root
+	local yes = allowed[root] or {}
+	local out = {}
+	for _, source in sources do
+		if (source == "mail" or source == "chat") and not yes[source] then
+			table.insert(out, source)
+		end
+	end
+	return out
+end
+
+agent.tool({
+	name = "search_everywhere",
+	group = "everywhere",
+	description = "Search the user's notes, mail and chat at once, newest first: each hit's source, "
+		.. "kind and id, what it is, a snippet and when. One query in Greed's search language, "
+		.. "words and fields like from:, and in:notes, in:mail or in:chat to search only those "
+		.. "(any other in: is a place inside them, like a mail folder or a chat room). Reading "
+		.. "mail or chat asks the user the first time in a project",
+	input = object({
+		query = { type = "string", description = 'Like "migration from:bea" or "lunch in:chat"' },
+		limit = { type = "integer", description = "How many at most, 50 if left out" },
+	}, { "query" }),
+	danger = function(args)
+		local asked = unallowed(args.query)
+		if #asked == 0 then
+			return nil
+		end
+		return `reads your {table.concat(asked, " and ")}, other people's messages`
+	end,
+	run = function(args)
+		-- Run only once allowed, or with nothing to allow.
+		local root = greed.project.current().root
+		allowed[root] = allowed[root] or {}
+		for _, source in unallowed(args.query) do
+			allowed[root][source] = true
+		end
+		local hits, troubles =
+			core.everywhere.search(args.query, math.clamp(tonumber(args.limit) or 50, 1, 200))
+		local out = {}
+		for _, hit in hits do
+			table.insert(out, {
+				source = hit.source,
+				kind = hit.kind,
+				id = hit.id,
+				what = hit.label,
+				snippet = hit.snippet,
+				at = if hit.at then core.time.iso_text(hit.at // 1000) else nil,
+			})
+		end
+		return untrusted(
+			`a search of the user's notes, mail and chat for "{args.query}"`,
+			greed.json.encode({
+				found = greed.json.array(out),
+				troubles = greed.json.array(troubles),
+			})
+		)
+	end,
+})
+
 return {}

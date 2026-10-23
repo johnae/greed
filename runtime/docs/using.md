@@ -766,6 +766,22 @@ searches the text as it is, unsaved changes included, and works in
 buffers without a file too. `ctrl-e` puts a file's matches in the panel,
 the same way.
 
+### Your notes, mail and chat at once
+
+`space n s` (`:search-everywhere`) searches what's yours wherever it's
+kept: your notes and todos, your mail and your chat messages, newest
+first, as you type. It takes the same query language as each of them, and
+`in:mail`, `in:chat` or `in:notes` picks some. Like this:
+
+```text
+lunch from:bea in:chat in:mail
+invoice date:2w..
+```
+
+Any other `in:` goes on to the sources (a room in chat, a folder in mail).
+Project files and shell history stay out, they have searches of their own,
+and each app's own search box still searches only that app.
+
 ## Files and buffers
 
 | Keys | |

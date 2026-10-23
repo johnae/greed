@@ -996,6 +996,28 @@ test("chat's search finds what the services told of, in Greed's query language",
 	assert(#found == 1 and found[1] == "$1", table.concat(found, " "))
 end)
 
+test("search everywhere finds chat messages with in:chat", function(t)
+	told(fake())
+	t:wait(50)
+	local labels: { string } = {}
+	local done = false
+	greed.spawn(function()
+		local hits, troubles = core.everywhere.search("lunch from:bea in:chat")
+		assert(#troubles == 0, table.concat(troubles, "; "))
+		for _, hit in hits do
+			table.insert(labels, `{hit.source}:{hit.label}`)
+		end
+		done = true
+	end)
+	t:wait_for(function(): boolean
+		return done
+	end)
+	assert(
+		#labels == 1 and labels[1] == "chat:Plans · Bea: lunch at noon?",
+		table.concat(labels, " | ")
+	)
+end)
+
 test("/ in the list searches every account; the message picked opens in its room", function(t)
 	local notify = fake()
 	told(notify)
