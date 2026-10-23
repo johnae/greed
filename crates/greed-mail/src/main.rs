@@ -10,8 +10,7 @@
 //!
 //! `--config FILE` reads accounts from FILE instead of Greed's `mail.toml`,
 //! `--store DIR` keeps the store in DIR instead of Greed's data folder, and
-//! `--limit N` stops a sync after about N messages a mailbox. `serve --read`
-//! only answers, from a store another greed-mail syncs.
+//! `--limit N` stops a sync after about N messages a mailbox.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -24,14 +23,14 @@ use greed_mail::store::Store;
 use greed_mail::sync::{self, Options};
 use greed_mail::{indexing, serve};
 
-const USAGE: &str = "usage: greed-mail [--config FILE] [--store DIR] [--limit N] [--read] (check | sync | serve) [ACCOUNT]";
+const USAGE: &str =
+    "usage: greed-mail [--config FILE] [--store DIR] [--limit N] (check | sync | serve) [ACCOUNT]";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut path: Option<PathBuf> = None;
     let mut store_dir: Option<PathBuf> = None;
     let mut options = Options::default();
-    let mut read = false;
     let mut rest = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -48,7 +47,6 @@ fn main() -> ExitCode {
                     },
                 }
             }
-            "--read" => read = true,
             "-h" | "--help" | "help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
@@ -89,7 +87,7 @@ fn main() -> ExitCode {
             if command == "serve" {
                 let accounts = accounts.into_iter().cloned().collect();
                 let from = config.from.clone();
-                return match runtime.block_on(serve::serve(Config { from, accounts }, dir, read)) {
+                return match runtime.block_on(serve::serve(Config { from, accounts }, dir)) {
                     Ok(()) => ExitCode::SUCCESS,
                     Err(e) => fail(&e),
                 };

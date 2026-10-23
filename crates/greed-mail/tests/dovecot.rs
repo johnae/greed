@@ -415,11 +415,6 @@ struct Served {
 
 impl Served {
     fn start(dovecot: &Dovecot) -> Served {
-        Served::with(dovecot, &[])
-    }
-
-    /// One started with `options` too, like `--read`.
-    fn with(dovecot: &Dovecot, options: &[&str]) -> Served {
         let config = dovecot.dir.join("mail.toml");
         std::fs::write(&config, dovecot.account_toml()).unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_greed-mail"))
@@ -427,7 +422,6 @@ impl Served {
             .arg(&config)
             .arg("--store")
             .arg(dovecot.dir.join("store"))
-            .args(options)
             .arg("serve")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -587,35 +581,6 @@ fn new_mail_comes_at_once_through_idle() {
     );
     let status = served.ask("status", &serde_json::json!({}));
     assert_eq!(status["accounts"][0]["messages"], 2, "{status}");
-}
-
-#[test]
-fn another_session_reads_what_the_mail_session_syncs() {
-    let Some(dovecot) = Dovecot::start("read") else {
-        return;
-    };
-    deliver(&dovecot, 1, false);
-    let syncing = Served::start(&dovecot);
-    syncing.wait_for("changed");
-    let mut reading = Served::with(&dovecot, &["--read"]);
-    let path = reading.ask("index", &serde_json::json!({}));
-    let index =
-        greed_index::index::Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
-    let keys = index
-        .search(
-            None,
-            &greed_index::query::Schema::default(),
-            &greed_index::index::View::default(),
-        )
-        .unwrap()
-        .keys;
-    let message: Vec<String> = keys.into_iter().filter(|k| k.starts_with("m:")).collect();
-    let thread = reading.ask("thread", &serde_json::json!({ "key": message[0] }));
-    assert_eq!(thread["subject"], "note 1", "{thread}");
-    // It syncs nothing itself: the syncing one keeps the store.
-    let status = reading.ask("status", &serde_json::json!({}));
-    assert_eq!(status["accounts"], serde_json::json!([]), "{status}");
-    drop(syncing);
 }
 
 /// The names of the message files in `anna`'s `folder` (INBOX for "").
@@ -1127,37 +1092,6 @@ fn an_invite_shows_in_its_thread_and_is_answered_to_its_organizer() {
         "{}",
         got[0].1
     );
-}
-
-#[test]
-fn another_session_has_the_mail_session_make_its_changes() {
-    let Some(dovecot) = Dovecot::start("forward") else {
-        return;
-    };
-    deliver(&dovecot, 1, false);
-    let mut syncing = Served::start(&dovecot);
-    syncing.wait_for("changed");
-    let key = message_keys(&mut syncing).remove(0);
-    let mut reading = Served::with(&dovecot, &["--read"]);
-    // Once it's listening for what the mail session says.
-    std::thread::sleep(Duration::from_millis(300));
-    let done = reading.ask(
-        "act",
-        &serde_json::json!({ "keys": [key], "action": "archive" }),
-    );
-    assert_eq!(done["changed"], 1, "{done}");
-    reading.wait_for("changed");
-    wait_until("archived on the server", || {
-        files(&dovecot, "Archive").len() == 1
-    });
-    drop(syncing);
-    std::thread::sleep(Duration::from_millis(300));
-    let answer = reading.answer(
-        "act",
-        &serde_json::json!({ "keys": [key], "action": "read" }),
-    );
-    let said = answer["error"]["message"].as_str().unwrap_or_default();
-    assert!(said.contains("mail session isn't running"), "{answer}");
 }
 
 #[test]
