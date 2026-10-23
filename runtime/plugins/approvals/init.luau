@@ -320,8 +320,10 @@ function M.rescan(load: boolean?)
 	end
 end
 
+-- Only the watched folders' plugins: hashing every file of Greed's own at
+-- each start would be most of the time starting takes.
 greed.on("plugin.loaded", function(event: greed.PluginLoaded)
-	if event.dir then
+	if event.dir and plugin_of(event.dir) then
 		loaded_as[event.name] = digest(event.dir)
 	end
 end)
