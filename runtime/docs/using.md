@@ -527,6 +527,7 @@ cursor's line's own number, and `absolute` goes back.
 | `r` + a character | Replace every selected character with it |
 | `R` | Replace the selections with what was copied |
 | `~` `` ` `` `` alt-` `` | Switch case, lowercase, uppercase |
+| `:snake-case` `:camel-case` `:pascal-case` `:kebab-case` `:title-case` `:sentence-case` | Change the selected words to that case, each line on its own: `fooBar` to `foo_bar`, `fooBar`, `FooBar`, `foo-bar`, `Foo Bar` or `Foo bar` |
 | `>` `<` | Indent or dedent the lines by one level of the language's indent |
 | `J` | Join lines with one space |
 | `:reflow [WIDTH]` | Rewrap the selected lines to the `text-width` option (80), or WIDTH |

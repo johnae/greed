@@ -269,3 +269,20 @@ test("an edit elsewhere while you type leaves your typing one undo step", functi
 	t:keys("esc u")
 	t:expect("|")
 end)
+
+test("the selected words change case: snake, camel, Pascal, kebab, title, sentence", function(t)
+	local function cased(command: string, before: string): string
+		t:buffer(before)
+		t:run(command)
+		return greed.view():buffer():text()
+	end
+	assert(cased("snake-case", "^fooBar HTTPServer|") == "foo_bar_http_server")
+	assert(cased("camel-case", "^foo_bar-baz|") == "fooBarBaz")
+	assert(cased("pascal-case", "^foo bar|") == "FooBar")
+	assert(cased("kebab-case", "^FooBar baz|") == "foo-bar-baz")
+	assert(cased("title-case", "^the quick_fox|") == "The Quick Fox")
+	assert(cased("sentence-case", "^The QuickFox|") == "The quick fox")
+	assert(cased("snake-case", "^fooBar\nbazQux|") == "foo_bar\nbaz_qux", "each line on its own")
+	assert(cased("snake-case", "^    fooBar|") == "    foo_bar", "the indent stays")
+	assert(cased("snake-case", "^caféBar|") == "café_bar", "accented letters stay")
+end)

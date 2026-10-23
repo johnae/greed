@@ -535,6 +535,72 @@ greed.command({
 	end,
 })
 
+-- The words of `line`: apart at anything but letters (accented ones too)
+-- and digits, and where a word in capitals starts (`fooBar`, `HTTPServer`),
+-- lowercase.
+local function words(line: string): { string }
+	local out = {}
+	for part in string.gmatch(line, "[%w\128-\255]+") do
+		local apart =
+			string.gsub(string.gsub(part, "([%l\128-\255])(%u)", "%1 %2"), "(%u)(%u%l)", "%1 %2")
+		for word in string.gmatch(apart, "%S+") do
+			table.insert(out, string.lower(word))
+		end
+	end
+	return out
+end
+
+-- `w` with a capital first letter from word `first` to `last` (the end).
+local function capitals(w: { string }, first: number, last: number?): { string }
+	local out = table.clone(w)
+	for i = first, math.min(last or #out, #out) do
+		out[i] = string.upper(string.sub(out[i], 1, 1)) .. string.sub(out[i], 2)
+	end
+	return out
+end
+
+-- Each case: its command, and how it puts a line's words back together.
+for name, join in
+	{
+		snake = function(w: { string }): string
+			return table.concat(w, "_")
+		end,
+		kebab = function(w: { string }): string
+			return table.concat(w, "-")
+		end,
+		camel = function(w: { string }): string
+			return table.concat(capitals(w, 2))
+		end,
+		pascal = function(w: { string }): string
+			return table.concat(capitals(w, 1))
+		end,
+		title = function(w: { string }): string
+			return table.concat(capitals(w, 1), " ")
+		end,
+		sentence = function(w: { string }): string
+			return table.concat(capitals(w, 1, 1), " ")
+		end,
+	} :: { [string]: (w: { string }) -> string }
+do
+	greed.command({
+		name = `{name}-case`,
+		doc = `Change the selected words to {name} case, each line on its own`,
+		run = function(ctx)
+			transform(ctx, function(s)
+				return (
+					string.gsub(s, "[^\n]+", function(line)
+						-- The indent and what ends the line stay as they are.
+						local lead, words_in, trail = string.match(line, "^(%s*)(.-)(%s*)$")
+						return (lead :: string)
+							.. join(words(words_in :: string))
+							.. trail :: string
+					end)
+				)
+			end)
+		end,
+	})
+end
+
 greed.command({
 	name = "indent",
 	doc = "Indent the lines of each selection",
