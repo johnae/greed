@@ -628,14 +628,7 @@ end
 services.define({ name = "chat", start = any_kept })
 
 if services.owner("chat") then
-	offer = services.offer("chat", {
-		version = VERSION,
-		-- Vouched for: what the views ask runs the services and reads the
-		-- secrets, which only chat may, whichever plugin passed it on.
-		handle = function(method: string, params: any, caller: services.Caller): (any, string?)
-			return greed.vouch(handle, method, params, caller)
-		end,
-	})
+	offer = services.offer("chat", { version = VERSION, handle = handle })
 	-- In its own session the accounts connect at once, so alerts come before
 	-- anything asks; elsewhere (tests, no sessions) when first asked.
 	if M.here() then

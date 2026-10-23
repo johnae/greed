@@ -236,6 +236,77 @@ pub(super) fn refused_answer<'a>(fed: &'a Limit, waiting: &Limit) -> Option<&'a 
         .find(|by| !waiting.iter().any(|(other, _)| other == *by))
 }
 
+/// The plugin whose file `chunk` ("plugin/file", as plugin chunks are
+/// named after an `@`) is, if it's a plugin's.
+fn owner_of_chunk<'a>(state: &'a super::State, chunk: &str) -> Option<&'a PluginId> {
+    state
+        .grants
+        .keys()
+        .filter(|name| {
+            chunk
+                .strip_prefix(&***name)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        })
+        .max_by_key(|name| name.len())
+}
+
+/// The plugin whose code `f` is, from the file it was written in; none for
+/// Greed's own and config's.
+fn author_of(lua: &Lua, f: &Function) -> Option<PluginId> {
+    let source = f.info().source?;
+    let chunk = source.strip_prefix('@')?;
+    owner_of_chunk(&state(lua), chunk).cloned()
+}
+
+/// `greed.plugin.handler` for `owner`: `f`, a function of the plugin whose
+/// code called `owner`'s, wrapped to run as that plugin's own, as its event
+/// handlers do: only its capabilities count, whoever calls it later. For
+/// registries of handlers, like a service's. Never another plugin's
+/// functions, so no plugin gets another's capabilities through it; with no
+/// plugin calling (config, tests), `f` as it is.
+pub(super) fn handler_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
+    let o = owner.clone();
+    let check = lua.create_function(move |lua, f: Function| -> LuaResult<Option<String>> {
+        let Some(by) = caller(lua, Some(&o)) else {
+            return Ok(None);
+        };
+        // Code no plugin wrote (Greed's own, a test's) can only get the
+        // caller's capabilities this way, which it has anyway.
+        if let Some(author) = author_of(lua, &f)
+            && author != by
+        {
+            return Err(mlua::Error::runtime(format!(
+                "greed.plugin.handler takes a function of {by}, the plugin calling {o}"
+            )));
+        }
+        Ok(Some(by.to_string()))
+    })?;
+    let (enter, leave) = vouch_enter_leave(lua)?;
+    // In Luau, so what it runs can wait.
+    lua.load(
+        r"
+        local check, enter, leave = ...
+        return function(f)
+            local by = check(f)
+            if by == nil then
+                return f
+            end
+            return function(...)
+                enter(by)
+                local results = table.pack(pcall(f, ...))
+                leave()
+                if not results[1] then
+                    error(results[2], 0)
+                end
+                return table.unpack(results, 2, results.n)
+            end
+        end
+        ",
+    )
+    .set_name("=greed.plugin.handler")
+    .call((check, enter, leave))
+}
+
 /// The plugins whose code is on the running coroutine's stack, innermost
 /// first, those whose code made that coroutine, and the plugin it runs for
 /// (whose command, handler or task it is). Frames that aren't a plugin's,
@@ -266,16 +337,7 @@ fn on_stack(lua: &Lua) -> Vec<PluginId> {
     let state = state(lua);
     let mut found: Vec<PluginId> = Vec::new();
     for chunk in &chunks {
-        let owner = state
-            .grants
-            .keys()
-            .filter(|name| {
-                chunk
-                    .strip_prefix(&***name)
-                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-            })
-            .max_by_key(|name| name.len());
-        if let Some(owner) = owner
+        if let Some(owner) = owner_of_chunk(&state, chunk)
             && !found.contains(owner)
         {
             found.push(owner.clone());
@@ -381,19 +443,13 @@ pub(super) fn started_by(lua: &Lua) -> Limit {
 /// only its capabilities count, not those of the code that called it or
 /// what started that.
 fn vouch_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
-    let name = owner.to_string();
-    let enter = lua.create_function(move |lua, NoArgs| {
-        // Below this function and the Luau wrapper that called it.
-        let outside = depth(lua).saturating_sub(2);
-        push_vouch(lua, outside, &name)
-    })?;
-    let leave = lua.create_function(|lua, NoArgs| pop_vouch(lua))?;
+    let (enter, leave) = vouch_enter_leave(lua)?;
     // In Luau, so what it runs can wait.
     lua.load(
         r"
-        local enter, leave = ...
+        local enter, leave, owner = ...
         return function(f, ...)
-            enter()
+            enter(owner)
             local results = table.pack(pcall(f, ...))
             leave()
             if not results[1] then
@@ -404,7 +460,19 @@ fn vouch_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
         ",
     )
     .set_name("=greed.vouch")
-    .call((enter, leave))
+    .call((enter, leave, owner.to_string()))
+}
+
+/// `enter(owner)` and `leave()`, for a Luau wrapper that vouches as `owner`
+/// for what it runs between them.
+fn vouch_enter_leave(lua: &Lua) -> LuaResult<(Function, Function)> {
+    let enter = lua.create_function(|lua, owner: String| {
+        // Below this function and the Luau wrapper that called it.
+        let outside = depth(lua).saturating_sub(2);
+        push_vouch(lua, outside, &owner)
+    })?;
+    let leave = lua.create_function(|lua, NoArgs| pop_vouch(lua))?;
+    Ok((enter, leave))
 }
 
 /// Runs `f`, the Luau a plugin passes to `greed.eval`, with every
@@ -1026,6 +1094,7 @@ mod tests {
         "plugin.caller",
         "plugin.describe",
         "plugin.dirs",
+        "plugin.handler",
         "plugin.list",
         "plugin.pending",
         "plugin.started_within",

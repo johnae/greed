@@ -337,6 +337,44 @@ test("an unknown capability stops the plugin loading", function(t)
 	)
 end)
 
+test(
+	"a handler a registry keeps runs as the plugin that gave it, and takes only its own",
+	function(t)
+		t:buffer("|x")
+		local dir = t:tempdir({ ["kept.txt"] = "kept\n" })
+		greed.plugin.load(t:tempdir({
+			["plugin.toml"] = 'name = "rack"\n',
+			["init.luau"] = [[
+local greed = require("@greed")
+local kept = {}
+return {
+	add = function(f: () -> string?)
+		table.insert(kept, greed.plugin.handler(f))
+	end,
+	run = function(): string?
+		return kept[#kept]()
+	end,
+}
+]],
+		}))
+		local adds = `require("@rack").add(function() return greed.fs.read("{dir}/kept.txt") end)`
+		greed.plugin.load(plugin(t, "reader", '"fs.read"', adds, '"rack"'))
+		t:run("reader-go")
+		assert(last(t) == "ok", last(t))
+		-- Run through the rack by a plugin that can't read files, it's still
+		-- reader's own.
+		local runs = `assert(require("@rack").run() == "kept\\n")`
+		greed.plugin.load(plugin(t, "nosy", "", runs, '"rack"'))
+		t:run("nosy-go")
+		assert(last(t) == "ok", last(t))
+		-- Another plugin's function isn't the caller's to hand over as its own.
+		local hands = `require("@rack").add(require("@rack").run)`
+		greed.plugin.load(plugin(t, "thief", "", hands, '"rack"'))
+		t:run("thief-go")
+		assert(string.find(last(t), "takes a function of thief", 1, true), last(t))
+	end
+)
+
 test("what a plugin vouches for counts only against it, but not code handed to it", function(t)
 	t:buffer("|x")
 	local dir = t:tempdir({})

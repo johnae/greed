@@ -131,6 +131,9 @@ type Defined = { definition: Definition, plugin: string? }
 type Offered = {
 	name: string,
 	spec: OfferSpec,
+	-- `spec.handle`, run as the owner's plugin, whoever passed it the
+	-- request (greed.plugin.handler).
+	handle: (method: string, params: any, caller: Caller) -> (any, string?),
 	incarnation: string,
 	-- The topics each socket connection listens to.
 	listeners: { [number]: { [string]: boolean } },
@@ -396,6 +399,7 @@ function M.offer(name: string, spec: OfferSpec): Offer
 	local offered: Offered = {
 		name = name,
 		spec = spec,
+		handle = greed.plugin.handler(spec.handle),
 		incarnation = greed.hash.random(8),
 		listeners = {},
 	}
@@ -472,7 +476,7 @@ function M.use(name: string, spec: ViewSpec): View
 				return nil, `{name} isn't offered any more`
 			end
 			return within(timeout, function()
-				return offered.spec.handle(method, params, { session = M.session() })
+				return offered.handle(method, params, { session = M.session() })
 			end)
 		end
 		local link = v.link
@@ -609,7 +613,7 @@ function M.answer(method: string, params: any, connection: number): any
 		end
 		return true
 	end
-	local result, why = o.spec.handle(params.method, params.params, hellos[connection] or {})
+	local result, why = o.handle(params.method, params.params, hellos[connection] or {})
 	if why then
 		error(why, 0)
 	end

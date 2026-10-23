@@ -340,7 +340,7 @@ pub(super) fn to_lua(lua: &Lua, check: Check) -> LuaResult<Table> {
     Ok(report)
 }
 
-/// `caller` and `cleanup`, for registries other plugins add to.
+/// `caller`, `cleanup` and `handler`, for registries other plugins add to.
 fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaResult<()> {
     let o = owner.clone();
     plugin.set(
@@ -350,6 +350,7 @@ fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaRes
         })?,
     )?;
     plugin.set("within", capabilities::within_function(lua)?)?;
+    plugin.set("handler", capabilities::handler_function(lua, owner)?)?;
     plugin.set(
         "started_within",
         lua.create_function(|lua, capability: String| {

@@ -2485,10 +2485,10 @@ and the view fetches again. When the owner and a view speak different
 `version`s, requests fail saying which to restart, and `:service-restart
 NAME` starts a service's session again with the greed you run now.
 
-`handle` runs with what both your plugin and the ones passing the request
-on may do. When it does what only yours may, like running its program or
-reading its secrets, vouch for it:
-`handle = function(...) return greed.vouch(answer, ...) end`.
+`handle` runs as your plugin's own, as your event handlers do: only your
+capabilities count, whichever plugins passed the request on. A registry of
+your own does the same for what plugins hand it with
+`greed.plugin.handler(f)`.
 
 Answers go as JSON, so a service sends data, never a path on its machine.
 

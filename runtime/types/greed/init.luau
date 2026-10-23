@@ -1795,6 +1795,8 @@ export type Plugins = {
 	within: <A..., R...>(name: string?, f: (A...) -> R..., A...) -> R...,
 	--- Runs `remove` when the plugin whose code called yours (see `caller`) is unloaded or reloaded, so what it added to your registry goes with it; with no other caller, when yours is, for your own cleanup. Returns that plugin's name.
 	cleanup: (remove: () -> ()) -> string,
+	--- For registries of handlers, like a service's: `f`, a function of the plugin whose code called yours (see `caller`), wrapped to run as that plugin's own, as its event handlers do: only its capabilities count, whoever calls it later. A function of any other plugin is an error, so no plugin gets another's capabilities through it; with no plugin calling (config, tests), `f` as it is.
+	handler: <A..., R...>(f: (A...) -> R...) -> (A...) -> R...,
 }
 
 --- A plugin, as `greed.plugin.describe` tells it, for a review.

@@ -388,13 +388,11 @@ services.define({ name = "mail", start = configured })
 if services.owner("mail") then
 	offer = services.offer("mail", {
 		version = 1,
-		-- Vouched for: only mail runs greed-mail, whichever plugin passed
-		-- the request on.
 		handle = function(method: string, params: any): (any, string?)
 			if method ~= "ask" then
 				return nil, `mail has no {method}`
 			end
-			return greed.vouch(owner_ask, params.method, params.params)
+			return owner_ask(params.method, params.params)
 		end,
 	})
 end
