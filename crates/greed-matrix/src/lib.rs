@@ -11,6 +11,7 @@ mod alerts;
 mod encryption;
 mod login;
 mod media;
+mod messages;
 mod rooms;
 mod search;
 mod spaces;
@@ -171,6 +172,7 @@ impl Matrix {
         self.watch(&id, &client);
         self.hear_verifications(&id, &client);
         self.hear_alerts(&id, &client).await;
+        self.hear_messages(&id, &client);
         self.accounts.borrow_mut().insert(id.clone(), signed);
         let sync = self.sync(&id, &client).await;
         let spaces = Arc::new(SpaceService::new(client.clone()).await);
@@ -334,9 +336,16 @@ impl Matrix {
                 protocol: PROTOCOL,
                 service: "matrix".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                can: ["threads", "encryption", "receipts", "previews", "polls"]
-                    .map(String::from)
-                    .to_vec(),
+                can: [
+                    "threads",
+                    "encryption",
+                    "receipts",
+                    "previews",
+                    "polls",
+                    "history"
+                ]
+                .map(String::from)
+                .to_vec(),
             })),
             "accounts" => Ok(json!(self.accounts())),
             "restore" => {
@@ -390,6 +399,7 @@ impl Matrix {
             "media.get" => self.media_get(&rpc::parse(params)?).await,
             "preview" => Ok(json!(self.preview(&rpc::parse(params)?).await?)),
             "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
+            "history" => Ok(json!(self.history(&rpc::parse(params)?).await?)),
             "join" => self.join(&rpc::parse(params)?).await,
             "space" => Ok(json!(self.space(&rpc::parse(params)?).await?)),
             "leave" => self.leave(&rpc::parse(params)?).await.map(|()| Value::Null),

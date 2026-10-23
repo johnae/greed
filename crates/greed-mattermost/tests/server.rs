@@ -722,6 +722,88 @@ fn posts_for_you_are_alerts() {
 }
 
 #[test]
+fn every_post_is_told_kept_up_to_date_and_older_ones_come_a_page_at_a_time() {
+    let Some(server) = Server::start("messages", &[]) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let Crew {
+            bea,
+            channel,
+            service,
+            mut notices,
+            account,
+            ..
+        } = crew(&server).await;
+        let post = |message: &str| json!({ "channel_id": channel, "message": message });
+        for n in 1..=3 {
+            bea.post("posts", &post(&format!("old {n}"))).await;
+        }
+        let said = |text: &'static str| {
+            move |n: &Value| n["method"] == "messages" && n["params"]["messages"][0]["text"] == text
+        };
+        let lunch = bea.post("posts", &post("lunch?")).await;
+        let told = heard(&mut notices, said("lunch?")).await;
+        assert_eq!(told["account"], account.as_str());
+        let message = &told["messages"][0];
+        assert_eq!(message["event"], lunch["id"], "{message}");
+        assert_eq!(message["room"], channel.as_str());
+        assert_eq!(message["room_name"], "Plans");
+        assert_eq!(message["sender"]["name"], "bea");
+        assert_eq!(message["mine"], false);
+        assert_eq!(message["direct"], false);
+        assert!(message["at"].as_i64().unwrap() > 0);
+
+        // Anna's own, changed: it comes again under its own id.
+        let room = json!({ "account": account, "room": channel });
+        call(&service, "timeline", room.clone()).await;
+        let mut send = room.clone();
+        send["text"] = json!("noon");
+        call(&service, "send", send).await;
+        let noon = heard(&mut notices, said("noon")).await;
+        let noon_id = noon["messages"][0]["event"].as_str().unwrap().to_string();
+        assert_eq!(noon["messages"][0]["mine"], true);
+        let mut edit = room.clone();
+        edit["event"] = json!(noon_id);
+        edit["text"] = json!("one");
+        call(&service, "edit", edit).await;
+        let one = heard(&mut notices, said("one")).await;
+        assert_eq!(one["messages"][0]["event"], noon_id.as_str(), "{one}");
+        let mut gone = room.clone();
+        gone["event"] = json!(noon_id);
+        call(&service, "redact", gone).await;
+        let unsaid = heard(&mut notices, |n| n["method"] == "unsaid").await;
+        assert_eq!(unsaid["event"], noon_id.as_str(), "{unsaid}");
+
+        // The older ones, newest first, two at a time.
+        let mut texts: Vec<String> = Vec::new();
+        let mut before: Option<String> = None;
+        for _ in 0..20 {
+            let page = json!({ "account": account, "room": channel, "before": before, "limit": 2 });
+            let got = call(&service, "history", page).await;
+            for message in got["messages"].as_array().unwrap() {
+                texts.push(message["text"].as_str().unwrap().to_string());
+            }
+            match got["before"].as_str() {
+                Some(next) => before = Some(next.to_string()),
+                None => break,
+            }
+        }
+        let at = |text: &str| texts.iter().position(|t| t == text);
+        assert!(
+            at("old 3") < at("old 2") && at("old 2") < at("old 1"),
+            "{texts:?}"
+        );
+        assert!(
+            at("lunch?").is_some() && at("lunch?") < at("old 3"),
+            "{texts:?}"
+        );
+    });
+}
+
+#[test]
 fn slash_commands_run_and_buttons_press() {
     let settings = [(
         "MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS",

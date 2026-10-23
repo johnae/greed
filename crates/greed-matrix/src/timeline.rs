@@ -71,7 +71,7 @@ fn key(params: &RoomParams) -> String {
 
 impl Matrix {
     /// The room `params` names.
-    fn room(&self, params: &RoomParams) -> Result<matrix_sdk::Room, Failure> {
+    pub(crate) fn room(&self, params: &RoomParams) -> Result<matrix_sdk::Room, Failure> {
         let client = self.client_of(&params.account)?;
         let id = RoomId::parse(&params.room).map_err(Failure::params)?;
         client

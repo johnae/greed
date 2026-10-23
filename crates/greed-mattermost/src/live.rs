@@ -137,6 +137,7 @@ impl Mattermost {
                         self.alert(id, event, &post);
                     }
                     self.posted(id, &post).await;
+                    self.said(id, &post).await;
                 }
             }
             "ephemeral_message" => {
@@ -149,6 +150,7 @@ impl Mattermost {
                 if let Some(mut post) = post() {
                     post.delete_at = post.delete_at.max(1);
                     self.posted(id, &post).await;
+                    self.said(id, &post).await;
                 }
             }
             "reaction_added" | "reaction_removed" => {

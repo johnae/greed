@@ -8,15 +8,18 @@
 //! `rooms`, `timeline`, `timeline.back`, `timeline.close`, `send`, `edit`,
 //! `redact`, `react`, `read`, `typing`, `media.get`, `upload`, `search`,
 //! `join` (a room by its id or address, or an invite), `leave` (or decline
-//! an invite), `directory` (rooms you could join) and `space` (the rooms
-//! of a space or team, `{account, room}`).
+//! an invite), `directory` (rooms you could join), `space` (the rooms
+//! of a space or team, `{account, room}`) and `history` (a room's older
+//! messages, a page at a time, to keep for searching).
 //! Those that can ("commands" in `hello`) also answer `commands` and
 //! `press`: a `send` starting with `/` runs a command, and a message's
 //! `actions` are pressed or picked from. With "previews", `preview` says
 //! what a link leads to; others give a message's `preview` with it. With
 //! "polls", `vote` answers a message's `poll`.
 //! Notifications: `account.changed`, `account.secret`, `rooms.changed`,
-//! `timeline.changed`, `typing.changed`, `login.step`, `alert`.
+//! `timeline.changed`, `typing.changed`, `login.step`, `alert`,
+//! `messages {account, messages}` (every message as it comes, in any room,
+//! and edits) and `unsaid {account, room, event}` (one deleted).
 //!
 //! `alert` is an `Alert`: a new message for you, as the service decides by
 //! your settings there (a mention, a direct message, a keyword), for the
@@ -605,6 +608,47 @@ pub struct Found {
     pub room: String,
     pub room_name: String,
     pub item: Item,
+}
+
+/// A message as it's kept to search: where, who, when and what it says.
+/// `messages` tells of these as they come, and `history` gives older ones.
+/// An edit comes again under the message's own `event`, with its new text.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Said {
+    pub room: String,
+    pub room_name: String,
+    pub event: String,
+    pub sender: Person,
+    /// Milliseconds since 1970.
+    pub at: i64,
+    /// What it says, or what it is ("sent a picture").
+    pub text: String,
+    /// The thread it's in, by its first message's id.
+    #[serde(default)]
+    pub thread: Option<String>,
+    pub mine: bool,
+    /// Whether it's in a direct message.
+    pub direct: bool,
+}
+
+/// `history`'s parameters: messages of `room` older than `before` (a mark
+/// the last answer gave), or the newest without it; at most `limit`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryParams {
+    pub account: String,
+    pub room: String,
+    #[serde(default)]
+    pub before: Option<String>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+/// What `history` answers: messages, newest first, and the mark for older
+/// ones; none once there are no more.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct History {
+    pub messages: Vec<Said>,
+    pub before: Option<String>,
 }
 
 /// `press`'s parameters: the message's `action`, and for a menu the

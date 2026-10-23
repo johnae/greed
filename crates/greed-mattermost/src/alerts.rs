@@ -58,7 +58,7 @@ impl Mattermost {
 
 /// A post's text, or what it is when it's a file or a call; nothing for
 /// what the server says itself (someone joining).
-fn describe(post: &Post) -> Option<String> {
+pub(crate) fn describe(post: &Post) -> Option<String> {
     if post.kind == "custom_calls" {
         return Some("is calling".into());
     }

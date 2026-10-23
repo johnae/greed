@@ -9,6 +9,7 @@ mod commands;
 mod live;
 mod login;
 mod media;
+mod messages;
 mod rooms;
 mod search;
 mod timeline;
@@ -45,6 +46,9 @@ pub struct Mattermost {
     timelines: RefCell<HashMap<String, Vec<Item>>>,
     /// Who's writing where, by "account channel", and when they last said so.
     typing: RefCell<HashMap<String, HashMap<String, Instant>>>,
+    /// What each channel is called and whether it is a direct message, by
+    /// "account channel", for the messages kept to search.
+    channels: RefCell<HashMap<String, (String, bool)>>,
 }
 
 /// A signed-in account: its server with the token, and who it is.
@@ -86,6 +90,7 @@ impl Mattermost {
             people: RefCell::default(),
             timelines: RefCell::default(),
             typing: RefCell::default(),
+            channels: RefCell::default(),
         })
     }
 
@@ -197,7 +202,7 @@ impl Service for Mattermost {
                 protocol: PROTOCOL,
                 service: "mattermost".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                can: ["threads", "presence", "commands"]
+                can: ["threads", "presence", "commands", "history"]
                     .map(String::from)
                     .to_vec(),
             })),
@@ -242,6 +247,7 @@ impl Service for Mattermost {
             "commands" => Ok(json!(self.commands(&rpc::parse(params)?).await?)),
             "press" => self.press(&rpc::parse(params)?).await.map(|()| Value::Null),
             "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
+            "history" => Ok(json!(self.history(&rpc::parse(params)?).await?)),
             "join" => self.join(&rpc::parse(params)?).await,
             "space" => Ok(json!(self.space(&rpc::parse(params)?).await?)),
             "leave" => self.leave(&rpc::parse(params)?).await.map(|()| Value::Null),

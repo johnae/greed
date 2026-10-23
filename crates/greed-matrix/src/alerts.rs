@@ -100,7 +100,7 @@ async fn alert(
 }
 
 /// A message's text, or what it is when it's a file.
-fn describe(message: &MessageType) -> String {
+pub(crate) fn describe(message: &MessageType) -> String {
     match message {
         MessageType::Image(_) => "sent a picture".into(),
         MessageType::Video(_) => "sent a video".into(),

@@ -1029,6 +1029,96 @@ fn new_messages_for_you_are_alerts() {
 }
 
 #[test]
+fn every_message_is_told_kept_up_to_date_and_older_ones_come_a_page_at_a_time() {
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+
+    let Some(server) = Tuwunel::start("messages", None) else {
+        return;
+    };
+    run(async {
+        let (matrix, mut notices, bea, room_id) = plans(&server).await;
+        let anna = "@anna:localhost";
+        let bea_room = bea
+            .get_room(&matrix_sdk::ruma::RoomId::parse(&room_id).unwrap())
+            .unwrap();
+        for n in 1..=3 {
+            bea_room
+                .send(RoomMessageEventContent::text_plain(format!("old {n}")))
+                .await
+                .unwrap();
+        }
+        let said = |text: &'static str| {
+            move |n: &Value| n["method"] == "messages" && n["params"]["messages"][0]["text"] == text
+        };
+        let lunch = bea_room
+            .send(RoomMessageEventContent::text_plain("lunch?"))
+            .await
+            .unwrap();
+        let told = heard(&mut notices, said("lunch?")).await;
+        assert_eq!(told["account"], anna);
+        let message = &told["messages"][0];
+        assert_eq!(
+            message["event"],
+            lunch.response.event_id.as_str(),
+            "{message}"
+        );
+        assert_eq!(message["room"], room_id.as_str());
+        assert_eq!(message["room_name"], "Plans");
+        assert_eq!(message["sender"]["id"], "@bea:localhost");
+        assert_eq!(message["mine"], false);
+        assert_eq!(message["direct"], false);
+        assert!(message["at"].as_i64().unwrap() > 0);
+
+        // Anna's own, changed: it comes again under its own event.
+        let params = json!({ "account": anna, "room": room_id });
+        until(&matrix, "timeline", &params, |_| true).await;
+        call(
+            &matrix,
+            "send",
+            json!({ "account": anna, "room": room_id, "text": "noon" }),
+        )
+        .await;
+        let noon = heard(&mut notices, said("noon")).await;
+        let noon_event = noon["messages"][0]["event"].as_str().unwrap().to_string();
+        assert_eq!(noon["messages"][0]["mine"], true);
+        let changed =
+            json!({ "account": anna, "room": room_id, "event": noon_event, "text": "one" });
+        call(&matrix, "edit", changed).await;
+        let one = heard(&mut notices, said("one")).await;
+        assert_eq!(one["messages"][0]["event"], noon_event.as_str(), "{one}");
+        let gone = json!({ "account": anna, "room": room_id, "event": noon_event });
+        call(&matrix, "redact", gone).await;
+        let unsaid = heard(&mut notices, |n| n["method"] == "unsaid").await;
+        assert_eq!(unsaid["event"], noon_event.as_str(), "{unsaid}");
+        assert_eq!(unsaid["room"], room_id.as_str());
+
+        // The older ones, newest first, two at a time.
+        let page = |before: Option<&str>| json!({ "account": anna, "room": room_id, "before": before, "limit": 2 });
+        let mut texts: Vec<String> = Vec::new();
+        let mut before: Option<String> = None;
+        for _ in 0..20 {
+            let got = call(&matrix, "history", page(before.as_deref())).await;
+            for message in got["messages"].as_array().unwrap() {
+                texts.push(message["text"].as_str().unwrap().to_string());
+            }
+            match got["before"].as_str() {
+                Some(next) => before = Some(next.to_string()),
+                None => break,
+            }
+        }
+        let at = |text: &str| texts.iter().position(|t| t == text);
+        assert!(
+            at("old 3") < at("old 2") && at("old 2") < at("old 1"),
+            "{texts:?}"
+        );
+        assert!(
+            at("lunch?").is_some() && at("lunch?") < at("old 3"),
+            "{texts:?}"
+        );
+    });
+}
+
+#[test]
 fn searches_messages() {
     use matrix_sdk::ruma::api::client::room::create_room;
     use matrix_sdk::ruma::events::InitialStateEvent;

@@ -88,10 +88,7 @@ impl Mattermost {
             "G" => RoomKind::Group,
             _ => RoomKind::Room,
         };
-        let name = match other_in(channel, me) {
-            Some(other) if kind == RoomKind::Direct => self.name_of(account, &other),
-            _ => channel.display_name.clone(),
-        };
+        let name = self.channel_name(account, me, channel);
         let read = member.map_or(channel.total_msg_count, |member| member.msg_count);
         Room {
             id: channel.id.clone(),
@@ -108,6 +105,15 @@ impl Mattermost {
                 .filter(|_| kind == RoomKind::Direct)
                 .and_then(|other| statuses.get(&other).cloned()),
             ..Room::default()
+        }
+    }
+
+    /// What account `account` calls `channel`: in a direct message, the
+    /// other person's name.
+    pub(crate) fn channel_name(&self, account: &str, me: &str, channel: &Channel) -> String {
+        match other_in(channel, me) {
+            Some(other) if channel.kind == "D" => self.name_of(account, &other),
+            _ => channel.display_name.clone(),
         }
     }
 
@@ -204,7 +210,7 @@ impl Mattermost {
 }
 
 /// The other person in a direct channel, whose name is both users' ids.
-fn other_in(channel: &Channel, me: &str) -> Option<String> {
+pub(crate) fn other_in(channel: &Channel, me: &str) -> Option<String> {
     let (a, b) = channel.name.split_once("__")?;
     Some(if a == me { b } else { a }.to_string())
 }
