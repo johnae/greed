@@ -521,7 +521,9 @@ test("shows the function and type the cursor is in, outermost first", function(t
 	greed.view():buffer():set_language("rust")
 	local left = t:status()
 	assert(left and string.find(left, "Server › listen", 1, true), left)
-	t:keys("g e")
+	-- On the blank line out of both, set directly rather than with keys.
+	local at = string.find(greed.view():buffer():text(), "\n\nfn", 1, true) :: number
+	greed.view():set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 	left = t:status()
 	assert(
 		left and not string.find(left, "›", 1, true) and not string.find(left, "listen", 1, true),
