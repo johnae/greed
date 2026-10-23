@@ -1809,8 +1809,9 @@ export type Style = {
 	dim: boolean?,
 	reverse: boolean?,
 	strikethrough: boolean?,
-	--- For floats in the window (`ui.float`, in its `gui` part): rounded corners and an outline instead of box lines, and a soft shadow.
+	--- For floats (`ui.float`): rounded corners, in the window drawn as an outline instead of box lines, in a terminal as `╭╮╰╯`. The built-in themes set it in the `gui` part, so terminals draw square boxes.
 	rounded: boolean?,
+	--- For floats in the window: a soft shadow under them.
 	shadow: boolean?,
 	--- For text in the window: its background as a badge, a box with rounded corners a little inside its cells, as motion hints have.
 	badge: boolean?,

@@ -149,10 +149,11 @@ pub struct Style {
     pub dim: Option<bool>,
     pub reverse: Option<bool>,
     pub strikethrough: Option<bool>,
-    /// For floats in the window: rounded corners and an outline instead of
-    /// box lines, and a soft shadow. Terminals draw neither.
+    /// For floats: rounded corners, in the window an outline instead of box
+    /// lines, in a terminal `╭╮╰╯`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rounded: Option<bool>,
+    /// For floats in the window: a soft shadow. Terminals don't draw one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow: Option<bool>,
     /// For text in the window: its background as a badge, a box with

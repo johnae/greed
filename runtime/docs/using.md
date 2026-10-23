@@ -253,12 +253,14 @@ shows underlined at the cursor until it's typed.
 
 In the window, floats (pickers, prompts, hover info) have rounded corners
 and a shadow (lighter on a light background) unless the theme turns them
-off; terminals draw box lines. The window draws the round ends of the
+off; terminals draw square box lines. The window draws the round ends of the
 status line's pills itself, so they need no Powerline font. Square floats
-without shadows:
+without shadows, or rounded ones in the terminal too (`╭╮╰╯`, if its font
+joins them well):
 
 ```luau
 greed.theme.set({ ["ui.float"] = { gui = { rounded = false, shadow = false } } })
+greed.theme.set({ ["ui.float"] = { tui = { rounded = true } } })
 ```
 
 ## Projects
@@ -2824,11 +2826,12 @@ their palette, with selections underlined.
 One theme serves the terminal and the window. Where they should differ, an
 entry's `tui` and `gui` parts change it for one of them, like
 `["ui.float"] = { bg = "black", gui = { bg = "#25282c", rounded = true } }`.
-These fields are for the window only:
+`rounded` gives floats rounded corners in both: drawn smooth in the window,
+as `╭╮╰╯` in the terminal. These fields are for the window only:
 
 | Field | |
 |---|---|
-| `rounded`, `shadow` | Floats as boxes with rounded corners and a soft shadow |
+| `shadow` | Floats with a soft shadow |
 | `badge` | The style's background as a small box with rounded corners, like a key cap (motion hints and buttons use it) |
 | `hover` | Light up what's under the mouse (buttons, fields, choices, tabs) |
 | `checkbox = "empty"` or `"checked"` | A checkbox over the text (todo boxes use it) |

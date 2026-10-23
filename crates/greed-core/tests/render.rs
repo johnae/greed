@@ -1638,6 +1638,59 @@ fn floats_can_hide_go_without_a_border_and_label_their_border() {
 }
 
 #[test]
+fn a_rounded_float_gets_rounded_corners_in_the_terminal_where_the_theme_says() {
+    use greed_core::render::grid::compose;
+    use greed_core::theme::{Entry, Medium, Style};
+    use greed_core::{Anchor, Extent, FloatOptions};
+    let rounded = Style {
+        rounded: Some(true),
+        ..Style::default()
+    };
+    let corners = |entry: Entry| {
+        let mut ed = editor("|main");
+        ed.theme_mut().set("ui.float", entry);
+        let float = ed.create_buffer("x", "boxed");
+        ed.float(
+            float,
+            FloatOptions {
+                title: None,
+                width: Extent::Cells(6),
+                height: Extent::Cells(1),
+                anchor: Anchor::Top,
+                focus: false,
+                x: Some(Extent::Cells(0)),
+                y: Some(Extent::Cells(0)),
+                tab: false,
+                label: None,
+                footer: None,
+                border: true,
+                hidden: false,
+                shared: false,
+            },
+        );
+        let f = frame(&mut ed, 12, 4);
+        let grid = compose(&f, Medium::Tui);
+        let line = |y: usize| grid[y].iter().map(|c| c.text.as_str()).collect::<String>();
+        (line(0), line(2))
+    };
+    let (top, bottom) = corners(Entry::new(rounded));
+    assert!(
+        top.starts_with("╭────╮") && bottom.starts_with("╰────╯"),
+        "{top}\n{bottom}"
+    );
+    let only_window = corners(Entry {
+        gui: rounded,
+        ..Entry::default()
+    });
+    assert!(only_window.0.starts_with("┌────┐"), "{}", only_window.0);
+    let only_terminal = corners(Entry {
+        tui: rounded,
+        ..Entry::default()
+    });
+    assert!(only_terminal.0.starts_with("╭────╮"), "{}", only_terminal.0);
+}
+
+#[test]
 fn a_click_on_a_floats_border_label_or_footer_finds_its_action() {
     use greed_core::{Anchor, Extent, FloatOptions, VirtualLine};
     let mut ed = editor("|main");

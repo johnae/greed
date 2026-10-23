@@ -349,9 +349,13 @@ fn draw_border(
     if x == 0 || y == 0 {
         return;
     }
+    // The window draws its own rounded outline over these.
+    let rounded = border.rounded == Some(true);
     for (dy, line) in grid.iter_mut().enumerate().skip(y - 1).take(h + 2) {
         let (left, fill, right) = match dy {
+            d if d == y - 1 && rounded => ('╭', '─', '╮'),
             d if d == y - 1 => ('┌', '─', '┐'),
+            d if d == y + h && rounded => ('╰', '─', '╯'),
             d if d == y + h => ('└', '─', '┘'),
             _ => ('│', ' ', '│'),
         };
