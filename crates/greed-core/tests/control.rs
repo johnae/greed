@@ -392,3 +392,147 @@ fn a_sessions_folder_is_made_closed_to_others_and_one_left_open_is_closed() {
     );
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+const ORDER: &str = r#"
+local greed = require("@greed")
+greed.on("control.request", function(req)
+  if req.method == "slow" then
+    greed.sleep(300)
+    greed.control.reply(req.id, "slow")
+  elseif req.method == "fast" then
+    greed.control.reply(req.id, "fast")
+  elseif req.method == "both" then
+    greed.control.reply(req.id, req.params)
+    greed.control.send(req.connection, "after", req.params)
+  elseif req.method == "flood" then
+    for i = 1, 20000 do
+      if not greed.control.send(req.connection, "flood", { n = i, pad = string.rep("x", 200) }) then
+        break
+      end
+    end
+    greed.control.reply(req.id, "flooded")
+  else
+    greed.control.reply(req.id, nil, "unknown method " .. req.method)
+  end
+end)
+"#;
+
+/// A connection to `socket` that's past auth, read and written by hand to
+/// see each line as it comes.
+fn raw(
+    socket: &std::path::Path,
+    token: &str,
+) -> (
+    std::os::unix::net::UnixStream,
+    std::io::BufReader<std::os::unix::net::UnixStream>,
+) {
+    use std::io::{BufRead, Write};
+    let mut stream = std::os::unix::net::UnixStream::connect(socket).unwrap();
+    let auth =
+        json!({ "jsonrpc": "2.0", "id": 0, "method": "auth", "params": { "token": token.trim() } });
+    writeln!(stream, "{auth}").unwrap();
+    let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    assert!(line.contains("true"), "{line}");
+    (stream, reader)
+}
+
+fn next(reader: &mut std::io::BufReader<std::os::unix::net::UnixStream>) -> serde_json::Value {
+    use std::io::BufRead;
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    serde_json::from_str(&line).unwrap_or_else(|_| panic!("not JSON: {line:?}"))
+}
+
+#[test]
+fn a_slow_request_doesnt_hold_up_the_ones_after_it() {
+    use std::io::Write;
+    let (conn, socket, token) = start(&name("pipelined"), ORDER);
+    let (mut stream, mut reader) = raw(&socket, &token);
+    writeln!(
+        stream,
+        "{}",
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "slow" })
+    )
+    .unwrap();
+    writeln!(
+        stream,
+        "{}",
+        json!({ "jsonrpc": "2.0", "id": 2, "method": "fast" })
+    )
+    .unwrap();
+    assert_eq!(next(&mut reader)["id"], 2, "the fast one is answered first");
+    assert_eq!(next(&mut reader)["id"], 1);
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_reply_is_never_overtaken_by_a_notification_sent_after_it() {
+    use std::io::Write;
+    let (conn, socket, token) = start(&name("ordered"), ORDER);
+    let (mut stream, mut reader) = raw(&socket, &token);
+    for n in 1..=200 {
+        let both = json!({ "jsonrpc": "2.0", "id": n, "method": "both", "params": { "n": n } });
+        writeln!(stream, "{both}").unwrap();
+    }
+    for n in 1..=200 {
+        let reply = next(&mut reader);
+        assert_eq!(reply["id"], n, "the reply first: {reply}");
+        let after = next(&mut reader);
+        assert_eq!(after["method"], "after", "{after}");
+        assert_eq!(after["params"]["n"], n);
+    }
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_connection_that_stops_reading_is_cut_off_without_holding_up_the_editor() {
+    use std::io::Write;
+    let (conn, socket, token) = start(&name("slowreader"), ORDER);
+    let (mut stuck, _never_read) = raw(&socket, &token);
+    writeln!(
+        stuck,
+        "{}",
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "flood" })
+    )
+    .unwrap();
+    // Others are answered at once meanwhile.
+    let mut other = Client::connect(&socket, &token).unwrap();
+    let asked = std::time::Instant::now();
+    assert_eq!(other.call("fast", &json!(null)).unwrap(), Ok(json!("fast")));
+    assert!(
+        asked.elapsed() < std::time::Duration::from_secs(2),
+        "{:?}",
+        asked.elapsed()
+    );
+    conn.input.send(Input::Quit).unwrap();
+}
+
+#[test]
+fn a_client_that_closes_its_side_gets_its_answers_and_is_done_at_once() {
+    let (conn, socket, token) = start(&name("finish"), ORDER);
+    let client = Client::connect(&socket, &token).unwrap();
+    let input = [
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "fast" }).to_string(),
+        json!({ "jsonrpc": "2.0", "id": 2, "method": "slow" }).to_string(),
+    ]
+    .join("\n");
+    let mut written = Vec::new();
+    let started = std::time::Instant::now();
+    client
+        .pipe(std::io::Cursor::new(input.into_bytes()), &mut written)
+        .unwrap();
+    let answers: Vec<serde_json::Value> = String::from_utf8(written)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(answers.len(), 2, "both answered: {answers:?}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "done once answered, not after a wait: {:?}",
+        started.elapsed()
+    );
+    conn.input.send(Input::Quit).unwrap();
+}

@@ -16,7 +16,7 @@ use tungstenite::handshake::server::{ErrorResponse, Request as Handshake, Respon
 use tungstenite::http::HeaderValue;
 use tungstenite::{Message, WebSocket};
 
-use crate::control::{Request, new_token};
+use crate::control::{Reply, Request, new_token};
 
 /// The header Claude Code sends the lock file's token in.
 const AUTH_HEADER: &str = "x-claude-code-ide-authorization";
@@ -216,7 +216,7 @@ fn forward(text: &str, requests: &Sender<Request>, outgoing: &Sender<String>) {
             .unwrap_or("")
             .to_owned(),
         params: message.get("params").cloned().unwrap_or(Value::Null),
-        reply,
+        reply: Reply::Channel(reply),
     };
     if requests.send(request).is_err() {
         return;

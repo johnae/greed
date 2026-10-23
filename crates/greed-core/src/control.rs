@@ -13,10 +13,10 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsE
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use crossbeam_channel::{Receiver, Sender, TrySendError};
 use serde_json::{Value, json};
 
 /// The version of what attached clients and sessions send each other:
@@ -248,8 +248,157 @@ pub struct Request {
     pub connection: Option<Notifier>,
     pub method: String,
     pub params: Value,
-    pub(crate) reply: Sender<Result<Value, String>>,
+    pub(crate) reply: Reply,
 }
+
+/// Where a request's answer goes.
+#[derive(Debug)]
+pub(crate) enum Reply {
+    /// Back to whoever waits on the channel, like the IDE connection.
+    Channel(Sender<Result<Value, String>>),
+    /// Into the outbox of the session socket connection it came on, in the
+    /// order the editor answers and notifies.
+    Outbox(Owed),
+}
+
+impl Request {
+    /// Sends the answer back to the connection that asked.
+    pub fn respond(self, answer: Result<Value, String>) {
+        // The connection may have gone away; then nobody wants the answer.
+        match self.reply {
+            Reply::Channel(reply) => {
+                let _ = reply.send(answer);
+            }
+            Reply::Outbox(mut owed) => owed.answer(answer),
+        }
+    }
+}
+
+/// A socket request's answer, owed to its connection: the response to
+/// request `id` (none for a notification, which gets none). One dropped
+/// without an answer, as when the editor gives it up, says so.
+#[derive(Debug)]
+pub(crate) struct Owed {
+    id: Option<Value>,
+    outbox: Outbox,
+}
+
+impl Owed {
+    /// Owes `outbox` the answer to request `id`, counting it while it does.
+    fn new(id: Option<Value>, outbox: Outbox) -> Self {
+        if id.is_some() {
+            outbox.owed.fetch_add(1, Ordering::Relaxed);
+        }
+        Self { id, outbox }
+    }
+
+    fn answer(&mut self, answer: Result<Value, String>) {
+        if let Some(id) = self.id.take() {
+            self.outbox.push(response(&id, answer).to_string());
+            self.outbox.owed.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Drop for Owed {
+    fn drop(&mut self) {
+        self.answer(Err("the editor dropped the request".to_owned()));
+    }
+}
+
+/// The JSON-RPC response to request `id`.
+fn response(id: &Value, answer: Result<Value, String>) -> Value {
+    match answer {
+        Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+        Err(message) => error_response(id, -32000, &message),
+    }
+}
+
+/// A connection's outgoing lines, written in the order they're put in by a
+/// thread of the connection's own, so neither the editor thread (which
+/// answers and notifies) nor the connection's reader waits on a client
+/// that's slow to read. One that falls more than [`OUTBOX_LINES`] behind is
+/// cut off: it hears the connection close, and starts again.
+#[derive(Debug, Clone)]
+pub(crate) struct Outbox {
+    lines: Sender<Option<String>>,
+    /// Requests passed to the editor and not answered yet.
+    owed: Arc<AtomicU64>,
+    open: Arc<AtomicBool>,
+    stream: Arc<UnixStream>,
+}
+
+/// How many lines a connection's outbox holds before it's cut off.
+const OUTBOX_LINES: usize = 10_000;
+
+impl Outbox {
+    /// An outbox for `stream`, and the thread writing it, which ends once
+    /// the connection closes.
+    fn start(stream: UnixStream) -> io::Result<(Self, std::thread::JoinHandle<()>)> {
+        let (lines, queued) = crossbeam_channel::bounded(OUTBOX_LINES);
+        let open = Arc::new(AtomicBool::new(true));
+        let stream = Arc::new(stream);
+        let outbox = Outbox {
+            lines,
+            owed: Arc::new(AtomicU64::new(0)),
+            open: open.clone(),
+            stream: stream.clone(),
+        };
+        let writer = std::thread::Builder::new().spawn(move || {
+            let mut out = &*stream;
+            // Lines until the stop `close` puts in, or every sender gone.
+            while let Ok(Some(line)) = queued.recv() {
+                if writeln!(out, "{line}").is_err() {
+                    open.store(false, Ordering::Relaxed);
+                    return;
+                }
+            }
+        })?;
+        Ok((outbox, writer))
+    }
+
+    /// Puts `line` out after what's there; false if the connection has
+    /// closed, or fell so far behind it was cut off.
+    fn push(&self, line: String) -> bool {
+        if !self.open.load(Ordering::Relaxed) {
+            return false;
+        }
+        match self.lines.try_send(Some(line)) {
+            Ok(()) => true,
+            Err(TrySendError::Full(_)) => {
+                self.close();
+                let _ = self.stream.shutdown(std::net::Shutdown::Both);
+                false
+            }
+            Err(TrySendError::Disconnected(_)) => false,
+        }
+    }
+
+    /// Once the client has closed its side, waits for the answers to what
+    /// it asked before (as `greed mcp` reads them after its input ends),
+    /// but not past [`FINISHING`]: one that went away altogether gets no
+    /// more, and its connection closes.
+    fn finish_owed(&self) {
+        let started = std::time::Instant::now();
+        while self.owed.load(Ordering::Relaxed) > 0
+            && self.open.load(Ordering::Relaxed)
+            && started.elapsed() < FINISHING
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Stops taking lines; what's in already is still written.
+    fn close(&self) {
+        self.open.store(false, Ordering::Relaxed);
+        // Wakes the writer to finish as soon as what's queued is out.
+        let _ = self.lines.try_send(None);
+    }
+}
+
+/// How long a connection whose client closed its side still waits for the
+/// answers it's owed.
+const FINISHING: Duration = Duration::from_secs(2);
 
 /// A connection to the session socket, for sending it notifications, like
 /// MCP's `notifications/tools/list_changed`, outside any request. It lets
@@ -258,33 +407,24 @@ pub struct Request {
 pub struct Notifier {
     /// Unique among the session's connections.
     pub id: u64,
-    writer: Weak<Mutex<UnixStream>>,
+    outbox: Outbox,
 }
 
 impl Notifier {
     /// Sends a JSON-RPC notification of `method` with `params` (left out
-    /// when null). False if the connection has closed.
+    /// when null), after the answers and notifications sent before it.
+    /// False if the connection has closed.
     pub fn notify(&self, method: &str, params: &Value) -> bool {
-        let Some(writer) = self.writer.upgrade() else {
-            return false;
-        };
         let mut message = json!({ "jsonrpc": "2.0", "method": method });
         if !params.is_null() {
             message["params"] = params.clone();
         }
-        // A client that stops reading mustn't hold up the editor thread,
-        // which sends these; answers, sent from the connection's own
-        // thread, can wait as long as they need.
-        let mut writer = lock(&writer);
-        let _ = writer.set_write_timeout(Some(NOTIFY_TIMEOUT));
-        let sent = writeln!(writer, "{message}").is_ok();
-        let _ = writer.set_write_timeout(None);
-        sent
+        self.outbox.push(message.to_string())
     }
 
     /// Whether the connection is still open.
     pub fn is_open(&self) -> bool {
-        self.writer.strong_count() > 0
+        self.outbox.open.load(Ordering::Relaxed)
     }
 }
 
@@ -292,22 +432,6 @@ static NEXT_CONNECTION: AtomicU64 = AtomicU64::new(1);
 
 /// Numbers the temporary names sockets are bound under in [`listen`].
 static NEXT_SOCKET: AtomicU64 = AtomicU64::new(0);
-
-/// How long a write to a connection may wait for it to read.
-const NOTIFY_TIMEOUT: Duration = Duration::from_secs(1);
-
-/// A connection's shared writer, held for one whole line.
-fn lock(writer: &Mutex<UnixStream>) -> MutexGuard<'_, UnixStream> {
-    writer.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-impl Request {
-    /// Sends the answer back to the connection that asked.
-    pub fn respond(self, answer: Result<Value, String>) {
-        // The connection may have gone away; then nobody wants the answer.
-        let _ = self.reply.send(answer);
-    }
-}
 
 /// The longest socket path that fits in a Unix socket address.
 const MAX_SOCKET_PATH: usize = 100;
@@ -765,10 +889,13 @@ struct Closing<'a> {
     id: u64,
     closed: &'a Sender<u64>,
     attached: bool,
+    outbox: Outbox,
 }
 
 impl Drop for Closing<'_> {
     fn drop(&mut self) {
+        // What's queued still goes out; answers that come later don't.
+        self.outbox.close();
         if !self.attached {
             let _ = self.closed.send(self.id);
         }
@@ -777,7 +904,9 @@ impl Drop for Closing<'_> {
 
 /// Answers one connection's requests until it closes, then says so on
 /// `closed`, or hands it to the server as an [`Attachment`] once it asks to
-/// attach.
+/// attach. Requests go to the editor as they come, without waiting for the
+/// ones before to be answered; answers and notifications go out through the
+/// connection's [`Outbox`] in the order the editor gives them.
 fn serve_connection(
     stream: UnixStream,
     session: &str,
@@ -789,20 +918,21 @@ fn serve_connection(
     let Ok(writer) = stream.try_clone() else {
         return;
     };
-    // Answers and notifications from the editor share the connection, a
-    // line at a time.
-    let Ok(shared) = stream.try_clone() else {
+    let Ok(out) = stream.try_clone() else {
         return;
     };
-    let shared = Arc::new(Mutex::new(shared));
+    let Ok((outbox, writing)) = Outbox::start(out) else {
+        return;
+    };
     let notifier = Notifier {
         id: NEXT_CONNECTION.fetch_add(1, Ordering::Relaxed),
-        writer: Arc::downgrade(&shared),
+        outbox: outbox.clone(),
     };
     let mut closing = Closing {
         id: notifier.id,
         closed,
         attached: false,
+        outbox: outbox.clone(),
     };
     let mut reader = BufReader::new(stream);
     let mut authed = false;
@@ -812,19 +942,21 @@ fn serve_connection(
     loop {
         line.clear();
         if !matches!(read_line_within(&mut reader, &mut line), Ok(n) if n > 0) {
+            outbox.finish_owed();
             return;
         }
         if line.trim_ascii().is_empty() {
             continue;
         }
-        let response = match serde_json::from_slice::<Value>(&line) {
+        match serde_json::from_slice::<Value>(&line) {
             Ok(message) if authed && message["method"] == "attach" => {
                 let theirs = message["params"]["protocol"].as_u64();
                 if theirs != Some(u64::from(PROTOCOL)) {
                     let version = message["params"]["version"].as_str();
                     let why = mismatch(session, theirs, version);
-                    let refused = error_response(&message["id"], -32001, &why);
-                    let _ = writeln!(lock(&shared), "{refused}");
+                    outbox.push(error_response(&message["id"], -32001, &why).to_string());
+                    outbox.close();
+                    let _ = writing.join();
                     return;
                 }
                 // Its name, for a client that came over `greed ssh` without
@@ -837,10 +969,13 @@ fn serve_connection(
                     result["heartbeat"] = Value::Bool(true);
                 }
                 let ok = json!({ "jsonrpc": "2.0", "id": message["id"], "result": result });
-                if writeln!(lock(&shared), "{ok}").is_ok() {
-                    closing.attached = true;
-                    let _ = attachments.send(attachment);
-                }
+                // The attachment writes to the connection from here on, once
+                // what's queued, this answer last, has gone out.
+                outbox.push(ok.to_string());
+                outbox.close();
+                let _ = writing.join();
+                closing.attached = true;
+                let _ = attachments.send(attachment);
                 return;
             }
             Ok(message) => answer(
@@ -850,22 +985,19 @@ fn serve_connection(
                 &mut shell,
                 requests,
                 &notifier,
-                &mut reader,
             ),
-            Err(err) => Some(error_response(&Value::Null, -32700, &err.to_string())),
-        };
-        let Some(response) = response else { continue };
-        if writeln!(lock(&shared), "{response}").is_err() {
-            return;
+            Err(err) => {
+                outbox.push(error_response(&Value::Null, -32700, &err.to_string()).to_string());
+            }
         }
     }
 }
 
-/// The response to one message, or `None` for a notification. A
-/// connection that says `"shell": true` at its first auth is a shell's,
-/// like `greed ctl`'s, and its requests come from "shell"; one that later
-/// sends more, like what `greed mcp` passes on from an agent, can't become
-/// one.
+/// Answers `auth` itself and passes anything else to the editor, whose
+/// answer goes to the connection's outbox. A connection that says
+/// `"shell": true` at its first auth is a shell's, like `greed ctl`'s, and
+/// its requests come from "shell"; one that later sends more, like what
+/// `greed mcp` passes on from an agent, can't become one.
 fn answer(
     message: &Value,
     token: &str,
@@ -873,17 +1005,14 @@ fn answer(
     shell: &mut Option<bool>,
     requests: &Sender<Request>,
     notifier: &Notifier,
-    reader: &mut BufReader<UnixStream>,
-) -> Option<Value> {
+) {
     let id = message.get("id").cloned();
     let method = message.get("method").and_then(Value::as_str).unwrap_or("");
     let params = message.get("params").cloned().unwrap_or(Value::Null);
     let respond = |result: Result<Value, String>| {
-        let id = id.clone()?;
-        Some(match result {
-            Ok(result) => json!({ "jsonrpc": "2.0", "id": id, "result": result }),
-            Err(message) => error_response(&id, -32000, &message),
-        })
+        if let Some(id) = &id {
+            notifier.outbox.push(response(id, result).to_string());
+        }
     };
     if method == "auth" {
         // Settled by the first auth, right or wrong, so a connection can't
@@ -892,16 +1021,17 @@ fn answer(
             *shell = Some(params.get("shell").and_then(Value::as_bool) == Some(true));
         }
         *authed = params.get("token").and_then(Value::as_str) == Some(token);
-        return respond(if *authed {
+        respond(if *authed {
             Ok(Value::Bool(true))
         } else {
             Err("wrong token".to_owned())
         });
+        return;
     }
     if !*authed {
-        return respond(Err("send auth with the session's token first".to_owned()));
+        respond(Err("send auth with the session's token first".to_owned()));
+        return;
     }
-    let (reply, answered) = crossbeam_channel::bounded(1);
     let request = Request {
         client: if *shell == Some(true) {
             "shell"
@@ -911,54 +1041,10 @@ fn answer(
         connection: Some(notifier.clone()),
         method: method.to_owned(),
         params,
-        reply,
+        reply: Reply::Outbox(Owed::new(id.clone(), notifier.outbox.clone())),
     };
-    if requests.send(request).is_err() {
-        return respond(Err("the editor has stopped".to_owned()));
-    }
-    // A request can wait long, e.g. for the user to review an edit; a
-    // client that gives up meanwhile closes the connection.
-    let result = loop {
-        match answered.recv_timeout(HANG_UP_CHECK) {
-            Ok(result) => break result,
-            Err(RecvTimeoutError::Disconnected) => {
-                break Err("the editor dropped the request".to_owned());
-            }
-            Err(RecvTimeoutError::Timeout) if hung_up(reader) => return None,
-            Err(RecvTimeoutError::Timeout) => {}
-        }
-    };
-    respond(result)
-}
-
-/// How often a connection waiting for an answer looks whether the client
-/// hung up.
-const HANG_UP_CHECK: Duration = Duration::from_millis(200);
-
-/// Whether the client on the other end of `reader` hung up. Anything it
-/// sent meanwhile stays in `reader` to be read.
-fn hung_up(reader: &mut BufReader<UnixStream>) -> bool {
-    if !reader.buffer().is_empty() {
-        return false;
-    }
-    // macOS refuses the timeout once the other end has closed, which is the
-    // answer; an open socket always takes it.
-    if reader
-        .get_ref()
-        .set_read_timeout(Some(Duration::from_millis(1)))
-        .is_err()
-    {
-        return true;
-    }
-    let gone = match reader.fill_buf() {
-        Ok(sent) => sent.is_empty(),
-        Err(err) => !matches!(
-            err.kind(),
-            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
-        ),
-    };
-    let _ = reader.get_ref().set_read_timeout(None);
-    gone
+    // One the editor can't take is dropped, which answers it.
+    let _ = requests.send(request);
 }
 
 fn error_response(id: &Value, code: i64, message: &str) -> Value {
