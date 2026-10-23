@@ -42,6 +42,8 @@ local function apply_servers(name: string, language: Language)
 			commands = servers,
 			root_markers = language.roots,
 			reads_only = language.reads_only,
+			settings = language.settings,
+			init_options = language.init_options,
 		})
 	else
 		greed.lsp.remove(name)

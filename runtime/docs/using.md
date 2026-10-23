@@ -963,6 +963,18 @@ starts again, up to three times in a row; `:lsp-restart` restarts this
 file's server (`:lsp-restart all` every one). Servers that support it get
 only what changed with each edit.
 
+A server's own settings go on its language, named as its documentation
+names them, and `init_options` for what it's started with:
+
+```luau
+require("@languages").set("rust", {
+	settings = { ["rust-analyzer"] = { cargo = { features = "all" } } },
+})
+```
+
+A running server keeps the settings it started with; `:lsp-restart` gives
+it the new ones.
+
 | Keys | |
 |---|---|
 | `space k` | What's under the cursor, with any problems there |

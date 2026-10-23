@@ -131,6 +131,44 @@ fn documents_open_after_initialize_and_report_diagnostics() {
 }
 
 #[test]
+fn a_server_gets_its_settings_and_init_options_and_each_section_it_asks_for() {
+    let settings = json!({ "rust-analyzer": { "cargo": { "features": "all" } } });
+    let mut s = setup("let x = 1;\n");
+    s.lsp.configure(greed_core::lsp::ServerConfig {
+        settings: settings.clone(),
+        init_options: json!({ "checkOnSave": true }),
+        ..support::rust_server()
+    });
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    // Its question about its settings is answered before its first diagnostics.
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    let probe = s.probe(buffer);
+    assert_eq!(
+        probe["initialize"]["initializationOptions"],
+        json!({ "checkOnSave": true })
+    );
+    assert_eq!(probe["changed"], json!({ "settings": settings }));
+    assert_eq!(
+        probe["configured"],
+        json!([{ "features": "all" }, null, settings]),
+        "a section, one there isn't, and all of them"
+    );
+}
+
+#[test]
+fn a_server_without_settings_is_told_none() {
+    let mut s = setup("let x = 1;\n");
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    let probe = s.probe(buffer);
+    assert!(probe["initialize"].get("initializationOptions").is_none());
+    assert_eq!(probe["changed"], Value::Null, "no didChangeConfiguration");
+    assert_eq!(probe["configured"], json!([null, null, null]));
+}
+
+#[test]
 fn changes_are_sent_once_per_version() {
     let mut s = setup("ok");
     s.lsp.sync(&s.editor);
@@ -581,8 +619,7 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
             command(&["no-such-server-greed"]),
             command(&["sh", "-c", "true"]),
         ],
-        root_markers: Vec::new(),
-        reads_only: false,
+        ..Default::default()
     };
     assert_eq!(
         config.installed_command(),
@@ -595,8 +632,7 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
     lsp.configure(ServerConfig {
         language: "rust".into(),
         commands: vec![command(&["no-such-server-greed"])],
-        root_markers: Vec::new(),
-        reads_only: false,
+        ..Default::default()
     });
     assert!(
         lsp.sync(&editor).is_empty(),

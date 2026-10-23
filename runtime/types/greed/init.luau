@@ -1502,7 +1502,8 @@ export type Lsp = {
 	--- A server runs in the topmost folder with one of `root_markers` inside
 	--- the file's project, or the project's root without one. With
 	--- `reads_only`, the server only reads the project's files, never running its code, so it starts in a project nobody trusted (see `trust`).
-	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean? }) -> (),
+	--- `settings` are the server's settings, sent once it's initialized and what it gets when it asks for a section; `init_options` goes with `initialize`. A running server keeps the ones it started with until it's restarted.
+	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean?, settings: { [string]: any }?, init_options: { [string]: any }? }) -> (),
 	--- Stops starting a server for a language; one running keeps running.
 	remove: (language: string) -> (),
 	--- Stops the servers running for `language` (every language without one) and starts them again, as after they got stuck. Returns how many were running. Needs "proc".

@@ -204,8 +204,10 @@ fn fake_server(
     let mut input = BufReader::new(input);
     let mut opened = Opened::default();
     let mut documents = Documents::default();
-    // How it was started, and the workspace folders the client said it has.
+    // How it was started, the workspace folders the client said it has, and
+    // the settings it was told and answered when it asked.
     let (mut started, mut folders) = (Value::Null, Value::Null);
+    let (mut changed, mut configured) = (Value::Null, Value::Null);
     while let Some(message) = read(&mut input) {
         let method = message["method"]
             .as_str()
@@ -223,6 +225,8 @@ fn fake_server(
             }
             "initialized" => initialized(&mut output),
             "(response)" if id == Some(json!("folders")) => folders = message["result"].clone(),
+            "(response)" if id == Some(json!("ask")) => configured = message["result"].clone(),
+            "workspace/didChangeConfiguration" => changed = message["params"].clone(),
             // What the client started it with and told it since.
             "probe" => write(
                 &mut output,
@@ -230,6 +234,7 @@ fn fake_server(
                     "initialize": started, "folders": folders, "text": opened.text,
                     "ranged": documents.ranged, "whole": documents.whole,
                     "errors": documents.errors,
+                    "changed": changed, "configured": configured,
                 } }),
             ),
             "textDocument/didOpen" | "textDocument/didChange" => {
@@ -303,7 +308,9 @@ fn capabilities(options: Options) -> Value {
 fn initialized(output: &mut impl Write) {
     write(
         output,
-        &json!({ "jsonrpc": "2.0", "id": "ask", "method": "workspace/configuration", "params": { "items": [{}, {}] } }),
+        &json!({ "jsonrpc": "2.0", "id": "ask", "method": "workspace/configuration", "params": { "items": [
+            { "section": "rust-analyzer.cargo" }, { "section": "nobody" }, {},
+        ] } }),
     );
     write(
         output,
@@ -473,7 +480,7 @@ pub fn rust_server() -> greed_core::lsp::ServerConfig {
         language: "rust".into(),
         commands: vec![vec!["sh".into()]],
         root_markers: vec!["Cargo.toml".into()],
-        reads_only: false,
+        ..Default::default()
     }
 }
 

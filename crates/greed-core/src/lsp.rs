@@ -23,7 +23,7 @@ pub use crate::rpc::{Event, ServerId};
 use crate::{Buffer, BufferId, Editor, Mark};
 
 /// How to start the server for one language.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ServerConfig {
     pub language: String,
     /// Commands to try, in order: the first whose program is installed runs.
@@ -35,6 +35,12 @@ pub struct ServerConfig {
     /// its code (a build script, a config file), so it may start in a
     /// project nobody trusted (see [`Lsp::trust`]).
     pub reads_only: bool,
+    /// The server's settings, as its documentation names them: sent once
+    /// it's initialized, and what it gets when it asks for a section. A
+    /// server keeps the ones it started with until it's restarted.
+    pub settings: Value,
+    /// What `initialize` sends as `initializationOptions`.
+    pub init_options: Value,
 }
 
 impl ServerConfig {
@@ -172,6 +178,8 @@ struct Server {
     /// Messages to send once the server has answered `initialize`.
     queued: Vec<Value>,
     documents: HashMap<BufferId, Document>,
+    /// The settings it started with ([`ServerConfig::settings`]).
+    settings: Value,
 }
 
 /// An open document as the server has it.
@@ -617,24 +625,25 @@ impl Lsp {
                 return Err(LspError::NoServer(format!("{language}: {err}")));
             }
         };
-        let command = config
-            .installed_command()
-            .or(config.commands.first())
-            .cloned()
-            .unwrap_or_default();
-        self.start(key, command, transport).map(Some)
+        self.start(key, &config, transport).map(Some)
     }
 
-    /// Talks to a new server over `transport`, and sends `initialize`.
+    /// Talks to a new server of `config` over `transport`, and sends
+    /// `initialize`.
     fn start(
         &mut self,
         key: Key,
-        command: Vec<String>,
+        config: &ServerConfig,
         transport: Transport,
     ) -> Result<ServerId, LspError> {
         let id = self.next_server;
         self.next_server += 1;
         let (language, root) = key.clone();
+        let command = config
+            .installed_command()
+            .or(config.commands.first())
+            .cloned()
+            .unwrap_or_default();
         let mut server = Server {
             language,
             root,
@@ -648,18 +657,20 @@ impl Lsp {
             capabilities: Value::Null,
             queued: Vec::new(),
             documents: HashMap::new(),
+            settings: config.settings.clone(),
         };
-        server.initialize_id = server.connection.request(
-            "initialize",
-            &json!({
-                "processId": std::process::id(),
-                "rootUri": file_uri(&server.root),
-                "rootPath": server.root,
-                "workspaceFolders": server.workspace_folders(),
-                "clientInfo": { "name": "greed" },
-                "capabilities": client_capabilities(),
-            }),
-        )?;
+        let mut params = json!({
+            "processId": std::process::id(),
+            "rootUri": file_uri(&server.root),
+            "rootPath": server.root,
+            "workspaceFolders": server.workspace_folders(),
+            "clientInfo": { "name": "greed" },
+            "capabilities": client_capabilities(),
+        });
+        if !config.init_options.is_null() {
+            params["initializationOptions"] = config.init_options.clone();
+        }
+        server.initialize_id = server.connection.request("initialize", &params)?;
         self.servers.insert(id, server);
         self.running.insert(key, id);
         Ok(id)
@@ -786,8 +797,20 @@ impl Lsp {
                 method,
                 params,
             } if method == "workspace/configuration" => {
-                let count = params["items"].as_array().map_or(0, Vec::len);
-                self.respond(server, &id, &Value::Array(vec![Value::Null; count]));
+                let settings = self
+                    .servers
+                    .get(&server)
+                    .map_or(&Value::Null, |s| &s.settings);
+                let answers: Vec<Value> = params["items"]
+                    .as_array()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|item| section(settings, item["section"].as_str()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                self.respond(server, &id, &Value::Array(answers));
                 Handled::Nothing
             }
             Event::Request {
@@ -876,6 +899,11 @@ impl Lsp {
         }
         server.ready = true;
         let _ = server.notify("initialized", &json!({}));
+        // Servers that don't ask for their settings read them from here.
+        if !server.settings.is_null() {
+            let settings = json!({ "settings": server.settings });
+            let _ = server.notify("workspace/didChangeConfiguration", &settings);
+        }
         for message in std::mem::take(&mut server.queued) {
             let _ = server.send(message);
         }
@@ -1042,6 +1070,20 @@ fn buffer_at<'a>(editor: &'a Editor, uri: &str) -> Option<&'a Buffer> {
     editor
         .buffers()
         .find(|b| b.path().is_some_and(|p| file_uri(p) == uri))
+}
+
+/// The part of `settings` a server asks for by its `section`, like
+/// `rust-analyzer.cargo`: all of them without one, null when it isn't there.
+fn section(settings: &Value, name: Option<&str>) -> Value {
+    let mut found = settings;
+    for key in name
+        .unwrap_or_default()
+        .split('.')
+        .filter(|k| !k.is_empty())
+    {
+        found = &found[key];
+    }
+    found.clone()
 }
 
 /// What the editor tells servers it can do. Plugins build the features on

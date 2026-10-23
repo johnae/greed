@@ -16,6 +16,12 @@ export type Language = {
 	--- build the project or load its plugins (rust-analyzer, typescript)
 	--- don't: they wait until you trust it.
 	reads_only: boolean?,
+	--- Its servers' settings, as their documentation names them, like
+	--- `{ ["rust-analyzer"] = { cargo = { features = "all" } } }`, and what
+	--- they're started with (`initializationOptions`). A server running
+	--- keeps the ones it started with until `:lsp-restart`.
+	settings: { [string]: any }?,
+	init_options: { [string]: any }?,
 	--- What starts a line comment.
 	comment: string?,
 	--- The brackets and quotes typed in pairs, closers by their openers;

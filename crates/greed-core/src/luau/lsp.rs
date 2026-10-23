@@ -256,11 +256,16 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
             if commands.is_empty() {
                 return Err(mlua::Error::runtime("a language server needs a command"));
             }
+            let json = |key: &str| -> LuaResult<serde_json::Value> {
+                lua.from_value(spec.get::<Value>(key)?)
+            };
             let config = ServerConfig {
                 language: spec.get("language")?,
                 commands,
                 root_markers: strings("root_markers")?,
                 reads_only: spec.get::<Option<bool>>("reads_only")?.unwrap_or(false),
+                settings: json("settings")?,
+                init_options: json("init_options")?,
             };
             let state = &mut *state_mut(lua);
             state.owned.server(owner.clone(), config.clone());
