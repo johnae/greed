@@ -114,6 +114,10 @@ end
 -- The value typed for an option, as the type it takes: a number for
 -- indent is that many spaces.
 local function value_of(text: string, option: string?): greed.OptionValue
+	-- A string option keeps a number as it was typed, like `rulers 80`.
+	if option and option ~= "indent" and type(greed.option.get(option)) == "string" then
+		return text
+	end
 	local value: greed.OptionValue = if text == "true"
 		then true
 		elseif text == "false" then false

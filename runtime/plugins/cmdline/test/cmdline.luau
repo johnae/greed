@@ -161,6 +161,11 @@ test(":set parses the value, and text can have spaces", function(t)
 		greed.option.get("jump-label-alphabet") == "ab cd",
 		tostring(greed.option.get("jump-label-alphabet"))
 	)
+	t:run("set", { "jump-label-alphabet", "123" })
+	assert(
+		greed.option.get("jump-label-alphabet") == "123",
+		"a string option keeps a number as text"
+	)
 	greed.option.set("jump-label-alphabet", "abcdefghijklmnopqrstuvwxyz")
 	t:run("set", { "tab-width" })
 	local messages = t:messages()
