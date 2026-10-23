@@ -315,3 +315,24 @@ test("the shared cases: what every engine running a query must agree on", functi
 	dates.clock = clock
 	assert(ok, tostring(err))
 end)
+
+test("an index gives back what it holds for the keys a search found", function(t)
+	local greed = require("@greed")
+	local index = greed.index.writer(t:tempdir() .. "/items.db") :: greed.Index
+	assert(index:write({
+		{
+			key = "a",
+			name = "Plans",
+			text = "lunch at noon?",
+			fields = { from = "Bea" },
+			flags = { "mention" },
+		},
+		{ key = "b", text = "fine" } :: any,
+	} :: any))
+	local items = assert(index:items({ "b", "gone", "a" }))
+	assert(#items == 2 and items[1].key == "b" and items[2].key == "a", "in the order asked")
+	local a: any = items[2]
+	assert(a.name == "Plans" and a.text == "lunch at noon?", a.text)
+	assert(a.fields.from[1] == "Bea", "its fields")
+	assert(a.flags[1] == "mention", "its flags")
+end)

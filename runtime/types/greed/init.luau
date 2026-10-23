@@ -1655,6 +1655,8 @@ export type IndexItem = { key: string, parent: string?, name: string?, text: str
 export type Index = {
 	--- The keys of the items matching `query` (every item, for nil), as `schema` says what its fields and flags mean, sorted and cut as `view` says; and of those, the ones that only might match, where it depends on a computed flag (then nothing is cut). Nil and why for a query that can't run.
 	search: (self: Index, query: any, schema: QuerySchema, view: { sort: { { field: string, descending: boolean } }?, limit: number? }?) -> ({ string }?, { string }?, string?),
+	--- The items with `keys`, as they were put in (without `words`), in that order; keys it doesn't hold are left out. For showing what `search` found. Nil and why when it can't read them.
+	items: (self: Index, keys: { string }) -> ({ IndexItem }?, string?),
 	--- Puts `items` in, in one go, each in place of the one with its key; an index from `open` can't be written. True, or nil and why.
 	write: (self: Index, items: { IndexItem }) -> (boolean?, string?),
 	--- Takes the items with `keys` out. True, or nil and why.

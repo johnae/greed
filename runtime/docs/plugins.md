@@ -2117,8 +2117,10 @@ local keys, maybe = query.search(index, parsed, source)
 ```
 
 `search` gives the matching items' keys; `maybe` holds those that depend
-on a flag that isn't stored, for the plugin to check. An index's methods
-work on another thread and wait like `greed.sleep`.
+on a flag that isn't stored, for the plugin to check. `index:items(keys)`
+gives back what the index holds for them (name, text, fields, flags), to
+show what was found. An index's methods work on another thread and wait
+like `greed.sleep`.
 
 ### A search box
 

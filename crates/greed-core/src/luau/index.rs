@@ -21,8 +21,25 @@ type Shared = Arc<Mutex<Index>>;
 /// What a job on an index came back with.
 pub enum Done {
     Found(Found),
+    Items(Vec<Item>),
     Count(usize),
     Wrote,
+}
+
+// An item as Luau gets it back: as it was put in, without `words`.
+fn item_to_lua(lua: &Lua, item: Item) -> LuaResult<Table> {
+    let table = lua.create_table()?;
+    table.set("key", item.key)?;
+    table.set("parent", item.parent)?;
+    table.set("name", item.name)?;
+    table.set("text", item.text)?;
+    let fields = lua.create_table()?;
+    for (field, values) in item.fields {
+        fields.set(field, lua.create_sequence_from(values)?)?;
+    }
+    table.set("fields", fields)?;
+    table.set("flags", lua.create_sequence_from(item.flags)?)?;
+    Ok(table)
 }
 
 // An item as Luau gives it: `key`, `parent` (the key of the item it's in),
@@ -69,6 +86,14 @@ pub(super) fn to_lua(lua: &Lua, done: Result<Done, Trouble>) -> LuaResult<MultiV
             lua.create_sequence_from(found.maybe)?,
         )
             .into_lua_multi(lua),
+        Ok(Done::Items(items)) => lua
+            .create_sequence_from(
+                items
+                    .into_iter()
+                    .map(|item| item_to_lua(lua, item))
+                    .collect::<LuaResult<Vec<_>>>()?,
+            )?
+            .into_lua_multi(lua),
         Ok(Done::Count(n)) => n.into_lua_multi(lua),
         Ok(Done::Wrote) => true.into_lua_multi(lua),
         Err(Trouble(why)) => (Value::Nil, why).into_lua_multi(lua),
@@ -110,6 +135,18 @@ fn handle(lua: &Lua, index: Index, path: &str) -> LuaResult<Table> {
         },
     )?;
     table.set("search", jobs::waiting_method(lua, "index:search", search)?)?;
+
+    let index = shared.clone();
+    let what = on("items");
+    let items = lua.create_function(move |lua, given: Table| {
+        let keys = given
+            .sequence_values::<String>()
+            .collect::<LuaResult<Vec<_>>>()?;
+        Ok(on_index(lua, &what, &index, move |index| {
+            index.items(&keys).map(Done::Items)
+        }))
+    })?;
+    table.set("items", jobs::waiting_method(lua, "index:items", items)?)?;
 
     let index = shared.clone();
     let what = on("write");

@@ -223,6 +223,45 @@ impl Index {
         Ok(())
     }
 
+    /// The items with `keys`, as they were put in, in that order; keys it
+    /// doesn't hold are left out. For showing what a search found.
+    pub fn items(&self, keys: &[String]) -> Result<Vec<Item>, Trouble> {
+        let mut loaded = Loaded {
+            text: true,
+            as_written: true,
+            ..Loaded::default()
+        };
+        for keys in keys.chunks(CHUNK) {
+            self.load(
+                &mut loaded,
+                &format!("key IN ({})", marks(keys.len())),
+                keys,
+            )?;
+        }
+        self.load_values(&mut loaded)?;
+        let mut items: Vec<Option<Item>> = loaded
+            .rows
+            .into_iter()
+            .zip(loaded.keys)
+            .zip(loaded.parents)
+            .map(|((row, key), parent)| {
+                Some(Item {
+                    key,
+                    parent,
+                    name: row.name,
+                    text: row.text,
+                    fields: row.fields,
+                    flags: row.flags,
+                    words: None,
+                })
+            })
+            .collect();
+        Ok(keys
+            .iter()
+            .filter_map(|key| loaded.by_key.get(key).and_then(|&at| items[at].take()))
+            .collect())
+    }
+
     /// How many items it holds.
     pub fn count(&self) -> Result<usize, Trouble> {
         let n: i64 = self
@@ -437,10 +476,15 @@ impl Index {
             .enumerate()
             .map(|(i, id)| (*id, i))
             .collect();
+        let order = if loaded.as_written {
+            "ORDER BY rowid"
+        } else {
+            ""
+        };
         for ids in loaded.ids.chunks(CHUNK) {
             let marks = marks(ids.len());
             let mut values = self.db.prepare_cached(&format!(
-                "SELECT item, field, value FROM item_values WHERE item IN ({marks})"
+                "SELECT item, field, value FROM item_values WHERE item IN ({marks}) {order}"
             ))?;
             let mut rows = values.query(params_from_iter(ids.iter()))?;
             while let Some(row) = rows.next()? {
@@ -606,10 +650,12 @@ impl Candidates {
 }
 
 // Items read from the index, as rows, with what finds them again; their
-// text only with `text`.
+// text only with `text`, their values in the order put in only with
+// `as_written`.
 #[derive(Default)]
 struct Loaded {
     text: bool,
+    as_written: bool,
     rows: Vec<Row>,
     ids: Vec<i64>,
     keys: Vec<String>,
@@ -1125,6 +1171,33 @@ mod tests {
         };
         assert_eq!(rows("field_words"), 1);
         assert_eq!(rows("item_values"), 2);
+    }
+
+    #[test]
+    fn items_come_back_as_they_went_in_in_the_order_asked() {
+        let path = temp("items");
+        let mut index = Index::open(&path).unwrap();
+        let mut message = item("m:1", "lunch at noon?");
+        message.parent = Some("room".into());
+        message.name = Some("Plans".into());
+        message.fields = HashMap::from([
+            ("from".into(), vec!["Bea".into()]),
+            ("tag".into(), vec!["work".into(), "lunch".into()]),
+        ]);
+        message.flags = vec!["mention".into()];
+        index.write(&[message, item("m:2", "fine")]).unwrap();
+        let found = index
+            .items(&["m:2".into(), "gone".into(), "m:1".into()])
+            .unwrap();
+        let keys: Vec<&str> = found.iter().map(|i| i.key.as_str()).collect();
+        assert_eq!(keys, ["m:2", "m:1"], "in the order asked, those it has");
+        let message = &found[1];
+        assert_eq!(message.text, "lunch at noon?");
+        assert_eq!(message.parent.as_deref(), Some("room"));
+        assert_eq!(message.name.as_deref(), Some("Plans"));
+        assert_eq!(message.fields["from"], ["Bea"]);
+        assert_eq!(message.fields["tag"], ["work", "lunch"], "values in order");
+        assert_eq!(message.flags, ["mention"]);
     }
 
     #[test]
