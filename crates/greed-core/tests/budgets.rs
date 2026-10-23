@@ -394,8 +394,10 @@ fn startup_empty() {
     budget(
         "startup_empty",
         |found| startup(found, "", None),
+        // About twice what it takes, so starting can't creep back up as
+        // plugins are added: 63 and 115 ms when these were set.
         &[
-            ("first_frame_cpu_ms", 400.0, 650.0),
+            ("first_frame_cpu_ms", 150.0, 300.0),
             ("peak_mb", 80.0, 100.0),
         ],
     );
@@ -413,7 +415,7 @@ fn startup_rust() {
             startup(found, &text, Some(&path));
         },
         &[
-            ("first_frame_cpu_ms", 800.0, 1000.0),
+            ("first_frame_cpu_ms", 300.0, 500.0),
             ("peak_mb", 120.0, 150.0),
         ],
     );
