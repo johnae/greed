@@ -550,7 +550,7 @@ local function render(r: Open): core.UiNode
 		then "changing your message · esc: not"
 		elseif r.replying then `answering {r.replying.sender.name} · esc: not`
 		elseif r.thread then "in the thread · enter sends · q: back to the room"
-		else "enter sends · alt-enter new line · space . on a message: what to do"
+		else "enter sends · alt-enter new line · space . on a message: what to do · esc q: the rooms"
 	table.insert(parts, ui.text(hint, "comment"))
 	return ui.column(parts)
 end

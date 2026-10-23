@@ -48,7 +48,7 @@ line of what it says (see below for where they come from).
 Outside the chat session, `:chat` opens the same list in a floating view of
 the tab. Rooms open in it and `q` goes back to the list; `alt-f` hides it
 and shows it again like the tab's other floats, and `:chat` brings it back
-as you left it.
+showing the rooms. In a room, `esc` then `q` goes back to them too.
 
 ## Signing in
 

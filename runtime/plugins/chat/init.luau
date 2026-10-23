@@ -239,6 +239,13 @@ local function on_room(o: List, window: greed.View, left: { account: string, roo
 	end
 end
 
+-- Shows list `o` in `window`, in place of the room there, on that room.
+local function show_list(o: List, window: greed.View)
+	local left = room.of(window:buffer())
+	window:show(o.buffer)
+	on_room(o, window, left)
+end
+
 --- The tab's float showing chat (the list or a room), if there is one.
 local function chat_float(): greed.View?
 	for _, view in panes.floats.all() do
@@ -285,12 +292,18 @@ local function new_list(): List
 end
 
 --- The list of rooms in a float of the tab, which `alt-f` hides and shows
---- like the others; one there already (showing the list or a room) comes
---- to the front.
+--- like the others; one there already comes to the front, showing the
+--- list again where it showed a room.
 function M.list()
 	local shown = chat_float()
 	if shown then
 		panes.floats.focus(shown)
+		-- The rooms, rather than the room it shows: the bar over a room
+		-- has the ones opened.
+		local o = list
+		if shown:buffer():kind() == "chat-room" and o and o.buffer:valid() then
+			show_list(o, shown)
+		end
 		return
 	end
 	local o = new_list()
@@ -657,8 +670,7 @@ room.on_leave = function(view: greed.View)
 		panel:focus()
 		on_room(o, panel, left)
 	else
-		view:show(o.buffer)
-		on_room(o, view, left)
+		show_list(o, view)
 	end
 end
 
