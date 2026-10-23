@@ -58,10 +58,10 @@ fn core_plugin_tests_pass() {
         plugin("picker"),
         plugin("multibuffer"),
         plugin("statusline"),
+        plugin("markdown"),
         plugin("lsp"),
         plugin("cmdline"),
         plugin("theme"),
-        plugin("markdown"),
         plugin("models"),
         plugin("terminal"),
         plugin("operations"),
@@ -248,6 +248,7 @@ fn vim_plugin_tests_pass() {
         plugin("panes"),
         plugin("multibuffer"),
         plugin("statusline"),
+        plugin("markdown"),
         plugin("lsp"),
         plugin("cmdline"),
         plugin("vscode"),
@@ -284,6 +285,7 @@ fn lsp_plugin_tests_pass() {
         plugin("picker"),
         plugin("multibuffer"),
         plugin("statusline"),
+        plugin("markdown"),
         plugin("lsp"),
     ];
     assert_all_pass(&plugins, &plugin("lsp"));

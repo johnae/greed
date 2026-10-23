@@ -106,12 +106,14 @@ end
 local looks: { [number]: boolean } = {}
 
 -- A buffer in the reading view: how it was before, and the images it
--- shows by path (false for those that didn't load).
+-- shows by path (false for those that didn't load). One `kept` reads so
+-- for good, from `M.document`, whatever the mode.
 type Reading = {
 	buffer: greed.Buffer,
 	readonly: boolean,
 	numbers: boolean,
 	images: { [string]: number | false },
+	kept: boolean?,
 }
 
 local reading: { [number]: Reading } = {}
@@ -159,12 +161,19 @@ local function free(line: Line, from: number, to: number): boolean
 	return true
 end
 
--- Whether emphasis from `from` to `to`, its markers `size` long, can be:
--- what's marked already, like `**`code`**`'s code, must be inside it whole.
-local function around(line: Line, from: number, to: number, size: number): boolean
+-- Whether markup from `from` to `to` can be: what's marked already, like
+-- `**`code`**`'s code or ``[`code`](url)``'s, must be whole inside its
+-- text, from `inner_from` to `inner_to`.
+local function around(
+	line: Line,
+	from: number,
+	to: number,
+	inner_from: number,
+	inner_to: number
+): boolean
 	for _, span in line.taken do
 		local overlaps = from <= span[2] and to >= span[1]
-		if overlaps and not (span[1] >= from + size and span[2] <= to - size) then
+		if overlaps and not (span[1] >= inner_from and span[2] <= inner_to) then
 			return false
 		end
 	end
@@ -201,7 +210,7 @@ local function inline(line: Line)
 			-- A field, which values.luau draws, or a command button, which
 			-- the blocks plugin does.
 			table.insert(line.taken, { first, last })
-		elseif free(line, first, last) then
+		elseif around(line, first, last, first + 1, first + #(label :: string)) then
 			local label_end = first + #(label :: string)
 			if line.reading then
 				table.insert(line.out, {
@@ -244,7 +253,11 @@ local function inline(line: Line)
 			-- `_` inside words (snake_case) isn't emphasis.
 			local word = marker == "_"
 				and string.match(string.sub(text, first - 1, first - 1), "%w") ~= nil
-			if around(line, first, last, size) and not word and not string.match(body, "%s$") then
+			if
+				around(line, first, last, first + size, last - size)
+				and not word
+				and not string.match(body, "%s$")
+			then
 				hide(line, first, first + size - 1)
 				paint(line, first + size, last - size, style)
 				hide(line, last - size + 1, last)
@@ -872,7 +885,7 @@ greed.command({
 -- The mode to go back to from reading.
 local back = core.style.home()
 
-local function start_reading(buffer: greed.Buffer)
+local function start_reading(buffer: greed.Buffer, kept: boolean?)
 	if reading[buffer:id()] then
 		return
 	end
@@ -881,10 +894,18 @@ local function start_reading(buffer: greed.Buffer)
 		readonly = buffer:readonly(),
 		numbers = buffer:line_numbers(),
 		images = {},
+		kept = kept,
 	}
 	buffer:set_readonly(true)
 	buffer:set_line_numbers(false)
 	redraw(buffer)
+end
+
+--- Shows a Markdown buffer as the reading view does, for good: read-only,
+--- no markup, links to follow. For text to read in a float, like a
+--- language server's hover.
+function M.document(buffer: greed.Buffer)
+	start_reading(buffer, true)
 end
 
 -- Stops reading buffer `id`, letting its images go.
@@ -904,8 +925,10 @@ end
 -- Every buffer back to editing, as it was.
 local function stop_reading()
 	local ids: { number } = {}
-	for id in reading do
-		table.insert(ids, id)
+	for id, read in reading do
+		if not read.kept then
+			table.insert(ids, id)
+		end
 	end
 	for _, id in ids do
 		local read = forget(id) :: Reading

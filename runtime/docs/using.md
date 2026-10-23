@@ -989,7 +989,7 @@ it the new ones.
 
 | Keys | |
 |---|---|
-| `space k` | What's under the cursor, with any problems there |
+| `space k` | What's under the cursor, with any problems there, drawn as Markdown: code in its language's colors, links to follow |
 | `g d` | Go to the definition |
 | `g D` `g y` `g i` | Go to the declaration, the type's definition, an implementation |
 | `g r` | Pick a place it's used, with a preview |

@@ -17,6 +17,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
+local markdown = require("@markdown")
 local picker = require("@picker")
 local common = require("@self/common")
 local marks = require("@self/marks")
@@ -29,10 +30,13 @@ local status = require("@self/status")
 
 local ask, describe = common.ask, common.describe
 
--- Hover contents come as a string, a { value } table, or a list of those.
+-- Hover contents come as Markdown: a string, a { value } table, or a list
+-- of those. An old server's { language, value } is code in that language.
 local function hover_text(contents: any): string
 	if type(contents) == "string" then
 		return contents
+	elseif type(contents) == "table" and contents.language and contents.value then
+		return `\`\`\`{contents.language}\n{contents.value}\n\`\`\``
 	elseif type(contents) == "table" and contents.value then
 		return contents.value
 	elseif type(contents) == "table" then
@@ -45,25 +49,16 @@ local function hover_text(contents: any): string
 	return ""
 end
 
--- Drops Markdown code fence lines ("```rust", "```"), which servers wrap
--- code in.
-local function without_fences(text: string): string
-	local kept = {}
-	for _, line in string.split(text, "\n") do
-		if not string.match(line, "^```") then
-			table.insert(kept, line)
-		end
-	end
-	return table.concat(kept, "\n")
-end
-
+-- Shows Markdown `text` in a float, as a document: code in its language's
+-- colors, no markup, links to follow.
 local function show_info(title: string, text: string)
 	local lines = string.split(text, "\n")
-	core.floats.show_text(
+	local view = core.floats.show_text(
 		title,
 		text,
-		{ kind = "info", width = "70%", height = math.min(#lines + 2, 20) }
+		{ kind = "info", width = "70%", height = math.min(#lines + 2, 20), language = "markdown" }
 	)
+	markdown.document(view:buffer())
 end
 
 local function hover(ctx: greed.Context)
@@ -78,9 +73,7 @@ local function hover(ctx: greed.Context)
 	if not ok and #parts == 0 then
 		return
 	end
-	local text = if result and result.contents
-		then without_fences(hover_text(result.contents))
-		else ""
+	local text = if result and result.contents then hover_text(result.contents) else ""
 	if string.match(text, "%S") then
 		table.insert(parts, text)
 	end

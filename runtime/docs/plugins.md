@@ -1063,6 +1063,14 @@ greed.tab.set_layout({
   (the line above it) and its options, `picked` or not.
   `choices.on_pick(fn)` hears each pick, after the text has changed. A pick
   only edits text; what it does is up to the plugin listening.
+- `require("@markdown").document(buffer)` shows a Markdown buffer the way
+  the reading view does, for good: read-only, no markup, code in its
+  language's colors and links to follow. Hover info uses it, like this:
+
+  ```luau
+  local view = core.floats.show_text("Hover", text, { language = "markdown" })
+  require("@markdown").document(view:buffer())
+  ```
 - `require("@markdown").structure(buffer)` reads a Markdown buffer once
   per edit and gives its `headings` (level, text, lines), `code` blocks
   (info string, fences' lines, the code's bytes), list `items` (bullet,

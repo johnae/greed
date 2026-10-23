@@ -148,6 +148,7 @@ fn with_plugin() -> Host {
         plugin("picker"),
         plugin("multibuffer"),
         plugin("statusline"),
+        plugin("markdown"),
         plugin("lsp"),
     ])
     .unwrap();
@@ -193,6 +194,12 @@ fn the_lsp_plugin_shows_hover_text() {
         ed.buffer(ed.view(float).buffer).text().to_string()
     });
     assert_eq!(text, "hover at 0:4");
+    assert_eq!(
+        h.eval("local b = require('@greed').view():buffer() return b:language(), require('@markdown').reading(b)")
+            .unwrap(),
+        "markdown\ttrue",
+        "shown as a Markdown document"
+    );
     h.press_keys("esc").unwrap();
     assert!(h.with_editor(|ed| ed.floats().is_empty()));
 }
@@ -668,6 +675,7 @@ fn each_projects_buffers_show_their_own_servers_root_and_work() {
         plugin("picker"),
         plugin("multibuffer"),
         plugin("statusline"),
+        plugin("markdown"),
         plugin("lsp"),
     ])
     .unwrap();
