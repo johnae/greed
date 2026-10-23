@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use mlua::chunk::Compiler;
 use mlua::{Function, Lua, Table, Value};
@@ -258,12 +258,32 @@ impl Modules {
     }
 }
 
-/// The bytecode for `file`'s `source`, compiled once per process: tests load
-/// the same plugins into a fresh editor for every test. Like evaluating
-/// source, it's the file as an expression if it is one, else as a block.
-/// Source that doesn't compile comes back, to load as it is and report
-/// what's wrong.
+/// Where bytecode is kept between runs, once [`keep_bytecode_in`] says.
+static BYTECODE: OnceLock<PathBuf> = OnceLock::new();
+
+/// Keeps the bytecode plugins compile to in `dir`, a folder of its own for
+/// this build, so the next start loads it instead of compiling every file
+/// again. The `greed` program calls it; tests don't, so they write nothing
+/// there.
+pub fn keep_bytecode_in(dir: PathBuf) {
+    let _ = BYTECODE.set(dir);
+}
+
+/// The bytecode for `file`'s `source`, compiled once per process (tests
+/// load the same plugins into a fresh editor for every test) and kept on
+/// disk if [`keep_bytecode_in`] said where. Like evaluating source, it's
+/// the file as an expression if it is one, else as a block. Source that
+/// doesn't compile comes back, to load as it is and report what's wrong.
 fn compiled(file: &Path, source: String) -> Result<Arc<[u8]>, String> {
+    compiled_keeping_in(BYTECODE.get().map(PathBuf::as_path), file, source)
+}
+
+/// [`compiled`], keeping bytecode in `dir` if given.
+fn compiled_keeping_in(
+    dir: Option<&Path>,
+    file: &Path,
+    source: String,
+) -> Result<Arc<[u8]>, String> {
     /// Each file's source as last compiled, and its bytecode.
     type Compiled = BTreeMap<PathBuf, (String, Arc<[u8]>)>;
     static COMPILED: Mutex<Compiled> = Mutex::new(BTreeMap::new());
@@ -273,16 +293,54 @@ fn compiled(file: &Path, source: String) -> Result<Arc<[u8]>, String> {
     {
         return Ok(code.clone());
     }
-    let compiler = Compiler::new();
-    let Ok(code) = compiler
-        .compile(format!("return {source}"))
-        .or_else(|_| compiler.compile(&source))
-    else {
-        return Err(source);
+    let kept = dir.map(|dir| dir.join(source_hash(&source)));
+    let code: Arc<[u8]> = if let Some(code) = kept.as_ref().and_then(|at| std::fs::read(at).ok()) {
+        code.into()
+    } else {
+        let compiler = Compiler::new();
+        let Ok(code) = compiler
+            .compile(format!("return {source}"))
+            .or_else(|_| compiler.compile(&source))
+        else {
+            return Err(source);
+        };
+        if let Some(at) = &kept {
+            keep(at, &code);
+        }
+        code.into()
     };
-    let code: Arc<[u8]> = code.into();
     cache().insert(file.to_owned(), (source, code.clone()));
     Ok(code)
+}
+
+/// The name a file's bytecode is kept under: 128 bits of `SipHash` of its
+/// source, a few times faster than SHA-256 on every plugin at every start.
+/// The folder is this build's, so the hash only has to agree with itself.
+fn source_hash(source: &str) -> String {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let half = |seed: u8| {
+        let mut hasher = DefaultHasher::new();
+        seed.hash(&mut hasher);
+        source.hash(&mut hasher);
+        hasher.finish()
+    };
+    format!("{:016x}{:016x}", half(0), half(1))
+}
+
+/// Writes `code` to `at`, beside it first and then renamed into place, so
+/// another session starting at the same time never reads half of it. A
+/// write that fails only means compiling again next time.
+fn keep(at: &Path, code: &[u8]) {
+    let Some(dir) = at.parent() else {
+        return;
+    };
+    let partial = at.with_extension(std::process::id().to_string());
+    let written = std::fs::create_dir_all(dir)
+        .and_then(|()| std::fs::write(&partial, code))
+        .and_then(|()| std::fs::rename(&partial, at));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&partial);
+    }
 }
 
 /// Takes away `getfenv`/`setfenv`, which reach into another plugin's
@@ -430,4 +488,29 @@ pub(super) fn plain(lua: &Lua, t: Table) -> LuaResult<Table> {
         .eval()?;
     lua.set_named_registry_value(KEY, &copy)?;
     copy.call(t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bytecode_is_kept_on_disk_and_read_back_by_its_source() {
+        let dir = std::env::temp_dir().join(format!("greed-bytecode-{}", std::process::id()));
+        let source = "local answer = 1\nreturn answer";
+        let first =
+            compiled_keeping_in(Some(&dir), Path::new("/a.luau"), source.to_owned()).unwrap();
+        let at = dir.join(source_hash(source));
+        assert_eq!(std::fs::read(&at).unwrap(), &first[..], "kept as compiled");
+        // Another file with the same source reads what was kept, not
+        // compiling it again.
+        let other = Compiler::new().compile("return 2").unwrap();
+        std::fs::write(&at, &other).unwrap();
+        let read =
+            compiled_keeping_in(Some(&dir), Path::new("/b.luau"), source.to_owned()).unwrap();
+        assert_eq!(&read[..], &other[..]);
+        let entries = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(entries, 1, "nothing partial is left behind");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

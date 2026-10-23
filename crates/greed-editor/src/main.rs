@@ -331,6 +331,7 @@ fn host(
     file: Option<PathBuf>,
     requests: Option<Sender<Request>>,
 ) -> Result<Host, HostError> {
+    runtime::keep_bytecode();
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, file);
     let host = Host::new(editor)?;

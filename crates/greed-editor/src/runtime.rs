@@ -43,6 +43,32 @@ pub(crate) fn cache_dir() -> Option<PathBuf> {
     greed_core::dirs::dir(greed_core::dirs::Kind::Cache)
 }
 
+/// Keeps plugins' compiled bytecode in the cache, in a folder for this
+/// build, so starting doesn't compile every plugin again. Other builds'
+/// folders are removed on a thread of their own, out of the way.
+pub fn keep_bytecode() {
+    let Some(cache) = cache_dir() else {
+        return;
+    };
+    let ours = format!("bytecode-{BUILD}");
+    greed_core::luau::keep_bytecode_in(cache.join(&ours));
+    std::thread::spawn(move || remove_other_builds(&cache, &ours));
+}
+
+/// Removes the bytecode folders in `cache` but `ours`.
+fn remove_other_builds(cache: &Path, ours: &str) {
+    let Ok(entries) = std::fs::read_dir(cache) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("bytecode-") && name != ours {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 /// Unpacks the built-in runtime into `cache` once per version of it, and
 /// returns its folder. It's written beside and renamed into place, so a
 /// second greed starting at the same time never sees half of it.

@@ -64,6 +64,7 @@ use serde::Deserialize;
 
 pub use api::EVENTS;
 pub use jobs::Done as FinishedJob;
+pub use modules::keep_bytecode_in;
 pub use testing::{TestResult, run_suites, run_tests};
 
 use crate::Editor;
