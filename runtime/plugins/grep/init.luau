@@ -1,6 +1,7 @@
 -- Search the whole project, and replace by editing what was found.
 --
 --   space /             search the project for a regex as you type
+--   space L             the same in this buffer, unsaved changes included
 --   ctrl-e              in that picker: put the matches in a results panel
 --   :grep PATTERN DIR?  put the matches in a results panel straight away
 --
@@ -64,34 +65,92 @@ end
 -- lists everything.
 local LIVE_LIMIT = 1000
 
+-- Where searching as you type looks: `find` gives the lines matching a
+-- query, `go` goes to one and `preview` shows it. With `root`, which the
+-- paths found are relative to, ctrl-e puts them in the results panel.
+type Place = {
+	title: string,
+	find: (query: string) -> Found,
+	go: (found: greed.GrepLine) -> (),
+	preview: (found: greed.GrepLine) -> picker.Preview?,
+	root: string?,
+}
+
+-- Searches `place` for a regex as you type, listing the matching lines.
+local function search_as_you_type(place: Place)
+	local pattern = ""
+	local function lines(query: string): { picker.Item }
+		pattern = query
+		local items = {}
+		for _, f in place.find(query) do
+			local label = `{key(f.path, f.line)}: {string.match(f.text, "^%s*(.-)%s*$")}`
+			table.insert(items, { label = label, value = f })
+		end
+		return items
+	end
+	local keys = {}
+	local root = place.root
+	if root then
+		keys["ctrl-e"] = function(picked: { picker.Item })
+			local found = {}
+			for _, item in picked do
+				table.insert(found, item.value)
+			end
+			show(pattern, root, found)
+		end
+	end
+	picker.pick(place.title, {}, function(item)
+		place.go(item.value :: greed.GrepLine)
+	end, {
+		source = lines,
+		preview = function(item)
+			return place.preview(item.value :: greed.GrepLine)
+		end,
+		keys = keys,
+	})
+end
+
+-- The first `limit` lines of `buffer` matching `query`, as they are now,
+-- unsaved changes included, found under `path`.
+local function buffer_lines(buffer: greed.Buffer, query: string, path: string, limit: number): Found
+	local found: Found = {}
+	-- A half-typed pattern that doesn't parse yet finds nothing.
+	local matches = buffer:find_all(core.search.pattern(query))
+	if matches == nil then
+		return found
+	end
+	for _, m in matches do
+		local line = buffer:line_of(m.from)
+		local last = found[#found]
+		if last == nil or last.line ~= line then
+			if #found == limit then
+				break
+			end
+			last = { path = path, line = line, text = buffer:line_text(line), matches = {} }
+			table.insert(found, last)
+		end
+		local start = buffer:line_start(line)
+		table.insert(last.matches, { from = m.from - start, to = m.to - start })
+	end
+	return found
+end
+
 greed.command({
 	name = "search-project",
 	doc = "Search the project for a regex as you type, and go to a match",
 	run = function()
 		local root = core.project.root()
-		local pattern = ""
-		local function lines(query: string): { picker.Item }
-			pattern = query
-			-- A half-typed pattern that doesn't parse yet finds nothing.
-			local found: { greed.GrepLine } = greed.fs.grep(
-				core.search.pattern(query),
-				root,
-				{ limit = LIVE_LIMIT }
-			) or {}
-			local items = {}
-			for _, f in found do
-				local label = `{key(f.path, f.line)}: {string.match(f.text, "^%s*(.-)%s*$")}`
-				table.insert(items, { label = label, value = f })
-			end
-			return items
-		end
-		picker.pick("Search", {}, function(item)
-			local f = item.value :: greed.GrepLine
-			core.file.open_at(core.project.resolve(f.path, root), f.line, f.matches[1].from)
-		end, {
-			source = lines,
-			preview = function(item)
-				local f = item.value :: greed.GrepLine
+		search_as_you_type({
+			title = "Search",
+			root = root,
+			find = function(query)
+				-- A half-typed pattern that doesn't parse yet finds nothing.
+				return greed.fs.grep(core.search.pattern(query), root, { limit = LIVE_LIMIT }) or {}
+			end,
+			go = function(f)
+				core.file.open_at(core.project.resolve(f.path, root), f.line, f.matches[1].from)
+			end,
+			preview = function(f)
 				local path = core.project.resolve(f.path, root)
 				local text = greed.fs.read(path)
 				if text == nil then
@@ -99,15 +158,31 @@ greed.command({
 				end
 				return { text = text, language = greed.language_of(path), line = f.line }
 			end,
-			keys = {
-				["ctrl-e"] = function(picked)
-					local found = {}
-					for _, item in picked do
-						table.insert(found, item.value)
-					end
-					show(pattern, root, found)
-				end,
-			},
+		})
+	end,
+})
+
+greed.command({
+	name = "search-buffer",
+	doc = "Search this buffer for a regex as you type, listing the lines that match",
+	run = function(ctx)
+		local buffer, view = ctx.buffer, ctx.view
+		local file = buffer:path()
+		local root = if file then core.project.root() else nil
+		local path = if file then core.project.relative(file) else core.project.name(buffer)
+		search_as_you_type({
+			title = `Search {path}`,
+			root = root,
+			find = function(query)
+				return buffer_lines(buffer, query, path, LIVE_LIMIT)
+			end,
+			go = function(f)
+				local at = buffer:line_start(f.line) + f.matches[1].from
+				view:set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+			end,
+			preview = function(f)
+				return { text = buffer:text(), language = buffer:language(), line = f.line }
+			end,
 		})
 	end,
 })
@@ -147,6 +222,6 @@ core.actions.action({
 	end,
 })
 
-greed.keymap.bind({ layer = "leader" }, { ["/"] = "search-project" })
+greed.keymap.bind({ layer = "leader" }, { ["/"] = "search-project", L = "search-buffer" })
 
 return {}

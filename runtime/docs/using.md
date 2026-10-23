@@ -727,6 +727,7 @@ Markdown section (`m a ...` includes the space around it), and `] p` `[ p`,
 | `*` | Search for the selected text, exactly as written; a whole word only matches whole words |
 | `alt-*` | The same, also inside longer words |
 | `space /` | Search the whole project as you type |
+| `space L` | List the lines of this buffer that match, as you type (`search-buffer`) |
 
 Patterns are regexes. The `search-case` option sets how searches mind
 case: `"smart"` (the default) ignores case unless what you type has a
@@ -755,6 +756,12 @@ and the files change as you type; `:w` saves them, `enter` goes to the
 line and `q` closes the panel. A file that changed on disk since the
 search is left alone and reported. `:grep PATTERN` fills the panel
 directly.
+
+`space L` is the same search in the buffer you're in: every matching line
+in a list with a preview, where `/` only jumps from match to match. It
+searches the text as it is, unsaved changes included, and works in
+buffers without a file too. `ctrl-e` puts a file's matches in the panel,
+the same way.
 
 ## Files and buffers
 

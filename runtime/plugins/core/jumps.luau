@@ -70,6 +70,7 @@ for _, name in
 		"pick-diagnostic",
 		"grep-open",
 		"search-project",
+		"search-buffer",
 		"pick-outline",
 		"next-change",
 		"prev-change",

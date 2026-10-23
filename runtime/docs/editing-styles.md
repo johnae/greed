@@ -44,6 +44,7 @@ it). After the leader a hint lists what can follow.
 |---|---|---|
 | `space f` | `ctrl-space f` | Find files |
 | `space /` | `ctrl-space /` | Search the project |
+| `space L` | `ctrl-space L` | Search this buffer, listing the lines that match |
 
 Helix and Vim also share `:` for commands, `g d` to go to a definition
 and `] d` to the next problem. Prompts and pickers work the same in all
