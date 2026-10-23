@@ -31,3 +31,13 @@ test("messages can be left out", function(t)
 		marks.diagnostic_marks(greed.view():buffer(), { diagnostic(4, 1, "not found") }, false)
 	assert(#found == 1 and found[1].sign == "E", "just the sign")
 end)
+
+test("the signs are a table to change, by how bad the problem is", function(t)
+	local signs = require("@lsp").signs
+	signs.error = "●"
+	t:buffer("|let a = b;")
+	local found =
+		marks.diagnostic_marks(greed.view():buffer(), { diagnostic(4, 1, "not found") }, false)
+	signs.error = "E"
+	assert(found[1].sign == "●", tostring(found[1].sign))
+end)

@@ -995,7 +995,9 @@ it the new ones.
 Problems are underlined, and their lines get a sign and a colored line
 number. Each line's worst problem also shows after the line's end; `:set
 diagnostic-messages false` hides those. They move with your edits until
-the server checks the file again.
+the server checks the file again. The signs are `E`, `W`, `I` and `H`;
+`require("@lsp").signs.error = "●"` changes one (`warning`, `info` and
+`hint` for the others), from the server's next check.
 
 In the `g r` and `space D` lists, `ctrl-e` puts the places in a panel like
 the project search's, to edit the same way: each reference with a line

@@ -4,9 +4,12 @@
 local greed = require("@greed")
 
 local NAMES = { "error", "warning", "info", "hint" }
-local SIGNS = { "E", "W", "I", "H" }
 
 local M = {}
+
+--- The sign beside a line with a problem, by how bad it is: change one
+--- with `require("@lsp").signs.error = "●"`.
+M.signs = { error = "E", warning = "W", info = "I", hint = "H" } :: { [string]: string }
 
 -- The marks for `diagnostics` in `buffer`; `messages` says whether to show
 -- their text after each line.
@@ -37,7 +40,7 @@ function M.diagnostic_marks(
 			from = at,
 			to = at,
 			style = "diagnostic.sign." .. name,
-			sign = SIGNS[d.severity] or "H",
+			sign = M.signs[name],
 		})
 		if messages then
 			local message = string.split(d.message, "\n")[1]

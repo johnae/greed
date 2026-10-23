@@ -456,4 +456,6 @@ return {
 	--- The completion menu: `completion.source(fn)` adds what to offer, in
 	--- any buffer, before the language server is asked.
 	completion = completion,
+	--- The sign beside a line with a problem, by how bad it is (marks.luau).
+	signs = marks.signs,
 }
