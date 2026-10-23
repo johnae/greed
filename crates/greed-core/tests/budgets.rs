@@ -129,7 +129,17 @@ fn budget(test: &str, measure: impl FnOnce(&mut Found), budgets: &[(&str, f64, f
             writeln!(out, "budget-found {name} {value}").unwrap();
         }
     } else {
-        check(test, &isolated(test), budgets);
+        // One measurement at a time: side by side they take each other's
+        // time, and on a shared CI runner an idle second filled up with
+        // the others' work.
+        static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let found = {
+            let _turn = ONE_AT_A_TIME
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            isolated(test)
+        };
+        check(test, &found, budgets);
     }
 }
 
