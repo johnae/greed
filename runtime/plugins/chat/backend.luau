@@ -401,6 +401,7 @@ local function started(service: string): (Service?, string?)
 	-- from a picker's choice.
 	local options: greed.RpcOptions = {
 		framing = "lines",
+		env = core.file.companion_env(),
 		on_notify = function(method: string, params: any)
 			heard(service, method, params)
 		end,

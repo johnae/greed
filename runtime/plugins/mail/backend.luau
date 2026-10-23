@@ -330,6 +330,7 @@ local function served(): (greed.RpcConnection?, string?)
 	local program = M.program()
 	local started, err = greed.rpc.start({ program, "serve" }, {
 		framing = "lines",
+		env = core.file.companion_env(),
 		-- Every session hears it, this one too.
 		on_notify = function(method: string, params: any)
 			if offer then

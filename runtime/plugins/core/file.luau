@@ -40,6 +40,24 @@ function M.companion(option: string, name: string): string
 	return name
 end
 
+--- What a companion program is started with so it keeps to the folders
+--- this Greed uses (its config, data and cache), as with `--profile` and
+--- in tests, rather than finding the usual ones in your home itself.
+function M.companion_env(): { [string]: string | false }
+	local dirs = greed.fs.dirs()
+	local env: { [string]: string | false } = {}
+	if dirs.config then
+		env.GREED_CONFIG_DIR = dirs.config
+	end
+	if dirs.data then
+		env.GREED_DATA_DIR = dirs.data
+	end
+	if dirs.cache then
+		env.GREED_CACHE_DIR = dirs.cache
+	end
+	return env
+end
+
 -- How buffers that aren't files save, by kind.
 local savers: { [string]: (buffer: greed.Buffer) -> () } = {}
 
