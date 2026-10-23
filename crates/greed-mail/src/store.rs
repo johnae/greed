@@ -670,6 +670,16 @@ impl Store {
         Ok(())
     }
 
+    /// How many messages the store has in `mailbox`.
+    pub fn count_in(&self, mailbox: i64) -> Result<u64, Trouble> {
+        let count: i64 = self.db.query_row(
+            "SELECT count(*) FROM places WHERE mailbox = ?1",
+            [mailbox],
+            |r| r.get(0),
+        )?;
+        Ok(count.cast_unsigned())
+    }
+
     /// Starts a mailbox's sync again under `uid_validity`: its UIDs from
     /// before mean nothing now, so its places go and the sync starts from
     /// the top. Messages stay: their headers come again under the new

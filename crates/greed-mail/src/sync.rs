@@ -23,6 +23,9 @@ pub struct Options {
     /// Only what arrived since the last sync, quickly, before anything
     /// slower: no flags, no first sync, nothing after a UIDVALIDITY change.
     pub arrived_only: bool,
+    /// Start a mailbox over under its new UIDVALIDITY even when the server
+    /// has far fewer messages in it than the store (see [`held`]).
+    pub start_over: bool,
 }
 
 impl Default for Options {
@@ -31,8 +34,30 @@ impl Default for Options {
             batch: BATCH,
             limit: None,
             arrived_only: false,
+            start_over: false,
         }
     }
+}
+
+/// Whether a mailbox with `now` messages on the server, where the store
+/// has `had`, is held as it is rather than synced: when fewer than half
+/// are there, the server more likely can't see them for a while (Proton
+/// Bridge shows a big mailbox empty when its disk is full, or while it
+/// builds its cache again) than they all went, and syncing would drop
+/// them here.
+pub fn held(had: u64, now: u64) -> bool {
+    had >= 20 && now < had / 2
+}
+
+/// Fails with why `name` is held (see [`held`]), unless `options` start it
+/// over.
+fn hold(name: &str, had: u64, now: u64, options: Options) -> Result<(), Trouble> {
+    if options.start_over || !held(had, now) {
+        return Ok(());
+    }
+    Err(Trouble(format!(
+        "{name} has {now} of the {had} messages here on the server, so it's kept as it was until they're back; if they did go, greed-mail --start-over sync"
+    )))
 }
 
 /// What a mailbox's sync did.
@@ -102,6 +127,8 @@ pub async fn mailbox<I: Imap>(
         return Ok(Synced::default());
     }
     if state.uid_validity != Some(opened.uid_validity) {
+        let had = store.count_in(state.id)?;
+        hold(name, had, u64::from(opened.messages), options)?;
         store.restart(state.id, opened.uid_validity)?;
         state = store.mailbox(account, name, role)?;
     }
@@ -140,7 +167,17 @@ pub async fn mailbox<I: Imap>(
 
     // What changed and went among those that were in.
     if was_done {
-        refresh(imap, store, &state, &opened, high, &mut synced).await?;
+        refresh(
+            imap,
+            store,
+            &state,
+            &opened,
+            high,
+            &mut synced,
+            name,
+            options,
+        )
+        .await?;
     }
 
     // The first sync going down, newest first.
@@ -163,7 +200,9 @@ pub async fn mailbox<I: Imap>(
 /// and takes out those gone from the mailbox. With CONDSTORE, only flags
 /// changed since the last time come, and the UIDs are listed only when the
 /// mailbox holds fewer messages than the store has in it; without, every
-/// message's flags come, which lists every UID too.
+/// message's flags come, which lists every UID too. A mailbox the server
+/// suddenly lists nearly empty is held as it is (see [`held`]).
+#[allow(clippy::too_many_arguments)]
 async fn refresh<I: Imap>(
     imap: &mut I,
     store: &mut Store,
@@ -171,6 +210,8 @@ async fn refresh<I: Imap>(
     opened: &Opened,
     high: u32,
     synced: &mut Synced,
+    name: &str,
+    options: Options,
 ) -> Result<(), Trouble> {
     let local = store.uids(state.id)?;
     let listed = if let (Some(now), Some(since)) = (opened.highest_modseq, state.modseq) {
@@ -190,6 +231,7 @@ async fn refresh<I: Imap>(
     };
     if let Some(listed) = listed {
         let listed: HashSet<u32> = listed.into_iter().collect();
+        hold(name, local.len() as u64, listed.len() as u64, options)?;
         let gone: Vec<u32> = local
             .into_iter()
             .filter(|uid| !listed.contains(uid))
@@ -617,6 +659,76 @@ mod tests {
         assert_eq!(store.counts(account).unwrap(), (3, 3), "no message twice");
         let inbox = store.mailbox(account, "INBOX", None).unwrap();
         assert_eq!(store.uids(inbox.id).unwrap(), [10, 11, 12]);
+    }
+
+    #[test]
+    fn a_mailbox_that_starts_over_nearly_empty_is_held_until_its_mail_is_back() {
+        let (mut store, account) = store("held");
+        let mut fake = Fake::with(1, 1..=40);
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        // The server lost track: new UIDs, and only 3 of the 40 there.
+        let mut emptied = Fake {
+            uid_validity: 2,
+            ..Fake::default()
+        };
+        for uid in 1..=3 {
+            emptied.add(100 + uid, &format!("m{uid}"));
+        }
+        let held = sync(&mut emptied, &mut store, account, Options::default()).unwrap_err();
+        assert!(held.0.contains("3 of the 40"), "{held}");
+        assert_eq!(store.counts(account).unwrap(), (40, 40), "kept as it was");
+        // Asked to, it starts over all the same.
+        let anyway = Options {
+            start_over: true,
+            ..Options::default()
+        };
+        assert!(
+            sync(&mut emptied, &mut store, account, anyway)
+                .unwrap()
+                .done
+        );
+        let inbox = store.mailbox(account, "INBOX", None).unwrap();
+        assert_eq!(store.uids(inbox.id).unwrap(), [101, 102, 103]);
+    }
+
+    #[test]
+    fn a_mailbox_the_server_suddenly_lists_nearly_empty_is_held() {
+        let (mut store, account) = store("vanished");
+        let mut fake = Fake::with(1, 1..=40);
+        sync(&mut fake, &mut store, account, Options::default()).unwrap();
+        // Same UIDs, but the server lists only 3 of them, as Bridge does
+        // when its disk is full.
+        for uid in 4..=40 {
+            fake.remove(uid);
+        }
+        let held = sync(&mut fake, &mut store, account, Options::default()).unwrap_err();
+        assert!(held.0.contains("INBOX has 3 of the 40"), "{held}");
+        assert_eq!(store.counts(account).unwrap(), (40, 40), "kept as it was");
+        // A few going is mail going, as ever.
+        let mut fewer = Fake::with(1, 1..=40);
+        for uid in 1..=5 {
+            fewer.remove(uid);
+        }
+        let synced = sync(&mut fewer, &mut store, account, Options::default()).unwrap();
+        assert_eq!(synced.gone, 5);
+        // Asked to, it lets most of them go too: all but 1 to 3 of the 35
+        // left.
+        let anyway = Options {
+            start_over: true,
+            ..Options::default()
+        };
+        assert_eq!(
+            sync(&mut fake, &mut store, account, anyway).unwrap().gone,
+            35
+        );
+    }
+
+    #[test]
+    fn a_mailbox_is_held_only_when_most_of_a_fair_number_went() {
+        assert!(held(40, 19));
+        assert!(!held(40, 20), "half is there");
+        assert!(!held(19, 0), "too few to tell");
+        assert!(!held(0, 0));
     }
 
     #[test]

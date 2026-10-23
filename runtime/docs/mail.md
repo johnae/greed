@@ -648,3 +648,10 @@ and checks every two minutes on a server that can't. When an account
 can't be reached it tries again a little later each time, up to every
 five minutes. `greed-mail sync` syncs once, on its own, if you want to see
 it work.
+
+A server sometimes shows a big mailbox nearly empty for a while: Proton
+Bridge does when its disk is full (its temporary files go to `/tmp`), or
+while it builds its cache again. When fewer than half of the messages you
+have here are there, greed-mail keeps the mailbox as it was and the mail
+list says so, until the rest are back. If they really did go,
+`greed-mail --start-over sync` lets them go here too.

@@ -9,8 +9,10 @@
 //! ```
 //!
 //! `--config FILE` reads accounts from FILE instead of Greed's `mail.toml`,
-//! `--store DIR` keeps the store in DIR instead of Greed's data folder, and
-//! `--limit N` stops a sync after about N messages a mailbox.
+//! `--store DIR` keeps the store in DIR instead of Greed's data folder,
+//! `--limit N` stops a sync after about N messages a mailbox, and
+//! `--start-over` lets a mailbox start over with far fewer messages than
+//! the store has (a sync holds it otherwise; see `sync::held`).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -23,8 +25,7 @@ use greed_mail::store::Store;
 use greed_mail::sync::{self, Options};
 use greed_mail::{indexing, serve};
 
-const USAGE: &str =
-    "usage: greed-mail [--config FILE] [--store DIR] [--limit N] (check | sync | serve) [ACCOUNT]";
+const USAGE: &str = "usage: greed-mail [--config FILE] [--store DIR] [--limit N] [--start-over] (check | sync | serve) [ACCOUNT]";
 
 /// Makes a panic end it at once, said as its other troubles are: unwinding
 /// would wait for the thread reading its input, and it would hang on,
@@ -66,6 +67,7 @@ fn main() -> ExitCode {
                     },
                 }
             }
+            "--start-over" => options.start_over = true,
             "-h" | "--help" | "help" => {
                 println!("{USAGE}");
                 return ExitCode::SUCCESS;
