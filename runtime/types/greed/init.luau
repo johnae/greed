@@ -2000,8 +2000,8 @@ export type Greed = {
 	stalls: () -> { { ms: number, plugin: string?, what: string, time: number } },
 	--- Errors from plugin code that nothing caught (a command, an event handler or a task failing), newest first, up to 100: the plugin, what it ran ("on buffer.opened", a command's name), the message, where in its Luau it failed, and when, in seconds since 1970.
 	errors: () -> { { plugin: string?, what: string, message: string, traceback: string, time: number } },
-	--- Counting where the editor's time goes: every run of plugin code (each command, event handler, status line) and the editor's own work (handling a key, parsing, drawing), by plugin and what it did. `start` begins, `stop` ends and returns the rows, the most time first; `running` says whether one is being taken.
-	profile: { start: () -> (), stop: () -> { ProfileRow }, running: () -> boolean },
+	--- Counting where the editor's time goes: every run of plugin code (each command, event handler, status line) and the editor's own work (handling a key, parsing, drawing), by plugin and what it did. `start` begins, `stop` ends and returns the rows, the most time first; `running` says whether one is being taken. `loading` is how long each plugin's code took to load, by name, in milliseconds, profile or not.
+	profile: { start: () -> (), stop: () -> { ProfileRow }, running: () -> boolean, loading: () -> { [string]: number } },
 	--- Debug lines and their topics, for seeing what the editor and plugins do: `:debug` and `:debug-log` use them.
 	debug: Debug,
 	--- Milliseconds on the editor's clock, for timing animations. While a

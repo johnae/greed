@@ -39,6 +39,8 @@ pub(crate) struct Stalls {
     kept: VecDeque<Stall>,
     inner: Duration,
     profile: Option<HashMap<(Option<String>, String), Spent>>,
+    /// How long each plugin's code took to load, last time it did.
+    loading: HashMap<String, Duration>,
     /// Keeps long stalls without saying them, for tests: how long a run
     /// takes depends on how busy the machine is, and a test checking what
     /// was said shouldn't.
@@ -62,6 +64,12 @@ fn note(lua: &Lua, took: Duration, plugin: Option<&str>, what: &str) {
         plugin.unwrap_or("greed"),
         took.as_secs_f64() * 1000.0
     );
+    if let (Some(plugin), "loading") = (plugin, what) {
+        state_mut(lua)
+            .stalls
+            .loading
+            .insert(plugin.to_owned(), took);
+    }
     if let Some(profile) = &mut state_mut(lua).stalls.profile {
         let spent = profile
             .entry((plugin.map(str::to_owned), what.to_owned()))
@@ -144,6 +152,16 @@ pub(super) fn profile_module(lua: &Lua) -> LuaResult<Table> {
     profile.set(
         "running",
         lua.create_function(|lua, NoArgs| Ok(state(lua).stalls.profile.is_some()))?,
+    )?;
+    profile.set(
+        "loading",
+        lua.create_function(|lua, NoArgs| {
+            let list = lua.create_table()?;
+            for (plugin, took) in &state(lua).stalls.loading {
+                list.set(plugin.as_str(), took.as_secs_f64() * 1000.0)?;
+            }
+            Ok(list)
+        })?,
     )?;
     Ok(profile)
 }

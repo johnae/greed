@@ -147,6 +147,7 @@ greed.command({
 			})
 		end
 		local dirs = greed.plugin.dirs()
+		local loading = greed.profile.loading()
 		for _, name in greed.plugin.list() do
 			local dir = dirs[name]
 			if dir then
@@ -156,7 +157,13 @@ greed.command({
 					table.insert(asks, capability.name)
 				end
 				local uses = if #asks > 0 then "  " .. table.concat(asks, ", ") else ""
-				table.insert(items, { label = `{name}  {M.origin(dir)}{uses}`, value = about })
+				-- What it adds to starting Greed, when that's enough to notice.
+				local ms = loading[name]
+				local took = if ms and ms >= 1 then string.format("  loads in %.0f ms", ms) else ""
+				table.insert(
+					items,
+					{ label = `{name}  {M.origin(dir)}{uses}{took}`, value = about }
+				)
 			end
 		end
 		picker.pick("Plugins", items, function(item)

@@ -747,3 +747,24 @@ fn keys_bound_to_missing_commands_are_named_at_start() {
         ["g z in helix runs nowhere, which doesn't exist"]
     );
 }
+
+#[test]
+fn how_long_each_plugin_took_to_load_is_kept() {
+    let h = host();
+    h.load_str(
+        "slow",
+        "local start = os.clock() while os.clock() - start < 0.005 do end",
+    )
+    .unwrap();
+    h.load_str("quick", "").unwrap();
+    let took = |name: &str| -> f64 {
+        h.eval(&format!(
+            "return require('@greed').profile.loading()['{name}']"
+        ))
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    assert!(took("slow") >= 5.0, "{}", took("slow"));
+    assert!(took("quick") < took("slow"));
+}

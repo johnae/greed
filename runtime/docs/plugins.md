@@ -1290,6 +1290,24 @@ nothing stalls, `:profile` (or `greed.profile.start()` and `stop()`)
 counts every run of plugin code and the editor's own work by plugin and
 what it did, the most time first.
 
+Every plugin's top level runs each time Greed starts, so keep it to
+registering: commands, keys, options, handlers. Read files, scan folders
+or start programs the first time they're needed, or from a handler,
+like this:
+
+```luau
+local index = nil
+local function notes()
+	index = index or build_index() -- the first time a command needs it
+	return index
+end
+```
+
+That way adding plugins hardly slows starting, and nobody has to set up
+lazy loading in their config. `:plugins` says how long each one took to
+load when it's a millisecond or more; `greed.profile.loading()` gives
+the numbers.
+
 To see what your plugin does as it runs, `greed.debug.log(...)` keeps a
 line while the `plugins` debug topic is on, or `plugin:NAME` for yours
 alone (`:debug plugin:myplugin`); off, it returns at once, and
