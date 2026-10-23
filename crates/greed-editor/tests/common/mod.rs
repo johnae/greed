@@ -30,10 +30,15 @@ impl World {
         for dir in ["run", "config/greed", "cache", "claude", "remote-home"] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
         }
-        // A config of their own, so the first-run setup page stays away.
+        // A config of their own, so the first-run setup page stays away,
+        // with notes of their own (none), so Hoard's session doesn't start
+        // for the notes in your home.
         std::fs::write(
             root.join("config/greed/init.luau"),
-            "-- A test world's config.\n",
+            format!(
+                "-- A test world's config.\nrequire(\"@greed\").option.set(\"notes-folder\", {:?})\n",
+                root.join("notes").display().to_string()
+            ),
         )
         .unwrap();
         Some(World { root })
@@ -230,12 +235,18 @@ pub fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
     }
 }
 
+/// Whether a session other than a service's runs: services (the world's
+/// notes start the hoard service) run on beside them, and go when the
+/// world does.
 pub fn running(world: &World) -> bool {
-    !world.sessions().trim().is_empty()
+    world
+        .sessions()
+        .lines()
+        .any(|line| !line.trim().is_empty() && !line.contains("(service)"))
 }
 
 pub fn none_running(world: &World) -> bool {
-    world.sessions().trim().is_empty()
+    !running(world)
 }
 
 /// Folders standing in for another machine's, beside the world's: its

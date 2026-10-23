@@ -33,7 +33,9 @@ fn greed_starts_a_session_that_outlives_detaching_and_quits_from_a_new_terminal(
     );
     let listed = world.sessions();
     assert!(
-        listed.starts_with("notes") && listed.contains(project.to_str().unwrap()),
+        // The hoard service may be listed too, started beside it.
+        listed.lines().any(|l| l.starts_with("notes "))
+            && listed.contains(project.to_str().unwrap()),
         "{listed}"
     );
     assert_eq!(

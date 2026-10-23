@@ -26,10 +26,11 @@ fn world(name: &str) -> std::path::PathBuf {
         .join(format!("greed-bridge-{name}-{}", std::process::id()))
 }
 
-/// `greed` in `world`.
+/// `greed` in `world`. Its data, state and home are the world's too, so
+/// nothing it starts (a chat or notes service) reaches yours.
 fn greed_in(name: &str) -> Command {
     let root = world(name);
-    for dir in ["run", "config", "cache", "claude"] {
+    for dir in ["run", "config", "cache", "data", "state", "home", "claude"] {
         std::fs::create_dir_all(root.join(dir)).unwrap();
     }
     let mut command = Command::new(GREED);
@@ -37,6 +38,9 @@ fn greed_in(name: &str) -> Command {
         .env("XDG_RUNTIME_DIR", root.join("run"))
         .env("XDG_CONFIG_HOME", root.join("config"))
         .env("XDG_CACHE_HOME", root.join("cache"))
+        .env("XDG_DATA_HOME", root.join("data"))
+        .env("XDG_STATE_HOME", root.join("state"))
+        .env("HOME", root.join("home"))
         .env("CLAUDE_CONFIG_DIR", root.join("claude"))
         .env_remove("GREED_SESSION")
         .env_remove("GREED_CONFIG_DIR")
