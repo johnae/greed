@@ -175,11 +175,15 @@ greed.command({
 
 -- Formatting on save runs the project's formatter and its config, which
 -- can be code (prettier's .prettierrc.js): only in a project you trusted.
--- `:format` you run yourself.
-core.file.before_save("format", function(buffer)
+-- `:format` you run yourself. Auto-save doesn't format, as in Helix: it
+-- saves when you pause, and formatting then would change the line you're
+-- typing (a trailing space gone before the next word).
+core.file.before_save("format", function(buffer, how)
 	local path = buffer:path()
 	if
-		greed.option.get("format-on-save") == true and (path == nil or core.project.trusts(path))
+		not how.auto
+		and greed.option.get("format-on-save") == true
+		and (path == nil or core.project.trusts(path))
 	then
 		local _, err = M.format(buffer)
 		if err then

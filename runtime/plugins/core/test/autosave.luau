@@ -44,3 +44,22 @@ test(
 		assert(greed.fs.read(path) == "xone\n", tostring((greed.fs.read(path))))
 	end
 )
+
+test("auto-save runs the save hooks, telling them it's an auto-save, and says nothing", function(t)
+	local core = require("@core")
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	local path = dir .. "/a.txt"
+	local told: { boolean } = {}
+	core.file.before_save("probe", function(_, how)
+		table.insert(told, how.auto)
+	end)
+	greed.open(path)
+	greed.option.set("auto-save", true)
+	t:keys("i x esc")
+	t:wait(1100)
+	assert(greed.fs.read(path) == "xone\n", tostring((greed.fs.read(path))))
+	assert(#t:messages() == 0, table.concat(t:messages(), "\n"))
+	t:keys("i y esc")
+	t:run("save")
+	assert(#told == 2 and told[1] == true and told[2] == false, tostring(#told))
+end)

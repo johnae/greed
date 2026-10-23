@@ -889,7 +889,9 @@ anyway. `:set auto-reload false` turns this off.
 
 `:set auto-save true` saves a file a second after you stop editing it, so
 a burst of typing is one save; `:set auto-save-delay 3000` waits three
-seconds. To keep it, in your `init.luau`:
+seconds. It saves quietly and skips formatting, as Helix does: formatting
+while you pause would change the line you're typing, like a trailing
+space gone just before your next word. To keep it, in your `init.luau`:
 `require("@greed").option.set("auto-save", true)`.
 
 ### Icons
@@ -1418,6 +1420,7 @@ language's formatter when it's installed (`gofmt`, `ruff`, `stylua`,
 `rustfmt` through rust-analyzer). Only what the formatter changed is
 replaced, so the cursor stays put. If you type while a slow formatter
 runs, its result is left out rather than undoing what you typed.
+Auto-save doesn't format; the next `:w` does.
 
 ```luau
 -- A different formatter for a language

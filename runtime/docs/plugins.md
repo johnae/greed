@@ -679,7 +679,10 @@ A buffer of your own with no file, like a page of results or a command's
 output, can be scratch: `core.file.scratch(buffer)` keeps its changes from
 counting as unsaved, so `:q` doesn't refuse over them and the status line
 shows no `[+]`, until it's saved as a file. `core.file.unsaved(buffer)` says
-whether a buffer has changes to save. A buffer someone types into in turns,
+whether a buffer has changes to save. `core.file.before_save(name, hook)`
+runs `hook(buffer, how)` just before a file is written, as formatting does;
+`how.auto` is true when auto-save writes it, so skip what would change the
+text under someone who only paused. A buffer someone types into in turns,
 like a prompt, can let go of its undo history with `buffer:clear_history()`,
 so undo never reaches past the last turn. To tell someone how to set a
 secret, `greed.secrets.variable("anthropic")` is the variable that does

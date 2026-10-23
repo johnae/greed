@@ -33,15 +33,33 @@ function M.on_save(kind: string, save: (buffer: greed.Buffer) -> ())
 	greed.plugin.cleanup(registry.set(savers, kind, save))
 end
 
+--- How a file is being saved, for the hooks that run before: `auto` when
+--- auto-save saves it, while you may only have paused typing.
+export type Saving = { auto: boolean }
+
+type Hook = (buffer: greed.Buffer, how: Saving) -> ()
+
 -- What runs on a file's buffer just before it's written, like a formatter,
 -- by name.
-local before_save: { [string]: (buffer: greed.Buffer) -> () } = {}
+local before_save: { [string]: Hook } = {}
 
 --- Makes `hook` run on each file's buffer just before it's written,
 --- replacing any hook called `name`. An error in it is shown, and the file
 --- is written anyway. It goes when the plugin that added it does.
-function M.before_save(name: string, hook: (buffer: greed.Buffer) -> ())
+function M.before_save(name: string, hook: Hook)
 	greed.plugin.cleanup(registry.set(before_save, name, hook))
+end
+
+-- Writes `buffer` to its file, or `path`, after the hooks.
+local function write(buffer: greed.Buffer, path: string?, how: Saving)
+	registry.tell(before_save, buffer, how)
+	buffer:save(path)
+end
+
+--- Saves a file's buffer as auto-save does: the hooks are told it's an
+--- auto-save, and nothing is said.
+function M.autosave(buffer: greed.Buffer)
+	write(buffer, nil, { auto = true })
 end
 
 -- Saves `buffer`, to `path` if given. A folder it goes in that isn't there
@@ -71,8 +89,7 @@ local function save(buffer: greed.Buffer, path: string?, force: boolean?, forced
 		end
 		assert(greed.fs.mkdir(folder))
 	end
-	registry.tell(before_save, buffer)
-	buffer:save(path)
+	write(buffer, path, { auto = false })
 	greed.echo("wrote " .. project.name(buffer))
 end
 

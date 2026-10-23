@@ -1,6 +1,7 @@
 -- Saving files on their own: with `auto-save` on, a file with unsaved
 -- changes is saved once its edits have stopped for `auto-save-delay`
--- milliseconds, so a burst of typing is one save.
+-- milliseconds, so a burst of typing is one save. It saves as `:w` does,
+-- quietly, with the save hooks told it's an auto-save.
 --
 -- Buffers that aren't files keep themselves the same way with `on_quiet`,
 -- as mail being written does:
@@ -8,6 +9,7 @@
 --     core.autosave.on_quiet("mail-compose", function(buffer) ... end)
 
 local greed = require("@greed")
+local file = require("./file")
 
 local M = {}
 
@@ -86,7 +88,7 @@ M.on_quiet("file", function(buffer: greed.Buffer)
 			and buffer:modified()
 			and not buffer:readonly()
 		then
-			buffer:save()
+			file.autosave(buffer)
 		end
 	end)
 	if not ok then

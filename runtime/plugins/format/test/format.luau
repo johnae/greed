@@ -103,3 +103,12 @@ test("what's typed while a formatter runs is kept, and its late result left out"
 	assert(buffer:text() == "new one    two", buffer:text())
 	assert(formatted == false and string.find(tostring(err), "changed", 1, true), tostring(err))
 end)
+
+test("auto-save saves without formatting, so a pause in typing isn't reformatted", function(t)
+	local path = squeezing(t, "a b")
+	greed.option.set("auto-save", true)
+	t:keys("g l a space space esc")
+	t:wait(1100)
+	assert(greed.fs.read(path) == "a b  ", (greed.fs.read(path)))
+	assert(greed.view():buffer():text() == "a b  ")
+end)
