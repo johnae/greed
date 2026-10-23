@@ -17,6 +17,7 @@ local backend = require("@self/backend")
 local encryption = require("@self/encryption")
 local alerts = require("@self/alerts")
 local search = require("@self/search")
+local index = require("@self/index")
 local join = require("@self/join")
 local room = require("@self/room")
 
@@ -27,6 +28,7 @@ local M = {}
 M.backend = backend
 M.alerts = alerts
 M.search = search
+M.index = index
 M.join = join
 
 -- The list of rooms, while it's open.

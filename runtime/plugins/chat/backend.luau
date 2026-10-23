@@ -11,6 +11,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local services = require("@service")
+local index = require("./index")
 
 local M = {}
 
@@ -335,6 +336,11 @@ local function note(key: string, has: boolean)
 	greed.fs.write(file, greed.json.encode(accounts))
 end
 
+-- Catches account `key` up on the messages kept to search (below).
+local catch_up: (key: string) -> ()
+-- The accounts caught up since the owner started.
+local caught: { [string]: boolean } = {}
+
 local function took(service: string, account: any)
 	local taken: Account = account
 	taken.service = service
@@ -342,6 +348,11 @@ local function took(service: string, account: any)
 	owned[key] = taken
 	note(key, true)
 	tell("account.changed", { service = service, params = taken })
+	local can = capable[service]
+	if taken.state.state == "ready" and can and can.history and not caught[key] then
+		caught[key] = true
+		greed.spawn(catch_up, key)
+	end
 end
 
 -- A sign-in's step as views may see it: a finished one's account is taken
@@ -363,6 +374,11 @@ local function heard(service: string, method: string, params: any)
 		keep(service, params.account, params.secret)
 	elseif method == "alert" then
 		core.registry.tell(alert_listeners, `{service} {params.account}`, params)
+	elseif method == "messages" then
+		-- Kept to search here; views ask the owner what a search finds.
+		greed.spawn(index.keep, service, `{service} {params.account}`, params.messages)
+	elseif method == "unsaid" then
+		greed.spawn(index.forget, `{service} {params.account}`, params.room, params.event)
 	elseif method == "login.step" then
 		tell(method, {
 			service = service,
@@ -460,6 +476,13 @@ local function owner_ask(
 		result = finished(service, result)
 	end
 	return result, why
+end
+
+function catch_up(key: string)
+	local service = M.split(key)
+	index.catch_up(key, function(method: string, params: any): (any, string?)
+		return owner_ask(service, method, params, "")
+	end)
 end
 
 -- Signs `key` ("service id") out, and forgets its secret.
@@ -572,6 +595,8 @@ local function handle(method: string, params: any, caller: services.Caller): (an
 	local session = caller.session or ""
 	if method == "ask" then
 		return owner_ask(params.service, params.method, params.params, session)
+	elseif method == "search" then
+		return index.search(params.parsed)
 	elseif method == "media.open" then
 		return media_open(params.service, params.params, session)
 	elseif method == "media.read" then
@@ -748,6 +773,15 @@ function M.showing(rooms: { string })
 	view:request("shown", { rooms = greed.json.array(rooms) })
 end
 
+--- What a chat search runs over (`index.luau`).
+M.source = index.source
+
+--- The messages `parsed` finds in what the owner keeps, newest first
+--- unless it sorts otherwise, or nil and why. Waits.
+function M.search(parsed: core.Query): ({ index.Found }?, string?)
+	return view:request("search", { parsed = parsed })
+end
+
 --- Hands the owner `link`, which a browser sign-in ended on, for the
 --- session whose sign-in waits for it.
 function M.pass_link(link: string): (any, string?)
@@ -835,6 +869,7 @@ function M.reset()
 	capable = {}
 	opens = {}
 	shown_by = {}
+	caught = {}
 	M.accounts = {}
 	M.can = {}
 end

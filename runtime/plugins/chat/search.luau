@@ -1,48 +1,43 @@
 -- Searching messages: `:chat-search` (`/` in the list) asks in the search
--- box and searches every account; in a room (`alt-s`) only that room. What
--- it finds comes newest first in a picker, and the one picked opens in its
--- room. Each service searches its own way: Mattermost on the server (its
--- words and `from:`, `in:`, `before:`), Matrix in what this device has seen
--- (encrypted rooms too) and on the server.
+-- box and searches every account; in a room (`alt-s`) only that room. It
+-- searches the messages the chat service keeps (`index.luau`), in Greed's
+-- query language as mail and notes are: words, `from:bea`, `in:plans`,
+-- `before:2026-10-01`, `is:mine`, `is:direct`. What it finds comes newest
+-- first in a picker, and the one picked opens in its room.
 
 local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
 local backend = require("./backend")
 local room = require("./room")
-local accounts = require("./accounts")
 
 local M = {}
 
 --- A message found: the account ("service id") and room it's in.
 export type Found = { account: string, room: string, room_name: string, item: backend.Item }
 
---- What `query` finds, newest first, in every account or in `only` (an
---- account and a room), and what went wrong in the accounts that failed.
-function M.search(query: string, only: { account: string, room: string }?): ({ Found }, { string })
-	local found: { Found } = {}
-	local troubles: { string } = {}
-	local keys: { string } = if only then { only.account } else accounts.keys()
-	for _, key in keys do
-		local hits, why =
-			accounts.ask(key, "search", { query = query, room = if only then only.room else nil })
-		if hits == nil then
-			table.insert(troubles, `{key}: {why}`)
-		else
-			for _, hit in hits do
-				table.insert(found, {
-					account = key,
-					room = hit.room,
-					room_name = hit.room_name,
-					item = hit.item,
-				})
-			end
-		end
+--- `text` read as the search box reads it; nil and why when it won't.
+function M.query(text: string): (core.Query?, string?)
+	local parsed = core.search_box.read(text, { source = backend.source })
+	if not parsed.ok then
+		local problem = parsed.problems[1]
+		return nil, `{text}: {if problem then problem.message else "it won't read"}`
 	end
-	table.sort(found, function(a: Found, b: Found): boolean
-		return a.item.at > b.item.at
-	end)
-	return found, troubles
+	return parsed, nil
+end
+
+--- What `text` finds, newest first, everywhere or in `only` (an account
+--- and a room); nil and why.
+function M.search(text: string, only: { account: string, room: string }?): ({ Found }?, string?)
+	local asked = text
+	if only then
+		asked = `{text} account:"{only.account}" room_id:"{only.room}"`
+	end
+	local parsed, why = M.query(asked)
+	if parsed == nil then
+		return nil, why
+	end
+	return backend.search(parsed)
 end
 
 --- How a message found reads in the picker: where, who, what, when.
@@ -69,18 +64,22 @@ function M.ask(window: greed.View, only: { account: string, room: string }?)
 	core.search_box.open({
 		title = if only then "Search this room" else "Search chat",
 		history = "chat",
+		source = backend.source,
 		on_submit = function(text: string)
 			if core.text.trim(text) == "" then
 				return
 			end
 			greed.spawn(function()
 				greed.echo("searching…")
-				local found, troubles = M.search(text, only)
-				greed.echo(if #troubles > 0 then `chat: {table.concat(troubles, "; ")}` else "")
-				if #found == 0 then
+				local found, why = M.search(text, only)
+				if found == nil then
+					greed.echo(`chat: {why}`)
+					return
+				elseif #found == 0 then
 					greed.echo(`nothing found for {text}`)
 					return
 				end
+				greed.echo("")
 				offer(found, window)
 			end)
 		end,

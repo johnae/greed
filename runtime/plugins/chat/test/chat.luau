@@ -129,10 +129,6 @@ local function fake(sent: { any }?): (method: string, params: any) -> ()
 			table.insert(asked, { method = "preview", params = params })
 			return { url = params.url, title = "Plots of land" }
 		end,
-		search = function(params: any): any
-			table.insert(asked, { method = "search", params = params })
-			return { { room = "!plans:x", room_name = "Plans", item = items[2] } }
-		end,
 		["timeline.close"] = function()
 			return nil
 		end,
@@ -862,20 +858,154 @@ test("alt-/ picks a command into the box", function(t)
 	assert(r and r.view:input() == "/away ", r and r.view:input())
 end)
 
+-- Messages the fake tells of, kept to search: Bea's in Plans, Cal's in
+-- Quiet, and Anna's own in Plans.
+local function told(notify: (method: string, params: any) -> ())
+	local function said(room: string, name: string, event: string, who: string, text: string): any
+		local id = `@{string.lower(who)}:x`
+		return {
+			room = room,
+			room_name = name,
+			event = event,
+			sender = { id = id, name = who },
+			at = 1792660000000 + #event,
+			text = text,
+			mine = who == "Anna",
+			direct = false,
+		}
+	end
+	notify("messages", {
+		account = "@anna:x",
+		messages = {
+			said("!plans:x", "Plans", "$1", "Bea", "lunch at noon?"),
+			said("!quiet:x", "Quiet", "$q1", "Cal", "lunch tomorrow, noon or so"),
+			said("!plans:x", "Plans", "$a1", "Anna", "noon is fine"),
+		},
+	})
+end
+
+-- What `text` finds, as chat's search does it, by event.
+local function finds(t: any, text: string, only: any?): { string }
+	local events: { string } = {}
+	local done = false
+	greed.spawn(function()
+		local found, why = chat.search.search(text, only)
+		assert(found, why)
+		for _, one in found do
+			table.insert(events, one.item.event or "")
+		end
+		done = true
+	end)
+	t:wait_for(function(): boolean
+		return done
+	end)
+	table.sort(events)
+	return events
+end
+
+test(
+	"as an account comes in, its rooms' older messages are kept, back to the horizon once",
+	function(t)
+		backend.reset()
+		chat.index.BETWEEN = 0
+		local now = os.time() * 1000
+		local function said(event: string, text: string, ago: number): any
+			return {
+				room = "!yard:x",
+				room_name = "Yard",
+				event = event,
+				sender = { id = "@cal:x", name = "Cal" },
+				at = now - ago,
+				text = text,
+				mine = false,
+				direct = false,
+			}
+		end
+		-- The room's history, newest first, given two at a time.
+		local history = {
+			said("$y4", "rake", 1000),
+			said("$y3", "hose", 2000),
+			said("$y2", "shed", 3000),
+			said("$y1", "spade", 4000),
+		}
+		local pages: { string } = {}
+		local notify = backend.use("matrix", {
+			rooms = function(): any
+				return { { id = "!yard:x", account = "@anna:x", name = "Yard", kind = "room" } }
+			end,
+			history = function(params: any): any
+				table.insert(pages, params.before or "newest")
+				local from = tonumber(params.before) or 0
+				local page = {}
+				for i = from + 1, math.min(from + 2, #history) do
+					table.insert(page, history[i])
+				end
+				return {
+					messages = page,
+					before = if from + 2 < #history then tostring(from + 2) else nil,
+				}
+			end,
+		}, { "history" })
+		local ready = { id = "@anna:x", server = "https://x", state = { state = "ready" } }
+		notify("account.changed", ready)
+		t:wait_for(function(): boolean
+			return #pages == 2
+		end)
+		t:wait(50)
+		assert(pages[1] == "newest" and pages[2] == "2", table.concat(pages, " "))
+		local found = finds(t, "spade")
+		assert(#found == 1 and found[1] == "$y1", table.concat(found, " "))
+
+		-- Coming in again, as after a restart: back to where it has messages.
+		backend.reset()
+		backend.use("matrix", {
+			rooms = function(): any
+				return { { id = "!yard:x", account = "@anna:x", name = "Yard", kind = "room" } }
+			end,
+			history = function(params: any): any
+				table.insert(pages, params.before or "newest")
+				return { messages = { history[1], history[2] }, before = "2" }
+			end,
+		}, { "history" })
+		table.clear(pages)
+		notify("account.changed", ready)
+		t:wait_for(function(): boolean
+			return #pages == 1
+		end)
+		t:wait(100)
+		assert(#pages == 1, "one page, which it had: " .. table.concat(pages, " "))
+	end
+)
+
+test("chat's search finds what the services told of, in Greed's query language", function(t)
+	local notify = fake()
+	told(notify)
+	t:wait(50)
+	local found = finds(t, "lunch")
+	assert(#found == 2 and found[1] == "$1" and found[2] == "$q1", table.concat(found, " "))
+	found = finds(t, "lunch from:bea")
+	assert(#found == 1 and found[1] == "$1", table.concat(found, " "))
+	found = finds(t, "noon in:quiet")
+	assert(#found == 1 and found[1] == "$q1", table.concat(found, " "))
+	found = finds(t, "noon is:mine")
+	assert(#found == 1 and found[1] == "$a1", table.concat(found, " "))
+	-- Deleted, it's found no more.
+	notify("unsaid", { account = "@anna:x", room = "!quiet:x", event = "$q1" })
+	t:wait(50)
+	found = finds(t, "lunch")
+	assert(#found == 1 and found[1] == "$1", table.concat(found, " "))
+end)
+
 test("/ in the list searches every account; the message picked opens in its room", function(t)
-	fake()
+	local notify = fake()
+	told(notify)
 	t:buffer("|x")
 	t:run("chat")
 	t:wait(50)
 	t:keys("/")
-	t:type("lunch")
+	t:type("lunch from:bea")
 	t:keys("enter")
 	t:wait(100)
-	local searched = calls("search")
-	assert(
-		#searched == 1 and searched[1].query == "lunch" and searched[1].room == nil,
-		greed.json.encode(asked)
-	)
 	t:keys("enter") -- the one found
 	t:wait(100)
 	local view = greed.view()
@@ -898,14 +1028,20 @@ test("/ in the list searches every account; the message picked opens in its room
 end)
 
 test("alt-s in a room searches only that room", function(t)
-	fake()
+	local notify = fake()
+	told(notify)
+	t:wait(50)
+	local only = { account = "matrix @anna:x", room = "!plans:x" }
+	local found = finds(t, "noon", only)
+	assert(#found == 2 and found[1] == "$1" and found[2] == "$a1", table.concat(found, " "))
 	on_message(t, "$1")
 	t:keys("alt-s")
 	t:type("noon")
 	t:keys("enter")
 	t:wait(100)
-	local searched = calls("search")
-	assert(#searched == 1 and searched[1].room == "!plans:x", greed.json.encode(asked))
+	local picked = greed.view():buffer():text()
+	assert(string.find(picked, "Anna: noon is fine", 1, true), picked)
+	assert(not string.find(picked, "Quiet", 1, true), "only this room's: " .. picked)
 end)
 
 test("the first link in a message, without what ends the sentence", function()
