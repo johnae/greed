@@ -126,6 +126,7 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.tree.guide"] = { fg = p.gutter },
 		["ui.tree.hover"] = { bg = p.selection },
 		["ui.indent.guide"] = { fg = p.bg_high },
+		["ui.ruler"] = { fg = p.bg_high },
 		["comment.todo"] = { fg = p.yellow, bold = true },
 		["comment.fixme"] = { fg = p.red, bold = true },
 		["comment.note"] = { fg = p.cyan, bold = true },

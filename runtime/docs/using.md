@@ -2756,7 +2756,12 @@ turn it off:
   third (`comment.note`). Only in comments, so a string saying "TODO"
   stays as it is. `:todo-comments` lists them across the project.
 
+Rulers are off until you name their columns: `:set rulers 80,100` draws a
+`┊` at columns 80 and 100 wherever nothing is written there (style
+`ui.ruler`). They don't reach the empty rows below the end of the file.
+
 ```luau
+require("@greed").option.set("rulers", "80,100")
 require("@greed").option.set("indent-guides", false)
 require("@todo-comments").words.PERF = "comment.note"
 ```
