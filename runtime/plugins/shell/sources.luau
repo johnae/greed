@@ -56,7 +56,7 @@ local completers: { [string]: Completer } = {}
 --- Completes the arguments of program `name` with `complete`, ahead of
 --- the other sources. It goes when the plugin that added it does.
 function M.completer(name: string, complete: Completer)
-	greed.plugin.tie(core.registry.set(completers, name, complete))
+	greed.plugin.cleanup(core.registry.set(completers, name, complete))
 end
 
 greed.option.define({

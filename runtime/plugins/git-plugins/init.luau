@@ -65,7 +65,7 @@ function M.use(url: string, opts: { ref: string?, name: string? }?): () -> ()
 		end
 	end
 	-- Taken out again when the config that said so runs again without it.
-	greed.plugin.tie(forget)
+	greed.plugin.cleanup(forget)
 	return forget
 end
 

@@ -161,7 +161,7 @@ function M.define(style: Style)
 	if greed.option.get("editing-style") == style.name then
 		greed.mode.set(style.mode)
 	end
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if styles[style.name] ~= style then
 			return
 		end
@@ -222,7 +222,7 @@ M.typing_kinds = {} :: { [string]: boolean }
 --- `core.style.typing_kind("picker")`: a picker you come back to after a
 --- float over it closes takes typing again, whatever the style.
 function M.typing_kind(kind: string)
-	greed.plugin.tie(registry.set(M.typing_kinds, kind, true))
+	greed.plugin.cleanup(registry.set(M.typing_kinds, kind, true))
 end
 
 --- The mode to be in with `view` focused: `typing_mode()` for a kind of
@@ -238,7 +238,7 @@ M.shown_as = {} :: { [string]: string }
 --- it came from: `core.style.show_as("completion-vim-insert", "vim-insert")`.
 --- Being typing or not follows `as` too.
 function M.show_as(mode: string, as: string)
-	greed.plugin.tie(registry.set(M.shown_as, mode, as))
+	greed.plugin.cleanup(registry.set(M.shown_as, mode, as))
 end
 
 -- The mode `mode` is shown as, following `show_as` all the way.
@@ -259,7 +259,7 @@ local kind_labels: { [string]: string } = {}
 --- has focus, e.g. "command" while typing on the command line rather than
 --- the typing mode's "insert". It goes when the plugin that set it does.
 function M.label_kind(kind: string, label: string)
-	greed.plugin.tie(registry.set(kind_labels, kind, label))
+	greed.plugin.cleanup(registry.set(kind_labels, kind, label))
 end
 
 --- What the status line calls the mode while a buffer of `kind` has
@@ -321,7 +321,7 @@ end
 ---     end)
 function M.each_typing(call: (mode: string) -> ())
 	local watcher: Watcher = { call = call, heard = {} }
-	greed.plugin.tie(registry.put(watchers, watcher))
+	greed.plugin.cleanup(registry.put(watchers, watcher))
 	for _, style in M.list() do
 		tell(watcher, style)
 	end

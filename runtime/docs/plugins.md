@@ -2635,13 +2635,28 @@ tools, status line pieces, actions, features, styles, command line aliases
 and the like. There's no need to pass your plugin's name or to clean up on
 `plugin.unloaded`.
 
+For what Greed doesn't know about, like a lock file you wrote or a process
+another program keeps for you, hand `greed.plugin.cleanup` a function. It
+runs when your plugin is unloaded or reloaded, like this:
+
+```luau
+greed.plugin.cleanup(function()
+	greed.fs.remove(lock)
+end)
+```
+
+It runs before your plugin's tasks are stopped, so don't wait in it: what
+it starts stops with the rest. If it fails you see the error, and the
+plugin still goes, with its other cleanups run.
+
 ### Keeping a registry of your own
 
-A plugin that lets others add to it, like a list of handlers, does the
-same with `greed.plugin.tie(remove)`: called in the function others call,
-it runs `remove` when the plugin that called it is unloaded or reloaded,
-and returns that plugin's name. Calls from your own plugin aren't tied,
-since what they added goes with your plugin anyway. `greed.plugin.caller()`
+A plugin that lets others add to it, like a list of handlers, uses the
+same `greed.plugin.cleanup(remove)`. Called in the function others call, it
+runs `remove` when the plugin that called it is unloaded or reloaded, and
+returns that plugin's name. So what another plugin added goes with it.
+Called from your own plugin, it runs when yours goes, which for a registry
+entry does no harm. `greed.plugin.caller()`
 just says who called. `require("@core").registry` makes the `remove`: `set`
 puts a value in a table under a key, `put` adds to a list, and each returns
 a function that takes the entry out unless it was replaced since. For an
@@ -2656,7 +2671,7 @@ local M = {}
 local greeters: { [string]: () -> string } = {}
 
 function M.greeter(name: string, greet: () -> string)
-	greed.plugin.tie(core.registry.set(greeters, name, greet))
+	greed.plugin.cleanup(core.registry.set(greeters, name, greet))
 end
 ```
 

@@ -84,7 +84,7 @@ end
 --- Calls `watch` whenever something starts or stops needing you, until the
 --- plugin that asked goes.
 function M.on_change(watch: () -> ())
-	greed.plugin.tie(registry.put(watchers, watch))
+	greed.plugin.cleanup(registry.put(watchers, watch))
 end
 
 -- A closed buffer's needs go with it.

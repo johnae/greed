@@ -18,7 +18,7 @@ local takers: { [string]: Taker } = {}
 --- Makes buffers of `kind` take a pasted image with `take`. It goes when the
 --- plugin that called this does.
 function M.taker(kind: string, take: Taker)
-	greed.plugin.tie(registry.set(takers, kind, take))
+	greed.plugin.cleanup(registry.set(takers, kind, take))
 end
 
 --- Whether buffers of `kind` take a pasted image.

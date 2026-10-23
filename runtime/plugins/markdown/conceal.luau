@@ -77,7 +77,7 @@ function M.add(concealer: Concealer): (buffer: greed.Buffer?) -> ()
 			paint(entry, open)
 		end
 	end
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		take()
 		for _, open in greed.buffers() do
 			if entry.drawn[open:id()] then

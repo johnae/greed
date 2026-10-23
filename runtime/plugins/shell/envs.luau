@@ -52,7 +52,7 @@ local providers: { [string]: Provider } = {}
 --- Adds an environment provider called `name`, for `shell-environments`
 --- to name. It goes when the plugin that added it does.
 function M.provider(name: string, provider: Provider)
-	greed.plugin.tie(core.registry.set(providers, name, provider))
+	greed.plugin.cleanup(core.registry.set(providers, name, provider))
 end
 
 -- Loaded environments, by provider and folder.

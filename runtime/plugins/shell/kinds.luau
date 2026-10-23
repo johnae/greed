@@ -135,7 +135,7 @@ end
 --- tables with `kind.columns`. The latest added is asked first. It goes
 --- when the plugin that added it does.
 function M.kind(kind: Kind)
-	greed.plugin.tie(core.registry.put(kinds, kind, function(other: Kind): boolean
+	greed.plugin.cleanup(core.registry.put(kinds, kind, function(other: Kind): boolean
 		return other.name == kind.name
 	end))
 end

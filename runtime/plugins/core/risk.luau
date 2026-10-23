@@ -26,7 +26,7 @@ local rules: { Entry } = {}
 --- folder), until the plugin that added it goes.
 function M.rule(program: string, rule: Rule)
 	local entry: Entry = { program = program, rule = rule }
-	greed.plugin.tie(registry.put(rules, entry, function(other: Entry): boolean
+	greed.plugin.cleanup(registry.put(rules, entry, function(other: Entry): boolean
 		return other == entry
 	end))
 end
@@ -38,7 +38,7 @@ local editor_commands: { [string]: string } = {}
 --- Says running Greed's command `name` is risky for an agent, and `why`
 --- ("sends the mail being written"), until the plugin that said so goes.
 function M.editor_command(name: string, why: string)
-	greed.plugin.tie(registry.set(editor_commands, name, why))
+	greed.plugin.cleanup(registry.set(editor_commands, name, why))
 end
 
 --- Why running Greed's command `name` is risky for an agent, or nil.
@@ -218,7 +218,7 @@ function M.safe_when(program: string, safe: Safe?)
 			return true
 		end,
 	}
-	greed.plugin.tie(registry.put(safe_rules, entry, function(other: SafeEntry): boolean
+	greed.plugin.cleanup(registry.put(safe_rules, entry, function(other: SafeEntry): boolean
 		return other == entry
 	end))
 end

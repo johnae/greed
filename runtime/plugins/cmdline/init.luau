@@ -647,7 +647,7 @@ local M = {}
 --- Makes `name` run `command` on the command line, e.g. `alias("w", "save")`,
 --- until the plugin (or config) that called this goes.
 function M.alias(name: string, command: string)
-	greed.plugin.tie(core.registry.set(aliases, name, command))
+	greed.plugin.cleanup(core.registry.set(aliases, name, command))
 end
 
 --- Adds a way to complete arguments, for commands whose argument specs

@@ -496,7 +496,7 @@ local places: { [string]: () -> { Place } } = {}
 --- function returned is called.
 function M.add_places(name: string, found: () -> { Place }): () -> ()
 	local remove = core.registry.set(places, name, found)
-	greed.plugin.tie(remove)
+	greed.plugin.cleanup(remove)
 	return remove
 end
 

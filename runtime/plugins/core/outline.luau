@@ -27,7 +27,7 @@ M.providers = {} :: { [string]: Provider }
 --- Finds units in `language` with `provider`, until the plugin that set it
 --- goes.
 function M.provider(language: string, provider: Provider)
-	greed.plugin.tie(registry.set(M.providers, language, provider))
+	greed.plugin.cleanup(registry.set(M.providers, language, provider))
 end
 
 --- The unit around `line` in `buffer`, with the ones before and after it

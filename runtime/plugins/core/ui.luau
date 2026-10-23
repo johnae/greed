@@ -1347,7 +1347,7 @@ function M.mount(
 	if not (opts and opts.keys == false) then
 		buffer:set_keys({ tab = "ui-next", ["shift-tab"] = "ui-prev" })
 	end
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		view:unmount()
 	end)
 	if not (opts and opts.draw == false) then

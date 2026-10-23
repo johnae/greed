@@ -361,7 +361,7 @@ local names: { string } = {}
 greed.command { name = "names", run = function() greed.echo(table.concat(names, ",")) end }
 local function add(name: string)
   table.insert(names, name)
-  return greed.plugin.tie(function()
+  return greed.plugin.cleanup(function()
     table.remove(names, table.find(names, name))
   end)
 end
@@ -390,7 +390,7 @@ fn what_a_plugin_adds_to_anothers_registry_goes_when_it_does() {
     h.reload("adder").unwrap();
     assert_eq!(names(&h), "own,mine", "reloading adds it once");
     h.unload("adder").unwrap();
-    assert_eq!(names(&h), "own", "the registry's own entry isn't tied");
+    assert_eq!(names(&h), "own", "the registry's own entry stays");
 }
 
 #[test]
@@ -425,9 +425,56 @@ fn ties_go_with_the_registry_without_running() {
     h.load_str("adder", r#"require("@registry").add("mine")"#)
         .unwrap();
     h.load_str("registry", REGISTRY).unwrap();
-    // The new registry starts empty, and the old one's ties don't touch it.
+    // The new registry starts empty, and the old one's cleanups don't touch it.
     h.unload("adder").unwrap();
     assert_eq!(names(&h), "own");
+}
+
+const OWN_CLEANUP: &str = r#"
+local greed = require("@greed")
+local name = greed.plugin.cleanup(function()
+  greed.echo("cleaned")
+  greed.spawn(function()
+    greed.sleep(10)
+    greed.echo("still running")
+  end)
+end)
+assert(name == "own")
+"#;
+
+#[test]
+fn a_plugin_ties_its_own_cleanup_which_runs_when_it_goes() {
+    let h = host();
+    h.load_str("own", OWN_CLEANUP).unwrap();
+    assert!(messages(&h).is_empty());
+    h.reload("own").unwrap();
+    assert_eq!(messages(&h), ["cleaned"], "once, by the old one");
+    h.unload("own").unwrap();
+    assert_eq!(messages(&h), ["cleaned"], "then the new one's");
+    assert!(
+        h.next_timer().is_none(),
+        "what the cleanup started stops with the plugin"
+    );
+}
+
+#[test]
+fn a_failing_cleanup_still_unloads_the_plugin() {
+    let h = host();
+    h.load_str(
+        "own",
+        r#"
+        local greed = require("@greed")
+        greed.command { name = "own-cmd", run = function() end }
+        greed.plugin.cleanup(function() error("boom") end)
+        greed.plugin.cleanup(function() greed.echo("second") end)
+        "#,
+    )
+    .unwrap();
+    let err = h.unload("own").unwrap_err().to_string();
+    assert!(err.contains("boom"), "{err}");
+    assert_eq!(messages(&h), ["second"], "the others still run");
+    assert_eq!(h.eval("#require('@greed').plugin.list()").unwrap(), "0");
+    assert!(h.run(FIRST_CLIENT, "own-cmd").is_err());
 }
 
 fn runtime(name: &str) -> std::path::PathBuf {

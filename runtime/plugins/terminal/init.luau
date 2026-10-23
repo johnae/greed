@@ -713,7 +713,7 @@ M.env = {} :: { [string]: string }
 --- agent plugin tells Claude Code where to find Greed. It goes when the
 --- plugin (or config) that set it does.
 function M.set_env(name: string, value: string)
-	greed.plugin.tie(core.registry.set(M.env, name, value))
+	greed.plugin.cleanup(core.registry.set(M.env, name, value))
 end
 
 -- A new buffer to show a terminal in.

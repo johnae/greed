@@ -45,7 +45,7 @@ function M.on_quiet(
 )
 	local keeper = { keep = keep, wanted = wanted }
 	keepers[kind] = keeper
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if keepers[kind] == keeper then
 			keepers[kind] = nil
 		end

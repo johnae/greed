@@ -51,7 +51,7 @@ local runners: { [string]: { run: Runner, by: string? } } = {}
 --- of the plugin that added it, so a runner can do no more than its plugin.
 function M.add(name: string, run: Runner, _plugin: string?): () -> ()
 	local remove = registry.set(runners, name, { run = run, by = greed.plugin.caller() })
-	greed.plugin.tie(remove)
+	greed.plugin.cleanup(remove)
 	return remove
 end
 

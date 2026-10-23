@@ -893,7 +893,7 @@ function M.parser(match: string, parse: Parser | string)
 	else
 		read = parse
 	end
-	greed.plugin.tie(core.registry.put(parsers, { match = match, parse = read }))
+	greed.plugin.cleanup(core.registry.put(parsers, { match = match, parse = read }))
 end
 
 --- Whether `command` is one `match` names: a program's name ("kubectl"),

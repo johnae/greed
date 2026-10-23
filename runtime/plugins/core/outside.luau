@@ -13,7 +13,7 @@ local kinds: { [string]: string } = {}
 --- whom: `source` names it to an agent ("mail you received"). It goes
 --- with the plugin that said so.
 function M.kind(kind: string, source: string)
-	greed.plugin.tie(registry.set(kinds, kind, source))
+	greed.plugin.cleanup(registry.set(kinds, kind, source))
 end
 
 --- Where the text of `buffer` came from, when someone else wrote it.

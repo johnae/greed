@@ -374,7 +374,7 @@ local choosing: { (view: greed.View) -> () } = {}
 --- snippet that offers choices, as completion's menu does to offer them.
 --- It goes when the plugin that added it does.
 function M.on_choices(listener: (view: greed.View) -> ())
-	greed.plugin.tie(registry.put(choosing, listener))
+	greed.plugin.cleanup(registry.put(choosing, listener))
 end
 
 -- Selects group `n` of `view`'s snippet, or ends the snippet at its end

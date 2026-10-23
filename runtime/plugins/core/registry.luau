@@ -1,10 +1,10 @@
 -- For plugins keeping registries other plugins add to: putting an entry in
 -- and getting back what takes it out again, but only while it's still the
--- one there. Hand that to `greed.plugin.tie`, and what a plugin added goes
+-- one there. Hand that to `greed.plugin.cleanup`, and what a plugin added goes
 -- when it does:
 --
 --     function M.add(name, thing)
---         greed.plugin.tie(core.registry.set(things, name, thing))
+--         greed.plugin.cleanup(core.registry.set(things, name, thing))
 --     end
 
 local greed = require("@greed")

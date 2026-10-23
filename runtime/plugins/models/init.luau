@@ -149,8 +149,8 @@ local role_by: { [string]: SetBy } = {}
 --- Adds or replaces the provider `name`, as your config can by setting
 --- `providers[name]`. It goes when the plugin that added it does.
 function M.provider(name: string, provider: Provider)
-	greed.plugin.tie(registry.set(M.providers, name, provider))
-	greed.plugin.tie(
+	greed.plugin.cleanup(registry.set(M.providers, name, provider))
+	greed.plugin.cleanup(
 		registry.set(provider_by, name, { by = greed.plugin.caller(), value = provider })
 	)
 end
@@ -158,8 +158,8 @@ end
 --- Makes `role` played by `spec`, as your config can by setting
 --- `roles[role]`. It goes when the plugin that set it does.
 function M.role(role: string, spec: Role)
-	greed.plugin.tie(registry.set(M.roles, role, spec))
-	greed.plugin.tie(registry.set(role_by, role, { by = greed.plugin.caller(), value = spec }))
+	greed.plugin.cleanup(registry.set(M.roles, role, spec))
+	greed.plugin.cleanup(registry.set(role_by, role, { by = greed.plugin.caller(), value = spec }))
 end
 
 -- The plugin that set `value` in `set_by` under `name`, if it's still set.
@@ -189,7 +189,7 @@ M.fallbacks = {} :: { [string]: Fallback? }
 --- to show and `playing` to follow. It goes when the plugin that said it
 --- does.
 function M.fallback(role: string, to: string, about: string)
-	greed.plugin.tie(registry.set(M.fallbacks, role, { to = to, about = about }))
+	greed.plugin.cleanup(registry.set(M.fallbacks, role, { to = to, about = about }))
 end
 
 --- The role whose model answers for `role`: itself when a model plays it,

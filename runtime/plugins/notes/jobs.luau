@@ -55,7 +55,7 @@ local jobs: { Job } = {}
 --- Adds `job`, in place of one with its name; it goes when the plugin
 --- adding it does.
 function M.add(job: Job)
-	greed.plugin.tie(core.registry.put(jobs, job, function(other: Job): boolean
+	greed.plugin.cleanup(core.registry.put(jobs, job, function(other: Job): boolean
 		return other.name == job.name
 	end))
 end

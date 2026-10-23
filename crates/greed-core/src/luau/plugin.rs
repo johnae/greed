@@ -31,9 +31,9 @@ pub struct Check {
     pub warnings: Vec<String>,
 }
 
-/// What a plugin's registry added for another plugin, to take away when
-/// that plugin goes: see `greed.plugin.tie`.
-pub(crate) struct Tie {
+/// What to run when a plugin goes: taking away what it added to another
+/// plugin's registry, or its own cleanup. See `greed.plugin.cleanup`.
+pub(crate) struct Cleanup {
     /// The plugin whose code added it.
     by: PluginId,
     /// The plugin whose registry it's in, whose code `remove` is.
@@ -41,15 +41,15 @@ pub(crate) struct Tie {
     remove: Function,
 }
 
-/// Takes the ties of what `name` added, to run, and drops those of its own
+/// Takes the cleanups for `name`, to run, and drops those of its own
 /// registries, which go with it.
-pub(super) fn untie(ties: &mut Vec<Tie>, name: &str) -> Vec<(PluginId, Function)> {
+pub(super) fn take_cleanups(cleanups: &mut Vec<Cleanup>, name: &str) -> Vec<(PluginId, Function)> {
     let mut removes = Vec::new();
-    ties.retain(|tie| {
-        if *tie.by == *name {
-            removes.push((tie.owner.clone(), tie.remove.clone()));
+    cleanups.retain(|cleanup| {
+        if *cleanup.by == *name {
+            removes.push((cleanup.owner.clone(), cleanup.remove.clone()));
         }
-        *tie.by != *name && *tie.owner != *name
+        *cleanup.by != *name && *cleanup.owner != *name
     });
     removes
 }
@@ -336,7 +336,7 @@ pub(super) fn to_lua(lua: &Lua, check: Check) -> LuaResult<Table> {
     Ok(report)
 }
 
-/// `caller` and `tie`, for registries other plugins add to.
+/// `caller` and `cleanup`, for registries other plugins add to.
 fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaResult<()> {
     let o = owner.clone();
     plugin.set(
@@ -354,17 +354,16 @@ fn add_registry_functions(lua: &Lua, plugin: &Table, owner: &PluginId) -> LuaRes
     )?;
     let o = owner.clone();
     plugin.set(
-        "tie",
+        "cleanup",
         lua.create_function(move |lua, remove: Function| {
-            let Some(by) = capabilities::caller(lua, Some(&o)) else {
-                return Ok(None);
-            };
-            state_mut(lua).ties.push(Tie {
+            // Called by your own code, it runs when your plugin goes.
+            let by = capabilities::caller(lua, Some(&o)).unwrap_or_else(|| o.clone());
+            state_mut(lua).cleanups.push(Cleanup {
                 by: by.clone(),
                 owner: o.clone(),
                 remove,
             });
-            Ok(Some(by.to_string()))
+            Ok(by.to_string())
         })?,
     )
 }

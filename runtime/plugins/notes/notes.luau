@@ -59,7 +59,7 @@ function M.add_place(name: string, folder: string)
 			table.remove(added, i)
 		end
 	end
-	greed.plugin.tie(
+	greed.plugin.cleanup(
 		core.registry.put(added, { name = name, folder = core.project.resolve(folder) })
 	)
 end
@@ -425,7 +425,7 @@ local guards: { (path: string) -> string? } = {}
 --- given a note's file; e.g. the plan plugin keeps decisions for you.
 --- It goes when the plugin that added it does.
 function M.guard(check: (path: string) -> string?)
-	greed.plugin.tie(core.registry.put(guards, check))
+	greed.plugin.cleanup(core.registry.put(guards, check))
 end
 
 --- Errors with why when agents may not write note `name`.
@@ -571,7 +571,7 @@ end
 function M.rule(rule: Rule)
 	local remove = core.registry.put(M.look.rules, rule)
 	M.look.changed()
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		remove()
 		M.look.changed()
 	end)

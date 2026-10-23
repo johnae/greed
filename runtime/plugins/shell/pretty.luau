@@ -85,7 +85,7 @@ local prefixes: { Prefix } = {}
 
 --- Adds a reader of line prefixes, until the plugin that added it goes.
 function M.prefix(read: Prefix)
-	greed.plugin.tie(core.registry.put(prefixes, read, function(other: Prefix): boolean
+	greed.plugin.cleanup(core.registry.put(prefixes, read, function(other: Prefix): boolean
 		return other == read
 	end))
 end

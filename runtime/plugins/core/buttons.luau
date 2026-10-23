@@ -29,7 +29,7 @@ end
 --- from. It goes when the plugin that set it does.
 function M.set_chooser(choose: Chooser)
 	chooser = choose
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if chooser == choose then
 			chooser = first
 		end
@@ -44,7 +44,7 @@ local offers: { Offer } = {}
 --- the cell of a table the cursor is in. It's asked only where no mark
 --- is a button, and goes when the plugin that made it does.
 function M.offer(offer: Offer)
-	greed.plugin.tie(registry.put(offers, offer))
+	greed.plugin.cleanup(registry.put(offers, offer))
 end
 
 --- The buttons over `pos` in `buffer`, in the order their marks start, or

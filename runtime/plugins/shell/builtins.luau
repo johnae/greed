@@ -82,9 +82,9 @@ function M.add(spec: BuiltinSpec, call: (args: { string }, ctx: BuiltinContext) 
 			stopped = stopped,
 		}) or 0
 	end
-	greed.plugin.tie(core.registry.set(parse.BUILTINS, name, entry))
-	greed.plugin.tie(core.registry.set(run.builtins, name, runs))
-	greed.plugin.tie(core.registry.set(pluggable, name, call))
+	greed.plugin.cleanup(core.registry.set(parse.BUILTINS, name, entry))
+	greed.plugin.cleanup(core.registry.set(run.builtins, name, runs))
+	greed.plugin.cleanup(core.registry.set(pluggable, name, call))
 end
 
 -- `line`, programs whose output goes to table stages, run by a plugin's

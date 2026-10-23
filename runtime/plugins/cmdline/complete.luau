@@ -30,7 +30,7 @@ local previews: { [string]: Preview? } = {}
 function M.register(name: string, completer: Completer, preview: Preview?)
 	local remove = core.registry.set(completers, name, completer)
 	previews[name] = preview
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if completers[name] == completer then
 			remove()
 			previews[name] = nil

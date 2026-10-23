@@ -127,7 +127,7 @@ function M.tool(spec: Tool)
 	-- Agents connected now hear of it, and of it going, so a plugin you
 	-- just approved can be used at once.
 	greed.vouch(announce)
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		remove()
 		greed.vouch(announce)
 	end)
@@ -234,7 +234,7 @@ local describe_groups = function() end
 function M.group(name: string, description: string)
 	local remove = registry.set(groups, name, description)
 	describe_groups()
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		remove()
 		describe_groups()
 	end)
@@ -490,7 +490,7 @@ local methods: { [string]: (request: greed.ControlRequest) -> any } = {
 --- returns, like `status/watch`; an error it raises goes back as the
 --- error. It goes when the plugin that added it does.
 function M.method(name: string, handler: (request: greed.ControlRequest) -> any)
-	greed.plugin.tie(registry.set(methods, name, handler))
+	greed.plugin.cleanup(registry.set(methods, name, handler))
 end
 
 greed.on("control.request", function(request: greed.ControlRequest)
@@ -520,7 +520,7 @@ local ended: { (caller: Caller) -> () } = {}
 --- session, goes. It goes when the plugin that added it does.
 function M.on_done(listener: (caller: Caller) -> ())
 	table.insert(ended, listener)
-	greed.plugin.tie(registry.remover(ended, listener))
+	greed.plugin.cleanup(registry.remover(ended, listener))
 end
 
 --- Says `caller`, an agent's in the editor, is done: its session ended.

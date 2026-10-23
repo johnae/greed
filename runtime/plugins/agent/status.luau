@@ -130,7 +130,7 @@ end
 --- other sessions on the machine; nil leaves it out. It goes when the plugin
 --- that added it does.
 function M.part(name: string, part: () -> any)
-	greed.plugin.tie(core.registry.set(parts, name, part))
+	greed.plugin.cleanup(core.registry.set(parts, name, part))
 end
 
 --- How many agents work and wait for you, from their states ("working",

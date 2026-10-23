@@ -50,7 +50,7 @@ local tried_from: string? = nil
 --- config) that added it goes.
 function M.define(name: string, theme: Theme)
 	themes[name] = theme
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if themes[name] == theme then
 			themes[name] = nil
 		end

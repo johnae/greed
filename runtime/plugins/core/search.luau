@@ -528,7 +528,7 @@ return {
 	--- of selecting it, like Vim's normal mode, until the plugin that called
 	--- this goes.
 	start_at_match = function(mode: string)
-		greed.plugin.tie(registry.set(at_start, mode, true))
+		greed.plugin.cleanup(registry.set(at_start, mode, true))
 	end,
 	--- The last pattern searched for, if any.
 	last = function(): string?

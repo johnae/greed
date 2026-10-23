@@ -133,7 +133,7 @@ function M.add(painter: Painter): (buffer: greed.Buffer?) -> ()
 			paint(painter, open, true)
 		end
 	end
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		take()
 		drawn_as[painter] = nil
 		for _, open in greed.buffers() do

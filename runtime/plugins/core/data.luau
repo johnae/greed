@@ -69,7 +69,7 @@ local sources: { Source } = {}
 --- Adds `source`, in place of one of the same name. It goes when the
 --- plugin that added it does.
 function M.source(source: Source)
-	greed.plugin.tie(registry.put(sources, source, function(other: Source): boolean
+	greed.plugin.cleanup(registry.put(sources, source, function(other: Source): boolean
 		return other.name == source.name
 	end))
 end

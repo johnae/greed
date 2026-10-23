@@ -26,7 +26,7 @@ M.list = {} :: { Agent }
 --- Adds an agent to pick from, or replaces the one of the same name. It
 --- goes when the plugin (or config) that added it does.
 function M.register(agent: Agent)
-	greed.plugin.tie(core.registry.put(M.list, agent, function(known: Agent)
+	greed.plugin.cleanup(core.registry.put(M.list, agent, function(known: Agent)
 		return known.name == agent.name
 	end))
 end

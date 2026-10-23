@@ -65,7 +65,7 @@ local ICONS: { [string]: Icons } = {
 --- Nerd Font, for `shell-icons` to pick. It goes when the plugin that gave
 --- it does.
 function M.add_icon(name: string, icons: Icons)
-	greed.plugin.tie(core.registry.set(ICONS, name, icons))
+	greed.plugin.cleanup(core.registry.set(ICONS, name, icons))
 end
 
 --- The icon segment `name` starts with, as `shell-icons` says; "" for a
@@ -83,7 +83,7 @@ end
 --- same `name` takes its place. It goes when the plugin that added it
 --- does.
 function M.segment(name: string, provider: Provider)
-	greed.plugin.tie(
+	greed.plugin.cleanup(
 		core.registry.put(providers, { name = name, provider = provider }, function(other)
 			return other.name == name
 		end)
@@ -199,7 +199,7 @@ local branch_finders: { (dir: string) -> string? } = {}
 --- names, as the vcs plugin does to show jj's too. It goes when the
 --- plugin that gave it does.
 function M.branch_finder(find: (dir: string) -> string?)
-	greed.plugin.tie(core.registry.put(branch_finders, find))
+	greed.plugin.cleanup(core.registry.put(branch_finders, find))
 	for _, shell in state.list() do
 		M.refresh(shell)
 	end

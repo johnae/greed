@@ -22,7 +22,7 @@ local claims: { [string]: Handler } = {}
 --- returns true, nothing else is done with them. It goes when the plugin
 --- that claimed them does.
 function M.claim(kind: string, handler: Handler)
-	greed.plugin.tie(registry.set(claims, kind, handler))
+	greed.plugin.cleanup(registry.set(claims, kind, handler))
 end
 
 -- Runs a button's action: a command's name, then any arguments to it.

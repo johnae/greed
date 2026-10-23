@@ -818,7 +818,7 @@ function M.claim(claim: (buffer: greed.Buffer) -> Parts?): () -> ()
 		take()
 		M.refresh()
 	end
-	greed.plugin.tie(undo)
+	greed.plugin.cleanup(undo)
 	return undo
 end
 

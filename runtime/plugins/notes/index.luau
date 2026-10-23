@@ -609,7 +609,7 @@ local listeners: { (name: string) -> () } = {}
 --- Calls `listener` with a note's name each time what the index knows of
 --- it changes, or it goes. It goes when the plugin that added it does.
 function M.on_changed(listener: (name: string) -> ())
-	greed.plugin.tie(core.registry.put(listeners, listener))
+	greed.plugin.cleanup(core.registry.put(listeners, listener))
 end
 
 -- Takes `name` out of the index.

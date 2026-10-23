@@ -714,15 +714,15 @@ function M.stage(spec: StageSpec, run: StageRun)
 		args = spec.args,
 		plugin = greed.plugin.caller(),
 	}
-	greed.plugin.tie(core.registry.put(M.STAGES, entry, function(other: Stage): boolean
+	greed.plugin.cleanup(core.registry.put(M.STAGES, entry, function(other: Stage): boolean
 		return other.name == name
 	end))
-	greed.plugin.tie(core.registry.set(ROWS, name, run))
+	greed.plugin.cleanup(core.registry.set(ROWS, name, run))
 	if spec.starts then
-		greed.plugin.tie(core.registry.set(STARTERS, name, true))
+		greed.plugin.cleanup(core.registry.set(STARTERS, name, true))
 	end
 	if spec.text then
-		greed.plugin.tie(core.registry.set(READS_TEXT, name, true))
+		greed.plugin.cleanup(core.registry.set(READS_TEXT, name, true))
 	end
 end
 

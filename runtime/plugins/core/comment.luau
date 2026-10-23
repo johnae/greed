@@ -13,7 +13,7 @@ local M = {}
 --- Sets what starts a line comment in `language`, e.g. "//".
 function M.set(language: string, token: string?)
 	if token then
-		greed.plugin.tie(registry.set(tokens, language, token))
+		greed.plugin.cleanup(registry.set(tokens, language, token))
 	else
 		tokens[language] = nil
 	end

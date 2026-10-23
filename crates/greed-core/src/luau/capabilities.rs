@@ -1029,7 +1029,7 @@ mod tests {
         "plugin.list",
         "plugin.pending",
         "plugin.started_within",
-        "plugin.tie",
+        "plugin.cleanup",
         "plugin.within",
         "syntax.query",
         "syntax.set_query",

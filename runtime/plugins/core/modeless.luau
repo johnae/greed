@@ -490,7 +490,7 @@ function M.define(spec: Style)
 	local mode = spec.name
 	greed.keymap.fallback(mode, "type-char")
 	greed.mode.set_cursor(mode, "bar")
-	greed.plugin.tie(registry.set(modes, mode, true))
+	greed.plugin.cleanup(registry.set(modes, mode, true))
 	style.define({
 		name = spec.name,
 		doc = spec.doc,

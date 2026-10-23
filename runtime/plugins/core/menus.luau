@@ -138,7 +138,7 @@ function M.add(title: string, label: string, command: string): () -> ()
 		take()
 		publish()
 	end
-	greed.plugin.tie(remove)
+	greed.plugin.cleanup(remove)
 	return remove
 end
 

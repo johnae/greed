@@ -21,7 +21,7 @@ local added: { { name: string, applies: Applies } } = {}
 --- third argument, once the plugin's name, is ignored.
 function M.add(name: string, applies: Applies, _plugin: string?): () -> ()
 	local remove = registry.put(added, { name = name, applies = applies })
-	greed.plugin.tie(remove)
+	greed.plugin.cleanup(remove)
 	return remove
 end
 

@@ -231,7 +231,7 @@ pub(crate) struct State {
     /// made them.
     pub owned: owned::Owned,
     /// What plugins' registries added for other plugins.
-    pub ties: Vec<plugin::Tie>,
+    pub cleanups: Vec<plugin::Cleanup>,
     /// What each plugin may use beyond the editor.
     pub grants: HashMap<PluginId, capabilities::Grant>,
     /// The plugin whose code is running, if any: a command or handler it
@@ -527,7 +527,7 @@ impl Host {
             query_owners: HashMap::new(),
             watches: watch::Watches::default(),
             owned: owned::Owned::default(),
-            ties: Vec::new(),
+            cleanups: Vec::new(),
             grants: HashMap::new(),
             running: None,
             limit: Vec::new(),
@@ -776,8 +776,9 @@ impl Host {
         if !state(&self.lua).plugins.contains_key(name) {
             return Err(HostError::UnknownPlugin(name.into()));
         }
-        unregister(&self.lua, name)?;
-        run_plugin(&self.lua, name)
+        let cleaned = unregister(&self.lua, name);
+        run_plugin(&self.lua, name)?;
+        Ok(cleaned?)
     }
 
     /// Removes a plugin and everything it registered. Fails while a loaded
@@ -1369,7 +1370,8 @@ pub(crate) fn approve(lua: &Lua, dir: &Path) -> Result<PluginId, HostError> {
 
 /// Adds or replaces a plugin and runs it.
 fn install(lua: &Lua, name: &str, plugin: Plugin) -> Result<(), HostError> {
-    unregister(lua, name)?;
+    // A cleanup that fails still lets the new one run; its error comes after.
+    let cleaned = unregister(lua, name);
     let (dir, grant) = match &plugin {
         Plugin::Dir { dir, grant, .. } => (Some(dir.to_string_lossy().into_owned()), grant.clone()),
         Plugin::Inline(_) => (None, capabilities::Grant::All),
@@ -1384,7 +1386,7 @@ fn install(lua: &Lua, name: &str, plugin: Plugin) -> Result<(), HostError> {
     payload.set("name", name)?;
     payload.set("dir", dir)?;
     api::emit(lua, "plugin.loaded", &payload)?;
-    Ok(())
+    Ok(cleaned?)
 }
 
 /// The files the plugin in folder `dir` loaded, if one is loaded from there.
@@ -1635,13 +1637,9 @@ fn unregister(lua: &Lua, name: &str) -> mlua::Result<()> {
         let state = &mut *state_mut(lua);
         (
             remove_owned_by(state, name),
-            plugin::untie(&mut state.ties, name),
+            plugin::take_cleanups(&mut state.cleanups, name),
         )
     };
-    tasks::stop_owned_by(lua, name)?;
-    for view in closed {
-        handles::view_closed(lua, view)?;
-    }
     // Every one runs even if one fails; the first error is returned.
     let label: Arc<str> = format!("removing what {name} added").into();
     let mut first_error = None;
@@ -1649,6 +1647,11 @@ fn unregister(lua: &Lua, name: &str) -> mlua::Result<()> {
         if let Err(err) = tasks::spawn_labelled(lua, remove, (), owner, label.clone()) {
             first_error.get_or_insert(err);
         }
+    }
+    // After its own cleanups, so what they start stops too.
+    tasks::stop_owned_by(lua, name)?;
+    for view in closed {
+        handles::view_closed(lua, view)?;
     }
     first_error.map_or(Ok(()), Err)
 }
@@ -1732,7 +1735,8 @@ pub(crate) fn unload(lua: &Lua, name: &str) -> Result<(), HostError> {
             });
         }
     }
-    unregister(lua, name)?;
+    // A cleanup that fails doesn't leave the plugin half unloaded.
+    let cleaned = unregister(lua, name);
     {
         let mut state = state_mut(lua);
         state.plugins.remove(name);
@@ -1743,7 +1747,7 @@ pub(crate) fn unload(lua: &Lua, name: &str) -> Result<(), HostError> {
     let payload = lua.create_table()?;
     payload.set("name", name)?;
     api::emit(lua, "plugin.unloaded", &payload)?;
-    Ok(())
+    Ok(cleaned?)
 }
 
 /// The names of the loaded plugins, sorted.

@@ -92,14 +92,14 @@ local KEEP = 500
 
 --- Adds a finder, replacing one by the same name.
 function M.finder(finder: Finder)
-	greed.plugin.tie(registry.put(finders, finder, function(other: Finder)
+	greed.plugin.cleanup(registry.put(finders, finder, function(other: Finder)
 		return other.name == finder.name
 	end))
 end
 
 --- Adds an action for things of `kind`, replacing one by the same name.
 function M.action(action: Action)
-	greed.plugin.tie(registry.put(actions, action, function(other: Action)
+	greed.plugin.cleanup(registry.put(actions, action, function(other: Action)
 		return other.kind == action.kind and other.name == action.name
 	end))
 end
@@ -124,7 +124,7 @@ local defaults: { [string]: string } = {}
 --- Makes action `name` what enter does to things of `kind`, wherever they
 --- show (a shell block, the inspector), until the plugin that said so goes.
 function M.set_default(kind: string, name: string)
-	greed.plugin.tie(registry.set(defaults, kind, name))
+	greed.plugin.cleanup(registry.set(defaults, kind, name))
 end
 
 --- What enter does to `target`: its kind's default action, when it has

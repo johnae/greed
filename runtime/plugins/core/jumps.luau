@@ -338,14 +338,14 @@ local M = {}
 
 --- Makes command `name` leave its starting place in the jumplist.
 function M.add(name: string)
-	greed.plugin.tie(registry.set(JUMPS, name, true))
+	greed.plugin.cleanup(registry.set(JUMPS, name, true))
 end
 
 --- Going back to a buffer of kind `kind` that has gone (as a page a plugin
 --- draws goes once nothing shows it) shows it again with `show(view)`,
 --- rather than skipping it.
 function M.reopen(kind: string, show: (view: greed.View) -> ())
-	greed.plugin.tie(registry.set(reopens, kind, show))
+	greed.plugin.cleanup(registry.set(reopens, kind, show))
 end
 
 --- The places in the focused view's jumplist, newest first: each one's

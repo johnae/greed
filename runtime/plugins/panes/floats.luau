@@ -74,7 +74,7 @@ greed.option.define({
 --- that added it goes.
 function M.define(name: string, layout: Layout)
 	local entry: Entry = { name = name, layout = layout }
-	greed.plugin.tie(core.registry.put(layouts, entry, function(other: Entry)
+	greed.plugin.cleanup(core.registry.put(layouts, entry, function(other: Entry)
 		return other.name == name
 	end))
 end

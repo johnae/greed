@@ -323,7 +323,7 @@ local functions: { [string]: { fn: Fn, doc: string } } = {}
 function M.add(name: string, fn: Fn, doc: string)
 	local entry = { fn = fn, doc = doc }
 	functions[name] = entry
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if functions[name] == entry then
 			functions[name] = nil
 		end

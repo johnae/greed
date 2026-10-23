@@ -23,7 +23,7 @@ function M.tag(tag: string, names: { string })
 	local set = tagged[tag] or {}
 	tagged[tag] = set
 	for _, name in names do
-		greed.plugin.tie(registry.set(set, name, true))
+		greed.plugin.cleanup(registry.set(set, name, true))
 	end
 end
 

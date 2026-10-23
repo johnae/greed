@@ -243,7 +243,7 @@ local providers: { Provider } = {}
 --- Lets formulas name the values `provider` gives. It goes when the plugin
 --- that added it does.
 function M.provide(provider: Provider)
-	greed.plugin.tie(core.registry.put(providers, provider))
+	greed.plugin.cleanup(core.registry.put(providers, provider))
 end
 
 --- `t` as formulas see a table: a list of its rows, each by its columns'

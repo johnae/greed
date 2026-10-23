@@ -816,7 +816,7 @@ end
 --- Calls `listener` with the buffer whenever its proposed changes come or
 --- go, until the plugin that called this goes.
 function M.on_change(listener: (buffer: greed.Buffer) -> ())
-	greed.plugin.tie(core.registry.put(listeners, listener))
+	greed.plugin.cleanup(core.registry.put(listeners, listener))
 end
 
 --- How many proposed changes are waiting, across all files.

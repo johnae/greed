@@ -80,7 +80,7 @@ local sources: { Source } = {}
 --- goes. The plugin that knows the things says what they are; the places
 --- that show them are sources (`source`).
 function M.kind(kind: Kind)
-	greed.plugin.tie(registry.put(kinds, kind, function(other: Kind)
+	greed.plugin.cleanup(registry.put(kinds, kind, function(other: Kind)
 		return other.name == kind.name
 	end))
 end
@@ -88,7 +88,7 @@ end
 --- Adds a source of objects, or replaces one by the same name, until the
 --- plugin that added it goes.
 function M.source(source: Source)
-	greed.plugin.tie(registry.put(sources, source, function(other: Source)
+	greed.plugin.cleanup(registry.put(sources, source, function(other: Source)
 		return other.name == source.name
 	end))
 end
@@ -107,7 +107,7 @@ end
 --- Calls `listener` with an object's id each time its owner says it
 --- changed (`changed`), until the plugin that asked goes.
 function M.on_changed(listener: (id: string) -> ())
-	greed.plugin.tie(registry.put(changed_listeners, listener))
+	greed.plugin.cleanup(registry.put(changed_listeners, listener))
 end
 
 -- What `f(...)` gives, or nil when it fails.

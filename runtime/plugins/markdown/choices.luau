@@ -145,7 +145,7 @@ local listeners: { { hear: Hear } } = {}
 --- argument, once the plugin's name, is ignored.
 function M.on_pick(hear: Hear, _plugin: string?): () -> ()
 	local stop = registry.put(listeners, { hear = hear })
-	greed.plugin.tie(stop)
+	greed.plugin.cleanup(stop)
 	return stop
 end
 

@@ -154,7 +154,7 @@ local policies: { Policy } = {}
 function M.policy(rule: Policy): () -> ()
 	table.insert(policies, 1, rule)
 	local remove = core.registry.remover(policies, rule)
-	greed.plugin.tie(remove)
+	greed.plugin.cleanup(remove)
 	return remove
 end
 

@@ -190,7 +190,7 @@ end
 --- Registers a computed item's function, for `{ kind = "computed", name }`,
 --- until the plugin that registered it goes.
 function M.define(name: string, f: () -> string)
-	greed.plugin.tie(core.registry.set(computed, name, f))
+	greed.plugin.cleanup(core.registry.set(computed, name, f))
 end
 
 --- The whole context as text for a model: each item under a heading with

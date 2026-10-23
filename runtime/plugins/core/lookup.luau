@@ -32,7 +32,7 @@ local answers: { [Kind]: { Entry } } = { definition = {}, hover = {}, fix = {} }
 --- it does.
 function M.add(kind: Kind, answer: Answer, options: { fallback: boolean? }?)
 	local entry = { answer = answer, fallback = options ~= nil and options.fallback == true }
-	greed.plugin.tie(registry.put(answers[kind], entry))
+	greed.plugin.cleanup(registry.put(answers[kind], entry))
 end
 
 -- Asks each answer for `kind` in turn, fallbacks last, until one answers.

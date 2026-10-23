@@ -13,7 +13,7 @@ local kinds: { [string]: (buffer: greed.Buffer) -> string? } = {}
 --- Says what buffers of `kind` are: `says` gives it for one, or nil when
 --- it has nothing to say. It goes with the plugin that said so.
 function M.kind(kind: string, says: (buffer: greed.Buffer) -> string?)
-	greed.plugin.tie(registry.set(kinds, kind, says))
+	greed.plugin.cleanup(registry.set(kinds, kind, says))
 end
 
 --- What `buffer` is, as the plugin showing it says; nil when none does.

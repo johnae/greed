@@ -92,9 +92,9 @@ function M.source(source: Source, options: SourceOptions?)
 	local registered: Registered = { source = source, options = options or {} :: SourceOptions }
 	if registered.options.first then
 		table.insert(sources, 1, registered)
-		greed.plugin.tie(core.registry.remover(sources, registered))
+		greed.plugin.cleanup(core.registry.remover(sources, registered))
 	else
-		greed.plugin.tie(core.registry.put(sources, registered))
+		greed.plugin.cleanup(core.registry.put(sources, registered))
 	end
 end
 

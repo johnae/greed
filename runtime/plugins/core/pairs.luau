@@ -47,14 +47,14 @@ M.kinds = { file = true, multibuffer = true } :: { [string]: boolean }
 --- Types brackets and quotes in pairs in buffers of `kind` too, until the
 --- plugin that said so goes.
 function M.kind(kind: string)
-	greed.plugin.tie(registry.set(M.kinds, kind, true))
+	greed.plugin.cleanup(registry.set(M.kinds, kind, true))
 end
 
 --- Sets `language`'s pairs, or with nil goes back to the usual ones:
 --- brackets, quotes and backticks.
 function M.set(language: string, closers: Pairs?)
 	if closers then
-		greed.plugin.tie(registry.set(by_language, language, closers))
+		greed.plugin.cleanup(registry.set(by_language, language, closers))
 	else
 		by_language[language] = nil
 	end

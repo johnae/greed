@@ -68,7 +68,7 @@ local statuses: { (block: Block) -> () } = {}
 --- Calls `listener` each time a block's status is drawn: as it starts, each
 --- second it runs and as it ends.
 function M.on_status(listener: (block: Block) -> ())
-	greed.plugin.tie(core.registry.put(statuses, listener))
+	greed.plugin.cleanup(core.registry.put(statuses, listener))
 end
 
 -- The most output lines a block shows, and how many of them are its head,
@@ -669,7 +669,7 @@ local placing: { (shell: Shell, block: Block, from: number, lines: { Line }) -> 
 --- in the buffer, from `from` on, to the end of the block: new ones, or
 --- what a filter or a watch shows in place of what was there.
 function M.on_placed(listener: (shell: Shell, block: Block, from: number, lines: { Line }) -> ())
-	greed.plugin.tie(core.registry.put(placing, listener))
+	greed.plugin.cleanup(core.registry.put(placing, listener))
 end
 
 local function tell_placed(shell: Shell, block: Block, from: number, lines: { Line })
@@ -1024,7 +1024,7 @@ local updated: { (block: Block) -> () } = {}
 --- Calls `listener` each time a block shows new output, or shows its
 --- output again (filtered, sorted).
 function M.on_update(listener: (block: Block) -> ())
-	greed.plugin.tie(core.registry.put(updated, listener))
+	greed.plugin.cleanup(core.registry.put(updated, listener))
 end
 
 local function tell_updated(block: Block)

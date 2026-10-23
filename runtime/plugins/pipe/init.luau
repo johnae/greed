@@ -110,7 +110,7 @@ M.filters = {
 --- Adds a Luau filter called `name`, for `| luau: name`, until the plugin
 --- (or config) that added it goes.
 function M.define(name: string, filter: Filter)
-	greed.plugin.tie(core.registry.set(M.filters, name, filter))
+	greed.plugin.cleanup(core.registry.set(M.filters, name, filter))
 end
 
 -- Output for a selection that didn't end with a line break loses the one

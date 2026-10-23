@@ -33,7 +33,7 @@ M.providers = {} :: { [string]: Provider }
 
 --- Indents `language` with `provider`, until the plugin that set it goes.
 function M.provider(language: string, provider: Provider)
-	greed.plugin.tie(registry.set(M.providers, language, provider))
+	greed.plugin.cleanup(registry.set(M.providers, language, provider))
 end
 
 --- One level of indent in each language, e.g. "  " or "\t", as the
@@ -121,7 +121,7 @@ function M.set(language: string, how: Indents)
 	M.closers[language] = how.closers
 	M.tab_widths[language] = how.tab_width
 	M.apply_tab_widths()
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if M.tab_widths[language] == how.tab_width then
 			M.tab_widths[language] = nil
 			M.apply_tab_widths()

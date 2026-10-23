@@ -204,7 +204,7 @@ local sources: { () -> string? } = {}
 --- nothing), to send with every message to an agent. It goes when the
 --- plugin that added it does.
 function M.pins(source: () -> string?)
-	greed.plugin.tie(core.registry.put(sources, source))
+	greed.plugin.cleanup(core.registry.put(sources, source))
 end
 
 --- What the user pinned, read now; nil when nothing is. Compare it with

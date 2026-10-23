@@ -48,7 +48,7 @@ function M.define(name: string, layout: Layout)
 		table.insert(order, name)
 	end
 	layouts[name] = layout
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if layouts[name] == layout then
 			layouts[name] = nil
 			local at = table.find(order, name)

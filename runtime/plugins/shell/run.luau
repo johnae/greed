@@ -242,7 +242,7 @@ local finished: { (shell: Shell, block: Block) -> () } = {}
 --- Calls `call` with each block that finishes from now on, until the
 --- plugin that asked goes.
 function M.on_finish(call: (shell: Shell, block: Block) -> ())
-	greed.plugin.tie(core.registry.put(finished, call))
+	greed.plugin.cleanup(core.registry.put(finished, call))
 end
 
 -- Writes the whole output of a block that went past the record's limit

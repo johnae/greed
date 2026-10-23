@@ -190,7 +190,7 @@ local listeners: { () -> () } = {}
 --- Calls `listener` whenever the mail changed: new mail, flags, a body
 --- that came. It goes with the plugin that added it.
 function M.on_changed(listener: () -> ())
-	greed.plugin.tie(core.registry.put(listeners, listener))
+	greed.plugin.cleanup(core.registry.put(listeners, listener))
 end
 
 local function changed()
@@ -204,7 +204,7 @@ local arrivals: { (keys: { string }) -> () } = {}
 --- index: new since its mailbox was all in, never what a first sync
 --- brings. It goes with the plugin that added it.
 function M.on_arrived(listener: (keys: { string }) -> ())
-	greed.plugin.tie(core.registry.put(arrivals, listener))
+	greed.plugin.cleanup(core.registry.put(arrivals, listener))
 end
 
 --- Says the mail with `keys` arrived, as greed-mail does (and a test).
@@ -228,7 +228,7 @@ local busy_listeners: { () -> () } = {}
 --- Calls `listener` whenever what greed-mail is busy with changes. It goes
 --- with the plugin that added it.
 function M.on_busy(listener: () -> ())
-	greed.plugin.tie(core.registry.put(busy_listeners, listener))
+	greed.plugin.cleanup(core.registry.put(busy_listeners, listener))
 end
 
 -- What wants to know when an account's round of syncing is over.
@@ -237,7 +237,7 @@ local synced_listeners: { (account: string) -> () } = {}
 --- Calls `listener` with an account's name each time a round of its sync
 --- is over. It goes with the plugin that added it.
 function M.on_synced(listener: (account: string) -> ())
-	greed.plugin.tie(core.registry.put(synced_listeners, listener))
+	greed.plugin.cleanup(core.registry.put(synced_listeners, listener))
 end
 
 --- Notes what greed-mail said it's doing (`indexing`, `progress`,

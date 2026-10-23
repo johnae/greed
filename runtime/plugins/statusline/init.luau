@@ -63,7 +63,7 @@ function M.add(side: "left" | "right", name: string, build: Piece, before: strin
 		end
 	end
 	table.insert(list, at, entry)
-	greed.plugin.tie(core.registry.remover(list, entry))
+	greed.plugin.cleanup(core.registry.remover(list, entry))
 end
 
 --- How a piece that takes time to find refreshes: `refresh` runs the way a
@@ -138,7 +138,7 @@ function M.add_async(side: "left" | "right", name: string, spec: AsyncPiece, bef
 	for _, event in events do
 		hear(event)
 	end
-	greed.plugin.tie(function()
+	greed.plugin.cleanup(function()
 		if async[name] == spec then
 			async[name] = nil
 			found[name] = nil

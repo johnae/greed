@@ -28,7 +28,7 @@ M.providers = {} :: { [string]: Provider }
 
 --- Folds `language` with `provider`, until the plugin that set it goes.
 function M.provider(language: string, provider: Provider)
-	greed.plugin.tie(registry.set(M.providers, language, provider))
+	greed.plugin.cleanup(registry.set(M.providers, language, provider))
 end
 
 -- The innermost `@fold` node around `line` spanning several lines.

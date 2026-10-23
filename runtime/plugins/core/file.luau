@@ -30,7 +30,7 @@ local savers: { [string]: (buffer: greed.Buffer) -> () } = {}
 --- e.g. for a list of search results that writes its edits back, until
 --- the plugin that called this goes.
 function M.on_save(kind: string, save: (buffer: greed.Buffer) -> ())
-	greed.plugin.tie(registry.set(savers, kind, save))
+	greed.plugin.cleanup(registry.set(savers, kind, save))
 end
 
 -- What runs on a file's buffer just before it's written, like a formatter,
@@ -41,7 +41,7 @@ local before_save: { [string]: (buffer: greed.Buffer) -> () } = {}
 --- replacing any hook called `name`. An error in it is shown, and the file
 --- is written anyway. It goes when the plugin that added it does.
 function M.before_save(name: string, hook: (buffer: greed.Buffer) -> ())
-	greed.plugin.tie(registry.set(before_save, name, hook))
+	greed.plugin.cleanup(registry.set(before_save, name, hook))
 end
 
 -- Saves `buffer`, to `path` if given. A folder it goes in that isn't there
@@ -191,7 +191,7 @@ local running: { [string]: () -> { string } } = {}
 --- anything does. Replaces any check called `name`; it goes when the
 --- plugin that added it does.
 function M.running(name: string, check: () -> { string })
-	greed.plugin.tie(registry.set(running, name, check))
+	greed.plugin.cleanup(registry.set(running, name, check))
 end
 
 --- Everything the checks say is running.
@@ -510,7 +510,7 @@ function M.opener(
 	match: (path: string) -> boolean,
 	open: (path: string, views: { greed.View }) -> string?
 )
-	greed.plugin.tie(registry.put(openers, { match = match, open = open }))
+	greed.plugin.cleanup(registry.put(openers, { match = match, open = open }))
 end
 
 local function opener_for(path: string): Opener?
@@ -656,7 +656,7 @@ end
 --- said it.
 function M.open_with(ext: string, how: OpenWith)
 	local bare = string.gsub(ext, "^%.", "")
-	greed.plugin.tie(registry.set(ways, string.lower(bare), how))
+	greed.plugin.cleanup(registry.set(ways, string.lower(bare), how))
 end
 
 -- Whether the file at `path` starts as a program does (ELF, Mach-O, a
@@ -800,7 +800,7 @@ local schemes: { [string]: (uri: string) -> () } = {}
 --- Makes `open` open links of `scheme` (like "mail" for mail:ID) in Greed
 --- rather than outside, until the plugin that called this goes.
 function M.link_scheme(scheme: string, open: (uri: string) -> ())
-	greed.plugin.tie(registry.set(schemes, string.lower(scheme), open))
+	greed.plugin.cleanup(registry.set(schemes, string.lower(scheme), open))
 end
 
 --- Opens the web page at `path`, one a plugin wrote (like mail laid out
@@ -1032,7 +1032,7 @@ local changed_listeners: { (path: string, to: string?) -> () } = {}
 --- when the plugin that added it does. For the old end of a rename, `to`
 --- is where it went.
 function M.on_changed(listener: (path: string, to: string?) -> ())
-	greed.plugin.tie(registry.put(changed_listeners, listener))
+	greed.plugin.cleanup(registry.put(changed_listeners, listener))
 end
 
 --- Writes `text` to the file at `path`. An open file is changed through its
