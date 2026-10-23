@@ -61,14 +61,49 @@ M.window_for = function(view: greed.View): greed.View
 	return view
 end
 
---- What's done when a room is marked read as you look at it (set by the
---- alerts).
-M.on_read = function(_account: string, _room: string) end
-
---- Whether room `room` of account `key` is open and shown somewhere.
+--- Whether room `room` of account `key` is open and shown somewhere here.
 function M.shown(key: string, room: string): boolean
 	local r = open[key_of(key, room, nil)]
 	return r ~= nil and r.buffer:valid() and #r.buffer:views() > 0
+end
+
+-- How often this session tells the owner which rooms it shows, in
+-- milliseconds, while any is open; the owner forgets what it wasn't told
+-- again for a while, as of a session that went.
+local SHOWING_EVERY = 5000
+
+-- The rooms this session shows to someone, as "key|room".
+local function showing(): { string }
+	local list = {}
+	if not greed.session.attached() then
+		return list
+	end
+	for _, r in open do
+		if r.thread == nil and r.buffer:valid() and #r.buffer:views() > 0 then
+			table.insert(list, `{r.account}|{r.room}`)
+		end
+	end
+	table.sort(list)
+	return list
+end
+
+local reporting = false
+
+-- Tells the owner which rooms this session shows, so it doesn't alert you
+-- of one you're reading: now, and every while as long as a room is open.
+local function report()
+	greed.spawn(backend.showing, showing())
+	if reporting then
+		return
+	end
+	reporting = true
+	greed.spawn(function()
+		while next(open) ~= nil do
+			greed.sleep(SHOWING_EVERY)
+			backend.showing(showing())
+		end
+		reporting = false
+	end)
 end
 
 --- A message's time of day, or its day too when it isn't today's.
@@ -605,7 +640,6 @@ local function mark_read(r: Open)
 		return
 	end
 	r.marked = os.time()
-	M.on_read(r.account, r.room)
 	greed.spawn(function()
 		ask(r, "read")
 	end)
@@ -714,6 +748,7 @@ function M.open(
 	r = made
 	open[whole] = r
 	target:show(buffer)
+	report()
 	greed.spawn(function()
 		local opened, why = ask(r, "timeline")
 		if opened then
@@ -746,6 +781,25 @@ backend.on_typing(function(key: string, room: string, who: { string })
 	if r and r.buffer:valid() then
 		r.typing = who
 		r.view:soon()
+	end
+end)
+
+-- Once the owner is back, as after it started again, the open rooms' and
+-- threads' timelines are asked for again.
+backend.on_reset(function()
+	for _, r in open do
+		if r.buffer:valid() then
+			greed.spawn(function()
+				local opened = ask(r, "timeline")
+				if opened then
+					r.items = opened.items
+					r.view:redraw()
+				end
+			end)
+		end
+	end
+	if next(open) ~= nil then
+		report()
 	end
 end)
 

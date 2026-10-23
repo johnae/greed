@@ -308,6 +308,11 @@ function M.list()
 	end
 	local o = new_list()
 	panes.floats.show(o.buffer, { title = "Chat", width = "70%", height = "80%" })
+	-- The rooms may be there already, filled before it showed.
+	local float = chat_float()
+	if float then
+		on_room(o, float, nil)
+	end
 end
 
 -- The panel showing the list of rooms, if one does.
@@ -474,7 +479,7 @@ local function follow(service: string, login: string, first: any)
 			greed.echo(`Go to {step.url} and enter {step.code}`)
 			return
 		elseif kind == "done" then
-			backend.signed_in(service, step)
+			-- The owner took the account in and kept its secret.
 			greed.echo(`signed in as {step.account.name or step.account.id}`)
 			return
 		elseif kind == "failed" then
@@ -537,11 +542,17 @@ greed.command({
 	doc = "Finish signing in with the link the browser ended on (what `greed link` hands over)",
 	args = { { name = "link", doc = "the link", type = "string" } },
 	run = function(ctx)
+		-- A sign-in started in another session waits there.
 		if not M.link(ctx.values.link) then
-			greed.echo("no sign-in is waiting for a link: :chat-login starts one")
+			local _, why = backend.pass_link(ctx.values.link)
+			greed.echo(if why then `chat: {why}` else "passed on to the sign-in waiting for it")
 		end
 	end,
 })
+
+backend.on_link(function(link: string)
+	M.link(link)
+end)
 
 -- A mattermost: link, or one of Greed's own, opened in Greed as a sign-in
 -- in the browser ends on, finishes signing in.

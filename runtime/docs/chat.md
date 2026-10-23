@@ -1,17 +1,21 @@
 # Chat
 
-Matrix and Mattermost rooms in Greed, in a session of their own. This is
-experimental; what's there and what isn't is listed at the end.
+Matrix and Mattermost rooms in Greed, from any session. Your accounts stay
+connected in a session of their own, the chat service's (`chat.service`),
+which starts by itself when something needs it; `:chat` anywhere shows the
+same rooms. This is experimental; what's there and what isn't is listed at
+the end.
 
 ```sh
 greed chat
 ```
 
-The session shows your rooms and channels in a sidebar on the left, those
-that mention you first, then those with something unread, then the most
-recent; a dot beside a direct message says whether the other person is
-around (Mattermost). After them come your Matrix spaces and Mattermost
-teams (`◆`), each with your rooms in it under it. `enter` opens a room
+`greed chat` goes to the chat service's session, which shows your rooms
+and channels in a sidebar on the left, those that mention you first, then
+those with something unread, then the most recent; a dot beside a direct
+message says whether the other person is around (Mattermost). After them
+come your Matrix spaces and Mattermost teams (`◆`), each with your rooms
+in it under it. `enter` opens a room
 beside the sidebar: its messages, laid out as Markdown and kept up to date
 as they come, and a box under them, and `q` goes back to the sidebar. The
 room is marked read as you look at it, who's writing shows under the
@@ -45,10 +49,11 @@ under them.
 A link's preview shows under its message: the site, the page's title, and a
 line of what it says (see below for where they come from).
 
-Outside the chat session, `:chat` opens the same list in a floating view of
-the tab. Rooms open in it and `q` goes back to the list; `alt-f` hides it
-and shows it again like the tab's other floats, and `:chat` brings it back
-showing the rooms. In a room, `esc` then `q` goes back to them too.
+In any other session, `:chat` opens the same list in a floating view of
+the tab, starting the chat service's session first if it isn't running.
+Rooms open in it and `q` goes back to the list; `alt-f` hides it and shows
+it again like the tab's other floats, and `:chat` brings it back showing
+the rooms. In a room, `esc` then `q` goes back to them too.
 
 ## Signing in
 
@@ -72,10 +77,11 @@ and forgets it.
 
 ### Letting the browser hand links to Greed
 
-`greed link URL` hands a link to the chat session, which finishes the
-sign-in waiting for it. On Linux, Greed's packages install the desktop
-entry `greed-link.desktop`, which does that for `mattermost://` links and
-Greed's own (`io.github.johnae:`). Make it their handler once:
+`greed link URL` hands a link to the chat service, which finishes the
+sign-in waiting for it, in whichever session you started it. On Linux,
+Greed's packages install the desktop entry `greed-link.desktop`, which
+does that for `mattermost://` links and Greed's own (`io.github.johnae:`).
+Make it their handler once:
 
 ```sh
 xdg-mime default greed-link.desktop x-scheme-handler/mattermost
@@ -143,14 +149,14 @@ shows.
 A new message that mentions you, or any message in a direct message, alerts
 you:
 
-- the room shows as needing you in the chat session's status until you
-  look at it,
+- the room shows as needing you in the chat service's status until you
+  look at it in any session,
 - you get one notification wherever you are: the hub tells the Greed
   window or terminal on each machine you're attached from, whichever
   session it shows, as it does when an agent waits for you.
 
-A room you're looking at doesn't alert. `:chat-alerted` goes to the room of
-the latest alert.
+A room you're looking at, in any session, doesn't alert. `:chat-alerted`
+goes to the room of the latest alert.
 
 `:set chat-alerts all` alerts of everything the service would notify you of
 (on Matrix, what your push rules on the server notify of),

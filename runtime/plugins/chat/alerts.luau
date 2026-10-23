@@ -1,10 +1,12 @@
 -- New messages for you, as the services say (`alert`): mentions and direct
--- messages by default. One marks its room as needing you (the session's
--- status) until you look at the room, and the hub tells you of it wherever
--- you are, through the Greed window or terminal on the machine you're at.
--- With `chat-alerts-desktop` it goes to the desktop's own notifications too
--- (notify-send or osascript), for when no Greed is attached. A room you're
--- looking at doesn't alert. `:chat-alerted` goes to the room of the latest.
+-- messages by default, raised once, by the chat service's owner. One marks
+-- its room as needing you (that session's status) until you look at the
+-- room in any session, and the hub tells you of it wherever you are,
+-- through the Greed window or terminal on the machine you're at. With
+-- `chat-alerts-desktop` it goes to the desktop's own notifications too
+-- (notify-send or osascript), for when no Greed is attached. A room shown
+-- in any session doesn't alert. `:chat-alerted` goes to the room of the
+-- latest.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -58,20 +60,28 @@ end
 local latest: { account: string, alert: backend.Alert }? = nil
 
 backend.on_alert(function(account: string, alert: backend.Alert)
-	if not M.wanted(alert) or room.shown(account, alert.room) then
+	if
+		not M.wanted(alert)
+		or room.shown(account, alert.room)
+		or backend.shown_anywhere(account, alert.room)
+	then
 		return
 	end
-	latest = { account = account, alert = alert }
 	local title, text = M.said(alert)
 	core.attention.set(M.key(account, alert.room), { label = title, reason = text, tell = true })
 	if greed.option.get("chat-alerts-desktop") == true then
 		core.desktop.notify(title, text)
 	end
+	backend.alerted(account, alert)
 end)
 
-room.on_read = function(account: string, room_id: string)
+backend.on_alerted(function(account: string, alert: backend.Alert)
+	latest = { account = account, alert = alert }
+end)
+
+backend.on_read(function(account: string, room_id: string)
 	core.attention.set(M.key(account, room_id), nil)
-end
+end)
 
 greed.command({
 	name = "chat-alerted",
