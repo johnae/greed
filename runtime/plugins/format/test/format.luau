@@ -81,3 +81,25 @@ test("formatting next to characters of more than one byte keeps them whole", fun
 	t:run("format")
 	assert(greed.view():buffer():text() == "cafè\n", greed.view():buffer():text())
 end)
+
+test("what's typed while a formatter runs is kept, and its late result left out", function(t)
+	languages.set(
+		"slow",
+		{ extensions = { "slow" }, formatter = { "sh", "-c", "sleep 0.2; tr -s ' '" } }
+	)
+	local dir = t:tempdir({ ["a.slow"] = "one    two" })
+	greed.open(dir .. "/a.slow")
+	local buffer = greed.view():buffer()
+	local formatted, err = nil, nil
+	greed.spawn(function()
+		formatted, err = require("@format").format(buffer)
+	end)
+	buffer:edit(function(e)
+		e:insert(0, "new ")
+	end)
+	t:wait_for(function()
+		return formatted ~= nil
+	end)
+	assert(buffer:text() == "new one    two", buffer:text())
+	assert(formatted == false and string.find(tostring(err), "changed", 1, true), tostring(err))
+end)

@@ -90,24 +90,29 @@ end
 local function run_formatter(buffer: greed.Buffer, command: { string }): string?
 	local path = buffer:path()
 	local folder = path and string.match(path, "^(.*)/[^/]*$")
+	local version = buffer:version()
 	local done, err = greed.process.run(command, { stdin = buffer:text(), cwd = folder })
 	if done == nil then
 		return `{command[1]}: {err}`
 	elseif done.code ~= 0 then
 		local first = string.match(done.stderr, "[^\n]+") or `exited with {done.code}`
 		return `{command[1]}: {first}`
+	elseif buffer:version() ~= version then
+		-- Its result is of the text before, and would undo what came since.
+		return `the buffer changed while {command[1]} ran, so it's left as it is`
 	end
 	apply(buffer, done.stdout)
 	return nil
 end
 
 -- Asks the language server to format the buffer. Returns false if there's
--- no server, or it can't.
-local function server_format(buffer: greed.Buffer): boolean
+-- no server, or it can't, and why when the buffer changed meanwhile.
+local function server_format(buffer: greed.Buffer): (boolean, string?)
 	if buffer:path() == nil then
-		return false
+		return false, nil
 	end
 	local indent = require("@core").indent.unit(buffer)
+	local version = buffer:version()
 	local ok, edits = pcall(greed.lsp.request, buffer, "textDocument/formatting", {
 		textDocument = { uri = greed.lsp.uri(buffer) },
 		options = {
@@ -116,7 +121,10 @@ local function server_format(buffer: greed.Buffer): boolean
 		},
 	})
 	if not ok or type(edits) ~= "table" then
-		return false
+		return false, nil
+	elseif buffer:version() ~= version then
+		-- Edits made for the text before would land in the wrong places.
+		return false, "the buffer changed while its server formatted it, so it's left as it is"
 	end
 	local ranges = {}
 	for _, edit in edits do
@@ -131,7 +139,7 @@ local function server_format(buffer: greed.Buffer): boolean
 			e:replace(range.from, range.to, range.text)
 		end
 	end)
-	return true
+	return true, nil
 end
 
 local M = {}
@@ -149,7 +157,7 @@ function M.format(buffer: greed.Buffer): (boolean, string?)
 		end
 		return err == nil, err
 	end
-	return server_format(buffer), nil
+	return server_format(buffer)
 end
 
 greed.command({

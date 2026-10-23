@@ -5,6 +5,7 @@
 		"picker": "./plugins/picker",
 		"core": "./plugins/core",
 		"languages": "./plugins/languages",
+		"format": "./plugins/format",
 		"agent": "./plugins/agent",
 		"cmdline": "./plugins/cmdline",
 		"restore": "./plugins/restore",

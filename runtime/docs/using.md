@@ -1411,7 +1411,8 @@ Saving a file formats it; `:format` formats without saving. Greed uses the
 language's formatter when it's installed (`gofmt`, `ruff`, `stylua`,
 `prettier`, `shfmt`, ...), otherwise the language server (Rust gets
 `rustfmt` through rust-analyzer). Only what the formatter changed is
-replaced, so the cursor stays put.
+replaced, so the cursor stays put. If you type while a slow formatter
+runs, its result is left out rather than undoing what you typed.
 
 ```luau
 -- A different formatter for a language
