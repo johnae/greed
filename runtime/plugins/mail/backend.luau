@@ -1,11 +1,14 @@
--- What the mail view asks for its mail: `greed-mail serve`, started once
--- and kept running while the plugin is loaded, over JSON-RPC. It syncs in
--- the background and keeps an index the view searches itself; this asks
--- it where that is, what a list shows of what the search found, and a
--- thread's messages. Tests put a fake in its place (`use`).
+-- What the mail view asks for its mail, through the `mail` service
+-- (`@service`). Its owner, in the mail service's session, runs `greed-mail
+-- serve` over JSON-RPC, which syncs in the background and keeps an index
+-- the views search themselves; views in every session ask the owner where
+-- that is, what a list shows of what the search found, and a thread's
+-- messages, and hear from it what greed-mail says. Tests put a fake in its
+-- place (`use`).
 
 local greed = require("@greed")
 local core = require("@core")
+local services = require("@service")
 
 local M = {}
 
@@ -169,11 +172,11 @@ export type Backend = {
 	attachment: (key: string, index: number, to: string?) -> (string?, string?),
 }
 
---- The session `greed mail` starts, which syncs the mail; others read what
---- it synced.
-M.SESSION = "mail.service"
+--- The session of the mail service, which syncs the mail; `greed mail`
+--- shows it.
+M.SESSION = services.session_of("mail")
 
---- Whether this is the mail session.
+--- Whether this is the mail service's session.
 function M.here(): boolean
 	return greed.session.current() == M.SESSION
 end
@@ -282,9 +285,31 @@ local awaiting: { [string]: greed.Signal } = {}
 -- How long an attachment may take to come.
 local PATIENCE = 120 * 1000
 
--- greed-mail, once it's started, and the index it keeps.
+-- The owner's greed-mail, once it's started, and this session's view of
+-- the index it keeps.
 local connection: greed.RpcConnection? = nil
 local opened: greed.Index? = nil
+local offer: services.Offer? = nil
+
+-- What greed-mail says by itself, as each session hears it from the owner.
+local function heard(method: string, params: any)
+	if method == "arrived" then
+		M.arrived(params.keys)
+	elseif method == "changed" then
+		changed()
+	elseif method == "refused" then
+		greed.echo(`{params.account}: {params.message}`)
+	elseif method == "indexing" or method == "progress" or method == "synced" then
+		M.heard(method, params)
+	elseif method == "sent" then
+		greed.echo("mail sent")
+	elseif method == "attachment" then
+		local waiting = awaiting[`{params.key} {params.index}`]
+		if waiting then
+			waiting:send(params)
+		end
+	end
+end
 
 --- The requests and notifications this speaks with greed-mail: its
 --- `PROTOCOL` (serve.rs) must be the same, which it says in `hello`.
@@ -297,33 +322,18 @@ function M.program(): string
 	return core.file.companion("mail-program", "greed-mail")
 end
 
--- greed-mail, started if it isn't running.
+-- In the owner's session: greed-mail, started if it isn't running.
 local function served(): (greed.RpcConnection?, string?)
 	if connection and connection:alive() then
 		return connection, nil
 	end
 	local program = M.program()
-	-- Only the mail session syncs; anywhere else greed-mail reads what it
-	-- synced.
-	local command = if M.here() then { program, "serve" } else { program, "--read", "serve" }
-	local started, err = greed.rpc.start(command, {
+	local started, err = greed.rpc.start({ program, "serve" }, {
 		framing = "lines",
+		-- Every session hears it, this one too.
 		on_notify = function(method: string, params: any)
-			if method == "arrived" then
-				M.arrived(params.keys)
-			elseif method == "changed" then
-				changed()
-			elseif method == "refused" then
-				greed.echo(`{params.account}: {params.message}`)
-			elseif method == "indexing" or method == "progress" or method == "synced" then
-				M.heard(method, params)
-			elseif method == "sent" then
-				greed.echo("mail sent")
-			elseif method == "attachment" then
-				local waiting = awaiting[`{params.key} {params.index}`]
-				if waiting then
-					waiting:send(params)
-				end
+			if offer then
+				offer:notify(method, params)
 			end
 		end,
 	})
@@ -349,8 +359,9 @@ local function served(): (greed.RpcConnection?, string?)
 	return started, nil
 end
 
--- The result of request `method`, or nil and why.
-local function ask(method: string, params: any): (any, string?)
+-- In the owner's session: the result of greed-mail's request `method`, or
+-- nil and why.
+local function owner_ask(method: string, params: any): (any, string?)
 	local rpc, err = served()
 	if rpc == nil then
 		return nil, err
@@ -366,6 +377,54 @@ local function ask(method: string, params: any): (any, string?)
 	return result
 end
 
+-- Whether there's mail to sync: then its owner starts with Greed.
+local function configured(): boolean
+	local config = greed.fs.dirs().config
+	return config ~= nil and greed.fs.stat(`{config}/mail.toml`) ~= nil
+end
+
+services.define({ name = "mail", start = configured })
+
+if services.owner("mail") then
+	offer = services.offer("mail", {
+		version = 1,
+		-- Vouched for: only mail runs greed-mail, whichever plugin passed
+		-- the request on.
+		handle = function(method: string, params: any): (any, string?)
+			if method ~= "ask" then
+				return nil, `mail has no {method}`
+			end
+			return greed.vouch(owner_ask, params.method, params.params)
+		end,
+	})
+end
+
+local view = services.use("mail", {
+	version = 1,
+	topics = {
+		"arrived",
+		"changed",
+		"refused",
+		"indexing",
+		"progress",
+		"synced",
+		"sent",
+		"attachment",
+	},
+	on = heard,
+	-- The owner started again: its greed-mail may have made the index anew.
+	reset = function()
+		opened = nil
+		changed()
+	end,
+})
+
+-- The result of greed-mail's request `method`, through the owner, or nil
+-- and why.
+local function ask(method: string, params: any): (any, string?)
+	return view:request("ask", { method = method, params = params })
+end
+
 --- greed-mail.
 M.served = {
 	index = function(): (greed.Index?, string?)
@@ -378,11 +437,10 @@ M.served = {
 		end
 		local index, trouble = greed.index.open(found.path)
 		opened = index
-		-- Made by an older greed-mail: the mail session's makes it again.
+		-- Made by an older greed-mail: the mail service makes it again.
 		if index == nil and string.find(trouble or "", "another Greed", 1, true) then
-			trouble = if M.here()
-				then "your mail is being indexed again for this version of Greed: it shows once that's done"
-				else "your mail isn't indexed for this version of Greed yet: :mail-session starts the mail session, which does it"
+			trouble =
+				"your mail is being indexed again for this version of Greed: it shows once that's done"
 		end
 		return index, trouble
 	end,

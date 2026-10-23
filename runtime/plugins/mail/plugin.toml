@@ -1,5 +1,5 @@
 name = "mail"
-requires = ["core", "notes", "picker", "panes"]
+requires = ["core", "notes", "picker", "panes", "service"]
 # It runs greed-mail, which syncs your mail (proc), and reads the index it
 # keeps of it (fs.read). Todos made from mail are written to your notes
 # through the notes plugin (fs.write).

@@ -74,18 +74,20 @@ seconds.
 
 ### The mail session and the quick look
 
-The mail session (`greed mail` from a shell, `:mail-session` from inside
-Greed) is the mail client: it has the full page, and it's the one that
-syncs, so keep it running for new mail to come in. Detach from it as from
-any session; it goes on syncing.
+The mail session (`mail.service`; `greed mail` from a shell,
+`:mail-session` from inside Greed) is the mail client: it has the full
+page, and it's the one that syncs. It starts by itself as Greed starts
+when there's a `mail.toml`, and whenever another session needs it, so you
+never start it yourself. Detach from it as from any session; it goes on
+syncing.
 
 In any other session, `:mail` opens a quick look: the same mail, in a
 floating view of the tab over what you're working on. `alt-f` hides it
 and shows it again like the tab's other floats, `:mail` brings it back,
 and `q` closes it. Threads open in it, and `q` goes back to the list. It
 works as the page does, and what you mark, archive, delete, write or
-answer there, the mail session does for it. It needs the mail session
-running, and says so when it isn't.
+answer there, the mail session does for it, starting first if it isn't
+running.
 
 After an upgrade, the mail session indexes your mail again the first time
 it starts (a minute or two for a hundred thousand messages); the list
@@ -452,8 +454,8 @@ summarise what's unread in work since monday
 archive the newsletters in my inbox older than a month
 ```
 
-The tools reach your mail through the mail session, so it needs to be
-running, from any session you ask in.
+The tools reach your mail through the mail session, from any session you
+ask in, starting it if it isn't running.
 
 What an agent can and can't do:
 
