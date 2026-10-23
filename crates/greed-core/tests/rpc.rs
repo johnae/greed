@@ -234,6 +234,27 @@ fn a_process_that_dies_says_so_last_and_nothing_waits_on_it() {
 }
 
 #[test]
+fn a_process_that_exits_is_waited_for_while_its_connection_is_kept() {
+    let (sender, events) = crossbeam_channel::unbounded();
+    let transport = Transport::spawn(&sh("echo $$ >&2"), Path::new("/")).unwrap();
+    let mut connection = Connection::open(0, transport, &sender);
+    let event = connection.receive(next(&events)).unwrap();
+    assert!(matches!(event, Event::Exited { .. }), "{event:?}");
+    assert!(eventually(|| !connection.stderr().is_empty()));
+    let pid = connection.stderr()[0].clone();
+    // Gone from the process table, rather than left there a zombie.
+    let listed = || {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid])
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    assert!(eventually(|| listed().is_empty()), "still {}", listed());
+    drop(connection);
+}
+
+#[test]
 fn only_the_last_lines_of_stderr_are_kept() {
     let (sender, events) = crossbeam_channel::unbounded();
     let transport = Transport::spawn(

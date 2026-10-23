@@ -281,6 +281,14 @@ impl Connection {
             Event::Exited { .. } => {
                 self.alive = false;
                 self.pending.clear();
+                // Its output ended: it's going, so it's waited for (no
+                // zombie is left), however long the connection is kept.
+                self.input = None;
+                if let Some(mut child) = self.child.take() {
+                    thread::spawn(move || {
+                        let _ = child.wait();
+                    });
+                }
                 Some(event)
             }
             _ => Some(event),
