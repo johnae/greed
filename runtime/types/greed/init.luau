@@ -316,6 +316,8 @@ export type View = {
 	id: (self: View) -> number,
 	--- Whether it is still open. Other methods fail once it was closed.
 	valid: (self: View) -> boolean,
+	--- `buffer:decorate` for marks only this view draws, like blame for the line its cursor is on. It replaces only this view's marks in `ns`; they go when the view closes.
+	decorate: (self: View, ns: string, marks: { Mark }, within: { from: number, to: number? }?) -> (),
 	selection: (self: View) -> Selection,
 	set_selection: (self: View, selection: Selection) -> (),
 	--- The head of the primary selection.

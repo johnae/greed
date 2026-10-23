@@ -6,9 +6,9 @@ use std::sync::Arc;
 use greed_text::{Assoc, Author, ChangeSet, Rope, Selection, Transaction, TxId, TxMeta};
 use smallvec::SmallVec;
 
-use crate::Error;
 use crate::history::{History, SavedHistory, Step};
 use crate::keymap::Key;
+use crate::{Error, ViewId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BufferId(pub u32);
@@ -156,6 +156,9 @@ pub struct Mark {
     /// Anything its owner wants kept with it, like a problem's message.
     /// Never drawn.
     pub data: Option<serde_json::Value>,
+    /// The one view that draws it, as `view:decorate` sets; every view of
+    /// the buffer when none.
+    pub view: Option<ViewId>,
 }
 
 /// When a concealing mark shows the text it hides, so it can be edited.
@@ -276,13 +279,35 @@ impl Buffer {
         })
     }
 
-    /// Replaces the marks in namespace `ns` that start within `range` with
-    /// `marks`, keeping the rest.
-    pub(crate) fn set_marks_in(&mut self, ns: &str, range: &Range<usize>, marks: Vec<Mark>) {
+    /// The marks `view` draws: its own and every view's.
+    pub fn marks_for(&self, view: ViewId) -> impl Iterator<Item = &Mark> {
+        self.all_marks()
+            .filter(move |m| m.view.is_none_or(|v| v == view))
+    }
+
+    /// Replaces the marks in namespace `ns` that only `view` draws (with
+    /// none, those every view draws) and that start within `range`, if
+    /// given, with `marks`, keeping the rest.
+    pub(crate) fn set_marks_in(
+        &mut self,
+        ns: &str,
+        view: Option<ViewId>,
+        range: Option<Range<usize>>,
+        marks: Vec<Mark>,
+    ) {
+        let range = range.unwrap_or(0..usize::MAX);
         let mut kept = self.marks.remove(ns).unwrap_or_default();
-        kept.retain(|m| !range.contains(&m.range.start));
+        kept.retain(|m| m.view != view || !range.contains(&m.range.start));
         kept.extend(marks);
         self.set_marks(ns, kept);
+    }
+
+    /// Takes away the marks only `view` draws, once it's gone.
+    pub(crate) fn forget_view(&mut self, view: ViewId) {
+        for marks in self.marks.values_mut() {
+            marks.retain(|m| m.view != Some(view));
+        }
+        self.marks.retain(|_, marks| !marks.is_empty());
     }
 
     /// Replaces the marks in namespace `ns`.

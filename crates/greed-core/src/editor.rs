@@ -58,6 +58,7 @@ pub enum Answer {
 /// scroll position. Each client has its own of every view.
 #[derive(Debug, Clone)]
 pub struct View {
+    pub id: ViewId,
     pub buffer: BufferId,
     pub selection: Selection,
     pub scroll: Scroll,
@@ -712,6 +713,9 @@ impl Editor {
                 removed = view;
             }
         }
+        for buffer in self.buffers.values_mut() {
+            buffer.forget_view(id);
+        }
         removed
     }
 
@@ -986,32 +990,35 @@ impl Editor {
         }
     }
 
-    /// Replaces `buffer`'s marks in namespace `ns`, clamping them to its text.
-    pub fn decorate(&mut self, buffer: BufferId, ns: &str, marks: Vec<Mark>) {
-        self.decorate_in(buffer, ns, None, marks);
+    /// Replaces all of `buffer`'s marks in namespace `ns`, every view's,
+    /// clamping them to its text.
+    pub fn decorate(&mut self, buffer: BufferId, ns: &str, mut marks: Vec<Mark>) {
+        let Some(b) = self.buffers.get_mut(&buffer) else {
+            return;
+        };
+        clamp_marks(b, &mut marks);
+        b.set_marks(ns, marks);
     }
 
-    /// Like [`Editor::decorate`], but with `within` replaces only the marks
-    /// in `ns` that start there.
+    /// Like [`Editor::decorate`], but replaces only the marks in `ns` that
+    /// only `view` draws (with none, those every view draws), and with
+    /// `within` only those that start there. The marks get `view`.
     pub fn decorate_in(
         &mut self,
         buffer: BufferId,
         ns: &str,
+        view: Option<ViewId>,
         within: Option<std::ops::Range<usize>>,
         mut marks: Vec<Mark>,
     ) {
         let Some(b) = self.buffers.get_mut(&buffer) else {
             return;
         };
-        let len = b.text().len_bytes();
+        clamp_marks(b, &mut marks);
         for mark in &mut marks {
-            let end = mark.range.end.min(len);
-            mark.range = mark.range.start.min(end)..end;
+            mark.view = view;
         }
-        match within {
-            Some(range) => b.set_marks_in(ns, &range, marks),
-            None => b.set_marks(ns, marks),
-        }
+        b.set_marks_in(ns, view, within, marks);
     }
 
     /// Starts following `range` of `buffer` through edits; see [`crate::Tracked`].
@@ -2217,6 +2224,8 @@ impl Editor {
     /// Opens a view of `buffer` for every client, all with `selection`.
     fn new_view(&mut self, buffer: BufferId, selection: Selection) -> ViewId {
         self.open_view(&View {
+            // `open_view` gives it its own.
+            id: ViewId(0),
             buffer,
             selection,
             scroll: Scroll::default(),
@@ -2232,6 +2241,7 @@ impl Editor {
     /// Opens a view for every client, each seeing it as `view`.
     fn open_view(&mut self, view: &View) -> ViewId {
         let id = ViewId(self.next_id());
+        let view = View { id, ..view.clone() };
         for client in self.clients.values_mut() {
             client.views.insert(id, view.clone());
         }
@@ -2299,6 +2309,15 @@ impl Editor {
                 }
             }
         }
+    }
+}
+
+/// Cuts `marks` to `buffer`'s text.
+fn clamp_marks(buffer: &Buffer, marks: &mut [Mark]) {
+    let len = buffer.text().len_bytes();
+    for mark in marks {
+        let end = mark.range.end.min(len);
+        mark.range = mark.range.start.min(end)..end;
     }
 }
 

@@ -130,6 +130,14 @@ impl UserData for ViewRef {
         methods.add_method("valid", |lua, this, NoArgs| {
             Ok(state(lua).editor.find_view(this.id).is_some())
         });
+        methods.add_method(
+            "decorate",
+            |lua, this, (ns, list, within): (String, Vec<Table>, Option<Table>)| {
+                let marks = marks_from_lua(lua, &list)?;
+                let buffer = this.with_view(lua, |v| Ok(v.buffer))?;
+                decorate(lua, buffer, Some(this.id), &ns, within, marks)
+            },
+        );
         add_selection_methods(methods);
         methods.add_method("size", |lua, this, NoArgs| {
             this.with_view(lua, |v| Ok(v.size.unzip()))
@@ -739,78 +747,10 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
     methods.add_method(
         "decorate",
         |lua, this, (ns, list, within): (String, Vec<Table>, Option<Table>)| {
-            // A button runs a command when clicked; sandboxed code could
-            // make one look like something else on a page asking you.
-            if list
-                .iter()
-                .any(|t| t.contains_key("action").unwrap_or(false))
-            {
-                super::capabilities::unless_sandboxed(lua, "add buttons that run commands")?;
-            }
-            let marks = list
-                .iter()
-                .map(|t| {
-                    let style = t.get::<Option<String>>("style")?.ok_or_else(|| {
-                        mlua::Error::runtime(
-                            "a mark needs a style, e.g. { from = 0, to = 5, style = \"match\" }",
-                        )
-                    })?;
-                    let flag = |key: &str| -> LuaResult<bool> {
-                        Ok(t.get::<Option<bool>>(key)?.unwrap_or(false))
-                    };
-                    Ok(Mark {
-                        range: t.get("from")?..t.get("to")?,
-                        style: style.into(),
-                        line: flag("line")?,
-                        text: t.get::<Option<String>>("text")?.map(Into::into),
-                        eol: flag("eol")?,
-                        sign: t.get::<Option<String>>("sign")?.map(Into::into),
-                        gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
-                        above: flag("above")?,
-                        overlay: flag("overlay")?,
-                        conceal: flag("conceal")?,
-                        reveal: reveal_from_lua(t.get("reveal"))?,
-                        fold: flag("fold")?,
-                        peek: flag("peek")?,
-                        nowrap: flag("nowrap")?,
-                        plain: flag("plain")?,
-                        lines: t
-                            .get::<Option<Vec<Value>>>("lines")?
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(virtual_line_from_lua)
-                            .collect::<LuaResult<_>>()?,
-                        image: t
-                            .get::<Option<Table>>("image")?
-                            .map(|i| mark_image_from_lua(&i))
-                            .transpose()?,
-                        scene: t
-                            .get::<Option<Table>>("scene")?
-                            .map(|s| mark_scene_from_lua(&s))
-                            .transpose()?,
-                        action: t.get::<Option<String>>("action")?.map(Into::into),
-                        scale: scale_from_lua(t.get("scale"))?,
-                        data: match t.get::<Value>("data")? {
-                            Value::Nil => None,
-                            data => Some(lua.from_value(data)?),
-                        },
-                    })
-                })
-                .collect::<LuaResult<Vec<_>>>()?;
-            let within = within
-                .map(|t| -> LuaResult<_> {
-                    let to: Option<usize> = t.get("to")?;
-                    Ok(t.get::<usize>("from")?..to.unwrap_or(usize::MAX))
-                })
-                .transpose()?;
+            let marks = marks_from_lua(lua, &list)?;
             // Checked last: reading the marks can run Luau that closes it.
             this.with_buffer(lua, |_| Ok(()))?;
-            let by = super::capabilities::caller(lua, None);
-            let state = &mut *state_mut(lua);
-            state.editor.decorate_in(this.buffer, &ns, within, marks);
-            let cleared = state.editor.buffer(this.buffer).marks(&ns).is_empty();
-            state.owned.marked(this.buffer, &ns, by, cleared);
-            Ok(())
+            decorate(lua, this.buffer, None, &ns, within, marks)
         },
     );
     methods.add_method("decorations", |lua, this, ns: String| {
@@ -835,6 +775,91 @@ fn add_decoration_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         }
         Ok(list)
     });
+}
+
+/// Replaces the marks in `ns` of `buffer` that `view` alone draws (every
+/// view's with none), and with `within` only those that start there.
+fn decorate(
+    lua: &Lua,
+    buffer: crate::BufferId,
+    view: Option<ViewId>,
+    ns: &str,
+    within: Option<Table>,
+    marks: Vec<Mark>,
+) -> LuaResult<()> {
+    let within = within
+        .map(|t| -> LuaResult<_> {
+            let to: Option<usize> = t.get("to")?;
+            Ok(t.get::<usize>("from")?..to.unwrap_or(usize::MAX))
+        })
+        .transpose()?;
+    let by = super::capabilities::caller(lua, None);
+    let state = &mut *state_mut(lua);
+    state.editor.decorate_in(buffer, ns, view, within, marks);
+    let cleared = state.editor.buffer(buffer).marks(ns).is_empty();
+    state.owned.marked(buffer, ns, by, cleared);
+    Ok(())
+}
+
+/// The marks `decorate` takes, `{ from, to, style, ... }`.
+fn marks_from_lua(lua: &Lua, list: &[Table]) -> LuaResult<Vec<Mark>> {
+    // A button runs a command when clicked; sandboxed code could make one
+    // look like something else on a page asking you.
+    if list
+        .iter()
+        .any(|t| t.contains_key("action").unwrap_or(false))
+    {
+        super::capabilities::unless_sandboxed(lua, "add buttons that run commands")?;
+    }
+    list.iter()
+        .map(|t| {
+            let style = t.get::<Option<String>>("style")?.ok_or_else(|| {
+                mlua::Error::runtime(
+                    "a mark needs a style, e.g. { from = 0, to = 5, style = \"match\" }",
+                )
+            })?;
+            let flag =
+                |key: &str| -> LuaResult<bool> { Ok(t.get::<Option<bool>>(key)?.unwrap_or(false)) };
+            Ok(Mark {
+                range: t.get("from")?..t.get("to")?,
+                style: style.into(),
+                line: flag("line")?,
+                text: t.get::<Option<String>>("text")?.map(Into::into),
+                eol: flag("eol")?,
+                sign: t.get::<Option<String>>("sign")?.map(Into::into),
+                gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
+                above: flag("above")?,
+                overlay: flag("overlay")?,
+                conceal: flag("conceal")?,
+                reveal: reveal_from_lua(t.get("reveal"))?,
+                fold: flag("fold")?,
+                peek: flag("peek")?,
+                nowrap: flag("nowrap")?,
+                plain: flag("plain")?,
+                lines: t
+                    .get::<Option<Vec<Value>>>("lines")?
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(virtual_line_from_lua)
+                    .collect::<LuaResult<_>>()?,
+                image: t
+                    .get::<Option<Table>>("image")?
+                    .map(|i| mark_image_from_lua(&i))
+                    .transpose()?,
+                scene: t
+                    .get::<Option<Table>>("scene")?
+                    .map(|s| mark_scene_from_lua(&s))
+                    .transpose()?,
+                action: t.get::<Option<String>>("action")?.map(Into::into),
+                scale: scale_from_lua(t.get("scale"))?,
+                data: match t.get::<Value>("data")? {
+                    Value::Nil => None,
+                    data => Some(lua.from_value(data)?),
+                },
+                view: None,
+            })
+        })
+        .collect()
 }
 
 /// A mark's `reveal`: "line" when not given, "cursor", "never", "auto" or

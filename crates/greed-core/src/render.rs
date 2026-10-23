@@ -1016,7 +1016,7 @@ impl<M: Measure> Renderer<M> {
             decorations.highlights(view.buffer, text, visible.clone()),
             &visible,
         );
-        let styled = marks_in(editor, view.buffer, &visible);
+        let styled = marks_in(editor, view, &visible);
         let (head, cursors) = cursors(text, view, editor.cursor_shape());
         let peers = Peer::all(editor, text, view_id);
         let number = line_number(editor.line_numbers(), text, head);
@@ -1277,7 +1277,7 @@ impl<M: Measure> Renderer<M> {
         let concealed = concealed(buffer, view, line, start..end, editor);
         // Text from marks, shown before the character at its position.
         let mut inserted: Vec<(&Mark, &str)> = buffer
-            .all_marks()
+            .marks_for(view.id)
             .filter(|m| !m.eol && !m.overlay && (start..=end).contains(&m.range.start))
             .filter(|m| !m.conceal || !reveals(text, view, m, line, editor))
             .filter_map(|m| Some((m, m.text.as_deref()?)))
@@ -1286,7 +1286,7 @@ impl<M: Measure> Renderer<M> {
         let mut inserted = inserted.into_iter().peekable();
         // Text scaled up by marks: each byte at the largest scale over it.
         let scaled: Vec<&Mark> = buffer
-            .all_marks()
+            .marks_for(view.id)
             .filter(|m| m.scale > 1 && m.range.start < end && m.range.end > start)
             .collect();
         let scale_at = |byte: usize| {
@@ -1868,7 +1868,7 @@ fn gutter_width(editor: &Editor, view: &View, line_numbers: bool) -> (usize, boo
     }
     let buffer = editor.buffer(view.buffer);
     let numbers = buffer.text().len_lines().to_string().len() + 1;
-    let signs = buffer.all_marks().any(|m| m.sign.is_some());
+    let signs = buffer.marks_for(view.id).any(|m| m.sign.is_some());
     (numbers + if signs { SIGN_WIDTH } else { 0 }, signs)
 }
 
@@ -2242,11 +2242,11 @@ fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
     inside(area.x + x, area.y + y)
 }
 
-/// The marks of `buffer` that touch `visible`.
-fn marks_in<'a>(editor: &'a Editor, buffer: BufferId, visible: &Range<usize>) -> Vec<&'a Mark> {
+/// The marks `view` draws that touch `visible`.
+fn marks_in<'a>(editor: &'a Editor, view: &View, visible: &Range<usize>) -> Vec<&'a Mark> {
     editor
-        .buffer(buffer)
-        .all_marks()
+        .buffer(view.buffer)
+        .marks_for(view.id)
         .filter(|m| m.range.start <= visible.end && m.range.end >= visible.start)
         .collect()
 }
@@ -2293,7 +2293,7 @@ pub(crate) fn hidden_lines(editor: &Editor, view: &View) -> Vec<Range<usize>> {
     let text = buffer.text();
     let cursors: Vec<usize> = cursor_lines(text, view).collect();
     let mut hidden: Vec<Range<usize>> = buffer
-        .all_marks()
+        .marks_for(view.id)
         .filter(|m| m.fold)
         .filter_map(|m| {
             let first = text.byte_to_line(m.range.start.min(text.len_bytes()));
@@ -2328,7 +2328,7 @@ fn virtual_lines<'a>(
     let buffer = editor.buffer(view.buffer);
     let text = buffer.text();
     buffer
-        .all_marks()
+        .marks_for(view.id)
         .filter(move |m| !m.lines.is_empty() && last_line(text, &m.range) == line)
         .flat_map(|m| m.lines.iter().map(move |l| (m, l)))
 }
@@ -2356,7 +2356,7 @@ fn concealed<'a>(
     editor: &Editor,
 ) -> Vec<&'a Mark> {
     buffer
-        .all_marks()
+        .marks_for(view.id)
         .filter(|m| m.conceal && m.range.start < bytes.end && m.range.end > bytes.start)
         .filter(|m| !reveals(buffer.text(), view, m, line, editor))
         .collect()
@@ -2420,7 +2420,7 @@ fn fitting_from_end(heights: &[usize], room: &mut usize) -> Option<usize> {
 fn nowrap(editor: &Editor, view: &View, line: usize) -> bool {
     let buffer = editor.buffer(view.buffer);
     let text = buffer.text();
-    buffer.all_marks().any(|m| {
+    buffer.marks_for(view.id).any(|m| {
         m.nowrap
             && text.byte_to_line(m.range.start.min(text.len_bytes())) <= line
             && line <= last_line(text, &m.range)

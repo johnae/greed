@@ -929,6 +929,10 @@ greed.tab.set_layout({
   marks starting from `a` up to `b`, for plugins that draw again only the
   lines an edit changed. `buffer:marks_at(pos)` gives the marks over a
   place in every namespace.
+  `view:decorate(ns, marks)` is the same for marks one view draws and the
+  others don't, like blame for the line the cursor is on in one pane of a
+  file that's open in two. It replaces only that view's marks in `ns`, and
+  they go when the view closes. Every client sees them in that pane.
   Language servers' diagnostics are marks too, in the `"diagnostics"`
   namespace, which is how they follow edits.
 - Multibuffers show excerpts of many files in one buffer, edited in place:

@@ -1974,6 +1974,24 @@ fn plugins_decorate_buffers() {
 }
 
 #[test]
+fn a_view_decorates_its_buffer_for_itself() {
+    let h = host("hello world");
+    h.eval(
+        "local view = require('@greed').view()
+         view:buffer():decorate('blame', { { from = 0, to = 5, style = 'match' } })
+         view:decorate('blame', { { from = 6, to = 11, style = 'hint' } })
+         view:decorate('blame', { { from = 6, to = 8, style = 'hint' } })",
+    )
+    .unwrap();
+    h.with_editor(|ed| {
+        let view = ed.focus();
+        let marks = ed.buffer(ed.view(view).buffer).marks("blame");
+        let got: Vec<_> = marks.iter().map(|m| (m.range.clone(), m.view)).collect();
+        assert_eq!(got, [(0..5, None), (6..8, Some(view))]);
+    });
+}
+
+#[test]
 fn fuzzy_matches_say_where_they_matched() {
     let h = host("");
     assert_eq!(

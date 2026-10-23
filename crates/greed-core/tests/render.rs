@@ -517,6 +517,41 @@ fn decorations_tag_their_text_and_lines_style_whole_rows() {
 }
 
 #[test]
+fn a_views_own_marks_show_in_it_alone_and_go_when_it_closes() {
+    use greed_core::{Mark, ViewId};
+    let mut ed = editor("|one two");
+    let main = ed.focus();
+    let buffer = ed.view(main).buffer;
+    let note = |at: usize, text: &str| Mark {
+        range: at..at,
+        style: "hint".into(),
+        text: Some(text.into()),
+        ..Mark::default()
+    };
+    ed.decorate(buffer, "blame", vec![note(0, "all ")]);
+    ed.decorate_in(buffer, "blame", Some(main), None, vec![note(4, "mine ")]);
+    let elsewhere = ViewId(main.0 + 100);
+    ed.decorate_in(
+        buffer,
+        "blame",
+        Some(elsewhere),
+        None,
+        vec![note(4, "other ")],
+    );
+    assert_eq!(rows(&frame(&mut ed, 30, 2)), ["1 all one mine two"]);
+
+    // Replacing a view's marks keeps every view's in the same namespace.
+    ed.decorate_in(buffer, "blame", Some(main), None, Vec::new());
+    assert_eq!(rows(&frame(&mut ed, 30, 2)), ["1 all one two"]);
+    assert_eq!(ed.buffer(buffer).marks("blame").len(), 2);
+
+    let split = ed.split(main);
+    ed.decorate_in(buffer, "blame", Some(split), None, vec![note(4, "split ")]);
+    assert!(ed.close(split));
+    assert_eq!(ed.buffer(buffer).marks("blame").len(), 2, "its marks went");
+}
+
+#[test]
 fn marks_add_text_that_isnt_in_the_buffer() {
     use greed_core::Mark;
     let mut ed = editor("let x = 1|;\nfoo()");
