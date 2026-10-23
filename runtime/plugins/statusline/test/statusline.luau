@@ -506,3 +506,25 @@ test("a piece slow to draw is drawn in the background from then on", function(t)
 	assert(right and string.find(right, "later", 1, true), right)
 	statusline.remove("test-slow")
 end)
+
+test("shows the function and type the cursor is in, outermost first", function(t)
+	-- As the languages plugin has it, which these tests may run without.
+	greed.syntax.set_query(
+		"rust",
+		"textobjects",
+		[[
+(function_item body: (_) @function.inside) @function.around
+(impl_item body: (_) @type.inside) @type.around
+]]
+	)
+	t:buffer("impl Server {\n    fn listen() {\n        x|\n    }\n}\n\nfn other() {}\n")
+	greed.view():buffer():set_language("rust")
+	local left = t:status()
+	assert(left and string.find(left, "Server › listen", 1, true), left)
+	t:keys("g e")
+	left = t:status()
+	assert(
+		left and not string.find(left, "›", 1, true) and not string.find(left, "listen", 1, true),
+		left
+	)
+end)

@@ -222,6 +222,32 @@ M.add("left", "file", function(ctx)
 	return if core.file.unsaved(buffer) then name .. " [+]" else name
 end)
 
+-- The functions and types the cursor is in, outermost first, as the
+-- language's textobjects query finds them: `Server › listen`.
+M.add("left", "symbol", function(ctx)
+	local at = ctx.view:cursor()
+	local around: { greed.Node } = {}
+	for _, object in { "function", "type" } do
+		for _, found in core.syntax.objects(ctx.buffer, object, at, at + 1) do
+			if found.around.from <= at and at < found.around.to then
+				table.insert(around, found.around)
+			end
+		end
+	end
+	table.sort(around, function(a: greed.Node, b: greed.Node): boolean
+		return a.from < b.from
+	end)
+	local names: { string } = {}
+	for _, node in around do
+		-- An impl block is named by its type; a closure has no name.
+		local name = node:child("name") or node:child("type")
+		if name then
+			table.insert(names, name:text())
+		end
+	end
+	return if #names > 0 then table.concat(names, " › ") else nil
+end)
+
 M.add("left", "macro", function(ctx)
 	local macro = core.registers.recording()
 	local text = macro and `recording @{macro}`

@@ -2621,7 +2621,10 @@ command line doesn't. Buffers without a file show by name, like
 `terminal: nu ~/src`, or `untitled` for a new file. While you type a
 command after `:` the mode says `COMMAND`, and in a prompt like search's
 `PROMPT`. The file gets `[+]` while it has unsaved changes; undoing back
-to what was saved takes it away. On the right it shows:
+to what was saved takes it away. After the file come the function and
+type the cursor is in, like `Server › listen`, in languages with a
+grammar; `require("@statusline").remove("symbol")` hides them. On the
+right it shows:
 
 - the branch and the lines added, changed and removed in the file, like
   `main +3 ~1 -2` (with jj the nearest bookmark and the change you're on,
