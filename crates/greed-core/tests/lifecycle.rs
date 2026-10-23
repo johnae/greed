@@ -501,6 +501,9 @@ fn a_status_line_piece_goes_with_its_plugin_and_stops_refreshing() {
         "#,
     )
     .unwrap();
+    // What loading left for later, like the menus, so the clock's timer is
+    // the first one waiting.
+    pass(&h, Instant::now(), 0);
     let start = started(&h, 100);
     pass(&h, start, 250);
     assert_eq!(messages(&h), ["refreshed", "refreshed", "refreshed"]);

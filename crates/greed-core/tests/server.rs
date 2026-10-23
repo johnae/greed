@@ -279,7 +279,11 @@ fn frames_carry_the_menus_and_a_window_runs_their_commands() {
             height: 2,
         }))
         .unwrap();
-    let f = frame(&conn);
+    // The menus come once the plugins have all loaded, a frame or so later.
+    let mut f = frame(&conn);
+    while f.menus.is_empty() {
+        f = frame(&conn);
+    }
     let file = f
         .menus
         .iter()

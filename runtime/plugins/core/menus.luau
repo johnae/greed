@@ -121,8 +121,22 @@ local function current(): { Menu }
 	return shown
 end
 
+-- Whether the menus are to be sent again once what's running now is done.
+local pending = false
+
+-- Sends the window the menus again, once for all the changes made in a
+-- row: starting loads every plugin and adds every item, and listing every
+-- command for each of them was much of the time starting took.
 local function publish()
-	greed.set_menus(current())
+	if pending then
+		return
+	end
+	pending = true
+	greed.spawn(function()
+		greed.sleep(0)
+		pending = false
+		greed.set_menus(current())
+	end)
 end
 
 --- The menus as the window shows them.
