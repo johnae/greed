@@ -310,6 +310,7 @@ pub const EVENTS: &[&str] = &[
     "file.changed",
     "keys.pending",
     "lsp.diagnostics",
+    "message",
     "mode.changed",
     "mouse",
     "option.changed",

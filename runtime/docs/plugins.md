@@ -1365,6 +1365,7 @@ end)
 | `keys.pending` | A key sequence is under way, e.g. after `space`; `""` once it's done | `keys` |
 | `option.changed` | An option was set | `name`, `value`, and `client` when it was set for one client alone |
 | `lsp.diagnostics` | A language server reported problems for a buffer | `buffer`; read them with `greed.lsp.diagnostics(buffer)` |
+| `message` | The status line is about to show a message: an echo, an error, a command that refused. What the handler echoes shows instead, and isn't told again, so echoing in it can't go on forever | `text`, and `error` when something failed |
 | `view.resized` | A view has room, for a client, for a different number of rows or columns | `view`, `rows`, `cols` |
 | `view.scrolled` | A view starts, for a client, at a different line; what the handler changes shows in the same frame, so one view can scroll another along | `view`, `line` |
 | `view.closed` | A view was closed, e.g. a plugin's panel | `view`, the closed view's id |

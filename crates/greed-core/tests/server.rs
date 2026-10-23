@@ -92,6 +92,48 @@ fn errors_and_messages_show_on_the_status_line() {
 }
 
 #[test]
+fn plugins_hear_messages_and_what_they_echo_back_isnt_told_again() {
+    let conn = server::spawn(|| {
+        let mut editor = Editor::new(ClientId(1));
+        editor.open("file", "hi", None);
+        let host = Host::new(editor)?;
+        host.load_str(
+            "listener",
+            r#"
+            local greed = require("@greed")
+            greed.command { name = "fail", run = function() error("broken", 0) end }
+            greed.command { name = "say", run = function() greed.echo("one"); greed.echo("two") end }
+            greed.on("message", function(m)
+              greed.echo(`heard {m.text} {m.error}`)
+            end)
+            "#,
+        )?;
+        Ok(host)
+    });
+    conn.input
+        .send(Input::Resize(Size {
+            width: 60,
+            height: 2,
+        }))
+        .unwrap();
+    frame(&conn);
+    let status = |conn: &Connection| screen_rows(&frame(conn))[1].text();
+    conn.input.send(Input::Run("say".into())).unwrap();
+    let mut shown = status(&conn);
+    while !shown.contains("heard") {
+        shown = status(&conn);
+    }
+    assert!(shown.contains("heard two false"), "{shown}");
+    conn.input.send(Input::Run("fail".into())).unwrap();
+    let mut shown = status(&conn);
+    while !shown.contains("broken") {
+        shown = status(&conn);
+    }
+    assert!(shown.contains("heard broken true"), "{shown}");
+    assert!(!shown.contains("heard heard"), "{shown}");
+}
+
+#[test]
 fn saving_writes_the_file_and_says_so() {
     let path: &'static Path = Box::leak(
         std::env::temp_dir()

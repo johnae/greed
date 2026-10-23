@@ -1574,6 +1574,13 @@ export type DiagnosticsChanged = {
 	buffer: Buffer,
 }
 
+--- What the status line is about to show. What a handler echoes shows instead, and isn't told again.
+export type Message = {
+	text: string,
+	--- Something failed: an error, or a command that refused.
+	error: boolean,
+}
+
 --- A client's mode changed. Handlers run as that client.
 export type ModeChanged = {
 	client: number,
@@ -1886,6 +1893,7 @@ export type EventName =
 	| "keys.pending"
 	| "command.run"
 	| "lsp.diagnostics"
+	| "message"
 	| "control.request"
 	| "control.closed"
 	| "client.attached"
@@ -1936,6 +1944,7 @@ export type Greed = {
 		& ((event: "keys.pending", handler: (event: KeysPending) -> ()) -> ())
 		& ((event: "command.run", handler: (event: CommandRun) -> ()) -> ())
 		& ((event: "lsp.diagnostics", handler: (event: DiagnosticsChanged) -> ()) -> ())
+		& ((event: "message", handler: (event: Message) -> ()) -> ())
 		& ((event: "control.request", handler: (event: ControlRequest) -> ()) -> ())
 		& ((event: "control.closed", handler: (event: ControlClosed) -> ()) -> ())
 		& ((event: "client.attached", handler: (event: ClientAttached) -> ()) -> ())

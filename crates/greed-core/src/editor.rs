@@ -2190,6 +2190,11 @@ impl Editor {
         std::mem::take(&mut self.messages)
     }
 
+    /// The messages queued after the first `count`, leaving those.
+    pub fn take_messages_after(&mut self, count: usize) -> Vec<String> {
+        self.messages.split_off(count.min(self.messages.len()))
+    }
+
     /// The messages queued since they were last taken.
     pub fn messages(&self) -> &[String] {
         &self.messages

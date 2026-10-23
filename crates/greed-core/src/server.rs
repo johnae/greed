@@ -650,7 +650,7 @@ impl Server<'_> {
             let mut problems = self.host.update_syntax();
             problems.extend(self.host.sync_lsp());
             if let Some(problem) = problems.pop() {
-                self.say(problem);
+                self.say_error(problem);
             }
             // Wake up in time for the next timer a command is waiting on.
             let timer = self
@@ -758,8 +758,9 @@ impl Server<'_> {
         if !self.handle_held(&mut typed) {
             return false;
         }
-        if let Some(latest) = self.host.with_editor_mut(|ed| ed.take_messages().pop()) {
-            self.say(latest);
+        // Plugins hear each one; the status line shows the last.
+        for message in self.host.with_editor_mut(Editor::take_messages) {
+            self.say(message);
         }
         if !self.follow_requests() {
             return false;
@@ -799,8 +800,23 @@ impl Server<'_> {
         self.clients.keys().next_back().copied()
     }
 
-    /// Shows `message` on the status line of the client used last.
+    /// Shows `message` on the status line of the client used last, after
+    /// telling plugins; what they echo in answer shows instead.
     fn say(&mut self, message: String) {
+        self.show(message, false);
+    }
+
+    /// `say` for something that failed.
+    fn say_error(&mut self, message: String) {
+        self.show(message, true);
+    }
+
+    fn show(&mut self, message: String, error: bool) {
+        let message = self
+            .host
+            .tell_message(&message, error)
+            .pop()
+            .unwrap_or(message);
         if let Some(client) = self.last_active().and_then(|id| self.clients.get_mut(&id)) {
             client.message = Some(message);
         }
@@ -955,7 +971,7 @@ impl Server<'_> {
                         let pasted = self.host.paste(id, &text);
                         self.report(pasted);
                     }
-                    Err(why) => self.say(why),
+                    Err(why) => self.say_error(why),
                 }
             }
             Input::SshAgentReply(ask, ref answer) => self.agent_reply(id, ask, answer.as_deref()),
@@ -963,8 +979,9 @@ impl Server<'_> {
             Input::Refresh => self.send_whole(id),
             Input::Problem(ref text) => {
                 self.log(&format!("client {}: {text}", id.0));
+                let shown = self.host.tell_message(text, true).pop();
                 if let Some(client) = self.clients.get_mut(&id) {
-                    client.message = Some(text.clone());
+                    client.message = Some(shown.unwrap_or_else(|| text.clone()));
                 }
             }
             Input::Ping => {}
@@ -982,7 +999,7 @@ impl Server<'_> {
             Ok(go_on) => go_on,
             Err(panic) => {
                 self.log(&panic.to_string());
-                self.say(first_line(&panic.to_string()));
+                self.say_error(first_line(&panic.to_string()));
                 true
             }
         }
@@ -1014,7 +1031,7 @@ impl Server<'_> {
                 Some(source) => format!("{source}: {line}"),
                 None => line,
             };
-            self.say(message);
+            self.say_error(message);
         }
     }
 
@@ -1322,7 +1339,7 @@ impl Server<'_> {
             reported = host.report_views();
         }
         if let Err(err) = reported {
-            self.say(first_line(&err.to_string()));
+            self.say_error(first_line(&err.to_string()));
         }
         for (id, mut frame) in frames {
             frame.gui = host.gui_options(id);

@@ -1027,6 +1027,24 @@ impl Host {
         state_mut(&self.lua).session_name = Some(name.to_owned());
     }
 
+    /// Tells plugins, with "message", what the status line is about to
+    /// show; `error` when something failed. Returns what their handlers
+    /// echoed, which isn't told again, so one that echoes doesn't go on
+    /// forever. A handler's own error is only kept, for `:errors`.
+    pub fn tell_message(&self, text: &str, error: bool) -> Vec<String> {
+        if state(&self.lua).registry.handlers("message").is_empty() {
+            return Vec::new();
+        }
+        let before = state(&self.lua).editor.messages().len();
+        let _ = budgeted(&self.lua, || {
+            let payload = self.lua.create_table()?;
+            payload.set("text", text)?;
+            payload.set("error", error)?;
+            api::emit(&self.lua, "message", &payload).map_err(HostError::from)
+        });
+        state_mut(&self.lua).editor.take_messages_after(before)
+    }
+
     /// Tells plugins the session socket connection `id` closed, with
     /// "control.closed", e.g. so what its requests wait on can stop.
     pub fn connection_closed(&self, id: u64) -> Result<(), HostError> {
