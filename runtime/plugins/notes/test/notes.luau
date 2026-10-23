@@ -1,6 +1,17 @@
 local test = require("@greed/test")
 local greed = require("@greed")
+local core = require("@core")
 local agent = require("@agent")
+
+-- What reminders need you for, as the hub tells you of it.
+local function told(text: string): boolean
+	for _, need in core.attention.list() do
+		if need.reason == text and need.tell then
+			return true
+		end
+	end
+	return false
+end
 
 -- A notes folder of the test's own, holding `files`. Returns its path.
 -- The project's notes go in a folder of the test's own too, one that isn't
@@ -441,8 +452,10 @@ test(
 		assert(notices[1].body == "call the bank\nplain line", notices[1].body)
 		local record = greed.fs.read(`{greed.fs.dirs().cache}/notes-reminders`) or ""
 		assert(string.find(record, "call the bank", 1, true), record)
+		assert(told("call the bank"), "needs you, wherever you are")
 		t:keys("space n r")
 		assert(not floating(t, "call the bank"), "dismissed")
+		assert(not told("call the bank"), "and needs you no more")
 		t:wait(61000)
 		assert(#t:notices() == 0 and not floating(t, "call the bank"), "once")
 	end
@@ -493,6 +506,23 @@ test("one session reminds you of your own notes; each project's, of its notes", 
 	assert(reminders.reminds_yours("a", { "a", "b" }), "the first by name")
 	assert(not reminders.reminds_yours("b", { "a", "b" }), "not the others")
 	assert(reminders.reminds_yours(nil, { "a" }), "not a session at all")
+end)
+
+test("with Hoard, its service's session reminds you, and no other", function()
+	local reminders = require("../reminders")
+	local services = require("@service")
+	local session = services.session
+	local function as(name: string)
+		services.session = function(): string?
+			return name
+		end
+	end
+	reminders.once_in("hoard")
+	as("hoard.service")
+	assert(reminders.yours_here(), "Hoard's session")
+	as("aaa")
+	assert(not reminders.yours_here(), "not a project's, even first by name")
+	services.session = session
 end)
 
 test("a reminder with only a date goes off at notes-remind-time", function(t)

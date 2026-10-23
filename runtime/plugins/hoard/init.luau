@@ -1,17 +1,19 @@
 -- Hoard: your notes, todos and today, for anyone, not only programmers.
--- `greed notes` starts it (or comes back to it) in a session of its own,
--- named hoard, which opens your notes folder on its home: search, adding a
--- todo or a thought to today's note, today's note, the agenda with boxes
--- to tick, the inbox and recent notes (home.luau). Editing there is
--- modeless, with VS Code's keys (`hoard-editing-style` changes that), notes
--- save on their own and have no line numbers, and language servers leave
--- them alone.
+-- `greed notes` goes to it in the session of the hoard service, which opens
+-- your notes folder on its home: search, adding a todo or a thought to
+-- today's note, today's note, the agenda with boxes to tick, the inbox and
+-- recent notes (home.luau). Editing there is modeless, with VS Code's keys
+-- (`hoard-editing-style` changes that), notes save on their own and have no
+-- line numbers, and language servers leave them alone. That session starts
+-- with Greed when you have notes, and it's the one that sets off reminders
+-- and runs the agent's scheduled jobs, once for all sessions.
 --
 -- `:hoard` (`space n h`) goes to Hoard from any session, starting it if
 -- needed, and `:hoard-window` (`space n H`) opens it in a window of its own.
 
 local greed = require("@greed")
 local core = require("@core")
+local services = require("@service")
 local notes = require("@notes")
 local home = require("@self/home")
 local review = require("@self/review")
@@ -24,13 +26,22 @@ M.home = home
 M.review = review
 M.agenda = agenda
 
---- The session `greed notes` starts.
-M.SESSION = "hoard.service"
+--- The session of the hoard service, which `greed notes` shows.
+M.SESSION = services.session_of("hoard")
 
 --- Whether this is Hoard's own session.
 function M.here(): boolean
 	return greed.session.current() == M.SESSION
 end
+
+-- With notes to remind of, Hoard's session runs from when Greed starts.
+services.define({
+	name = "hoard",
+	start = function(): boolean
+		return greed.fs.stat(notes.folder()) ~= nil
+	end,
+})
+notes.reminders.once_in("hoard")
 
 greed.option.define({
 	name = "hoard-editing-style",

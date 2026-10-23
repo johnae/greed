@@ -1937,9 +1937,10 @@ When a reminder comes due:
 Reminders that came due while Greed wasn't running show the next time it
 starts. Greed remembers which ones went off in its cache folder, so each
 goes off once. When several on one line went off while it wasn't running,
-the line shows once. With several sessions running, the reminders in your
-own notes go off in one of them, and a project's in that project's
-session, so none goes off twice.
+the line shows once. The reminders in your own notes go off in Hoard's
+session, which starts with Greed when you have notes, and a project's in
+that project's session, so none goes off twice; the hub tells you of them
+wherever you are.
 
 The status line says how many todos are due today, like `2 due today`, in a
 warning color when some are overdue (`1 overdue, 2 due today`). Click it to

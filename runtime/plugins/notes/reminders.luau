@@ -14,6 +14,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local statusline = require("@statusline")
+local services = require("@service")
 local notes = require("./notes")
 local todos = require("./todos")
 local index = require("./index")
@@ -204,20 +205,34 @@ local function draw()
 	end
 end
 
---- Closes the notice.
-function M.dismiss()
-	if notice.view then
-		pcall(notice.view.close, notice.view)
+-- What a reminder needs you under (`core.attention`): the hub tells you of
+-- it wherever you are, as reminders often go off in a session you aren't
+-- looking at (Hoard's), until it's dismissed.
+local function needs_you(reminder: Reminder): string
+	return `reminder:{reminder.key}`
+end
+
+-- The notice is gone: what it showed needs you no more.
+local function cleared()
+	for _, reminder in notice.shown do
+		core.attention.set(needs_you(reminder), nil)
 	end
 	notice.view, notice.drawn = nil, nil
 	notice.shown = {}
 end
 
+--- Closes the notice.
+function M.dismiss()
+	if notice.view then
+		pcall(notice.view.close, notice.view)
+	end
+	cleared()
+end
+
 -- Closed some other way, it's dismissed too.
 greed.on("view.closed", function(event: greed.ViewClosed)
 	if notice.view and notice.view:id() == event.view then
-		notice.view, notice.drawn = nil, nil
-		notice.shown = {}
+		cleared()
 	end
 end)
 
@@ -231,6 +246,10 @@ function M.notify(reminders: { Reminder })
 	for _, reminder in reminders do
 		table.insert(notice.shown, reminder)
 		table.insert(bodies, reminder.text)
+		core.attention.set(
+			needs_you(reminder),
+			{ label = "Reminder", reason = reminder.text, tell = true }
+		)
 	end
 	draw()
 	local title = if #reminders == 1 then "Reminder" else `{#reminders} reminders`
@@ -262,15 +281,42 @@ function M.reminds_yours(current: string?, running: { string }): boolean
 	return true
 end
 
+-- The service whose owner does what happens once for all sessions, once a
+-- plugin said so (Hoard does).
+local once: string? = nil
+
+--- Says the owner of the service `name` sets off reminders in your own
+--- notes and does what else should happen once for all sessions, rather
+--- than the first session by name. It goes with the plugin that said so.
+function M.once_in(name: string)
+	once = name
+	greed.plugin.cleanup(function()
+		if once == name then
+			once = nil
+		end
+	end)
+end
+
 --- Whether this session sets off reminders in your own notes, and does
 --- the other things that should happen once for all sessions (the agent's
 --- scheduled jobs).
 function M.yours_here(): boolean
+	if once then
+		return services.owner(once)
+	end
+	local current = greed.session.current()
 	local running = {}
 	for _, session in greed.session.list() do
-		table.insert(running, session.name)
+		-- A service's session has its own work, never this.
+		if session.service then
+			if session.name == current then
+				return false
+			end
+		else
+			table.insert(running, session.name)
+		end
 	end
-	return M.reminds_yours(greed.session.current(), running)
+	return M.reminds_yours(current, running)
 end
 
 --- Looks for reminders that came due and haven't gone off, and tells you
