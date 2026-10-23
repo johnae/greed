@@ -486,6 +486,8 @@ test("enter on a file fetches and opens it; :chat-attach sends one", function(t)
 			return { path = dir .. "/notes.txt" }
 		end,
 		upload = function(params: any)
+			-- What the service would send, read while it's there.
+			params.text = greed.fs.read(params.path)
 			table.insert(asked, { method = "upload", params = params })
 			return nil
 		end,
@@ -493,6 +495,9 @@ test("enter on a file fetches and opens it; :chat-attach sends one", function(t)
 			return nil
 		end,
 	})
+	-- Small pieces, so both files go in several.
+	local piece = backend.PIECE
+	backend.PIECE = 5
 	local room = on_message(t, "$5")
 	local text = room:text()
 	assert(string.find(text, "📄 notes.txt", 1, true), text)
@@ -511,7 +516,11 @@ test("enter on a file fetches and opens it; :chat-attach sends one", function(t)
 	t:run("chat-attach", { dir .. "/beds.txt" })
 	t:wait(50)
 	local sent = calls("upload")
-	assert(#sent == 1 and sent[1].path == dir .. "/beds.txt", greed.json.encode(asked))
+	-- It goes to the owner as data, and the service sends the owner's copy.
+	assert(#sent == 1 and sent[1].text == "beans\n", greed.json.encode(asked))
+	assert(string.find(sent[1].path, "-beds.txt$") ~= nil, sent[1].path)
+	assert(greed.fs.stat(sent[1].path) == nil, "the copy goes once it's sent")
+	backend.PIECE = piece
 end)
 
 test("a browser sign-in finishes with the link :chat-link hands over", function(t)

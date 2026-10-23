@@ -304,10 +304,43 @@ local function keep(service: string, account: string, secret: string?)
 	end
 end
 
+-- Where the owner notes which accounts it has, by "service id", without
+-- their secrets: every session can tell from it whether to start the
+-- owner with Greed, without reading the keyring.
+local function accounts_file(): string?
+	local data = greed.fs.dirs().data
+	return if data then `{data}/chat/accounts.json` else nil
+end
+
+-- The accounts the owner noted it has.
+local function noted(): { [string]: boolean }
+	local file = accounts_file()
+	local text = if file then greed.fs.read(file) else nil
+	local decoded = if text then greed.json.decode(text) else nil
+	return if type(decoded) == "table" then decoded else {}
+end
+
+-- Notes that the owner has account `key`, or not.
+local function note(key: string, has: boolean)
+	local file = accounts_file()
+	local accounts = noted()
+	if file == nil or (accounts[key] == true) == has then
+		return
+	end
+	if has then
+		accounts[key] = true
+	else
+		accounts[key] = nil
+	end
+	greed.fs.write(file, greed.json.encode(accounts))
+end
+
 local function took(service: string, account: any)
 	local taken: Account = account
 	taken.service = service
-	owned[`{service} {taken.id}`] = taken
+	local key = `{service} {taken.id}`
+	owned[key] = taken
+	note(key, true)
 	tell("account.changed", { service = service, params = taken })
 end
 
@@ -443,6 +476,7 @@ local function owner_logout(key: string): (any, string?)
 	end
 	keep(account.service, account.id, nil)
 	owned[key] = nil
+	note(key, false)
 	tell("account.gone", { key = key })
 	return true, why
 end
@@ -464,11 +498,86 @@ function M.alerted(account: string, alert: Alert)
 	tell("alerted", { account = account, alert = alert })
 end
 
+-- How much of a file one request carries, in bytes: files go between the
+-- owner and views as data in pieces, never as a path on the owner's
+-- machine.
+M.PIECE = 512 * 1024
+
+-- Files fetched for views to read in pieces, and files views are sending
+-- in pieces, by handle.
+local held: { [string]: string } = {}
+local coming: { [string]: { string } } = {}
+
+-- The file a message carries, fetched by its service, held for a view to
+-- read: its handle and size.
+local function media_open(service: string, params: any, session: string): (any, string?)
+	local got, why = owner_ask(service, "media.get", params, session)
+	if got == nil then
+		return nil, why
+	end
+	local bytes, trouble = greed.fs.read_bytes(got.path)
+	if bytes == nil then
+		return nil, trouble
+	end
+	local handle = greed.hash.random(8)
+	held[handle] = bytes
+	return { handle = handle, size = #bytes }
+end
+
+-- The piece of held file `handle` from byte `from`; the last one lets it go.
+local function media_read(handle: string, from: number): (any, string?)
+	local bytes = held[handle]
+	if bytes == nil then
+		return nil, "that file isn't held any more"
+	end
+	if from + M.PIECE >= #bytes then
+		held[handle] = nil
+	end
+	return { data = greed.base64.encode(string.sub(bytes, from + 1, from + M.PIECE)) }
+end
+
+-- A piece of a file a view sends; with the last, it's written here and
+-- uploaded by `service` as `params` say, and goes once that's done.
+local function media_put(params: any, session: string): (any, string?)
+	local pieces = coming[params.handle] or {}
+	coming[params.handle] = pieces
+	local piece = greed.base64.decode(params.data)
+	if piece == nil then
+		coming[params.handle] = nil
+		return nil, "a piece of the file came garbled"
+	end
+	table.insert(pieces, piece)
+	if not params.last then
+		return true
+	end
+	coming[params.handle] = nil
+	local cache = greed.fs.dirs().cache
+	if cache == nil then
+		return nil, "there's no cache folder to keep the file in while it's sent"
+	end
+	local path = `{cache}/chat/sending/{params.handle}-{params.name}`
+	local wrote, why = greed.fs.write(path, table.concat(pieces), { private = true })
+	if not wrote then
+		return nil, why
+	end
+	local upload: { [string]: any } = table.clone(params.params)
+	upload.path = path
+	local result, trouble = owner_ask(params.service, "upload", upload, session)
+	greed.fs.remove(path)
+	return result, trouble
+end
+
 -- What the owner answers views.
 local function handle(method: string, params: any, caller: services.Caller): (any, string?)
 	local session = caller.session or ""
 	if method == "ask" then
 		return owner_ask(params.service, params.method, params.params, session)
+	elseif method == "media.open" then
+		return media_open(params.service, params.params, session)
+	elseif method == "media.read" then
+		return media_read(params.handle, params.from)
+	elseif method == "media.put" then
+		return media_put(params, session)
 	elseif method == "accounts" then
 		local accounts: { Account } = {}
 		for _, account in owned do
@@ -511,14 +620,9 @@ local function start_kept()
 	end
 end
 
--- Whether any service has accounts kept: then the owner starts with Greed.
+-- Whether the owner has accounts: then it starts with Greed.
 local function any_kept(): boolean
-	for _, service in M.SERVICES do
-		if next(kept(service)) ~= nil then
-			return true
-		end
-	end
-	return false
+	return next(noted()) ~= nil
 end
 
 services.define({ name = "chat", start = any_kept })
@@ -655,6 +759,56 @@ end
 --- session whose sign-in waits for it.
 function M.pass_link(link: string): (any, string?)
 	return view:request("link", { link = link })
+end
+
+--- The bytes of the file a message carries (`params`: account, room,
+--- event, thumbnail), fetched by `service` through the owner in pieces, or
+--- nil and why. Waits.
+function M.media(service: string, params: any): (string?, string?)
+	local opened, why = view:request("media.open", { service = service, params = params })
+	if opened == nil then
+		return nil, why
+	end
+	local pieces: { string } = {}
+	local from = 0
+	while from < opened.size do
+		local got, trouble = view:request("media.read", { handle = opened.handle, from = from })
+		local piece = if got then greed.base64.decode(got.data) else nil
+		if piece == nil then
+			return nil, trouble or "a piece of the file came garbled"
+		end
+		table.insert(pieces, piece :: string)
+		from += M.PIECE
+	end
+	return table.concat(pieces), nil
+end
+
+--- Sends the file at `path` here to a room through `service` (`params`:
+--- account, room, thread), in pieces through the owner: its result, or nil
+--- and why. Waits.
+function M.upload(service: string, params: any, path: string): (any, string?)
+	local bytes, why = greed.fs.read_bytes(path)
+	if bytes == nil then
+		return nil, why
+	end
+	local handle = greed.hash.random(8)
+	local name = string.match(path, "([^/]+)$") or "file"
+	local from = 0
+	repeat
+		local last = from + M.PIECE >= #bytes
+		local result, trouble = view:request("media.put", {
+			handle = handle,
+			data = greed.base64.encode(string.sub(bytes, from + 1, from + M.PIECE)),
+			last = last,
+			service = service,
+			params = params,
+			name = name,
+		})
+		if last or result == nil then
+			return result, trouble
+		end
+		from += M.PIECE
+	until false
 end
 
 --- Puts `fake` in `service`'s place, for tests: its methods answer by

@@ -178,15 +178,27 @@ function M.attachment_spans(item: backend.Item): { core.UiSpan }
 	return spans
 end
 
--- Asks `r`'s service `method`, with the room (and thread) and `extra`.
-local function ask(r: Open, method: string, extra: { [string]: any }?): (any, string?)
+-- `r`'s service, and the room (and thread) with `extra` for its methods.
+local function addressed(r: Open, extra: { [string]: any }?): (string, { [string]: any })
 	local service, id = backend.split(r.account)
 	local params: { [string]: any } = { account = id, room = r.room, thread = r.thread }
 	local more: { [string]: any } = extra or {}
 	for name, value in more do
 		params[name] = value
 	end
+	return service, params
+end
+
+-- Asks `r`'s service `method`, with the room (and thread) and `extra`.
+local function ask(r: Open, method: string, extra: { [string]: any }?): (any, string?)
+	local service, params = addressed(r, extra)
 	return backend.ask(service, method, params)
+end
+
+-- The bytes of the file a message in `r` carries, as `extra` says which.
+local function carried(r: Open, extra: { [string]: any }): (string?, string?)
+	local service, params = addressed(r, extra)
+	return backend.media(service, params)
 end
 
 -- Small pictures of what messages carry, by "account room event": the
@@ -208,8 +220,8 @@ local function picture(r: Open, item: backend.Item): core.UiNode?
 	if known == nil then
 		thumbnails[key] = {}
 		greed.spawn(function()
-			local got = ask(r, "media.get", { event = item.event, thumbnail = true })
-			local image = if got then greed.image.load(got.path) else nil
+			local bytes = carried(r, { event = item.event, thumbnail = true })
+			local image = if bytes then greed.image.decode(bytes) else nil
 			thumbnails[key] = { image = image }
 			if image and r.buffer:valid() then
 				r.view:soon()
@@ -1082,16 +1094,26 @@ greed.command({
 	end),
 })
 
--- Fetches the file `item` carries, then gives `done` its local path.
+-- Fetches the file `item` carries into this session's cache, then gives
+-- `done` its path there.
 local function fetch(r: Open, item: backend.Item, done: (path: string) -> ())
 	greed.echo("fetching it…")
 	greed.spawn(function()
-		local got, why = ask(r, "media.get", { event = item.event })
-		if got == nil then
-			greed.echo(`chat: {why}`)
+		local bytes, why = carried(r, { event = item.event })
+		local cache = greed.fs.dirs().cache
+		if bytes == nil or cache == nil then
+			greed.echo(`chat: {why or "there's no cache folder to keep it in"}`)
 			return
 		end
-		done(got.path)
+		local name = if item.media then item.media.name else "file"
+		local event = string.gsub(item.event or "", "[^%w]", "")
+		local path = `{cache}/chat/files/{event}-{name}`
+		local wrote, trouble = greed.fs.write(path, bytes, { private = true })
+		if not wrote then
+			greed.echo(`chat: {trouble}`)
+			return
+		end
+		done(path)
 	end)
 end
 
@@ -1235,7 +1257,8 @@ greed.command({
 		if path == nil or path == "" then
 			return
 		end
-		local _, why = ask(r, "upload", { path = core.project.resolve(path) })
+		local service, params = addressed(r)
+		local _, why = backend.upload(service, params, core.project.resolve(path))
 		greed.echo(if why then `chat: {why}` else "sent")
 	end,
 })

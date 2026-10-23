@@ -1,6 +1,7 @@
 name = "chat"
 requires = ["core", "picker", "markdown", "panes", "service"]
 # It runs greed-matrix and greed-mattermost, which keep your chat accounts
-# connected (proc), looking for them beside greed (fs.read), and keeps
-# their sign-ins in the keyring (secrets).
-capabilities = ["proc", "fs.read", "secrets"]
+# connected (proc), looking for them beside greed (fs.read), keeps their
+# sign-ins in the keyring (secrets), and keeps the files messages carry in
+# its cache folder to open them, and those you send while they go (fs.write).
+capabilities = ["proc", "fs.read", "fs.write", "secrets"]
