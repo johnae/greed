@@ -12,7 +12,7 @@ use async_imap::imap_proto::NameAttribute;
 use async_imap::types::{Capability, Flag};
 use async_imap::{Client, Session};
 use futures::TryStreamExt;
-use rustls_platform_verifier::ConfigVerifierExt;
+use rustls_platform_verifier::BuilderVerifierExt;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -690,14 +690,24 @@ async fn greeting<T: Wire>(client: &mut Client<T>) -> Result<(), Trouble> {
     Ok(())
 }
 
-/// `tcp` encrypted for `host`, its certificate checked as the system checks
-/// one.
+/// How connections are encrypted: certificates checked as the system checks
+/// them, with ring's crypto named rather than left to rustls to pick, which
+/// it can't when a build has two (the chat programs bring aws-lc-rs).
+fn tls_config() -> Result<ClientConfig, Trouble> {
+    let provider = Arc::new(tokio_rustls::rustls::crypto::ring::default_provider());
+    let builder = ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .and_then(BuilderVerifierExt::with_platform_verifier)
+        .map_err(|e| Trouble(format!("setting up TLS: {e}")))?;
+    Ok(builder.with_no_client_auth())
+}
+
+/// `tcp` encrypted for `host`.
 async fn encrypt(
     tcp: TcpStream,
     host: &str,
 ) -> Result<tokio_rustls::client::TlsStream<TcpStream>, Trouble> {
-    let config = ClientConfig::with_platform_verifier()
-        .map_err(|e| Trouble(format!("setting up TLS: {e}")))?;
+    let config = tls_config()?;
     let name = ServerName::try_from(host.to_string())
         .map_err(|_| Trouble(format!("{host} isn't a host name")))?;
     TlsConnector::from(Arc::new(config))
@@ -709,6 +719,13 @@ async fn encrypt(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tls_is_set_up_whichever_crypto_the_build_has() {
+        // `cargo test --workspace` builds rustls with both ring and
+        // aws-lc-rs, where rustls's own pick panics.
+        assert!(tls_config().is_ok());
+    }
 
     #[test]
     fn recent_is_never_kept_as_a_flag() {

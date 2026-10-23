@@ -14,6 +14,22 @@ use crate::rpc::{self, Notifier, Service};
 /// Runs the program for `service`, made by `make` with its data folder.
 pub fn main<S: Service>(service: &str, make: impl FnOnce(PathBuf, Notifier) -> Rc<S>) -> ExitCode {
     let program = format!("greed-{service}");
+    // A panic ends it at once, said as its other troubles are: unwinding
+    // would wait for the thread reading its input, and it would hang on,
+    // answering nothing.
+    let panicked = std::panic::take_hook();
+    let named = program.clone();
+    std::panic::set_hook(Box::new(move |info| {
+        panicked(info);
+        let payload = info.payload();
+        let what = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("it panicked");
+        eprintln!("{named}: {what}");
+        std::process::exit(101);
+    }));
     let usage = format!("usage: {program} serve [--data DIR]");
     let fail = |message: &str| {
         eprintln!("{program}: {message}");

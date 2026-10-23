@@ -26,7 +26,26 @@ use greed_mail::{indexing, serve};
 const USAGE: &str =
     "usage: greed-mail [--config FILE] [--store DIR] [--limit N] (check | sync | serve) [ACCOUNT]";
 
+/// Makes a panic end it at once, said as its other troubles are: unwinding
+/// would wait for the thread reading its input, and it would hang on,
+/// answering nothing.
+fn end_on_panic() {
+    let panicked = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        panicked(info);
+        let payload = info.payload();
+        let what = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("it panicked");
+        eprintln!("greed-mail: {what}");
+        std::process::exit(101);
+    }));
+}
+
 fn main() -> ExitCode {
+    end_on_panic();
     let mut args = std::env::args().skip(1);
     let mut path: Option<PathBuf> = None;
     let mut store_dir: Option<PathBuf> = None;
