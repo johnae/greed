@@ -74,6 +74,8 @@ M.source = {
 	places = "tag",
 	stored = FLAGS,
 } :: core.QuerySource
+-- The owner runs what's searched with it.
+backend.source = M.source
 
 --- The searches kept to go back to, shown over the list with how many
 --- unread messages each finds; `tab` and `alt-1` to `alt-9` go to them. Set them in your
@@ -160,18 +162,13 @@ end
 --- The keys of the messages `parsed` finds, newest first unless it sorts
 --- otherwise, from the index alone; or nil and why.
 function M.found(parsed: core.Query): ({ string }?, string?)
-	local index, err = backend.get().index()
-	if index == nil then
-		return nil, err
-	end
 	local asked = table.clone(parsed)
 	asked.view = table.clone(parsed.view)
 	if #asked.view.sort == 0 then
 		asked.view.sort = { { field = "date", descending = true } }
 	end
 	asked.view.limit = asked.view.limit or LIMIT
-	local keys, _, trouble = core.query.search(index, asked, M.source)
-	return keys, trouble
+	return backend.get().search(asked)
 end
 
 --- The messages `parsed` finds, newest first unless it sorts otherwise,

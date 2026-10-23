@@ -1,10 +1,9 @@
 -- What the mail view asks for its mail, through the `mail` service
 -- (`@service`). Its owner, in the mail service's session, runs `greed-mail
--- serve` over JSON-RPC, which syncs in the background and keeps an index
--- the views search themselves; views in every session ask the owner where
--- that is, what a list shows of what the search found, and a thread's
--- messages, and hear from it what greed-mail says. Tests put a fake in its
--- place (`use`).
+-- serve` over JSON-RPC, which syncs in the background and keeps an index,
+-- and searches it; views in every session ask the owner what a search
+-- finds, what a list shows of it, and a thread's messages, and hear from it
+-- what greed-mail says. Tests put a fake in its place (`use`).
 
 local greed = require("@greed")
 local core = require("@core")
@@ -123,8 +122,9 @@ export type Account = {
 
 --- What the view needs from wherever its mail comes from.
 export type Backend = {
-	--- The index to search, or nil and why.
-	index: () -> (greed.Index?, string?),
+	--- The keys of the messages `parsed` finds, sorted and cut as its view
+	--- says, or nil and why.
+	search: (parsed: core.Query) -> ({ string }?, string?),
 	--- What a list shows of the messages with `keys`, in that order.
 	summaries: (keys: { string }) -> ({ Summary }?, string?),
 	--- The thread `key` names, or the one message `key` is in.
@@ -285,8 +285,8 @@ local awaiting: { [string]: greed.Signal } = {}
 -- How long an attachment may take to come.
 local PATIENCE = 120 * 1000
 
--- The owner's greed-mail, once it's started, and this session's view of
--- the index it keeps.
+-- The owner's greed-mail, once it's started, and the index it keeps,
+-- searched here.
 local connection: greed.RpcConnection? = nil
 local opened: greed.Index? = nil
 local offer: services.Offer? = nil
@@ -377,6 +377,38 @@ local function owner_ask(method: string, params: any): (any, string?)
 	return result
 end
 
+--- What a search's fields and flags mean (the mail plugin's), for the
+--- owner to run what views ask it to find.
+M.source = nil :: core.QuerySource?
+
+-- In the owner's session: the keys of the messages `parsed` finds in
+-- greed-mail's index, or nil and why. Views never open the index: what
+-- they search goes to the owner as data.
+local function owner_search(parsed: core.Query): ({ string }?, string?)
+	if opened == nil then
+		local found, err = owner_ask("index", {})
+		if found == nil then
+			return nil, err
+		end
+		local index, trouble = greed.index.open(found.path)
+		if index == nil then
+			-- Made by an older greed-mail: the mail service makes it again.
+			if string.find(trouble or "", "another Greed", 1, true) then
+				return nil,
+					"your mail is being indexed again for this version of Greed: it shows once that's done"
+			end
+			return nil, trouble
+		end
+		opened = index
+	end
+	local source = M.source
+	if source == nil then
+		return nil, "mail can't search yet"
+	end
+	local keys, _, trouble = core.query.search(opened :: greed.Index, parsed, source)
+	return keys, trouble
+end
+
 -- Whether there's mail to sync: then its owner starts with Greed.
 local function configured(): boolean
 	local config = greed.fs.dirs().config
@@ -389,10 +421,12 @@ if services.owner("mail") then
 	offer = services.offer("mail", {
 		version = 1,
 		handle = function(method: string, params: any): (any, string?)
-			if method ~= "ask" then
-				return nil, `mail has no {method}`
+			if method == "ask" then
+				return owner_ask(params.method, params.params)
+			elseif method == "search" then
+				return owner_search(params.parsed)
 			end
-			return owner_ask(params.method, params.params)
+			return nil, `mail has no {method}`
 		end,
 	})
 end
@@ -410,11 +444,8 @@ local view = services.use("mail", {
 		"attachment",
 	},
 	on = heard,
-	-- The owner started again: its greed-mail may have made the index anew.
-	reset = function()
-		opened = nil
-		changed()
-	end,
+	-- The owner started again: what was found may have changed.
+	reset = changed,
 })
 
 -- The result of greed-mail's request `method`, through the owner, or nil
@@ -425,22 +456,8 @@ end
 
 --- greed-mail.
 M.served = {
-	index = function(): (greed.Index?, string?)
-		if opened then
-			return opened, nil
-		end
-		local found, err = ask("index", {})
-		if found == nil then
-			return nil, err
-		end
-		local index, trouble = greed.index.open(found.path)
-		opened = index
-		-- Made by an older greed-mail: the mail service makes it again.
-		if index == nil and string.find(trouble or "", "another Greed", 1, true) then
-			trouble =
-				"your mail is being indexed again for this version of Greed: it shows once that's done"
-		end
-		return index, trouble
+	search = function(parsed: core.Query): ({ string }?, string?)
+		return view:request("search", { parsed = parsed })
 	end,
 	summaries = function(keys: { string }): ({ Summary }?, string?)
 		return ask("summaries", { keys = keys })

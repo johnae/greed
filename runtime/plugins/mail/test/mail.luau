@@ -198,8 +198,9 @@ local function fake()
 	responded = {}
 	local changed: () -> () = function() end
 	changed = mail.backend.use({
-		index = function(): (any, string?)
-			return index
+		search = function(parsed: core.Query): ({ string }?, string?)
+			local keys, _, why = core.query.search(index :: any, parsed, mail.source)
+			return keys, why
 		end,
 		summaries = function(keys: { string }): (any, string?)
 			local out = {}
@@ -811,17 +812,56 @@ test("a greed-mail that speaks another protocol, or none, says what to rebuild",
 	mail.backend.use(nil)
 	local ok, err: any = pcall(function()
 		greed.option.set("mail-program", other)
-		local _, said = mail.backend.get().index()
+		local inbox = assert(mail.query("in:inbox"))
+		local _, said = mail.backend.get().search(inbox)
 		assert(string.find(said or "", "speaks mail protocol 99", 1, true), tostring(said))
 		assert(string.find(said or "", "it's newer", 1, true), tostring(said))
 		greed.option.set("mail-program", old)
-		_, said = mail.backend.get().index()
+		_, said = mail.backend.get().search(inbox)
 		assert(string.find(said or "", "older than this Greed", 1, true), tostring(said))
 		assert(string.find(said or "", "no method hello", 1, true), "why: " .. tostring(said))
 	end)
 	greed.option.set("mail-program", "")
 	fake()
 	assert(ok, tostring(err))
+end)
+
+test("the owner searches greed-mail's index; what a view gets is the keys", function(t)
+	local dir = t:tempdir()
+	-- A greed-mail that says where its index is, which a test wrote.
+	local program = `{dir}/greed-mail`
+	local script = [[#!/bin/sh
+while read line; do
+	id=$(printf '%s' "$line" | sed 's/.*"id":\([0-9]*\).*/\1/')
+	case "$line" in
+	*'"hello"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"protocol":1}}\n' "$id" ;;
+	*'"index"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"path":"INDEX"}}\n' "$id" ;;
+	esac
+done
+]]
+	greed.fs.write(program, (string.gsub(script, "INDEX", `{dir}/index.db`)))
+	greed.process.run({ "chmod", "+x", program })
+	local found: { string }? = nil
+	local why: string? = nil
+	local done = false
+	greed.spawn(function()
+		local index = assert(greed.index.writer(`{dir}/index.db`))
+		assert(index:write({
+			{ key = "m:1", text = "plots", fields = { from = "Bea", tag = { "INBOX" } } },
+			{ key = "m:2", text = "rent", fields = { from = "Cal", tag = { "INBOX" } } },
+		} :: any))
+		mail.backend.use(nil)
+		greed.option.set("mail-program", program)
+		local bea = assert(mail.query("from:bea"))
+		found, why = mail.backend.get().search(bea)
+		done = true
+	end)
+	t:wait_for(function(): boolean
+		return done
+	end)
+	greed.option.set("mail-program", "")
+	fake()
+	assert(found and #found == 1 and found[1] == "m:1", `{greed.json.encode(found)} {why}`)
 end)
 
 test("a reads a reply to all; c writes new mail from To", function(t)
