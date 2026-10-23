@@ -322,8 +322,20 @@ function M.program(): string
 	return core.file.companion("mail-program", "greed-mail")
 end
 
--- In the owner's session: greed-mail, started if it isn't running.
-local function served(): (greed.RpcConnection?, string?)
+-- Why greed-mail at `rpc` didn't answer: what it said as it went, when it
+-- went, else `trouble`.
+local function gone_why(rpc: greed.RpcConnection, trouble: string): string
+	if rpc:alive() then
+		return trouble
+	end
+	local said = string.match(rpc:stderr(), "greed%-mail: (.-)%s*$")
+	return said or `greed-mail: {trouble}`
+end
+
+-- In the owner's session: greed-mail, started if it isn't running. What
+-- asks while it starts waits for that one: a second would find the store
+-- taken and stop.
+local served = core.joined(function(): (greed.RpcConnection?, string?)
 	if connection and connection:alive() then
 		return connection, nil
 	end
@@ -346,7 +358,11 @@ local function served(): (greed.RpcConnection?, string?)
 	local hello, trouble = started:request("hello", {})
 	local speaks = if type(hello) == "table" then hello.protocol else nil
 	if speaks ~= M.PROTOCOL then
+		local gone = if started:alive() then nil else gone_why(started, trouble or "it exited")
 		started:close()
+		if gone then
+			return nil, gone
+		end
 		if speaks == nil then
 			return nil,
 				`{program} is older than this Greed ({trouble or "it doesn't say which protocol it speaks"}): rebuild or update it, or :set mail-program to the one beside greed`
@@ -358,22 +374,19 @@ local function served(): (greed.RpcConnection?, string?)
 	connection = started
 	opened = nil
 	return started, nil
-end
+end)
 
 -- In the owner's session: the result of greed-mail's request `method`, or
 -- nil and why.
 local function owner_ask(method: string, params: any): (any, string?)
-	local rpc, err = served()
+	local rpc, err = served("")
 	if rpc == nil then
 		return nil, err
 	end
 	local result, trouble = rpc:request(method, params)
-	if trouble then
-		-- Gone, it said why as it went.
-		local said = if rpc:alive()
-			then trouble
-			else string.match(rpc:stderr(), "greed%-mail: (.-)%s*$")
-		return nil, said or `greed-mail: {trouble}`
+	if trouble ~= nil then
+		local said: string = trouble
+		return nil, gone_why(rpc, said)
 	end
 	return result
 end

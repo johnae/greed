@@ -390,8 +390,9 @@ local function heard(service: string, method: string, params: any)
 end
 
 --- In the owner's session: `service`, started and its accounts restored if
---- it isn't running, or nil and why.
-local function started(service: string): (Service?, string?)
+--- it isn't running, or nil and why. What asks while it starts waits for
+--- that one, so its store has one program writing it.
+local started = core.joined(function(service: string): (Service?, string?)
 	local found = running[service]
 	if found then
 		return found, nil
@@ -440,7 +441,7 @@ local function started(service: string): (Service?, string?)
 		end
 	end
 	return wrapped, nil
-end
+end)
 
 -- Asks `service` for `method` for the session `session`: a timeline stays
 -- open while any session has it open, and a sign-in's secret stays here.

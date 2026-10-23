@@ -1589,3 +1589,80 @@ test("search everywhere finds mail with in:mail, newest first", function(t)
 	local said = table.concat(labels, " | ")
 	assert(said == "mail:Anna Berg: Invoice 41 | mail:Bob: Garden plans", said)
 end)
+
+test("whether mail starts with Greed is checked as mail, with mail's capabilities", function()
+	local service = require("@service")
+	local config = assert(greed.fs.dirs().config)
+	greed.fs.write(`{config}/mail.toml`, "")
+	assert(service.starts_with_greed("mail"), "it starts once mail.toml is there")
+	greed.fs.remove(`{config}/mail.toml`)
+	assert(not service.starts_with_greed("mail"), "and not without one")
+end)
+
+-- A greed-mail at `dir` that notes each start in `dir`/starts and answers
+-- hello after `delay`; `say` it says on stderr and stops at once instead.
+local function slow_mail(dir: string, delay: string, say: string?): string
+	local program = `{dir}/greed-mail`
+	local body = if say
+		then `echo "greed-mail: {say}" >&2\nexit 1\n`
+		else [[
+sleep DELAY
+while read line; do
+	id=$(printf '%s' "$line" | sed 's/.*"id":\([0-9]*\).*/\1/')
+	case "$line" in
+	*'"hello"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"protocol":1}}\n' "$id" ;;
+	*) printf '{"jsonrpc":"2.0","id":%s,"result":[]}\n' "$id" ;;
+	esac
+done
+]]
+	local script = `#!/bin/sh\necho started >> {dir}/starts\n{body}`
+	greed.fs.write(program, (string.gsub(script, "DELAY", delay)))
+	greed.process.run({ "chmod", "+x", program })
+	return program
+end
+
+test("what's asked while greed-mail starts waits for that one", function(t)
+	local dir = t:tempdir()
+	local program = slow_mail(dir, "0.5")
+	local answered = 0
+	greed.spawn(function()
+		mail.backend.use(nil)
+		greed.option.set("mail-program", program)
+		for _ = 1, 3 do
+			greed.spawn(function()
+				local accounts = mail.backend.get().accounts()
+				assert(#accounts == 0, greed.json.encode(accounts))
+				answered += 1
+			end)
+		end
+	end)
+	t:wait_for(function(): boolean
+		return answered == 3
+	end)
+	greed.option.set("mail-program", "")
+	fake()
+	local starts = greed.fs.read(`{dir}/starts`) or ""
+	assert(starts == "started\n", "started once: " .. starts)
+end)
+
+test("a greed-mail that stops at once says why, as it said", function(t)
+	local dir = t:tempdir()
+	local program = slow_mail(dir, "0", "the store is in use by greed-mail 4242")
+	local why: string? = nil
+	local done = false
+	greed.spawn(function()
+		mail.backend.use(nil)
+		greed.option.set("mail-program", program)
+		local inbox = assert(mail.query("tag:inbox"))
+		local found
+		found, why = mail.backend.get().search(inbox)
+		assert(found == nil, "nothing found")
+		done = true
+	end)
+	t:wait_for(function(): boolean
+		return done
+	end)
+	greed.option.set("mail-program", "")
+	fake()
+	assert(why == "the store is in use by greed-mail 4242", why)
+end)

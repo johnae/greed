@@ -183,6 +183,13 @@ function M.define(definition: Definition)
 			2
 		)
 	end
+	local start = definition.start
+	if type(start) == "function" then
+		-- Run later from here, it checks with the defining plugin's
+		-- capabilities, as `handle` does.
+		definition = table.clone(definition)
+		definition.start = greed.plugin.handler(start)
+	end
 	local entry: Defined = { definition = definition, plugin = nil }
 	entry.plugin = greed.plugin.cleanup(registry.set(defined, definition.name, entry))
 end
@@ -639,16 +646,21 @@ greed.on("control.closed", function(event: greed.ControlClosed)
 	M.closed(event.connection)
 end)
 
+--- Whether `name`'s owner starts with Greed, as its definition says.
+function M.starts_with_greed(name: string): boolean
+	local entry = defined[name]
+	local start = if entry then entry.definition.start else nil
+	return start == "always" or (type(start) == "function" and start())
+end
+
 -- Owners that start with Greed, from any session but a service's.
 greed.on("editor.started", function()
 	local here = M.session()
 	if not here or string.find(here, "%.service$") then
 		return
 	end
-	for name, entry in defined do
-		local start = entry.definition.start
-		local now = start == "always" or (type(start) == "function" and start())
-		if now then
+	for name in defined do
+		if M.starts_with_greed(name) then
 			greed.spawn(M.start, M.session_of(name))
 		end
 	end

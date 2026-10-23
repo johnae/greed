@@ -225,6 +225,8 @@ return {
 	registry = require("@self/registry"),
 	--- Runs a few changes with no frame drawn in between (atomic.luau).
 	atomic = require("@self/atomic"),
+	--- A function whose calls at once with the same key share one run (joined.luau).
+	joined = require("@self/joined"),
 	--- Times and durations as Greed writes and reads them (time.luau).
 	time = require("@self/time"),
 	--- Dates: moving them on, repeats, and reading them in plain words

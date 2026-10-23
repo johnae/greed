@@ -1249,7 +1249,10 @@ view, to put a label on its border, and its `kind` option gives the prompt
 keys of its own, the way the vscode style's find bar binds `enter` to the
 next match.
 
-`greed.signal()` lets one piece of code wait for a value another sends.
+`greed.signal()` lets one piece of code wait for a value another sends,
+one waiter each. `core.joined(f)` makes `f(key)` run once for calls that
+come at the same time with the same key: the others wait and get what it
+gave, so a program several ask for at once starts once.
 `greed.animate(ms, step)` calls `step(t)` once a frame; the flash on copy
 is built on it. `greed.fs.watch(path)` makes a "file.changed" event come
 whenever that file changes, from anywhere; it's how your config reloads.
