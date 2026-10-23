@@ -205,8 +205,10 @@ local function items(): { picker.Item }
 	end
 	for _, s in greed.session.list() do
 		if not s.current then
-			local label =
-				`{if s.root then core.project.tilde(s.root) else s.name}  (goes to session {s.name})`
+			-- A service's folder is its own, nothing you'd look for.
+			local label = if s.service
+				then `{s.service}  (service, goes to its session)`
+				else `{if s.root then core.project.tilde(s.root) else s.name}  (goes to session {s.name})`
 			add(s.root, label, { session = s.name, root = s.root })
 		end
 	end

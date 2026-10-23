@@ -25,7 +25,7 @@ M.review = review
 M.agenda = agenda
 
 --- The session `greed notes` starts.
-M.SESSION = "hoard"
+M.SESSION = "hoard.service"
 
 --- Whether this is Hoard's own session.
 function M.here(): boolean

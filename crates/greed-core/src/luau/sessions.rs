@@ -24,6 +24,7 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             for info in control::sessions().map_err(mlua::Error::external)? {
                 let entry = lua.create_table()?;
                 entry.set("current", current.as_deref() == Some(info.name.as_str()))?;
+                entry.set("service", info.service())?;
                 entry.set("name", info.name)?;
                 entry.set("root", info.root.map(|r| r.to_string_lossy().into_owned()))?;
                 entry.set("build", info.build)?;
@@ -80,11 +81,38 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
         "status",
         jobs::waiting(lua, "greed.session.status", start_status)?,
     )?;
+    let start_session = lua.create_function(|lua, name: String| {
+        Ok(jobs::start(
+            lua,
+            format!("greed.session.start {name:?}"),
+            move || Output::Started(start(&name)),
+        ))
+    })?;
+    session.set(
+        "start",
+        jobs::waiting(lua, "greed.session.start", start_session)?,
+    )?;
     session.set(
         "switch",
         lua.create_function(|lua, spec: Table| switch(lua, &spec))?,
     )?;
     Ok(session)
+}
+
+/// `greed.session.start(name)`: starts the session `name` in the
+/// background unless it's running, and waits until it listens. Two sessions
+/// starting it at once get one: the second can't take the name, and finds
+/// the first listening.
+fn start(name: &str) -> Result<(), String> {
+    let running = control::sessions().map_err(|err| err.to_string())?;
+    if running.iter().any(|info| info.name == name) {
+        return Ok(());
+    }
+    let mut child =
+        crate::starting::spawn_server(name, None, false).map_err(|err| err.to_string())?;
+    // Waited for, so it doesn't linger once it ends.
+    std::thread::spawn(move || child.wait());
+    Ok(())
 }
 
 /// `greed.session.switch(spec)`: asks for the attached client to go where

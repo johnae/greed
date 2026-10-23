@@ -441,11 +441,22 @@ fn session_name(name: Option<&str>) -> Result<String, Box<dyn std::error::Error>
     {
         return Ok(name);
     }
-    match live_sessions()?.as_slice() {
+    only_session(
+        "set GREED_SESSION to pick one (greed ls lists them, with how their agents are doing)",
+    )
+}
+
+/// The session to use when none is named: the only one running, leaving
+/// out services' sessions, which run beside the ones you use. With several,
+/// the error names them and says `pick`, how to choose.
+pub fn only_session(pick: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut names = live_sessions()?;
+    names.retain(|name| control::service_of(name).is_none());
+    match names.as_slice() {
         [only] => Ok(only.clone()),
         [] => Err("no editor is running".into()),
         several => Err(format!(
-            "several editors are running ({}); set GREED_SESSION to pick one (greed ls lists them, with how their agents are doing)",
+            "several editors are running ({}); {pick}",
             several.join(", ")
         )
         .into()),

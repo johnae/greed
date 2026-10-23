@@ -71,6 +71,21 @@ fn plugins_answer_requests_from_the_session_socket() {
 }
 
 #[test]
+fn a_services_session_is_named_apart_from_any_projects() {
+    assert_eq!(control::service_session("chat"), "chat.service");
+    assert_eq!(control::service_of("chat.service"), Some("chat"));
+    assert_eq!(control::service_of("chat"), None);
+    assert_eq!(
+        control::service_of(".service"),
+        None,
+        "no service has no name"
+    );
+    // A project's session name never has a dot, whatever its folder's called.
+    let project = greed_core::project::session_name(std::path::Path::new("/p/chat.service"), &[]);
+    assert_eq!(control::service_of(&project), None, "{project}");
+}
+
+#[test]
 fn connections_need_the_sessions_token() {
     let (conn, socket, _) = start(&name("token"), ECHO);
     let err = Client::connect(&socket, "wrong").err().unwrap();

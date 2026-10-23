@@ -171,7 +171,7 @@ export type Backend = {
 
 --- The session `greed mail` starts, which syncs the mail; others read what
 --- it synced.
-M.SESSION = "mail"
+M.SESSION = "mail.service"
 
 --- Whether this is the mail session.
 function M.here(): boolean

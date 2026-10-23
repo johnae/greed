@@ -542,6 +542,28 @@ pub fn session_files(name: &str) -> (PathBuf, PathBuf) {
     )
 }
 
+/// What a service's session name ends with. A project's session name never
+/// has a dot, so the two never take each other's names.
+const SERVICE: &str = ".service";
+
+/// The service whose owner the session called `name` runs, if it's one.
+pub fn service_of(name: &str) -> Option<&str> {
+    name.strip_suffix(SERVICE)
+        .filter(|service| !service.is_empty())
+}
+
+/// The name of the session the owner of `service` runs in.
+pub fn service_session(service: &str) -> String {
+    format!("{service}{SERVICE}")
+}
+
+/// The folder a service's session works from, in Greed's data folder: its
+/// own, so it's never taken for a project, and a project's `greed` never
+/// finds it.
+pub fn service_root(service: &str) -> Option<PathBuf> {
+    crate::dirs::dir(crate::dirs::Kind::Data).map(|data| data.join("services").join(service))
+}
+
 /// A listening session socket. Dropping it removes the socket and token
 /// files.
 pub struct Session {
@@ -629,6 +651,13 @@ pub struct SessionInfo {
     /// Its process, and the greed it runs, if it said.
     pub pid: Option<u32>,
     pub greed: Option<PathBuf>,
+}
+
+impl SessionInfo {
+    /// The service whose owner it runs, if it's one.
+    pub fn service(&self) -> Option<&str> {
+        service_of(&self.name)
+    }
 }
 
 /// How long asking another session on this machine for its status waits for

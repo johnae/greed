@@ -14,6 +14,7 @@ use greed_core::SwitchTo;
 use greed_core::control::{self, Attachment, Opening};
 use greed_core::project;
 use greed_core::server::{self, Input, Output};
+use greed_core::starting::{AGENT_ENV, log_path, restore_flags, spawn_server};
 use serde_json::{Value, json};
 
 use crate::versions::{self, Choice, Stale};
@@ -21,18 +22,19 @@ use crate::{client, ctl, host, read};
 
 type Error = Box<dyn std::error::Error>;
 
-/// Where a session `greed ssh` started listens for its programs' ssh agent
-/// requests, set by `spawn_server` for `greed serve`.
-const AGENT_ENV: &str = "GREED_AGENT_SOCK";
-
-/// How long `greed` waits for the server it started to listen. It listens
-/// before it loads anything, so this is only long for a loaded machine.
-const STARTUP: Duration = Duration::from_secs(30);
-
 /// `greed serve`: runs the editor with no terminal until something quits it.
+/// A service's session works from a folder of its own, wherever it was
+/// started from.
 pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
     let target = absolute(path)?;
-    let root = project::root_of(&target);
+    let root = match control::service_of(name) {
+        Some(service) => {
+            let root = control::service_root(service).ok_or("no data folder for services")?;
+            std::fs::create_dir_all(&root)?;
+            root
+        }
+        None => project::root_of(&target),
+    };
     // The session works from its project's root, so paths in it are short.
     std::env::set_current_dir(&root)?;
     // A file that isn't there yet opens empty, to be written there.
@@ -90,11 +92,6 @@ pub fn new_name(path: Option<&Path>) -> Result<String, Error> {
     Ok(project::session_name(&root, &names))
 }
 
-/// Where a background session's output goes.
-fn log_path(name: &str) -> PathBuf {
-    control::sessions_dir().join(format!("{name}.log"))
-}
-
 /// `greed attach`: shows the session called `name` (or the only one running)
 /// in this terminal until it quits or lets this terminal go.
 pub fn attach(name: Option<&str>) -> Result<(), Error> {
@@ -103,15 +100,7 @@ pub fn attach(name: Option<&str>) -> Result<(), Error> {
         .or_else(|| std::env::var("GREED_SESSION").ok())
     {
         Some(name) => name,
-        None => match ctl::live_sessions()?.as_slice() {
-            [only] => only.clone(),
-            [] => return Err("no editor is running".into()),
-            several => {
-                return Err(
-                    format!("several are running ({}); name one", several.join(", ")).into(),
-                );
-            }
-        },
+        None => ctl::only_session("name one")?,
     };
     if inside().as_deref() == Some(name.as_str()) {
         return Err(format!(
@@ -729,84 +718,6 @@ fn answer_here(
         }
         other => Some(other),
     }
-}
-
-/// `--fresh` and `--restore` as this greed was given them (or, for
-/// `--restore`, an upgrade asked), for a greed it starts a session with.
-fn restore_flags() -> impl Iterator<Item = &'static str> {
-    [
-        control::fresh().then_some("--fresh"),
-        control::restore().then_some("--restore"),
-    ]
-    .into_iter()
-    .flatten()
-}
-
-/// Starts `greed serve` for the session called `name` in the background, its
-/// output going to a log, and waits until it listens.
-fn spawn_server(name: &str, file: Option<&Path>, remote: bool) -> Result<Child, Error> {
-    control::make_sessions_dir(&control::sessions_dir())?;
-    let log_path = log_path(name);
-    let log = std::fs::File::create(&log_path)?;
-    let mut command = Command::new(std::env::current_exe()?);
-    command.args(["serve", "--session", name]);
-    command.args(restore_flags());
-    if let Some(file) = file {
-        command.arg(file);
-    }
-    // Commands over ssh may come without it; the session and the programs
-    // in its terminals should have what a login has.
-    if let Some(dir) = control::runtime_dir() {
-        command.env("XDG_RUNTIME_DIR", dir);
-    }
-    if let Some(path) = path_with_greed() {
-        command.env("PATH", path);
-    }
-    if remote {
-        command.env(control::REMOTE_ENV, "1");
-        // Its programs reach your ssh agent through the session, at a
-        // path that stays the same however often you come back.
-        let agent = greed_core::ssh_agent::socket_of(name);
-        command.env(AGENT_ENV, &agent).env("SSH_AUTH_SOCK", &agent);
-    } else {
-        // Started from a terminal of a session that has one: that's its.
-        command.env_remove(AGENT_ENV);
-    }
-    std::os::unix::process::CommandExt::process_group(&mut command, 0);
-    let mut child = command
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log)
-        .spawn()?;
-    let (socket, _) = control::session_files(name);
-    let deadline = Instant::now() + STARTUP;
-    while std::os::unix::net::UnixStream::connect(&socket).is_err() {
-        if child.try_wait()?.is_some() || Instant::now() > deadline {
-            // One that is only slow would otherwise start later with no
-            // one attached, and run until someone finds it.
-            let _ = child.kill();
-            let _ = child.wait();
-            let log = std::fs::read_to_string(&log_path).unwrap_or_default();
-            return Err(format!("the editor didn't start: {}", log.trim()).into());
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    Ok(child)
-}
-
-/// `PATH` with this greed's folder added at the end, when no greed is on it,
-/// as on a machine `greed ssh` put greed on: so `greed FILE` and `greed ctl`
-/// work in the session's terminals. A greed you installed stays first.
-fn path_with_greed() -> Option<std::ffi::OsString> {
-    if greed_core::lsp::which("greed").is_some() {
-        return None;
-    }
-    let exe = std::env::current_exe().ok()?;
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|path| std::env::split_paths(&path).collect())
-        .unwrap_or_default();
-    dirs.push(exe.parent()?.to_path_buf());
-    std::env::join_paths(dirs).ok()
 }
 
 /// Tells a `greed --fresh` that the session `name` is already running, so

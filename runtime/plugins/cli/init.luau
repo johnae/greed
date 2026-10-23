@@ -48,7 +48,7 @@ greed.cli({
 				string.format(
 					"%-20s %s%s%s",
 					session.name,
-					session.root or "",
+					if session.service then "(service)" else session.root or "",
 					if agents then `  {agents}` else "",
 					other
 				)

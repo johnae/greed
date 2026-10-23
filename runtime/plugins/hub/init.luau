@@ -64,10 +64,13 @@ end
 
 --- The hub among `sessions` (as `greed.session.list` gives them): the one
 --- `wanted` names if it runs, else the first by name of those of `build`.
+--- A service's session never is: a stuck service mustn't take the hub down.
 function M.elect(sessions: { greed.SessionInfo }, build: string, wanted: string?): string?
 	local names: { string } = {}
 	for _, session in sessions do
-		if session.name == wanted then
+		if session.service then
+			continue
+		elseif session.name == wanted then
 			return wanted
 		elseif session.build == nil or session.build == build then
 			table.insert(names, session.name)

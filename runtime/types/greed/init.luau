@@ -1108,6 +1108,8 @@ export type SessionInfo = {
 	build: string?,
 	--- Whether it's this session.
 	current: boolean,
+	--- The service whose owner it runs (its name is the service's with `.service` after it), if it's one.
+	service: string?,
 }
 
 export type Sessions = {
@@ -1129,6 +1131,8 @@ export type Sessions = {
 	program: () -> string?,
 	--- What the session `name` on this machine says of itself, as its `status` tool gives it (`schema`, `session`, `attention`, `agents`), asked as an ordinary client, so asking can't do anything there; or nil and why: it's gone, its greed has no `status`, or it didn't answer in time. It waits, so it works in a command, an event handler or `greed.spawn`.
 	status: (name: string) -> ({ [string]: any }?, string?),
+	--- Starts the session `name` on this machine in the background, unless it's running, and waits until it listens; true, or nil and why it didn't start. The client stays where it is. A service's session (`NAME.service`) works from a folder of its own. It waits, so it works in a command, an event handler or `greed.spawn`.
+	start: (name: string) -> (boolean?, string?),
 	--- Sends the attached client to the session `name`, or to the session for
 	--- the project `path` is in (opening it there), starting it if it isn't
 	--- running. This session goes on without the client. With `new`, a new

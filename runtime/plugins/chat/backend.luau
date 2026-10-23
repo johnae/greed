@@ -15,7 +15,7 @@ local M = {}
 M.SERVICES = { "matrix", "mattermost" }
 
 --- The session `greed chat` starts, which keeps the accounts connected.
-M.SESSION = "chat"
+M.SESSION = "chat.service"
 
 --- Whether this is the chat session.
 function M.here(): boolean

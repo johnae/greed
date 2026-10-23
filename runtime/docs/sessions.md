@@ -21,6 +21,14 @@ greed ssh eris    # a session on eris, shown here
 Sessions are kept apart on purpose: a stuck plugin or a hungry language
 server in one project leaves the others alone.
 
+Chat, mail and Hoard keep their accounts and notes in a session of their
+own too, a service's session: `chat.service`, `mail.service`,
+`hoard.service`. You never start one yourself; `greed chat`, `:chat` and the
+like start it when it's needed. They work from a folder of their own, so a
+project folder called `chat` gets its own session as usual. `greed ls` and
+`space P` mark them as services, and `greed attach` or `greed ctl` without
+a name leave them out when they look for the only session running.
+
 ## The hub: one session follows the others
 
 Each session wants to know what the others are doing: which agents wait
@@ -43,6 +51,9 @@ and every session works out which one by the same rule:
 2. otherwise the first by name of the running sessions of the same greed
    build.
 
+A service's session is never the hub, even named: a stuck chat service
+shouldn't take everything else down with it.
+
 Every session looks at the running sessions every few seconds and applies
 that rule, so they agree without asking each other. When the hub ends, the
 next one by name becomes the hub within seconds. There's nothing to start
@@ -54,7 +65,7 @@ have a hub of their own until they're restarted.
 To keep the hub in one place, for example a session you never quit:
 
 ```luau
-greed.option.set("hub-session", "notes")
+greed.option.set("hub-session", "dotfiles")
 ```
 
 ## Other machines
