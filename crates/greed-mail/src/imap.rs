@@ -132,9 +132,13 @@ pub struct Connection {
 
 impl Connection {
     /// Connects to `account`'s IMAP server and logs in, its password from
-    /// its command.
-    pub async fn to(account: &Account) -> Result<Connection, String> {
-        let password = account.password()?;
+    /// its command (`waiting` hears if that takes a while, see
+    /// [`Account::password`]).
+    pub async fn to(
+        account: &Account,
+        waiting: &dyn Fn(Option<&str>),
+    ) -> Result<Connection, String> {
+        let password = account.password(waiting).await?;
         Connection::open(&account.imap(), account.user(), &password)
             .await
             .map_err(|e| e.0)

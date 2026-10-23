@@ -1499,6 +1499,32 @@ test("the list says what greed-mail is busy with: indexing, then syncing", funct
 	assert(string.find(text, "syncing", 1, true) == nil, "all in: " .. text)
 end)
 
+test("the list says when a password command keeps an account waiting, or a sync failed", function(t)
+	fake()
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc")
+	local backend = mail.backend
+	local function shown(): string
+		return greed.view():buffer():text()
+	end
+	backend.heard("waiting", { account = "proton", program = "rbw" })
+	local waiting = "proton: waiting for rbw to give the password; is it locked?"
+	assert(string.find(shown(), waiting, 1, true), shown())
+	backend.heard("waiting", { account = "proton" })
+	assert(not string.find(shown(), "waiting for", 1, true), "given: " .. shown())
+	backend.heard("trouble", { account = "proton", message = "logging in as anna: no" })
+	assert(string.find(shown(), "proton: logging in as anna: no", 1, true), shown())
+	backend.heard("progress", { account = "proton", messages = 10 })
+	assert(not string.find(shown(), "logging in", 1, true), "syncing again: " .. shown())
+	-- Said with its account already, it isn't named twice.
+	backend.heard("trouble", { account = "proton", message = "proton: rbw failed" })
+	assert(string.find(shown(), "proton: rbw failed", 1, true), shown())
+	assert(not string.find(shown(), "proton: proton:", 1, true), shown())
+	backend.heard("synced", { account = "proton", messages = 1, done = true })
+	assert(not string.find(shown(), "rbw failed", 1, true), "a round went well: " .. shown())
+end)
+
 -- Runs the agent tool `name` with `args`.
 local function tool(name: string, args: { [string]: any }): any
 	local agent = require("@agent")

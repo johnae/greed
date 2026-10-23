@@ -353,8 +353,13 @@ fn new_id(domain: &str) -> String {
     format!("<{nanos:x}.{:x}@{domain}>", std::process::id())
 }
 
-/// Hands `outgoing` to `account`'s SMTP server.
-pub async fn deliver(account: &Account, outgoing: &Outgoing) -> Result<(), Failure> {
+/// Hands `outgoing` to `account`'s SMTP server; `waiting` hears if its
+/// password command takes a while (see [`Account::password`]).
+pub async fn deliver(
+    account: &Account,
+    outgoing: &Outgoing,
+    waiting: &dyn Fn(Option<&str>),
+) -> Result<(), Failure> {
     let at = account.smtp().ok_or_else(|| {
         Failure::Refused(format!("{} has no smtp server in mail.toml", account.name))
     })?;
@@ -366,7 +371,7 @@ pub async fn deliver(account: &Account, outgoing: &Outgoing) -> Result<(), Failu
         }
         Tls::None => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(&at.host),
     };
-    let password = account.password().map_err(Failure::Later)?;
+    let password = account.password(waiting).await.map_err(Failure::Later)?;
     let transport = builder
         .port(at.port)
         .credentials(Credentials::new(account.user().to_string(), password))

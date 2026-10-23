@@ -12,9 +12,23 @@
 //! kept in memory only.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::Stdio;
+use std::time::Duration;
 
 use serde::Deserialize;
+use tokio::process::Command;
+
+/// How long a password command may take before it's told that it waits.
+const PASSWORD_PATIENCE: Duration = Duration::from_secs(2);
+
+/// Tells its listener the wait is over when it goes.
+struct Over<'a>(&'a dyn Fn(Option<&str>));
+
+impl Drop for Over<'_> {
+    fn drop(&mut self) {
+        (self.0)(None);
+    }
+}
 
 /// Every account, in the order the file has them.
 #[derive(Debug, Clone, Deserialize)]
@@ -195,15 +209,30 @@ impl Account {
 
     /// The password, from its command. What the command prints is never
     /// put in an error, in case it printed the password and then failed.
-    pub fn password(&self) -> Result<String, String> {
+    /// One that takes a while, as a password manager waiting to be
+    /// unlocked does, is told to `waiting` with its program's name, and
+    /// again with none once it's done.
+    pub async fn password(&self, waiting: &dyn Fn(Option<&str>)) -> Result<String, String> {
         let (program, args) = self
             .password
             .split_first()
             .ok_or_else(|| format!("{}: no password command", self.name))?;
-        let out = Command::new(program)
-            .args(args)
-            .output()
-            .map_err(|e| format!("{}: couldn't run {program}: {e}", self.name))?;
+        let mut running = std::pin::pin!(
+            Command::new(program)
+                .args(args)
+                .stdin(Stdio::null())
+                .kill_on_drop(true)
+                .output()
+        );
+        let out = if let Ok(out) = tokio::time::timeout(PASSWORD_PATIENCE, &mut running).await {
+            out
+        } else {
+            waiting(Some(program));
+            // Told it's over however it ends, given up on included.
+            let _over = Over(waiting);
+            running.await
+        }
+        .map_err(|e| format!("{}: couldn't run {program}: {e}", self.name))?;
         if !out.status.success() {
             return Err(format!("{}: {program} failed ({})", self.name, out.status));
         }
@@ -518,19 +547,45 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// `account`'s password, and what was told while it waited.
+    fn password_of(account: &Account) -> (Result<String, String>, Vec<Option<String>>) {
+        let told = std::cell::RefCell::new(Vec::new());
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let password = runtime.block_on(account.password(&|program: Option<&str>| {
+            told.borrow_mut().push(program.map(str::to_owned));
+        }));
+        (password, told.into_inner())
+    }
+
     #[test]
     fn the_password_comes_from_its_command_without_the_newline() {
         let config = Config::parse(
             "[[account]]\nname = \"a\"\naddress = \"a@b\"\nprovider = \"gmail\"\npassword = [\"echo\", \"hunter2\"]",
         )
         .unwrap();
-        assert_eq!(config.accounts[0].password().unwrap(), "hunter2");
+        let (password, told) = password_of(&config.accounts[0]);
+        assert_eq!(password.unwrap(), "hunter2");
+        assert!(told.is_empty(), "a quick one isn't waited on: {told:?}");
         let failing = Config::parse(
             "[[account]]\nname = \"a\"\naddress = \"a@b\"\nprovider = \"gmail\"\npassword = [\"sh\", \"-c\", \"echo hunter2; exit 1\"]",
         )
         .unwrap();
-        let err = failing.accounts[0].password().unwrap_err();
+        let err = password_of(&failing.accounts[0]).0.unwrap_err();
         assert!(err.contains("failed"), "{err}");
         assert!(!err.contains("hunter2"), "never what it printed");
+    }
+
+    #[test]
+    fn a_password_command_that_takes_a_while_is_told_as_it_waits_and_when_its_done() {
+        let config = Config::parse(
+            "[[account]]\nname = \"a\"\naddress = \"a@b\"\nprovider = \"gmail\"\npassword = [\"sh\", \"-c\", \"sleep 3; echo hunter2\"]",
+        )
+        .unwrap();
+        let (password, told) = password_of(&config.accounts[0]);
+        assert_eq!(password.unwrap(), "hunter2");
+        assert_eq!(told, vec![Some("sh".to_owned()), None]);
     }
 }

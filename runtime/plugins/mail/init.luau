@@ -338,6 +338,9 @@ local function render(o: Open): core.UiNode
 		})
 	end
 	local parts: { core.UiNode } = { tabs(o), head }
+	for _, line in backend.stuck_lines() do
+		table.insert(parts, ui.text(line, "diagnostic.warning"))
+	end
 	local busy = M.busy_node()
 	if busy then
 		table.insert(parts, busy)

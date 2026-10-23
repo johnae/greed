@@ -360,7 +360,7 @@ fn logs_in_and_lists_mailboxes_with_their_roles() {
     let config = dovecot.account();
     let account = &config.accounts[0];
     run(async {
-        let password = account.password().unwrap();
+        let password = account.password(&|_| {}).await.unwrap();
         let mut connection = Connection::open(&account.imap(), account.user(), &password)
             .await
             .unwrap();

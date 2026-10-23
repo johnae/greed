@@ -137,6 +137,17 @@ impl Shared {
         let message = json!({ "jsonrpc": "2.0", "method": method, "params": params });
         let _ = self.out.send(message.to_string());
     }
+
+    /// Tells, as `waiting`, while `account`'s password command keeps it
+    /// waiting (its program), and when that's over (none).
+    fn waiting<'a>(&'a self, account: &'a Account) -> impl Fn(Option<&str>) + 'a {
+        move |program| {
+            self.notify(
+                "waiting",
+                &json!({ "account": account.name, "program": program }),
+            );
+        }
+    }
 }
 
 /// Which requests and notifications this greed-mail speaks, as `hello`
@@ -651,8 +662,10 @@ async fn keep_syncing(config: &Config, mut store: Store, mut index: Index, share
                 if config.accounts.is_empty() {
                     std::future::pending::<()>().await;
                 }
-                futures::future::select_all(config.accounts.iter().map(|a| Box::pin(watch(a))))
-                    .await;
+                futures::future::select_all(
+                    config.accounts.iter().map(|a| Box::pin(watch(a, shared))),
+                )
+                .await;
             };
             // Mail waiting in the outbox goes once its wait is over.
             let due = store.next_due().ok().flatten().map(|at| {
@@ -671,8 +684,8 @@ async fn keep_syncing(config: &Config, mut store: Store, mut index: Index, share
 /// Waits until `account`'s inbox changes, as its server says in IDLE, or
 /// for `POLL` when its server can't IDLE. A connection that breaks ends
 /// the wait a little later, so the next round finds out why.
-async fn watch(account: &Account) {
-    let Ok(connection) = Connection::to(account).await else {
+async fn watch(account: &Account, shared: &Shared) {
+    let Ok(connection) = Connection::to(account, &shared.waiting(account)).await else {
         tokio::time::sleep(POLL).await;
         return;
     };
@@ -695,7 +708,7 @@ async fn round(
     index: &mut Index,
     shared: &Shared,
 ) -> Result<bool, String> {
-    let mut connection = Connection::to(account).await?;
+    let mut connection = Connection::to(account, &shared.waiting(account)).await?;
     let id = store
         .account(&account.name, &account.address)
         .map_err(|e| e.0)?;
@@ -907,7 +920,7 @@ async fn send_mail(
         );
     };
     for posted in store.outbox(id).map_err(|e| e.0)? {
-        match send::deliver(account, &posted.outgoing).await {
+        match send::deliver(account, &posted.outgoing, &shared.waiting(account)).await {
             Ok(()) => {}
             Err(Failure::Refused(why)) => {
                 store.sent_out(posted.id, Some(&why)).map_err(|e| e.0)?;

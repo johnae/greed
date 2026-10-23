@@ -121,6 +121,19 @@ fn main() -> ExitCode {
     }
 }
 
+/// Says when `account`'s password command keeps us waiting, as one that
+/// wants to be unlocked does.
+fn say_waiting(account: &Account) -> impl Fn(Option<&str>) + '_ {
+    move |program| {
+        if let Some(program) = program {
+            eprintln!(
+                "{}: waiting for {program} to give the password",
+                account.name
+            );
+        }
+    }
+}
+
 fn fail(message: &str) -> ExitCode {
     eprintln!("greed-mail: {message}");
     ExitCode::FAILURE
@@ -131,7 +144,7 @@ fn fail(message: &str) -> ExitCode {
 async fn check(account: &Account) -> Result<(), String> {
     let at = account.imap();
     let started = Instant::now();
-    let mut connection = Connection::to(account).await?;
+    let mut connection = Connection::to(account, &say_waiting(account)).await?;
     println!(
         "{}: {}:{} logged in in {} ms",
         account.name,
@@ -175,7 +188,7 @@ async fn sync_account(
     index: &mut Index,
     options: Options,
 ) -> Result<(), String> {
-    let mut connection = Connection::to(account).await?;
+    let mut connection = Connection::to(account, &say_waiting(account)).await?;
     let id = store
         .account(&account.name, &account.address)
         .map_err(|e| e.0)?;

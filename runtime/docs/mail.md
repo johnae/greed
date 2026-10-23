@@ -57,6 +57,11 @@ and the password is never written down. Each setting is explained under
 [mail.toml](#mailtoml) below; Gmail and Proton have their own ways, shown
 there too.
 
+If the command waits, say for your password manager to be unlocked, the
+mail list says so over your mail ("waiting for rbw to give the password")
+and syncing carries on once it's given. A sync that fails says why there
+too, until the next one goes well.
+
 `greed-mail check` logs in to each account and says what its server can
 do, which is a quick way to see that `mail.toml` is right. Then:
 

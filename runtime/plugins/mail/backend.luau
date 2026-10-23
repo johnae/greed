@@ -216,14 +216,17 @@ function M.arrived(keys: { string })
 end
 
 --- What greed-mail is busy with, as it says: indexing (how far, of how
---- many), and each account's sync while it isn't all in (how many
---- messages so far).
+--- many), each account's sync while it isn't all in (how many messages
+--- so far), the password commands it waits on (by account, the program),
+--- and what went wrong syncing an account, until a round goes well.
 export type Busy = {
 	indexing: { done: number, of: number }?,
 	syncing: { [string]: number },
+	waiting: { [string]: string },
+	trouble: { [string]: string },
 }
 
-M.busy = { syncing = {} } :: Busy
+M.busy = { syncing = {}, waiting = {}, trouble = {} } :: Busy
 
 -- What wants to know when what greed-mail is busy with changed.
 local busy_listeners: { () -> () } = {}
@@ -244,7 +247,7 @@ function M.on_synced(listener: (account: string) -> ())
 end
 
 --- Notes what greed-mail said it's doing (`indexing`, `progress`,
---- `synced`), as it does (and a test).
+--- `synced`, `waiting`, `trouble`), as it does (and a test).
 function M.heard(method: string, params: any)
 	local busy = M.busy
 	if method == "indexing" then
@@ -253,9 +256,15 @@ function M.heard(method: string, params: any)
 			else nil
 	elseif method == "progress" then
 		busy.syncing[params.account] = params.messages
+		busy.trouble[params.account] = nil
 	elseif method == "synced" then
 		busy.syncing[params.account] = if params.done then nil else params.messages
+		busy.trouble[params.account] = nil
 		core.registry.tell(synced_listeners, params.account)
+	elseif method == "waiting" then
+		busy.waiting[params.account] = params.program
+	elseif method == "trouble" then
+		busy.trouble[params.account] = params.message
 	else
 		return
 	end
@@ -276,6 +285,38 @@ function M.syncing_text(): string?
 		table.insert(said, `{account}: {core.text.count(syncing[account])} messages in`)
 	end
 	return if #said > 0 then `syncing {table.concat(said, ", ")}` else nil
+end
+
+--- What keeps accounts from syncing, in words, one line each: a password
+--- command waiting (to be unlocked, most likely), or what went wrong.
+function M.stuck_lines(): { string }
+	local busy = M.busy
+	local accounts: { string } = {}
+	for account in busy.waiting do
+		table.insert(accounts, account)
+	end
+	for account in busy.trouble do
+		if not busy.waiting[account] then
+			table.insert(accounts, account)
+		end
+	end
+	table.sort(accounts)
+	local lines: { string } = {}
+	for _, account in accounts do
+		local program = busy.waiting[account]
+		local trouble = busy.trouble[account] or ""
+		-- Some say which account already, as greed-mail's own errors do.
+		local prefix = `{account}: `
+		local named = string.sub(trouble, 1, #prefix) == prefix
+		table.insert(
+			lines,
+			if program
+				then `{account}: waiting for {program} to give the password; is it locked?`
+				elseif named then trouble
+				else `{account}: {trouble}`
+		)
+	end
+	return lines
 end
 
 -- Who waits for an attachment, by "key index", for greed-mail to say where
@@ -299,7 +340,13 @@ local function heard(method: string, params: any)
 		changed()
 	elseif method == "refused" then
 		greed.echo(`{params.account}: {params.message}`)
-	elseif method == "indexing" or method == "progress" or method == "synced" then
+	elseif
+		method == "indexing"
+		or method == "progress"
+		or method == "synced"
+		or method == "waiting"
+		or method == "trouble"
+	then
 		M.heard(method, params)
 	elseif method == "sent" then
 		greed.echo("mail sent")
@@ -454,6 +501,8 @@ local view = services.use("mail", {
 		"indexing",
 		"progress",
 		"synced",
+		"waiting",
+		"trouble",
 		"sent",
 		"attachment",
 	},
