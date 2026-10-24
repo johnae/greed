@@ -57,10 +57,10 @@ and the password is never written down. Each setting is explained under
 [mail.toml](#mailtoml) below; Gmail and Proton have their own ways, shown
 there too.
 
-If the command waits, say for your password manager to be unlocked, the
+If the command waits, say for you to unlock your password manager, the
 mail list says so over your mail ("waiting for rbw to give the password")
-and syncing carries on once it's given. A sync that fails says why there
-too, until the next one goes well.
+and syncing picks up once it's given. A sync that fails says why there
+too, until the next one goes through.
 
 `greed-mail check` logs in to each account and says what its server can
 do, which is a quick way to see that `mail.toml` is right. Then:
@@ -169,6 +169,8 @@ require("@mail").rules = {
 
 In the list, `enter` reads the thread under the cursor in its place, `/`
 searches again and `$` syncs now; `q` in a thread goes back to the list.
+`] m` and `[ m` go to the next and previous row, and in a thread to the
+next and previous message.
 Reading a thread marks it read.
 
 A dot marks unread mail, ⚑ flagged mail and 📎 mail with something
@@ -177,7 +179,7 @@ attached; a message's folders, labels and tags follow its subject
 
 Over the list are your saved searches, each with how many unread messages
 it finds, counted again as mail comes in. They go as tabs do: `tab` and
-`shift-tab` (or `]` and `[`) to the next and the one before, `alt-1` to
+`shift-tab` to the next and the one before, `alt-1` to
 `alt-9` to one, and `g s` picks any of them by name, however many you
 have; pressing one goes to it too. Set your own in your config
 (`~/.config/greed/init.luau`):
@@ -647,14 +649,14 @@ each account's inbox for the server to say something arrived (IMAP IDLE),
 and checks every two minutes on a server that can't. When an account
 can't be reached it tries again a little later each time, up to every
 five minutes. `greed-mail sync` syncs once, on its own, if you want to see
-it work. While an account isn't all in, the mail list shows a bar for it
-over your mail: how many messages are here of how many the server has.
-Every mailbox's headers come before any bodies, so all your mail shows in
-the list and searches early; bodies follow, and one you open comes first.
+it work. Until an account is all in, the mail list shows a bar for it
+over your mail, how many messages are here of how many the server has.
+Headers come first, every mailbox's, so all your mail shows up in the list
+and searches early on. Bodies follow, and one you open jumps the queue.
 
-A server sometimes shows a big mailbox nearly empty for a while: Proton
-Bridge does when its disk is full (its temporary files go to `/tmp`), or
-while it builds its cache again. When fewer than half of the messages you
-have here are there, greed-mail keeps the mailbox as it was and the mail
-list says so, until the rest are back. If they really did go,
+Sometimes a server shows a big mailbox nearly empty for a while. Proton
+Bridge does it when its disk fills up (its temporary files go to `/tmp`),
+or while it rebuilds its cache. So when fewer than half of the messages
+you have here are on the server, greed-mail leaves the mailbox alone and
+the mail list says so, until the rest are back. If they really did go,
 `greed-mail --start-over sync` lets them go here too.

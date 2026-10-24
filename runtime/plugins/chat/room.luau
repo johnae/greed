@@ -1596,9 +1596,25 @@ greed.keymap.bind({ role = "command", kind = "chat-room" }, {
 	esc = "chat-close",
 	tab = "chat-room-next",
 	["shift-tab"] = "chat-room-previous",
-	["]"] = "chat-room-next",
-	["["] = "chat-room-previous",
 })
+
+-- `] m` and `[ m` go message by message.
+core.items.provide("chat-room", function(view: greed.View): { number }
+	local starts: { number } = {}
+	local r = M.of(view:buffer())
+	if r == nil then
+		return starts
+	end
+	local last: backend.Item? = nil
+	r.view:each(function(line: number, value: Line)
+		local item = value.item
+		if item ~= last and M.is_message(item) then
+			table.insert(starts, r.buffer:line_start(line))
+		end
+		last = item
+	end)
+	return starts
+end)
 for i = 1, 9 do
 	greed.keymap.bind({ kind = "chat-room" }, { [`alt-{i}`] = `chat-room-{i}` })
 end

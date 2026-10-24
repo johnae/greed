@@ -2512,9 +2512,32 @@ greed.keymap.bind({ kind = "mail" }, {
 	["g s"] = "mail-searches",
 	tab = "mail-search-next",
 	["shift-tab"] = "mail-search-previous",
-	["]"] = "mail-search-next",
-	["["] = "mail-search-previous",
 })
+
+-- `] m` and `[ m`: row by row in the list, message by message in a thread.
+core.items.provide("mail", function(view: greed.View): { number }
+	local starts: { number } = {}
+	local o = open
+	if o and o.buffer == view:buffer() then
+		o.view:each(function(line: number)
+			table.insert(starts, o.buffer:line_start(line))
+		end)
+	end
+	return starts
+end)
+core.items.provide("mail-thread", function(view: greed.View): { number }
+	local starts: { number } = {}
+	local r = reading
+	if r and r.buffer == view:buffer() then
+		for _, message in r.thread.messages do
+			local spot = r.view:spots(message_tag(message.key))[1]
+			if spot then
+				table.insert(starts, spot.from)
+			end
+		end
+	end
+	return starts
+end)
 greed.keymap.bind({ kind = "mail-thread" }, ACTIONS)
 -- In every mode, as Hoard's box has it.
 greed.keymap.bind({ kind = "mail-compose" }, {

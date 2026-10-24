@@ -1703,3 +1703,45 @@ test("a greed-mail that stops at once says why, as it said", function(t)
 	fake()
 	assert(why == "the store is in use by greed-mail 4242", why)
 end)
+
+test("] m and [ m go row by row in the list and message by message in a thread", function(t)
+	fake()
+	now[2].earlier = {
+		{
+			key = "m:1:b0",
+			thread = "t:1:b",
+			from = "Anna Berg <anna@example.com>",
+			subject = "Invoice 41",
+			date = "2026-10-17T08:00:00+02:00",
+			unread = false,
+			flagged = false,
+			tags = {},
+			to = "me@example.com",
+			cc = "",
+			text = "The first word on it",
+			attachments = {},
+			complete = true,
+			html = false,
+		},
+	}
+	t:buffer("|x")
+	t:run("mail")
+	t:keys("esc")
+	local view = greed.view()
+	local function on(): string
+		local buffer = view:buffer()
+		return buffer:line_text(buffer:line_of(view:cursor()))
+	end
+	assert(string.find(on(), "Invoice 41", 1, true), on())
+	t:keys("] m")
+	assert(string.find(on(), "Garden plans", 1, true), "the next row: " .. on())
+	t:keys("[ m")
+	assert(string.find(on(), "Invoice 41", 1, true), "back: " .. on())
+	t:keys("enter")
+	view = greed.view()
+	view:set_cursor(0)
+	t:keys("] m")
+	assert(string.find(on(), "▸ Anna Berg", 1, true), "the earlier message: " .. on())
+	t:keys("] m")
+	assert(string.find(on(), "From", 1, true), "then the last, opened: " .. on())
+end)

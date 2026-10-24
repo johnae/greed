@@ -29,14 +29,17 @@ project folder called `chat` gets its own session as usual. `greed ls` and
 `space P` mark them as services, and `greed attach` or `greed ctl` without
 a name leave them out when they look for the only session running.
 
-Nothing runs in the background unless you say so. To have mail syncing,
-Hoard's reminders or chat's accounts going from the moment Greed starts,
-name them (each still starts only once it's set up, mail with a
-`mail.toml`, say):
+Nothing runs in the background unless you ask for it, since plenty of
+people won't use mail or chat at all. If you want mail syncing, Hoard's
+reminders or chat's accounts going from the moment Greed starts, name
+them. Like this:
 
 ```luau
 greed.option.set("services-at-start", "mail hoard chat")
 ```
+
+Each one still waits until it's set up, so mail won't start without a
+`mail.toml`.
 
 ## The hub: one session follows the others
 

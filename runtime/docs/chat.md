@@ -34,18 +34,20 @@ messages, and on Matrix "seen by" says who has read up to where.
 | `alt-b`, `enter` | press one of its buttons, or pick from its menu (Mattermost) |
 | `alt-/` | pick a command into the box (Mattermost) |
 | `alt-up` | fetch older messages |
+| `] m`, `[ m` | the next or previous message |
 | `tab`, `shift-tab` | the next or previous room in the bar over a room (the rooms you opened); `alt-1`…`alt-9` one of them |
 | `q`, `esc` | stop answering or changing; else back to the room, or to the list (the sidebar) |
 
 `space .` on a message offers the same, and copying what it says.
 
 Code blocks and tables in a message keep their lines, so a bot's
-box-drawn table stays lined up (it's cut with `…` at the edge rather than
-wrapped). For the whole thing, `open as text` on `space .` puts the message
-in a buffer of its own, where you can scroll sideways.
+box-drawn table stays lined up. A wide one gets cut with `…` at the edge,
+which isn't great, so `open as text` on `space .` puts the whole message
+in a buffer of its own where you can scroll sideways.
+
 A room shows each thread's first message with how many replies it has;
-the replies are in the thread. A reply to a message (Matrix) shows a line
-of what it answers above it, `↳ Bea: lunch at noon?`.
+the replies are in the thread. A reply to a message (Matrix) gets a line
+above it saying what it answers, like `↳ Bea: lunch at noon?`.
 
 On Mattermost, a message starting with `/` runs a command, like `/away` or
 an integration's; what it answers only you shows in the room. Posts from

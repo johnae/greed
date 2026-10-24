@@ -1253,6 +1253,23 @@ next match.
 one waiter each. `core.joined(f)` makes `f(key)` run once for calls that
 come at the same time with the same key: the others wait and get what it
 gave, so a program several ask for at once starts once.
+
+`] m` and `[ m` move by item in any buffer made of items. Say where yours
+start with `core.items.provide(kind, starts)`: `kind` is your buffer's
+kind and `starts(view)` returns the offsets items start at, in order.
+Like this, a row a line:
+
+```luau
+core.items.provide("todo-list", function(view)
+	local buffer = view:buffer()
+	local starts = {}
+	for line = 0, buffer:line_count() - 1 do
+		table.insert(starts, buffer:line_start(line))
+	end
+	return starts
+end)
+```
+
 `greed.animate(ms, step)` calls `step(t)` once a frame; the flash on copy
 is built on it. `greed.fs.watch(path)` makes a "file.changed" event come
 whenever that file changes, from anywhere; it's how your config reloads.
