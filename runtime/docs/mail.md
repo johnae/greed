@@ -28,9 +28,12 @@ and `type:` their kind: the extension (`pdf`, `docx`, `jpg`), or `image`,
 Mail needs two things: `greed-mail`, the program that syncs it, and a
 `mail.toml` saying which accounts to sync.
 
-`greed-mail` comes with Greed: Greed's packages put it beside `greed`, and
-Greed finds it there (or on your `PATH`). If yours is somewhere else, say
-where with `:set mail-program /path/to/greed-mail`. Greed and greed-mail
+`greed-mail` comes with Greed: Greed's packages put it beside `greed` (the
+Nix package and the static Linux build too), and Greed finds it there (or
+on your `PATH`). If yours is somewhere else, say where with
+`:set mail-program /path/to/greed-mail`. On another machine you reach
+with `greed ssh`, the greed put there doesn't bring it along yet: install
+Greed there, or put `greed-mail` on its `PATH`, to read mail on it. Greed and greed-mail
 check they speak the same way when they meet; one older or newer than
 the other says so over the list, and which to update, rather than
 misreading the other.

@@ -58,7 +58,14 @@ rustPlatform.buildRustPackage {
   };
   # The release profile with full link-time optimization (Cargo.toml).
   buildType = "dist";
-  cargoBuildFlags = [ "--package" "greed-editor" ];
+  # Greed, and greed-mail beside it, which the mail session runs: it finds
+  # it next to its own binary first.
+  cargoBuildFlags = [
+    "--package"
+    "greed-editor"
+    "--package"
+    "greed-mail"
+  ];
   buildNoDefaultFeatures = !gui;
 
   # The runtime is built into the binary too; installing it lets editors

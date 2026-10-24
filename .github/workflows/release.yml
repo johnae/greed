@@ -67,7 +67,7 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
           name=greed-$version-linux-${{ matrix.arch }}-tui-only-static
           mkdir -p "target/packages/$name/bin"
-          cp result/bin/greed "target/packages/$name/bin/"
+          cp result/bin/greed result/bin/greed-mail "target/packages/$name/bin/"
           cp LICENSE README.md THIRD-PARTY.md "target/packages/$name/"
           "target/packages/$name/bin/greed" --version
           tar -C target/packages -czf "target/packages/$name.tar.gz" "$name"
