@@ -185,15 +185,34 @@ pub async fn mailbox<I: Imap>(
         }
     }
 
-    // The first sync going down, newest first.
+    // The first sync going down, newest first. Going down again for what
+    // went missing here, it fetches only what isn't here, as the server
+    // lists each window.
+    let have: HashSet<u32> = store.uids(state.id)?.into_iter().collect();
     while low > 1 {
         if full(&synced) {
             return Ok(synced);
         }
         let from = low.saturating_sub(window.width).max(1);
-        let fetched = imap.fetch(from, low - 1).await?;
+        let fetched = if have.is_empty() {
+            imap.fetch(from, low - 1).await?
+        } else {
+            let missing: Vec<u32> = imap
+                .uids(from, low - 1)
+                .await?
+                .into_iter()
+                .filter(|uid| !have.contains(uid))
+                .collect();
+            let mut fetched = Vec::new();
+            for (first, last) in runs(&missing) {
+                fetched.extend(imap.fetch(first, last).await?);
+            }
+            fetched
+        };
         low = from;
         store.put(account, state.id, &fetched, high, low)?;
+        // Sized by what it fetched: a window of what's here already
+        // widens, so going over them takes few steps.
         window.saw(fetched.len());
         synced.fetched += fetched.len();
     }
@@ -765,6 +784,7 @@ mod tests {
             assert_eq!(store.uids(inbox.id).unwrap(), [40]);
             let synced = sync(&mut fake, &mut store, account, options).unwrap();
             assert!(synced.done, "{what}");
+            assert_eq!(synced.fetched, 39, "{what}: only what was missing");
             assert_eq!(store.uids(inbox.id).unwrap().len(), 40, "{what}: all back");
             assert_eq!(
                 store.counts(account).unwrap(),

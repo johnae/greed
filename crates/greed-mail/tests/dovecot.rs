@@ -505,6 +505,7 @@ fn serve_syncs_in_the_background_and_answers_the_client() {
     }
     let mut served = Served::start(&dovecot);
     served.wait_for("changed");
+    all_in(&mut served);
     let path = served.ask("index", &serde_json::json!({}));
     let index = Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
     let word = Node {
@@ -596,6 +597,14 @@ fn files(dovecot: &Dovecot, folder: &str) -> Vec<String> {
         }
     }
     names
+}
+
+/// Waits until `served` has everything in, bodies too: headers come
+/// first, so the first `changed` can come before them.
+fn all_in(served: &mut Served) {
+    wait_until("everything in, bodies too", || {
+        served.ask("status", &serde_json::json!({}))["accounts"][0]["done"] == true
+    });
 }
 
 /// Waits until `done` holds, saying `what` if it doesn't in time.
@@ -741,6 +750,7 @@ fn a_reply_is_sent_filed_in_sent_and_its_original_marked_answered() {
     deliver(&dovecot, 1, true);
     let mut served = Served::start(&dovecot);
     served.wait_for("changed");
+    all_in(&mut served);
     let path = served.ask("index", &serde_json::json!({}));
     let index =
         greed_index::index::Index::open_read(Path::new(path["path"].as_str().unwrap())).unwrap();
@@ -896,6 +906,7 @@ fn an_attachment_is_fetched_whole_and_saved_or_kept() {
     std::fs::write(maildir.join("cur/1760000001.M1P1.test:2,S"), message).unwrap();
     let mut served = Served::start(&dovecot);
     served.wait_for("changed");
+    all_in(&mut served);
     let key = message_keys(&mut served).remove(0);
     let shown = served.ask("summaries", &serde_json::json!({ "keys": [key] }));
     assert_eq!(shown[0]["attached"], 1, "a list says it: {shown}");

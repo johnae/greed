@@ -109,6 +109,19 @@ impl Backoff {
     }
 }
 
+/// What `progress` says: an account's mailbox synced some.
+#[derive(Serialize)]
+struct Progress<'a> {
+    account: &'a str,
+    mailbox: &'a str,
+    /// Headers fetched.
+    fetched: usize,
+    bodies: usize,
+    /// How many the account has here, of how many on the server.
+    messages: i64,
+    of: Option<u64>,
+}
+
 /// What `status` says of an account.
 #[derive(Debug, Clone, Default, Serialize)]
 struct Standing {
@@ -766,53 +779,71 @@ async fn round(
         );
     }
     let mut more = false;
-    for mailbox in chosen {
-        send_changes(&mut connection, store, index, account, id, shared).await?;
-        asked_for(&mut connection, store, index, id, shared).await?;
-        let synced = sync::mailbox(
-            &mut connection,
-            store,
-            id,
-            &mailbox.name,
-            mailbox.role,
-            options,
-        )
-        .await
-        .map_err(|e| format!("{}: {e}", mailbox.name))?;
-        let fetched = sync::bodies(&mut connection, store, id, &mailbox.name, bodies)
-            .await
-            .map_err(|e| format!("{}: {e}", mailbox.name))?;
-        more |= !synced.done || fetched >= BODIES;
-        // Mail coming due while a long catch-up goes on is sent between
-        // its batches, not once it's over.
-        let sending =
-            async |store: &mut Store| send_mail(&mut connection, store, account, id, shared).await;
-        if index_telling(store, index, shared, sending).await? > 0 {
-            shared.notify("changed", &json!({}));
+    // Every mailbox's headers before any bodies: with headers the mail
+    // shows in lists and searches, while bodies, slow to fetch from some
+    // servers (Bridge decrypts each), can come after, and one opened
+    // comes first anyway. Bodies wait for a round with no headers left.
+    let mut headers_left = false;
+    for bodies_now in [false, true] {
+        if bodies_now && headers_left {
+            break;
         }
-        // Said once they're in the index, so rules searching find them.
-        let arrived = store.arrived().map_err(|e| e.0)?;
-        if !arrived.is_empty() {
-            shared.notify("arrived", &json!({ "keys": arrived }));
-        }
-        if synced.fetched + synced.changed + synced.gone + fetched > 0 {
-            let (messages, _) = store.counts(id).map_err(|e| e.0)?;
-            shared.notify(
-                "progress",
-                &json!({
-                    "account": account.name,
-                    "mailbox": mailbox.name,
-                    "fetched": synced.fetched,
-                    "bodies": fetched,
-                    "messages": messages,
-                    "of": of,
-                }),
-            );
+        for mailbox in &chosen {
+            send_changes(&mut connection, store, index, account, id, shared).await?;
+            asked_for(&mut connection, store, index, id, shared).await?;
+            let (synced, fetched) = if bodies_now {
+                let fetched = sync::bodies(&mut connection, store, id, &mailbox.name, bodies)
+                    .await
+                    .map_err(|e| format!("{}: {e}", mailbox.name))?;
+                (sync::Synced::default(), fetched)
+            } else {
+                let synced = sync::mailbox(
+                    &mut connection,
+                    store,
+                    id,
+                    &mailbox.name,
+                    mailbox.role,
+                    options,
+                )
+                .await
+                .map_err(|e| format!("{}: {e}", mailbox.name))?;
+                (synced, 0)
+            };
+            headers_left |= !bodies_now && !synced.done;
+            more |= headers_left || fetched >= BODIES;
+            // Mail coming due while a long catch-up goes on is sent between
+            // its batches, not once it's over.
+            let sending = async |store: &mut Store| {
+                send_mail(&mut connection, store, account, id, shared).await
+            };
+            if index_telling(store, index, shared, sending).await? > 0 {
+                shared.notify("changed", &json!({}));
+            }
+            // Said once they're in the index, so rules searching find them.
+            let arrived = store.arrived().map_err(|e| e.0)?;
+            if !arrived.is_empty() {
+                shared.notify("arrived", &json!({ "keys": arrived }));
+            }
+            if synced.fetched + synced.changed + synced.gone + fetched > 0 {
+                let (messages, _) = store.counts(id).map_err(|e| e.0)?;
+                let progress = Progress {
+                    account: &account.name,
+                    mailbox: &mailbox.name,
+                    fetched: synced.fetched,
+                    bodies: fetched,
+                    messages,
+                    of,
+                };
+                shared.notify("progress", &json!(progress));
+            }
         }
     }
     asked_for(&mut connection, store, index, id, shared).await?;
     // Once what's asked for is done; what's asked meanwhile waits a round.
-    more |= fetch_ahead(&mut connection, store, id, &shared.kept).await?;
+    // Attachments, like bodies, wait until every header is in.
+    if !headers_left {
+        more |= fetch_ahead(&mut connection, store, id, &shared.kept).await?;
+    }
     let (messages, _) = store.counts(id).map_err(|e| e.0)?;
     shared.notify(
         "synced",
