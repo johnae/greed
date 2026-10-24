@@ -147,6 +147,8 @@ struct Shared {
     kept: PathBuf,
     standing: Mutex<BTreeMap<String, Standing>>,
     wake: Notify,
+    /// A nudge to fetch the bodies and attachments asked for now.
+    asked: Notify,
     /// What undoes the last change asked for.
     last: Mutex<Option<Undoing>>,
 }
@@ -174,6 +176,7 @@ impl Shared {
             kept,
             standing: Mutex::new(BTreeMap::new()),
             wake: Notify::new(),
+            asked: Notify::new(),
             last: Mutex::new(None),
         }
     }
@@ -207,11 +210,15 @@ pub const PROTOCOL: u32 = 1;
 pub async fn serve(config: Config, dir: PathBuf) -> Result<(), String> {
     let mut store = Store::open(&dir).map_err(|e| e.0)?;
     let index = indexing::open(&mut store, &dir.join("index.db")).map_err(|e| e.0)?;
-    // Changes asked for are made with a store and index of their own, as
-    // the sync holds its own while it waits on a server.
-    let beside = store.beside(&dir).map_err(|e| e.0)?;
-    let again = Index::open(&dir.join("index.db")).map_err(|e| e.0)?;
-    let writer = RefCell::new((beside, again));
+    // Changes asked for, and fetches, are made with a store and index of
+    // their own, as the sync holds its own while it waits on a server.
+    let beside = || -> Result<(Store, Index), String> {
+        let store = store.beside(&dir).map_err(|e| e.0)?;
+        let index = Index::open(&dir.join("index.db")).map_err(|e| e.0)?;
+        Ok((store, index))
+    };
+    let writer = RefCell::new(beside()?);
+    let (fetch_store, fetch_index) = beside()?;
     let reader =
         Reader::open(&dir).map_err(|_| format!("there's no mail in {} yet", dir.display()))?;
     let (out, mut lines) = mpsc::unbounded_channel::<String>();
@@ -220,16 +227,16 @@ pub async fn serve(config: Config, dir: PathBuf) -> Result<(), String> {
     // it. It runs as long as the program does.
     let syncing = Arc::clone(&shared);
     let accounts = config.clone();
-    std::thread::Builder::new()
-        .name("sync".into())
-        .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("a runtime to sync on");
-            runtime.block_on(keep_syncing(&accounts, store, index, &syncing));
-        })
-        .map_err(|e| format!("couldn't start syncing: {e}"))?;
+    background("sync", async move || {
+        keep_syncing(&accounts, store, index, &syncing).await;
+    })?;
+    // Nor does it hold up what you open: bodies and attachments asked for
+    // come on a connection of their own, while a long catch-up goes on.
+    let fetching = Arc::clone(&shared);
+    let accounts = config.clone();
+    background("fetch", async move || {
+        keep_fetching(&accounts, fetch_store, fetch_index, &fetching).await;
+    })?;
     let output = async {
         let mut stdout = tokio::io::stdout();
         while let Some(line) = lines.recv().await {
@@ -332,7 +339,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             let bodiless = thread.bodiless();
             if !bodiless.is_empty() {
                 lock(&shared.wanted).extend(bodiless);
-                shared.wake.notify_one();
+                shared.asked.notify_one();
             }
             serde_json::to_value(thread).map_err(|e| e.to_string())
         }
@@ -679,17 +686,7 @@ async fn keep_syncing(config: &Config, mut store: Store, mut index: Index, share
                 Ok(left) => more |= left,
                 Err(trouble) => {
                     failed = true;
-                    shared.notify(
-                        "trouble",
-                        &json!({ "account": account.name, "message": trouble }),
-                    );
-                    lock(&shared.standing)
-                        .entry(account.name.clone())
-                        .or_insert_with(|| Standing {
-                            name: account.name.clone(),
-                            ..Standing::default()
-                        })
-                        .trouble = Some(trouble);
+                    troubled(shared, account, trouble);
                 }
             }
         }
@@ -720,6 +717,73 @@ async fn keep_syncing(config: &Config, mut store: Store, mut index: Index, share
                 () = shared.wake.notified() => {}
                 () = changed => {}
                 () = tokio::time::sleep(due.unwrap_or(QUIET).min(QUIET)) => {}
+            }
+        }
+    }
+}
+
+/// Runs what `make` gives on a thread of its own, named `name`, for as
+/// long as the program runs.
+fn background<F>(name: &str, make: impl FnOnce() -> F + Send + 'static) -> Result<(), String>
+where
+    F: Future<Output = ()>,
+{
+    std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("a runtime to run on");
+            runtime.block_on(make());
+        })
+        .map(|_| ())
+        .map_err(|e| format!("couldn't start the {name} thread: {e}"))
+}
+
+/// Says what went wrong with `account`, and keeps it for `status`.
+fn troubled(shared: &Shared, account: &Account, trouble: String) {
+    shared.notify(
+        "trouble",
+        &json!({ "account": account.name, "message": trouble }),
+    );
+    lock(&shared.standing)
+        .entry(account.name.clone())
+        .or_insert_with(|| Standing {
+            name: account.name.clone(),
+            ..Standing::default()
+        })
+        .trouble = Some(trouble);
+}
+
+/// Fetches the bodies and attachments asked for as they're asked, each
+/// account's on a connection of its own, so a long sync round doesn't keep
+/// you waiting on the message you opened. When the server can't be
+/// reached, what's asked waits for the sync's next round.
+async fn keep_fetching(config: &Config, mut store: Store, mut index: Index, shared: &Shared) {
+    loop {
+        shared.asked.notified().await;
+        for account in &config.accounts {
+            let Ok(id) = store.account(&account.name, &account.address) else {
+                continue;
+            };
+            let prefix = format!("m:{id}:");
+            let asked = lock(&shared.wanted).iter().any(|k| k.starts_with(&prefix))
+                || lock(&shared.attachments)
+                    .iter()
+                    .any(|(k, _, _)| k.starts_with(&prefix));
+            if !asked {
+                continue;
+            }
+            let fetched = async {
+                let mut connection = Connection::to(account, &shared.waiting(account)).await?;
+                asked_for(&mut connection, &mut store, &mut index, id, shared).await?;
+                let _ = connection.close().await;
+                Ok::<(), String>(())
+            };
+            if let Err(trouble) = fetched.await {
+                troubled(shared, account, trouble);
+                shared.wake.notify_one();
             }
         }
     }
@@ -1229,7 +1293,7 @@ fn attachment(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
         return Ok(json!({ "path": entry.path() }));
     }
     lock(&with.shared.attachments).push((key.to_string(), number, to));
-    with.shared.wake.notify_one();
+    with.shared.asked.notify_one();
     Ok(json!({ "waiting": true }))
 }
 

@@ -652,7 +652,9 @@ five minutes. `greed-mail sync` syncs once, on its own, if you want to see
 it work. Until an account is all in, the mail list shows a bar for it
 over your mail, how many messages are here of how many the server has.
 Headers come first, every mailbox's, so all your mail shows up in the list
-and searches early on. Bodies follow, and one you open jumps the queue.
+and searches early on. Bodies follow. One you open doesn't wait for any
+of that: it's fetched right away on a connection of its own, same for an
+attachment you open.
 
 Sometimes a server shows a big mailbox nearly empty for a while. Proton
 Bridge does it when its disk fills up (its temporary files go to `/tmp`),
