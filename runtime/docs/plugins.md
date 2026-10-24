@@ -2666,6 +2666,27 @@ Markdown: every loaded plugin with its commands, keys and options, every
 option, every event, and the whole API. With your config and plugins loaded, they
 describe your own setup.
 
+## Sharing a plugin
+
+A plugin in a git repository of its own, with `plugin.toml` at the top,
+installs with one line in someone's config:
+
+```luau
+require("@git-plugins").use("https://github.com/you/greed-leap")
+```
+
+Put its docs in a `docs` folder, as Markdown. Once the plugin is
+installed, `:docs` and `space h d` list those pages after the manual's,
+and `space h /` searches them. `README.md` comes first, then the others by
+name, each titled by its first heading; a `SUMMARY.md` like this manual's
+sets the order instead. Links and pictures relative to the page work in
+the editor and on GitHub alike.
+
+`greed check .` in its CI keeps it working as Greed changes, and
+`greed = "0.4"` in `plugin.toml` keeps an older Greed from loading it.
+[Plugins to install](plugins-to-install.md) lists plugins others can use,
+and how to add yours.
+
 ## Loading and reloading
 
 Greed loads the default plugins, then yours, then `init.luau`. Each plugin

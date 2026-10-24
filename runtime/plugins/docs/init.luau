@@ -6,7 +6,7 @@
 --   :docs [WORDS]   the heading with those words, or the picker
 --
 -- Pages open read-only, in the reading view: links go to other pages, and
--- esc shows the Markdown.
+-- esc shows the Markdown. A plugin's own `docs` folder joins them.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -27,20 +27,91 @@ function M.folder(): string?
 	return (string.gsub(own, "/plugins/docs/?$", "/docs"))
 end
 
---- The pages, in the order the contents (`SUMMARY.md`) lists them: each
---- one's title and file. Pages it lists that aren't there, like the
---- reference pages the website makes, are left out.
-function M.pages(): { { title: string, path: string } }
-	local folder = M.folder()
-	local summary = folder and greed.fs.read(`{folder}/SUMMARY.md`)
-	if folder == nil or summary == nil then
-		return {}
+--- A page of the manual or of a plugin's docs: its title and file.
+export type Page = { title: string, path: string }
+
+-- A line a search found, in a page.
+type Found = { path: string, line: number }
+
+-- The pages in `folder`, in the order its contents (`SUMMARY.md`) lists
+-- them, leaving out those that aren't there, like the reference pages the
+-- website makes. Without contents, its Markdown files, README.md first,
+-- each titled by its first heading.
+local function pages_in(folder: string): { Page }
+	local out: { Page } = {}
+	local summary = greed.fs.read(`{folder}/SUMMARY.md`)
+	if summary then
+		for title, file in string.gmatch(summary, "%[([^%]]+)%]%(([^%)]+)%)") do
+			local path = `{folder}/{file}`
+			if greed.fs.read(path) then
+				table.insert(out, { title = title, path = path })
+			end
+		end
+		return out
 	end
-	local out = {}
-	for title, file in string.gmatch(summary, "%[([^%]]+)%]%(([^%)]+)%)") do
+	local files: { string } = {}
+	local entries = greed.fs.list(folder)
+	if entries then
+		for _, entry in entries do
+			if not entry.dir and string.match(entry.name, "%.md$") then
+				table.insert(files, entry.name)
+			end
+		end
+	end
+	table.sort(files, function(a: string, b: string): boolean
+		if (a == "README.md") ~= (b == "README.md") then
+			return a == "README.md"
+		end
+		return a < b
+	end)
+	for _, file in files do
 		local path = `{folder}/{file}`
-		if greed.fs.read(path) then
-			table.insert(out, { title = title, path = path })
+		local text = "\n" .. (greed.fs.read(path) or "")
+		local title = string.match(text, "\n#%s+([^\n]-)%s*\n")
+		table.insert(out, { title = title or (string.gsub(file, "%.md$", "")), path = path })
+	end
+	return out
+end
+
+--- The `docs` folder of each loaded plugin that has one, by plugin name.
+function M.plugin_folders(): { [string]: string }
+	local out: { [string]: string } = {}
+	for name, dir in greed.plugin.dirs() do
+		local info = greed.fs.stat(`{dir}/docs`)
+		if info and info.kind == "dir" then
+			out[name] = `{dir}/docs`
+		end
+	end
+	return out
+end
+
+-- Where pages come from: the manual, then plugins' docs by plugin name,
+-- with what a search lists their pages under.
+local function folders(): { { dir: string, prefix: string } }
+	local out: { { dir: string, prefix: string } } = {}
+	local manual = M.folder()
+	if manual then
+		table.insert(out, { dir = manual, prefix = "" })
+	end
+	local own = M.plugin_folders()
+	local names: { string } = {}
+	for name in own do
+		table.insert(names, name)
+	end
+	table.sort(names)
+	for _, name in names do
+		table.insert(out, { dir = own[name], prefix = `{name}/` })
+	end
+	return out
+end
+
+--- The manual's pages in the order its contents (`SUMMARY.md`) lists them,
+--- then the pages in each plugin's own `docs` folder.
+function M.pages(): { Page }
+	local out: { Page } = {}
+	for _, folder in folders() do
+		for _, page in pages_in(folder.dir) do
+			table.insert(out, page)
 		end
 	end
 	return out
@@ -159,35 +230,39 @@ greed.command({
 
 greed.command({
 	name = "docs-search",
-	doc = "Search the manual as you type, and go to what's found",
+	doc = "Search the manual and plugins' docs as you type, and go to what's found",
 	run = function()
-		local folder = M.folder()
-		if folder == nil then
+		local roots = folders()
+		if #roots == 0 then
 			greed.echo("the manual isn't here")
 			return
 		end
-		local root = folder :: string
 		picker.pick("Search the manual", {}, function(item)
-			local f = item.value :: greed.GrepLine
-			M.open(core.project.resolve(f.path, root), f.line)
+			local f = item.value :: Found
+			M.open(f.path, f.line)
 		end, {
 			source = function(query: string): { picker.Item }
-				local found: { greed.GrepLine } = greed.fs.grep(
-					core.search.pattern(query),
-					root,
-					{ limit = 200 }
-				) or {}
 				local items: { picker.Item } = {}
-				for _, f in found do
-					local page = string.gsub(f.path, "%.md$", "")
-					local text = string.match(f.text, "^%s*(.-)%s*$") or f.text
-					table.insert(items, { label = `{page}: {text}`, value = f })
+				local pattern = core.search.pattern(query)
+				for _, root in roots do
+					local found: { greed.GrepLine } = greed.fs.grep(
+						pattern,
+						root.dir,
+						{ limit = 200 }
+					) or {}
+					for _, f in found do
+						local page = root.prefix .. string.gsub(f.path, "%.md$", "")
+						local text = string.match(f.text, "^%s*(.-)%s*$") or f.text
+						local value: Found =
+							{ path = core.project.resolve(f.path, root.dir), line = f.line }
+						table.insert(items, { label = `{page}: {text}`, value = value })
+					end
 				end
 				return items
 			end,
 			preview = function(item)
-				local f = item.value :: greed.GrepLine
-				return preview(core.project.resolve(f.path, root), f.line)
+				local f = item.value :: Found
+				return preview(f.path, f.line)
 			end,
 		})
 	end,

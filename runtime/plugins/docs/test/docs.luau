@@ -75,3 +75,44 @@ test("enter on a link in a page goes to the page it names", function(t)
 	assert(string.find(page:path() or "", "using.md$"), tostring(page:path()))
 	assert(page:readonly(), "a page followed to is read-only too")
 end)
+
+test("a plugin's own docs folder joins the manual, README first", function(t)
+	local dir = t:tempdir({
+		["plugin.toml"] = 'name = "leaping"\n',
+		["init.luau"] = "",
+		["docs/README.md"] = "# Leaping\n\nJumps to labels.\n\n## Labels on every word\n\nPress s.\n",
+		["docs/colors.md"] = "Some words first.\n\n# Leaping colors\n\n## The label's color\n",
+	})
+	greed.plugin.load(dir)
+	local ok, err = pcall(function()
+		local titles: { string } = {}
+		for _, page in docs.pages() do
+			if string.find(page.path, dir, 1, true) then
+				table.insert(titles, page.title)
+			end
+		end
+		local listed = table.concat(titles, ", ")
+		assert(listed == "Leaping, Leaping colors", listed)
+		assert(docs.pages()[1].title == "Greed", "the manual comes first")
+
+		t:buffer("|")
+		t:run("docs", { "labels", "every", "word" })
+		local buffer = greed.view():buffer()
+		assert(buffer:path() == `{dir}/docs/README.md`, tostring(buffer:path()))
+		assert(buffer:readonly(), "read-only like the manual")
+
+		t:keys("esc space h /")
+		t:keys("l a b e l ' s space c o l o r")
+		t:wait(300)
+		t:wait_for(function()
+			return string.find(table.concat(t:floats(), "\n"), "leaping/colors: ", 1, true) ~= nil
+		end)
+		t:keys("enter")
+		assert(greed.view():buffer():path() == `{dir}/docs/colors.md`, "found in its pages")
+	end)
+	greed.plugin.unload("leaping")
+	assert(ok, tostring(err))
+	for _, page in docs.pages() do
+		assert(not string.find(page.path, dir, 1, true), "gone with the plugin")
+	end
+end)
