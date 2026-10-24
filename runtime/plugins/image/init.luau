@@ -160,6 +160,28 @@ greed.keymap.bind({ kind = "image" }, {
 	["0"] = "image-zoom-actual",
 })
 
+-- `space .` anywhere on a picture: the same zooms as its keys.
+core.actions.finder({
+	name = "image",
+	find = function(view: greed.View): { core.Target }?
+		local v = viewers[view:buffer():id()]
+		if v == nil then
+			return nil
+		end
+		local name = core.project.basename(v.path) or v.path
+		return { { kind = "image", label = name, value = v.path, buffer = v.buffer } }
+	end,
+})
+core.actions.command("image", "zoom in", "image-zoom-in", "Draw it bigger (+)")
+core.actions.command("image", "zoom out", "image-zoom-out", "Draw it smaller (-)")
+core.actions.command(
+	"image",
+	"fit",
+	"image-zoom-fit",
+	"As wide as the view, or its own size when smaller (=)"
+)
+core.actions.command("image", "actual size", "image-zoom-actual", "At its own size (0)")
+
 core.file.opener(M.is_image, function(path, views)
 	local _, err = M.open(path, views)
 	return err

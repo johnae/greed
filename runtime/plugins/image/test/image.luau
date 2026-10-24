@@ -55,3 +55,27 @@ test("the keys work in a style no plugin names", function(t)
 	t:keys("0")
 	assert(string.find(buffer:text(), "100%", 1, true), buffer:text())
 end)
+
+test("space . on a picture offers its zooms, which zoom it", function(t)
+	local core = require("@core")
+	local dir = t:tempdir({ ["dot.png"] = PNG })
+	greed.open(dir .. "/dot.png")
+	local buffer = greed.view():buffer()
+	t:keys("0")
+	local targets = core.actions.at(greed.view())
+	local picture = targets[1]
+	assert(picture and picture.kind == "image" and picture.label == "dot.png", "it's found")
+	local names: { string } = {}
+	for _, action in core.actions.for_kind("image", picture) do
+		table.insert(names, action.name)
+	end
+	local listed = table.concat(names, ", ")
+	assert(string.find(listed, "zoom in, zoom out, fit, actual size", 1, true), listed)
+	for _, action in core.actions.for_kind("image", picture) do
+		if action.name == "zoom in" then
+			core.actions.run(action, picture)
+		end
+	end
+	t:wait(50)
+	assert(string.find(buffer:text(), "125%", 1, true), buffer:text())
+end)

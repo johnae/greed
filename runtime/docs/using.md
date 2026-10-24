@@ -2426,7 +2426,9 @@ another terminal that can size text, or turns it off in kitty.
 Opening a PNG, JPEG or GIF shows the image, as wide as the pane at most,
 under a line with its name, its size in pixels and the zoom. `+` and `-`
 draw it bigger and smaller, `=` fits it to the pane again and `0` draws it
-at its own size. It shows in the window and in terminals that show images.
+at its own size; `space .` on it offers the same. It shows in the window
+and in terminals that show images. A picture in a chat room opens this way
+with `enter`, or `open` on `space .`.
 
 ### PDFs
 
