@@ -133,3 +133,19 @@ test("the highlights that fade are faint in every theme, light or dark", functio
 		end
 	end
 end)
+
+test("a theme asked for before a plugin adds it is used once it does", function(t)
+	theme.use("nord")
+	theme.use("later-theme")
+	assert(theme.current() == "nord", "the one in use stays meanwhile")
+	local later: theme.Styles = { keyword = { fg = "#123456" } }
+	theme.define("later-theme", { inherits = "nord", styles = later })
+	assert(theme.current() == "later-theme")
+	assert(fg("keyword") == "#123456", tostring(fg("keyword")))
+	local ok, err = pcall(function()
+		t:run("theme", { "no-such-theme" })
+	end)
+	assert(not ok and string.find(tostring(err), "no theme called", 1, true), tostring(err))
+	assert(theme.current() == "later-theme", "a misspelled name changes nothing")
+	theme.use("default")
+end)

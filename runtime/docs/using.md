@@ -2821,6 +2821,11 @@ theme.define("mine", {
 })
 ```
 
+A theme can come from a plugin too, like
+[zenbones](https://github.com/johnae/greed-zenbones). `theme.use` and the
+theme you picked last wait for it: the one in use stays until the plugin
+adds it, as on the first start, while it's still being fetched.
+
 `greed.theme.set` changes single names on top of whichever theme is in use,
 and those changes stay when you switch themes. Each changes only the fields
 it gives: `greed.theme.set({ comment = { italic = false } })` keeps the

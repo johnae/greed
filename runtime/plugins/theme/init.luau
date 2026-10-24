@@ -45,9 +45,12 @@ end
 local current = "default"
 -- The theme in use before tab on `:theme` started trying others.
 local tried_from: string? = nil
+-- A theme asked for before a plugin added it, like one fetched from git on
+-- the first start, or the one picked last when its plugin loads after this.
+local wanted: string? = nil
 
 --- Adds a theme, or replaces the one called `name`, until the plugin (or
---- config) that added it goes.
+--- config) that added it goes. One asked for before it was there is used now.
 function M.define(name: string, theme: Theme)
 	themes[name] = theme
 	greed.plugin.cleanup(function()
@@ -55,6 +58,9 @@ function M.define(name: string, theme: Theme)
 			themes[name] = nil
 		end
 	end)
+	if wanted == name then
+		M.use(name)
+	end
 end
 
 --- Every theme's name, sorted.
@@ -116,6 +122,12 @@ end
 --- you're not in is dimmed: blended towards the background in the window,
 --- the terminal's dim attribute in a terminal.
 function M.use(name: string)
+	if themes[name] == nil then
+		-- Its plugin may not be there yet; it's used once it adds it.
+		wanted = name
+		return
+	end
+	wanted = nil
 	local base = styles(name, {})
 	if greed.option.get("effects-dim") == true then
 		base["ui.pane.inactive"] = patch(base["ui.pane.inactive"], { dim = true })
@@ -172,6 +184,9 @@ greed.command({
 	run = function(ctx)
 		local name = ctx.args[1]
 		if name then
+			if themes[name] == nil then
+				error(`there's no theme called {name}`, 0)
+			end
 			pick(name)
 			return
 		end
@@ -198,6 +213,21 @@ greed.command({
 
 local saved = remembered()
 local name = saved and string.match(greed.fs.read(saved) or "", "^%s*(%S+)")
-M.use(if name and themes[name] then name else "default")
+-- The default meanwhile, when the one picked last comes from a plugin that
+-- loads after this.
+M.use("default")
+if name then
+	M.use(name)
+end
+
+-- Once everything has loaded, one asked for that hasn't come is said: a
+-- plugin still being fetched, or a misspelled name.
+greed.on("editor.started", function()
+	if wanted then
+		greed.echo(
+			`theme {wanted} isn't there yet; it's used once a plugin adds it (:theme lists them)`
+		)
+	end
+end)
 
 return M
