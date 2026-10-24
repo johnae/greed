@@ -32,6 +32,11 @@ const LISTED: u32 = 50;
 /// How long joining a room may take the server.
 const JOINING: Duration = Duration::from_secs(300);
 
+/// How long a sync that stopped on an error waits to start again, the first
+/// time; twice as long each time after, up to `RESTART_MOST`.
+const RESTART: Duration = Duration::from_secs(2);
+const RESTART_MOST: Duration = Duration::from_secs(120);
+
 impl Matrix {
     /// Starts syncing `client` (account `id`), saying how that goes as
     /// `account.changed` and when its rooms change as `rooms.changed`.
@@ -49,16 +54,34 @@ impl Matrix {
         let mut states = sync.state();
         let me = self.me.clone();
         let account = id.to_string();
+        let restart = Arc::downgrade(&sync);
         tokio::task::spawn_local(async move {
+            let mut wait = RESTART;
             while let Some(state) = states.next().await {
                 let Some(me) = me.upgrade() else { break };
-                let state = match state {
-                    State::Running => AccountState::Ready,
+                let failed = matches!(state, State::Error(_));
+                let said = match state {
+                    State::Running => {
+                        wait = RESTART;
+                        AccountState::Ready
+                    }
                     State::Idle | State::Terminated => AccountState::Syncing,
+                    // The server forgot where the sync was, as it does after
+                    // a pause: starting again is all it asks.
+                    State::Error(e) if why(&e).contains("M_UNKNOWN_POS") => AccountState::Syncing,
                     State::Error(e) => AccountState::Trouble(why(&e)),
                     State::Offline => AccountState::Trouble("can't reach the server".into()),
                 };
-                me.changed(&account, state);
+                me.changed(&account, said);
+                drop(me);
+                // A sync that stopped on an error stays stopped until it's
+                // started again: a little later each time it fails again.
+                if failed {
+                    tokio::time::sleep(wait).await;
+                    wait = (wait * 2).min(RESTART_MOST);
+                    let Some(sync) = restart.upgrade() else { break };
+                    sync.start().await;
+                }
             }
         });
         self.watch_rooms(id, client);

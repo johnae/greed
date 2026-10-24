@@ -1545,3 +1545,26 @@ test("a server is named without its scheme or a slash at the end", function()
 	assert(chat.host("http://127.0.0.1:38411") == "127.0.0.1:38411")
 	assert(chat.host("mm.evroc.com") == "mm.evroc.com")
 end)
+
+test("an account's trouble takes one line of the list, however long", function(t)
+	local notify = fake()
+	notify("account.changed", {
+		id = "@anna:x",
+		server = "https://x",
+		name = "Anna",
+		state = {
+			state = "trouble",
+			why = "the server returned an error: [400 / M_SOMETHING] Requesting something it didn't like at all",
+		},
+	})
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	local text = greed.view():buffer():text()
+	local line = string.match(text, "Anna[^\n]*") or ""
+	assert(
+		string.find(line, "the server returned", 1, true) and string.find(line, "…", 1, true),
+		line
+	)
+	assert(not string.find(text, "didn't like", 1, true), "cut, not wrapped: " .. text)
+end)

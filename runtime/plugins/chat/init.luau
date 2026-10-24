@@ -173,8 +173,9 @@ local function render_list(o: List): core.UiNode
 	for _, key in keys do
 		local account = backend.accounts[key]
 		local state = account.state.state
+		-- One line however long what went wrong is: the sidebar is narrow.
 		local said = if state == "trouble"
-			then `  {account.state.why or "trouble"}`
+			then `  {core.text.clip(account.state.why or "trouble", 28)}`
 			elseif state == "syncing" then "  syncing…"
 			else ""
 		table.insert(
