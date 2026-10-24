@@ -155,7 +155,11 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
 
 /// Type checks and tests the plugin in `dir` against the `others`. Its
 /// tests run with only what was `approved` for it, when it needs approving.
-fn check(dir: &Path, others: &[(String, PathBuf)], approved: Option<&BTreeSet<String>>) -> Check {
+pub(super) fn check(
+    dir: &Path,
+    others: &[(String, PathBuf)],
+    approved: Option<&BTreeSet<String>>,
+) -> Check {
     let types = analyze(dir, others);
     let mut plugins: Vec<PathBuf> = others.iter().map(|(_, dir)| dir.clone()).collect();
     plugins.push(dir.to_owned());

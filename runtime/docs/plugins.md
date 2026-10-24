@@ -2567,6 +2567,17 @@ printed plugin by plugin. A test file requires your plugin's other files
 with `require("../log")` and gets the ones your plugin loaded, state and
 all, so internals can stay out of what your plugin returns.
 
+`greed check DIR` (or `greed check` in the plugin's folder) does what the
+editor does before it trusts a plugin: strict type checking against
+Greed's types and the other plugins', so `require("@theme")` checks too,
+then the tests, then warnings like keys bound to commands that don't
+exist. It needs no `.luaurc` in the plugin, so it suits a plugin with a
+repository of its own, and its CI:
+
+```yaml
+- run: nix run github:johnae/greed -- check .
+```
+
 `t:keys("i")` presses keys and `t:type("hello world")` types text a
 character at a time, newlines as `enter`. `t:draw(cols, rows)` and
 `t:screen(cols, rows)` give what a client would show, as lines of text;

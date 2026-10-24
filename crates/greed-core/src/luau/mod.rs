@@ -65,6 +65,7 @@ use serde::Deserialize;
 pub use api::EVENTS;
 pub use jobs::Done as FinishedJob;
 pub use modules::keep_bytecode_in;
+pub use plugin::Check;
 pub use testing::{TestResult, run_suites, run_tests};
 
 use crate::Editor;
@@ -1968,6 +1969,20 @@ pub(crate) fn plugin_dirs(lua: &Lua) -> Vec<(PluginId, PathBuf)> {
 /// The name in `dir`'s `plugin.toml`.
 pub(crate) fn plugin_name(dir: &Path) -> Result<String, HostError> {
     Ok(read_manifest(dir)?.1.name)
+}
+
+/// Type checks and tests the plugin in `dir` with the plugins in `others`
+/// loaded beside it, as `greed.plugin.check` does from the editor: what
+/// `greed check` runs, for a plugin that lives outside Greed's own.
+pub fn check_plugin(dir: &Path, others: &[PathBuf]) -> Result<Check, HostError> {
+    let name = plugin_name(dir)?;
+    let others: Vec<(String, PathBuf)> = others
+        .iter()
+        .filter(|other| other.join("plugin.toml").is_file())
+        .filter_map(|other| Some((plugin_name(other).ok()?, other.clone())))
+        .filter(|(other, _)| *other != name)
+        .collect();
+    Ok(plugin::check(dir, &others, None))
 }
 
 /// `ms` milliseconds from Luau as a duration: none for a negative number

@@ -48,7 +48,7 @@ const NOTES_SESSION: &str = "hoard";
 /// The session `greed mail` shows, where the mail plugin opens your mail.
 const MAIL_SESSION: &str = "mail";
 
-const USAGE: &str = "usage: greed [FILE]\n       greed --session NAME [FILE]\n                            show the session NAME, starting it if it isn't running\n       greed --new [FILE]   start another session for the project, with this greed\n       greed notes          Hoard: your notes, todos and today, in a session of their own\n       greed mail           your mail, searched and read, in a session of its own\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed ssh HOST ctl ARGS\n                            greed ctl on another machine, asking nothing (for programs)\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--run COMMAND] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --fresh              with greed [FILE] or greed ssh: a session started now opens nothing it had open before\n       --restore            with greed [FILE] or greed ssh: a session started now opens what it had open, even after it was quit\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
+const USAGE: &str = "usage: greed [FILE]\n       greed --session NAME [FILE]\n                            show the session NAME, starting it if it isn't running\n       greed --new [FILE]   start another session for the project, with this greed\n       greed notes          Hoard: your notes, todos and today, in a session of their own\n       greed mail           your mail, searched and read, in a session of its own\n       greed repl [FILE]\n       greed test [PLUGIN_DIR...]\n       greed check [PLUGIN_DIR...]\n                            a plugin's types, tests and warnings, as Greed checks it\n       greed ctl TOOL [ARGS] (greed ctl for more)\n       greed edit [--wait] FILE...\n                            open files in the running editor; --wait until :q, as $EDITOR\n       greed mcp            MCP server for the running editor, on stdio\n       greed serve [FILE]    run the editor with no terminal\n       greed attach [NAME]   show a running editor here\n       greed ssh HOST [--session NAME | --new] [FILE]\n                            show an editor on another machine, starting one if needed\n       greed ssh HOST ctl ARGS\n                            greed ctl on another machine, asking nothing (for programs)\n       greed shot [FILE] [--keys KEYS] [--type TEXT] [--run COMMAND] [--wait S] [--wait-for TEXT] [--size WxH] [--out PNG]\n                            the editor as the window shows it, after those steps, as a picture\n       greed commands        these, and the commands plugins add (greed ls, greed new, ...)\n       greed --version\n       --terminal           with greed [FILE] or greed ssh: open a terminal in the session too\n       --shell              with greed [FILE] or greed ssh: show the project's greed shell\n       --fresh              with greed [FILE] or greed ssh: a session started now opens nothing it had open before\n       --restore            with greed [FILE] or greed ssh: a session started now opens what it had open, even after it was quit\n       --gui                show the editor in a window rather than this terminal\n       --record SCRIPT      record the editor as the window shows it, as SCRIPT says, into pictures\n       --profile DIR        keep config, data, cache, state and sessions in DIR\n       --config-dir DIR, --data-dir DIR, --cache-dir DIR, --state-dir DIR\n                            move one of those folders";
 
 const HELP: &str = "\
 Type Luau to evaluate it, or one of:
@@ -144,6 +144,7 @@ fn main() -> ExitCode {
         [cmd, dirs @ ..] if cmd == "test" => {
             test(&dirs.iter().map(PathBuf::from).collect::<Vec<_>>())
         }
+        [cmd, dirs @ ..] if cmd == "check" => check(dirs),
         [cmd] if cmd == "commands" => commands(),
         [cmd, rest @ ..] if cmd == "shot" => shot(rest),
         [cmd] if cmd == "bench" => bench::run(None, false),
@@ -480,6 +481,61 @@ fn write(host: &Host) -> Result<String, Box<dyn std::error::Error>> {
         greed_core::files::write(path, |out| buffer.text().write_to(out))?;
         Ok(format!("wrote {}", path.display()))
     })
+}
+
+/// Checks plugins as `greed.plugin.check` does: strict type checking with
+/// Greed's types and the other plugins' (`require("@theme")` and the like
+/// resolve to them), then their tests, then what looks wrong once they're
+/// loaded with the others. For a plugin that lives in a repository of its
+/// own, which has no `.luaurc` pointing at Greed. Fails if any part does.
+fn check(dirs: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let others = plugins()?;
+    let mut failed = 0;
+    let here = [".".to_owned()];
+    for dir in if dirs.is_empty() { &here[..] } else { dirs } {
+        let dir = Path::new(dir).canonicalize()?;
+        println!("{}", dir.display());
+        let found = greed_core::luau::check_plugin(&dir, &others)?;
+        match &found.types {
+            Ok((true, _)) => println!("  ok    types"),
+            Ok((false, said)) => {
+                failed += 1;
+                println!(
+                    "  FAIL  types\n        {}",
+                    said.trim().replace('\n', "\n        ")
+                );
+            }
+            Err(why) => println!("  skip  types: {why}"),
+        }
+        match &found.tests {
+            Ok(tests) => {
+                for (file, name, failure) in tests {
+                    match failure {
+                        None => println!("  ok    {file}: {name}"),
+                        Some(why) => {
+                            failed += 1;
+                            println!(
+                                "  FAIL  {file}: {name}\n        {}",
+                                why.replace('\n', "\n        ")
+                            );
+                        }
+                    }
+                }
+            }
+            Err(why) => {
+                failed += 1;
+                println!("  FAIL  tests: {why}");
+            }
+        }
+        for warning in &found.warnings {
+            println!("  warn  {warning}");
+        }
+    }
+    if failed > 0 {
+        return Err(format!("{failed} check(s) failed").into());
+    }
+    println!("all good");
+    Ok(())
 }
 
 /// Runs plugins' tests, each with the default plugins loaded so keymaps
