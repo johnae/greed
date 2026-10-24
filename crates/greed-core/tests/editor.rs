@@ -287,6 +287,31 @@ fn files_open_once_and_show_in_a_view() {
 }
 
 #[test]
+fn the_file_a_session_starts_with_opens_as_any_file_does_one_that_isnt_text_too() {
+    let dir = std::env::temp_dir().join(format!("greed-open-path-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("pic.png"), b"\x89PNG\r\n\x1a\n\xff").unwrap();
+    let mut ed = Editor::new(greed_text::ClientId(1));
+    let (picture, view) = ed.open_path(&dir.join("pic.png")).unwrap();
+    assert_eq!(ed.view(view).buffer, picture, "shown, in the first view");
+    assert!(ed.buffer(picture).is_readonly());
+    assert!(
+        ed.buffer(picture)
+            .path()
+            .is_some_and(|path| path.ends_with("pic.png"))
+    );
+    let mut other = Editor::new(greed_text::ClientId(1));
+    let (missing, _) = other.open_path(&dir.join("new.md")).unwrap();
+    assert_eq!(
+        other.buffer(missing).text().len_bytes(),
+        0,
+        "not there yet: empty"
+    );
+    assert!(!other.buffer(missing).is_readonly());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn every_spelling_of_a_file_is_one_buffer() {
     let dir = std::env::temp_dir().join(format!("greed-spellings-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("src")).unwrap();

@@ -132,7 +132,7 @@ fn main() -> ExitCode {
         [cmd] if let Some(session) = own_session(cmd) => edit(Some(&session), None, opening),
         [cmd, link] if cmd == "link" => chat_link(link),
         [cmd] if cmd == "repl" => repl(None),
-        [cmd, file] if cmd == "repl" => repl(Some(PathBuf::from(file))),
+        [cmd, file] if cmd == "repl" => repl(Some(Path::new(file))),
         [cmd] if cmd == "test" => runtime::dir()
             .map_err(Into::into)
             .and_then(|dir| test(&[dir.join("plugins/core")])),
@@ -316,23 +316,22 @@ fn plugin_dirs(dir: &Path) -> io::Result<Vec<PathBuf>> {
         .collect())
 }
 
-/// The text of `file`, or nothing if there is no file yet.
-fn read(file: Option<&Path>) -> io::Result<String> {
-    match file {
-        Some(path) if path.exists() => std::fs::read_to_string(path),
-        _ => Ok(String::new()),
-    }
-}
-
-/// An editor with `text` open and the default plugins loaded.
-fn host(
-    text: &str,
-    file: Option<PathBuf>,
-    requests: Option<Sender<Request>>,
-) -> Result<Host, HostError> {
+/// An editor with `file` open (or an empty buffer) and the default plugins
+/// loaded. The file opens as any opened file does: one that isn't text
+/// too, for a plugin like the image viewer to show once it's there.
+fn host(file: Option<&Path>, requests: Option<Sender<Request>>) -> Result<Host, HostError> {
     runtime::keep_bytecode();
     let mut editor = Editor::new(ClientId(1));
-    editor.open("file", text, file);
+    match file.map(|path| (path, editor.open_path(path))) {
+        Some((_, Ok(_))) => {}
+        Some((path, Err(err))) => {
+            editor.open("file", "", None);
+            editor.echo(format!("can't open {}: {err}", path.display()));
+        }
+        None => {
+            editor.open("file", "", None);
+        }
+    }
     let host = Host::new(editor)?;
     // Before plugins load, so they can start transports like the IDE
     // connection.
@@ -394,8 +393,7 @@ fn edit(
 
 /// The editor in this process, for when a background session can't start.
 fn edit_here(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
-    let text = read(file.as_deref())?;
-    let conn = server::spawn(move || host(&text, file, None));
+    let conn = server::spawn(move || host(file.as_deref(), None));
     // Closing a window leaves the editor; here that means quitting it.
     if matches!(
         client::run(&conn.input, &conn.output)?,
@@ -407,8 +405,8 @@ fn edit_here(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn repl(file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
-    let host = host(&read(file.as_deref())?, file, None)?;
+fn repl(file: Option<&Path>) -> Result<(), Box<dyn std::error::Error>> {
+    let host = host(file, None)?;
 
     let interactive = io::stdin().is_terminal();
     if interactive {
@@ -639,7 +637,7 @@ fn plugin_command(
     args: &[String],
     opening: Opening,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let host = host("", None, None)?;
+    let host = host(None, None)?;
     if !host.cli_commands().iter().any(|(n, _, _)| n == name) {
         if args.is_empty() {
             return edit(None, Some(PathBuf::from(name)), opening);
@@ -662,7 +660,7 @@ fn plugin_command(
 /// `greed commands`: Greed's own commands, then the ones plugins add.
 fn commands() -> Result<(), Box<dyn std::error::Error>> {
     println!("{USAGE}");
-    let commands = host("", None, None)?.cli_commands();
+    let commands = host(None, None)?.cli_commands();
     if !commands.is_empty() {
         println!("\nfrom plugins:");
     }

@@ -130,7 +130,7 @@ pub fn tell(message: &str) -> Result<(), Error> {
 /// page is closed.
 fn run_page(name: &'static str, code: String) -> Result<(), Error> {
     let conn = server::spawn(move || {
-        let host = host("", None, None)?;
+        let host = host(None, None)?;
         host.load_str(name, &code)?;
         Ok(host)
     });

@@ -1046,6 +1046,32 @@ impl Editor {
         if let Some(buffer) = self.buffer_for(path) {
             return Ok(buffer);
         }
+        let buffer = self.file_buffer(path)?;
+        let id = buffer.id();
+        self.insert_buffer(buffer);
+        Ok(id)
+    }
+
+    /// The file at `path` in a new view, focused, as [`Editor::open`] opens
+    /// text: for the file a session starts with. Read as
+    /// [`Editor::open_file`] reads it, so one that isn't text opens too.
+    pub fn open_path(&mut self, path: &Path) -> std::io::Result<(BufferId, ViewId)> {
+        let path = &file_path(path)?;
+        let buffer = self.file_buffer(path)?;
+        let id = buffer.id();
+        let view = self.add_view(id, Selection::point(0));
+        if self.projects.is_empty() {
+            let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            self.add_project(root, view);
+        }
+        self.insert_buffer(buffer);
+        Ok((id, view))
+    }
+
+    /// A new buffer for the file at `path` (made absolute already): its text,
+    /// empty if it isn't there yet; read-only with what can't be read
+    /// replaced when it isn't UTF-8.
+    fn file_buffer(&mut self, path: &Path) -> std::io::Result<Buffer> {
         let (text, binary) = match std::fs::read(path) {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => (String::new(), false),
             Err(err) => return Err(err),
@@ -1059,8 +1085,7 @@ impl Editor {
         buffer.set_detected(self.file_types.detect(path));
         buffer.set_readonly(binary);
         buffer.set_lossy(binary);
-        self.insert_buffer(buffer);
-        Ok(id)
+        Ok(buffer)
     }
 
     /// The open buffer for the file at `path`, however it's spelled (see

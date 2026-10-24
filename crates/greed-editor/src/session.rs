@@ -18,7 +18,7 @@ use greed_core::starting::{AGENT_ENV, log_path, restore_flags, spawn_server};
 use serde_json::{Value, json};
 
 use crate::versions::{self, Choice, Stale};
-use crate::{client, ctl, host, read};
+use crate::{client, ctl, host};
 
 type Error = Box<dyn std::error::Error>;
 
@@ -39,7 +39,6 @@ pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
     std::env::set_current_dir(&root)?;
     // A file that isn't there yet opens empty, to be written there.
     let file = (path.is_some() && !target.is_dir()).then_some(target);
-    let text = read(file.as_deref())?;
     let mut session = control::listen(name, Some(&root))?;
     // A session `greed ssh` started reaches your ssh agent through you.
     if let Some(agent) = std::env::var_os(AGENT_ENV).filter(|path| !path.is_empty())
@@ -48,7 +47,8 @@ pub fn serve(name: &str, path: Option<&Path>) -> Result<(), Error> {
         eprintln!("greed: programs in this session won't reach your ssh agent: {err}");
     }
     let requests = session.sender().clone();
-    let conn = server::spawn_with_session(move || host(&text, file, Some(requests)), Some(session));
+    let conn =
+        server::spawn_with_session(move || host(file.as_deref(), Some(requests)), Some(session));
     // Nothing is drawn until a client attaches and says how big it is.
     conn.server.join().map_err(|_| "the editor crashed")??;
     // `greed` sends a background session's output here; after a clean exit
