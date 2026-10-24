@@ -13,6 +13,7 @@
 - [Editing styles](editing-styles.md)
 - [Keys](keys.md)
 - [Highlighting](highlighting.md)
+- [Plugins to install](plugins-to-install.md)
 - [Writing plugins](plugins.md)
   - [Building interfaces](ui.md)
 - [Agents](agents.md)

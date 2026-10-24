@@ -2537,6 +2537,7 @@ the branch or tag they follow, asking again if an update wants more.
 To stop using one, take its line out of your config and run
 `:plugins-sync`: the plugin goes to the trash and its pin goes from the
 lock file. Starting Greed never removes plugins on its own.
+[Plugins to install](plugins-to-install.md) lists some to try.
 
 ### Where Greed keeps things, and profiles
 
