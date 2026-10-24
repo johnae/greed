@@ -9,6 +9,7 @@
 
 mod alerts;
 mod encryption;
+mod formatted;
 mod login;
 mod media;
 mod messages;

@@ -521,7 +521,7 @@ fn event_item(event: &EventTimelineItem, here: &Here) -> Item {
             match &like.kind {
                 MsgLikeKind::Message(message) => {
                     item.kind = kind_of(message.msgtype());
-                    item.text = message.body().to_string();
+                    item.text = crate::formatted::text_of(message.msgtype());
                     item.edited = message.is_edited();
                     item.media = crate::media::media_of(message.msgtype());
                     item.location = location_of(message.msgtype());
