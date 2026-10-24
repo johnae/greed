@@ -3,8 +3,13 @@ local greed = require("@greed")
 local notes = require("@notes")
 local hoard = require("@hoard")
 
+-- The date `offset` days from today on the calendar: adding seconds lands
+-- a day short near midnight on the night the clocks go back.
 local function day(offset: number): string
-	return os.date("%Y-%m-%d", os.time() + offset * 86400) :: string
+	local today = os.date("*t") :: { year: number, month: number, day: number }
+	local noon =
+		os.time({ year = today.year, month = today.month, day = today.day + offset, hour = 12 })
+	return os.date("%Y-%m-%d", noon) :: string
 end
 
 local function folder(t: test.TestContext, files: { [string]: string }): string

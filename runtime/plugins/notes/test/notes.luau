@@ -394,8 +394,13 @@ test("space n t jots a thought down in the inbox, with today's date", function(t
 end)
 
 -- The date `days` from today, and with `time` the minute `seconds` from now.
+-- The date `days` from today, counted in days on the calendar: adding
+-- seconds lands a day short near midnight on the night the clocks go back.
 local function day(days: number): string
-	return os.date("%Y-%m-%d", os.time() + days * 86400) :: string
+	local today = os.date("*t") :: { year: number, month: number, day: number }
+	local noon =
+		os.time({ year = today.year, month = today.month, day = today.day + days, hour = 12 })
+	return os.date("%Y-%m-%d", noon) :: string
 end
 local function minute(seconds: number): string
 	return os.date("%Y-%m-%d %H:%M", os.time() + seconds) :: string
