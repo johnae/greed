@@ -16,6 +16,10 @@
 //! last few builds are kept. A greed on the other machine's PATH of the
 //! same version is used when this one can't be put there, and of the same
 //! build always.
+//!
+//! The programs Greed runs beside itself ([`HELPERS`], like `greed-mail`)
+//! go along into the same folder, from beside whichever greed is put there,
+//! where Greed finds them.
 
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
@@ -40,6 +44,12 @@ const RELEASES: &str = "https://github.com/johnae/greed/releases/download";
 pub fn ensure(host: &str) -> Result<String, Error> {
     let found = probe(host)?;
     if let Some(path) = found.build {
+        // Put there before helpers went along: this build has them beside it.
+        if !found.build_missing.is_empty()
+            && let Ok(me) = std::env::current_exe()
+        {
+            upload_helpers(host, &me, folder_of(&path), &found.build_missing);
+        }
         return Ok(path);
     }
     let system = found.system;
@@ -54,6 +64,18 @@ pub fn ensure(host: &str) -> Result<String, Error> {
         }
     }
     if let Some(path) = found.version {
+        if !found.version_missing.is_empty() {
+            let source = match &given {
+                Some(given) => Ok(PathBuf::from(given)),
+                None => fetched(host, &system),
+            };
+            match source {
+                Ok(greed) => upload_helpers(host, &greed, folder_of(&path), &found.version_missing),
+                Err(err) => {
+                    eprintln!("greed: couldn't get what goes beside greed on {host}: {err}");
+                }
+            }
+        }
         return Ok(path);
     }
     let folder = format!("{server}/{}", folder_name());
@@ -107,6 +129,16 @@ struct Found {
     build: Option<String>,
     /// A greed of this version there, if there is one.
     version: Option<String>,
+    /// The helpers missing beside each, when it's one Greed put there: one
+    /// put there before they went along. One on the PATH has what its
+    /// install gave it.
+    build_missing: Vec<String>,
+    version_missing: Vec<String>,
+}
+
+/// The folder of the program at `path`.
+fn folder_of(path: &str) -> &str {
+    path.rsplit_once('/').map_or(".", |(folder, _)| folder)
 }
 
 /// Asks `host` for its system, its home, this build of greed and a greed of
@@ -114,6 +146,14 @@ struct Found {
 fn probe(host: &str) -> Result<Found, Error> {
     let folder = folder_name();
     let built = build_folder();
+    let helpers = HELPERS.join(" ");
+    // The helpers missing in the server folder `dir`, if Greed put a greed there.
+    let missing = |dir: &str| {
+        format!(
+            "if [ -x \"$s/{dir}/greed\" ]; then for h in {helpers}; do \
+             [ -x \"$s/{dir}/$h\" ] || printf '%s ' \"$h\"; done; fi; echo"
+        )
+    };
     let line = format!(
         "uname -s; uname -m; echo \"$HOME\"; \
          s=\"$HOME/.local/share/greed/server\"; v=$(greed --version 2>/dev/null); \
@@ -122,19 +162,30 @@ fn probe(host: &str) -> Result<Found, Error> {
          else echo; fi; \
          if [ -x \"$s/{folder}/greed\" ]; then echo \"$s/{folder}/greed\"; \
          elif [ \"${{v%% (*}}\" = 'greed {VERSION}' ]; then command -v greed; \
-         else echo; fi"
+         else echo; fi; {}; {}",
+        missing(&built),
+        missing(&folder)
     );
     let (mut child, input, mut output) = remote(host, &line)?;
     drop(input);
     let mut lines = Vec::new();
-    for _ in 0..5 {
+    for _ in 0..7 {
         let mut line = String::new();
         output.read_line(&mut line)?;
         lines.push(line.trim().to_owned());
     }
     let _ = child.wait();
-    let [os, arch, home, exact, version] =
-        <[String; 5]>::try_from(lines).map_err(|_| "no answer")?;
+    let [
+        os,
+        arch,
+        home,
+        exact,
+        version,
+        build_missing,
+        version_missing,
+    ] = <[String; 7]>::try_from(lines).map_err(|_| "no answer")?;
+    let names =
+        |line: String| -> Vec<String> { line.split_whitespace().map(str::to_owned).collect() };
     if home.is_empty() {
         return Err(format!("{host} didn't say where its home is").into());
     }
@@ -145,6 +196,8 @@ fn probe(host: &str) -> Result<Found, Error> {
         home,
         build: Some(exact).filter(|g| !g.is_empty()),
         version: Some(version).filter(|g| !g.is_empty()),
+        build_missing: names(build_missing),
+        version_missing: names(version_missing),
     })
 }
 
@@ -210,14 +263,55 @@ fn fetched(host: &str, system: &str) -> Result<PathBuf, Error> {
     Ok(cached)
 }
 
+/// The programs that ship beside `greed` and that Greed runs from beside
+/// itself: they go wherever a greed is put.
+pub const HELPERS: &[&str] = &["greed-mail"];
+
+/// The helpers there are beside `greed`, with their names.
+fn helpers_beside(greed: &Path) -> Vec<(&'static str, PathBuf)> {
+    HELPERS
+        .iter()
+        .map(|name| (*name, greed.with_file_name(name)))
+        .filter(|(_, path)| path.is_file())
+        .collect()
+}
+
 /// Copies `binary` to `folder` on `host` as `greed`, and checks it runs
-/// there. It's written beside and renamed into place, so a greed starting
-/// there at the same time never runs half of it.
+/// there, then the helpers beside it. Each is written beside and renamed
+/// into place, so a greed starting there at the same time never runs half
+/// of one. A helper that doesn't go only means its part of Greed doesn't
+/// work there, which it says when it's used.
 fn upload(host: &str, binary: &Path, folder: &str) -> Result<(), Error> {
+    copy(host, binary, folder, "greed", true)?;
+    upload_helpers(host, binary, folder, HELPERS);
+    Ok(())
+}
+
+/// Copies the helpers named in `wanted` from beside `greed` to `folder` on
+/// `host`, those there are.
+fn upload_helpers(host: &str, greed: &Path, folder: &str, wanted: &[impl AsRef<str>]) {
+    for (name, helper) in helpers_beside(greed) {
+        if !wanted.iter().any(|w| w.as_ref() == name) {
+            continue;
+        }
+        if let Err(err) = copy(host, &helper, folder, name, false) {
+            eprintln!("greed: couldn't put {name} on {host}: {err}");
+        }
+    }
+}
+
+/// Copies `binary` to `folder/name` on `host`; with `check`, only once it
+/// says its version there.
+fn copy(host: &str, binary: &Path, folder: &str, name: &str, check: bool) -> Result<(), Error> {
+    let part = format!("{folder}/{name}.part");
+    let check = if check {
+        format!("&& \"{part}\" --version >/dev/null ")
+    } else {
+        String::new()
+    };
     let line = format!(
-        "mkdir -p \"{folder}\" && cat > \"{folder}/greed.part\" && chmod +x \"{folder}/greed.part\" \
-         && \"{folder}/greed.part\" --version >/dev/null && mv \"{folder}/greed.part\" \"{folder}/greed\" \
-         && echo copied"
+        "mkdir -p \"{folder}\" && cat > \"{part}\" && chmod +x \"{part}\" \
+         {check}&& mv \"{part}\" \"{folder}/{name}\" && echo copied"
     );
     let (mut child, mut input, mut output) = remote(host, &line)?;
     std::io::copy(&mut std::fs::File::open(binary)?, &mut input)?;
@@ -265,7 +359,8 @@ fn download(system: &str, to: &Path) -> Result<(), Error> {
             "-xzf",
             "-",
             "--strip-components=2",
-            &format!("{name}/bin/greed"),
+            // greed, and the helpers beside it in releases that have them.
+            &format!("{name}/bin"),
         ])
         .stdin(Stdio::piped())
         .spawn()?;
@@ -292,6 +387,26 @@ fn get(url: &str) -> Result<Vec<u8>, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_helpers_beside_a_greed_go_with_it_those_there_are() {
+        let dir = std::env::temp_dir().join(format!("greed-helpers-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let greed = dir.join("greed");
+        std::fs::write(&greed, "").unwrap();
+        assert!(helpers_beside(&greed).is_empty(), "none there yet");
+        std::fs::write(dir.join("greed-mail"), "").unwrap();
+        std::fs::write(dir.join("something-else"), "").unwrap();
+        assert_eq!(
+            helpers_beside(&greed),
+            [("greed-mail", dir.join("greed-mail"))]
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(
+            folder_of("/home/me/.local/share/greed/server/0.3/greed"),
+            "/home/me/.local/share/greed/server/0.3"
+        );
+    }
 
     #[test]
     fn systems_are_named_as_releases_name_them() {

@@ -410,6 +410,9 @@ version's static build from the releases, checked against the release's
 checksums. A greed of the same version already on that machine's `PATH` is
 used as it is. Where there's no greed on its `PATH`, a session puts its own at the end of
 its programs' `PATH`, so `greed FILE` in its terminal opens the file there.
+The programs that come beside `greed`, like `greed-mail` for `greed mail`,
+go along with it, built for that machine too; a machine that got its greed
+before they did gets them the next time you connect.
 
 `GREED_REMOTE` sets the path of `greed` on the other machine, and nothing
 is copied (the two ends check they speak the same protocol, and say so if
