@@ -63,6 +63,7 @@ local paste = require("@self/paste")
 local floats = require("@self/floats")
 local query = require("@self/query")
 local search_box = require("@self/search_box")
+local tables = require("@self/tables")
 local modeless = require("@self/modeless")
 local lookup = require("@self/lookup")
 
@@ -124,6 +125,10 @@ export type UiTab = ui.Tab
 export type RecallWalk = recall.Walk
 --- A float being typed in, from `floats.typing`.
 export type TypingFloat = floats.Typing
+--- A Markdown table's cells, columns and lines (tables.luau).
+export type TableCell = tables.Cell
+export type TableGrid = tables.Grid
+export type TableSpec = tables.Spec
 --- A part of a query, and a whole one parsed (query.luau).
 export type QueryNode = query.Node
 export type Query = query.Parsed
@@ -236,6 +241,8 @@ return {
 	query = query,
 	--- The box a query is typed in, the same everywhere (search_box.luau).
 	search_box = search_box,
+	--- Markdown tables: their cells, and their columns lined up (tables.luau).
+	tables = tables,
 	--- The files you've been in, most recent first (recent.luau).
 	recent = require("@self/recent"),
 	--- Watching objects for changes, with a notification saying how (watch.luau).

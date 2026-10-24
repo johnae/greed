@@ -7,7 +7,7 @@
 -- Lines are 0-based and bytes 0-based, end exclusive, as everywhere.
 
 local greed = require("@greed")
-local tables = require("./tables")
+local tables = require("@core").tables
 local core_text = require("@core").text
 
 local M = {}

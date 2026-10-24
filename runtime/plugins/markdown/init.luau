@@ -21,7 +21,7 @@ require("@self/folds")
 require("@self/outline")
 local choices = require("@self/choices")
 local questions = require("@self/questions")
-local tables = require("@self/tables")
+local tables = core.tables
 local links = require("@self/links")
 local structure = require("@self/structure")
 local conceal = require("@self/conceal")
@@ -426,7 +426,7 @@ local function draw_table(
 		delimiter,
 		1,
 		#delimiter.text,
-		tables.border(widths, "├", "┼", "┤"),
+		core.ui.border(widths, "├", "┼", "┤"),
 		"markdown.table"
 	)
 	if n > 0 then
@@ -434,7 +434,7 @@ local function draw_table(
 			from = line_start(n - 1),
 			to = line_end(n - 1),
 			style = "markdown.table",
-			lines = { tables.border(widths, "┌", "┬", "┐") },
+			lines = { core.ui.border(widths, "┌", "┬", "┐") },
 		})
 	end
 	-- Empty, so the border's style doesn't paint the last row.
@@ -442,7 +442,7 @@ local function draw_table(
 		from = line_end(last),
 		to = line_end(last),
 		style = "markdown.table",
-		lines = { tables.border(widths, "└", "┴", "┘") },
+		lines = { core.ui.border(widths, "└", "┴", "┘") },
 	})
 	return true
 end

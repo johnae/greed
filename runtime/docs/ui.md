@@ -116,6 +116,7 @@ ends.
 | Node | What it draws |
 |---|---|
 | `ui.text(text, style?)` | Text, wrapped to the width |
+| `ui.markdown(text)` | Markdown: prose wrapped like `ui.text`, but code blocks and tables keep their lines (cut with `…` at the edge), and a table's columns line up. Chat messages use it |
 | `ui.span(text, style?)` | A piece of a line, for `line`, `list` and `grid` |
 | `ui.line(spans)` | One line of spans |
 | `ui.tabs(tabs)` | A line of tabs, each `{ label, current, press }`, numbered from 1; the current one picked out |

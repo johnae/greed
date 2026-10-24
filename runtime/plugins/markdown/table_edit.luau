@@ -7,7 +7,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local structure = require("./structure")
-local tables = require("./tables")
+local tables = core.tables
 local values = require("./values")
 
 local M = {}
@@ -18,7 +18,7 @@ export type Spot = {
 	buffer: greed.Buffer,
 	first: number,
 	last: number,
-	grid: tables.Grid,
+	grid: core.TableGrid,
 	row: number,
 	column: number,
 }
@@ -58,7 +58,7 @@ end
 -- Where cell `column` of `row` starts in the table starting on `first`.
 local function cell_start(buffer: greed.Buffer, first: number, row: number, column: number): number
 	local line = line_of(first, row)
-	local cells: { tables.Cell } = tables.cells(core.text.lines(buffer, line, line)) or {}
+	local cells: { core.TableCell } = tables.cells(core.text.lines(buffer, line, line)) or {}
 	local cell = cells[math.min(column, #cells)]
 	return buffer:line_start(line) + (if cell then cell.from - 1 else 0)
 end
@@ -69,7 +69,7 @@ end
 
 --- Writes `grid` over the table at `spot`, its pipes lined up, and puts
 --- the cursor in cell `column` of `row`.
-function M.write(view: greed.View, spot: Spot, grid: tables.Grid, row: number, column: number)
+function M.write(view: greed.View, spot: Spot, grid: core.TableGrid, row: number, column: number)
 	local buffer = spot.buffer
 	local text = table.concat(
 		tables.write(grid, function(s)
@@ -104,7 +104,11 @@ end
 local function editing(
 	name: string,
 	doc: string,
-	change: (grid: tables.Grid, row: number, column: number) -> (number?, number?)
+	change: (
+		grid: core.TableGrid,
+		row: number,
+		column: number
+	) -> (number?, number?)
 )
 	greed.command({
 		name = name,
@@ -124,7 +128,7 @@ local function editing(
 end
 
 -- Each row of `grid`, the header first.
-local function rows_of(grid: tables.Grid): { { string } }
+local function rows_of(grid: core.TableGrid): { { string } }
 	local all = { grid.header }
 	for _, row in grid.rows do
 		table.insert(all, row)
@@ -165,7 +169,7 @@ editing(
 )
 
 local function move_row(by: number)
-	return function(grid: tables.Grid, row: number, column: number): (number?, number?)
+	return function(grid: core.TableGrid, row: number, column: number): (number?, number?)
 		local to = row + by
 		if row == 0 or to < 1 or to > #grid.rows then
 			return nil, nil
@@ -179,7 +183,7 @@ editing("markdown-table-row-up", "Move the cursor's row of a Markdown table up",
 editing("markdown-table-row-down", "Move the cursor's row of a Markdown table down", move_row(1))
 
 local function add_column(right: boolean)
-	return function(grid: tables.Grid, row: number, column: number): (number?, number?)
+	return function(grid: core.TableGrid, row: number, column: number): (number?, number?)
 		local at = if right then column + 1 else column
 		local n = #grid.header
 		for _, cells in rows_of(grid) do
@@ -188,7 +192,7 @@ local function add_column(right: boolean)
 			end
 			table.insert(cells, at, "")
 		end
-		table.insert(grid.specs, at, "plain" :: tables.Spec)
+		table.insert(grid.specs, at, "plain" :: core.TableSpec)
 		return row, at
 	end
 end
@@ -221,7 +225,7 @@ editing(
 )
 
 local function move_column(by: number)
-	return function(grid: tables.Grid, row: number, column: number): (number?, number?)
+	return function(grid: core.TableGrid, row: number, column: number): (number?, number?)
 		local to = column + by
 		if to < 1 or to > #grid.header then
 			return nil, nil
@@ -258,7 +262,7 @@ local function before(a: string, b: string): boolean
 end
 
 local function sort(descending: boolean)
-	return function(grid: tables.Grid, row: number, column: number): (number?, number?)
+	return function(grid: core.TableGrid, row: number, column: number): (number?, number?)
 		-- Rows that are alike keep their order.
 		local order: { [{ string }]: number } = {}
 		for i, cells in grid.rows do
@@ -381,7 +385,7 @@ local function jump(name: string, doc: string, by: number)
 			-- A row written short of cells is filled out to reach the cell.
 			local line =
 				core.text.lines(ctx.buffer, line_of(spot.first, row), line_of(spot.first, row))
-			local cells: { tables.Cell } = tables.cells(line) or {}
+			local cells: { core.TableCell } = tables.cells(line) or {}
 			if #cells < column then
 				M.write(ctx.view, spot, spot.grid, row, column)
 			else

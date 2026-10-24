@@ -24,6 +24,7 @@ local text_helpers = require("./text")
 local prompt = require("./prompt")
 local formula = require("./formula")
 local atomic = require("./atomic")
+local tables = require("./tables")
 
 local width, clip = text_helpers.width, text_helpers.clip
 
@@ -165,6 +166,76 @@ function M.text(text: string, style: string?): Node
 					end
 				end
 				table.insert(out, { { text = clip(line, cells), style = style } })
+			end
+			return out
+		end,
+	}
+end
+
+--- Markdown `text` as `text` lays it out, prose wrapped to the view's
+--- width, except that code (fenced) and tables keep their lines, cut short
+--- with … at the edge, so a box-drawn table or a stack trace stays lined
+--- up. A table's columns are lined up first.
+function M.markdown(text: string): Node
+	-- Runs of lines: prose to wrap, or lines to keep as they are.
+	local runs: { { kept: boolean, lines: { string } } } = {}
+	local function add(kept: boolean, line: string)
+		local last = runs[#runs]
+		if last and last.kept == kept then
+			table.insert(last.lines, line)
+		else
+			table.insert(runs, { kept = kept, lines = { line } })
+		end
+	end
+	local lines = string.split(text, "\n")
+	local i = 1
+	while i <= #lines do
+		local line = lines[i]
+		if string.match(line, "^%s*```") then
+			-- Fenced code, to its closing fence (or the end).
+			add(true, line)
+			i += 1
+			while i <= #lines do
+				local inside = lines[i]
+				add(true, inside)
+				i += 1
+				if string.match(inside, "^%s*```") then
+					break
+				end
+			end
+		elseif string.match(line, "^%s*|") and tables.aligns(lines[i + 1] or "") then
+			local rows: { string } = {}
+			while i <= #lines and string.match(lines[i], "^%s*|") do
+				table.insert(rows, lines[i])
+				i += 1
+			end
+			local grid = tables.grid(rows)
+			local lined: { string } = if grid
+				then tables.write(grid, function(cell: string): number
+					return width(cell)
+				end)
+				else rows
+			for _, row in lined do
+				add(true, row)
+			end
+		else
+			add(false, line)
+			i += 1
+		end
+	end
+	return {
+		lay = function(cells: number): { Line }
+			local out: { Line } = {}
+			for _, run in runs do
+				if run.kept then
+					for _, kept in run.lines do
+						table.insert(out, { { text = clip(kept, cells) } })
+					end
+				else
+					for _, laid in M.text(table.concat(run.lines, "\n")).lay(cells) do
+						table.insert(out, laid)
+					end
+				end
 			end
 			return out
 		end,

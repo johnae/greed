@@ -592,3 +592,38 @@ test("progress shows a bar and how far, or how much so far", function()
 	local open = ui.draw(ui.progress("syncing", 2500), 80)
 	assert(open == "syncing: 2,500", open)
 end)
+
+test("ui.markdown keeps code's lines and lines tables up; prose still wraps", function()
+	local text = table.concat({
+		"Total: 2 (HIGH: 2) and then a long sentence that goes on and on past the edge",
+		"```",
+		"┌─────────┬──────────────────┬──────────┬────────────────────────────────┐",
+		"│ Library │ Vulnerability    │ Severity │ Title                          │",
+		"```",
+		"| Name | Size |",
+		"|------|-----:|",
+		"| a | 12 |",
+		"| longer | 3 |",
+	}, "\n")
+	local lines: { string } = {}
+	for _, line in core.ui.markdown(text).lay(40) do
+		local parts: { string } = {}
+		for _, span in line do
+			table.insert(parts, span.text)
+		end
+		table.insert(lines, table.concat(parts))
+	end
+	local said = table.concat(lines, "\n")
+	-- Prose wraps to the width.
+	assert(lines[1] == "Total: 2 (HIGH: 2) and then a long", lines[1])
+	-- Code doesn't: each line one line, cut at the edge.
+	local box = string.match(said, "\n(┌[^\n]*)") or ""
+	assert(core.text.width(box) <= 40 and string.find(box, "…", 1, true), box)
+	assert(
+		not string.find(said, "\n───", 1, true),
+		"not wrapped onto the next line: " .. said
+	)
+	-- A table's columns line up.
+	assert(string.find(said, "| a      |   12 |", 1, true), said)
+	assert(string.find(said, "| longer |    3 |", 1, true), said)
+end)

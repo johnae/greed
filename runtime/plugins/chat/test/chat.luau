@@ -1620,3 +1620,25 @@ test("a reply shows a line of what it answers above it", function(t)
 	assert(not string.find(text, "↳ Dan: old news\nmore", 1, true), "one line of it: " .. text)
 	assert(string.find(text, "↳ a message further back", 1, true), text)
 end)
+
+test("open as text shows a message in a buffer of its own", function(t)
+	fake()
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	t:keys("enter")
+	t:wait(50)
+	local r = assert(chat.rooms.of(greed.view():buffer()))
+	local item = r.items[2]
+	for _, action in core.actions.for_kind("chat-message") do
+		if action.name == "open as text" then
+			core.actions.run(
+				action,
+				{ kind = "chat-message", label = "", value = { room = r, item = item } }
+			)
+		end
+	end
+	t:wait(50)
+	local shown = greed.view():buffer()
+	assert(shown:kind() == "chat-text" and shown:text() == "lunch at noon?", shown:kind())
+end)

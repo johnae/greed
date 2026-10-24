@@ -18,7 +18,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local structure = require("./structure")
-local tables = require("./tables")
+local tables = core.tables
 local questions = require("./questions")
 
 type Structure = structure.Structure

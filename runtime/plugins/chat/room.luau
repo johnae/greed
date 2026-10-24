@@ -420,7 +420,7 @@ function M.item_node(
 	-- A file's text is its name, shown already, unless it's a caption.
 	local caption = media == nil or item.text ~= media.name
 	if caption and (item.text ~= "" or item.kind ~= "message") then
-		table.insert(parts, valued(ui.text(said(item)), item, true))
+		table.insert(parts, valued(ui.markdown(said(item)), item, true))
 	end
 	if preview then
 		for _, line in M.preview_lines(preview) do
@@ -1538,6 +1538,18 @@ local ACTIONS: {
 			run = function(_r, item)
 				greed.clipboard.set(item.text)
 				greed.echo("copied")
+			end,
+		},
+		{
+			name = "open as text",
+			doc = "What it says in a buffer of its own, to scroll sideways, search or copy from",
+			run = function(_r, item, view)
+				local buffer = greed.create_buffer(
+					"chat-text",
+					item.text,
+					{ readonly = true, language = "markdown" }
+				)
+				view:show(buffer)
 			end,
 		},
 	}

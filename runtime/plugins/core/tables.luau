@@ -7,8 +7,6 @@
 --                              │ a    │   12 │
 --                              └──────┴──────┘
 
-local core = require("@core")
-
 local M = {}
 
 export type Align = "left" | "right" | "center"
@@ -162,10 +160,6 @@ function M.layout(
 	end
 	return widths, out
 end
-
---- A border across columns `widths` wide: `left`, `middle` between
---- columns and `right`, e.g. "├", "┼", "┤".
-M.border = core.ui.border
 
 --- Which cell of row `text` byte `at` (1-based) is in: 1 up to the first
 --- pipe between cells, and so on, a cell's pipe on the right counting as

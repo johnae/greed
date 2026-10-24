@@ -38,6 +38,11 @@ messages, and on Matrix "seen by" says who has read up to where.
 | `q`, `esc` | stop answering or changing; else back to the room, or to the list (the sidebar) |
 
 `space .` on a message offers the same, and copying what it says.
+
+Code blocks and tables in a message keep their lines, so a bot's
+box-drawn table stays lined up (it's cut with `…` at the edge rather than
+wrapped). For the whole thing, `open as text` on `space .` puts the message
+in a buffer of its own, where you can scroll sideways.
 A room shows each thread's first message with how many replies it has;
 the replies are in the thread. A reply to a message (Matrix) shows a line
 of what it answers above it, `↳ Bea: lunch at noon?`.
