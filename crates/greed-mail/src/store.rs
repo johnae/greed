@@ -1459,7 +1459,8 @@ fn connect(dir: &Path) -> Result<Connection, Trouble> {
     db.pragma_update(None, "journal_mode", "WAL")?;
     db.pragma_update(None, "synchronous", "NORMAL")?;
     db.pragma_update(None, "foreign_keys", "ON")?;
-    db.busy_timeout(std::time::Duration::from_secs(5))?;
+    // The sync and what's asked of it write from threads of their own.
+    db.busy_timeout(std::time::Duration::from_secs(20))?;
     db.execute(
         "ATTACH DATABASE ?1 AS bodies",
         [dir.join("bodies.db").to_string_lossy()],

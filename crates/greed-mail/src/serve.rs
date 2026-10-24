@@ -46,6 +46,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use greed_index::index::Index;
@@ -117,22 +118,49 @@ struct Standing {
 }
 
 /// What the parts share: lines to write, bodies asked for, the accounts'
-/// standing, and a nudge to sync now.
+/// standing, and a nudge to sync now. The sync runs on a thread of its
+/// own, so what's asked is answered while it works.
 struct Shared {
     out: mpsc::UnboundedSender<String>,
-    wanted: RefCell<Vec<String>>,
+    wanted: Mutex<Vec<String>>,
     /// Attachments asked for: of which message, which one, and where to
     /// save it (beside the store without a place).
-    attachments: RefCell<Vec<(String, usize, Option<PathBuf>)>>,
+    attachments: Mutex<Vec<(String, usize, Option<PathBuf>)>>,
     /// Where attachments opened from the store are kept.
     kept: PathBuf,
-    standing: RefCell<BTreeMap<String, Standing>>,
+    standing: Mutex<BTreeMap<String, Standing>>,
     wake: Notify,
     /// What undoes the last change asked for.
-    last: RefCell<Option<Undoing>>,
+    last: Mutex<Option<Undoing>>,
+}
+
+/// What `mutex` holds, even after a thread panicked holding it: the
+/// program ends then anyway (see main.rs).
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Takes out of `list` those `mine` picks, leaving the others.
+fn take_from<T>(list: &Mutex<Vec<T>>, mine: impl Fn(&T) -> bool) -> Vec<T> {
+    let mut list = lock(list);
+    let (taken, left) = std::mem::take(&mut *list).into_iter().partition(mine);
+    *list = left;
+    taken
 }
 
 impl Shared {
+    fn new(out: mpsc::UnboundedSender<String>, kept: PathBuf) -> Shared {
+        Shared {
+            out,
+            wanted: Mutex::new(Vec::new()),
+            attachments: Mutex::new(Vec::new()),
+            kept,
+            standing: Mutex::new(BTreeMap::new()),
+            wake: Notify::new(),
+            last: Mutex::new(None),
+        }
+    }
+
     fn notify(&self, method: &str, params: &Value) {
         let message = json!({ "jsonrpc": "2.0", "method": method, "params": params });
         let _ = self.out.send(message.to_string());
@@ -170,15 +198,21 @@ pub async fn serve(config: Config, dir: PathBuf) -> Result<(), String> {
     let reader =
         Reader::open(&dir).map_err(|_| format!("there's no mail in {} yet", dir.display()))?;
     let (out, mut lines) = mpsc::unbounded_channel::<String>();
-    let shared = Shared {
-        out,
-        wanted: RefCell::new(Vec::new()),
-        attachments: RefCell::new(Vec::new()),
-        kept: dir.join("attachments"),
-        standing: RefCell::new(BTreeMap::new()),
-        wake: Notify::new(),
-        last: RefCell::new(None),
-    };
+    let shared = Arc::new(Shared::new(out, dir.join("attachments")));
+    // The sync's long writes and waits on servers hold up nothing asked of
+    // it. It runs as long as the program does.
+    let syncing = Arc::clone(&shared);
+    let accounts = config.clone();
+    std::thread::Builder::new()
+        .name("sync".into())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("a runtime to sync on");
+            runtime.block_on(keep_syncing(&accounts, store, index, &syncing));
+        })
+        .map_err(|e| format!("couldn't start syncing: {e}"))?;
     let output = async {
         let mut stdout = tokio::io::stdout();
         while let Some(line) = lines.recv().await {
@@ -199,9 +233,9 @@ pub async fn serve(config: Config, dir: PathBuf) -> Result<(), String> {
         dir: &dir,
         shared: &shared,
     };
+    // Its input closed, it's done; the sync goes with the program.
     tokio::select! {
         () = answer(&with) => {}
-        () = keep_syncing(&config, store, index, &shared) => {}
         () = output => {}
     }
     Ok(())
@@ -257,7 +291,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
     let Answering { reader, shared, .. } = with;
     match method {
         "status" => {
-            let standing: Vec<Standing> = shared.standing.borrow().values().cloned().collect();
+            let standing: Vec<Standing> = lock(&shared.standing).values().cloned().collect();
             Ok(json!({ "accounts": standing }))
         }
         "hello" => Ok(json!({ "protocol": PROTOCOL, "version": env!("CARGO_PKG_VERSION") })),
@@ -280,7 +314,7 @@ fn handle(method: &str, params: &Value, with: &Answering<'_>) -> Result<Value, S
             };
             let bodiless = thread.bodiless();
             if !bodiless.is_empty() {
-                shared.wanted.borrow_mut().extend(bodiless);
+                lock(&shared.wanted).extend(bodiless);
                 shared.wake.notify_one();
             }
             serde_json::to_value(thread).map_err(|e| e.to_string())
@@ -480,7 +514,7 @@ fn post_draft(draft: &Draft, account: Option<&str>, with: &Answering<'_>) -> Res
     let posted = store
         .post(id, &outgoing, replying, after)
         .map_err(|e| e.0)?;
-    *shared.last.borrow_mut() = Some(Undoing::Sent(posted));
+    *lock(&shared.last) = Some(Undoing::Sent(posted));
     shared.wake.notify_one();
     Ok(json!({ "posted": posted, "seconds": SENDING.as_secs() }))
 }
@@ -550,7 +584,7 @@ fn act(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
         }
     }
     if !changed.is_empty() {
-        *with.shared.last.borrow_mut() = Some(Undoing::Changes(undos));
+        *lock(&with.shared.last) = Some(Undoing::Changes(undos));
         // Only what changed: a long catch-up going on mustn't hold it up.
         indexing::catch_up_on(store, index, &changed).map_err(|e| e.0)?;
         with.shared.notify("changed", &json!({}));
@@ -562,12 +596,7 @@ fn act(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
 /// An `undo` request: the last change asked for undone, or the mail just
 /// sent taken back while it waits; says which.
 fn undo(with: &Answering<'_>) -> Result<Value, String> {
-    let last = with
-        .shared
-        .last
-        .borrow_mut()
-        .take()
-        .ok_or("nothing to undo")?;
+    let last = lock(&with.shared.last).take().ok_or("nothing to undo")?;
     let (store, index) = &mut *with.writer.borrow_mut();
     match last {
         Undoing::Sent(id) => {
@@ -637,9 +666,7 @@ async fn keep_syncing(config: &Config, mut store: Store, mut index: Index, share
                         "trouble",
                         &json!({ "account": account.name, "message": trouble }),
                     );
-                    shared
-                        .standing
-                        .borrow_mut()
+                    lock(&shared.standing)
                         .entry(account.name.clone())
                         .or_insert_with(|| Standing {
                             name: account.name.clone(),
@@ -776,7 +803,7 @@ async fn round(
         "synced",
         &json!({ "account": account.name, "messages": messages, "done": !more }),
     );
-    shared.standing.borrow_mut().insert(
+    lock(&shared.standing).insert(
         account.name.clone(),
         Standing {
             name: account.name.clone(),
@@ -824,9 +851,7 @@ async fn arrived_first(
         shared.notify("arrived", &json!({ "keys": keys }));
     }
     let (messages, _) = store.counts(id).map_err(|e| e.0)?;
-    shared
-        .standing
-        .borrow_mut()
+    lock(&shared.standing)
         .entry(account.name.clone())
         .or_insert_with(|| Standing {
             name: account.name.clone(),
@@ -972,12 +997,7 @@ async fn asked_for(
     shared: &Shared,
 ) -> Result<(), String> {
     let prefix = format!("m:{id}:");
-    let (attachments, others): (Vec<_>, Vec<_>) = shared
-        .attachments
-        .take()
-        .into_iter()
-        .partition(|(key, _, _)| key.starts_with(&prefix));
-    *shared.attachments.borrow_mut() = others;
+    let attachments = take_from(&shared.attachments, |(key, _, _)| key.starts_with(&prefix));
     for (key, number, to) in attachments {
         let saved = save_attachment(
             connection,
@@ -999,12 +1019,7 @@ async fn asked_for(
         // A connection that broke ends the round, as anywhere else.
         let _ = saved?;
     }
-    let (keys, others): (Vec<String>, Vec<String>) = shared
-        .wanted
-        .take()
-        .into_iter()
-        .partition(|key| key.starts_with(&prefix));
-    *shared.wanted.borrow_mut() = others;
+    let keys = take_from(&shared.wanted, |key| key.starts_with(&prefix));
     if keys.is_empty() {
         return Ok(());
     }
@@ -1151,10 +1166,7 @@ fn attachment(params: &Value, with: &Answering<'_>) -> Result<Value, String> {
     {
         return Ok(json!({ "path": entry.path() }));
     }
-    with.shared
-        .attachments
-        .borrow_mut()
-        .push((key.to_string(), number, to));
+    lock(&with.shared.attachments).push((key.to_string(), number, to));
     with.shared.wake.notify_one();
     Ok(json!({ "waiting": true }))
 }
@@ -1195,15 +1207,7 @@ mod tests {
             .collect();
         store.put(account, all.id, &messages, 1, 1).unwrap();
         let (out, mut lines) = mpsc::unbounded_channel();
-        let shared = Shared {
-            out,
-            wanted: RefCell::new(Vec::new()),
-            attachments: RefCell::new(Vec::new()),
-            kept: dir.join("attachments"),
-            standing: RefCell::new(BTreeMap::new()),
-            wake: Notify::new(),
-            last: RefCell::new(None),
-        };
+        let shared = Shared::new(out, dir.join("attachments"));
         let mut left_between = Vec::new();
         let between = async |store: &mut Store| {
             left_between.push(store.unindexed_count().unwrap());

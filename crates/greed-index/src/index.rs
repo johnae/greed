@@ -15,6 +15,9 @@ use crate::query::{self, Answer, Flag, Kind, Node, Query, Row, Rows, Schema};
 /// The version of the tables; an index made by another is made again.
 const VERSION: &str = "5";
 
+/// How long a writer waits for another to finish before giving up.
+const BUSY: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// How many candidates are loaded and checked at a time.
 const CHUNK: usize = 1000;
 
@@ -120,6 +123,9 @@ impl Index {
     /// older Greed made it, for writing.
     pub fn open(path: &Path) -> Result<Index, Trouble> {
         let db = Connection::open(path)?;
+        // Two writers of one index, as a program syncing on one thread and
+        // answering on another has, wait their turn rather than fail.
+        db.busy_timeout(BUSY)?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "synchronous", "NORMAL")?;
         if read_version(&db).is_ok_and(|v| v != VERSION) {
