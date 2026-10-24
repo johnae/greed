@@ -667,3 +667,65 @@ fn checking_a_plugin_that_runs_lines_in_the_shell_charges_it_only_its_programs()
     assert_eq!(said[0], "passed 2", "{said:?}");
     assert!(failures(&said).is_empty(), "{said:?}");
 }
+
+/// Lets the editor's timers due up to `ms` from now fire.
+fn pass(host: &Host, ms: u64) {
+    let until = std::time::Instant::now() + std::time::Duration::from_millis(ms);
+    while let Some(at) = host.next_timer().filter(|at| *at <= until) {
+        host.fire_timers(at).unwrap();
+    }
+}
+
+#[test]
+fn a_rescan_another_plugin_asks_for_loads_what_needs_nothing_and_the_rest_waits() {
+    let temp = Temp::new("rescan");
+    let store = temp.0.join("approved.json");
+    let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", "", None);
+    let host = Host::new(editor).unwrap();
+    host.require_approval(store.clone(), vec![runtime.clone()]);
+    host.load_dirs(&[
+        runtime.join("core"),
+        runtime.join("picker"),
+        runtime.join("approvals"),
+    ])
+    .unwrap();
+    let watched = temp.0.join("watched");
+    std::fs::create_dir_all(&watched).unwrap();
+    host.eval(&format!(
+        "require('@approvals').watched = function() return {{ {:?} }} end",
+        watched.to_str().unwrap()
+    ))
+    .unwrap();
+    // Like git-plugins after fetching: a plugin with no capabilities of its
+    // own, so the loading is approvals' doing.
+    let fetcher = temp.plugin("fetcher", "", "\"approvals\"");
+    std::fs::write(
+        fetcher.join("init.luau"),
+        "return { fetched = function() require('@approvals').rescan(true) end }\n",
+    )
+    .unwrap();
+    host.load_dir(&fetcher).unwrap();
+    for (name, capabilities) in [("quiet", ""), ("asks", "\"proc\"")] {
+        let dir = watched.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            format!("name = \"{name}\"\ncapabilities = [{capabilities}]\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("init.luau"), "return {}\n").unwrap();
+    }
+    host.load_str("caller", "require('@fetcher').fetched()")
+        .unwrap();
+    pass(&host, 1000);
+    let list = loaded(&host);
+    assert!(list.split(',').any(|n| n == "quiet"), "{list}");
+    assert!(!list.split(',').any(|n| n == "asks"), "{list}");
+    assert_eq!(
+        host.eval("require('@greed').plugin.pending()[1].name")
+            .unwrap(),
+        "asks"
+    );
+}

@@ -265,6 +265,9 @@ local function plugin_of(path: string): string?
 end
 
 -- Loads or reloads the plugin in `dir`, or has it wait for your approval.
+-- Approvals vouches for it, whoever asked for a rescan, like git-plugins
+-- after fetching: it's always a folder it watches, and one asking for
+-- capabilities still waits for you.
 local function settle(dir: string)
 	local ok, about = pcall(greed.plugin.describe, dir)
 	if not ok then
@@ -279,7 +282,7 @@ local function settle(dir: string)
 	local was = greed.plugin.dirs()[info.name] ~= nil
 	if #info.missing > 0 then
 		-- It goes on the waiting list; what runs now keeps running.
-		pcall(greed.plugin.load, dir, nil)
+		pcall(greed.vouch, greed.plugin.load, dir, nil)
 		local now = if was then " (it runs as it was until then)" else ""
 		greed.echo(
 			`{info.name} asks for {table.concat(info.missing, ", ")}: approve it to load it{now}`
@@ -287,7 +290,7 @@ local function settle(dir: string)
 		greed.run("plugins-approve")
 		return
 	end
-	local loaded, err = pcall(greed.plugin.load, dir, nil)
+	local loaded, err = pcall(greed.vouch, greed.plugin.load, dir, nil)
 	if loaded then
 		greed.echo(if was then `reloaded {info.name}` else `loaded {info.name}`)
 	else
@@ -307,9 +310,8 @@ local function soon(dir: string)
 	end)
 end
 
---- Looks through the watched folders again, watching what's there; with
---- `load`, plugin folders it hadn't seen load (or wait for approval).
-function M.rescan(load: boolean?)
+-- Looks through and watches the watched folders, as `M.rescan` says.
+local function rescan(load: boolean?)
 	for _, folder in M.watched() do
 		greed.fs.watch(folder)
 		for _, entry in entries(folder) do
@@ -325,6 +327,14 @@ function M.rescan(load: boolean?)
 			end
 		end
 	end
+end
+
+--- Looks through the watched folders again, watching what's there; with
+--- `load`, plugin folders it hadn't seen load (or wait for approval).
+--- Another plugin may ask for it, like git-plugins after fetching:
+--- approvals vouches for it, since it only reads its own folders.
+function M.rescan(load: boolean?)
+	greed.vouch(rescan, load)
 end
 
 -- Only the watched folders' plugins: hashing every file of Greed's own at

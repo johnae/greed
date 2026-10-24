@@ -20,6 +20,7 @@
 
 local greed = require("@greed")
 local core = require("@core")
+local approvals = require("@approvals")
 
 greed.option.define({
 	name = "plugins-lock",
@@ -188,8 +189,8 @@ end
 
 --- Fetches the plugins said to use that aren't here yet, at the commits the
 --- lock file says; with `update`, takes every one (or the one named) to
---- the latest of its ref. Writes the lock file. Returns how many it
---- fetched or moved, and what failed.
+--- the latest of its ref. Writes the lock file, and new ones load (or wait
+--- for approval). Returns how many it fetched or moved, and what failed.
 function M.sync(update: boolean?, only: string?): (number, { string })
 	local folder = M.folder()
 	if folder == nil then
@@ -217,6 +218,12 @@ function M.sync(update: boolean?, only: string?): (number, { string })
 		end
 	end
 	write_lock(locked)
+	-- New ones load now, or wait for approval, rather than when something
+	-- watching the folder notices: the folder may not have been there to
+	-- watch, as on the first start.
+	if done > 0 then
+		approvals.rescan(true)
+	end
 	return done, failed
 end
 

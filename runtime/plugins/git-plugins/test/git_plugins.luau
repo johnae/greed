@@ -128,3 +128,19 @@ test("a plugin the config no longer uses is removed by a sync, and its pin with 
 	forget_keep()
 	greed.option.set("plugins-lock", "")
 end)
+
+test("a plugin fetched loads by itself, with nothing watching its folder yet", function(t)
+	local repo = repository(t, "arrives")
+	local lock = `{t:tempdir()}/plugins.lock`
+	greed.option.set("plugins-lock", lock)
+	plugins.use(repo, { name = "arrives" })
+	assert(greed.plugin.dirs().arrives == nil)
+	waiting(t, function()
+		plugins.sync()
+	end)
+	-- Approvals waits for the files to be still before it loads them.
+	t:wait(500)
+	assert(greed.plugin.dirs().arrives, "loaded: " .. table.concat(greed.messages(), " | "))
+	greed.plugin.unload("arrives")
+	greed.option.set("plugins-lock", "")
+end)
