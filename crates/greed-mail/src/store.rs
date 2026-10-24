@@ -1795,10 +1795,13 @@ fn put_thread(
 ) -> Result<(), Trouble> {
     let refers = header.references.first().or(header.in_reply_to.first());
     let thread = match refers {
+        // By the Message-ID's index: left to choose, SQLite takes the
+        // thread's and goes over every message with a thread, for each
+        // new one (180 ms each in a store of 170,000).
         Some(refers) => tx
             .query_row(
-                "SELECT thread FROM messages WHERE account = ?1 AND message_id = ?2
-                 AND thread IS NOT NULL LIMIT 1",
+                "SELECT thread FROM messages INDEXED BY messages_message_id
+                 WHERE account = ?1 AND message_id = ?2 AND thread IS NOT NULL LIMIT 1",
                 params![account, refers],
                 |r| r.get(0),
             )
