@@ -1887,6 +1887,40 @@ fn plugins_set_the_theme() {
 }
 
 #[test]
+fn a_style_names_a_font_for_the_window_which_frames_list() {
+    use greed_core::theme::{Font, Medium};
+    let h = host("");
+    h.eval(
+        "require('@greed').theme.set({
+           comment = { italic = true, gui = { font = 'Monaspace Radon' } },
+         })",
+    )
+    .unwrap();
+    let style = h.with_editor(|ed| ed.theme().style("comment", Medium::Gui));
+    let font = style.font.unwrap();
+    assert_eq!(font, Font::named("Monaspace Radon"), "the same each time");
+    assert_eq!(font.name().as_deref(), Some("Monaspace Radon"));
+    let tui = h.with_editor(|ed| ed.theme().style("comment", Medium::Tui));
+    assert_eq!(
+        (tui.font, tui.italic),
+        (None, Some(true)),
+        "a terminal keeps the italic"
+    );
+    assert_eq!(
+        h.eval("require('@greed').theme.get('comment').gui.font")
+            .unwrap(),
+        "Monaspace Radon"
+    );
+    let fonts = &h.gui_options(FIRST_CLIENT)["gui-fonts"];
+    assert!(fonts.lines().any(|f| f == "Monaspace Radon"), "{fonts}");
+    let err = h
+        .eval("require('@greed').theme.set({ x = { font = '' } })")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("family"), "{err}");
+}
+
+#[test]
 fn a_base_theme_switches_whole_and_entries_set_stay_on_top() {
     let h = host("");
     let fg = |name: &str| {

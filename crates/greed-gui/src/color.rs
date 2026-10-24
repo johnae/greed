@@ -85,6 +85,9 @@ pub struct Look {
     pub strikethrough: bool,
     /// Drawn in the prose font.
     pub prose: bool,
+    /// Drawn in a family a style named, the `n`th of the frame's
+    /// `gui-fonts`, in the grid's cells.
+    pub font: Option<u16>,
     /// The background drawn as a badge.
     pub badge: bool,
     /// Drawn as a checkbox over its cells, in place of its text.
@@ -118,6 +121,10 @@ pub fn look(style: &Style, palette: &Palette) -> Look {
         }),
         strikethrough: style.strikethrough == Some(true),
         prose: style.font == Some(Font::Prose),
+        font: match style.font {
+            Some(Font::Named(n)) => Some(n),
+            _ => None,
+        },
         badge: style.badge == Some(true),
         checkbox: style.checkbox,
     }

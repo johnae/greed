@@ -175,6 +175,7 @@ pub fn style_of(cell: &Cell, look: &Look) -> TextStyle {
         italic: look.italic,
         scale: cell.scale.max(1),
         prose: look.prose,
+        font: look.font,
     }
 }
 

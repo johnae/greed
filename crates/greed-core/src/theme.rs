@@ -77,6 +77,49 @@ pub enum Font {
     Mono,
     /// A proportional font for prose (`gui-font-prose`).
     Prose,
+    /// A family by its name, the `n`th of [`font_names`], drawn in the
+    /// grid's cells, like comments in a handwritten one.
+    Named(u16),
+}
+
+/// The families styles name, in the order first named; frames send them
+/// to the window as `gui-fonts`, one a line, which [`Font::Named`] counts in.
+static FONT_NAMES: std::sync::Mutex<Vec<Arc<str>>> = std::sync::Mutex::new(Vec::new());
+
+impl Font {
+    /// The font for the family `name`, the same each time it's asked for.
+    #[must_use]
+    pub fn named(name: &str) -> Font {
+        let mut names = FONT_NAMES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let at = names.iter().position(|n| &**n == name).unwrap_or_else(|| {
+            names.push(name.into());
+            names.len() - 1
+        });
+        Font::Named(u16::try_from(at).unwrap_or(u16::MAX))
+    }
+
+    /// The family's name, for one of [`Font::Named`].
+    #[must_use]
+    pub fn name(self) -> Option<Arc<str>> {
+        let Font::Named(n) = self else {
+            return None;
+        };
+        let names = FONT_NAMES
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        names.get(usize::from(n)).cloned()
+    }
+}
+
+/// Every family styles have named so far, in [`Font::Named`]'s order.
+#[must_use]
+pub fn font_names() -> Vec<Arc<str>> {
+    FONT_NAMES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
 }
 
 /// A checkbox the window draws in place of the text's own symbol.

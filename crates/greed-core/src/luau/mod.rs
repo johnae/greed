@@ -676,6 +676,11 @@ impl Host {
         if crate::debug::on(crate::debug::Topic::Client) {
             options.insert(crate::debug::CLIENT.to_owned(), "true".to_owned());
         }
+        // The families styles name, which their cells count in.
+        let fonts = crate::theme::font_names();
+        if !fonts.is_empty() {
+            options.insert("gui-fonts".to_owned(), fonts.join("\n"));
+        }
         options
     }
 

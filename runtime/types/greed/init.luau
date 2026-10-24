@@ -1828,8 +1828,8 @@ export type Style = {
 	hover: boolean?,
 	--- In the window, drawn as a control over the cells of its text: a checkbox ("empty" or "checked", for todos) or a choice ("choice" or "chosen"). Terminals show the text.
 	checkbox: ("empty" | "checked" | "choice" | "chosen")?,
-	--- The window's font for the text: "mono", the grid's (`gui-font`), or "prose", a proportional one (`gui-font-prose`) fitted into the same cells. Terminals have only the one.
-	font: ("mono" | "prose")?,
+	--- The window's font for the text: "mono", the grid's (`gui-font`), "prose", a proportional one (`gui-font-prose`) fitted into the same cells, or a family's name, like "Monaspace Radon", drawn in the grid's cells, or in the grid's font when it isn't installed. Terminals have only the one.
+	font: string?,
 }
 
 --- A theme entry: a style for every client, with changes for the terminal

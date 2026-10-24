@@ -14,11 +14,13 @@ pub const DEFAULT_SIZE: f32 = 15.0;
 
 /// The fonts a frame's options ask for: `gui-font`, the grid's family, and
 /// `gui-font-prose`, prose's (none, or empty, for the system's monospaced
-/// and sans-serif fonts), at `gui-font-size`.
+/// and sans-serif fonts), at `gui-font-size`, and `gui-fonts`, the families
+/// styles name, one a line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Choice {
     pub family: Option<String>,
     pub prose: Option<String>,
+    pub named: Vec<String>,
     pub size: f32,
 }
 
@@ -27,6 +29,7 @@ impl Default for Choice {
         Choice {
             family: None,
             prose: None,
+            named: Vec::new(),
             size: DEFAULT_SIZE,
         }
     }
@@ -49,6 +52,10 @@ pub fn chosen(options: &BTreeMap<String, String>) -> Choice {
     Choice {
         family: family("gui-font"),
         prose: family("gui-font-prose"),
+        named: options
+            .get("gui-fonts")
+            .map(|names| names.lines().map(str::to_owned).collect())
+            .unwrap_or_default(),
         size,
     }
 }
@@ -61,6 +68,9 @@ pub struct TextStyle {
     pub italic: bool,
     pub scale: u8,
     pub prose: bool,
+    /// The family a style named, the `n`th of `gui-fonts`, in the grid's
+    /// cells; the grid's own font when it isn't installed.
+    pub font: Option<u16>,
 }
 
 /// Monospaced families to draw in when none is chosen, or the one chosen
@@ -211,6 +221,8 @@ pub struct Fonts {
     cache: SwashCache,
     buffer: Buffer,
     family: Option<String>,
+    /// The families styles name, in `gui-fonts`' order.
+    named: Vec<String>,
     /// Prose's family, or the system's sans-serif.
     prose: Option<String>,
     /// The families drawn in when none is chosen or the chosen one isn't
@@ -252,6 +264,7 @@ impl Fonts {
             buffer,
             family: None,
             prose: None,
+            named: Vec::new(),
             installed,
             default_family,
             default_prose,
@@ -291,6 +304,14 @@ impl Fonts {
         self.prose = family;
     }
 
+    /// The families styles name, which [`TextStyle::font`] counts in.
+    pub fn set_named(&mut self, named: Vec<String>) {
+        if self.named != named {
+            self.shaped.clear();
+        }
+        self.named = named;
+    }
+
     /// The family text is drawn in: `chosen` when it's installed, else
     /// `default`; nil when neither is, for the font system's own choice.
     fn in_use<'a>(&self, chosen: Option<&'a str>, default: Option<&'a str>) -> Option<&'a str> {
@@ -323,9 +344,15 @@ impl Fonts {
 
     /// [`Fonts::shape`], without the lines kept from before.
     fn shape_now(&mut self, text: &str, style: TextStyle) -> (Vec<LayoutGlyph>, f32) {
+        let named = style
+            .font
+            .and_then(|n| self.named.get(usize::from(n)))
+            .map(String::as_str);
         let family = if style.prose {
             self.in_use(self.prose.as_deref(), self.default_prose.as_deref())
                 .map_or(Family::SansSerif, Family::Name)
+        } else if let Some(name) = named.filter(|name| self.installed.names.contains(*name)) {
+            Family::Name(name)
         } else {
             self.in_use(self.family.as_deref(), self.default_family.as_deref())
                 .map_or(Family::Monospace, Family::Name)
@@ -660,6 +687,27 @@ mod tests {
     }
 
     #[test]
+    fn a_family_a_style_names_draws_its_text_or_the_grids_font_when_missing() {
+        let mut fonts = Fonts::new(None, 15.0);
+        // Any installed family other than the grid's, like the prose one.
+        let Some(other) = fonts.default_prose.clone() else {
+            return;
+        };
+        fonts.set_named(vec![other, "No Such Font Anywhere".to_owned()]);
+        let font_of = |fonts: &mut Fonts, font: Option<u16>| {
+            let style = TextStyle {
+                font,
+                ..TextStyle::default()
+            };
+            fonts.shape("x", style).0.first().map(|g| g.font_id)
+        };
+        let grid = font_of(&mut fonts, None);
+        assert_ne!(font_of(&mut fonts, Some(0)), grid, "drawn in the named one");
+        assert_eq!(font_of(&mut fonts, Some(1)), grid, "one not installed");
+        assert_eq!(font_of(&mut fonts, Some(7)), grid, "one never named");
+    }
+
+    #[test]
     fn a_chosen_font_that_is_not_installed_gives_way_to_the_default() {
         let mut fonts = Fonts::new(None, 15.0);
         let default = fonts.grid_family().map(str::to_owned);
@@ -691,11 +739,13 @@ mod tests {
             chosen(&options(&[
                 ("gui-font", "Fira Code"),
                 ("gui-font-prose", "Inter"),
+                ("gui-fonts", "Monaspace Radon\nIosevka"),
                 ("gui-font-size", "13.5")
             ])),
             Choice {
                 family: Some("Fira Code".to_owned()),
                 prose: Some("Inter".to_owned()),
+                named: vec!["Monaspace Radon".to_owned(), "Iosevka".to_owned()],
                 size: 13.5
             }
         );

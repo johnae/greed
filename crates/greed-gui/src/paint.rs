@@ -273,6 +273,7 @@ impl Painter {
         self.fonts
             .set(choice.family.clone(), choice.size * self.scale as f32);
         self.fonts.set_prose(choice.prose.clone());
+        self.fonts.set_named(choice.named.clone());
         self.atlas.clear();
     }
 

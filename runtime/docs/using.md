@@ -2849,6 +2849,17 @@ as `╭╮╰╯` in the terminal. These fields are for the window only:
 | `checkbox = "empty"` or `"checked"` | A checkbox over the text (todo boxes use it) |
 | `checkbox = "choice"` or `"chosen"` | A round button (Markdown choices use it) |
 | `font = "prose"` | Text in the proportional font |
+| `font = "Monaspace Radon"` | Text in that family, in the grid's cells; the grid's font when it isn't installed |
+
+Naming a family works best with ones made to share a grid, like the
+Monaspace families: comments in Radon, which looks handwritten, beside code
+in Neon, like this:
+
+```luau
+greed.theme.set({ comment = { italic = true, gui = { font = "Monaspace Radon" } } })
+```
+
+The terminal keeps the italic and draws the rest as usual.
 
 `#rrggbb` colors go out as they are when the terminal says it shows 24-bit
 color (`COLORTERM=truecolor`, as most do), and as the nearest of 256 colors

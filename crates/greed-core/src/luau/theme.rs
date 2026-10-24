@@ -197,11 +197,12 @@ fn style_from_lua(t: &Table, media: bool) -> LuaResult<Style> {
             None => None,
             Some("mono") => Some(Font::Mono),
             Some("prose") => Some(Font::Prose),
-            Some(other) => {
-                return Err(mlua::Error::runtime(format!(
-                    "font is \"mono\" or \"prose\", not {other:?}"
-                )));
+            Some("") => {
+                return Err(mlua::Error::runtime(
+                    "font is \"mono\", \"prose\" or a family's name, like \"Monaspace Radon\"",
+                ));
             }
+            Some(family) => Some(Font::named(family)),
         },
     })
 }
@@ -236,8 +237,9 @@ fn style_to_lua(lua: &Lua, style: &Style) -> LuaResult<Table> {
     t.set(
         "font",
         style.font.map(|f| match f {
-            Font::Mono => "mono",
-            Font::Prose => "prose",
+            Font::Mono => "mono".into(),
+            Font::Prose => "prose".into(),
+            Font::Named(_) => f.name().unwrap_or_default().to_string(),
         }),
     )?;
     Ok(t)
