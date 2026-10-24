@@ -1568,3 +1568,55 @@ test("an account's trouble takes one line of the list, however long", function(t
 	)
 	assert(not string.find(text, "didn't like", 1, true), "cut, not wrapped: " .. text)
 end)
+
+test("a reply shows a line of what it answers above it", function(t)
+	local notify = fake()
+	t:buffer("|x")
+	t:run("chat")
+	t:wait(50)
+	t:keys("enter")
+	t:wait(50)
+	local room = greed.view():buffer()
+	local function reply(id: string, to: string, replied: any?): any
+		return {
+			id = id,
+			event = `${id}`,
+			kind = "message",
+			at = 1792660090000,
+			sender = { id = "@cal:x", name = "Cal" },
+			text = `answer {id}`,
+			reply_to = to,
+			replied = replied,
+			replies = 0,
+			reactions = {},
+			edited = false,
+			mine = false,
+		}
+	end
+	notify("timeline.changed", {
+		account = "@anna:x",
+		room = "!plans:x",
+		changes = {
+			-- To a message shown here: quoted from it.
+			{ op = "insert", at = 3, item = reply("r1", "$1") },
+			-- As the service says, when it has it.
+			{
+				op = "insert",
+				at = 4,
+				item = reply(
+					"r2",
+					"$gone",
+					{ sender = { id = "@dan:x", name = "Dan" }, text = "old news\nmore" }
+				),
+			},
+			-- Further back than what's shown.
+			{ op = "insert", at = 5, item = reply("r3", "$older") },
+		},
+	})
+	t:wait(50)
+	local text = room:text()
+	assert(string.find(text, "↳ Bea: lunch at noon?", 1, true), text)
+	assert(string.find(text, "↳ Dan: old news", 1, true), text)
+	assert(not string.find(text, "↳ Dan: old news\nmore", 1, true), "one line of it: " .. text)
+	assert(string.find(text, "↳ a message further back", 1, true), text)
+end)

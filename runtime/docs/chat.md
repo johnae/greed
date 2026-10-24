@@ -39,7 +39,8 @@ messages, and on Matrix "seen by" says who has read up to where.
 
 `space .` on a message offers the same, and copying what it says.
 A room shows each thread's first message with how many replies it has;
-the replies are in the thread.
+the replies are in the thread. A reply to a message (Matrix) shows a line
+of what it answers above it, `↳ Bea: lunch at noon?`.
 
 On Mattermost, a message starting with `/` runs a command, like `/away` or
 an integration's; what it answers only you shows in the room. Posts from

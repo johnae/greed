@@ -357,7 +357,8 @@ function M.item_node(
 	previous: backend.Item?,
 	in_thread: boolean,
 	shown: core.UiNode?,
-	preview: backend.Preview?
+	preview: backend.Preview?,
+	answered: { name: string, text: string }?
 ): core.UiNode?
 	if item.kind == "day" then
 		return ui.line({
@@ -397,6 +398,16 @@ function M.item_node(
 				item,
 				false
 			)
+		)
+	end
+	-- What a reply answers, a line of it, as chat clients quote it.
+	if item.reply_to then
+		local quoted = if answered
+			then `{answered.name}: {string.match(answered.text, "^[^\n]*") or ""}`
+			else "a message further back"
+		table.insert(
+			parts,
+			valued(ui.line({ ui.span(`↳ {core.text.clip(quoted, 80)}`, "comment") }), item, false)
 		)
 	end
 	local media = item.media
@@ -559,6 +570,21 @@ local function bar(r: Open): core.UiNode?
 	return ui.tabs(tabs)
 end
 
+--- What the reply `item` answers, to quote above it: as the service says,
+--- else the message in `by_event` (those shown, by id) it names; nil when
+--- it's further back than that, or not a reply.
+function M.answered(
+	item: backend.Item,
+	by_event: { [string]: backend.Item }
+): { name: string, text: string }?
+	local replied = item.replied
+	if replied then
+		return { name = replied.sender.name, text = replied.text }
+	end
+	local shown = if item.reply_to then by_event[item.reply_to] else nil
+	return if shown then { name = shown.sender.name, text = shown.text } else nil
+end
+
 local function render(r: Open): core.UiNode
 	local parts: { core.UiNode } = {}
 	local top = bar(r)
@@ -580,9 +606,22 @@ local function render(r: Open): core.UiNode
 		)
 		previous = first
 	end
+	-- The messages here by their ids, for the replies among them to quote.
+	local by_event: { [string]: backend.Item } = {}
 	for _, item in r.items do
-		local node =
-			M.item_node(item, previous, r.thread ~= nil, picture(r, item), link_preview(r, item))
+		if item.event then
+			by_event[item.event] = item
+		end
+	end
+	for _, item in r.items do
+		local node = M.item_node(
+			item,
+			previous,
+			r.thread ~= nil,
+			picture(r, item),
+			link_preview(r, item),
+			M.answered(item, by_event)
+		)
 		if node then
 			table.insert(parts, node)
 		end

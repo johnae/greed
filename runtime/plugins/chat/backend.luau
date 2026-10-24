@@ -76,6 +76,8 @@ export type Item = {
 	kind: string,
 	text: string,
 	reply_to: string?,
+	--- What it answers, when the service has it.
+	replied: { sender: { id: string, name: string }, text: string }?,
 	thread: string?,
 	replies: number,
 	reactions: { { key: string, count: number, mine: boolean } },

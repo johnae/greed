@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use greed_chat::protocol::{
-    Change, Item, ItemKind, Location, MessageParams, Person, Poll, PollAnswer, Reaction,
+    Change, Item, ItemKind, Location, MessageParams, Person, Poll, PollAnswer, Reaction, Replied,
     RoomParams, SendParams, Sending, VoteParams,
 };
 use greed_chat::rpc::Failure;
@@ -18,9 +18,10 @@ use matrix_sdk::ruma::{EventId, OwnedUserId, RoomId, UserId};
 use matrix_sdk_ui::Timeline;
 use matrix_sdk_ui::eyeball_im::VectorDiff;
 use matrix_sdk_ui::timeline::{
-    EventSendState, EventTimelineItem, MembershipChange, MsgLikeKind, PollResult, TimelineBuilder,
-    TimelineDetails, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent,
-    TimelineItemKind, TimelineReadReceiptTracking, VirtualTimelineItem, default_event_filter,
+    EventSendState, EventTimelineItem, InReplyToDetails, MembershipChange, MsgLikeKind, PollResult,
+    TimelineBuilder, TimelineDetails, TimelineEventItemId, TimelineFocus, TimelineItem,
+    TimelineItemContent, TimelineItemKind, TimelineReadReceiptTracking, VirtualTimelineItem,
+    default_event_filter,
 };
 use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
@@ -121,8 +122,13 @@ impl Matrix {
         let here = Here::new(&timeline, &params.room);
         let (items, mut diffs) = timeline.subscribe().await;
         let mut len = items.len();
+        fetch_replied(&timeline, items.iter());
+        let fetching = Arc::downgrade(&timeline);
         let forwarding = tokio::task::spawn_local(async move {
             while let Some(batch) = diffs.next().await {
+                if let Some(timeline) = fetching.upgrade() {
+                    fetch_replied(&timeline, batch.iter().flat_map(diff_items));
+                }
                 let changes = changes(&mut len, batch, &here);
                 let Some(me) = me.upgrade() else { break };
                 let params = json!({
@@ -338,6 +344,42 @@ impl Here {
     }
 }
 
+/// The items a diff brings, new or changed.
+fn diff_items(diff: &VectorDiff<Arc<TimelineItem>>) -> Vec<&Arc<TimelineItem>> {
+    match diff {
+        VectorDiff::Append { values } | VectorDiff::Reset { values } => values.iter().collect(),
+        VectorDiff::PushFront { value }
+        | VectorDiff::PushBack { value }
+        | VectorDiff::Insert { value, .. }
+        | VectorDiff::Set { value, .. } => vec![value],
+        _ => Vec::new(),
+    }
+}
+
+/// Asks the server for what replies among `items` answer, when the
+/// timeline hasn't got it: once it comes the reply changes, quoting it.
+fn fetch_replied<'a>(timeline: &Arc<Timeline>, items: impl Iterator<Item = &'a Arc<TimelineItem>>) {
+    for item in items {
+        let Some(event) = item.as_event() else {
+            continue;
+        };
+        let unknown = event
+            .content()
+            .in_reply_to()
+            .is_some_and(|reply| matches!(reply.event, TimelineDetails::Unavailable));
+        if !unknown {
+            continue;
+        }
+        let Some(id) = event.event_id() else {
+            continue;
+        };
+        let (timeline, id) = (timeline.clone(), id.to_owned());
+        tokio::task::spawn_local(async move {
+            let _ = timeline.fetch_details_for_event(&id).await;
+        });
+    }
+}
+
 /// A batch of the timeline's diffs as the protocol's changes, keeping
 /// `len` the number of items the client has.
 fn changes(len: &mut usize, batch: Vec<VectorDiff<Arc<TimelineItem>>>, here: &Here) -> Vec<Change> {
@@ -461,6 +503,7 @@ fn event_item(event: &EventTimelineItem, here: &Here) -> Item {
     match event.content() {
         TimelineItemContent::MsgLike(like) => {
             item.reply_to = like.in_reply_to.as_ref().map(|r| r.event_id.to_string());
+            item.replied = like.in_reply_to.as_ref().and_then(replied_of);
             item.thread = like.thread_root.as_ref().map(ToString::to_string);
             item.replies = like
                 .thread_summary
@@ -525,6 +568,36 @@ fn event_item(event: &EventTimelineItem, here: &Here) -> Item {
         | TimelineItemContent::FailedToParseState { .. } => item.kind = ItemKind::Unreadable,
     }
     item
+}
+
+/// What a reply answers, once the timeline has it: who wrote it and what
+/// it says (what it is, when it isn't text).
+fn replied_of(details: &InReplyToDetails) -> Option<Replied> {
+    let TimelineDetails::Ready(event) = &details.event else {
+        return None;
+    };
+    let name = match &event.sender_profile {
+        TimelineDetails::Ready(profile) => profile.display_name.clone(),
+        _ => None,
+    };
+    let text = match &event.content {
+        TimelineItemContent::MsgLike(like) => match &like.kind {
+            MsgLikeKind::Message(message) => message.body().to_string(),
+            MsgLikeKind::Sticker(_) => "a sticker".into(),
+            MsgLikeKind::Poll(_) => "a poll".into(),
+            MsgLikeKind::Redacted => "a deleted message".into(),
+            _ => "a message".into(),
+        },
+        _ => "a message".into(),
+    };
+    Some(Replied {
+        sender: Person {
+            id: event.sender.to_string(),
+            name: name.unwrap_or_else(|| event.sender.localpart().to_string()),
+            avatar: None,
+        },
+        text,
+    })
 }
 
 /// A change to someone's membership of a room, in words.

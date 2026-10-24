@@ -471,6 +471,15 @@ fn lists_rooms_and_keeps_a_timeline() {
         let yes = item_with(&sent["changes"], "**yes**").unwrap();
         assert_eq!(yes["mine"], true);
         assert_eq!(yes["reply_to"], event.as_str());
+        // What it answers comes with it, to quote.
+        let quoted = heard(&mut notices, |n| {
+            n["method"] == "timeline.changed"
+                && item_with(&n["params"]["changes"], "**yes**")
+                    .is_some_and(|yes| yes["replied"]["text"] == "lunch at noon?")
+        })
+        .await;
+        let yes = item_with(&quoted["changes"], "**yes**").unwrap();
+        assert_eq!(yes["replied"]["sender"]["id"], "@bea:localhost");
 
         call(&matrix, "timeline.close", params).await;
     });

@@ -200,6 +200,14 @@ pub struct Person {
     pub avatar: Option<String>,
 }
 
+/// The message a reply answers, as the reply shows it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Replied {
+    pub sender: Person,
+    /// What it says, as Markdown.
+    pub text: String,
+}
+
 /// A new message for you, sent as `alert`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Alert {
@@ -234,6 +242,10 @@ pub struct Item {
     /// The message as Markdown, as written or turned from HTML.
     pub text: String,
     pub reply_to: Option<String>,
+    /// What it answers, when it's a reply and the service has it: who
+    /// wrote it and what it says, to show above it.
+    #[serde(default)]
+    pub replied: Option<Replied>,
     /// The thread it's in, by its first message's id.
     pub thread: Option<String>,
     /// Replies in the thread it starts.

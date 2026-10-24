@@ -413,6 +413,7 @@ impl Mattermost {
             kind,
             text: text(post),
             reply_to: None,
+            replied: None,
             thread: Some(post.root_id.clone()).filter(|root| !root.is_empty()),
             replies: post.reply_count,
             reactions: reactions.into_values().collect(),
