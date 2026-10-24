@@ -683,6 +683,7 @@ selects every place it appears.
 | `m i T` `m a T` | Inside or around the test (Rust, Python, Go, JavaScript and TypeScript) |
 | `m a e` | An entry in a table, map or struct |
 | `] f` `[ f` | The next or previous function; also `t`, `a`, `c`, `T` and `e` |
+| `] m` `[ m` | The next or previous item where a buffer is made of them: a message in a chat room or a mail thread, a row of the mail list; a count goes that many |
 | `alt-o` `alt-i` | Grow the selection to the syntax node around it, or shrink it back |
 | `] n` `[ n` | The next or previous node beside it (Helix has these on `alt-n` `alt-p`, which are pane keys here) |
 | `alt-a` `alt-I` | Every node beside it, or every node inside it |
@@ -2428,7 +2429,8 @@ under a line with its name, its size in pixels and the zoom. `+` and `-`
 draw it bigger and smaller, `=` fits it to the pane again and `0` draws it
 at its own size; `space .` on it offers the same. It shows in the window
 and in terminals that show images. A picture in a chat room opens this way
-with `enter`, or `open` on `space .`.
+with `enter`, or `open` on `space .`, and `q` or `esc` takes you back to
+wherever you opened it from (it's `ctrl-o`, really).
 
 ### PDFs
 
@@ -2436,7 +2438,8 @@ Opening a PDF shows its first page, as wide as the pane. `]` and `[` go to
 the next and previous page (with a count, that many), `+` and `-` draw it
 bigger and smaller, and `=` as wide as the pane again. `t` switches to the
 text of every page, which reads in any terminal and searches with `/`; `t`
-again shows the page the cursor is on.
+again shows the page the cursor is on. `q` or `esc` goes back, as on a
+picture.
 
 ### Other files
 

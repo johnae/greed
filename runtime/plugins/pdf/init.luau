@@ -219,6 +219,8 @@ greed.keymap.bind({ kind = "pdf" }, {
 	["-"] = "pdf-zoom-out",
 	["="] = "pdf-zoom-fit",
 	t = "pdf-text",
+	q = "jump-back",
+	esc = "jump-back",
 })
 
 core.file.opener(function(path)

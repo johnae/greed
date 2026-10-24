@@ -158,6 +158,9 @@ greed.keymap.bind({ kind = "image" }, {
 	["-"] = "image-zoom-out",
 	["="] = "image-zoom-fit",
 	["0"] = "image-zoom-actual",
+	-- Back to where it was opened from, as q and esc leave a chat room.
+	q = "jump-back",
+	esc = "jump-back",
 })
 
 -- `space .` anywhere on a picture: the same zooms as its keys.
