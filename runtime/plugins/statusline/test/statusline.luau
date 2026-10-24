@@ -525,6 +525,14 @@ test("shows the function and type the cursor is in, outermost first", function(t
 	local at = string.find(greed.view():buffer():text(), "\n\nfn", 1, true) :: number
 	greed.view():set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
 	left = t:status()
+	-- On a busy machine the piece may have been found slow, and is drawn
+	-- again in the background at most once a second.
+	if left and string.find(left, "listen", 1, true) then
+		t:wait(1100)
+		t:status()
+		t:wait(10)
+		left = t:status()
+	end
 	assert(
 		left and not string.find(left, "›", 1, true) and not string.find(left, "listen", 1, true),
 		left
