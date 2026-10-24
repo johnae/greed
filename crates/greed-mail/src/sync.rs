@@ -49,14 +49,14 @@ pub fn held(had: u64, now: u64) -> bool {
     had >= 20 && now < had / 2
 }
 
-/// Fails with why `name` is held (see [`held`]), unless `options` start it
-/// over.
-fn hold(name: &str, had: u64, now: u64, options: Options) -> Result<(), Trouble> {
+/// Fails with why a mailbox is held (see [`held`]), unless `options` start
+/// it over. What syncs it says which mailbox, as with any trouble.
+fn hold(had: u64, now: u64, options: Options) -> Result<(), Trouble> {
     if options.start_over || !held(had, now) {
         return Ok(());
     }
     Err(Trouble(format!(
-        "{name} has {now} of the {had} messages here on the server, so it's kept as it was until they're back; if they did go, greed-mail --start-over sync"
+        "{now} of the {had} messages here are on the server, so it's kept as it was until they're back; if they did go, greed-mail --start-over sync"
     )))
 }
 
@@ -128,7 +128,7 @@ pub async fn mailbox<I: Imap>(
     }
     if state.uid_validity != Some(opened.uid_validity) {
         let had = store.count_in(state.id)?;
-        hold(name, had, u64::from(opened.messages), options)?;
+        hold(had, u64::from(opened.messages), options)?;
         store.restart(state.id, opened.uid_validity)?;
         state = store.mailbox(account, name, role)?;
     }
@@ -172,17 +172,7 @@ pub async fn mailbox<I: Imap>(
     // to without listing it all again. Those in already are found as they
     // come, so none is twice.
     if was_done {
-        let missing = refresh(
-            imap,
-            store,
-            &state,
-            &opened,
-            high,
-            &mut synced,
-            name,
-            options,
-        )
-        .await?;
+        let missing = refresh(imap, store, &state, &opened, high, &mut synced, options).await?;
         if missing.len() > options.batch {
             low = high + 1;
             store.put(account, state.id, &[], high, low)?;
@@ -232,7 +222,6 @@ fn runs(uids: &[u32]) -> Vec<(u32, u32)> {
 /// message's flags come, which lists every UID too. A mailbox the server
 /// suddenly lists nearly empty is held as it is (see [`held`]). Gives the
 /// UIDs the server listed that the store hasn't got, in order.
-#[allow(clippy::too_many_arguments)]
 async fn refresh<I: Imap>(
     imap: &mut I,
     store: &mut Store,
@@ -240,7 +229,6 @@ async fn refresh<I: Imap>(
     opened: &Opened,
     high: u32,
     synced: &mut Synced,
-    name: &str,
     options: Options,
 ) -> Result<Vec<u32>, Trouble> {
     let local = store.uids(state.id)?;
@@ -262,7 +250,7 @@ async fn refresh<I: Imap>(
     let mut missing = Vec::new();
     if let Some(listed) = listed {
         let listed: HashSet<u32> = listed.into_iter().collect();
-        hold(name, local.len() as u64, listed.len() as u64, options)?;
+        hold(local.len() as u64, listed.len() as u64, options)?;
         let have: HashSet<u32> = local.iter().copied().collect();
         missing = listed
             .iter()
@@ -740,7 +728,7 @@ mod tests {
             fake.remove(uid);
         }
         let held = sync(&mut fake, &mut store, account, Options::default()).unwrap_err();
-        assert!(held.0.contains("INBOX has 3 of the 40"), "{held}");
+        assert!(held.0.starts_with("3 of the 40 messages here"), "{held}");
         assert_eq!(store.counts(account).unwrap(), (40, 40), "kept as it was");
         // A few going is mail going, as ever.
         let mut fewer = Fake::with(1, 1..=40);
