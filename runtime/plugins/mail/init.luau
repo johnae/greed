@@ -350,15 +350,19 @@ local function render(o: Open): core.UiNode
 	return ui.column(parts)
 end
 
---- What greed-mail is busy with, as a line over the list: a bar while it
---- indexes, how much is in while an account syncs; nil when it isn't.
+--- What greed-mail is busy with, over the list: a bar while it indexes,
+--- and one for each account it syncs, how much is in of how much there is
+--- (just how much is in when the server doesn't say); nil when it's idle.
 function M.busy_node(): core.UiNode?
 	local indexing = backend.busy.indexing
 	if indexing then
 		return ui.progress("indexing your mail", indexing.done, indexing.of)
 	end
-	local said = backend.syncing_text()
-	return if said then ui.text(said, "comment") else nil
+	local bars: { core.UiNode } = {}
+	for _, one in backend.syncing() do
+		table.insert(bars, ui.progress(`syncing {one.account}`, one.messages, one.of))
+	end
+	return if #bars > 0 then ui.column(bars) else nil
 end
 
 -- Drawn again as what greed-mail is busy with changes.

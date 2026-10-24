@@ -647,7 +647,8 @@ each account's inbox for the server to say something arrived (IMAP IDLE),
 and checks every two minutes on a server that can't. When an account
 can't be reached it tries again a little later each time, up to every
 five minutes. `greed-mail sync` syncs once, on its own, if you want to see
-it work.
+it work. While an account isn't all in, the mail list shows a bar for it
+over your mail: how many messages are here of how many the server has.
 
 A server sometimes shows a big mailbox nearly empty for a while: Proton
 Bridge does when its disk is full (its temporary files go to `/tmp`), or

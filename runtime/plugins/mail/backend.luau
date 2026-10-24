@@ -215,13 +215,17 @@ function M.arrived(keys: { string })
 	core.registry.tell(arrivals, keys)
 end
 
+--- An account's sync while it isn't all in: how many messages are here,
+--- of how many on the server when it says.
+export type Syncing = { account: string, messages: number, of: number? }
+
 --- What greed-mail is busy with, as it says: indexing (how far, of how
---- many), each account's sync while it isn't all in (how many messages
---- so far), the password commands it waits on (by account, the program),
---- and what went wrong syncing an account, until a round goes well.
+--- many), each account's sync while it isn't all in, the password commands
+--- it waits on (by account, the program), and what went wrong syncing an
+--- account, until a round goes well.
 export type Busy = {
 	indexing: { done: number, of: number }?,
-	syncing: { [string]: number },
+	syncing: { [string]: Syncing },
 	waiting: { [string]: string },
 	trouble: { [string]: string },
 }
@@ -254,13 +258,18 @@ function M.heard(method: string, params: any)
 		busy.indexing = if params.done < params.of
 			then { done = params.done, of = params.of }
 			else nil
-	elseif method == "progress" then
-		busy.syncing[params.account] = params.messages
-		busy.trouble[params.account] = nil
-	elseif method == "synced" then
-		busy.syncing[params.account] = if params.done then nil else params.messages
-		busy.trouble[params.account] = nil
-		core.registry.tell(synced_listeners, params.account)
+	elseif method == "progress" or method == "synced" then
+		local account: string = params.account
+		if method == "synced" and params.done then
+			busy.syncing[account] = nil
+		else
+			busy.syncing[account] =
+				{ account = account, messages = params.messages, of = params.of }
+		end
+		busy.trouble[account] = nil
+		if method == "synced" then
+			core.registry.tell(synced_listeners, account)
+		end
 	elseif method == "waiting" then
 		busy.waiting[params.account] = params.program
 	elseif method == "trouble" then
@@ -271,20 +280,16 @@ function M.heard(method: string, params: any)
 	core.registry.tell(busy_listeners)
 end
 
---- Which accounts greed-mail syncs and how much of each is in, in words,
---- or nil when none.
-function M.syncing_text(): string?
-	local syncing = M.busy.syncing
-	local accounts: { string } = {}
-	for account in syncing do
-		table.insert(accounts, account)
+--- The accounts greed-mail syncs, by name.
+function M.syncing(): { Syncing }
+	local list: { Syncing } = {}
+	for _, one in M.busy.syncing do
+		table.insert(list, one)
 	end
-	table.sort(accounts)
-	local said: { string } = {}
-	for _, account in accounts do
-		table.insert(said, `{account}: {core.text.count(syncing[account])} messages in`)
-	end
-	return if #said > 0 then `syncing {table.concat(said, ", ")}` else nil
+	table.sort(list, function(a: Syncing, b: Syncing): boolean
+		return a.account < b.account
+	end)
+	return list
 end
 
 --- What keeps accounts from syncing, in words, one line each: a password
@@ -507,8 +512,23 @@ local view = services.use("mail", {
 		"attachment",
 	},
 	on = heard,
-	-- The owner started again: what was found may have changed.
-	reset = changed,
+	-- Reached, or the owner started again: what was found may have
+	-- changed, and how the sync stands is asked rather than waited for.
+	reset = function(reached: services.View)
+		changed()
+		local status = reached:request("ask", { method = "status", params = {} })
+		for _, account in if status then status.accounts or {} else {} do
+			if not account.done then
+				M.heard(
+					"progress",
+					{ account = account.name, messages = account.messages, of = account.of }
+				)
+			end
+			if account.trouble then
+				M.heard("trouble", { account = account.name, message = account.trouble })
+			end
+		end
+	end,
 })
 
 -- The result of greed-mail's request `method`, through the owner, or nil

@@ -25,14 +25,16 @@
 //! loads nothing) and `attachment` (thing number `index` attached to it,
 //! saved `to` a path or kept beside the store).
 //! Notifications: `changed` (the index changed: search again), `progress`
-//! (an account's mailbox synced some), `trouble` (an account that can't
+//! (an account's mailbox synced some: how many `messages` it has here, `of`
+//! how many on the server), `waiting` (an account's password command keeps
+//! it waiting: its `program`, none once it's done), `trouble` (an account that can't
 //! sync, and why), `refused` (a change or mail its server refused, and
 //! why), `sent` (mail its server took), `arrived` (the keys of new mail,
 //! once it's in the index: what came since its mailbox was all in, never
 //! what a first sync brings), `attachment` (where one asked
 //! for went, or why it couldn't), `indexing` (how far a long catch-up of
 //! the index got: `done` of `of`) and `synced` (an account's round over:
-//! how many `messages` it has, and whether it's all `done`).
+//! how many `messages` it has, `of` how many, and whether it's all `done`).
 //!
 //! Other sessions reach it through the mail plugin's service, in the mail
 //! session; nothing else talks to it.
@@ -59,7 +61,7 @@ use crate::body;
 use crate::config::{Account, Config, Provider};
 use crate::files;
 use crate::html;
-use crate::imap::{Changing, Connection, Imap, Mailbox};
+use crate::imap::{Changing, Connection, Imap, Mailbox, Role};
 use crate::indexing;
 use crate::invite;
 use crate::pending;
@@ -112,6 +114,8 @@ impl Backoff {
 struct Standing {
     name: String,
     messages: i64,
+    /// How many the server has, as far as it says (see `on_server`).
+    of: Option<u64>,
     /// Whether everything on the server is in, headers and bodies.
     done: bool,
     trouble: Option<String>,
@@ -751,6 +755,16 @@ async fn round(
     let mailboxes = connection.mailboxes().await.map_err(|e| e.0)?;
     let chosen = sync::chosen(account.provider, &mailboxes);
     arrived_first(&mut connection, store, index, account, id, &chosen, shared).await?;
+    let of = on_server(&mut connection, &chosen).await;
+    // Where it stands, said at once while it isn't all in, rather than once
+    // the round's first mailbox has done some.
+    let (messages, _) = store.counts(id).map_err(|e| e.0)?;
+    if of.is_some_and(|of| u64::try_from(messages).unwrap_or(0) < of) {
+        shared.notify(
+            "progress",
+            &json!({ "account": account.name, "messages": messages, "of": of }),
+        );
+    }
     let mut more = false;
     for mailbox in chosen {
         send_changes(&mut connection, store, index, account, id, shared).await?;
@@ -791,6 +805,7 @@ async fn round(
                     "fetched": synced.fetched,
                     "bodies": fetched,
                     "messages": messages,
+                    "of": of,
                 }),
             );
         }
@@ -801,19 +816,35 @@ async fn round(
     let (messages, _) = store.counts(id).map_err(|e| e.0)?;
     shared.notify(
         "synced",
-        &json!({ "account": account.name, "messages": messages, "done": !more }),
+        &json!({ "account": account.name, "messages": messages, "of": of, "done": !more }),
     );
     lock(&shared.standing).insert(
         account.name.clone(),
         Standing {
             name: account.name.clone(),
             messages,
+            of,
             done: !more,
             trouble: None,
         },
     );
     let _ = connection.close().await;
     Ok(more)
+}
+
+/// How many messages the account has on the server, for a sync to say how
+/// far it got: All Mail's where there is one (it holds each once), else
+/// every mailbox's together. None when the server won't say.
+async fn on_server(connection: &mut Connection, mailboxes: &[&Mailbox]) -> Option<u64> {
+    let counted = match mailboxes.iter().find(|m| m.role == Some(Role::All)) {
+        Some(all) => std::slice::from_ref(all),
+        None => mailboxes,
+    };
+    let mut total = 0;
+    for mailbox in counted {
+        total += u64::from(connection.status(&mailbox.name).await.ok()?.messages);
+    }
+    Some(total)
 }
 
 /// Fetches what arrived in each of `mailboxes`, before anything slow (all
