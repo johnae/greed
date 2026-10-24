@@ -905,6 +905,13 @@ greed.tab.set_layout({
   put a sign in the gutter, or draw text over the buffer's (like jump
   labels). Other things a mark can do:
 
+  - `eol = true` shows `text` after the line, clipped at the viewport edge,
+    with a one-cell separator by default. Set `eol_space = false` to start
+    exactly at the rendered line end without moving the cursor or wrapping
+    source text. Tight marks append directly before ordinary EOL annotations,
+    even at a selected newline; ordinary annotations keep their separators.
+    Guides and rulers use this to keep their columns on empty lines and at EOL.
+
   - `conceal` hides text (like a link's brackets), shown again as `reveal`
     says: `"line"` (the default) when a cursor is on its line, `"cursor"`
     when one is inside it, `"never"`, `"auto"`, which follows the mode: on

@@ -116,7 +116,11 @@ local function marks_for(
 	end
 	if past ~= "" then
 		local finish = start + #text
-		table.insert(out, { from = finish, to = finish, style = style, text = past })
+		-- Start at the newline without a separator or an inline cursor stop.
+		table.insert(
+			out,
+			{ from = finish, to = finish, style = style, text = past, eol = true, eol_space = false }
+		)
 	end
 	return after + core.text.width(past)
 end

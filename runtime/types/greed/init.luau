@@ -264,6 +264,11 @@ export type Mark = {
 	text: string?,
 	--- Show `text` after the end of the line instead, cut off at the edge.
 	eol: boolean?,
+	--- With `eol`, leave a one-cell separator before `text` (default true).
+	--- False starts at the rendered line end without moving the cursor or
+	--- wrapping. Tight marks append directly before ordinary EOL annotations.
+	--- Has no effect on inline text.
+	eol_space: boolean?,
 	--- A symbol for the sign column next to the line numbers, e.g. "E".
 	sign: string?,
 	--- A style for the line number of each line the mark touches, e.g. "ui.gutter.diagnostic.error".

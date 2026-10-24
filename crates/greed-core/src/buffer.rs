@@ -98,7 +98,7 @@ pub struct Tracked {
 
 /// Text drawn with a style, e.g. a search match. It moves with edits; text
 /// typed at either edge stays outside it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[expect(clippy::struct_excessive_bools, reason = "flags set from Luau")]
 pub struct Mark {
     pub range: Range<usize>,
@@ -110,6 +110,8 @@ pub struct Mark {
     /// of the range, or after the end of its line with `eol`.
     pub text: Option<Arc<str>>,
     pub eol: bool,
+    /// Separate EOL text from the line or preceding EOL text with a space.
+    pub eol_space: bool,
     /// A symbol for the sign column, next to the line numbers.
     pub sign: Option<Arc<str>>,
     /// A style for the line number of each line the mark touches.
@@ -159,6 +161,36 @@ pub struct Mark {
     /// The one view that draws it, as `view:decorate` sets; every view of
     /// the buffer when none.
     pub view: Option<ViewId>,
+}
+
+impl Default for Mark {
+    fn default() -> Self {
+        Self {
+            range: Range::default(),
+            style: Arc::default(),
+            line: false,
+            text: None,
+            eol: false,
+            eol_space: true,
+            sign: None,
+            gutter: None,
+            above: false,
+            overlay: false,
+            conceal: false,
+            reveal: Reveal::default(),
+            fold: false,
+            peek: false,
+            nowrap: false,
+            plain: false,
+            lines: Vec::new(),
+            image: None,
+            scene: None,
+            action: None,
+            scale: 0,
+            data: None,
+            view: None,
+        }
+    }
 }
 
 /// When a concealing mark shows the text it hides, so it can be edited.

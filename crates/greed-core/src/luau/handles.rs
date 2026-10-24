@@ -826,6 +826,7 @@ fn marks_from_lua(lua: &Lua, list: &[Table]) -> LuaResult<Vec<Mark>> {
                 line: flag("line")?,
                 text: t.get::<Option<String>>("text")?.map(Into::into),
                 eol: flag("eol")?,
+                eol_space: t.get::<Option<bool>>("eol_space")?.unwrap_or(true),
                 sign: t.get::<Option<String>>("sign")?.map(Into::into),
                 gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
                 above: flag("above")?,
@@ -897,6 +898,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("line", mark.line)?;
     t.set("text", mark.text.as_deref())?;
     t.set("eol", mark.eol)?;
+    t.set("eol_space", mark.eol_space)?;
     t.set("sign", mark.sign.as_deref())?;
     t.set("gutter", mark.gutter.as_deref())?;
     t.set("above", mark.above)?;

@@ -1031,9 +1031,10 @@ impl<M: Measure> Renderer<M> {
             let skip = if line == scroll.line { scroll.row } else { 0 };
             let layout = self.layout(editor, view, line, text_width);
             let last = layout.len() - 1;
-            // The line's bytes; an empty last line still counts as one.
+            // Include EOF in the last line: marks can sit after its final character.
             let start = text.line_to_byte(line);
-            let lines = start..text.line_to_byte(line + 1).max(start + 1);
+            let end = text.line_to_byte(line + 1) + usize::from(line + 1 == text.len_lines());
+            let lines = start..end;
             let head_shown = !lines.contains(&head) || shows(&layout, head);
             let on_line = |m: &&&Mark| m.range.start < lines.end && m.range.end >= lines.start;
             let line_gutter = Gutter::for_line(gutter, signs, &styled, &lines);
@@ -1055,6 +1056,11 @@ impl<M: Measure> Renderer<M> {
                 }
                 // Whether the line's end cell is drawn: the cursor is on it.
                 let (mut x, mut drawn) = (gutter, false);
+                let tight = i == last
+                    && styled.iter().filter(on_line).any(|m| {
+                        m.eol && !m.eol_space && m.text.as_ref().is_some_and(|s| !s.is_empty())
+                    });
+                let mut end_tags = SmallVec::new();
                 for cell in &cells {
                     let place = screen_position(area, x, rows.len());
                     if cursor_here(cell, (head, head_shown), &lines, cursor.is_some()) {
@@ -1079,7 +1085,9 @@ impl<M: Measure> Renderer<M> {
                         .checked_sub(visible.start)
                         .and_then(|i| syntax.get(i)?.clone());
                     let cell_tags = cell_tags(view, cell, &cursors, &peers, capture, &styled);
-                    if !(cell.end_of_line && cell_tags.is_empty()) {
+                    if cell.end_of_line && tight {
+                        end_tags = cell_tags;
+                    } else if !(cell.end_of_line && cell_tags.is_empty()) {
                         drawn = cell.end_of_line;
                         row.push_scaled(&cell.text, cell_tags, cell.scale);
                     }
@@ -1088,7 +1096,13 @@ impl<M: Measure> Renderer<M> {
                 if i == last {
                     let gap = x - usize::from(cells.last().is_some_and(|c| c.end_of_line));
                     let at = (view_id, area, rows.len());
-                    self.push_eol_text(&mut row, at, (gap, drawn), styled.iter().filter(on_line));
+                    self.push_eol_text(
+                        &mut row,
+                        at,
+                        (gap, drawn, tight),
+                        end_tags,
+                        styled.iter().filter(on_line),
+                    );
                 }
                 push_covering(&mut rows, row, row_height(&cells), text_rows);
             }
@@ -1109,27 +1123,36 @@ impl<M: Measure> Renderer<M> {
         Laid::new(rows, cursor, sized)
     }
 
-    /// Adds each `eol` mark's text after the end of a line, a space before
-    /// each, the first's at column `gap`: the line's end cell, where the
-    /// cursor can sit, so the text stays put whether it's there or not.
-    /// With `drawn`, the row already has that cell, the cursor on it. The
-    /// text is cut off at the edge rather than wrapped. `at` is the view,
-    /// its area and the row's index in it, for marks with actions.
+    /// Adds EOL text without wrapping. Tight marks come first, at the line
+    /// end, carrying its cursor/selection tags on their first grapheme.
+    /// Ordinary marks follow with a separating space. `at` locates actions
+    /// in the view.
     fn push_eol_text<'a>(
         &self,
         row: &mut Row,
         at: (ViewId, Rect, usize),
-        (gap, mut drawn): (usize, bool),
-        marks: impl Iterator<Item = &'a &'a Mark>,
+        (gap, mut drawn, tight): (usize, bool, bool),
+        mut end_tags: SmallVec<[Tag; 2]>,
+        marks: impl Iterator<Item = &'a &'a Mark> + Clone,
     ) {
         let (view, area, row_index) = at;
         let (left, mut room) = (area.x, usize::from(area.width).saturating_sub(gap));
         let screen_row = area.y + u16::try_from(row_index).unwrap_or(u16::MAX);
-        for mark in marks.filter(|m| m.eol) {
+        let leading = marks
+            .clone()
+            .filter(|m| m.eol && !m.eol_space)
+            .take(if tight { usize::MAX } else { 0 });
+        let trailing = marks.filter(|m| m.eol && (!tight || m.eol_space));
+        for mark in leading.chain(trailing) {
             let Some(text) = &mark.text else { continue };
             let mut shown = String::new();
             let mut used = 0;
-            for g in std::iter::once(" ").chain(text.graphemes(true)) {
+            for g in mark
+                .eol_space
+                .then_some(" ")
+                .into_iter()
+                .chain(text.graphemes(true))
+            {
                 let w = self.measure.width(g);
                 if w > room {
                     room = 0;
@@ -1140,10 +1163,9 @@ impl<M: Measure> Renderer<M> {
                 shown.push_str(g);
             }
             if !shown.is_empty() {
-                // The space goes in unstyled, so buttons side by side stay
-                // apart.
-                let (space, text) = shown.split_at(1);
-                if !std::mem::take(&mut drawn) {
+                // Ordinary labels keep their unstyled separator.
+                let (space, text) = shown.split_at(usize::from(mark.eol_space));
+                if !std::mem::take(&mut drawn) && !space.is_empty() {
                     row.push(space, SmallVec::new());
                 }
                 if let Some(action) = &mark.action {
@@ -1152,10 +1174,26 @@ impl<M: Measure> Renderer<M> {
                         col: left + ends,
                         row: screen_row,
                     };
-                    self.record_action(view, place, used - 1, action, mark.range.start);
+                    self.record_action(
+                        view,
+                        place,
+                        used - usize::from(mark.eol_space),
+                        action,
+                        mark.range.start,
+                    );
                 }
                 if !text.is_empty() {
-                    row.push(text, smallvec![Tag::from(mark.style.clone())]);
+                    let tag = Tag::from(mark.style.clone());
+                    if end_tags.is_empty() {
+                        row.push(text, smallvec![tag]);
+                    } else {
+                        let first = text.graphemes(true).next().unwrap();
+                        end_tags.insert(0, tag.clone());
+                        row.push(first, std::mem::take(&mut end_tags));
+                        if first.len() < text.len() {
+                            row.push(&text[first.len()..], smallvec![tag]);
+                        }
+                    }
                 }
             }
         }

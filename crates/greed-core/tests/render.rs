@@ -619,6 +619,93 @@ fn text_after_a_line_stays_put_with_the_cursor_on_its_end_and_reaches_the_edge()
 }
 
 #[test]
+fn tight_rulers_keep_the_line_end_cursor_and_exact_column() {
+    use greed_core::Mark;
+    for (text, prefix, cursor) in [
+        ("|\nx", "", Position { col: 2, row: 0 }),
+        ("\n|x", "", Position { col: 2, row: 1 }),
+        ("ab|\nx", "ab", Position { col: 4, row: 0 }),
+        ("ab\n|x", "ab", Position { col: 2, row: 1 }),
+    ] {
+        let mut ed = editor(text);
+        let buffer = ed.view(ed.focus()).buffer;
+        let ruler = format!("{}│", " ".repeat(7 - prefix.len()));
+        ed.decorate(
+            buffer,
+            "ruler",
+            vec![Mark {
+                range: 0..0,
+                style: "border".into(),
+                text: Some(ruler.as_str().into()),
+                eol: true,
+                eol_space: false,
+                ..Mark::default()
+            }],
+        );
+        let f = frame(&mut ed, 10, 3);
+        assert_eq!(rows(&f)[0], format!("1 {prefix}{ruler}"), "{text:?}");
+        assert_eq!(f.cursor, Some(cursor), "{text:?}");
+    }
+}
+
+#[test]
+fn tight_eol_marks_precede_annotations_and_keep_adjacent_columns() {
+    use greed_core::Mark;
+    let mut ed = editor("ab|");
+    let buffer = ed.view(ed.focus()).buffer;
+    ed.decorate(
+        buffer,
+        "labels",
+        [
+            ("note", true, "annotation"),
+            ("界", false, "wide"),
+            ("│", false, "border"),
+        ]
+        .into_iter()
+        .map(|(text, eol_space, style)| Mark {
+            range: 0..0,
+            style: style.into(),
+            text: Some(text.into()),
+            eol: true,
+            eol_space,
+            ..Mark::default()
+        })
+        .collect(),
+    );
+    let f = frame(&mut ed, 13, 3);
+    assert_eq!(rows(&f)[0], "1 ab界│ note");
+    assert_eq!(f.cursor, Some(Position { col: 4, row: 0 }));
+    assert_eq!(tagged(&f, &Tag::from("border")), ["│"]);
+    assert_eq!(tagged(&f, &Tag::from("annotation")), ["note"]);
+    let f = frame(&mut ed, 5, 3);
+    assert_eq!(rows(&f)[0], "1 ab", "a wide grapheme cannot cross the edge");
+    assert_eq!(f.cursor, Some(Position { col: 4, row: 0 }));
+}
+
+#[test]
+fn tight_eol_text_keeps_secondary_cursors_visible() {
+    use greed_core::Mark;
+    let mut ed = editor("|ab\nx|");
+    let buffer = ed.view(ed.focus()).buffer;
+    ed.decorate(
+        buffer,
+        "annotation",
+        vec![Mark {
+            range: 4..4,
+            style: "annotation".into(),
+            text: Some("界".into()),
+            eol: true,
+            eol_space: false,
+            ..Mark::default()
+        }],
+    );
+    let f = frame(&mut ed, 20, 4);
+    assert_eq!(rows(&f)[1], "2 x界");
+    assert_eq!(tagged(&f, &Tag::CURSOR), ["界"]);
+    assert_eq!(f.cursor, Some(Position { col: 2, row: 0 }));
+}
+
+#[test]
 fn signs_get_a_column_before_the_line_numbers() {
     use greed_core::Mark;
     let mut ed = editor("|a\nb\nc");
