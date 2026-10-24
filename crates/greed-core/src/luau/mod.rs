@@ -292,10 +292,40 @@ struct Manifest {
     /// What it uses beyond the editor; see `capabilities`.
     #[serde(default)]
     capabilities: Vec<String>,
+    /// The oldest Greed it works with, like "0.4".
+    #[serde(default)]
+    greed: Option<String>,
 }
 
 fn default_entry() -> String {
     "init.luau".to_owned()
+}
+
+/// A version as numbers, `MAJOR.MINOR` or `MAJOR.MINOR.PATCH`.
+fn version_numbers(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
+    let major = parts.next()??;
+    let minor = parts.next()??;
+    let patch = parts.next().unwrap_or(Some(0))?;
+    parts.next().is_none().then_some((major, minor, patch))
+}
+
+/// Fails, saying why, unless this Greed is `needs` or newer.
+fn new_enough(needs: &str) -> Result<(), String> {
+    let have = env!("CARGO_PKG_VERSION");
+    let Some(wanted) = version_numbers(needs) else {
+        return Err(format!(
+            "greed = {needs:?} isn't a version: give the oldest Greed it works with, like \"0.4\""
+        ));
+    };
+    // A build between releases counts as the release it's named after.
+    let current = version_numbers(have.split('-').next().unwrap_or(have)).unwrap_or_default();
+    if current < wanted {
+        return Err(format!(
+            "it needs Greed {needs} or newer, and this is {have}: update Greed to use it"
+        ));
+    }
+    Ok(())
 }
 
 /// When the current call into Luau must finish, and how long calls get.
@@ -1274,6 +1304,7 @@ pub(crate) fn load_dir_as(lua: &Lua, dir: &Path, name: &str) -> Result<PluginId,
         entry: default_entry(),
         requires: Vec::new(),
         capabilities: Vec::new(),
+        greed: None,
     };
     load_manifest(lua, dir, manifest, capabilities::Grant::All)
 }
@@ -1284,6 +1315,12 @@ fn load_manifest(
     manifest: Manifest,
     grant: capabilities::Grant,
 ) -> Result<PluginId, HostError> {
+    if let Some(needs) = &manifest.greed {
+        new_enough(needs).map_err(|message| HostError::Manifest {
+            path: dir.join("plugin.toml"),
+            message,
+        })?;
+    }
     if let Some(missing) = manifest
         .requires
         .iter()

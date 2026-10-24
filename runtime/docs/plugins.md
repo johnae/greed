@@ -36,6 +36,11 @@ requires its other files with `require("@self/name")`, and those files
 require each other with `require("./name")`. A plugin can't require files
 outside its folder.
 
+A plugin that needs something newer than the oldest Greed people run says
+which, `greed = "0.4"`, and on an older Greed it doesn't load and says to
+update Greed, rather than failing partway with an error about a function
+that isn't there.
+
 ### Capabilities
 
 A plugin can edit buffers, add commands, keys, pickers and the rest of the

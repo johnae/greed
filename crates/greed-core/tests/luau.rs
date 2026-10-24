@@ -192,6 +192,44 @@ fn plugin_directories_load_with_local_requires() {
 }
 
 #[test]
+fn a_plugin_needing_a_newer_greed_says_so_and_doesnt_load() {
+    let dir = std::env::temp_dir().join(format!("greed-version-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("init.luau"), "return {}\n").unwrap();
+    let h = host("");
+    let manifest = |greed: &str| {
+        std::fs::write(
+            dir.join("plugin.toml"),
+            format!("name = \"versioned\"\ngreed = \"{greed}\"\n"),
+        )
+        .unwrap();
+    };
+
+    manifest("99.0");
+    let err = h.load_dir(&dir).unwrap_err().to_string();
+    let have = env!("CARGO_PKG_VERSION");
+    assert!(
+        err.contains("needs Greed 99.0 or newer") && err.contains(have),
+        "{err}"
+    );
+    assert_eq!(
+        h.eval("require('@greed').plugin.dirs().versioned").unwrap(),
+        "nil"
+    );
+
+    manifest("not a version");
+    let err = h.load_dir(&dir).unwrap_err().to_string();
+    assert!(err.contains("like \"0.4\""), "{err}");
+
+    // This version and older ones load.
+    manifest(have);
+    h.load_dir(&dir).unwrap();
+    manifest("0.1");
+    h.load_dir(&dir).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn evaluating_again_and_again_keeps_no_memory() {
     // What 1000 evals may grow Luau's memory by: pages of its heap that the
     // garbage left half used, nothing like a copy of what each eval made.
