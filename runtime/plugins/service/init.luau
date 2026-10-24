@@ -21,7 +21,9 @@ local M = {}
 export type Caller = { session: string? }
 
 --- When an owner starts: when a view first needs it, when Greed starts, or
---- when Greed starts if the function says so.
+--- when Greed starts if the function says so. Starting with Greed also
+--- takes `services-at-start` naming it: what runs in the background is
+--- yours to choose.
 export type Start = "use" | "always" | () -> boolean
 
 export type Definition = { name: string, start: Start? }
@@ -646,11 +648,22 @@ greed.on("control.closed", function(event: greed.ControlClosed)
 	M.closed(event.connection)
 end)
 
---- Whether `name`'s owner starts with Greed, as its definition says.
+greed.option.define({
+	name = "services-at-start",
+	doc = "The services that start in the background when Greed starts, names with spaces between (like mail hoard chat); the others start when first used",
+	default = "",
+})
+
+--- Whether `name`'s owner starts with Greed: `services-at-start` names it,
+--- and its definition says it would (mail with a mail.toml, say).
 function M.starts_with_greed(name: string): boolean
+	local listed = false
+	for word in string.gmatch(tostring(greed.option.get("services-at-start") or ""), "%S+") do
+		listed = listed or word == name
+	end
 	local entry = defined[name]
 	local start = if entry then entry.definition.start else nil
-	return start == "always" or (type(start) == "function" and start())
+	return listed and (start == "always" or (type(start) == "function" and start()))
 end
 
 -- Owners that start with Greed, from any session but a service's.

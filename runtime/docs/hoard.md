@@ -424,9 +424,16 @@ greed.option.set("notes-agent-schedule", "week friday 16:00, connect weekdays 08
 The day is `daily`, `weekdays` or a weekday's name. A run Greed was
 closed for happens when it next starts that day, and a run with nothing
 new to work on (an inbox unchanged since the last one) is skipped, so
-the model isn't asked for nothing. Hoard's own session runs the schedule,
-whichever sessions you have open; it starts with Greed when you have
-notes. What a scheduled run changes waits for your review like any other.
+the model isn't asked for nothing. Hoard's own session runs the schedule
+and your reminders, whichever sessions you have open. It starts when you
+first open Hoard or your notes; to have reminders and scheduled runs from
+the moment Greed starts, start it with Greed:
+
+```luau
+greed.option.set("services-at-start", "hoard")
+```
+
+What a scheduled run changes waits for your review like any other.
 
 ## Where your notes are
 

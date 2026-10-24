@@ -1628,9 +1628,12 @@ test("whether mail starts with Greed is checked as mail, with mail's capabilitie
 	local service = require("@service")
 	local config = assert(greed.fs.dirs().config)
 	greed.fs.write(`{config}/mail.toml`, "")
+	assert(not service.starts_with_greed("mail"), "not unless services-at-start says so")
+	greed.option.set("services-at-start", "hoard mail")
 	assert(service.starts_with_greed("mail"), "it starts once mail.toml is there")
 	greed.fs.remove(`{config}/mail.toml`)
 	assert(not service.starts_with_greed("mail"), "and not without one")
+	greed.option.set("services-at-start", "")
 end)
 
 -- A greed-mail at `dir` that notes each start in `dir`/starts and answers
