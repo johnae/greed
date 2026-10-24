@@ -24,6 +24,19 @@ Commands have names like `goto-end` or `select-line`, and `:` runs any of
 them by name. Keys starting with `space` are the leader's: in the vscode style
 they start with `ctrl-space` instead.
 
+## Going back
+
+`q` and `esc` go back in anything you read rather than edit: a picture, a
+PDF, help, the file tree, a multibuffer, mail, chat. If the thing has steps
+of its own they come first, so in mail `q` takes a thread back to the list,
+and in a chat room it stops an answer you started. Then it goes where you
+came from, same as `ctrl-o`, and a float with nowhere to go closes.
+
+In text you edit, `q` and `esc` stay your style's (macros, normal mode),
+and in a prompt or a picker only `esc` cancels, since `q` is something you
+type. `ctrl-o` and `ctrl-i` go back and forward through where a pane has
+been everywhere.
+
 ## Binding keys
 
 Bindings go in `~/.config/greed/init.luau`. Commands like finding a file

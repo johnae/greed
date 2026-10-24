@@ -233,6 +233,8 @@ return {
 	--- `] m` and `[ m`: moving by item, where kinds of buffers say their
 	--- items start (items.luau).
 	items = require("@self/items"),
+	--- `q` and `esc` going back where you read rather than edit (back.luau).
+	back = require("@self/back"),
 	--- A function whose calls at once with the same key share one run (joined.luau).
 	joined = require("@self/joined"),
 	--- Times and durations as Greed writes and reads them (time.luau).

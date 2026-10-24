@@ -723,9 +723,8 @@ greed.command({
 	end,
 })
 
+core.back.provide("help", "help-close")
 greed.keymap.bind({ kind = "help" }, {
-	esc = "help-close",
-	q = "help-close",
 	enter = "help-goto",
 	backspace = "help-back",
 	["ctrl-o"] = "help-back",

@@ -138,7 +138,7 @@ greed.keymap.bind({ kind = "staged-diff" }, {
 	u = "staged-unstage",
 	c = "staged-commit",
 	r = "staged-refresh",
-	q = "multibuffer-close",
 })
+core.back.provide("staged-diff", "multibuffer-close")
 
 return M

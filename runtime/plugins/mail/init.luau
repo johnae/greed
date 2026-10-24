@@ -2460,9 +2460,10 @@ local ACTIONS = {
 	T = "mail-todo",
 	z = "mail-undo",
 	b = "mail-browser",
-	q = "mail-close",
-	esc = "mail-close",
 }
+
+core.back.provide("mail", "mail-close")
+core.back.provide("mail-thread", "mail-close")
 
 -- Mail is written by whoever sent it, so an agent reading it is told so;
 -- mail being written quotes what it answers.

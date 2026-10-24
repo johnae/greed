@@ -459,7 +459,7 @@ greed.keymap.bind({ kind = "tree" }, {
 	R = "tree-rename",
 	d = "tree-delete",
 	e = "tree-edit",
-	q = "tree-close",
 })
+core.back.provide("tree", "tree-close")
 
 return M

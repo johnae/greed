@@ -740,8 +740,8 @@ greed.command({
 
 greed.keymap.bind({ role = "command", kind = "multibuffer" }, {
 	enter = "multibuffer-open",
-	q = "multibuffer-close",
 })
+core.back.provide("multibuffer", "multibuffer-close")
 
 greed.keymap.bind({ layer = "leader", kind = "multibuffer" }, {
 	["g r"] = "multibuffer-revert",

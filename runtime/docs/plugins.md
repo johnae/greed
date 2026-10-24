@@ -1270,6 +1270,16 @@ core.items.provide("todo-list", function(view)
 end)
 ```
 
+A buffer you read rather than edit should go back on `q` and `esc` like
+every other one does. `core.back.provide(kind, step?)` binds both for your
+kind. `step` is what your kind does first, a command name or a function
+that returns true if it went somewhere; leave it out and back goes where
+you came from, or closes your float. Like this:
+
+```luau
+core.back.provide("todo-list", "todo-list-close")
+```
+
 `greed.animate(ms, step)` calls `step(t)` once a frame; the flash on copy
 is built on it. `greed.fs.watch(path)` makes a "file.changed" event come
 whenever that file changes, from anywhere; it's how your config reloads.

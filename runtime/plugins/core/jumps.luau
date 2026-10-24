@@ -250,7 +250,12 @@ greed.on("command.run", function(event: greed.CommandRun)
 	if JUMPS[event.name] then
 		push(view, now)
 	end
-	if JUMPS[event.name] or event.name == "jump-back" or event.name == "jump-forward" then
+	if
+		JUMPS[event.name]
+		or event.name == "jump-back"
+		or event.name == "jump-forward"
+		or event.name == "back"
+	then
 		leaving[view:id()] = now
 	else
 		leaving[view:id()] = nil
@@ -301,22 +306,26 @@ greed.on("view.closed", function(event: greed.ViewClosed)
 	leaving[event.view] = nil
 end)
 
+local function back(view: greed.View): boolean
+	local h = history(view)
+	if h.index > #h.places then
+		push(view, look(view))
+		h.index = #h.places
+	end
+	while h.index > 1 do
+		h.index -= 1
+		if go(view, h.places[h.index]) then
+			return true
+		end
+	end
+	return false
+end
+
 greed.command({
 	name = "jump-back",
 	doc = "Go back to where the last jump started, in this view",
 	run = function()
-		local view = greed.view()
-		local h = history(view)
-		if h.index > #h.places then
-			push(view, look(view))
-			h.index = #h.places
-		end
-		while h.index > 1 do
-			h.index -= 1
-			if go(view, h.places[h.index]) then
-				return
-			end
-		end
+		back(greed.view())
 	end,
 })
 
@@ -336,6 +345,10 @@ greed.command({
 })
 
 local M = {}
+
+--- Goes back to where the last jump in `view` started, as ctrl-o does;
+--- false if there's nowhere to go back to.
+M.back = back
 
 --- Makes command `name` leave its starting place in the jumplist.
 function M.add(name: string)

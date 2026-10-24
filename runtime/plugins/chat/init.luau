@@ -640,8 +640,8 @@ greed.keymap.bind({ kind = "chat" }, {
 	["/"] = "chat-search",
 	["+"] = "chat-join",
 	["-"] = "chat-leave",
-	q = "chat-close",
 })
+core.back.provide("chat", "chat-close")
 
 -- The chat session opens on the list, and keeps the accounts connected.
 greed.on("editor.started", function()

@@ -1590,10 +1590,9 @@ greed.keymap.bind({ kind = "chat-room" }, {
 -- Out of the box only, so esc while writing leaves writing as it does; tab
 -- and shift-tab go through the bar's rooms as mail's go through its
 -- searches, alt and a number to one.
+core.back.provide("chat-room", "chat-close")
 greed.keymap.bind({ role = "command", kind = "chat-room" }, {
-	q = "chat-close",
 	enter = "chat-enter",
-	esc = "chat-close",
 	tab = "chat-room-next",
 	["shift-tab"] = "chat-room-previous",
 })
