@@ -28,14 +28,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Two link-time-optimized builds side by side run a Linux runner
+          # out of memory, so one at a time there.
           - system: x86_64-linux
             runner: ubuntu-24.04
             packages: .#default .#static
+            flags: --max-jobs 1
           - system: aarch64-linux
             runner: ubuntu-24.04-arm
             packages: .#default .#static
-            # Two link-time-optimized builds side by side run the arm
-            # runner out of memory, so one at a time there.
             flags: --max-jobs 1
           - system: aarch64-darwin
             runner: macos-latest
