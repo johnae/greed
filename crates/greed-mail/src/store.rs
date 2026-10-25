@@ -12,7 +12,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::addresses;
 use crate::body::Body;
@@ -1455,12 +1455,16 @@ impl Store {
 
 /// A connection to the store in `dir`, `bodies.db` attached.
 fn connect(dir: &Path) -> Result<Connection, Trouble> {
-    let db = Connection::open(dir.join("mail.db"))?;
+    let mut db = Connection::open(dir.join("mail.db"))?;
     db.pragma_update(None, "journal_mode", "WAL")?;
     db.pragma_update(None, "synchronous", "NORMAL")?;
     db.pragma_update(None, "foreign_keys", "ON")?;
-    // The sync and what's asked of it write from threads of their own.
+    // The sync and what's asked of it write from threads of their own. They
+    // take the write lock as they begin, so the other one waits; one that
+    // only read first fails at once ("database is locked") when the other
+    // wrote meanwhile, however long it may wait.
     db.busy_timeout(std::time::Duration::from_secs(20))?;
+    db.set_transaction_behavior(TransactionBehavior::Immediate);
     db.execute(
         "ATTACH DATABASE ?1 AS bodies",
         [dir.join("bodies.db").to_string_lossy()],

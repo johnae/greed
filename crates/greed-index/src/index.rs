@@ -7,7 +7,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
-use rusqlite::{Connection, OpenFlags, params_from_iter, types::Value};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior, params_from_iter, types::Value};
 
 use crate::compare;
 use crate::query::{self, Answer, Flag, Kind, Node, Query, Row, Rows, Schema};
@@ -122,10 +122,13 @@ impl Index {
     /// The index at `path`, made if it isn't there, or made again when an
     /// older Greed made it, for writing.
     pub fn open(path: &Path) -> Result<Index, Trouble> {
-        let db = Connection::open(path)?;
+        let mut db = Connection::open(path)?;
         // Two writers of one index, as a program syncing on one thread and
-        // answering on another has, wait their turn rather than fail.
+        // answering on another has, wait their turn rather than fail: they
+        // take the write lock as a transaction begins, since one that only
+        // read first can't wait for it.
         db.busy_timeout(BUSY)?;
+        db.set_transaction_behavior(TransactionBehavior::Immediate);
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "synchronous", "NORMAL")?;
         if read_version(&db).is_ok_and(|v| v != VERSION) {
