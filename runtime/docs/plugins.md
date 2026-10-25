@@ -2827,24 +2827,28 @@ describe your own setup.
 
 ## Sharing a plugin
 
-A plugin in a git repository of its own, with `plugin.toml` at the top,
-installs with one line in someone's config:
+Put your plugin in a git repository of its own, with `plugin.toml` at the
+top, and anyone can install it with one line in their config. Like this,
+for [zenbones](https://github.com/johnae/greed-zenbones):
 
 ```luau
-require("@git-plugins").use("https://github.com/you/greed-leap")
+require("@git-plugins").use("https://github.com/johnae/greed-zenbones")
 ```
 
-Put its docs in a `docs` folder, as Markdown. Once the plugin is
+Docs go in a `docs` folder, as plain Markdown. Once the plugin is
 installed, `:docs` and `space h d` list those pages after the manual's,
-and `space h /` searches them. `README.md` comes first, then the others by
-name, each titled by its first heading; a `SUMMARY.md` like this manual's
-sets the order instead. Links and pictures relative to the page work in
-the editor and on GitHub alike.
+and `space h /` searches them too. `README.md` comes first, then the rest
+by name, each titled by its first heading (a `SUMMARY.md` like this
+manual's sets the order instead).
 
-`greed check .` in its CI keeps it working as Greed changes, and
-`greed = "0.4"` in `plugin.toml` keeps an older Greed from loading it.
-[Plugins to install](plugins-to-install.md) lists plugins others can use,
-and how to add yours.
+Links and pictures relative to the page work in the editor and on GitHub
+alike, so the same folder reads fine in both. Zenbones has one, if you
+want something to copy.
+
+Run `greed check .` in its CI and you'll hear about it when a new Greed
+breaks something. `greed = "0.4"` in `plugin.toml` keeps an older Greed
+from loading it at all. Once it's out there,
+[Plugins to install](plugins-to-install.md) says how to get it listed.
 
 ## Loading and reloading
 
