@@ -237,8 +237,14 @@ end
 
 --- Walks each room of account `account` ("service id") back with `ask`
 --- (`history`, `rooms`), keeping what it finds: to `chat-search-days` back
---- the first time, after that only to where it already has messages.
-function M.catch_up(account: string, ask: (method: string, params: any) -> (any, string?))
+--- the first time, after that only to where it already has messages. Rooms
+--- in `walked` (by "account|room") are left out, and those it starts on go
+--- in it.
+function M.catch_up(
+	account: string,
+	ask: (method: string, params: any) -> (any, string?),
+	walked: { [string]: boolean }
+)
 	local service, id = string.match(account, "^(%S+) (.*)$")
 	if service == nil or id == nil then
 		return
@@ -251,10 +257,11 @@ function M.catch_up(account: string, ask: (method: string, params: any) -> (any,
 	local horizon = (os.time() - days * 86400) * 1000
 	local done = caught()
 	for _, room in rooms do
-		if room.kind == "space" or room.kind == "invite" then
+		local which = `{account}|{room.id}`
+		if room.kind == "space" or room.kind == "invite" or walked[which] then
 			continue
 		end
-		local which = `{account}|{room.id}`
+		walked[which] = true
 		local before: string? = nil
 		for _ = 1, PAGES do
 			local page = ask("history", { account = id, room = room.id, before = before })

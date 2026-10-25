@@ -225,6 +225,48 @@ test("changes apply as the protocol says", function()
 	assert(#items == 0)
 end)
 
+test("an account ready before its sign-in's answer stays ready", function(t)
+	backend.reset()
+	local notify: any = nil
+	notify = backend.use("matrix", {
+		["login.methods"] = function()
+			return { { kind = "password" } }
+		end,
+		["login.start"] = function()
+			return {
+				login = "l1",
+				step = {
+					step = "ask",
+					fields = { { name = "user", label = "Username", secret = false } },
+				},
+			}
+		end,
+		["login.answer"] = function()
+			-- Its sync is running already as the answer goes out.
+			notify(
+				"account.changed",
+				{ id = "@anna:x", server = "https://x", state = { state = "ready" } }
+			)
+			return {
+				step = "done",
+				account = { id = "@anna:x", server = "https://x", state = { state = "syncing" } },
+				secret = "the tokens",
+			}
+		end,
+	})
+	t:buffer("|x")
+	t:run("chat-login")
+	t:keys("enter")
+	t:type("x.org")
+	t:keys("enter")
+	t:keys("enter")
+	t:type("anna")
+	t:keys("enter")
+	t:wait(100)
+	local account = assert(backend.accounts["matrix @anna:x"], "the account is there")
+	assert(account.state.state == "ready", account.state.state)
+end)
+
 test("signing in with a password asks for each field, then keeps the account", function(t)
 	backend.reset()
 	local answered: any = nil
@@ -976,6 +1018,48 @@ test(
 		assert(#pages == 1, "one page, which it had: " .. table.concat(pages, " "))
 	end
 )
+
+test("a room that comes after its account is ready is caught up too, once", function(t)
+	backend.reset()
+	chat.index.BETWEEN = 0
+	local now = os.time() * 1000
+	-- As a first sync can be: ready with one room, the other one later.
+	local rooms = { { id = "!yard:x", account = "@anna:x", name = "Yard", kind = "room" } }
+	local walked: { string } = {}
+	local notify = backend.use("matrix", {
+		rooms = function(): any
+			return rooms
+		end,
+		history = function(params: any): any
+			table.insert(walked, params.room)
+			local said = {
+				room = params.room,
+				room_name = if params.room == "!ops:x" then "Ops" else "Yard",
+				event = `$in{params.room}`,
+				sender = { id = "@cal:x", name = "Cal" },
+				at = now - 1000,
+				text = if params.room == "!ops:x" then "the deploy went out" else "rake",
+				mine = false,
+				direct = false,
+			}
+			return { messages = { said }, before = nil }
+		end,
+	}, { "history" })
+	notify("account.changed", { id = "@anna:x", server = "https://x", state = { state = "ready" } })
+	t:wait_for(function(): boolean
+		return #walked == 1
+	end)
+	table.insert(rooms, { id = "!ops:x", account = "@anna:x", name = "Ops", kind = "room" })
+	notify("rooms.changed", { account = "@anna:x" })
+	t:wait_for(function(): boolean
+		return #walked == 2
+	end)
+	notify("rooms.changed", { account = "@anna:x" })
+	t:wait(100)
+	assert(table.concat(walked, " ") == "!yard:x !ops:x", table.concat(walked, " "))
+	local found = finds(t, "deploy")
+	assert(#found == 1 and found[1] == "$in!ops:x", table.concat(found, " "))
+end)
 
 test("chat's search finds what the services told of, in Greed's query language", function(t)
 	local notify = fake()

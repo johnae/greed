@@ -338,10 +338,36 @@ local function note(key: string, has: boolean)
 	greed.fs.write(file, greed.json.encode(accounts))
 end
 
--- Catches account `key` up on the messages kept to search (below).
-local catch_up: (key: string) -> ()
--- The accounts caught up since the owner started.
-local caught: { [string]: boolean } = {}
+-- Catches account `key` up on the messages kept to search (below), in
+-- the rooms not in `walked` yet.
+local catch_up: (key: string, walked: { [string]: boolean }) -> ()
+-- The rooms caught up since the owner started, by "account|room".
+local walked: { [string]: boolean } = {}
+-- The accounts being caught up now, true when their rooms changed meanwhile.
+local catching: { [string]: boolean } = {}
+
+-- Catches account `key` up, once it's ready, in the rooms it hasn't been
+-- yet. Its first sync can be ready before all its rooms are here, so it's
+-- asked again each time they change.
+local function catch_up_rooms(service: string, key: string)
+	local account = owned[key]
+	local can = capable[service]
+	if account == nil or account.state.state ~= "ready" or not (can and can.history) then
+		return
+	end
+	if catching[key] ~= nil then
+		catching[key] = true
+		return
+	end
+	catching[key] = false
+	greed.spawn(function()
+		repeat
+			catching[key] = false
+			catch_up(key, walked)
+		until catching[key] == false
+		catching[key] = nil
+	end)
+end
 
 local function took(service: string, account: any)
 	local taken: Account = account
@@ -350,11 +376,7 @@ local function took(service: string, account: any)
 	owned[key] = taken
 	note(key, true)
 	tell("account.changed", { service = service, params = taken })
-	local can = capable[service]
-	if taken.state.state == "ready" and can and can.history and not caught[key] then
-		caught[key] = true
-		greed.spawn(catch_up, key)
-	end
+	catch_up_rooms(service, key)
 end
 
 -- A sign-in's step as views may see it: a finished one's account is taken
@@ -364,6 +386,12 @@ local function finished(service: string, step: any): any
 		return step
 	end
 	keep(service, step.account.id, step.secret)
+	-- The account as the sign-in answered: its sync may have said it's
+	-- ready meanwhile, which a stale "syncing" mustn't undo.
+	local known = owned[`{service} {step.account.id}`]
+	if known and known.state.state == "ready" and step.account.state.state == "syncing" then
+		step.account.state = known.state
+	end
 	took(service, step.account)
 	return { step = "done", account = step.account }
 end
@@ -387,6 +415,9 @@ local function heard(service: string, method: string, params: any)
 			params = { login = params.login, step = finished(service, params.step) },
 		})
 	else
+		if method == "rooms.changed" then
+			catch_up_rooms(service, `{service} {params.account}`)
+		end
 		tell(method, { service = service, params = params })
 	end
 end
@@ -482,11 +513,11 @@ local function owner_ask(
 	return result, why
 end
 
-function catch_up(key: string)
+function catch_up(key: string, rooms_walked: { [string]: boolean })
 	local service = M.split(key)
 	index.catch_up(key, function(method: string, params: any): (any, string?)
 		return owner_ask(service, method, params, "")
-	end)
+	end, rooms_walked)
 end
 
 -- Signs `key` ("service id") out, and forgets its secret.
@@ -873,7 +904,8 @@ function M.reset()
 	capable = {}
 	opens = {}
 	shown_by = {}
-	caught = {}
+	walked = {}
+	catching = {}
 	M.accounts = {}
 	M.can = {}
 end
