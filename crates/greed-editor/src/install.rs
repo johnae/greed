@@ -265,7 +265,7 @@ fn fetched(host: &str, system: &str) -> Result<PathBuf, Error> {
 
 /// The programs that ship beside `greed` and that Greed runs from beside
 /// itself: they go wherever a greed is put.
-pub const HELPERS: &[&str] = &["greed-mail"];
+pub const HELPERS: &[&str] = &["greed-mail", "greed-matrix", "greed-mattermost"];
 
 /// The helpers there are beside `greed`, with their names.
 fn helpers_beside(greed: &Path) -> Vec<(&'static str, PathBuf)> {

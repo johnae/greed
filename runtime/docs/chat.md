@@ -206,4 +206,5 @@ and stores what Matrix needs locally (rooms, encryption keys, files it
 fetched), locked with a key kept with your sign-in. They come with Greed:
 its packages put them beside `greed`, and Greed starts them from there (or
 your `PATH`); the `chat-matrix-program` and `chat-mattermost-program`
-options name others.
+options name others. On another machine you reach with `greed ssh`, the
+greed put there brings them along, so `greed chat` works there too.
