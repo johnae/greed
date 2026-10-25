@@ -7,7 +7,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 media=$root/site/media
-cargo build -q -p greed-editor -p greed-mail --manifest-path "$root/Cargo.toml"
+cargo build -q -p greed-editor -p greed-mail -p greed-matrix --manifest-path "$root/Cargo.toml"
 
 # Starts a Dovecot in `$1` serving the sample mailbox, site/media/mail, as
 # sam (any password), and writes the demo profile's mail.toml for it, for
@@ -88,6 +88,88 @@ EOF
   echo $!
 }
 
+# Starts a Tuwunel in `$1` with made-up people and rooms for a demo saying
+# `# needs: chat`: sam (password demo) is in the garden club, the ops room
+# and a direct chat with Anna. Prints Tuwunel's pid and its address.
+# Tuwunel comes from devenv, or GREED_MATRIX_TUWUNEL names one. Needs curl
+# and jq.
+start_chat() {
+  local dir=$1 port program url pid
+  program=${GREED_MATRIX_TUWUNEL:-$(command -v tuwunel)}
+  port=$((20000 + RANDOM % 40000))
+  url=http://127.0.0.1:$port
+  mkdir -p "$dir"
+  cat >"$dir/tuwunel.toml" <<EOF
+[global]
+server_name = "localhost"
+database_path = "$dir/db"
+address = ["127.0.0.1"]
+port = $port
+allow_registration = true
+registration_token = "demo"
+allow_federation = false
+allow_check_for_updates = false
+startup_netburst = false
+log = "warn"
+EOF
+  "$program" -c "$dir/tuwunel.toml" >/dev/null 2>"$dir/log" &
+  pid=$!
+  until curl -sf "$url/_matrix/client/versions" >/dev/null; do sleep 0.1; done
+  local -A token
+  local user name session
+  # The first account is the server's admin, with a room of its own: not
+  # one of them.
+  for user in admin:Admin sam:Sam anna:"Anna Berg" jonas:Jonas bea:"Bea Lind"; do
+    name=${user#*:} user=${user%%:*}
+    session=$(curl -s -XPOST "$url/_matrix/client/v3/register" \
+      -d "{\"username\":\"$user\",\"password\":\"demo\"}" | jq -r .session)
+    token[$user]=$(curl -s -XPOST "$url/_matrix/client/v3/register" \
+      -d "{\"username\":\"$user\",\"password\":\"demo\",\"auth\":{\"type\":\"m.login.registration_token\",\"token\":\"demo\",\"session\":\"$session\"}}" |
+      jq -r .access_token)
+    curl -s -XPUT "$url/_matrix/client/v3/profile/@$user:localhost/displayname" \
+      -H "Authorization: Bearer ${token[$user]}" -d "{\"displayname\":\"$name\"}" >/dev/null
+  done
+  local n=0
+  # As `$1`, in the room `$2`, the message `$3`, and as HTML `$4` if given,
+  # as clients send code.
+  say() {
+    n=$((n + 1))
+    jq -n --arg body "$3" --arg html "${4:-}" '{msgtype: "m.text", body: $body}
+      + if $html == "" then {} else {format: "org.matrix.custom.html", formatted_body: $html} end' |
+      curl -s -XPUT "$url/_matrix/client/v3/rooms/$2/send/m.room.message/demo$n" \
+        -H "Authorization: Bearer ${token[$1]}" -d @- >/dev/null
+    sleep 0.05
+  }
+  # A room `$2` that `$1` makes, the others in `$3` joining it.
+  room() {
+    local id who
+    id=$(curl -s -XPOST "$url/_matrix/client/v3/createRoom" -H "Authorization: Bearer ${token[$1]}" \
+      -d "{\"name\":\"$2\",\"preset\":\"public_chat\"}" | jq -r .room_id)
+    for who in $3; do
+      curl -s -XPOST "$url/_matrix/client/v3/join/$id" \
+        -H "Authorization: Bearer ${token[$who]}" -d '{}' >/dev/null
+    done
+    echo "$id"
+  }
+  local garden ops lunch
+  ops=$(room jonas Ops "sam bea")
+  say jonas "$ops" "The shop's deploy went out at 14:00"
+  say bea "$ops" "Checkout looks fine from here"
+  say jonas "$ops" "The worker pod restarted twice, I'm looking into it"
+  local pods=$'NAME     READY   STATUS    RESTARTS\nworker   1/1     Running   2'
+  say jonas "$ops" $'```\n'"$pods"$'\n```' "<pre><code>$pods</code></pre>"
+  lunch=$(room anna "Anna Berg" "sam")
+  say anna "$lunch" "Are we still on for lunch on Thursday?"
+  garden=$(room anna "Garden club" "sam jonas bea")
+  say bea "$garden" "Who's bringing the seed trays on Saturday?"
+  say jonas "$garden" "I can, there's a stack of them in the shed"
+  say anna "$garden" "The tomato seeds came today, enough for everyone"
+  say bea "$garden" "Lovely! Which kinds?"
+  say anna "$garden" "Sungold and San Marzano"
+  say jonas "$garden" "Sam, could you bring the plant labels?"
+  echo "$pid $url"
+}
+
 names=("$@")
 if [ ${#names[@]} -eq 0 ]; then
   for demo in "$media"/*.demo; do
@@ -119,9 +201,15 @@ for name in "${names[@]}"; do
   if grep -q '^# needs: notes' "$media/$name.demo"; then
     cp -r "$media/notes" "$scratch/home/notes"
   fi
-  dovecot=""
+  servers=""
   if grep -q '^# needs: mail' "$media/$name.demo"; then
-    dovecot=$(start_mail "$scratch/dovecot" "$scratch/profile")
+    servers=$(start_mail "$scratch/dovecot" "$scratch/profile")
+  fi
+  # The demo signs in to its Tuwunel, at the address `{matrix}` stands for.
+  if grep -q '^# needs: chat' "$media/$name.demo"; then
+    read -r tuwunel matrix <<<"$(start_chat "$scratch/tuwunel")"
+    servers="$servers $tuwunel"
+    sed -i "s|{matrix}|$matrix|g" "$scratch/$name.demo"
   fi
   echo "recording $name"
   # Nothing of this machine: a home of its own, and only the variables
@@ -140,10 +228,11 @@ for name in "${names[@]}"; do
   (cd "$scratch/home/shop" && env -i "${vars[@]}" \
     "$root/target/debug/greed" --profile "$scratch/profile" --record "$scratch/$name.demo" \
     "${args[@]}")
-  if [ -n "$dovecot" ]; then
-    kill "$dovecot" 2>/dev/null || true
-    wait "$dovecot" 2>/dev/null || true
-  fi
+  # The servers it started, Dovecot and Tuwunel.
+  for server in $servers; do
+    kill "$server" 2>/dev/null || true
+    wait "$server" 2>/dev/null || true
+  done
   out=$root/target/media/$name
   rm -rf "$out"
   mkdir -p "$(dirname "$out")"

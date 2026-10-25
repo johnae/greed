@@ -10,6 +10,8 @@ Nothing connects until you sign in to an account (`:chat-login`), and
 chat doesn't start with Greed unless `services-at-start` names it
 ([Sessions](sessions.md#sessions-and-clients)).
 
+[![The rooms in the sidebar, the garden club's messages, a message from Jonas answered with a quote of it above the answer, then every room searched for deploy and the message found opened in Ops](https://github.com/johnae/greed/releases/download/media/chat.png)](https://github.com/johnae/greed/releases/download/media/chat.mp4)
+
 ```sh
 greed chat
 ```

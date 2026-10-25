@@ -1,0 +1,67 @@
+# Chat: your rooms, a room's messages, answering one, and searching every
+# room. The people and rooms are made up, on a Tuwunel of the recording's
+# own (record.sh's start_chat), which the demo signs in to unseen.
+# command: greed chat
+# needs: chat
+size 1280 800
+fps 30
+typing 0.03
+show-keys
+hide
+run chat-login
+wait 0.5
+type matrix
+keys enter
+wait 0.3
+type {matrix}
+keys enter
+wait-for Password
+keys enter
+wait 0.3
+type sam
+keys enter
+wait 0.3
+type demo
+keys enter
+wait-for Garden club
+wait 12
+keys j
+wait 0.3
+show
+wait 0.6
+
+caption Your rooms, those that mention you first
+wait 2.5
+
+caption A room's messages, kept up to date as they come
+keys enter
+wait-for plant labels
+wait 2.5
+
+caption Answering a message
+keys k k k
+wait 0.4
+keys alt-r
+wait 0.3
+keys i
+type Sure, I'll bring them
+wait 0.3
+keys enter
+wait-for ↳ Jonas
+wait 2.5
+shot chat
+keys esc
+wait 0.5
+
+caption Searching every room
+keys q
+wait 0.6
+keys /
+type deploy
+wait 1.5
+keys enter
+wait-for deploy went out
+wait 1.5
+keys enter
+wait-for restarted twice
+wait 2.5
