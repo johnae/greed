@@ -39,7 +39,7 @@ filter_commits = false
 tag_pattern = "v[0-9].*"
 sort_commits = "oldest"
 commit_parsers = [
-  { message = "^feat", group = "<!-- 0 -->New" },
+  { message = "^(feat|spike)", group = "<!-- 0 -->New" },
   { message = "^fix", group = "<!-- 1 -->Fixed" },
   { message = "^perf", group = "<!-- 2 -->Faster" },
   { message = "^docs", group = "<!-- 3 -->Documentation" },
