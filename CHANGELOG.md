@@ -3,6 +3,131 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## 0.4.0 - 2026-10-25
+
+### Highlights
+
+- Chat (`greed chat`), still experimental: Matrix and Mattermost rooms with threads, reactions, files and pictures, encrypted Matrix rooms, search, and notifications for mentions and direct messages.
+- Mail, chat and Hoard each run in a session of their own that does the syncing, and every other session shows them; nothing of them starts until you set it up.
+- Search your notes, mail and chat at once, and so can your agent.
+- Plugins from elsewhere: zenbones is the first on the new [Plugins to install](https://greed.rs/docs/plugins-to-install.html) page, a plugin's own docs show in `:docs`, `greed check` checks one from a shell or CI, and `plugin.toml` can say the oldest Greed it needs.
+- Starting is faster: loading the plugins takes about 65 ms instead of 155, since compiled plugins are kept between starts.
+- A theme can give a style any font family in the window, like comments in a handwritten one.
+- Hover shows as Markdown with code in its colors, `space L` searches the buffer as you type, and there are rulers, case changes and the function you're in on the status line.
+- Greed starts on Ubuntu's default umask again (#22), and mail no longer fails the odd archive or undo with "database is locked".
+
+### New
+
+- lsp: a language's servers get their settings and init options
+- statusline: the function and type you're in, as a path
+- core: change case to snake, camel, Pascal, kebab, title or sentence
+- guides: rulers at the columns the rulers option names
+- render: rounded floats in the terminal too, from the same rounded setting
+- lsp: the diagnostic signs are a table to change, require("@lsp").signs
+- plugin: greed.plugin.cleanup takes your own cleanup too, for what Greed doesn't know about
+- events: plugins hear each message the status line shows
+- marks: view:decorate, for marks one view draws and the others don't
+- grep: space L searches this buffer as you type, listing the lines that match
+- lsp: hover shows as Markdown, code in its colors and links to follow
+- plugins: how long each plugin took to load, in :plugins
+- theme: a style can name any font family for the window
+- plugins: plugin.toml says the oldest Greed it works with
+- plugins: greed check, a plugin's types, tests and warnings from the command line
+- docs: a plugin's own docs folder shows in :docs beside the manual
+- chat: the chat protocol and the JSON-RPC loop services answer it with
+- chat: greed-matrix signs in with a password and restores the session
+- chat: greed-mattermost signs in with a password
+- chat: browser sign-in: Mattermost SSO by desktop token, Matrix SSO by loopback
+- chat: both services sync, list rooms, keep live timelines and send
+- chat: the chat plugin: sign in, rooms, a room's timeline and sending
+- chat: messages read as Markdown, laid out with styles
+- chat: threads, edits, deleting, reactions, read marks, typing and presence
+- chat: files and pictures: shown, opened, and sent
+- chat: links back from the browser, Matrix OAuth, calls and links to the service's own app
+- chat: encrypted Matrix rooms: recovery key, setting up, verifying this device
+- chat: notifications for mentions and direct messages
+- chat: Mattermost slash commands, and buttons and menus in messages
+- chat: search messages
+- chat: link previews
+- chat: joining rooms: by address, invites, the directory
+- chat: polls, locations, and voice messages played
+- hub: what asks to be told of needing you is told wherever you are, as chat alerts
+- chat: Matrix spaces: their rooms listed under them, browsed and joined
+- chat: a bar of your rooms over a room, as mail's searches; tabs drawn by core.ui
+- chat: in the chat session the rooms are a sidebar, a room opens beside it
+- sessions: a service runs in a session of its own, started in the background
+- service: @service, state kept by one owner and shown through views in any session
+- chat: chat on the chat service; one owner runs the accounts, every session shows them
+- mail: mail on the mail service; one greed-mail syncs, every session asks it
+- hoard: Hoard's session is the hoard service; it reminds you and runs the scheduled jobs
+- chat: files go in pieces as data; starting chat reads no secrets
+- plugin: greed.plugin.handler; a service's handle runs as its owner's plugin
+- mail: the owner searches the index; views never open it
+- index: index:items gives back what an index holds for keys
+- chat: the services tell of every message, and give a room's older ones
+- chat: the chat service keeps every message to search, in Greed's query language
+- search: search your notes, mail and chat at once
+- mail: a mailbox the server suddenly shows nearly empty is held, not emptied here
+- mail: syncing shows how far it got of all there is, as a bar
+- service: services start at launch only when services-at-start names them
+- image: space . on a picture zooms it, as its keys do
+- chat: a reply shows what it answers, quoted above it
+- chat: code and tables in a message keep their lines, through ui.markdown
+- core: ] m and [ m move by item: a message in a chat room or a mail thread, a row of the mail list
+- image: q and esc go back from a picture or a PDF to where it was opened
+- core: back, the same everywhere: q and esc go back where you read rather than edit
+
+### Fixed
+
+- sessions: the sessions folder is made private however the umask is set, and one 0.3.0 made too open is closed again
+- format: edits typed while a formatter runs aren't lost
+- cmdline: :set keeps a number typed for a string option as it was typed
+- autosave: saves through the save hooks, quietly and without formatting
+- theme: a theme from a plugin is used once the plugin adds it
+- plugins: a plugin from git loads as soon as it's fetched, not on the next start
+- nix: greed-mail comes with Greed from Nix and in the static build
+- ssh: greed-mail goes along with the greed greed ssh puts on another machine
+- chat: a request that fails says why, down to its cause
+- chat: verifying works when the other device says the emoji match first
+- chat: joining a room on another server is given the minutes it takes
+- chat,mail: chat and mail open in the tab's floating view, one each, moving between what they show
+- chat: :chat shows the rooms, and a room says how to get back to them
+- control: replies in order, requests don't queue, slow readers cut off
+- mail,chat: their programs keep to the folders Greed uses
+- services: start checks run as their plugin, and programs start once
+- mail: a password command that waits doesn't stop greed-mail, and the list says so
+- mail,chat: greed-mail names its TLS crypto, and the programs end on a panic
+- rpc: a program that exits is reaped, not left a zombie
+- mail: messages the server lists that the store hasn't got are fetched again
+- mail: a held mailbox is named once in what the list says
+- sessions: the file a session starts with opens as any file does, a picture too
+- chat: a Matrix sync that stops on an error starts again, and an account's trouble takes one line
+- chat: code a Matrix message's HTML has in <pre> shows as code
+- ssh: greed-matrix and greed-mattermost go along too, so greed chat works there
+- mail: searching everything leaves mail out until it's set up, saying nothing
+- mail: writers take the store's and the index's lock as they begin, so none fails as locked
+
+### Faster
+
+- plugins: compiled bytecode is kept between starts
+- approvals: only plugins in watched folders are hashed as they load
+- menus: sent once after a run of changes, not again for every plugin
+- mail: greed-mail syncs on a thread of its own, so it answers at once
+- mail: headers come before bodies, and refilling skips what's here
+- mail: a new message finds its thread by its Message-ID's index, not a scan
+- mail: what you open is fetched on a connection of its own, not after the sync's step
+
+### Documentation
+
+- contributing: keep PRs small, an AGENTS.md for coding agents, and a PR template
+- readme: a clearer intro, why Greed exists, and a smoother read
+- site: the landing page reads more easily, with why Greed exists up front
+- an intro page that reads more easily, and lists every page
+- readme: say how Greed is built where it says why, so there's no separate Why to explain
+- the intro names what the plugins cover, as the README does
+- plugins to install, zenbones the first of them, and how to share yours
+- why Hoard, mail and chat are there, and that none runs until set up
+
 ## 0.3.0 - 2026-10-22
 
 ### Highlights
