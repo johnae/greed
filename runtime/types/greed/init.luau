@@ -271,7 +271,9 @@ export type Mark = {
 	--- Draw over selections and cursors rather than under them.
 	above: boolean?,
 	--- Draw `text` over the characters from `from` instead of inserting it,
-	--- like a jump label. The text doesn't move.
+	--- like a jump label. The text doesn't move. Past a line's end it goes
+	--- on over the empty room there, after any `eol` text, a space only
+	--- moving what follows along, so several can share it (like rulers).
 	overlay: boolean?,
 	--- Hide the text, showing `text` (if any) in its place, e.g. the
 	--- brackets of a `[[link]]`, except where `reveal` says.

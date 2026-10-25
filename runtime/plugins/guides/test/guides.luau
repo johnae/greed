@@ -65,3 +65,21 @@ test("rulers past a line's end come after the indent guides there", function(t)
 	assert(rows[3] == "│       ┊", "a blank line in a block: " .. rows[3])
 	assert(rows[2] == "│   x   ┊", rows[2])
 end)
+
+test(
+	"a blank line the cursor is on keeps its guides and rulers, and typing goes in under them",
+	function(t)
+		greed.option.set("indent", "    ")
+		greed.option.set("rulers", "7")
+		t:buffer("fn a() {\n    if x {\n|\n        y\n    }\n}")
+		greed.view():buffer():set_line_numbers(false)
+		local rows = t:draw(40, 8)
+		assert(rows[3] == "│     ┊", "on the cursor's blank line: " .. rows[3])
+		t:keys("i")
+		t:type("z")
+		rows = t:draw(40, 8)
+		greed.option.set("rulers", "")
+		assert(greed.view():buffer():line_text(2) == "z", greed.view():buffer():line_text(2))
+		assert(rows[3] == "z     ┊", "typed where the cursor was: " .. rows[3])
+	end
+)

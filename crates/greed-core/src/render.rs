@@ -1019,6 +1019,8 @@ impl<M: Measure> Renderer<M> {
         let styled = marks_in(editor, view, &visible);
         let (head, cursors) = cursors(text, view, editor.cursor_shape());
         let peers = Peer::all(editor, text, view_id);
+        // The syntax capture a cell's byte has.
+        let capture = |cell: &Cell| syntax.get(cell.byte.checked_sub(visible.start)?)?.clone();
         let number = line_number(editor.line_numbers(), text, head);
         let mut rows = Vec::with_capacity(text_rows);
         let mut cursor = None;
@@ -1069,19 +1071,17 @@ impl<M: Measure> Renderer<M> {
                     if !cell.end_of_line {
                         last_shown = Some(cell.byte);
                     }
-                    if let Some((text, tag)) = overlay.over(&styled, cell) {
-                        row.push_scaled(&text, smallvec![tag], cell.scale);
+                    let under = || cursor_tags(view, cell, &cursors, &peers);
+                    if let Some((text, tags)) = overlay.cover(&styled, cell, x, under) {
+                        drawn = cell.end_of_line;
+                        row.push_scaled(&text, tags, cell.scale);
                         x += cell.width;
                         continue;
                     }
-                    let capture = cell
-                        .byte
-                        .checked_sub(visible.start)
-                        .and_then(|i| syntax.get(i)?.clone());
-                    let cell_tags = cell_tags(view, cell, &cursors, &peers, capture, &styled);
-                    if !(cell.end_of_line && cell_tags.is_empty()) {
+                    let tags = cell_tags(view, cell, &cursors, &peers, capture(cell), &styled);
+                    if !(cell.end_of_line && tags.is_empty()) {
                         drawn = cell.end_of_line;
-                        row.push_scaled(&cell.text, cell_tags, cell.scale);
+                        row.push_scaled(&cell.text, tags, cell.scale);
                     }
                     x += cell.width;
                 }
@@ -1089,6 +1089,7 @@ impl<M: Measure> Renderer<M> {
                     let gap = x - usize::from(cells.last().is_some_and(|c| c.end_of_line));
                     let at = (view_id, area, rows.len());
                     self.push_eol_text(&mut row, at, (gap, drawn), styled.iter().filter(on_line));
+                    overlay.past_the_end(&mut row, usize::from(area.width), &self.measure);
                 }
                 push_covering(&mut rows, row, row_height(&cells), text_rows);
             }
@@ -1769,12 +1770,17 @@ struct Overlay {
     /// What's left, last grapheme first.
     left: Vec<String>,
     style: Option<Arc<str>>,
+    /// Drawn over cursors and selections rather than under them.
+    above: bool,
+    /// What goes past the line's end, and the end cell's column.
+    past: Option<(Past, usize)>,
 }
 
 impl Overlay {
     /// What to draw instead of `cell`, if an overlay covers it: one starting
-    /// there among `marks`, or one carried on from earlier cells.
-    fn over(&mut self, marks: &[&Mark], cell: &Cell) -> Option<(String, Tag)> {
+    /// there among `marks`, or one carried on from earlier cells. With it,
+    /// whether it's above cursors and selections.
+    fn over(&mut self, marks: &[&Mark], cell: &Cell) -> Option<(String, Tag, bool)> {
         if let Some(mark) = marks
             .iter()
             .find(|m| m.overlay && m.range.start == cell.byte)
@@ -1782,9 +1788,108 @@ impl Overlay {
             let text = mark.text.as_deref().unwrap_or_default();
             self.left = text.graphemes(true).rev().map(str::to_owned).collect();
             self.style = Some(mark.style.clone());
+            self.above = mark.above;
         }
         let grapheme = self.left.pop()?;
-        Some((grapheme, Tag::from(self.style.clone()?)))
+        Some((grapheme, Tag::from(self.style.clone()?), self.above))
+    }
+
+    /// What to draw in `cell`, at column `x`, if overlay text covers it,
+    /// and its tags: the overlay's, then `under`'s (the cursors and
+    /// selections there) unless it's above them. A line's end cell takes
+    /// what goes past the end, for `past_the_end`.
+    fn cover(
+        &mut self,
+        marks: &[&Mark],
+        cell: &Cell,
+        x: usize,
+        under: impl FnOnce() -> SmallVec<[Tag; 2]>,
+    ) -> Option<(String, SmallVec<[Tag; 2]>)> {
+        let (text, tag, above) = if cell.end_of_line {
+            let past = Past::new(self, marks, cell.byte);
+            let covered = past.on_end();
+            self.past = Some((past, x));
+            covered
+        } else {
+            self.over(marks, cell)
+        }?;
+        let mut tags = smallvec![tag];
+        if !above {
+            tags.extend(under());
+        }
+        Some((text, tags))
+    }
+
+    /// Draws what goes past the line's end after `row`, up to column `width`.
+    fn past_the_end(&mut self, row: &mut Row, width: usize, measure: &impl Measure) {
+        if let Some((past, x)) = self.past.take() {
+            past.draw(row, x, width, measure);
+        }
+    }
+}
+
+/// Overlay text past the end of a line, each from the line's end cell on:
+/// what's left of one that started in the line, and every one starting at
+/// its end. A space there only places what comes after it, so several can
+/// share the room after a line, like indent guides and rulers.
+struct Past {
+    /// Each one's graphemes, its style and whether it's above cursors.
+    layers: Vec<(Vec<String>, Arc<str>, bool)>,
+}
+
+impl Past {
+    /// The overlays past the line ending at byte `end`.
+    fn new(overlay: &mut Overlay, marks: &[&Mark], end: usize) -> Past {
+        let mut layers = Vec::new();
+        if !overlay.left.is_empty()
+            && let Some(style) = overlay.style.clone()
+        {
+            let left = std::mem::take(&mut overlay.left).into_iter().rev();
+            layers.push((left.collect(), style, overlay.above));
+        }
+        for mark in marks.iter().filter(|m| m.overlay && m.range.start == end) {
+            let text = mark.text.as_deref().unwrap_or_default();
+            let graphemes = text.graphemes(true).map(str::to_owned).collect();
+            layers.push((graphemes, mark.style.clone(), mark.above));
+        }
+        Past { layers }
+    }
+
+    /// What's drawn on the line's end cell: the first that isn't a space
+    /// there, its style and whether it's above cursors.
+    fn on_end(&self) -> Option<(String, Tag, bool)> {
+        self.layers.iter().find_map(|(graphemes, style, above)| {
+            let first = graphemes.first().filter(|g| *g != " ")?;
+            Some((first.clone(), Tag::from(style.clone()), *above))
+        })
+    }
+
+    /// Draws the rest in the columns after `row`'s text (text after the
+    /// line comes first), the end cell being at column `x`, up to `width`.
+    fn draw(&self, row: &mut Row, x: usize, width: usize, measure: &impl Measure) {
+        let mut at: usize = row.text().graphemes(true).map(|g| measure.width(g)).sum();
+        let mut cells: BTreeMap<usize, (&str, usize, &Arc<str>)> = BTreeMap::new();
+        for (graphemes, style, _) in &self.layers {
+            let mut col = x;
+            for g in graphemes {
+                let w = measure.width(g);
+                let taken = cells
+                    .range(..col + w)
+                    .next_back()
+                    .is_some_and(|(c, (_, cw, _))| c + cw > col);
+                if col > x && g != " " && col >= at && col + w <= width && !taken {
+                    cells.insert(col, (g, w, style));
+                }
+                col += w;
+            }
+        }
+        for (col, (g, w, style)) in cells {
+            if col > at {
+                row.push(&" ".repeat(col - at), SmallVec::new());
+            }
+            row.push(g, smallvec![Tag::from(style.clone())]);
+            at = col + w;
+        }
     }
 }
 
@@ -1944,6 +2049,14 @@ fn cell_tags(
         .into_iter()
         .collect();
     tags.extend(on_cell(false));
+    tags.extend(cursor_tags(view, cell, cursors, peers));
+    tags.extend(on_cell(true));
+    tags
+}
+
+/// The selection and cursor tags of one cell: the peers', then this view's.
+fn cursor_tags(view: &View, cell: &Cell, cursors: &[usize], peers: &[Peer]) -> SmallVec<[Tag; 2]> {
+    let mut tags = SmallVec::new();
     for peer in peers {
         tags.extend(selection_tags(
             &peer.selection,
@@ -1958,7 +2071,6 @@ fn cell_tags(
         cursors,
         (&Tag::SELECTION, &Tag::CURSOR),
     ));
-    tags.extend(on_cell(true));
     tags
 }
 
@@ -2488,7 +2600,7 @@ fn end_cell(end: usize) -> Cell {
 /// `marks` draw there, a transcript's bar say, without the cursor or a
 /// selection.
 fn push_repeated(row: &mut Row, cell: &Cell, marks: &[&Mark]) {
-    if let Some((text, tag)) = Overlay::default().over(marks, cell) {
+    if let Some((text, tag, _)) = Overlay::default().over(marks, cell) {
         row.push_scaled(&text, smallvec![tag], cell.scale);
         return;
     }

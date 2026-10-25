@@ -619,6 +619,99 @@ fn text_after_a_line_stays_put_with_the_cursor_on_its_end_and_reaches_the_edge()
 }
 
 #[test]
+fn overlay_text_at_a_lines_end_goes_on_past_it_and_the_cursor_stays_put() {
+    use greed_core::Mark;
+    // A ruler drawn over the line's end cell and the empty space after it.
+    for (text, at, ruler, row, shown, cursor) in [
+        ("|\nx", 0, "    │", 0, "1     │", (2, 0)),
+        ("ab|\nx", 2, "  │", 0, "1 ab  │", (4, 0)),
+        ("ab\n|x", 2, "  │", 0, "1 ab  │", (2, 1)),
+        ("x\nab|", 4, "  │", 1, "2 ab  │", (4, 1)),
+    ] {
+        let mut ed = editor(text);
+        let buffer = ed.view(ed.focus()).buffer;
+        ed.decorate(
+            buffer,
+            "ruler",
+            vec![Mark {
+                range: at..at,
+                style: "border".into(),
+                text: Some(ruler.into()),
+                overlay: true,
+                ..Mark::default()
+            }],
+        );
+        let f = frame(&mut ed, 12, 4);
+        assert_eq!(rows(&f)[row], shown, "{text:?}");
+        let (col, row) = cursor;
+        assert_eq!(f.cursor, Some(Position { col, row }), "{text:?}");
+    }
+}
+
+#[test]
+fn a_cursor_shows_over_overlay_text_unless_it_is_above() {
+    use greed_core::Mark;
+    // The primary cursor is the terminal's own; another one, on the empty
+    // second line, is drawn.
+    for (above, shown) in [(false, vec!["│"]), (true, vec![])] {
+        let mut ed = editor("|x\n|\ny");
+        let buffer = ed.view(ed.focus()).buffer;
+        ed.decorate(
+            buffer,
+            "ruler",
+            vec![Mark {
+                range: 2..2,
+                style: "border".into(),
+                text: Some("│ │".into()),
+                overlay: true,
+                above,
+                ..Mark::default()
+            }],
+        );
+        let f = frame(&mut ed, 12, 3);
+        assert_eq!(tagged(&f, &Tag::CURSOR), shown, "above: {above}");
+    }
+}
+
+#[test]
+fn overlay_text_past_a_lines_end_leaves_text_after_the_line_where_it_is() {
+    use greed_core::Mark;
+    let mut ed = editor("ab|\nx");
+    let buffer = ed.view(ed.focus()).buffer;
+    ed.decorate(
+        buffer,
+        "lsp",
+        vec![Mark {
+            range: 0..0,
+            style: "diagnostic.error".into(),
+            text: Some("bad".into()),
+            eol: true,
+            ..Mark::default()
+        }],
+    );
+    // Rulers three and six cells past the line's end: the first falls on
+    // the note and gives way, the second is past it.
+    ed.decorate(
+        buffer,
+        "ruler",
+        vec![Mark {
+            range: 2..2,
+            style: "border".into(),
+            text: Some("   │  │".into()),
+            overlay: true,
+            ..Mark::default()
+        }],
+    );
+    let f = frame(&mut ed, 14, 3);
+    assert_eq!(rows(&f)[0], "1 ab bad  │");
+    assert_eq!(f.cursor, Some(Position { col: 4, row: 0 }));
+    assert_eq!(tagged(&f, &Tag::from("diagnostic.error")), ["bad"]);
+    let f = frame(&mut ed, 9, 3);
+    assert_eq!(rows(&f)[0].trim_end(), "1 ab bad", "cut off at the edge");
+    assert_eq!(rows(&f)[1], "2 x", "nothing wraps");
+}
+
+#[test]
 fn signs_get_a_column_before_the_line_numbers() {
     use greed_core::Mark;
     let mut ed = editor("|a\nb\nc");

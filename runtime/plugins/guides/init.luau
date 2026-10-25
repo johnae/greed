@@ -1,10 +1,12 @@
 -- Indent guides: a thin line at each level of indent, so you can see the
--- lines a block holds. Blank lines inside a block get them too, except one
--- a cursor is on, where they'd sit in the way of typing. `:set
+-- lines a block holds. Blank lines inside a block get them too. `:set
 -- indent-guides false` turns them off; their style is "ui.indent.guide".
 --
 -- Rulers, at the columns the `rulers` option names, go the same way: where
 -- nothing is written at their column, in "ui.ruler".
+--
+-- Both are drawn over the text (`overlay`), past a line's end too, so
+-- neither moves the cursor or what you type.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -62,9 +64,7 @@ end
 
 -- The marks for `glyph` in `style` at `cols` (0-based, in order) on line
 -- `n`, whose text is `text`: over a blank where the column has one, and
--- past the line's end for the rest, after the `after` columns marks before
--- these already show there. Text already there wins. Returns how many
--- columns past the end are shown now.
+-- past the line's end for the rest. Text already there wins.
 local function marks_for(
 	buffer: greed.Buffer,
 	n: number,
@@ -73,12 +73,11 @@ local function marks_for(
 	tab: number,
 	out: { greed.Mark },
 	glyph: string,
-	style: string,
-	after: number
-): number
+	style: string
+)
 	local last = cols[#cols]
 	if last == nil then
-		return after
+		return
 	end
 	local start = buffer:line_start(n)
 	-- The byte each column starts at over the line's blanks, and whether
@@ -110,15 +109,17 @@ local function marks_for(
 				text = glyph,
 				overlay = not tabs[guide],
 			})
-		elseif guide >= col + after + core.text.width(past) then
-			past ..= string.rep(" ", guide - col - after - core.text.width(past)) .. glyph
+		elseif guide >= col + core.text.width(past) then
+			past ..= string.rep(" ", guide - col - core.text.width(past)) .. glyph
 		end
 	end
 	if past ~= "" then
 		local finish = start + #text
-		table.insert(out, { from = finish, to = finish, style = style, text = past })
+		table.insert(
+			out,
+			{ from = finish, to = finish, style = style, text = past, overlay = true }
+		)
 	end
-	return after + core.text.width(past)
 end
 
 greed.option.define({
@@ -137,23 +138,8 @@ local function rulers(): { number }
 	return cols
 end
 
--- The lines with a cursor on them in `buffer`'s views.
-local function cursor_lines(buffer: greed.Buffer): { [number]: boolean }
-	local lines = {}
-	for _, view in buffer:views() do
-		for _, range in view:selection().ranges do
-			lines[buffer:line_of(range.head)] = true
-		end
-	end
-	return lines
-end
-
--- Guides and rulers are drawn together, so rulers past a line's end come
--- after the guides there.
 local redraw = core.visible.add({
 	ns = "indent-guides",
-	-- A blank line a cursor is on has no guides.
-	cursor = true,
 	wants = function(buffer: greed.Buffer): boolean
 		return buffer:kind() == "file"
 			and (greed.option.get("indent-guides") == true or #rulers() > 0)
@@ -164,7 +150,6 @@ local redraw = core.visible.add({
 		local tab = buffer:tab_width()
 		local unit = core.indent.unit(buffer)
 		local step = if unit == "\t" then tab else math.max(1, #unit)
-		local cursors = cursor_lines(buffer)
 		local count = buffer:line_count()
 		local marks: { greed.Mark } = {}
 		-- The indent of the last line with text above, and of the next
@@ -185,7 +170,7 @@ local redraw = core.visible.add({
 			if #lead < #text then
 				cols = columns(lead, tab)
 				above = cols
-			elseif not guides_on or cursors[n] then
+			elseif not guides_on then
 				cols = 0
 			else
 				if below_line < n then
@@ -202,8 +187,8 @@ local redraw = core.visible.add({
 				cols = math.min(above or 0, below or 0)
 			end
 			local guide_cols = if guides_on then M.guides(cols, step) else {}
-			local after = marks_for(buffer, n, text, guide_cols, tab, marks, GUIDE, STYLE, 0)
-			marks_for(buffer, n, text, ruler_cols, tab, marks, "┊", "ui.ruler", after)
+			marks_for(buffer, n, text, guide_cols, tab, marks, GUIDE, STYLE)
+			marks_for(buffer, n, text, ruler_cols, tab, marks, "┊", "ui.ruler")
 		end
 		return marks
 	end,

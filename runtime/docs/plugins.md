@@ -905,6 +905,12 @@ greed.tab.set_layout({
   put a sign in the gutter, or draw text over the buffer's (like jump
   labels). Other things a mark can do:
 
+  - `overlay` draws `text` over what's there rather than inserting it, so
+    nothing moves, the cursor included. It goes on past the end of a line
+    too, where its spaces only move the rest along. That's how rulers sit
+    at their column, even on a blank line:
+    `{ from = line_end, to = line_end, text = "     ┊", overlay = true, style = "ui.ruler" }`.
+
   - `conceal` hides text (like a link's brackets), shown again as `reveal`
     says: `"line"` (the default) when a cursor is on its line, `"cursor"`
     when one is inside it, `"never"`, `"auto"`, which follows the mode: on
