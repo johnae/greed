@@ -347,3 +347,24 @@ end)
 test("a service's session is the name with .service after it", function()
 	assert(service.session_of("chat") == "chat.service")
 end)
+
+test("nothing starts with Greed until you name it, set up or not", function(t)
+	assert(greed.option.get("services-at-start") == "", "none named by default")
+	local config = assert(greed.fs.dirs().config)
+	greed.fs.write(`{config}/mail.toml`, "")
+	local before = greed.option.get("notes-folder")
+	greed.option.set("notes-folder", t:tempdir({ ["today.md"] = "# Today\n" }))
+	local started: { string } = {}
+	for _, name in { "mail", "chat", "hoard" } do
+		if service.starts_with_greed(name) then
+			table.insert(started, name)
+		end
+	end
+	greed.option.set("services-at-start", "mail hoard")
+	local named = service.starts_with_greed("mail") and service.starts_with_greed("hoard")
+	greed.option.set("services-at-start", "")
+	greed.fs.remove(`{config}/mail.toml`)
+	greed.option.set("notes-folder", before)
+	assert(#started == 0, table.concat(started, " "))
+	assert(named, "named, they would")
+end)
