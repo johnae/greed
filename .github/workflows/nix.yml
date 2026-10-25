@@ -34,6 +34,9 @@ jobs:
           - system: aarch64-linux
             runner: ubuntu-24.04-arm
             packages: .#default .#static
+            # Two link-time-optimized builds side by side run the arm
+            # runner out of memory, so one at a time there.
+            flags: --max-jobs 1
           - system: aarch64-darwin
             runner: macos-latest
             packages: .#default
@@ -48,7 +51,7 @@ jobs:
           name: greed
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: build
-        run: nix build --print-build-logs ${{ matrix.packages }}
+        run: nix build --print-build-logs ${{ matrix.flags }} ${{ matrix.packages }}
       - name: runs
         run: |
           for result in result*; do
