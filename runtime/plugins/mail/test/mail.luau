@@ -1607,6 +1607,8 @@ end)
 
 test("search everywhere finds mail with in:mail, newest first", function(t)
 	fake()
+	local config = assert(greed.fs.dirs().config)
+	greed.fs.write(`{config}/mail.toml`, "")
 	local labels: { string } = {}
 	local done = false
 	greed.spawn(function()
@@ -1620,6 +1622,7 @@ test("search everywhere finds mail with in:mail, newest first", function(t)
 	t:wait_for(function(): boolean
 		return done
 	end)
+	greed.fs.remove(`{config}/mail.toml`)
 	local said = table.concat(labels, " | ")
 	assert(said == "mail:Anna Berg: Invoice 41 | mail:Bob: Garden plans", said)
 end)

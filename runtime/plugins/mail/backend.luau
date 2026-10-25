@@ -475,13 +475,14 @@ local function owner_search(parsed: core.Query): ({ string }?, string?)
 	return keys, trouble
 end
 
--- Whether there's mail to sync: then its owner starts with Greed.
-local function configured(): boolean
+--- Whether there's mail to sync (a mail.toml): then its owner starts with
+--- Greed, and searching everything looks in it.
+function M.configured(): boolean
 	local config = greed.fs.dirs().config
 	return config ~= nil and greed.fs.stat(`{config}/mail.toml`) ~= nil
 end
 
-services.define({ name = "mail", start = configured })
+services.define({ name = "mail", start = M.configured })
 
 if services.owner("mail") then
 	offer = services.offer("mail", {

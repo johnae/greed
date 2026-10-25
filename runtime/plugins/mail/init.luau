@@ -1633,6 +1633,10 @@ core.everywhere.add({
 	name = "mail",
 	doc = "Your mail, every account, by the mail list's search",
 	search = function(text: string, limit: number): ({ core.EverywhereHit }?, string?)
+		-- Without mail set up there's nothing to find, and nothing to say.
+		if not backend.configured() then
+			return {}, nil
+		end
 		local parsed, why = M.query(text)
 		if parsed == nil then
 			return nil, why

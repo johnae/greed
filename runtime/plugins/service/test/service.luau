@@ -368,3 +368,19 @@ test("nothing starts with Greed until you name it, set up or not", function(t)
 	assert(#started == 0, table.concat(started, " "))
 	assert(named, "named, they would")
 end)
+
+test("searching everything starts nothing and says nothing of what isn't set up", function()
+	local asked: { string } = {}
+	as("myproject")
+	service.start = function(session: string): (boolean?, string?)
+		table.insert(asked, session)
+		return nil, "not in a test"
+	end
+	local ok, err = pcall(function()
+		local _, troubles = require("@core").everywhere.search("lunch")
+		assert(#troubles == 0, table.concat(troubles, " | "))
+	end)
+	restore()
+	assert(ok, tostring(err))
+	assert(#asked == 0, "started " .. table.concat(asked, " "))
+end)
