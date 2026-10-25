@@ -6,6 +6,10 @@ which starts by itself when something needs it; `:chat` anywhere shows the
 same rooms. This is experimental; what's there and what isn't is listed at
 the end.
 
+Nothing connects until you sign in to an account (`:chat-login`), and
+chat doesn't start with Greed unless `services-at-start` names it
+([Sessions](sessions.md#sessions-and-clients)).
+
 ```sh
 greed chat
 ```

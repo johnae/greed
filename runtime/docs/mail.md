@@ -4,6 +4,11 @@ Greed reads, searches and writes your mail. `greed mail` opens it in a
 session of its own, on a full page: your inbox, newest first, with the
 search box over it.
 
+Nothing of it runs until you open it, and it doesn't start with Greed
+unless you ask it to ([Sessions](sessions.md#sessions-and-clients) says
+how). Searching everything at once just leaves mail out until there's a
+`mail.toml`.
+
 [![The mail list, searched for deploy, a thread read, turned into a todo due Thursday, then the agent asked which mail needs an answer this week, naming three messages](https://github.com/johnae/greed/releases/download/media/mail.png)](https://github.com/johnae/greed/releases/download/media/mail.mp4)
 
 What you type narrows the list as you type, in the query language every
@@ -81,9 +86,9 @@ seconds.
 
 The mail session (`mail.service`; `greed mail` from a shell,
 `:mail-session` from inside Greed) is the mail client: it has the full
-page, and it's the one that syncs. It starts by itself as Greed starts
-when there's a `mail.toml`, and whenever another session needs it, so you
-never start it yourself. Detach from it as from any session; it goes on
+page, and it's the one that syncs. It starts whenever another session
+needs it, so you never start it yourself, and with Greed too once there's
+a `mail.toml` and `services-at-start` names mail. Detach from it as from any session; it goes on
 syncing.
 
 In any other session, `:mail` opens a quick look: the same mail, in a

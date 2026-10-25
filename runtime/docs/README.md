@@ -33,16 +33,23 @@ Pages open as documents: `enter` follows a link, `esc` shows the Markdown.
 - [Boards](boards.md): live shell commands saved as a page of cards.
 - [Charts](charts.md): any table as a chart that follows the numbers.
 - [Mail](mail.md): your IMAP accounts, searched as you type.
+- [Chat](chat.md): Matrix and Mattermost rooms, still experimental.
 - [Editing styles](editing-styles.md): the Vim, Helix and VS Code styles, their
   keys, and making your own.
 - [Keys](keys.md): finding out what a key does, and binding your own.
 - [Highlighting](highlighting.md): how code is highlighted and themed.
+- [Plugins to install](plugins-to-install.md): plugins others wrote, like themes.
 - [Writing plugins](plugins.md) and [Building interfaces](ui.md): commands, keys,
   decorations, panels, tests and types, and drawing your own lists and fields.
 - [Agents](agents.md): `greed ctl`, MCP, proposals, `/ide`, and agents inside Greed.
 - [Permissions and sandboxing](permissions.md): what agents and plugins may do,
   and what asks you.
 - [How Greed is built](design.md): what lives in Rust, what lives in Luau, and why.
+
+Why mail and chat in an editor? Because I wanted what I know in one place:
+code, notes, mail and conversations, behind keys I picked, with an agent that
+can search all of it with me. None of it runs until you set it up, though. If
+you only want an editor, that's all you get.
 
 It's really early days, so expect a few things here to change. If something's
 wrong or missing, an issue or a pull request is very welcome.

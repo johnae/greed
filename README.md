@@ -62,6 +62,13 @@ Quite a bit, actually:
   file your inbox or pull todos out of a meeting.
 - Mail (`greed mail`): your IMAP accounts in one fast, searchable list, with HTML
   laid out without loading anything.
+- Chat (`greed chat`): Matrix and Mattermost rooms, still experimental.
+
+Why mail and chat in an editor? Because I wanted what I know in one place:
+code, notes, mail and conversations, behind keys I picked, with an agent that
+can search all of it with me ("which mail about the deploy still needs an
+answer?"). None of it runs until you set it up, though. If you only want an
+editor, that's all you get.
 
 ## Plugins in Luau
 
