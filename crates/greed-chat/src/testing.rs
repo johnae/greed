@@ -30,7 +30,8 @@ pub fn free_port() -> u16 {
 /// Goes where a browser would from `url`, following redirects and keeping
 /// cookies in `jar`, and gives the address it ends on. With `stop`, it
 /// doesn't go to an address starting with that, as when the browser is on
-/// another machine than the one listening.
+/// another machine than the one listening; a page it ends on with a link
+/// there (a "Continue" button) gives that link, as clicking it would.
 pub fn browse(url: &str, jar: &Path, stop: Option<&str>) -> String {
     let mut at = url.to_string();
     for _ in 0..20 {
@@ -47,7 +48,12 @@ pub fn browse(url: &str, jar: &Path, stop: Option<&str>) -> String {
         let (status, next) = last.split_once(' ').unwrap_or_default();
         assert!(!status.starts_with(['4', '5']), "{at}: {status} {body}");
         if next.is_empty() {
-            return at;
+            let link = stop.and_then(|stop| {
+                let start = body.find(&format!("href=\"{stop}"))? + 6;
+                let end = start + body[start..].find('"')?;
+                Some(body[start..end].replace("&amp;", "&"))
+            });
+            return link.unwrap_or(at);
         }
         if stop.is_some_and(|stop| next.starts_with(stop)) {
             return next.to_string();

@@ -746,12 +746,18 @@ fn signs_in_with_oauth_and_restores_that_session() {
         assert_eq!(started["step"]["step"], "open", "{started}");
         let url = started["step"]["url"].as_str().unwrap().to_string();
         let back = greed_chat::loopback::query(&url)["redirect_uri"].clone();
-        let link = tokio::task::spawn_blocking(move || browse(&url, &jar, Some(&back)))
+        let to = back.clone();
+        let link = tokio::task::spawn_blocking(move || browse(&url, &jar, Some(&to)))
             .await
             .unwrap();
-        // Tuwunel asks you to approve Greed first; the answer sends the
-        // browser on to Greed with the code.
-        let link = approve(&link, &server.dir.join("cookies"));
+        // Tuwunel 1.9.1 and later ask you to approve Greed first, and the
+        // answer sends the browser on to Greed with the code; 1.9.0 sends
+        // it straight back.
+        let link = if link.starts_with(&back) {
+            link
+        } else {
+            approve(&link, &server.dir.join("cookies"))
+        };
         assert!(link.contains("code="), "{link}");
         let done = call(
             &matrix,
