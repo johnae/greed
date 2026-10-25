@@ -485,6 +485,66 @@ fn lists_rooms_and_keeps_a_timeline() {
     });
 }
 
+#[test]
+fn who_wrote_what_goes_by_their_name() {
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+
+    let Some(server) = Tuwunel::start("names", None) else {
+        return;
+    };
+    run(async {
+        use matrix_sdk::ruma::api::client::room::create_room;
+
+        for user in ["anna", "bea", "carl"] {
+            server.register(user, "secret").await;
+        }
+        let bea = other(&server, "bea", "secret").await;
+        bea.account()
+            .set_display_name(Some("Bea Lind"))
+            .await
+            .unwrap();
+        let mut request = create_room::v3::Request::new();
+        request.name = Some("Plans".into());
+        let room = bea.create_room(request).await.unwrap();
+        for user in ["anna", "carl"] {
+            room.invite_user_by_id(format!("@{user}:localhost").as_str().try_into().unwrap())
+                .await
+                .unwrap();
+        }
+        other(&server, "anna", "secret")
+            .await
+            .join_room_by_id(room.room_id())
+            .await
+            .unwrap();
+        let carl = other(&server, "carl", "secret").await;
+        carl.join_room_by_id(room.room_id()).await.unwrap();
+        room.send(RoomMessageEventContent::text_plain("lunch at noon?"))
+            .await
+            .unwrap();
+        carl.get_room(room.room_id())
+            .unwrap()
+            .send(RoomMessageEventContent::text_plain("sounds good"))
+            .await
+            .unwrap();
+        // Anna signs in here once it's all written: the sync brings the
+        // room with its latest message, Carl's, and only his name.
+        let (notifier, _notices) = rpc::notifier();
+        let matrix = Matrix::new(server.dir.join("data"), notifier);
+        sign_in(&matrix, &server, "anna", "secret").await;
+        let room_id = room.room_id().to_string();
+        let params = json!({ "account": "@anna:localhost", "room": room_id });
+        until(&matrix, "timeline", &params, |opened| {
+            opened["items"].as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|i| i["text"] == "lunch at noon?" && i["sender"]["name"] == "Bea Lind")
+            })
+        })
+        .await;
+        call(&matrix, "timeline.close", params).await;
+    });
+}
+
 /// Anna signed in through the service, and Bea (a plain client) in room
 /// "Plans" with her: the service, its notifications, Bea, the room's id.
 async fn plans(

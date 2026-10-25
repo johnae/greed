@@ -123,6 +123,15 @@ impl Matrix {
         let (items, mut diffs) = timeline.subscribe().await;
         let mut len = items.len();
         fetch_replied(&timeline, items.iter());
+        // Who wrote what has their name only once the room's members are
+        // here, which a sync leaves out: they come in the background, and
+        // the messages change as they do.
+        let members = Arc::downgrade(&timeline);
+        tokio::task::spawn_local(async move {
+            if let Some(timeline) = members.upgrade() {
+                timeline.fetch_members().await;
+            }
+        });
         let fetching = Arc::downgrade(&timeline);
         let forwarding = tokio::task::spawn_local(async move {
             while let Some(batch) = diffs.next().await {
