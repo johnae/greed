@@ -8,6 +8,7 @@
 local greed = require("@greed")
 local text = require("./text")
 local registry = require("./registry")
+local scroll = require("./scroll")
 
 local M = {}
 
@@ -83,16 +84,17 @@ function M.side_scroll(view: greed.View, columns: number)
 end
 
 --- Scrolls `view` by `lines` (up when negative), bringing the cursor onto
---- the screen with it, since drawing would scroll back to the cursor.
+--- the screen with it, out of the scroll margin, since drawing would
+--- scroll back to the cursor.
 function M.scroll(view: greed.View, lines: number)
 	local buffer = view:buffer()
 	local last = math.max(buffer:line_count() - 1, 0)
 	local top = math.clamp(view:scroll() + lines, 0, last)
 	view:set_scroll(top)
 	local line = buffer:line_of(view:cursor())
-	local bottom = bottom_line(view, top)
-	if line < top then
-		point(view, buffer:line_start(top))
+	local first, bottom = scroll.within(buffer, top, bottom_line(view, top))
+	if line < first then
+		point(view, buffer:line_start(first))
 	elseif line > bottom then
 		point(view, buffer:line_start(bottom))
 	end

@@ -583,6 +583,7 @@ pub(super) fn greed_module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     greed.set("quit", quit_function(lua)?)?;
 
     greed.set("line_numbers", line_numbers_function(lua)?)?;
+    greed.set("scroll_margin", scroll_margin_function(lua)?)?;
     greed.set("reveal", reveal_function(lua)?)?;
 
     greed.set(
@@ -2222,6 +2223,15 @@ fn line_numbers_function(lua: &Lua) -> LuaResult<Function> {
             }
         };
         state_mut(lua).editor.set_line_numbers_style(style);
+        Ok(())
+    })
+}
+
+/// `greed.scroll_margin(rows)`: how many rows views keep in sight above and
+/// below the cursor as they follow it.
+fn scroll_margin_function(lua: &Lua) -> LuaResult<Function> {
+    lua.create_function(|lua, rows: usize| {
+        state_mut(lua).editor.set_scroll_margin(rows);
         Ok(())
     })
 }

@@ -1447,13 +1447,19 @@ impl<M: Measure> Renderer<M> {
             row: self.row_of(editor, view, line, head, width),
         };
         let current = view.scroll;
-        if (cursor.line, cursor.row) < (current.line, current.row) || height == 0 {
-            return cursor;
+        let hidden = hidden_lines(editor, view);
+        // The scroll margin's rows above and below the cursor stay in sight
+        // too, as many as half the view.
+        let margin = editor.scroll_margin().min(height.saturating_sub(1) / 2);
+        let margin = isize::try_from(margin).unwrap_or(0);
+        let above = self.rows_away(editor, view, cursor, -margin, width, &hidden);
+        if (above.line, above.row) < (current.line, current.row) || height == 0 {
+            return above;
         }
+        let cursor = self.rows_away(editor, view, cursor, margin, width, &hidden);
 
         // Is the cursor's row within `height` screen rows of the current
         // scroll? Rows count as many screen rows as their scale makes them.
-        let hidden = hidden_lines(editor, view);
         let cursor_heights = self.heights(editor, view, cursor.line, width);
         // On the buffer's last row, what's drawn under it stays in sight
         // too, like the bottom of a box around a prompt.
@@ -1520,6 +1526,47 @@ impl<M: Measure> Renderer<M> {
             break;
         }
         top
+    }
+
+    /// The row `rows` rows after `from` (before it, when negative), past
+    /// the lines folds hide, stopping at the buffer's first and last rows.
+    fn rows_away(
+        &self,
+        editor: &Editor,
+        view: &View,
+        from: Scroll,
+        rows: isize,
+        width: usize,
+        hidden: &[Range<usize>],
+    ) -> Scroll {
+        let lines = editor.buffer(view.buffer).text().len_lines();
+        let shown = |l: &usize| !is_hidden(hidden, *l);
+        let mut at = from;
+        for _ in 0..rows.unsigned_abs() {
+            let next = if rows < 0 && at.row > 0 {
+                Some(Scroll {
+                    row: at.row - 1,
+                    ..at
+                })
+            } else if rows < 0 {
+                (0..at.line).rev().find(shown).map(|line| Scroll {
+                    line,
+                    row: self.heights(editor, view, line, width).len() - 1,
+                })
+            } else if at.row + 1 < self.heights(editor, view, at.line, width).len() {
+                Some(Scroll {
+                    row: at.row + 1,
+                    ..at
+                })
+            } else {
+                (at.line + 1..lines)
+                    .find(shown)
+                    .map(|line| Scroll { line, row: 0 })
+            };
+            let Some(next) = next else { break };
+            at = next;
+        }
+        at
     }
 
     /// The screen rows each row of `line` takes.

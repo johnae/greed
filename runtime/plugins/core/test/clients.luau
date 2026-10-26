@@ -121,6 +121,8 @@ end)
 -- A hundred numbered lines, without line numbers, the cursor on the first,
 -- and a command that puts the acting client's cursor on line `n`.
 local function long(t: any)
+	-- The views follow their cursors to the edge, with no scroll margin.
+	greed.option.set("scroll-margin", 0)
 	local lines = {}
 	for i = 0, 99 do
 		table.insert(lines, (if i == 0 then "|" else "") .. `line {i}`)

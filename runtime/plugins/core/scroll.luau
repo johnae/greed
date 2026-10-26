@@ -14,17 +14,57 @@ local function rows(view: greed.View): number
 	return buffer:line_of(last) - buffer:line_of(first) + 1
 end
 
--- Moves the view and every cursor `lines` down (up if negative), keeping
--- their columns.
-local function scroll_by(ctx: greed.Context, lines: number)
+greed.option.define({
+	name = "scroll-margin",
+	doc = "How many lines a view keeps in sight above and below the cursor, at most half of it (Vim's and Helix's scrolloff)",
+	default = 5,
+})
+
+local function margin(): number
+	return math.max(0, math.floor(tonumber(greed.option.get("scroll-margin")) or 0))
+end
+
+greed.scroll_margin(margin())
+greed.on("option.changed", function(event: greed.OptionChanged)
+	if event.name == "scroll-margin" then
+		greed.scroll_margin(margin())
+	end
+end)
+
+-- The first and last of the lines `top` to `bottom` on the screen the
+-- cursor may be on: the scroll margin is kept at either end, but not at
+-- the buffer's own, as drawing keeps it.
+local function within(buffer: greed.Buffer, top: number, bottom: number): (number, number)
+	local keep = math.min(margin(), (bottom - top) // 2)
+	local last = buffer:line_count() - 1
+	return if top > 0 then top + keep else top, if bottom < last then bottom - keep else bottom
+end
+
+-- The line the primary cursor is on.
+local function cursor_line(ctx: greed.Context): number
+	local selection = ctx.view:selection()
+	return ctx.buffer:line_of(motions.cursor(ctx.buffer, selection.ranges[selection.primary]))
+end
+
+-- Scrolls the view `lines` down (up if negative), the cursors along with
+-- it when `along`, then keeps the cursor on the screen out of the scroll
+-- margin: every cursor moves as far as it must, keeping its column.
+local function scroll(ctx: greed.Context, lines: number, along: boolean)
 	local view, buffer = ctx.view, ctx.buffer
 	local last = buffer:line_count() - 1
-	view:set_scroll(math.clamp(view:scroll() + lines, 0, last))
-	motions.each_range(ctx, function(_, range)
-		local at = motions.cursor(buffer, range)
-		local line = math.clamp(buffer:line_of(at) + lines, 0, last)
-		return motions.point(text.at_column(buffer, line, text.column(buffer, at)))
-	end)
+	local shown = rows(view)
+	local top = math.clamp(view:scroll() + lines, 0, last)
+	view:set_scroll(top)
+	local line = cursor_line(ctx)
+	local first, bottom = within(buffer, top, top + shown - 1)
+	local moved = math.clamp(line + if along then lines else 0, first, bottom) - line
+	if moved ~= 0 then
+		motions.each_range(ctx, function(_, range)
+			local at = motions.cursor(buffer, range)
+			local to = math.clamp(buffer:line_of(at) + moved, 0, last)
+			return motions.point(text.at_column(buffer, to, text.column(buffer, at)))
+		end)
+	end
 end
 
 local function command(name: string, doc: string, lines: (rows: number) -> number)
@@ -32,7 +72,7 @@ local function command(name: string, doc: string, lines: (rows: number) -> numbe
 		name = name,
 		doc = doc,
 		run = function(ctx)
-			scroll_by(ctx, lines(rows(ctx.view)))
+			scroll(ctx, lines(rows(ctx.view)), true)
 		end,
 	})
 end
@@ -49,12 +89,6 @@ end)
 command("half-page-up", "Move half a screen up", function(n)
 	return -(n // 2)
 end)
-
--- The line the primary cursor is on.
-local function cursor_line(ctx: greed.Context): number
-	local selection = ctx.view:selection()
-	return ctx.buffer:line_of(motions.cursor(ctx.buffer, selection.ranges[selection.primary]))
-end
 
 -- Scrolls so the cursor's line is `from_top` rows below the top of the view.
 local function align(name: string, doc: string, from_top: (rows: number) -> number)
@@ -77,45 +111,29 @@ align("align-view-bottom", "Scroll so the cursor's line is at the bottom of the 
 	return n - 1
 end)
 
--- Scrolls the view `lines` down (up if negative) without moving the
--- cursor, unless that would take it off the screen.
-local function scroll_view(ctx: greed.Context, lines: number)
-	local view, buffer = ctx.view, ctx.buffer
-	local last = buffer:line_count() - 1
-	local top = math.clamp(view:scroll() + lines, 0, last)
-	local shown = rows(view)
-	view:set_scroll(top)
-	local line = cursor_line(ctx)
-	local inside = math.clamp(line, top, top + shown - 1)
-	if inside ~= line then
-		motions.each_range(ctx, function(_, range)
-			local at = motions.cursor(buffer, range)
-			local moved = math.clamp(buffer:line_of(at) + inside - line, 0, last)
-			return motions.point(text.at_column(buffer, moved, text.column(buffer, at)))
-		end)
-	end
-end
-
+-- Scrolling the view by lines leaves the cursor where it is, unless that's
+-- off the screen or in the scroll margin.
 for _, up in { false, true } do
 	greed.command({
 		name = if up then "scroll-up" else "scroll-down",
 		doc = if up then "Scroll the view a line up" else "Scroll the view a line down",
 		run = function(ctx)
-			scroll_view(ctx, (ctx.count or 1) * (if up then -1 else 1))
+			scroll(ctx, (ctx.count or 1) * (if up then -1 else 1), false)
 		end,
 	})
 end
 
 -- Puts the cursor on the line `at(top, rows)` of the view, at its first
--- character that isn't a space.
+-- character that isn't a space, out of the scroll margin.
 local function to_window(name: string, doc: string, at: (top: number, rows: number) -> number)
 	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
 			local buffer = ctx.buffer
-			local line =
-				math.clamp(at(ctx.view:scroll(), rows(ctx.view)), 0, buffer:line_count() - 1)
+			local top, n = ctx.view:scroll(), rows(ctx.view)
+			local first, last = within(buffer, top, math.min(top + n, buffer:line_count()) - 1)
+			local line = math.clamp(at(top, n), first, last)
 			ctx.view:set_selection({
 				ranges = { motions.point(text.first_non_blank(buffer, buffer:line_start(line))) },
 				primary = 1,
@@ -168,7 +186,12 @@ greed.command({
 	end,
 })
 
-local M = { keys = {} :: { [string]: string } }
+local M = {
+	keys = {} :: { [string]: string },
+	--- The first and last of the lines `top` to `bottom` on the screen the
+	--- cursor may be on, out of the scroll margin.
+	within = within,
+}
 for key, name in VIEW_KEYS do
 	M.keys[`z {key}`] = name
 end

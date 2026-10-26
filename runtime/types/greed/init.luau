@@ -1996,6 +1996,8 @@ export type Greed = {
 	--- number, "relative" to the cursor's line (0 on it), or "hybrid", relative
 	--- with the cursor's line showing its own.
 	line_numbers: (style: "absolute" | "relative" | "hybrid") -> (),
+	--- How many rows views keep in sight above and below the cursor as they follow it, at most half the view (core sets it from the `scroll-margin` option).
+	scroll_margin: (rows: number) -> (),
 	--- When text hidden by marks whose `reveal` is "auto" shows: "line" (on a cursor's line, the default), "cursor" or "never", as for a mark's own `reveal`; `typing`, the same for those whose `reveal` is "typing" (as `how` without it). Core sets them as the mode changes (see `core.reveal`).
 	reveal: (how: "line" | "cursor" | "never", typing: ("line" | "cursor" | "never")?) -> (),
 	--- Lets the attached terminal go and keeps the editor running in the

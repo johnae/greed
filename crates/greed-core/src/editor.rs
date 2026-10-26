@@ -468,6 +468,8 @@ pub struct Editor {
     cursor_shapes: HashMap<Arc<str>, CursorShape>,
     /// How line numbers count, where buffers show them.
     line_numbers: LineNumbers,
+    /// How many rows a view keeps in sight above and below its cursor.
+    scroll_margin: usize,
     /// When marks whose `reveal` is `Auto` show the text they hide.
     reveal: Reveal,
     /// When marks whose `reveal` is `Typing` show the text they hide.
@@ -511,6 +513,7 @@ impl Editor {
             clipboard: Vec::new(),
             cursor_shapes: HashMap::new(),
             line_numbers: LineNumbers::default(),
+            scroll_margin: 0,
             reveal: Reveal::Line,
             typing_reveal: Reveal::Line,
             file_types: FileTypes::bundled(),
@@ -1883,6 +1886,16 @@ impl Editor {
 
     pub fn set_line_numbers_style(&mut self, style: LineNumbers) {
         self.line_numbers = style;
+    }
+
+    /// How many rows a view keeps in sight above and below its cursor, as
+    /// it scrolls to follow it (at most half the view).
+    pub fn scroll_margin(&self) -> usize {
+        self.scroll_margin
+    }
+
+    pub fn set_scroll_margin(&mut self, rows: usize) {
+        self.scroll_margin = rows;
     }
 
     /// When concealing marks whose `reveal` is [`Reveal::Auto`] show their

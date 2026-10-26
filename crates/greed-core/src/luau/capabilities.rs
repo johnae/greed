@@ -1050,6 +1050,7 @@ mod tests {
         "panel",
         "quit",
         "reveal",
+        "scroll_margin",
         "set_menus",
         "signal",
         "sleep",

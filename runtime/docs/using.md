@@ -518,7 +518,18 @@ one character wide.
 
 `:set line-numbers relative` numbers lines by distance from the cursor's
 line, so the line marked 5 below is `5 j` away. `hybrid` also shows the
-cursor's line's own number, and `absolute` goes back.
+cursor's line's own number, like Helix's `relative`, and `absolute` goes
+back.
+
+The view keeps 5 lines in sight above and below the cursor as it follows
+it, so you see what's coming. Paging, `g t` `g b`, `z j` `z k` and the
+mouse wheel keep the cursor out of those lines too. It's Vim's and
+Helix's `scrolloff`, here `scroll-margin`; 0 lets the cursor go to the
+edge, and a big number keeps it in the middle:
+
+```luau
+greed.option.set("scroll-margin", 0)
+```
 
 **Changing**
 

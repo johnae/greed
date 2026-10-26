@@ -227,6 +227,58 @@ fn the_view_scrolls_to_keep_the_cursor_visible() {
 }
 
 #[test]
+fn a_scroll_margin_keeps_rows_in_sight_around_the_cursor_but_the_buffers_ends() {
+    let text: Vec<String> = (0..50).map(|n| format!("line {n}")).collect();
+    let mut ed = editor(&format!("|{}", text.join("\n")));
+    ed.set_scroll_margin(2);
+    let view = ed.focus();
+    let line_start =
+        |ed: &Editor, line: usize| ed.buffer(ed.view(view).buffer).text().line_to_byte(line);
+    // Eight rows of text; with the cursor on each line in turn, the line
+    // at the top of the view.
+    for (line, top) in [
+        (0, 0),
+        (5, 0),
+        (6, 1),
+        (10, 5),
+        (8, 5),
+        (6, 4),
+        (49, 42),
+        (47, 42),
+        (1, 0),
+    ] {
+        ed.view_mut(view).selection = Selection::point(line_start(&ed, line));
+        frame(&mut ed, 20, 9);
+        assert_eq!(ed.view(view).scroll.line, top, "cursor on line {line}");
+    }
+}
+
+#[test]
+fn a_scroll_margin_counts_wrapped_rows() {
+    // The first line wraps into four rows: the margin keeps its last one
+    // above the cursor, and the line below it.
+    let mut ed = editor("aaaa bbbb cccc dddd\n|x\ny\nz");
+    ed.set_scroll_margin(1);
+    let f = frame(&mut ed, 8, 4);
+    assert_eq!(rows(&f), ["  dddd", "2 x", "3 y"]);
+}
+
+#[test]
+fn a_scroll_margin_past_half_the_view_keeps_the_cursor_in_the_middle() {
+    let text: Vec<String> = (0..50).map(|n| format!("line {n}")).collect();
+    let mut ed = editor(&format!("|{}", text.join("\n")));
+    ed.set_scroll_margin(100);
+    let view = ed.focus();
+    for line in 10..20 {
+        let at = ed.buffer(ed.view(view).buffer).text().line_to_byte(line);
+        ed.view_mut(view).selection = Selection::point(at);
+        let f = frame(&mut ed, 20, 8);
+        // Seven rows of text: three above the cursor and three below.
+        assert_eq!(f.cursor.map(|c| c.row), Some(3), "cursor on line {line}");
+    }
+}
+
+#[test]
 fn views_remember_which_bytes_they_showed() {
     let text: Vec<String> = (0..50).map(|n| format!("line {n}")).collect();
     let mut ed = editor(&format!("|{}", text.join("\n")));

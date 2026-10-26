@@ -34,16 +34,29 @@ test("z j and z k scroll the view, Z keeps the view keys until esc", function(t)
 	t:expect_mode("helix")
 end)
 
-test("g t and g b go to the top and bottom line on the screen", function(t)
-	t:buffer("|" .. lines(50))
-	t:draw(40, 11)
-	t:keys("g b")
-	local buffer = greed.view():buffer()
-	local head = greed.view():selection().ranges[1].head
-	assert(buffer:line_of(head) == 9, tostring(buffer:line_of(head)))
-	t:keys("g t")
-	assert(greed.view():selection().ranges[1].head == 0)
-end)
+test(
+	"g t and g b go to the top and bottom line on the screen, out of the scroll margin",
+	function(t)
+		greed.option.set("scroll-margin", 2)
+		t:buffer("|" .. lines(50))
+		t:draw(40, 11)
+		local buffer = greed.view():buffer()
+		local function line(): number
+			return buffer:line_of(greed.view():selection().ranges[1].head)
+		end
+		t:keys("g b")
+		assert(line() == 7, "the margin's lines below: " .. line())
+		t:keys("g t")
+		assert(line() == 0, "none above the buffer's first line: " .. line())
+		local at = buffer:line_start(30)
+		greed.view():set_selection({ ranges = { { anchor = at, head = at } }, primary = 1 })
+		t:draw(40, 11)
+		local top = greed.view():scroll()
+		t:keys("g t")
+		assert(line() == top + 2, `the margin's lines above: {line()} under {top}`)
+		assert(greed.view():scroll() == top, "the view stays")
+	end
+)
 
 test("g n, g p and g a go between open files, g m to the last one changed", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "a", ["b.txt"] = "b" })

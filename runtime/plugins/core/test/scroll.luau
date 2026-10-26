@@ -1,8 +1,10 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 
--- A hundred numbered lines, drawn on a screen ten lines high.
+-- A hundred numbered lines, drawn on a screen ten lines high, with no
+-- scroll margin unless a test sets one.
 local function long(t: any, cursor_line: number)
+	greed.option.set("scroll-margin", 0)
 	local lines = {}
 	for i = 0, 99 do
 		table.insert(lines, (if i == cursor_line then "|" else "") .. `line {i}`)
@@ -63,6 +65,21 @@ test("z z puts the cursor's line in the middle of the screen", function(t)
 	assert(greed.view():scroll() == 45, tostring(greed.view():scroll()))
 	local rows = t:draw(40, 11)
 	assert(string.find(rows[6], "line 50", 1, true), rows[6])
+end)
+
+test("paging and scrolling by lines keep the cursor out of the scroll margin", function(t)
+	long(t, 0)
+	greed.option.set("scroll-margin", 2)
+	t:keys("ctrl-f")
+	assert(
+		greed.view():scroll() == 10 and cursor_line() == 12,
+		`the margin's lines above it: {greed.view():scroll()} {cursor_line()}`
+	)
+	local rows = t:draw(40, 11)
+	assert(greed.view():scroll() == 10, "drawing doesn't scroll back")
+	assert(string.find(rows[3], "line 12", 1, true), rows[3])
+	t:keys("z j z j z j")
+	assert(cursor_line() == 15, `z j brings it along at the margin: {cursor_line()}`)
 end)
 
 test("page down and page up work in insert mode too", function(t)
