@@ -31,7 +31,16 @@ fn repl(args: &[&str], script: &str) -> String {
         .unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success());
-    String::from_utf8(output.stdout).unwrap()
+    // Notices of code that held the editor up depend on how busy the
+    // machine is, so they're left out, as `t:messages` leaves them out.
+    let mut out = String::new();
+    for line in String::from_utf8(output.stdout).unwrap().lines() {
+        if !line.contains(" held the editor up for ") {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
 }
 
 #[test]
