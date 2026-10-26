@@ -1108,8 +1108,13 @@ fn clients() {
             let [typist, watcher, _] = bytes;
             found.set("typist_bytes", median(typist));
             found.set("watcher_bytes", median(watcher));
-            let ((), idle, _) = timed(|| std::thread::sleep(Duration::from_secs(1)));
-            found.set("idle_cpu_ms_per_s", ms(idle));
+            // Idle is the quietest of a few seconds: on a slow machine the
+            // first can still be finishing what the typing started, while
+            // work that never stops fills every one.
+            let idle = (0..3)
+                .map(|_| ms(timed(|| std::thread::sleep(Duration::from_secs(1))).1))
+                .fold(f64::INFINITY, f64::min);
+            found.set("idle_cpu_ms_per_s", idle);
             // What was measured is what was meant: the typing went into the
             // file, beside a split, with a terminal open.
             let mut shell = Client::connect_as(&socket, &token, true).unwrap();
