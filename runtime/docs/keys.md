@@ -243,6 +243,20 @@ greed.keymap.bind({ mode = "helix", kind = "tree" }, { O = "tree-open" })
 greed.keymap.bind({}, { ["ctrl-q"] = "quit" })
 ```
 
+That's also how you change the keys of Greed's own panels: a picker's are
+bound for the kind `picker`, the file tree's for `tree`, help's for `help`.
+`space h k` in one shows where a key comes from, like `kind:picker ->
+picker-next`. Say you'd rather move through pickers with `ctrl-j` and
+`ctrl-k`, and drop `ctrl-n`:
+
+```luau
+greed.keymap.bind({ kind = "picker" }, {
+	["ctrl-j"] = "picker-next",
+	["ctrl-k"] = "picker-prev",
+})
+greed.keymap.unbind({ kind = "picker" }, { "ctrl-n" })
+```
+
 When a key is pressed, Greed looks first in the layers for the buffer's
 kind: the style's role's, the mode's, the leader's, those of the layers
 and modes it inherits, then the kind's for every mode. Then come the
