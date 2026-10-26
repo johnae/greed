@@ -21,9 +21,11 @@ fn start(text: &'static str, path: Option<&'static Path>) -> Connection {
     })
 }
 
+/// What the server says next. A busy machine loading the plugins in a debug
+/// build can take a while, so it gets far longer than it should need.
 fn next(conn: &Connection) -> Output {
     conn.output
-        .recv_timeout(Duration::from_secs(5))
+        .recv_timeout(Duration::from_secs(30))
         .expect("server answered")
 }
 
@@ -728,7 +730,7 @@ fn with_the_client_topic_on_frames_ask_for_the_clients_side_and_its_lines_are_ke
             .iter()
             .any(|l| l.text == text)
     };
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
     while !kept("client 1: drew a frame in 1.00 ms") && std::time::Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));
     }

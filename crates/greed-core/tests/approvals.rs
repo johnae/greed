@@ -42,6 +42,9 @@ impl Drop for Temp {
 fn host(store: &Path, shipped: &Path) -> Host {
     let host = Host::new(Editor::new(ClientId(1))).unwrap();
     host.require_approval(store.to_owned(), vec![shipped.to_owned()]);
+    // The tests check what was said, which a busy machine's notices of
+    // code holding the editor up would add to.
+    host.quiet_stalls();
     host
 }
 
