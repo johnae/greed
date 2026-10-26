@@ -133,8 +133,6 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["markdown.text"] = { gui = prose },
 		["markdown.marker"] = { fg = p.comment },
 		["markdown.heading"] = { fg = p.blue, bold = true },
-		["markdown.heading.1"] = { fg = p.purple, bold = true },
-		["markdown.heading.2"] = { fg = p.blue, bold = true },
 		["markdown.bold"] = { bold = true },
 		["markdown.italic"] = { italic = true },
 		["markdown.strike"] = { fg = p.comment, strikethrough = true },
@@ -286,6 +284,16 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 	for n, hue in { p.purple, p.green, p.yellow, p.cyan, p.red, p.blue } do
 		styles[`ui.cursor.peer.{n}`] = { bg = hue, fg = p.bg }
 		styles[`ui.selection.peer.{n}`] = { underline = true, underline_color = hue }
+	end
+	-- Each heading level in a hue of its own, the same written and read:
+	-- the first six that differ, as some palettes give two hues one color.
+	local level, used = 0, {}
+	for _, hue in { p.purple, p.blue, p.cyan, p.green, p.yellow, p.orange, p.red } do
+		if level < 6 and not used[hue] then
+			used[hue], level = true, level + 1
+			styles[`markup.heading.{level}`] = { fg = hue, bold = true }
+			styles[`markdown.heading.{level}`] = { fg = hue, bold = true }
+		end
 	end
 	for name, color in severity do
 		styles[`ui.gutter.diagnostic.{name}`] = { fg = color }

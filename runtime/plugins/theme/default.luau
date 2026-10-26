@@ -68,8 +68,13 @@ return {
 	["markdown.text"] = { gui = { font = "prose" } },
 	["markdown.marker"] = { fg = "bright-black" },
 	["markdown.heading"] = { fg = "blue", bold = true },
+	-- Each heading level in a color of its own, the same written and read.
 	["markdown.heading.1"] = { fg = "magenta", bold = true },
 	["markdown.heading.2"] = { fg = "blue", bold = true },
+	["markdown.heading.3"] = { fg = "cyan", bold = true },
+	["markdown.heading.4"] = { fg = "green", bold = true },
+	["markdown.heading.5"] = { fg = "yellow", bold = true },
+	["markdown.heading.6"] = { fg = "red", bold = true },
 	["markdown.bold"] = { bold = true },
 	["markdown.italic"] = { italic = true },
 	["markdown.strike"] = { strikethrough = true, dim = true },
@@ -168,6 +173,12 @@ return {
 
 	-- Prose
 	["markup.heading"] = { fg = "blue", bold = true },
+	["markup.heading.1"] = { fg = "magenta", bold = true },
+	["markup.heading.2"] = { fg = "blue", bold = true },
+	["markup.heading.3"] = { fg = "cyan", bold = true },
+	["markup.heading.4"] = { fg = "green", bold = true },
+	["markup.heading.5"] = { fg = "yellow", bold = true },
+	["markup.heading.6"] = { fg = "red", bold = true },
 	["markup.heading.marker"] = { fg = "bright-black" },
 	["markup.list"] = { fg = "magenta" },
 	["markup.bold"] = { bold = true },

@@ -149,3 +149,23 @@ test("a theme asked for before a plugin adds it is used once it does", function(
 	assert(theme.current() == "later-theme", "a misspelled name changes nothing")
 	theme.use("default")
 end)
+
+test("each heading level has a color of its own, the same written and read", function()
+	-- Greed's own themes: the default and those made from a palette.
+	local names = { "default" }
+	for name in require("../themes") do
+		table.insert(names, name)
+	end
+	for _, name in names do
+		theme.use(name)
+		local seen: { [string]: number } = {}
+		for level = 1, 6 do
+			local read = fg(`markdown.heading.{level}`)
+			assert(read, `{name}: no color for level {level}`)
+			assert(fg(`markup.heading.{level}`) == read, `{name}: level {level} differs written`)
+			assert(seen[read] == nil, `{name}: levels {seen[read]} and {level} look the same`)
+			seen[read] = level
+		end
+	end
+	theme.use("default")
+end)

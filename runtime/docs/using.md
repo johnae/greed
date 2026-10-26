@@ -1464,7 +1464,9 @@ its command stands for the file's path.
 
 Markdown files show as documents. The file stays plain Markdown.
 
-- Headings show without their hashes, a top-level one twice the size.
+- Headings show without their hashes, a top-level one twice the size,
+  and each level in a color of its own (`markdown.heading.1` to `.6` in a
+  theme).
 - `**bold**`, `*italic*`, `~~struck~~` and `` `code` `` show without their
   markers, links as their underlined text.
 - Fenced code gets a background of its own and keeps its markup: a
