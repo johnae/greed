@@ -146,18 +146,20 @@ greed.command({
 	run = function(ctx)
 		local buffer, view = ctx.buffer, ctx.view
 		local syntax = require("@core").syntax
-		local found: { { node: greed.Node, name: greed.Node } } = {}
+		local found: { { node: greed.Node, name: greed.Node, object: string } } = {}
 		for _, object in { "function", "type" } do
 			for _, o in syntax.objects(buffer, object) do
 				local name = o.around:child("name")
 				if name then
-					table.insert(found, { node = o.around, name = name })
+					table.insert(found, { node = o.around, name = name, object = object })
 				end
 			end
 		end
 		table.sort(found, function(a: { name: greed.Node }, b: { name: greed.Node })
 			return a.name.from < b.name.from
 		end)
+		-- What each is, then its line, the numbers lined up on the right.
+		local digits = #tostring(buffer:line_count())
 		local items = {}
 		for _, f in found do
 			-- Nested items are indented under what holds them.
@@ -169,7 +171,8 @@ greed.command({
 			end
 			local line = buffer:line_of(f.name.from)
 			table.insert(items, {
-				label = `{string.rep("  ", depth)}{f.name:text()}  {f.node.kind}:{line + 1}`,
+				label = `{string.rep("  ", depth)}{f.name:text()}`,
+				detail = string.format(`%-8s  %{digits}d`, f.object, line + 1),
 				value = f.name.from,
 			})
 		end

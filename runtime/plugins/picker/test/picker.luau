@@ -260,8 +260,8 @@ test("the outline lists functions and types, nested, and jumps to one", function
 	greed.view():buffer():set_language("rust")
 	t:keys("space s")
 	local list = greed.view():buffer():text()
-	assert(string.find(list, "S  struct_item:1", 1, true), list)
-	assert(string.find(list, "two  function_item:3", 1, true), list)
+	assert(string.find(list, "S%s+type%s+1"), list)
+	assert(string.find(list, "two%s+function%s+3"), list)
 	t:keys("t w o enter")
 	t:expect("struct S;\nfn one() {}\nfn |two() {}\n")
 end)
@@ -745,4 +745,103 @@ test("a command needing an argument, picked from the palette, goes to the comman
 	assert(string.find(floats, ":test-greet-someone ", 1, true), floats)
 	t:keys("y o u enter")
 	assert(ran == "you", tostring(ran))
+end)
+
+-- The rows under the open picker's query, as drawn.
+local function rows(): { string }
+	local buffer = greed.view():buffer()
+	local out = {}
+	for line = 1, buffer:line_count() - 1 do
+		table.insert(out, buffer:line_text(line))
+	end
+	return out
+end
+
+-- The text of every piece of the open picker drawn in `style`.
+local function styled(style: string): { string }
+	local buffer = greed.view():buffer()
+	local out = {}
+	for _, mark in buffer:decorations("picker") do
+		if mark.style == style then
+			table.insert(out, buffer:slice(mark.from, mark.to))
+		end
+	end
+	return out
+end
+
+test("an item's detail goes in a column of its own after the labels, dimmed", function(t)
+	local picker = require("@picker")
+	t:buffer("|abc")
+	picker.pick("Things", {
+		{ label = "a", detail = "one", value = 1 },
+		{ label = "longer", detail = "two", value = 2 },
+		{ label = "plain", value = 3 },
+	}, function() end)
+	local shown = rows()
+	assert(shown[1] == " a       one", shown[1])
+	assert(shown[2] == " longer  two", shown[2])
+	assert(shown[3] == " plain", "no detail, no column: " .. shown[3])
+	local dimmed = table.concat(styled("ui.menu.doc"), ",")
+	assert(dimmed == "one,two", dimmed)
+end)
+
+test("what's typed finds an item by its detail too, marked where it matched", function(t)
+	local picker = require("@picker")
+	t:buffer("|abc")
+	picker.pick("Things", {
+		{ label = "alpha", detail = "first", value = 1 },
+		{ label = "beta", detail = "second", value = 2 },
+	}, function() end)
+	t:keys("s e c")
+	assert(current() == "beta", tostring(current()))
+	assert(matched() == "sec", matched())
+end)
+
+test("a label too long for its column is cut, so the details still line up", function(t)
+	local picker = require("@picker")
+	t:buffer("|abc")
+	t:draw(50, 20)
+	picker.pick("Things", {
+		{ label = string.rep("x", 60), detail = "far", value = 1 },
+		{ label = "short", detail = "near", value = 2 },
+	}, function() end)
+	t:draw(50, 20)
+	local shown = rows()
+	local long_at = string.find(shown[1], "far", 1, true)
+	local short_at = string.find(shown[2], "near", 1, true)
+	assert(string.find(shown[1], "…", 1, true), "cut: " .. shown[1])
+	assert(long_at and short_at, table.concat(shown, "\n"))
+	-- The ellipsis takes three bytes for its one column.
+	assert(long_at - 2 == short_at, `{long_at} vs {short_at}:\n{table.concat(shown, "\n")}`)
+end)
+
+test("the outline names what each thing is in plain words, its line beside it", function(t)
+	require("@greed").syntax.set_query(
+		"rust",
+		"textobjects",
+		"(function_item) @function.around (struct_item) @type.around"
+	)
+	t:buffer("|fn first() {}\n" .. string.rep("\n", 10) .. "struct Second;\n")
+	greed.view():buffer():set_language("rust")
+	t:keys("space s")
+	local shown = rows()
+	assert(string.match(shown[1], "^ first%s+function%s+1$"), shown[1])
+	assert(string.match(shown[2], "^ Second%s+type%s+12$"), shown[2])
+	-- Right-aligned, so the numbers end in the same column.
+	local first_end = #shown[1]
+	local second_end = #shown[2]
+	assert(first_end == second_end, "the line numbers line up:\n" .. table.concat(shown, "\n"))
+end)
+
+test("the detail column stays put as what's typed narrows the list", function(t)
+	local picker = require("@picker")
+	t:buffer("|abc")
+	picker.pick("Things", {
+		{ label = "a-much-longer-label", detail = "one", value = 1 },
+		{ label = "b", detail = "two", value = 2 },
+	}, function() end)
+	local before = string.find(rows()[2], "two", 1, true)
+	t:keys("t w o")
+	local after = string.find(rows()[1], "two", 1, true)
+	assert(before == after, `{before} then {after}: {rows()[1]}`)
 end)

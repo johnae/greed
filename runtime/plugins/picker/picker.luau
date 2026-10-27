@@ -6,6 +6,9 @@ local ui = core.ui
 
 export type Item = {
 	label: string,
+	--- More about it, dimmed in a column after the labels: a command's doc,
+	--- a symbol's file and line. What's typed matches it too.
+	detail: string?,
 	value: any,
 	--- What the item is, for `alt-.` to list its actions (see core's
 	--- actions): "file" for a path, "command" for a command's name, ...
@@ -148,33 +151,78 @@ local function query(o: Open): string
 	return o.buffer:slice(0, o.buffer:line_end(0))
 end
 
+-- Between the label and the detail in what's matched; where a match falls
+-- in the detail is counted from after it.
+local BETWEEN = "  "
+
+-- What's typed is matched against: the label, then the detail.
+local function text_of(item: Item): string
+	return if item.detail then item.label .. BETWEEN .. item.detail else item.label
+end
+
+-- `text` cut with an ellipsis to `width` cells, if given, in `style`, the
+-- characters at `positions` (bytes from 0) marked as matched. With the
+-- cells it takes.
+local function cut(
+	text: string,
+	positions: { number },
+	width: number?,
+	style: string?
+): ({ core.UiSpan }, number)
+	local shown = if width then core.text.clip(text, math.max(width, 1)) else text
+	local kept = if shown == text then #text else #shown - #"…"
+	local visible: { number } = {}
+	for _, pos in positions do
+		if pos >= 0 and pos < kept then
+			table.insert(visible, pos)
+		end
+	end
+	return ui.matched(shown, visible, nil, style), core.text.width(shown)
+end
+
 -- The matches, a row each under the query, what's typed picked out in
--- each and the current one marked.
+-- each and the current one marked. Details line up in a column after the
+-- labels, sized from every item so it stays put while you type: labels get
+-- what the widest detail leaves, and at least three fifths of the row.
+-- Anything too long is cut with an ellipsis, so every item keeps one row.
 local function draw(o: Open): core.UiNode
-	-- A label too long for the float is cut with an ellipsis, so every item
-	-- keeps one row.
 	local _, cols = o.view:size()
+	local room = if cols then cols - 2 else nil
 	local shown = table.move(o.matches, 1, math.min(#o.matches, LIMIT), 1, {})
+	local column, widest = 0, 0
+	for _, item in o.items do
+		local detail = item.detail
+		if detail then
+			column = math.max(column, core.text.width(item.label))
+			widest = math.max(widest, core.text.width(detail))
+		end
+	end
+	if room then
+		column = math.min(column, math.max(room - widest - 2, room * 3 // 5, 1))
+	end
 	return ui.list(shown, function(index: number): { core.UiSpan }
-		local label = o.labels[index]
-		local cut = if cols then core.text.clip(label, math.max(cols - 2, 1)) else label
-		local kept = if cut == label then #label else #cut - #"…"
+		local item = o.items[index]
 		local matched: { number } = if o.source
 			then {}
 			else greed.fuzzy_positions(
 				o.matched or o.query or "",
-				label,
+				o.labels[index],
 				{ case = core.search.case() }
 			)
-		local visible: { number } = {}
-		for _, pos in matched do
-			if pos < kept then
-				table.insert(visible, pos)
-			end
-		end
 		local spans: { core.UiSpan } = { ui.span(" ") }
-		for _, span in ui.matched(cut, visible) do
-			table.insert(spans, span)
+		local detail = item.detail
+		local label, used = cut(item.label, matched, if detail then column else room)
+		table.move(label, 1, #label, #spans + 1, spans)
+		if detail then
+			table.insert(spans, ui.span(string.rep(" ", column - used + 2)))
+			local from = #item.label + #BETWEEN
+			local shifted = {}
+			for _, pos in matched do
+				table.insert(shifted, pos - from)
+			end
+			local width = if room then room - column - 2 else nil
+			local rest = cut(detail, shifted, width, "ui.menu.doc")
+			table.move(rest, 1, #rest, #spans + 1, spans)
 		end
 		return spans
 	end, { current = o.current })
@@ -209,7 +257,7 @@ local function set_items(o: Open, items: { Item })
 	o.labels = {}
 	o.matches = {}
 	for i, item in items do
-		o.labels[i] = item.label
+		o.labels[i] = text_of(item)
 		o.matches[i] = i
 	end
 	o.current = 1
@@ -550,7 +598,7 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 	close()
 	local labels = {}
 	for i, item in items do
-		labels[i] = item.label
+		labels[i] = text_of(item)
 	end
 	local preview = options and options.preview
 	-- With a preview, the list takes the left half and the preview the right.

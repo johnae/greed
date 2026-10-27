@@ -1255,6 +1255,14 @@ view, to put a label on its border, and its `kind` option gives the prompt
 keys of its own, the way the vscode style's find bar binds `enter` to the
 next match.
 
+An item can have a `detail` beside its `label`: it's dimmed in a column of
+its own, lined up after the labels, and what's typed matches it too. Like
+this, from the outline:
+
+```luau
+{ label = "recorded_uids", detail = "function  43", value = pos }
+```
+
 `greed.signal()` lets one piece of code wait for a value another sends,
 one waiter each. `core.joined(f)` makes `f(key)` run once for calls that
 come at the same time with the same key: the others wait and get what it

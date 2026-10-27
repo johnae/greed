@@ -1310,7 +1310,7 @@ end
 --- Asks which of your addresses the mail written in `buffer` is from,
 --- and makes it so (`from_identity`).
 function M.pick_from(buffer: greed.Buffer)
-	local items: { { label: string, value: any, kind: string? } } = {}
+	local items: { { label: string, detail: string?, value: any, kind: string? } } = {}
 	for _, identity in M.identities() do
 		table.insert(items, { label = from_line(identity), value = identity })
 	end
@@ -1819,7 +1819,7 @@ local function pick_rule(title: string, chosen: (rule: Rule) -> ())
 		greed.echo('no mail rules: require("@mail").rules sets them')
 		return
 	end
-	local items: { { label: string, value: any, kind: string? } } = {}
+	local items: { { label: string, detail: string?, value: any, kind: string? } } = {}
 	for i, rule in M.rules do
 		local all = if rule.all then ", on all mail" else ""
 		table.insert(items, { label = `{i}. {rule.query}  {M.rule_text(rule)}{all}`, value = rule })
@@ -2040,7 +2040,7 @@ greed.command({
 	name = "mail-drafts",
 	doc = "Pick a draft to go on writing; alt-. on one discards it",
 	run = function()
-		local items: { { label: string, value: any, kind: string? } } = {}
+		local items: { { label: string, detail: string?, value: any, kind: string? } } = {}
 		for _, d in M.drafts() do
 			table.insert(
 				items,
@@ -2415,7 +2415,7 @@ greed.command({
 	doc = "Pick a saved search to show, however many there are, with how many unread each finds",
 	run = function()
 		local o = open
-		local items: { { label: string, value: any, kind: string? } } = {}
+		local items: { { label: string, detail: string?, value: any, kind: string? } } = {}
 		for _, saved in M.searches do
 			local unread = if o then o.unread[saved.query] else nil
 			local count = if unread and unread > 0 then `  {unread} unread` else ""
