@@ -102,6 +102,12 @@ type Open = {
 	-- The items and their labels as given, while a path's folder is listed
 	-- instead.
 	given: { items: { Item }, labels: { string } }?,
+	-- The rest of the current item's detail, drawn under its row (1 is the
+	-- first under the query) from column `lead`, when its column cut it.
+	more: { row: number, lead: number, lines: { string } }?,
+	-- The first match drawn, as the list scrolls to keep the current one in
+	-- sight.
+	top: number?,
 }
 
 -- Shows the current item in the preview, if it changed.
@@ -184,11 +190,14 @@ end
 -- each and the current one marked. Details line up in a column after the
 -- labels, sized from every item so it stays put while you type: labels get
 -- what the widest detail leaves, and at least three fifths of the row.
--- Anything too long is cut with an ellipsis, so every item keeps one row.
+-- Anything too long is cut with an ellipsis, so every item keeps one row,
+-- except the current item's detail: that wraps, the rest of it under the
+-- row (`more`). The list starts at `top`, moved as little as keeps the
+-- current item and the rest of its detail in sight.
 local function draw(o: Open): core.UiNode
-	local _, cols = o.view:size()
+	o.more = nil
+	local height, cols = o.view:size()
 	local room = if cols then cols - 2 else nil
-	local shown = table.move(o.matches, 1, math.min(#o.matches, LIMIT), 1, {})
 	local column, widest = 0, 0
 	for _, item in o.items do
 		local detail = item.detail
@@ -200,6 +209,23 @@ local function draw(o: Open): core.UiNode
 	if room then
 		column = math.min(column, math.max(room - widest - 2, room * 3 // 5, 1))
 	end
+	local width = if room then room - column - 2 else nil
+	local current = o.matches[o.current]
+	local long = if current then o.items[current].detail else nil
+	local wrapped: { string }? = nil
+	if width and long and core.text.width(long) > width then
+		wrapped = string.split(core.text.reflow(long, math.max(width, 1)), "\n")
+	end
+	local top = math.min(o.top or 1, o.current)
+	if height then
+		-- The rows under the query; the current item stays in them even
+		-- when its detail has more lines than fit.
+		local rows = height - 1
+		local under = math.min(if wrapped then #wrapped - 1 else 0, rows - 1)
+		top = math.max(top, o.current + under - rows + 1)
+	end
+	o.top = top
+	local shown = table.move(o.matches, top, math.min(#o.matches, top + LIMIT - 1), 1, {})
 	return ui.list(shown, function(index: number): { core.UiSpan }
 		local item = o.items[index]
 		local matched: { number } = if o.source
@@ -220,12 +246,16 @@ local function draw(o: Open): core.UiNode
 			for _, pos in matched do
 				table.insert(shifted, pos - from)
 			end
-			local width = if room then room - column - 2 else nil
+			if wrapped and index == current then
+				detail = wrapped[1]
+				local lines = table.move(wrapped, 2, #wrapped, 1, {})
+				o.more = { row = o.current - top + 1, lead = column + 3, lines = lines }
+			end
 			local rest = cut(detail, shifted, width, "ui.menu.doc")
 			table.move(rest, 1, #rest, #spans + 1, spans)
 		end
 		return spans
-	end, { current = o.current })
+	end, { current = o.current - top + 1 })
 end
 
 -- Draws the matches under the query, keeping the cursor where it is in
@@ -242,6 +272,18 @@ local function render(o: Open)
 		)
 	end
 	o.buffer:decorate("picker-hint", hint)
+	local more: { greed.Mark } = {}
+	local rest = o.more
+	if rest and rest.row < o.buffer:line_count() then
+		local lead = string.rep(" ", rest.lead)
+		local lines: { greed.MarkLine } = {}
+		for _, line in rest.lines do
+			table.insert(lines, lead .. line)
+		end
+		local at = o.buffer:line_start(rest.row)
+		table.insert(more, { from = at, to = at, style = "ui.menu.doc", lines = lines })
+	end
+	o.buffer:decorate("picker-more", more)
 	update_preview(o)
 	local index = o.matches[o.current]
 	local item = if index then o.items[index] else nil

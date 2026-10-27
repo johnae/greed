@@ -1256,8 +1256,9 @@ keys of its own, the way the vscode style's find bar binds `enter` to the
 next match.
 
 An item can have a `detail` beside its `label`: it's dimmed in a column of
-its own, lined up after the labels, and what's typed matches it too. Like
-this, from the outline:
+its own, lined up after the labels, and what's typed matches it too. One
+too long for its column is cut, except the current item's, which shows in
+full under its row. Like this, from the outline:
 
 ```luau
 { label = "recorded_uids", detail = "function  43", value = pos }

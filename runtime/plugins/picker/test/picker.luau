@@ -845,3 +845,104 @@ test("the detail column stays put as what's typed narrows the list", function(t)
 	local after = string.find(rows()[1], "two", 1, true)
 	assert(before == after, `{before} then {after}: {rows()[1]}`)
 end)
+
+-- The lines drawn under the current item, for its detail in full.
+local function more(): { string }
+	local buffer = greed.view():buffer()
+	local out = {}
+	for _, mark in buffer:decorations("picker-more") do
+		local lines = mark.lines
+		if lines then
+			for _, line in lines do
+				local text = ""
+				if type(line) == "string" then
+					text = line
+				else
+					for _, span in line do
+						text ..= span.text
+					end
+				end
+				table.insert(out, text)
+			end
+		end
+	end
+	return out
+end
+
+local LONG =
+	"Move the cursors' lines down one, or the list item or section under the cursor; with a count, that many"
+
+test("the current item's detail shows in full under it when its column cuts it", function(t)
+	local picker = require("@picker")
+	t:buffer("|abc")
+	t:draw(60, 20)
+	picker.pick("Things", {
+		{ label = "short", detail = "fits", value = 1 },
+		{ label = "long", detail = LONG, value = 2 },
+	}, function() end)
+	t:draw(60, 20)
+	assert(#more() == 0, "a detail that fits adds nothing: " .. table.concat(more(), "|"))
+	t:keys("down")
+	t:draw(60, 20)
+	local row = rows()[2]
+	assert(not string.find(row, "…", 1, true), "the row isn't cut: " .. row)
+	local rest = more()
+	assert(#rest >= 1, "the rest comes under it")
+	local all: { string } = { string.match(row, "long%s+(.*)$") or "" }
+	for _, line in rest do
+		table.insert(all, (string.gsub(line, "^%s+", "")))
+	end
+	assert(table.concat(all, " ") == LONG, table.concat(all, " / "))
+	-- Lined up under the detail column.
+	local column = string.find(row, "Move", 1, true)
+	local under = string.find(rest[1], "%S")
+	assert(column == under, `{column} vs {under}`)
+	t:keys("up")
+	t:draw(60, 20)
+	assert(#more() == 0, "it goes with the current item")
+	assert(string.find(rows()[2], "…", 1, true), "and the row is cut again: " .. rows()[2])
+end)
+
+test("the list scrolls to keep the current item and its whole detail in sight", function(t)
+	local picker = require("@picker")
+	t:buffer("|abc")
+	t:draw(60, 30)
+	local items = {}
+	for i = 1, 30 do
+		table.insert(
+			items,
+			{ label = `item{i}`, detail = if i == 9 then LONG else "short", value = i }
+		)
+	end
+	picker.pick("Things", items, function() end)
+	t:draw(60, 30)
+	local rows_shown = (greed.view():size() or 0) - 1
+	for _ = 1, 8 do
+		t:keys("down")
+	end
+	t:draw(60, 30)
+	local shown = rows()
+	-- item9 is current: on screen, and every line of its detail under it.
+	local at = 0
+	for i, row in shown do
+		if string.match(row, "^ item9 ") then
+			at = i
+		end
+	end
+	assert(at > 0, "the current item is in the list:\n" .. table.concat(shown, "\n"))
+	assert(at + #more() <= rows_shown, `row {at}, {#more()} more, {rows_shown} rows`)
+	for _ = 1, 15 do
+		t:keys("down")
+	end
+	t:draw(60, 30)
+	local found = false
+	for i, row in rows() do
+		found = found or (string.match(row, "^ item24 ") ~= nil and i <= rows_shown)
+	end
+	assert(found, "far down, the current item still shows:\n" .. table.concat(rows(), "\n"))
+	t:keys("1")
+	assert(
+		string.match(rows()[1], "^ item1 ") ~= nil,
+		"a new query starts at the top again: " .. rows()[1]
+	)
+end)
