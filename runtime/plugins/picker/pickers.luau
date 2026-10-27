@@ -172,7 +172,7 @@ greed.command({
 			local line = buffer:line_of(f.name.from)
 			table.insert(items, {
 				label = `{string.rep("  ", depth)}{f.name:text()}`,
-				detail = string.format(`%-8s  %{digits}d`, f.object, line + 1),
+				detail = string.format(`%-8s  line %{digits}d`, f.object, line + 1),
 				value = f.name.from,
 			})
 		end

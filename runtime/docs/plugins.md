@@ -1261,7 +1261,7 @@ too long for its column is cut, except the current item's, which shows in
 full under its row. Like this, from the outline:
 
 ```luau
-{ label = "recorded_uids", detail = "function  43", value = pos }
+{ label = "recorded_uids", detail = "function  line 43", value = pos }
 ```
 
 `greed.signal()` lets one piece of code wait for a value another sends,

@@ -260,8 +260,8 @@ test("the outline lists functions and types, nested, and jumps to one", function
 	greed.view():buffer():set_language("rust")
 	t:keys("space s")
 	local list = greed.view():buffer():text()
-	assert(string.find(list, "S%s+type%s+1"), list)
-	assert(string.find(list, "two%s+function%s+3"), list)
+	assert(string.find(list, "S%s+type%s+line%s+1"), list)
+	assert(string.find(list, "two%s+function%s+line%s+3"), list)
 	t:keys("t w o enter")
 	t:expect("struct S;\nfn one() {}\nfn |two() {}\n")
 end)
@@ -825,8 +825,8 @@ test("the outline names what each thing is in plain words, its line beside it", 
 	greed.view():buffer():set_language("rust")
 	t:keys("space s")
 	local shown = rows()
-	assert(string.match(shown[1], "^ first%s+function%s+1$"), shown[1])
-	assert(string.match(shown[2], "^ Second%s+type%s+12$"), shown[2])
+	assert(string.match(shown[1], "^ first%s+function%s+line%s+1$"), shown[1])
+	assert(string.match(shown[2], "^ Second%s+type%s+line%s+12$"), shown[2])
 	-- Right-aligned, so the numbers end in the same column.
 	local first_end = #shown[1]
 	local second_end = #shown[2]
