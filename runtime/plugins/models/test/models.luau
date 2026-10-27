@@ -644,7 +644,7 @@ test("a model is picked from the provider's list, the preset first", function(t)
 	local said = ask_model("poetry", "openai")
 	t:wait(10)
 	local shown = t:floats()[1] or ""
-	local preset = string.find(shown, "gpt-5  (suggested)", 1, true)
+	local preset = string.find(shown, "gpt%-5  +suggested")
 	assert(preset and preset < (string.find(shown, "gpt-a", 1, true) or 0), shown)
 	assert(string.find(shown, "type a name", 1, true), shown)
 	t:type("gpt-b")

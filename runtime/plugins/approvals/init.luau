@@ -75,14 +75,15 @@ greed.command({
 			greed.echo("no plugins wait for approval")
 			return
 		end
-		local items = {}
+		local items: { picker.Item } = {}
 		for _, about in waiting do
 			local asks = {}
 			for _, capability in about.capabilities do
 				table.insert(asks, capability.name)
 			end
 			table.insert(items, {
-				label = `{about.name}  {table.concat(asks, ", ")}`,
+				label = about.name,
+				detail = table.concat(asks, ", "),
 				value = about,
 			})
 		end
@@ -139,10 +140,11 @@ greed.command({
 	name = "plugins",
 	doc = "List the plugins, where each comes from and what it may use; enter opens one",
 	run = function()
-		local items = {}
+		local items: { picker.Item } = {}
 		for _, about in greed.plugin.pending() do
 			table.insert(items, {
-				label = `{about.name}  waiting for approval  ({M.origin(about.dir)})`,
+				label = about.name,
+				detail = `waiting for approval  ({M.origin(about.dir)})`,
 				value = about,
 			})
 		end
@@ -162,7 +164,7 @@ greed.command({
 				local took = if ms and ms >= 1 then string.format("  loads in %.0f ms", ms) else ""
 				table.insert(
 					items,
-					{ label = `{name}  {M.origin(dir)}{uses}{took}`, value = about }
+					{ label = name, detail = `{M.origin(dir)}{uses}{took}`, value = about }
 				)
 			end
 		end

@@ -244,7 +244,7 @@ test("the command palette shows each command's keys", function(t)
 	t:buffer("|abc")
 	t:keys("space ? g o t o - l a s t")
 	assert(
-		string.find(greed.view():buffer():text(), "goto-last-line  (g e)", 1, true),
+		string.find(greed.view():buffer():text(), "goto%-last%-line  +%(g e%)  Move"),
 		greed.view():buffer():text()
 	)
 	t:keys("esc")

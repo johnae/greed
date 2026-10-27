@@ -108,7 +108,8 @@ greed.command({
 		for _, line in lines do
 			local text = string.gsub(line.text, "^%s+", "")
 			table.insert(items, {
-				label = `{line.path}:{line.line + 1}  {text}`,
+				label = `{line.path}:{line.line + 1}`,
+				detail = text,
 				value = { path = `{root}/{line.path}`, line = line.line },
 			})
 		end

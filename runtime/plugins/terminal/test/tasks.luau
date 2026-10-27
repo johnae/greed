@@ -58,7 +58,7 @@ test("tasks come from the project's files, and space o t picks one, the last run
 	assert(all.VAR == nil and all[".PHONY"] == nil, "not variables or special targets")
 	t:keys("space o t")
 	local floats = table.concat(t:floats(), "\n")
-	assert(string.find(floats, "lint  npm run lint", 1, true), floats)
+	assert(string.find(floats, "lint  +npm run lint"), floats)
 end)
 
 test("an unknown task says so", function(t)

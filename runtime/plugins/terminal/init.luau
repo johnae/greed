@@ -1385,7 +1385,7 @@ greed.command({
 		local items = {}
 		for _, ref in list do
 			local shown = core.project.relative(ref.path)
-			table.insert(items, { label = `{shown}:{ref.line}  {ref.text}`, value = ref })
+			table.insert(items, { label = `{shown}:{ref.line}`, detail = ref.text, value = ref })
 		end
 		picker.pick("In the output", items, function(item)
 			local ref = item.value :: Reference

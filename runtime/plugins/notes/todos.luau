@@ -396,7 +396,7 @@ greed.command({
 		local items = {}
 		for _, todo in M.list() do
 			local due = if todo.due then `{todo.due}  ` else ""
-			table.insert(items, { label = `{due}{todo.text}  ({todo.note})`, value = todo })
+			table.insert(items, { label = `{due}{todo.text}`, detail = todo.note, value = todo })
 		end
 		if #items == 0 then
 			greed.echo("nothing to do")

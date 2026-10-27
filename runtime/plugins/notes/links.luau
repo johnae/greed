@@ -524,7 +524,7 @@ greed.command({
 			for _, place in M.places_in(note) do
 				table.insert(
 					items,
-					{ label = `{note.name}  {place.sign} {place.text}`, value = place }
+					{ label = note.name, detail = `{place.sign} {place.text}`, value = place }
 				)
 			end
 		end

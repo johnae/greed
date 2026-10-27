@@ -764,7 +764,8 @@ greed.command({
 			local running = #state.running(shell)
 			local busy = if running > 0 then ` · {running} running` else ""
 			table.insert(items, {
-				label = `{shell.name}  {core.project.tilde(shell.cwd)}{busy}`,
+				label = shell.name,
+				detail = `{core.project.tilde(shell.cwd)}{busy}`,
 				value = shell.buffer:id(),
 			})
 		end
@@ -1150,7 +1151,8 @@ greed.command({
 			for _, block in state.running(shell) do
 				local command = string.match(block.command, "^[^\n]*") or block.command
 				table.insert(items, {
-					label = `{shell.name} {block.number}  {command}  · {log.running_status(block)}`,
+					label = `{shell.name} {block.number}`,
+					detail = `{command}  · {log.running_status(block)}`,
 					value = { shell = shell, block = block },
 				})
 			end

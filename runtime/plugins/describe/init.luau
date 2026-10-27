@@ -685,13 +685,14 @@ core.actions.action({
 			greed.echo(`nothing done to {target.label} yet`)
 			return
 		end
-		local items = {}
+		local items: { picker.Item } = {}
 		for _, entry in history do
 			local made = if entry.made then core.objects.get(entry.made) else nil
 			local ago = core.time.ago((greed.now() - entry.at) // 1000)
 			local what = if made then `  → {made.label}` else ""
 			table.insert(items, {
-				label = `{ago}  {entry.by}  {entry.action}{what}`,
+				label = ago,
+				detail = `{entry.by}  {entry.action}{what}`,
 				value = made or object,
 			})
 		end
@@ -712,9 +713,9 @@ greed.command({
 		elseif #here == 1 then
 			M.inspect(here[1])
 		else
-			local items = {}
+			local items: { picker.Item } = {}
 			for _, object in here do
-				table.insert(items, { label = `{object.kind}  {object.label}`, value = object })
+				table.insert(items, { label = object.kind, detail = object.label, value = object })
 			end
 			picker.pick("Inspect", items, function(item)
 				M.inspect(item.value)

@@ -40,7 +40,7 @@ test("each plugin says where it comes from", function(t)
 	t:run("plugins")
 	t:wait(50)
 	local listed = greed.view():buffer():text()
-	assert(string.find(listed, "core  Greed's own", 1, true), listed)
+	assert(string.find(listed, "core  +Greed's own"), listed)
 	t:keys("esc")
 end)
 

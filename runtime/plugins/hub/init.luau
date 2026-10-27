@@ -862,7 +862,7 @@ greed.command({
 	run = function()
 		local items: { picker.Item } = {}
 		for host, at in M.reached() do
-			table.insert(items, { label = `{host}  {os.date("%Y-%m-%d", at)}`, value = host })
+			table.insert(items, { label = host, detail = os.date("%Y-%m-%d", at), value = host })
 		end
 		if #items == 0 then
 			greed.echo("no machines reached with greed ssh")

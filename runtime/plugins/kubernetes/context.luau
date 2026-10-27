@@ -276,7 +276,7 @@ greed.command({
 			local current = name == (now or "default")
 			table.insert(
 				items,
-				{ label = `{name}{if current then "  (current)" else ""}`, value = name }
+				{ label = name, detail = if current then "current" else nil, value = name }
 			)
 		end
 		picker.pick(`Namespace ({KEYS})`, items, function(item)

@@ -355,12 +355,13 @@ greed.command({
 	name = "operations",
 	doc = "Pick a recent operation to review: its changes across files and the programs it ran",
 	run = function()
-		local items = {}
+		local items: { picker.Item } = {}
 		for _, op in M.list() do
 			local status = if op.status == "done" then "" else ` ({op.status})`
 			local ago = core.time.ago(os.time() - op.time)
 			table.insert(items, {
-				label = `{op.name}{status}  {op.author}, {count(#op.files, "file")}, {ago}`,
+				label = `{op.name}{status}`,
+				detail = `{op.author}, {count(#op.files, "file")}, {ago}`,
 				value = op,
 			})
 		end

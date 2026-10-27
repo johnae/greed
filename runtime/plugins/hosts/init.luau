@@ -95,13 +95,13 @@ local HOME = {}
 local function items(): { picker.Item }
 	local list: { picker.Item } = {}
 	if M.away() then
-		table.insert(list, { label = "home  (the machine you are at)", value = HOME })
+		table.insert(list, { label = "home", detail = "the machine you are at", value = HOME })
 	end
 	local listed: { [string]: boolean } = {}
 	local function add(host: string, note: string)
 		if not listed[host] then
 			listed[host] = true
-			table.insert(list, { label = `{host}  ({note})`, value = host })
+			table.insert(list, { label = host, detail = note, value = host })
 		end
 	end
 	for _, host in M.recent() do

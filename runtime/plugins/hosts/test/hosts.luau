@@ -21,10 +21,10 @@ test("the picker lists recent hosts first, then the configured ones, each once",
 	t:run("connect", { "gpu1" })
 	t:run("connect")
 	local shown = table.concat(t:floats(), "\n")
-	local recent = string.find(shown, "gpu1  (recent)", 1, true)
-	local configured = string.find(shown, "build-box  (~/.ssh/config)", 1, true)
+	local recent = string.find(shown, "gpu1  +recent")
+	local configured = string.find(shown, "build%-box  +~/%.ssh/config")
 	assert(recent and configured and recent < configured, shown)
-	assert(not string.find(shown, "gpu1  (~/.ssh/config)", 1, true), "listed once: " .. shown)
+	assert(not string.find(shown, "gpu1  +~/%.ssh/config"), "listed once: " .. shown)
 	hosts.ssh_config = nil
 end)
 
@@ -62,7 +62,7 @@ test("on another machine the picker offers home first, which sends the client ho
 	end
 	t:run("connect")
 	local shown = table.concat(t:floats(), "\n")
-	local home = string.find(shown, "home  (the machine you are at)", 1, true)
+	local home = string.find(shown, "home  +the machine you are at")
 	local host = string.find(shown, "build-box", 1, true)
 	hosts.away = away
 	assert(home and host and home < host, shown)

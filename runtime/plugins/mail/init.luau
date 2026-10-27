@@ -1822,7 +1822,10 @@ local function pick_rule(title: string, chosen: (rule: Rule) -> ())
 	local items: { { label: string, detail: string?, value: any, kind: string? } } = {}
 	for i, rule in M.rules do
 		local all = if rule.all then ", on all mail" else ""
-		table.insert(items, { label = `{i}. {rule.query}  {M.rule_text(rule)}{all}`, value = rule })
+		table.insert(
+			items,
+			{ label = `{i}. {rule.query}`, detail = `{M.rule_text(rule)}{all}`, value = rule }
+		)
 	end
 	require("@picker").pick(title, items, function(item)
 		chosen(item.value)
@@ -2421,7 +2424,7 @@ greed.command({
 			local count = if unread and unread > 0 then `  {unread} unread` else ""
 			table.insert(
 				items,
-				{ label = `{saved.name}  {saved.query}{count}`, value = saved.query }
+				{ label = saved.name, detail = `{saved.query}{count}`, value = saved.query }
 			)
 		end
 		if #items == 0 then

@@ -1748,7 +1748,7 @@ local function pick_model(role: string, name: string, provider: Provider, start:
 		local now = current and current.provider == name and current.model == start
 		table.insert(
 			items,
-			{ label = `{start}  ({if now then "now" else "suggested"})`, value = start }
+			{ label = start, detail = if now then "now" else "suggested", value = start }
 		)
 	end
 	for _, id in ids do
@@ -1811,7 +1811,8 @@ function M.ask_role(role: string): (string?, boolean)
 	for _, name in names do
 		local provider = M.providers[name] :: Provider
 		table.insert(items, {
-			label = `{name}  {provider.url}  {M.key_state(name) or "no key yet"}`,
+			label = name,
+			detail = `{provider.url}  {M.key_state(name) or "no key yet"}`,
 			value = name,
 		})
 	end

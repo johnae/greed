@@ -1043,7 +1043,7 @@ greed.command({
 					else "not installed"
 				table.insert(
 					items,
-					{ label = `{agent.title or agent.name}  ({how})`, value = agent }
+					{ label = agent.title or agent.name, detail = how, value = agent }
 				)
 			end
 			local picked = picker.choose("Agent", items)

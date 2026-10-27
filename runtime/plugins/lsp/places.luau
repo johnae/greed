@@ -227,7 +227,8 @@ greed.command({
 					local path = location and greed.lsp.path(location.uri)
 					if path and location.range then
 						table.insert(items, {
-							label = `{symbol.name}  {core.project.relative(path)}:{location.range.start.line + 1}`,
+							label = symbol.name,
+							detail = `{core.project.relative(path)}:{location.range.start.line + 1}`,
 							value = { path = path, position = location.range.start },
 						})
 					end

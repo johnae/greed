@@ -119,13 +119,13 @@ greed.command({
 				end
 			end
 			local keys = keys_of[command.name] or {}
-			local label = command.name
+			local detail = command.doc
 			if #keys > 0 then
-				label ..= `  ({table.concat(keys, ", ")})`
+				detail = `({table.concat(keys, ", ")})  {detail}`
 			end
 			table.insert(
 				items,
-				{ label = `{label}  {command.doc}`, value = command.name, kind = "command" }
+				{ label = command.name, detail = detail, value = command.name, kind = "command" }
 			)
 		end
 		picker.pick("Commands", items, function(item)
@@ -196,7 +196,7 @@ greed.command({
 	run = function()
 		local items = {}
 		for _, object in core.watch.list() do
-			table.insert(items, { label = `{object.kind}  {object.label}`, value = object })
+			table.insert(items, { label = object.kind, detail = object.label, value = object })
 		end
 		if #items == 0 then
 			greed.echo("nothing is watched: watch, on space ., starts")
@@ -214,7 +214,7 @@ greed.command({
 	run = function()
 		local jumps = require("@core").jumps
 		local root = project.root()
-		local items = {}
+		local items: { picker.Item } = {}
 		for _, place in jumps.list() do
 			local buffer: greed.Buffer? = nil
 			for _, open in greed.buffers() do
@@ -230,7 +230,7 @@ greed.command({
 				where = tostring(row + 1)
 				line = string.gsub(buffer:line_text(row), "^%s+", "")
 			end
-			table.insert(items, { label = `{name}:{where}  {line}`, value = place })
+			table.insert(items, { label = `{name}:{where}`, detail = line, value = place })
 		end
 		if #items == 0 then
 			greed.echo("the jumplist is empty")
@@ -248,9 +248,9 @@ greed.command({
 	run = function()
 		local using = core.style.current().name
 		-- The style in use comes first, so enter right away changes nothing.
-		local items = {}
+		local items: { picker.Item } = {}
 		for _, style in core.style.list() do
-			local item = { label = `{style.name}  {style.doc}`, value = style.name }
+			local item: picker.Item = { label = style.name, detail = style.doc, value = style.name }
 			table.insert(items, if style.name == using then 1 else #items + 1, item)
 		end
 		picker.pick("Editing style", items, function(item)

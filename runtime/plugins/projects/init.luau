@@ -188,37 +188,39 @@ end
 local function items(): { picker.Item }
 	local list = {}
 	local listed: { [string]: boolean } = {}
-	local function add(root: string?, label: string, value: any)
+	local function add(root: string?, label: string, detail: string, value: any)
 		if root then
 			if listed[root] then
 				return
 			end
 			listed[root] = true
 		end
-		table.insert(list, { label = label, value = value })
+		table.insert(list, { label = label, detail = detail, value = value })
 	end
 	-- Each says what enter does with it.
 	for _, p in greed.project.list() do
-		local label = core.project.tilde(p.root)
-			.. if p.current then "  (shown)" else "  (open here)"
-		add(p.root, label, { project = p.id, root = p.root })
+		local detail = if p.current then "shown" else "open here"
+		add(p.root, core.project.tilde(p.root), detail, { project = p.id, root = p.root })
 	end
 	for _, s in greed.session.list() do
 		if not s.current then
+			local value = { session = s.name, root = s.root }
 			-- A service's folder is its own, nothing you'd look for.
-			local label = if s.service
-				then `{s.service}  (service, goes to its session)`
-				else `{if s.root then core.project.tilde(s.root) else s.name}  (goes to session {s.name})`
-			add(s.root, label, { session = s.name, root = s.root })
+			if s.service then
+				add(s.root, s.service, "service, goes to its session", value)
+			else
+				local label = if s.root then core.project.tilde(s.root) else s.name
+				add(s.root, label, `goes to session {s.name}`, value)
+			end
 		end
 	end
 	for _, root in core.project.recent() do
-		local label = `{core.project.tilde(root)}  (recent, starts a session)`
-		add(root, label, { path = root, root = root })
+		local where = core.project.tilde(root)
+		add(root, where, "recent, starts a session", { path = root, root = root })
 	end
 	for _, f in found do
-		local label = `{core.project.tilde(f.path)}  ({f.from}, starts a session)`
-		add(f.path, label, { path = f.path, root = f.path })
+		local where = core.project.tilde(f.path)
+		add(f.path, where, `{f.from}, starts a session`, { path = f.path, root = f.path })
 	end
 	return list
 end

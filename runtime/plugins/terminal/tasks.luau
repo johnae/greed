@@ -127,13 +127,13 @@ function M.setup(terminal: any)
 				end
 				return a < b
 			end)
-			local items = {}
+			local items: { picker.Item } = {}
 			for _, known in names do
 				local command = tasks[known].command
 				local shown = if type(command) == "string"
 					then command
 					else table.concat(command, " ")
-				table.insert(items, { label = `{known}  {shown}`, value = known })
+				table.insert(items, { label = known, detail = shown, value = known })
 			end
 			picker.pick("Tasks", items, function(item)
 				M.run(terminal, item.value)
