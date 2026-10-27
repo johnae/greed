@@ -3,6 +3,37 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## 0.4.1 - 2026-10-27
+
+### Highlights
+
+- A scroll margin: the view now keeps 5 lines in sight above and below the cursor as you move. Set `scroll-margin` to change it, or to 0 for how it was: `require("@greed").option.set("scroll-margin", 0)`.
+- Pickers show an item's detail in a column of its own: the outline says function or type and its line, the command picker each command's keys and description.
+- The current item's detail shows in full under its row, and the list scrolls to keep it in sight.
+- Each heading level has a color of its own (#25).
+- Rulers and indent guides past a line's end no longer move the cursor (#24).
+- Chat names Matrix senders by their display name, and a new account keeps every room's older messages for search.
+
+### New
+
+- theme: each heading level in a color of its own, written and read
+- scroll: a scroll margin keeps lines in sight around the cursor (scrolloff)
+- picker: an item's detail lines up in a column of its own; the outline says function or type and the line
+- picker: the current item's detail shows in full under it, and the list scrolls to keep both in sight
+- pickers: numbers say what they are: the outline's line, a shell block's $3, when a machine was reached
+
+### Fixed
+
+- chat: Matrix messages go by their writer's name, members fetched as a room opens
+- chat: a new account comes in ready, and every room's older messages are kept to search, rooms that come later too
+- guides: rulers and guides past a line's end are overlays, so the cursor stays where it is
+
+### Documentation
+
+- chat: a video of chat, recorded on a Tuwunel of its own with made-up people and rooms
+- keys: a panel's keys, a picker's say, are rebound for its kind
+- site: the tour shows the outline and the command picker's descriptions
+
 ## 0.4.0 - 2026-10-25
 
 ### Highlights
