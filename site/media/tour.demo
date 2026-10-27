@@ -1,6 +1,7 @@
 # Recent additions, one scene each: brackets that close themselves,
-# snippets, a folder edited as text, and Greed's agent writing a plugin
-# that is loaded once installed. The model is scripted in the demo profile.
+# snippets, a folder edited as text, Greed's agent writing a plugin that is
+# loaded once installed, the outline, and the command picker's descriptions.
+# The model is scripted in the demo profile.
 size 1280 800
 fps 30
 typing 0.03
@@ -87,6 +88,25 @@ keys i
 wait 0.6
 keys alt-u
 wait 1.2
+keys esc
+wait 0.6
+
+caption The outline: what each thing is, and its line
+keys :
+type open src/orders.rs
+keys enter
+wait 0.6
+keys space s
+wait 2
+keys esc
+wait 0.4
+
+caption The command picker shows the current command's description in full
+keys space ?
+type agent
+wait 0.8
+keys down
+wait 2.2
 keys esc
 wait 0.6
 
