@@ -83,7 +83,15 @@ function M.set(name: string, changes: Language)
 	for key, value in changes :: { [string]: any } do
 		(language :: { [string]: any })[key] = copy(value)
 	end
-	if changes.servers ~= nil or changes.roots ~= nil then
+	-- Any of what its servers start with, so a config setting only their
+	-- settings reaches them too.
+	if
+		changes.servers ~= nil
+		or changes.roots ~= nil
+		or changes.settings ~= nil
+		or changes.init_options ~= nil
+		or changes.reads_only ~= nil
+	then
 		greed.plugin.within(by, apply_servers, name, language)
 	end
 	languages[name] = language

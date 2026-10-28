@@ -880,3 +880,53 @@ fn accept_and_wait(h: &Host) {
     h.sync_lsp();
     pump(h, |h| probe_out(h).is_some());
 }
+
+#[test]
+fn a_languages_settings_and_start_options_reach_its_server_set_on_their_own() {
+    let mut editor = Editor::new(ClientId(1));
+    editor.open(
+        "file",
+        "let x = 1;",
+        Some(std::env::temp_dir().join("greed-lsp-languages/main.rs")),
+    );
+    let h = Host::new(editor).unwrap();
+    let (launcher, _started) = support::launcher();
+    h.set_lsp_launcher(launcher);
+    let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+    for plugin in ["core", "cmdline", "languages"] {
+        h.load_dir(&runtime.join(plugin)).unwrap();
+    }
+    // As a config does: only the options, Rust's servers as they were.
+    h.load_str(
+        "config",
+        r#"
+        local greed = require("@greed")
+        greed.lsp.trust(nil)
+        local languages = require("@languages")
+        languages.set("rust", { init_options = { symbols = "all" } })
+        languages.set("rust", { settings = { ["rust-analyzer"] = { cargo = { features = "all" } } } })
+        greed.command { name = "probe", run = function(ctx)
+            local seen = greed.lsp.request(ctx.buffer, "probe", {})
+            greed.echo(greed.json.encode({ init = seen.initialize.initializationOptions, changed = seen.changed }))
+        end }
+        "#,
+    )
+    .unwrap();
+    h.sync_lsp();
+    h.run(FIRST_CLIENT, "probe").unwrap();
+    let mut messages = Vec::new();
+    pump(&h, |h| {
+        messages.extend(h.with_editor_mut(Editor::take_messages));
+        !messages.is_empty()
+    });
+    let seen: serde_json::Value = serde_json::from_str(&messages[0]).unwrap();
+    assert_eq!(
+        seen["init"],
+        serde_json::json!({ "symbols": "all" }),
+        "{seen}"
+    );
+    assert_eq!(
+        seen["changed"]["settings"]["rust-analyzer"]["cargo"]["features"], "all",
+        "{seen}"
+    );
+}
