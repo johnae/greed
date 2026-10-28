@@ -930,3 +930,39 @@ fn a_languages_settings_and_start_options_reach_its_server_set_on_their_own() {
         "{seen}"
     );
 }
+
+/// The text of what the acting client's view shows: the picker's, once open.
+fn shown(h: &Host) -> String {
+    h.eval("return require('@greed').view():buffer():text()")
+        .unwrap()
+}
+
+#[test]
+fn project_symbols_of_a_kind_ask_for_every_kind_and_keep_those() {
+    let h = with_plugin();
+    // Every kind it was told of, as the server tells it.
+    h.eval("require('@greed').run('pick-workspace-symbol')")
+        .unwrap();
+    pump(&h, |h| shown(h).contains("Parser"));
+    let all = shown(&h);
+    assert!(all.contains("struct"), "{all}");
+    assert!(
+        !all.contains("parse_line"),
+        "types only, as rust-analyzer: {all}"
+    );
+    h.press_keys("esc").unwrap();
+    // Functions: asked for every kind, the types left out, methods kept.
+    h.eval("require('@greed').run('pick-workspace-symbol', { args = { 'function' } })")
+        .unwrap();
+    pump(&h, |h| shown(h).contains("parse_line"));
+    let functions = shown(&h);
+    assert!(
+        functions.contains("parse_line") && functions.contains("function"),
+        "{functions}"
+    );
+    assert!(
+        functions.contains("next") && functions.contains("method"),
+        "{functions}"
+    );
+    assert!(!functions.contains("Parser"), "{functions}");
+}

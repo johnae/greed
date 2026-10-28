@@ -371,6 +371,21 @@ fn answer(method: &str, params: &Value, opened: &Opened) -> Option<Value> {
     // hover text, and an empty list of definitions.
     let far = position["character"].as_u64() > Some(10);
     let answer = match method {
+        // As rust-analyzer: types only, unless asked for every kind.
+        "workspace/symbol" => {
+            let at = |line: u32| {
+                json!({ "uri": "file:///project/src/main.rs", "range": {
+                    "start": { "line": line, "character": 0 },
+                    "end": { "line": line, "character": 1 },
+                } })
+            };
+            let mut symbols = vec![json!({ "name": "Parser", "kind": 23, "location": at(0) })];
+            if params["searchKind"] == "allSymbols" {
+                symbols.push(json!({ "name": "parse_line", "kind": 12, "location": at(4) }));
+                symbols.push(json!({ "name": "next", "kind": 6, "location": at(8) }));
+            }
+            Value::Array(symbols)
+        }
         "textDocument/hover" if far => json!({ "contents": "" }),
         "textDocument/hover" => json!({
             "contents": format!("hover at {}:{}", position["line"], position["character"]),

@@ -1039,6 +1039,19 @@ it the new ones.
 | `space D` | Pick a problem in any file the server checked, open or not |
 | `] d` `[ d` | Next and previous problem; `] D` `[ D` the last and first |
 
+`:pick-workspace-symbol function` lists only functions and methods, and
+`type`, `module`, `constant` and `variable` work the same way; it asks
+rust-analyzer for every kind, so no `#` is needed. A key for it is a
+command of your own, here on `space M`, which is free:
+
+```luau
+local greed = require("@greed")
+greed.command({ name = "pick-functions", run = function()
+	greed.run("pick-workspace-symbol", { args = { "function" } })
+end })
+greed.keymap.bind({ layer = "leader" }, { M = "pick-functions" })
+```
+
 Problems are underlined, and their lines get a sign and a colored line
 number. Each line's worst problem also shows after the line's end; `:set
 diagnostic-messages false` hides those. They move with your edits until

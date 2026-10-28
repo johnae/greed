@@ -209,29 +209,74 @@ greed.command({
 	end,
 })
 
+-- The kinds of symbol `pick-workspace-symbol` can keep to, each with the
+-- kinds LSP has (`common.SYMBOL_KINDS`) that count as it.
+local SYMBOL_GROUPS: { [string]: { string } } = {
+	["function"] = { "function", "method", "constructor" },
+	type = { "class", "struct", "enum", "interface" },
+	module = { "module", "namespace", "package" },
+	constant = { "constant", "enum member" },
+	variable = { "variable", "field", "property" },
+}
+
 greed.command({
 	name = "pick-workspace-symbol",
-	doc = "Pick a function, type or other symbol anywhere in the project, as the language server knows them",
+	doc = "Pick a function, type or other symbol anywhere in the project, as the language server knows them; with a kind, only those",
+	args = {
+		{
+			name = "kind",
+			type = "choice",
+			choices = { "function", "type", "module", "constant", "variable" },
+			optional = true,
+			doc = "Only symbols of this kind, like function (methods too) or type",
+		},
+	},
 	run = function(ctx)
 		local buffer = ctx.buffer
-		picker.pick("Symbols", {}, function(item)
+		local kind: string? = ctx.values.kind
+		-- With a kind, the kinds LSP has that count as it.
+		local wanted: { [string]: boolean } = {}
+		local group: { string } = if kind then SYMBOL_GROUPS[kind] else {}
+		for _, name in group do
+			wanted[name] = true
+		end
+		local title = if kind then `Symbols: {kind}` else "Symbols"
+		picker.pick(title, {}, function(item)
 			common.open_at(item.value.path, item.value.position)
 		end, {
 			source = function(query)
 				local ok, result = common.request(buffer, "workspace/symbol", function()
-					return { query = query }
+					-- rust-analyzer searches only types unless asked for all
+					-- (its own searchKind); other servers pass over it.
+					local all = if kind and kind ~= "type" then "allSymbols" else nil
+					return { query = query, searchKind = all }
 				end)
-				local items = {}
+				local found: { { name: string, kind: string, path: string, at: greed.LspPosition } } =
+					{}
+				local widest = 0
 				for _, symbol in if ok then result or {} else {} do
 					local location = symbol.location
 					local path = location and greed.lsp.path(location.uri)
-					if path and location.range then
-						table.insert(items, {
-							label = symbol.name,
-							detail = `{core.project.relative(path)}:{location.range.start.line + 1}`,
-							value = { path = path, position = location.range.start },
+					local what = common.SYMBOL_KINDS[symbol.kind] or "symbol"
+					if path and location.range and (kind == nil or wanted[what]) then
+						table.insert(found, {
+							name = symbol.name,
+							kind = what,
+							path = path,
+							at = location.range.start,
 						})
+						widest = math.max(widest, #what)
 					end
+				end
+				-- What each is, then where, lined up.
+				local items = {}
+				for _, f in found do
+					local where = `{core.project.relative(f.path)}:{f.at.line + 1}`
+					table.insert(items, {
+						label = f.name,
+						detail = `{f.kind}{string.rep(" ", widest - #f.kind + 2)}{where}`,
+						value = { path = f.path, position = f.at },
+					})
 				end
 				return items
 			end,

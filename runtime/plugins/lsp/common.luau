@@ -60,6 +60,36 @@ function M.ask(buffer: greed.Buffer, method: string, pos: number): (boolean, any
 	end)
 end
 
+--- What a symbol is, by the number LSP gives it (`SymbolKind`), in words.
+M.SYMBOL_KINDS = {
+	"file",
+	"module",
+	"namespace",
+	"package",
+	"class",
+	"method",
+	"property",
+	"field",
+	"constructor",
+	"enum",
+	"interface",
+	"function",
+	"variable",
+	"constant",
+	"string",
+	"number",
+	"boolean",
+	"array",
+	"object",
+	"key",
+	"null",
+	"enum member",
+	"struct",
+	"event",
+	"operator",
+	"type parameter",
+}
+
 local SEVERITY = { "error", "warning", "info", "hint" }
 
 --- A severity's name: "error", "warning", "info" or "hint".
