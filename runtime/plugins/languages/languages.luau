@@ -16,10 +16,11 @@ export type Language = {
 	--- build the project or load its plugins (rust-analyzer, typescript)
 	--- don't: they wait until you trust it.
 	reads_only: boolean?,
-	--- Its servers' settings, as their documentation names them, like
-	--- `{ ["rust-analyzer"] = { cargo = { features = "all" } } }`, and what
-	--- they're started with (`initializationOptions`). A server running
-	--- keeps the ones it started with until `:lsp-restart`.
+	--- Its servers' settings, as their documentation names them, under the
+	--- section a server asks for, and what they're started with
+	--- (`initializationOptions`), which is where rust-analyzer takes its
+	--- own, like `{ cargo = { features = "all" } }`. A server running keeps
+	--- the ones it started with until `:lsp-restart`.
 	settings: { [string]: any }?,
 	init_options: { [string]: any }?,
 	--- What starts a line comment.

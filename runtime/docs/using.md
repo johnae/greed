@@ -1007,11 +1007,18 @@ file's server (`:lsp-restart all` every one). Servers that support it get
 only what changed with each edit.
 
 A server's own settings go on its language, named as its documentation
-names them, and `init_options` for what it's started with:
+names them: `settings` for those it asks for as it runs, under the
+section it asks for (often its own name), and `init_options` for what
+it's started with. Which one a server reads is up to the server, and its
+documentation says.
+
+rust-analyzer only takes what it's started with, so its settings go in
+`init_options`, without the `rust-analyzer` around them. Like this, so
+project symbols (`space S`) find functions too, not only types:
 
 ```luau
 require("@languages").set("rust", {
-	settings = { ["rust-analyzer"] = { cargo = { features = "all" } } },
+	init_options = { workspace = { symbol = { search = { kind = "all_symbols" } } } },
 })
 ```
 
