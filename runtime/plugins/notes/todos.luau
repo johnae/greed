@@ -515,6 +515,9 @@ greed.command({
 		end, {
 			source = function(query)
 				local items = {}
+				if query == "" then
+					return items
+				end
 				local found: { Found } = notes.grep(core.search.pattern(query, "notes")) or {}
 				for _, line in found do
 					table.insert(items, {

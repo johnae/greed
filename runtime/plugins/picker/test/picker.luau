@@ -100,9 +100,10 @@ test("a source follows the query once typing pauses, keeping only the latest ans
 	})
 	t:buffer("|x")
 	t:run("pick-live")
+	t:wait(60)
 	t:keys("a b")
 	t:wait(100)
-	assert(table.concat(asked, ",") == "ab", "asked once typing paused")
+	assert(table.concat(asked, ",") == ",ab", "asked as it opened, then once typing paused")
 	t:wait(50)
 	assert(string.find(greed.view():buffer():text(), " ab!", 1, true), greed.view():buffer():text())
 	t:keys("c")
@@ -116,11 +117,45 @@ test("a source follows the query once typing pauses, keeping only the latest ans
 		"the stale answer isn't shown"
 	)
 	t:wait(100)
-	assert(table.concat(asked, ",") == "ab,abc,abcd", table.concat(asked, ","))
+	assert(table.concat(asked, ",") == ",ab,abc,abcd", table.concat(asked, ","))
 	assert(
 		string.find(greed.view():buffer():text(), " abcd!", 1, true),
 		greed.view():buffer():text()
 	)
+end)
+
+test("a source is asked with nothing typed as the picker opens, and when it's cleared", function(t)
+	local picker = require("@picker")
+	local asked: { string } = {}
+	greed.command({
+		name = "pick-symbols",
+		run = function()
+			picker.pick("Symbols", {}, function() end, {
+				source = function(query: string): { picker.Item }
+					table.insert(asked, query)
+					if query == "" then
+						return { { label = "Parser", detail = "src/parse.rs:3", value = 1 } }
+					end
+					return { { label = `parse_{query}`, value = 2 } }
+				end,
+			})
+		end,
+	})
+	t:buffer("|x")
+	t:run("pick-symbols")
+	t:wait(20)
+	assert(#asked == 1 and asked[1] == "", "asked as it opened")
+	local listed = table.concat(t:floats(), "\n")
+	assert(string.find(listed, "Parser  src/parse.rs:3", 1, true), listed)
+	t:keys("l")
+	t:wait(150)
+	listed = table.concat(t:floats(), "\n")
+	assert(string.find(listed, "parse_l", 1, true), listed)
+	t:keys("backspace")
+	t:wait(150)
+	assert(asked[#asked] == "", table.concat(asked, ","))
+	listed = table.concat(t:floats(), "\n")
+	assert(string.find(listed, "Parser", 1, true), "back to what nothing typed shows: " .. listed)
 end)
 
 test("a picker's own keys don't take over the same keys in later pickers", function(t)

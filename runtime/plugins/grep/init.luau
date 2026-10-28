@@ -82,6 +82,10 @@ local function search_as_you_type(place: Place)
 	local function lines(query: string): { picker.Item }
 		pattern = query
 		local items = {}
+		-- Nothing typed matches every line: nothing to list yet.
+		if query == "" then
+			return items
+		end
 		for _, f in place.find(query) do
 			local label = `{key(f.path, f.line)}: {string.match(f.text, "^%s*(.-)%s*$")}`
 			table.insert(items, { label = label, value = f })

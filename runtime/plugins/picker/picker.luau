@@ -35,9 +35,11 @@ export type Options = {
 	--- the current one.
 	keys: { [string]: (items: { Item }, current: Item?) -> () }?,
 	--- Asks for the items as the query changes, instead of filtering a fixed
-	--- list, for searches too big to list up front. It runs `delay` ms after
-	--- typing stops and can wait, e.g. on `greed.fs.grep`; answers for a query
-	--- that has since changed are dropped. `items` can be empty then.
+	--- list, for searches too big to list up front. It runs as the picker
+	--- opens, with nothing typed, then `delay` ms after typing stops, and can
+	--- wait, e.g. on `greed.fs.grep`; answers for a query that has since
+	--- changed are dropped. `items` can be empty then. A source with nothing
+	--- to show for an empty query gives nothing.
 	source: ((query: string) -> { Item })?,
 	--- Milliseconds without typing before `source` runs; 100 by default.
 	delay: number?,
@@ -389,12 +391,13 @@ local function matching(o: Open, q: string): { number }
 end
 
 -- Filters the items again if the query changed, or with a source, asks it
--- once typing pauses.
+-- once typing pauses, and as the picker opens.
 local function refresh(o: Open)
 	local q = query(o)
 	if q == o.query then
 		return
 	end
+	local opening = o.query == nil
 	o.query = q
 	local paths = o.paths
 	if paths and is_path(q) then
@@ -414,8 +417,11 @@ local function refresh(o: Open)
 	end
 	o.generation += 1
 	local generation = o.generation
-	if q == "" then
-		set_items(o, {})
+	-- Nothing typed is asked too, as Helix does, so a language server's
+	-- symbols show as the picker opens; opening never waits for them.
+	if opening then
+		o.searching = true
+		greed.spawn(search, o, source)
 		return
 	end
 	greed.sleep(o.delay)

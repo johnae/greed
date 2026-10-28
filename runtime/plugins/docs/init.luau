@@ -243,6 +243,9 @@ greed.command({
 		end, {
 			source = function(query: string): { picker.Item }
 				local items: { picker.Item } = {}
+				if query == "" then
+					return items
+				end
 				local pattern = core.search.pattern(query)
 				for _, root in roots do
 					local found: { greed.GrepLine } = greed.fs.grep(

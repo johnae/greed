@@ -1025,7 +1025,7 @@ it the new ones.
 | `g D` `g y` `g i` | Go to the declaration, the type's definition, an implementation |
 | `g r` | Pick a place it's used, with a preview |
 | `space H` | Select every place in this file it's used (Helix's space h, which is help here) |
-| `space S` | Pick a symbol anywhere in the project |
+| `space S` | Pick a symbol anywhere in the project: what the server lists first shows as it opens, and what you type asks it again (rust-analyzer lists only types unless the query has a `#`) |
 | `:rename` | Rename it everywhere it's used (`space r`; also `g r n` in the Vim style, `f2` in the vscode style) |
 | `space a` | Pick a fix or refactor for the cursor or selection, or what a plugin offers there, like linking a note the line mentions |
 | `space d` | Pick a problem in this file |
