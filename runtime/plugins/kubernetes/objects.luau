@@ -612,7 +612,7 @@ end
 core.actions.action({
 	kind = "pod",
 	name = "shell",
-	doc = "A shell in it (bash if it has one) in a floating terminal; with several containers, pick one",
+	doc = "A shell in it, as kubectl exec gives (bash if it has one), in a floating terminal; with several containers, pick one",
 	run = function(target)
 		local value = target.value
 		local pod = ask_json(value, { "get", "pod", value.name, "-o", "json" }, shell.env_of(value))
