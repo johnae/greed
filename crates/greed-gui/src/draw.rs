@@ -303,7 +303,9 @@ pub fn build(
     let boxes = float_boxes(chrome, &looks, (cw, ch));
     let mut instances = Vec::new();
     let fill = |pass: Pass, out: &mut Vec<Instance>| {
-        backgrounds(&looks, &regions, pass, &columns, ch, background, out);
+        backgrounds(
+            &looks, &heights, &regions, pass, &columns, ch, background, out,
+        );
     };
     fill(Pass::Under, &mut instances);
     let rounded = chrome.rounded;
@@ -894,9 +896,17 @@ enum Shape {
 }
 
 /// The backgrounds `pass` draws, a rectangle for each run of one color, or
-/// a badge or pill over the background beside it.
+/// a badge or pill over the background beside it. A cell of scaled text
+/// has its background as tall as the rows it takes (`heights`), and the
+/// cells under it none of their own: those rows are laid out apart, so
+/// theirs would land elsewhere.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each pass draws from the same frame's parts"
+)]
 fn backgrounds(
     looks: &[Vec<Look>],
+    heights: &[Vec<usize>],
     regions: &[Vec<Region>],
     pass: Pass,
     columns: &Columns,
@@ -907,21 +917,25 @@ fn backgrounds(
     let titled = pass == Pass::Floats { border: false };
     for (y, row) in looks.iter().enumerate() {
         let top = y as f32 * ch;
-        let bgs: Vec<Option<(Rgba, Shape)>> = row
+        let bgs: Vec<Option<(Rgba, Shape, usize)>> = row
             .iter()
             .zip(&regions[y])
-            .map(|(l, &r)| match pass.draws(r) {
-                Some(always) if always || l.bg != background => {
-                    let shape = if l.badge {
-                        Shape::Badge
-                    } else if titled && r == Region::Title {
-                        Shape::Title
-                    } else {
-                        Shape::Block
-                    };
-                    Some((l.bg, shape))
+            .enumerate()
+            .map(|(x, (l, &r))| {
+                let height = heights[y].get(x).copied().unwrap_or(1);
+                match pass.draws(r) {
+                    Some(always) if height > 0 && (always || l.bg != background) => {
+                        let shape = if l.badge {
+                            Shape::Badge
+                        } else if titled && r == Region::Title {
+                            Shape::Title
+                        } else {
+                            Shape::Block
+                        };
+                        Some((l.bg, shape, height))
+                    }
+                    _ => None,
                 }
-                _ => None,
             })
             .collect();
         let mut x = 0;
@@ -933,12 +947,15 @@ fn backgrounds(
                 .filter(|b| b.1 == Shape::Block);
             x += same.len();
             match same[0] {
-                Some((bg, Shape::Block)) => out.push(rect(left, top, w, ch, bg)),
-                Some((bg, shape)) => {
-                    if let Some((under, _)) = beside {
-                        out.push(rect(left, top, w, ch, under));
+                Some((bg, Shape::Block, height)) => {
+                    out.push(rect(left, top, w, ch * height as f32, bg));
+                }
+                Some((bg, shape, height)) => {
+                    let h = ch * height as f32;
+                    if let Some((under, _, _)) = beside {
+                        out.push(rect(left, top, w, h, under));
                     }
-                    out.push(badge(left, top, w, ch, shape == Shape::Title, bg));
+                    out.push(badge(left, top, w, h, shape == Shape::Title, bg));
                 }
                 None => {}
             }
