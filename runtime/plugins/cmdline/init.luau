@@ -152,9 +152,16 @@ local function render(o: Open, to_end: boolean?)
 	o.drawn:redraw()
 	local start = prompt_start(o)
 	local prompt = ":" .. o.text
-	if o.buffer:slice(start, o.buffer:len()) ~= prompt then
+	local old = o.buffer:slice(start, o.buffer:len())
+	if old ~= prompt then
+		-- Only what changed, after the ":": text a plugin puts at the
+		-- prompt's start goes before it, with what can't be deleted.
+		local same = 0
+		while same < #old and string.byte(old, same + 1) == string.byte(prompt, same + 1) do
+			same += 1
+		end
 		o.buffer:edit(function(e)
-			e:replace(start, o.buffer:len(), prompt)
+			e:replace(start + same, o.buffer:len(), string.sub(prompt, same + 1))
 		end)
 	end
 	o.drawing = nil
