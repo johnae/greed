@@ -5,7 +5,8 @@
 -- Running it again replaces the result.
 --
 --   space m r   run the block under the cursor (enter on its fence too)
---   space m R   run every block in the file, in order
+--   space m R   run every block in the file, in order, asking before
+--               each one not marked safe=true
 --   space m c   clear the block's result; :blocks-results-clear for all
 --   space m s   stop the block running under the cursor
 --
@@ -22,7 +23,9 @@
 -- `input=NAME` gives another block that result (on stdin, or as `input` in
 -- Luau), running the named block first if it has no result yet, or every
 -- time with `rerun=true`. `dir=PATH` runs a program elsewhere than the
--- file's folder, and `timeout=SECONDS` stops it after that long. Add a
+-- file's folder, and `timeout=SECONDS` stops it after that long.
+-- `safe=true` says running a block changes nothing: only those run without
+-- asking when you didn't press them, as an input or in run all. Add a
 -- language from Luau:
 --
 --     require("@blocks").runner("lua", require("@blocks").program({ "lua", "-e" }))
@@ -483,8 +486,29 @@ end
 -- Says why a block may not run, when it may not; agents' runs have one.
 type Check = (block: Block) -> string?
 
+-- What happens to an input not marked `safe=true`: "ask" asks, "run" runs
+-- it (you said so for all of them), and without either it doesn't run.
+type Unsafe = "ask" | "run"
+
 -- How a run goes beyond the usual: `answer` is the answer whose pick ran it.
-type How = { answer: string? }
+type How = { answer: string?, unsafe: Unsafe? }
+
+--- Whether `block` says running it changes nothing (`safe=true`), so it may
+--- run without you pressing it: as another block's input, or in run all.
+function M.safe(block: Block): boolean
+	return block.opts.safe == "true"
+end
+
+-- Asks whether to run `block`, which isn't marked safe, saying `what` it
+-- is and the `keys` to answer with, and returns the key pressed.
+local function ask(buffer: greed.Buffer, block: Block, what: string, keys: string): string
+	local code = buffer:slice(block.code_from, block.code_to)
+	local first = string.match(code, "^%s*([^\n]*)") or ""
+	greed.echo(`{what}, \`{first}\`: {keys}`)
+	local key = greed.next_key()
+	greed.echo("")
+	return key
+end
 
 local run_block: (
 	buffer: greed.Buffer,
@@ -500,7 +524,8 @@ local function input_for(
 	buffer: greed.Buffer,
 	block: Block,
 	chain: { [string]: boolean },
-	check: Check?
+	check: Check?,
+	unsafe: Unsafe?
 ): (string?, string?)
 	local id = block.opts.input
 	if id == nil then
@@ -515,9 +540,26 @@ local function input_for(
 	end
 	-- With `rerun=true`, the input runs every time, not only without a result.
 	local result = if block.opts.rerun == "true" then nil else source.result
+	-- One not marked safe runs only when you say so, or else its last
+	-- result does.
+	if result == nil and not M.safe(source) and unsafe ~= "run" then
+		local key = "n"
+		if unsafe == "ask" then
+			key = if source.result
+				then ask(buffer, source, `run block {id} again`, "y yes, n use its last result")
+				else ask(buffer, source, `run block {id} first`, "y yes, n no")
+		end
+		if key ~= "y" then
+			result = source.result
+			if result == nil then
+				return nil,
+					`block {id} isn't marked safe=true, so it runs only when it's run itself`
+			end
+		end
+	end
 	if result == nil then
 		chain[id] = true
-		if not run_block(buffer, source, chain, check) then
+		if not run_block(buffer, source, chain, check, { unsafe = unsafe }) then
 			return nil, `block {id} didn't run`
 		end
 		local ran = named(buffer, id)
@@ -558,7 +600,7 @@ function run_block(
 	draw(buffer)
 	-- Running the block its input comes from moves this one, which the
 	-- run's tracked fence follows.
-	local input, failed = input_for(buffer, block, chain, check)
+	local input, failed = input_for(buffer, block, chain, check, how and how.unsafe)
 	local now = block_at(buffer, where(run) or block.from) or block
 	-- Checked on the block as it is now, after any wait for its input.
 	failed = failed or (check and check(now))
@@ -745,14 +787,14 @@ greed.command({
 			greed.echo("there's no code block here")
 		elseif allow(ctx.buffer) then
 			approve(ctx.buffer, with_inputs(ctx.buffer, block))
-			run_block(ctx.buffer, block, {})
+			run_block(ctx.buffer, block, {}, nil, { unsafe = "ask" })
 		end
 	end,
 })
 
 greed.command({
 	name = "blocks-run-all",
-	doc = "Run every code block in the file, in order, saving each one's result",
+	doc = "Run every code block in the file, in order, saving each one's result; asks before those not marked safe=true",
 	run = function(ctx)
 		local buffer = ctx.buffer
 		if #M.runnable(buffer) == 0 then
@@ -763,6 +805,9 @@ greed.command({
 			return
 		end
 		approve(buffer, M.runnable(buffer))
+		-- Blocks not marked safe=true run once you say so, each, or all of
+		-- them with a.
+		local all = false
 		-- Each result moves the blocks after it, so they're found again.
 		local i = 1
 		while true do
@@ -770,8 +815,24 @@ greed.command({
 			if block == nil then
 				break
 			end
-			run_block(buffer, block, {})
 			i += 1
+			if not M.safe(block) and not all then
+				local key = ask(
+					buffer,
+					block,
+					`run line {block.open + 1}`,
+					"y yes, n skip it, a this and the rest, esc stop"
+				)
+				if key == "n" then
+					continue
+				elseif key == "a" then
+					all = true
+				elseif key ~= "y" then
+					greed.echo(`stopped at line {block.open + 1}`)
+					return
+				end
+			end
+			run_block(buffer, block, {}, nil, { unsafe = if all then "run" else "ask" })
 		end
 	end,
 })

@@ -12,6 +12,7 @@ export type Blocks = {
 	runnable: (buffer: greed.Buffer) -> { any },
 	run_for_agent: (buffer: greed.Buffer, block: any) -> boolean,
 	refused: (buffer: greed.Buffer, block: any) -> string?,
+	safe: (block: any) -> boolean,
 }
 
 local object = agent.schema.object
@@ -25,6 +26,7 @@ return function(blocks: Blocks)
 			line = block.open + 1,
 			lang = block.lang,
 			id = block.opts.id,
+			safe = blocks.safe(block),
 			code = buffer:slice(block.code_from, block.code_to),
 			result = block.result and block.result.text,
 		}
@@ -33,7 +35,7 @@ return function(blocks: Blocks)
 	agent.tool({
 		name = "blocks_list",
 		group = "blocks",
-		description = "The runnable code blocks in a Markdown file: each one's index, 1-based line, language, id, code and saved result",
+		description = "The runnable code blocks in a Markdown file: each one's index, 1-based line, language, id, code, saved result, and whether it's marked safe to run again (safe=true: running it changes nothing)",
 		input = object({ path = { type = "string" } }, { "path" }),
 		run = function(args)
 			local buffer = greed.load(args.path)

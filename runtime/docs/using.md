@@ -1823,7 +1823,7 @@ using.md
 | Keys | |
 |---|---|
 | `space m r`, or `enter` on the fence once it shows `▶ run` | Run the block under the cursor |
-| `space m R` | Run every block in the file, in order |
+| `space m R` | Run every block in the file, in order, asking before each one not marked `safe=true` |
 | `space m c` | Clear the block's result (`:blocks-results-clear` clears them all) |
 | `space m s` | Stop the block running under the cursor |
 
@@ -1852,12 +1852,48 @@ Options go after the language:
   block's result: on stdin for a program, as `input` in Luau, and into
   the first line of a `shell` block, so `where STATUS != Running` alone
   works on it. The named block runs first if it has no result yet, so a
-  page of blocks works like a small pipeline. With `rerun=true` on the
-  block taking the input, its input runs again every time, so it never
-  reads a stale result.
+  page of blocks works like a small pipeline; unless it's `safe=true`,
+  Greed asks first (below). With `rerun=true` on the block taking the
+  input, its input runs again every time, so it never reads a stale
+  result.
+- `safe=true` says running the block changes nothing, like `ls` or
+  `kubectl get pods`, so it may run without you pressing it (below).
 - `dir=PATH` runs a program in another folder than the file's.
 - `timeout=SECONDS` stops it after that long.
 - `every=SECONDS`, on a `shell` block, keeps it live (above).
+
+A block runs when you run it. When it would run without you pressing it,
+as the input of the block you ran or in `space m R`, it runs right away
+only with `safe=true`. Any other asks first, showing its first line, so a
+`kubectl delete` or a migration never runs again by accident:
+
+- An input that has a result is read as it is, without asking, unless
+  the block taking it says `rerun=true`. Once it has run, by you or after
+  a `y`, later runs just read its result.
+- An input with no result asks: `y` runs it, `n` stops, saying it isn't
+  marked safe. With `rerun=true` it asks to run again: `y` runs it, `n`
+  uses its last result.
+- An agent's run, or a pick's, never asks: an input that isn't safe and
+  has no result stops it, saying so, and with `rerun=true` its last result
+  is used.
+- `space m R` asks before each block that isn't safe: `y` runs it, `n`
+  skips it, `a` runs it and the rest without asking, `esc` stops.
+
+Like this:
+
+````markdown
+```sh id=pods safe=true
+kubectl get pods -n shop
+```
+
+```sh input=pods rerun=true
+grep -c Running
+```
+````
+
+Choices made as a file opens (`output=choices`), a pick's `when=` blocks,
+buttons and `every=` run as they say they do, since that's what they're
+written for.
 
 While a block runs, its fence shows `■ running`; click that or press
 `space m s` to stop it, along with anything it started, like a server. A

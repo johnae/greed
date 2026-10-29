@@ -76,7 +76,7 @@ end)
 
 test("input= feeds a named block's result to another, running it first", function(t)
 	t:buffer(
-		"```sh id=names\nprintf 'b\\na\\n'\n```\n\n```sh input=names\nsort|\n```\n\n```luau input=names\n#input\n```\n"
+		"```sh id=names safe=true\nprintf 'b\\na\\n'\n```\n\n```sh input=names\nsort|\n```\n\n```luau input=names\n#input\n```\n"
 	)
 	t:run("block-run")
 	-- names ran first, so both have results.
@@ -84,7 +84,7 @@ test("input= feeds a named block's result to another, running it first", functio
 	assert(
 		string.find(
 			text(),
-			"```sh id=names\nprintf 'b\\na\\n'\n```\n\n```result\nb\na\n```",
+			"```sh id=names safe=true\nprintf 'b\\na\\n'\n```\n\n```result\nb\na\n```",
 			1,
 			true
 		),
@@ -99,22 +99,87 @@ test("an input naming no block, or blocks feeding each other, says so", function
 	t:buffer("```sh input=nothing\necho x|\n```\n")
 	t:run("block-run")
 	t:wait_for(has("error: there's no block with id=nothing"))
-	t:buffer("```sh id=a input=b\ncat\n```\n\n```sh id=b input=a\ncat|\n```\n")
+	t:buffer("```sh id=a input=b safe=true\ncat\n```\n\n```sh id=b input=a\ncat|\n```\n")
 	t:run("block-run")
 	t:wait_for(has("feed each other"))
 end)
 
-test("run all runs every block in order", function(t)
-	t:buffer("|```sh\necho one\n```\n\n```text\nnot run\n```\n\n```sh\necho two\n```\n")
+-- Waits until the editor says something with `wanted` in it.
+local function asked(t: any, wanted: string)
+	t:wait_for(function()
+		return string.find(table.concat(t:messages(), "\n"), wanted, 1, true) ~= nil
+	end)
+end
+
+test("run all runs every safe block in order", function(t)
+	t:buffer(
+		"|```sh safe=true\necho one\n```\n\n```text\nnot run\n```\n\n```sh safe=true\necho two\n```\n"
+	)
 	t:run("blocks-run-all")
-	t:wait_for(has("```sh\necho two\n```\n\n```result\ntwo\n```"))
-	assert(string.find(text(), "```sh\necho one\n```\n\n```result\none\n```", 1, true), text())
+	t:wait_for(has("```sh safe=true\necho two\n```\n\n```result\ntwo\n```"))
+	assert(
+		string.find(text(), "```sh safe=true\necho one\n```\n\n```result\none\n```", 1, true),
+		text()
+	)
 	assert(
 		not string.find(text(), "not run\n```\n\n```result", 1, true),
 		"only blocks with a runner"
 	)
 	t:run("blocks-results-clear")
 	assert(not string.find(text(), "```result", 1, true), text())
+end)
+
+test("run all asks before each block not marked safe", function(t)
+	local page =
+		"|```sh safe=true\necho one\n```\n\n```sh\necho two\n```\n\n```sh\necho three\n```\n"
+	t:buffer(page)
+	t:keys("space m R")
+	-- The safe one runs; the next asks, showing its first line and where
+	-- it is now, under the first one's result.
+	asked(t, "run line 9, `echo two`")
+	assert(has("```result\none\n```")(), text())
+	t:keys("n")
+	asked(t, "run line 13, `echo three`")
+	t:keys("y")
+	t:wait_for(has("echo three\n```\n\n```result\nthree\n```"))
+	assert(not has("echo two\n```\n\n```result")(), "n skips it")
+	-- a runs the rest without asking.
+	t:buffer(page)
+	t:keys("space m R")
+	asked(t, "run line 9")
+	t:keys("a")
+	t:wait_for(has("echo three\n```\n\n```result\nthree\n```"))
+	assert(has("echo two\n```\n\n```result\ntwo\n```")(), text())
+	-- Anything else stops there.
+	t:buffer(page)
+	t:keys("space m R")
+	asked(t, "run line 9")
+	t:keys("esc")
+	asked(t, "stopped at line 9")
+	assert(not has("echo three\n```\n\n```result")(), text())
+end)
+
+test("an input not marked safe runs only once you say so", function(t)
+	local page = "```sh id=src\necho src\n```\n\n```sh input=src\ncat|\n```\n"
+	t:buffer(page)
+	t:keys("space m r")
+	asked(t, "run block src first, `echo src`")
+	t:keys("n")
+	t:wait_for(has("error: block src isn't marked safe=true"))
+	t:buffer(page)
+	t:keys("space m r")
+	asked(t, "run block src first")
+	t:keys("y")
+	t:wait_for(has("cat\n```\n\n```result\nsrc\n```"))
+	-- With a result, rerun=true asks to run it again, and n uses the result.
+	t:buffer(
+		"```sh id=src\necho fresh\n```\n\n```result\nstale\n```\n\n```sh input=src rerun=true\ncat|\n```\n"
+	)
+	t:keys("space m r")
+	asked(t, "run block src again, `echo fresh`")
+	t:keys("n")
+	t:wait_for(has("cat\n```\n\n```result\nstale\n```"))
+	assert(not has("fresh\n```\n\n```result\nfresh")(), "it didn't run")
 end)
 
 test("clearing a result takes it away; a block without a runner says which do", function(t)
@@ -230,17 +295,24 @@ test("agents list a file's blocks and run one, in files the user let run", funct
 end)
 
 test("rerun=true runs the input again even when it has a result", function(t)
-	t:buffer("```sh id=n\necho fresh\n```\n\n```result\nstale\n```\n\n```sh input=n\ncat|\n```\n")
+	t:buffer(
+		"```sh id=n safe=true\necho fresh\n```\n\n```result\nstale\n```\n\n```sh input=n\ncat|\n```\n"
+	)
 	t:run("block-run")
 	-- Without the flag, the saved result is used as it is.
 	t:wait_for(has("```sh input=n\ncat\n```\n\n```result\nstale\n```"))
 	t:buffer(
-		"```sh id=n\necho fresh\n```\n\n```result\nstale\n```\n\n```sh input=n rerun=true\ncat|\n```\n"
+		"```sh id=n safe=true\necho fresh\n```\n\n```result\nstale\n```\n\n```sh input=n rerun=true\ncat|\n```\n"
 	)
 	t:run("block-run")
 	t:wait_for(has("```sh input=n rerun=true\ncat\n```\n\n```result\nfresh\n```"))
 	assert(
-		string.find(text(), "```sh id=n\necho fresh\n```\n\n```result\nfresh\n```", 1, true),
+		string.find(
+			text(),
+			"```sh id=n safe=true\necho fresh\n```\n\n```result\nfresh\n```",
+			1,
+			true
+		),
 		text()
 	)
 end)
@@ -276,9 +348,23 @@ test("an agent can't run a trusted file's block once it's changed, until you run
 	assert(tool("blocks_run", { path = path, id = "a" }).result == "pwned", "trusted as it is")
 end)
 
+test("an agent's run never runs an input not marked safe, and lists which are", function(t)
+	local dir = t:tempdir({
+		["run.md"] = "```sh id=wipe\necho wiped\n```\n\n```sh id=count input=wipe\nwc -l\n```\n",
+	})
+	local path = dir .. "/run.md"
+	greed.open(path)
+	t:run("blocks-trust")
+	local listed = tool("blocks_list", { path = path })
+	assert(listed[1].safe == false, "not marked safe")
+	local ran = tool("blocks_run", { path = path, id = "count" })
+	assert(string.find(ran.result, "isn't marked safe=true", 1, true), tostring(ran.result))
+	assert(not has("echo wiped\n```\n\n```result")(), "the input didn't run")
+end)
+
 test("a block changed while it waits for its input doesn't run for an agent", function(t)
 	local dir = t:tempdir({
-		["run.md"] = "```sh id=slow\nsleep 0.3; echo in\n```\n\n```sh id=b input=slow\ncat\n```\n",
+		["run.md"] = "```sh id=slow safe=true\nsleep 0.3; echo in\n```\n\n```sh id=b input=slow\ncat\n```\n",
 	})
 	local path = dir .. "/run.md"
 	greed.open(path)

@@ -134,7 +134,7 @@ end)
 test("input= gives a shell block another block's result to start from", function(t)
 	page(
 		t,
-		"```sh id=sizes\nprintf 'NAME     SIZE\\napple    1\\nbanana   20\\n'\n```\n\n"
+		"```sh id=sizes safe=true\nprintf 'NAME     SIZE\\napple    1\\nbanana   20\\n'\n```\n\n"
 			.. "```shell input=sizes\nwhere SIZE > 5 | select NAME\n```"
 	)
 	greed.view():set_cursor(assert((string.find(text(), "```shell", 1, true))) - 1)
