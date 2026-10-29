@@ -9,6 +9,7 @@
 local greed = require("@greed")
 local core = require("@core")
 local picker = require("@picker")
+local integration = require("@self/integration")
 
 greed.option.define({
 	name = "terminal-scrollback",
@@ -859,9 +860,11 @@ function M.open(command: { string }?, options: OpenOptions?): Term
 		env.GREED_TERMINAL_ID = tostring(buffer:id())
 		env.GREED_BIN = greed.session.program() or false
 	end
+	-- Your shell gets the marks Greed reads, with nothing to set up.
+	local run = integration.wrap(given, env)
 	local spawned, started = pcall(function()
 		return greed.terminal.spawn({
-			command = given,
+			command = run,
 			cwd = opts.cwd or here or greed.project.current().root,
 			env = env,
 			rows = rows or 24,
@@ -1567,7 +1570,7 @@ local function to_command(ctx: greed.Context, back: boolean)
 	if found == nil then
 		greed.echo(
 			if #commands == 0
-				then "no commands marked: the shell has to mark its prompts (see Terminals in the docs)"
+				then "no commands marked: bash, zsh, fish and nushell mark them, other shells need to (see Terminals in the docs)"
 				else `no command {if back then "before" else "after"} this one`
 		)
 		return

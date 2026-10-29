@@ -2217,62 +2217,29 @@ terminal.tasks.serve = { command = { "python", "-m", "http.server" }, cwd = "~/s
 
 ### Commands your shell marks
 
-A shell can mark where each prompt, command and its output start, and how
-the command ended. Greed then knows the commands in a terminal: `[ p` and
-`] p` go between them, `g o` selects one's output, and a command that
-failed shows its exit code at the end of its line.
+Greed knows the commands you run in a terminal: `[ p` and `] p` go
+between them, `g o` selects one's output, and a command that failed shows
+its exit code at the end of its line. It also knows the folder your shell
+is in, so a terminal you open from a terminal starts in the same folder,
+and `g x` (or `ctrl-click`) on a path in the output, like `src/main.rs:12:5`
+from a compiler, opens that file at that line, found from that folder.
 
-fish 4 marks them on its own. For zsh, add this to `~/.zshrc`:
+There's nothing to set up for bash, zsh, fish or nushell. nushell and fish
+4 tell Greed all of it themselves. For bash, zsh and older fish, Greed
+starts the shell pointed at a few lines of its own, through the
+environment, and those read your config as the shell would (your
+`.bashrc` or profile files, your `.zshenv` and `.zshrc`, your fish config)
+before adding what Greed reads. Your files aren't touched, so it works the
+same on NixOS and other read-only or immutable systems, and on machines
+you reach with `greed ssh`. Your prompt stays yours. A
+shell you start with a command (`:terminal bash -c 'make'`) runs as it is,
+and so does macOS's own `/bin/bash`, which is too old for this.
+`:set terminal-shell-integration false` starts shells without it.
 
-```zsh
-_greed_precmd() { local code=$?; print -n "\e]133;D;$code\a\e]133;A\a" }
-_greed_preexec() { print -n "\e]133;C\a" }
-precmd_functions+=(_greed_precmd)
-preexec_functions+=(_greed_preexec)
-PS1="$PS1%{\e]133;B\a%}"
-```
-
-and for bash, to `~/.bashrc`:
-
-```bash
-PROMPT_COMMAND='printf "\e]133;D;%s\a\e]133;A\a" "$?"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-PS1="$PS1\[\e]133;B\a\]"
-PS0='\e]133;C\a'
-```
-
-These are the same marks kitty, WezTerm, Ghostty and iTerm2 read, so they
-work there too.
-
-### The folder your shell is in
-
-A shell can also say which folder it's in. Then a terminal you open from
-a terminal starts in the same folder, and `g x` (or `ctrl-click`) on a path
-in the output, like `src/main.rs:12:5` from a compiler, opens that file at
-that line, finding it from that folder. Without it, paths are found from
-the project's folder.
-
-For fish, add this to `~/.config/fish/config.fish`:
-
-```fish
-function __greed_folder --on-variable PWD
-    printf '\e]7;file://%s%s\a' (hostname) (string escape --style=url $PWD)
-end
-__greed_folder
-```
-
-For zsh:
-
-```zsh
-_greed_folder() { print -n "\e]7;file://$HOST$PWD\a" }
-chpwd_functions+=(_greed_folder)
-_greed_folder
-```
-
-and for bash, in `PROMPT_COMMAND`:
-
-```bash
-PROMPT_COMMAND='printf "\e]7;file://%s%s\a" "$HOSTNAME" "$PWD"'"${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
-```
+Another shell can say the same with the escape sequences kitty, WezTerm,
+Ghostty and iTerm2 read too: `OSC 133;A` where a prompt starts, `B` where
+the command starts, `C` where its output starts and `D;CODE` where it
+ended, and `OSC 7;file://HOST/PATH` for the folder.
 
 ## Shells
 

@@ -435,6 +435,94 @@ test("a shell's marked commands: go between them, select their output, see what 
 	assert(#exits == 1 and exits[1].text == "exit 2", "only the failure shows")
 end)
 
+-- With nothing set up, `shell` (started as `args` say) marks its commands
+-- and says its folder: `false` fails with 1, and `cd /tmp` moves it.
+local function marks_by_itself(t: test.TestContext, shell: string, args: { string })
+	local program = greed.which(shell)
+	if program == nil then
+		print(`skipped: no {shell}`)
+		return
+	end
+	local command = { program }
+	table.move(args, 1, #args, 2, command)
+	t:run("terminal", command)
+	local terminal = require("@terminal")
+	local buffer = greed.view():buffer()
+	t:wait(500)
+	t:type("false\ncd /tmp\n")
+	t:wait_for(function(): boolean
+		local commands = terminal.commands(buffer)
+		return #commands >= 2 and terminal.cwd(buffer) == "/tmp"
+	end)
+	local codes: { number } = {}
+	for _, marked in terminal.commands(buffer) do
+		table.insert(codes, marked.code or -1)
+	end
+	assert(table.find(codes, 1), "false failed: " .. table.concat(codes, " "))
+	t:keys("ctrl-\\")
+	t:type("i exit\n")
+end
+
+-- `shell` started as `args` say in a home of its own with `files`, shows
+-- every line in `said` (what the files print), and still marks commands.
+local function reads_your_files(
+	t: test.TestContext,
+	shell: string,
+	args: { string },
+	files: { [string]: string },
+	said: { string }
+)
+	local program = greed.which(shell)
+	if program == nil then
+		print(`skipped: no {shell}`)
+		return
+	end
+	local home = t:tempdir(files)
+	local command = { program }
+	table.move(args, 1, #args, 2, command)
+	local terminal = require("@terminal")
+	local env: { [string]: string | false } = { HOME = home, ZDOTDIR = false }
+	local term = terminal.open(command, { env = env })
+	for _, line in said do
+		shows(t, line)
+	end
+	t:type("false\n")
+	t:wait_for(function(): boolean
+		for _, marked in terminal.commands(term.buffer) do
+			if marked.code == 1 then
+				return true
+			end
+		end
+		return false
+	end)
+	t:type("exit\n")
+end
+
+test("bash and zsh read your own files as they would, and mark commands", function(t)
+	local rc = {
+		[".bashrc"] = "echo bashrc read\nPS1='mine> '\n",
+		[".bash_profile"] = "echo profile read\n",
+		[".zshenv"] = "echo zshenv read\n",
+		[".zshrc"] = "echo zshrc read\nPS1='mine> '\n",
+	}
+	reads_your_files(t, "bash", {}, rc, { "bashrc read", "mine> " })
+	reads_your_files(t, "bash", { "-l" }, rc, { "profile read" })
+	reads_your_files(t, "zsh", { "-l" }, rc, { "zshenv read", "zshrc read", "mine> " })
+end)
+
+test("bash marks its commands with nothing to set up, as a login shell too", function(t)
+	marks_by_itself(t, "bash", {})
+	marks_by_itself(t, "bash", { "-l" })
+end)
+
+test("zsh marks its commands with nothing to set up", function(t)
+	marks_by_itself(t, "zsh", { "-l" })
+end)
+
+test("fish says its folder with nothing to set up", function(t)
+	marks_by_itself(t, "fish", {})
+end)
+
 test("without marks, going between commands says why", function(t)
 	t:run("terminal", { "sh", "-c", "echo plain; sleep 5" })
 	shows(t, "plain")
