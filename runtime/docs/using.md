@@ -1826,6 +1826,7 @@ using.md
 | `space m R` | Run every block in the file, in order, asking before each one not marked `safe=true` |
 | `space m c` | Clear the block's result (`:blocks-results-clear` clears them all) |
 | `space m s` | Stop the block running under the cursor |
+| `space m k` | Run the blocks marked `safe=true` again, to see what changed |
 
 Blocks run as `shell`, `sh`, `bash`, `zsh`, `fish`, `python`, `node`,
 `ruby`, `luau` and `http`:
@@ -1858,6 +1859,8 @@ Options go after the language:
   result.
 - `safe=true` says running the block changes nothing, like `ls` or
   `kubectl get pods`, so it may run without you pressing it (below).
+- `drift-ignore=REGEX` leaves out what differs every run when showing
+  what changed since the last run (below).
 - `dir=PATH` runs a program in another folder than the file's.
 - `timeout=SECONDS` stops it after that long.
 - `every=SECONDS`, on a `shell` block, keeps it live (above).
@@ -1894,6 +1897,31 @@ grep -c Running
 Choices made as a file opens (`output=choices`), a pick's `when=` blocks,
 buttons and `every=` run as they say they do, since that's what they're
 written for.
+
+When a block's output comes out different from the result it had, the
+result shows how: `≠ changed since the last run` after the fence, a `+`
+by each new line, and the lines that went struck out where they were.
+It stays until the block runs again or you edit its result. Handy on a
+runbook or a setup page you go through again later: the step that went
+differently stands out.
+
+`space m k` checks a whole file that way. It runs only the blocks marked
+`safe=true`, and says how many it checked, how many changed, and how many
+it left alone because they aren't safe. A block whose input isn't safe and
+has no result is left alone too.
+
+Output that differs every run, like a timestamp or an id, would always
+count as changed. `drift-ignore=REGEX` leaves out what the regex matches
+on each line:
+
+````markdown
+```sh safe=true drift-ignore=[0-9]+[smhd]
+kubectl get pods -n shop
+```
+````
+
+Here the pods' ages can change and the block still counts as unchanged;
+a pod that's gone, new or not ready does show.
 
 While a block runs, its fence shows `■ running`; click that or press
 `space m s` to stop it, along with anything it started, like a server. A

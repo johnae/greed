@@ -348,6 +348,77 @@ test("an agent can't run a trusted file's block once it's changed, until you run
 	assert(tool("blocks_run", { path = path, id = "a" }).result == "pwned", "trusted as it is")
 end)
 
+-- The marks showing how results changed since the run before.
+local function drift(): { note: boolean, added: { string }, gone: { string } }
+	local buffer = greed.view():buffer()
+	local out = { note = false, added = {}, gone = {} }
+	for _, mark in buffer:decorations("blocks") do
+		if mark.text == "≠ changed since the last run" then
+			out.note = true
+		elseif mark.style == "diff.plus" then
+			table.insert(out.added, buffer:slice(mark.from, mark.to))
+		elseif mark.style == "diff.minus" and mark.lines then
+			for _, line in mark.lines do
+				table.insert(out.gone, tostring(line))
+			end
+		end
+	end
+	return out
+end
+
+test("a result that comes out different shows what changed, until it's edited", function(t)
+	t:buffer("```sh\nprintf 'a\\nb\\nc\\n'\n```|\n\n```result\na\nold\nc\n```\n")
+	t:run("block-run")
+	t:wait_for(has("```result\na\nb\nc\n```"))
+	local shown = drift()
+	assert(shown.note, "a note on the fence")
+	assert(#shown.added == 1 and shown.added[1] == "b", table.concat(shown.added, "|"))
+	assert(#shown.gone == 1 and shown.gone[1] == "old", table.concat(shown.gone, "|"))
+	-- Editing the result takes it away.
+	local buffer = greed.view():buffer()
+	buffer:edit(function(e)
+		local at = assert((string.find(buffer:text(), "\nb\n", 1, true)))
+		e:replace(at, at + 1, "B")
+	end)
+	assert(not drift().note, "gone once the result is edited")
+end)
+
+test("the same output, a first run or what drift-ignore matches shows no change", function(t)
+	t:buffer("```sh\necho same\n```|\n\n```result\nsame\n```\n")
+	t:run("block-run")
+	-- Done once its fence no longer says it's running.
+	t:wait_for(function()
+		for _, mark in greed.view():buffer():decorations("blocks") do
+			if mark.style == "blocks.running" then
+				return false
+			end
+		end
+		return true
+	end)
+	assert(not drift().note, "same output")
+	t:buffer("```sh\necho first\n```|\n")
+	t:run("block-run")
+	t:wait_for(has("```result\nfirst\n```"))
+	assert(not drift().note, "nothing to compare with")
+	t:buffer("```sh drift-ignore=[0-9]+\necho took 30 ms\n```|\n\n```result\ntook 12 ms\n```\n")
+	t:run("block-run")
+	t:wait_for(has("```result\ntook 30 ms\n```"))
+	assert(not drift().note, "the numbers are left out")
+end)
+
+test("check runs the safe blocks again and says what changed and what it left", function(t)
+	t:buffer(
+		"|```sh safe=true\necho new\n```\n\n```result\nold\n```\n\n"
+			.. "```sh safe=true\necho same\n```\n\n```result\nsame\n```\n\n"
+			.. "```sh\necho risky\n```\n"
+	)
+	t:keys("space m k")
+	asked(t, "checked 2, 1 changed; 1 not marked safe=true, so not run")
+	assert(has("echo new\n```\n\n```result\nnew\n```")(), text())
+	assert(not has("echo risky\n```\n\n```result")(), "the block not marked safe didn't run")
+	assert(drift().note, "the changed one shows it")
+end)
+
 test("an agent's run never runs an input not marked safe, and lists which are", function(t)
 	local dir = t:tempdir({
 		["run.md"] = "```sh id=wipe\necho wiped\n```\n\n```sh id=count input=wipe\nwc -l\n```\n",

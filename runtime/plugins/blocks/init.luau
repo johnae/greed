@@ -9,6 +9,12 @@
 --               each one not marked safe=true
 --   space m c   clear the block's result; :blocks-results-clear for all
 --   space m s   stop the block running under the cursor
+--   space m k   run the blocks marked safe=true again, to see what changed
+--
+-- A result that comes out different from the run before shows how: the
+-- new lines marked, the old ones struck out under them, until the block
+-- runs again or its result is edited. `drift-ignore=REGEX` leaves out what
+-- differs every run, like a timestamp.
 --
 -- Nothing runs when a file opens. The first time you run a block in a file
 -- Greed asks whether to: y for now, a to always trust that file. Files you
@@ -290,8 +296,11 @@ type Running = {
 }
 local running: { Running } = {}
 
+-- Something kept for a block, by its fence, until it runs again.
+type Fenced = { buffer: greed.Buffer, fence: greed.Tracked }
+
 -- What runs drew over their results, by the fence of their block.
-type Drawn = { buffer: greed.Buffer, fence: greed.Tracked, drawing: runners.Drawing }
+type Drawn = Fenced & { drawing: runners.Drawing }
 local drawn: { Drawn } = {}
 
 local OUT_OF_UNDO: { undo: boolean? } = { undo = false }
@@ -338,9 +347,9 @@ local function block_at(buffer: greed.Buffer, pos: number): Block?
 	return nil
 end
 
--- The result block's text for `outcome`: the output, cut to the
--- `blocks-max-lines` option, in a fence longer than any it holds.
-local function result_text(outcome: runners.Outcome): string
+-- What a result block holds for `outcome`: the output, or what went wrong,
+-- cut to the `blocks-max-lines` option.
+local function result_body(outcome: runners.Outcome): string
 	local body = if outcome.error then `error: {outcome.error}` else outcome.output
 	body = string.gsub(string.gsub(body, "\r\n", "\n"), "\n+$", "")
 	local max = greed.option.get("blocks-max-lines") :: number
@@ -348,6 +357,13 @@ local function result_text(outcome: runners.Outcome): string
 	if #lines > max then
 		body = table.concat(lines, "\n", 1, max) .. `\n… {#lines - max} more lines`
 	end
+	return body
+end
+
+-- The result block's text for `outcome`: its body in a fence longer than
+-- any it holds.
+local function result_text(outcome: runners.Outcome): string
+	local body = result_body(outcome)
 	local longest = 0
 	for ticks in string.gmatch(body, "`+") do
 		longest = math.max(longest, #ticks)
@@ -362,17 +378,23 @@ local function result_text(outcome: runners.Outcome): string
 	return `\n\n{fence}{info}\n{body}{if body == "" then "" else "\n"}{fence}`
 end
 
--- Keeps what `outcome` drew to show over the result of `block`, in place
--- of what a run of it drew before.
-local function keep_drawing(buffer: greed.Buffer, block: Block, outcome: runners.Outcome)
-	for i = #drawn, 1, -1 do
-		local d = drawn[i]
+-- Forgets what `list` kept for `block` in `buffer`, and what it kept for
+-- blocks whose fence went.
+local function forget_fenced<T>(list: { T & Fenced }, buffer: greed.Buffer, block: Block)
+	for i = #list, 1, -1 do
+		local d = list[i]
 		local at = d.fence:range()
 		if d.buffer == buffer and (at == nil or at == block.from) then
 			d.fence:forget()
-			table.remove(drawn, i)
+			table.remove(list, i)
 		end
 	end
+end
+
+-- Keeps what `outcome` drew to show over the result of `block`, in place
+-- of what a run of it drew before.
+local function keep_drawing(buffer: greed.Buffer, block: Block, outcome: runners.Outcome)
+	forget_fenced(drawn, buffer, block)
 	local drawing = outcome.drawing
 	if drawing then
 		local fence = buffer:track_range(block.from, buffer:line_end(block.open))
@@ -380,8 +402,88 @@ local function keep_drawing(buffer: greed.Buffer, block: Block, outcome: runners
 	end
 end
 
+-- Results that came out different from the run before, by the fence of
+-- their block: the result before (`old`) and now (`new`), shown as a diff
+-- until the block runs again or its result is edited.
+type Drift = Fenced & { old: string, new: string, ignore: string? }
+local drifts: { Drift } = {}
+-- How many results came out different, ever, so a check can count its own.
+local drifted = 0
+
+-- `text` with what the regex `ignore` matches in each line made the same,
+-- so timestamps and ids that differ every run don't count as a change.
+local function ignoring(text: string, ignore: string?): string
+	if ignore == nil then
+		return text
+	end
+	local lines = string.split(text, "\n")
+	for i, line in lines do
+		local found = greed.text.matches(line, ignore)
+		local kept, at = {}, 1
+		for _, match in found or {} :: { greed.TextMatch } do
+			table.insert(kept, string.sub(line, at, match.from - 1))
+			at = match.to + 1
+		end
+		table.insert(kept, string.sub(line, at))
+		lines[i] = table.concat(kept, "…")
+	end
+	return table.concat(lines, "\n")
+end
+
+-- How many lines of `text` end before byte `at`.
+local function lines_before(text: string, at: number): number
+	local _, count = string.gsub(string.sub(text, 1, at), "\n", "")
+	return count
+end
+
+-- The lines that differ between `old` and `new`, apart from what `ignore`
+-- matches: in each, the 0-based lines `old_from` up to `old_to` of `old`
+-- became `new_from` up to `new_to` of `new`.
+local function changed_lines(
+	old: string,
+	new: string,
+	ignore: string?
+): { { old_from: number, old_to: number, new_from: number, new_to: number } }
+	local a, b = ignoring(old, ignore) .. "\n", ignoring(new, ignore) .. "\n"
+	local out = {}
+	local shift = 0
+	for _, change in greed.diff(a, b) do
+		local new_from = lines_before(b, change.from + shift)
+		local _, added = string.gsub(change.text, "\n", "")
+		table.insert(out, {
+			old_from = lines_before(a, change.from),
+			old_to = lines_before(a, change.to),
+			new_from = new_from,
+			new_to = new_from + added,
+		})
+		shift += #change.text - (change.to - change.from)
+	end
+	return out
+end
+
+-- Notes whether `block`'s result, `old` before this run, came out
+-- different as `new`, so it shows; a result the same as before shows none.
+local function note_drift(buffer: greed.Buffer, block: Block, old: string?, new: string)
+	forget_fenced(drifts, buffer, block)
+	local ignore: string? = block.opts["drift-ignore"]
+	if ignore then
+		local _, bad = greed.text.matches("", ignore)
+		if bad then
+			greed.echo(`drift-ignore: {bad}`)
+			ignore = nil
+		end
+	end
+	if old == nil or #changed_lines(old, new, ignore) == 0 then
+		return
+	end
+	drifted += 1
+	local fence = buffer:track_range(block.from, buffer:line_end(block.open))
+	table.insert(drifts, { buffer = buffer, fence = fence, old = old, new = new, ignore = ignore })
+end
+
 -- Saves `outcome` as the result of `block`, replacing the one it had,
--- kept to undo unless `opts` says.
+-- kept to undo unless `opts` says. A live block's updates aren't compared
+-- with the one before, since they change all the time.
 local function save(
 	buffer: greed.Buffer,
 	block: Block,
@@ -389,6 +491,9 @@ local function save(
 	opts: { undo: boolean? }?
 )
 	keep_drawing(buffer, block, outcome)
+	if opts ~= OUT_OF_UNDO then
+		note_drift(buffer, block, block.result and block.result.text, result_body(outcome))
+	end
 	local text = result_text(outcome)
 	-- After the closing fence's line break when there is one, so a cursor
 	-- at the fence's end stays there rather than going after the result.
@@ -837,6 +942,60 @@ greed.command({
 	end,
 })
 
+-- Whether `block` keeps its output in a result: not one making choices,
+-- a button, one a pick runs or a live one.
+local function keeps_result(block: Block): boolean
+	local o = block.opts
+	return o.output ~= "choices" and not o.button and not o.when and not o.every
+end
+
+-- Whether `block` would need an input run that isn't marked safe and has
+-- no result, which a check doesn't do.
+local function needs_unsafe_input(buffer: greed.Buffer, block: Block): boolean
+	for _, needed in with_inputs(buffer, block) do
+		local source = needed.opts.input and named(buffer, needed.opts.input)
+		if source and not M.safe(source) and source.result == nil then
+			return true
+		end
+	end
+	return false
+end
+
+greed.command({
+	name = "blocks-check",
+	doc = "Run this file's blocks marked safe=true again and mark those whose output changed since the last run",
+	run = function(ctx)
+		local buffer = ctx.buffer
+		if not allow(buffer) then
+			return
+		end
+		local checked, left, before = 0, 0, drifted
+		-- Each result moves the blocks after it, so they're found again.
+		local i = 1
+		while true do
+			local block = M.runnable(buffer)[i]
+			if block == nil then
+				break
+			end
+			i += 1
+			if keeps_result(block) then
+				if M.safe(block) and not needs_unsafe_input(buffer, block) then
+					run_block(buffer, block, {})
+					checked += 1
+				else
+					left += 1
+				end
+			end
+		end
+		local changed = drifted - before
+		local said = `checked {checked}, {changed} changed`
+		if left > 0 then
+			said ..= `; {left} not marked safe=true, so not run`
+		end
+		greed.echo(said)
+	end,
+})
+
 greed.command({
 	name = "block-result-clear",
 	doc = "Remove the result under the code block at the cursor",
@@ -1018,6 +1177,54 @@ markdown.choices.on_pick(function(buffer, group, by)
 	greed.vouch(greed.plugin.within, by, heard, buffer, group)
 end)
 
+-- The line `result`'s text starts on: the one after its opening fence.
+local function first_line(buffer: greed.Buffer, result: { from: number, to: number }): number
+	local first = buffer:line_of(result.from) + 1
+	while first < buffer:line_count() and string.sub(buffer:line_text(first), 1, 3) ~= "```" do
+		first += 1
+	end
+	return first + 1
+end
+
+-- The marks showing how `drift`'s result changed since the run before: a
+-- note after the block's fence, the lines that are new, and those that
+-- went shown under the line before them, struck out.
+local function drift_marks(buffer: greed.Buffer, block: Block, drift: Drift): { greed.Mark }
+	local first = first_line(buffer, assert(block.result))
+	local fence_end = buffer:line_end(block.open)
+	local out: { greed.Mark } = {
+		{
+			from = fence_end,
+			to = fence_end,
+			style = "diff.delta",
+			text = "≠ changed since the last run",
+			eol = true,
+		},
+	}
+	local old_lines = string.split(drift.old, "\n")
+	for _, change in changed_lines(drift.old, drift.new, drift.ignore) do
+		-- A sign by each new line, as the text may already be green.
+		for line = first + change.new_from, first + change.new_to - 1 do
+			table.insert(out, {
+				from = buffer:line_start(line),
+				to = buffer:line_end(line),
+				style = "diff.plus",
+				sign = "+",
+			})
+		end
+		if change.old_to > change.old_from then
+			local gone: { greed.MarkLine } = {}
+			for n = change.old_from + 1, change.old_to do
+				table.insert(gone, old_lines[n])
+			end
+			-- Under the line before the change: the result's fence for the first.
+			local above = buffer:line_start(first + change.new_from - 1)
+			table.insert(out, { from = above, to = above, style = "diff.minus", lines = gone })
+		end
+	end
+	return out
+end
+
 -- The marks showing `drawing` over `result`'s text: its lines' styles,
 -- and its scene over them, for the clients that draw one better. None when
 -- the result's text isn't the drawing's, as after an edit.
@@ -1026,12 +1233,7 @@ local function drawing_marks(
 	result: { from: number, to: number },
 	drawing: runners.Drawing
 ): { greed.Mark }
-	-- The result's text starts the line after its opening fence.
-	local first = buffer:line_of(result.from) + 1
-	while first < buffer:line_count() and string.sub(buffer:line_text(first), 1, 3) ~= "```" do
-		first += 1
-	end
-	first += 1
+	local first = first_line(buffer, result)
 	local count = #drawing.lines
 	if first + count > buffer:line_of(result.to) then
 		return {}
@@ -1123,6 +1325,22 @@ function draw(buffer: greed.Buffer)
 			end
 		end
 	end
+	-- A result edited since, or gone, shows no change any more.
+	for i = #drifts, 1, -1 do
+		local d = drifts[i]
+		if d.buffer == buffer then
+			local at = d.fence:range()
+			local block = if at then block_at(buffer, at) else nil
+			if block and block.result and block.result.text == d.new then
+				for _, mark in drift_marks(buffer, block, d) do
+					table.insert(marks, mark)
+				end
+			else
+				d.fence:forget()
+				table.remove(drifts, i)
+			end
+		end
+	end
 	if M.on(buffer) then
 		for _, block in M.runnable(buffer) do
 			if not busy[block.from] and not behind[block.from] then
@@ -1170,6 +1388,7 @@ greed.keymap.bind({ layer = "leader" }, {
 	["m R"] = "blocks-run-all",
 	["m c"] = "block-result-clear",
 	["m s"] = "block-stop",
+	["m k"] = "blocks-check",
 })
 
 --- Command buttons in Markdown, `[label](run:command)`; see links.luau.
