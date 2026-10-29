@@ -1180,7 +1180,10 @@ greed.command({
 	doc = "Send esc to the terminal's program; a second one quickly after stops typing into it",
 	run = function(ctx)
 		local now = greed.now()
-		if now - last_esc <= DOUBLE_ESC then
+		-- A second esc while the first is still held came in time, however
+		-- late the editor gets to it: keys go before timers, so a busy
+		-- editor (a program's output pouring in) may only see it now.
+		if held_esc ~= nil or now - last_esc <= DOUBLE_ESC then
 			last_esc = -math.huge
 			-- The first never reached the program, if it was held.
 			held_esc = nil

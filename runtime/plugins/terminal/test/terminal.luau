@@ -385,6 +385,22 @@ test("on the normal screen, esc esc leaves without the program getting an esc", 
 	t:keys("ctrl-d")
 end)
 
+test("esc esc leaves even when the editor was too busy to see the second in time", function(t)
+	t:run("terminal", { "cat", "-v" })
+	t:keys("esc")
+	-- Busy, as with a program's output pouring in: the second esc is seen
+	-- well after the wait, but before the first was sent.
+	local busy = greed.now()
+	while greed.now() - busy < 400 do
+	end
+	t:keys("esc")
+	assert(greed.mode.get() == "helix", "left")
+	t:keys("i x enter")
+	shows(t, "x")
+	assert(not string.find(greed.view():buffer():text(), "^[", 1, true), "no esc reached it")
+	t:keys("ctrl-d")
+end)
+
 test(
 	"a full screen program gets esc at once, and so does any with terminal-esc-wait off",
 	function(t)
