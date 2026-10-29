@@ -604,6 +604,20 @@ fn a_views_own_marks_show_in_it_alone_and_go_when_it_closes() {
 }
 
 #[test]
+fn padding_leaves_room_above_and_left_of_a_views_text() {
+    use greed_core::Padding;
+    let mut ed = editor("a|b\ncd");
+    let view = ed.focus();
+    ed.set_padding(view, Padding { top: 1, left: 3 });
+    let shown = frame(&mut ed, 12, 5);
+    assert_eq!(rows(&shown), ["", "   1 ab", "   2 cd", ""]);
+    // The cursor, and what's clicked, are where the text went.
+    assert_eq!(shown.cursor, Some(Position { col: 6, row: 1 }));
+    ed.set_padding(view, Padding::default());
+    assert_eq!(rows(&frame(&mut ed, 12, 5)), ["1 ab", "2 cd", "", ""]);
+}
+
+#[test]
 fn a_client_without_its_status_line_gives_the_row_to_the_text() {
     let mut ed = editor("|a\nb\nc");
     let client = ed.client();

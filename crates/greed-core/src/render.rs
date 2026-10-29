@@ -993,12 +993,48 @@ impl<M: Measure> Renderer<M> {
         row
     }
 
+    /// Lays out one view to fill `room`, as [`Self::text_rows`] does, inside
+    /// the padding the view asks for: empty rows above its text, and empty
+    /// cells left of it.
+    fn view_rows(
+        &self,
+        editor: &mut Editor,
+        view_id: ViewId,
+        room: Rect,
+        line_numbers: bool,
+        decorations: &dyn Decorations,
+    ) -> Laid {
+        let padding = editor.view(view_id).padding;
+        let top = padding.top.min(room.height.saturating_sub(1));
+        let left = padding.left.min(room.width.saturating_sub(1));
+        if top == 0 && left == 0 {
+            return self.text_rows(editor, view_id, room, line_numbers, decorations);
+        }
+        let inner = Rect {
+            x: room.x + left,
+            y: room.y + top,
+            width: room.width - left,
+            height: room.height - top,
+        };
+        let mut laid = self.text_rows(editor, view_id, inner, line_numbers, decorations);
+        if left > 0 {
+            let indent = " ".repeat(usize::from(left));
+            for row in laid.rows.iter_mut().filter(|r| !r.spans.is_empty()) {
+                row.spans
+                    .insert(0, Span::new(indent.clone(), SmallVec::new()));
+            }
+        }
+        laid.rows
+            .splice(0..0, std::iter::repeat_n(Row::default(), usize::from(top)));
+        laid
+    }
+
     /// Lays out one view to fill `room`, scrolling it to keep its primary
     /// cursor visible: its rows, and where that cursor is on screen. A
     /// buffer with a screen size of its own, like a terminal's, is laid out
     /// at that size from `room`'s top left, whatever room the view has, for
     /// the client to crop or scale to fit.
-    fn view_rows(
+    fn text_rows(
         &self,
         editor: &mut Editor,
         view_id: ViewId,

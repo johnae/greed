@@ -347,6 +347,8 @@ export type View = {
 	set_keys: (self: View, keys: { [string]: string }?) -> (),
 	--- Leaves the marks in these namespaces out of what this view draws, e.g. `{ "lsp" }` for slides without the problems' squiggles; other views of the buffer still draw them. Replaces the list it had; nil or empty draws them all again.
 	hide_marks: (self: View, namespaces: { string }?) -> (),
+	--- Leaves rows empty above its text and cells empty left of it, e.g. `{ top = 4, left = 8 }` for a slide's margin; `size()` is then the room inside. Nil takes it away.
+	set_padding: (self: View, padding: { top: number?, left: number? }?) -> (),
 	--- The first and last line it's narrowed to, or nil when it shows all of its buffer.
 	narrowed: (self: View) -> (number?, number?),
 	--- Shows only the lines a filter keeps, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. `text` is what was typed, given back by `filter()`; with `regex` it's a regex. Otherwise the lines `query` matches, a query `core.query` parsed (as the shell's filters read one: query.luau there): its words anywhere in a line (minding case with `case`), its fields those of a line of JSON (dotted paths, through arrays) or logfmt, compared as `greed.compare` does, and `key=value` found in the text of other lines; without a query, every word of `text`. A `section` ("status.conditions") keeps the indented text (YAML, indented JSON) under those keys, with the keys above what shows. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.

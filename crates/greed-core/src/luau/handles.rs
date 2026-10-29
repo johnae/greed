@@ -456,6 +456,21 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
             Ok(())
         },
     );
+    methods.add_method("set_padding", |lua, this, padding: Option<Table>| {
+        this.with_view(lua, |_| Ok(()))?;
+        let side = |name: &str| -> LuaResult<u16> {
+            match &padding {
+                Some(t) => Ok(t.get::<Option<u16>>(name)?.unwrap_or(0)),
+                None => Ok(0),
+            }
+        };
+        let padding = crate::Padding {
+            top: side("top")?,
+            left: side("left")?,
+        };
+        state_mut(lua).editor.set_padding(this.id, padding);
+        Ok(())
+    });
     methods.add_method("hide_marks", |lua, this, hidden: Option<Vec<String>>| {
         this.with_view(lua, |_| Ok(()))?;
         let hidden = hidden

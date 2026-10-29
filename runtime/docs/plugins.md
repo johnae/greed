@@ -956,6 +956,9 @@ greed.tab.set_layout({
   their signs and messages in `"lsp"`. `view:hide_marks({ "diagnostics",
   "lsp" })` leaves a namespace's marks out of one view, as slides do;
   `view:hide_marks(nil)` draws them all again.
+- `view:set_padding({ top = 4, left = 8 })` leaves rows empty above a
+  view's text and cells empty left of it, like a slide's margins; its
+  `size()` is then the room inside, for centring what's in it.
 - Multibuffers show excerpts of many files in one buffer, edited in place:
   `require("@multibuffer").open({ { path = path, from = 9, to = 12 } },
   { summary = "3 places" })` gives a buffer to show in a panel or float,

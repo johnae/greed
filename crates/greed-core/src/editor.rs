@@ -81,6 +81,15 @@ pub struct View {
     pub keys: Arc<HashMap<Key, Arc<str>>>,
     /// The namespaces of marks it doesn't draw, like problems on a slide.
     pub hidden_marks: Arc<[Arc<str>]>,
+    /// Room left empty above and left of its text, like a slide's margin.
+    pub padding: Padding,
+}
+
+/// Empty rows above a view's text and empty cells left of it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Padding {
+    pub top: u16,
+    pub left: u16,
 }
 
 impl View {
@@ -997,6 +1006,16 @@ impl Editor {
     pub fn set_buffer_keys(&mut self, buffer: BufferId, keys: HashMap<Key, Arc<str>>) {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.set_keys(keys);
+        }
+    }
+
+    /// Leaves `padding` empty above and left of `view`'s text, for every
+    /// client.
+    pub fn set_padding(&mut self, view: ViewId, padding: Padding) {
+        for client in self.clients.values_mut() {
+            if let Some(view) = client.views.get_mut(&view) {
+                view.padding = padding;
+            }
         }
     }
 
@@ -2316,6 +2335,7 @@ impl Editor {
             columns: 0,
             keys: Arc::default(),
             hidden_marks: Arc::default(),
+            padding: Padding::default(),
         })
     }
 
