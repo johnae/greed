@@ -902,6 +902,9 @@ async fn round(
             }
         }
     }
+    // A change that waited for a UID this round found, like trashing what
+    // was just archived, goes now rather than a round later.
+    send_changes(&mut connection, store, index, account, id, shared).await?;
     asked_for(&mut connection, store, index, id, shared).await?;
     // Once what's asked for is done; what's asked meanwhile waits a round.
     // Attachments, like bodies, wait until every header is in.
@@ -909,9 +912,18 @@ async fn round(
         more |= fetch_ahead(&mut connection, store, id, &shared.kept).await?;
     }
     let (messages, _) = store.counts(id).map_err(|e| e.0)?;
+    synced(shared, account, messages, of, !more);
+    let _ = connection.close().await;
+    Ok(more)
+}
+
+/// Says a round of `account` is over, with how many `messages` are in of
+/// how many the server has (`of`), and whether that's all (`done`), and
+/// keeps it as where the account stands.
+fn synced(shared: &Shared, account: &Account, messages: i64, of: Option<u64>, done: bool) {
     shared.notify(
         "synced",
-        &json!({ "account": account.name, "messages": messages, "of": of, "done": !more }),
+        &json!({ "account": account.name, "messages": messages, "of": of, "done": done }),
     );
     lock(&shared.standing).insert(
         account.name.clone(),
@@ -919,12 +931,10 @@ async fn round(
             name: account.name.clone(),
             messages,
             of,
-            done: !more,
+            done,
             trouble: None,
         },
     );
-    let _ = connection.close().await;
-    Ok(more)
 }
 
 /// How many messages the account has on the server, for a sync to say how

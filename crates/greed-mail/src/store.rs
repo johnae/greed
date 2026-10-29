@@ -441,10 +441,10 @@ struct Place {
 }
 
 impl Place {
-    /// Whether the message is filed here, as in a folder: not All Mail,
-    /// which holds everything, nor a Bridge label.
+    /// Whether the message is filed here, as in a folder, or on its way
+    /// there: not All Mail, which holds everything, nor a Bridge label.
     fn folder(&self) -> bool {
-        self.uid > 0 && self.role.as_deref() != Some("all") && !self.name.starts_with("Labels/")
+        self.role.as_deref() != Some("all") && !self.name.starts_with("Labels/")
     }
 
     /// Whether this is Bridge's label `name` (its `Labels/NAME` mailbox),
@@ -737,6 +737,18 @@ impl Store {
                 "DELETE FROM places WHERE message = ?1 AND mailbox = ?2 AND uid < 0",
                 params![id, mailbox],
             )?;
+            // Moved on from here before that: the move goes by that UID
+            // now, and it isn't here any more.
+            let moving_on = tx.execute(
+                "UPDATE pending SET uid = ?3 WHERE message = ?1 AND mailbox = ?2 AND uid < 0",
+                params![id, mailbox, f.uid],
+            )?;
+            if moving_on > 0 {
+                tx.execute(
+                    "DELETE FROM places WHERE mailbox = ?1 AND uid = ?2",
+                    params![mailbox, f.uid],
+                )?;
+            }
         }
         tx.execute(
             "UPDATE mailboxes SET high = ?2, low = ?3, synced_at = datetime('now') WHERE id = ?1",
@@ -1189,17 +1201,26 @@ impl Store {
         match undo {
             Undo::Act(action) => self.act(id, action),
             Undo::Back { to } => {
-                let waiting: Vec<i64> = self
+                let waiting: Vec<(i64, String)> = self
                     .db
                     .prepare(
-                        "SELECT id FROM pending WHERE message = ?1 AND op = 'move' ORDER BY id",
+                        "SELECT id, arg FROM pending WHERE message = ?1 AND op = 'move' ORDER BY id",
                     )?
-                    .query_map([id], |r| r.get(0))?
+                    .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))?
                     .collect::<Result<_, _>>()?;
-                if waiting.is_empty() {
+                // The last change's moves, one from each folder it was in;
+                // those before it stay, as archiving under a trashing.
+                let newest = waiting.last().map(|(_, arg)| arg);
+                let last: Vec<i64> = waiting
+                    .iter()
+                    .rev()
+                    .take_while(|(_, arg)| Some(arg) == newest)
+                    .map(|(pending, _)| *pending)
+                    .collect();
+                if last.is_empty() {
                     self.act(id, &Action::Move { to: to.clone() })
                 } else {
-                    self.take_back(&waiting, false)?;
+                    self.take_back(&last, false)?;
                     Ok(true)
                 }
             }
@@ -1266,13 +1287,14 @@ impl Store {
     }
 
     /// What `account` changed here that its server doesn't have yet, in
-    /// the order it was done.
+    /// the order it was done. A change to a message moved here from this
+    /// end waits until the sync finds its UID in its new mailbox.
     pub fn pending(&self, account: i64) -> Result<Vec<Pending>, Trouble> {
         let mut statement = self.db.prepare(
             "SELECT pending.id, mailboxes.name, pending.uid, pending.uidvalidity, pending.op,
                  pending.arg
              FROM pending JOIN mailboxes ON mailboxes.id = pending.mailbox
-             WHERE mailboxes.account = ?1 ORDER BY pending.id",
+             WHERE mailboxes.account = ?1 AND pending.uid > 0 ORDER BY pending.id",
         )?;
         let pending = statement
             .query_map([account], |r| {
@@ -1390,7 +1412,7 @@ impl Store {
     pub fn take_back(&mut self, ids: &[i64], forsaken: bool) -> Result<(), Trouble> {
         let tx = self.db.transaction()?;
         for id in ids {
-            let Some((message, mailbox, uid, op, arg)): Option<(i64, i64, u32, String, String)> =
+            let Some((message, mailbox, uid, op, arg)): Option<(i64, i64, i64, String, String)> =
                 tx.query_row(
                     "SELECT message, mailbox, uid, op, arg FROM pending WHERE id = ?1",
                     [id],
@@ -2230,6 +2252,90 @@ mod tests {
         assert_eq!((kept.text.as_deref(), kept.calendar), (Some("hi"), None));
         let wanting = store.wanting(inbox.id, 10).unwrap();
         assert_eq!(wanting.len(), 1);
+    }
+
+    #[test]
+    fn a_message_moved_on_before_its_uid_there_is_found_waits_for_it() {
+        let dir = temp("move-on");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let archive = store.mailbox(account, "Archive", Some("archive")).unwrap();
+        let trash = store.mailbox(account, "Trash", Some("trash")).unwrap();
+        store
+            .put(account, inbox.id, &[mail(1, "a", &[], None)], 1, 1)
+            .unwrap();
+        let id = store.messages_of(&format!("m:{account}:pm:a")).unwrap()[0];
+        store.act(id, &Action::Archive).unwrap();
+        let archived: Vec<i64> = store
+            .pending(account)
+            .unwrap()
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        // The server has it in the archive, under a UID not found yet.
+        store.sent(&archived).unwrap();
+        let back = store.undoing(id, &Action::Trash).unwrap();
+        assert_eq!(
+            back,
+            Some(Undo::Back {
+                to: "Archive".into()
+            })
+        );
+        assert!(
+            store.act(id, &Action::Trash).unwrap(),
+            "trashed here at once"
+        );
+        let waiting = places(&store, id);
+        assert_eq!(waiting.len(), 1, "{waiting:?}");
+        assert_eq!(waiting[0].0, trash.id);
+        assert!(
+            store.pending(account).unwrap().is_empty(),
+            "nothing to send before its UID in the archive is known"
+        );
+        // Found there: moved on from there, and not shown there again.
+        store
+            .put(account, archive.id, &[mail(9, "a", &[], None)], 9, 9)
+            .unwrap();
+        let pending = store.pending(account).unwrap();
+        assert_eq!(pending.len(), 1, "{pending:?}");
+        assert_eq!(
+            (
+                pending[0].mailbox.as_str(),
+                pending[0].uid,
+                pending[0].op.as_str(),
+                pending[0].arg.as_str()
+            ),
+            ("Archive", 9, "move", "Trash")
+        );
+        assert_eq!(places(&store, id), [(trash.id, waiting[0].1)]);
+    }
+
+    #[test]
+    fn undo_takes_back_only_the_last_of_moves_still_waiting() {
+        let dir = temp("undo-last");
+        let mut store = Store::open(&dir).unwrap();
+        let account = store.account("a", "a@example.com").unwrap();
+        let inbox = store.mailbox(account, "INBOX", Some("inbox")).unwrap();
+        let archive = store.mailbox(account, "Archive", Some("archive")).unwrap();
+        store.mailbox(account, "Trash", Some("trash")).unwrap();
+        store
+            .put(account, inbox.id, &[mail(1, "a", &[], None)], 1, 1)
+            .unwrap();
+        let id = store.messages_of(&format!("m:{account}:pm:a")).unwrap()[0];
+        store.act(id, &Action::Archive).unwrap();
+        let back = store.undoing(id, &Action::Trash).unwrap().unwrap();
+        store.act(id, &Action::Trash).unwrap();
+        store.undo(id, &back).unwrap();
+        let left = places(&store, id);
+        assert_eq!(left.len(), 1, "{left:?}");
+        assert_eq!(
+            left[0].0, archive.id,
+            "in the archive again, on its way there"
+        );
+        let pending = store.pending(account).unwrap();
+        assert_eq!(pending.len(), 1, "the archiving still waits: {pending:?}");
+        assert_eq!(pending[0].arg, "Archive");
     }
 
     #[test]

@@ -653,23 +653,17 @@ fn mail_marked_moved_and_deleted_here_is_so_on_the_server() {
     act(&mut served, "trash", &two);
     wait_until("in the trash", || files(&dovecot, "Trash").len() == 1);
     // The sync finds it in the trash under its UID there; then it can go
-    // for good.
+    // for good, only when asked for, since it can't be undone. Trashing
+    // it again changes nothing meanwhile, so it's asked until then.
+    let mut asked = serde_json::Value::Null;
     wait_until("found in the trash", || {
-        let thread = served.ask("thread", &serde_json::json!({ "key": two }));
-        !thread.is_null() && {
-            let status = served.ask("status", &serde_json::json!({}));
-            status["accounts"][0]["done"] == true
-        }
+        asked = served.ask(
+            "act",
+            &serde_json::json!({ "action": "trash", "keys": [two] }),
+        );
+        asked["in_trash"] == 1
     });
-    // Only when asked for: it can't be undone.
-    let asked = served.ask(
-        "act",
-        &serde_json::json!({ "action": "trash", "keys": [two] }),
-    );
-    assert_eq!(
-        (asked["changed"].clone(), asked["in_trash"].clone()),
-        (0.into(), 1.into())
-    );
+    assert_eq!(asked["changed"], 0, "{asked}");
     let params = serde_json::json!({ "action": "trash", "keys": [two], "for_good": true });
     assert_eq!(served.ask("act", &params)["changed"], 1);
     wait_until("gone for good", || files(&dovecot, "Trash").is_empty());
