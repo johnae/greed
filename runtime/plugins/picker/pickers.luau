@@ -22,9 +22,12 @@ local function file_preview(item: picker.Item): picker.Preview?
 	return { text = text, language = greed.language_of(item.value) }
 end
 
--- An open buffer's text as it is now, saved or not.
+-- An open buffer's text as it is now, saved or not: the buffer of a file
+-- by its path, or a buffer without one.
 local function buffer_preview(item: picker.Item): picker.Preview?
-	local buffer = greed.buffer_for(item.value)
+	local buffer: greed.Buffer? = if type(item.value) == "string"
+		then greed.buffer_for(item.value)
+		else item.value :: greed.Buffer
 	return if buffer then { text = buffer:text(), language = buffer:language() } else nil
 end
 
@@ -67,10 +70,11 @@ greed.command({
 
 greed.command({
 	name = "pick-buffer",
-	doc = "Switch to an open file",
+	doc = "Switch to an open file, or a buffer kept open without one, like a shell's > buf:NAME",
 	run = function()
 		-- The files you were in last come first, named as the file picker
-		-- names them, with [+] on those with unsaved changes.
+		-- names them, with [+] on those with unsaved changes; buffers of
+		-- text kept open without a file go by their name.
 		local items: { picker.Item } = {}
 		local listed: { [number]: boolean } = {}
 		local buffers = core.recent.buffers()
@@ -79,17 +83,27 @@ greed.command({
 		end
 		for _, buffer in buffers do
 			local path = buffer:path()
-			if path and not listed[buffer:id()] then
+			local name = buffer:name()
+			if listed[buffer:id()] then
+				continue
+			elseif path then
 				listed[buffer:id()] = true
 				local label = project.short(path)
 				if core.file.unsaved(buffer) then
 					label ..= " [+]"
 				end
 				table.insert(items, { label = label, value = path, kind = "file" })
+			elseif buffer:kind() == "file" and buffer:kept() and name then
+				listed[buffer:id()] = true
+				table.insert(items, { label = name, value = buffer })
 			end
 		end
 		picker.pick("Buffers", items, function(item)
-			core.file.open(item.value)
+			if type(item.value) == "string" then
+				core.file.open(item.value)
+			else
+				greed.view():show(item.value)
+			end
 		end, { preview = buffer_preview })
 	end,
 })

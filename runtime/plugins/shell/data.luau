@@ -186,6 +186,8 @@ function M.target(into: Into, cwd: string): greed.Buffer
 	local buffer = M.buffer(into.name, cwd)
 	if buffer == nil then
 		local new = greed.create_buffer("file", "")
+		-- Named as you named it, to find it again in the buffer picker.
+		new:set_name(`buf:{into.name}`)
 		new:set_kept(true)
 		-- A command's output, made again by running it: nothing to save
 		-- unless it's saved as a file.

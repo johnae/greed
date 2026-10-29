@@ -112,6 +112,14 @@ test("> buf:NAME sends a command's output to a buffer, and >> adds to it", funct
 	-- open shows it.
 	run(t, sh, "open buf:out")
 	assert(greed.view():buffer() == out, "shown")
+	-- It goes by the name you gave it, and space b finds it there.
+	assert(out:name() == "buf:out", tostring(out:name()))
+	greed.view():show(sh.buffer)
+	t:keys("esc space b")
+	local listed = table.concat(t:floats(), "\n")
+	assert(string.find(listed, "buf:out", 1, true), listed)
+	t:keys("b u f : o u t enter")
+	assert(greed.view():buffer() == out, "picked and shown")
 end)
 
 test("output that's JSON is kept as a value, and says so", function(t)

@@ -422,7 +422,8 @@ And end with where its output goes:
 
 Errors still show in the block. One of these alone passes it on: `$3`
 shows block 3's output again, `$3 > buf:keep` keeps it in a buffer, and
-`open buf:keep` shows that buffer. Such lines run through a pipe rather
+`open buf:keep` shows that buffer, and `space b` lists it as `buf:keep`
+beside your open files. Such lines run through a pipe rather
 than a terminal, so a `> buf:` gets only what the program printed, and
 can't be combined with `!`.
 
