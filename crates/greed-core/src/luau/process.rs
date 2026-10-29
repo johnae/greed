@@ -126,6 +126,10 @@ pub(super) fn module(lua: &Lua, owner: &PluginId, greed: &Table) -> LuaResult<Ta
     ))?;
     process.set("run", run)?;
     process.set("spawn", spawn)?;
+    process.set(
+        "env",
+        lua.create_function(|_, name: String| Ok(std::env::var(name).ok()))?,
+    )?;
     Ok(process)
 }
 

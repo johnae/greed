@@ -1608,6 +1608,10 @@ if ran and ran.code == 0 then
 end
 ```
 
+`greed.process.env(name)` is one of the editor's own environment
+variables, as the programs it starts inherit them, or nil: `env("SHELL")`.
+It takes `proc` too, since variables can hold secrets.
+
 Like a spawned program, it's your plugin's and goes with it.
 `greed.which("kubectl")` says where a program is, or nil when it isn't
 installed. `greed.terminal.spawn({ command, rows, cols })` starts one

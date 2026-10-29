@@ -65,6 +65,7 @@ pub const KNOWN: &[(&str, &str)] = &[
 const GATED: &[(&str, &str)] = &[
     ("process.run", "proc"),
     ("process.spawn", "proc"),
+    ("process.env", "proc"),
     ("rpc.start", "proc"),
     ("terminal.spawn", "proc"),
     ("lsp.server", "proc"),

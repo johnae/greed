@@ -650,6 +650,8 @@ export type Process = {
 	run: (command: { string }, opts: RunOptions?) -> (Ran?, string?),
 	--- Starts `command` to talk to over its input and output, like an agent speaking JSON-RPC, and returns at once; nil and the error if it couldn't start. It runs until it exits, is killed, or the plugin that started it unloads. In `env`, `false` leaves a variable out of what it inherits. With `stderr = "stream"`, what it prints as errors arrives from `read` too, in the order it comes; by default it's only kept for `child:stderr()`. With `group`, it starts a process group of its own, which `kill` and `signal` reach, so the programs it starts end with it.
 	spawn: (command: { string }, opts: { cwd: string?, env: { [string]: string | false }?, stderr: ("keep" | "stream")?, group: boolean? }?) -> (Child?, string?),
+	--- The editor's own environment variable `name`, as the programs it starts inherit it, or nil if it isn't set: `env("SHELL")`.
+	env: (name: string) -> string?,
 }
 
 --- How `greed.rpc.start` talks to a program. `framing` is how its messages are told apart: "headers" (`Content-Length`, as language servers and debug adapters write them; the default) or "lines" (one a line, as agents over ACP). `on_request(method, params)` answers its requests, returning the result or nil and an error; `on_notify(method, params)` hears its notifications; each runs in a coroutine of its own, so it may wait. `on_exit(stderr)` is called once it exits, with the last lines of its error output.
