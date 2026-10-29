@@ -246,6 +246,10 @@ For keys that should mean something in one buffer only for a while,
 keys for that buffer, in every mode and ahead of every other binding,
 while it has focus; `buffer:set_keys(nil)` drops them. The agent pane uses
 it to answer a question with `enter` or a letter whatever mode you're in.
+`view:set_keys` does the same for one view, ahead of its buffer's keys, so
+another view of the same file keeps its usual keys. Slides use it: `right`
+goes to the next slide in the slide show, while the file stays yours to
+edit in a pane.
 
 ### Typed arguments
 

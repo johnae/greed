@@ -76,6 +76,9 @@ pub struct View {
     /// The lines it shows of what it would, as a float filtering a log: those
     /// hidden stay in the buffer.
     pub filter: Option<std::sync::Arc<crate::line_filter::LineFilter>>,
+    /// Single keys bound for this view alone, ahead of its buffer's, like
+    /// a slide show's on the slides.
+    pub keys: Arc<HashMap<Key, Arc<str>>>,
 }
 
 impl View {
@@ -982,6 +985,18 @@ impl Editor {
     pub fn set_buffer_keys(&mut self, buffer: BufferId, keys: HashMap<Key, Arc<str>>) {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.set_keys(keys);
+        }
+    }
+
+    /// Binds single keys for `view` alone, for every client, in every mode
+    /// and ahead of its buffer's keys and every keymap layer, while it has
+    /// focus. Replaces what was bound for it before; an empty map drops them.
+    pub fn set_view_keys(&mut self, view: ViewId, keys: HashMap<Key, Arc<str>>) {
+        let keys = Arc::new(keys);
+        for client in self.clients.values_mut() {
+            if let Some(view) = client.views.get_mut(&view) {
+                view.keys = keys.clone();
+            }
         }
     }
 
@@ -1968,13 +1983,15 @@ impl Editor {
     #[must_use]
     pub fn binds(&self, key: Key) -> bool {
         let client = &self.clients[&self.acting];
-        let buffer = &self.buffers[&client.views[&client.focus].buffer];
+        let view = &client.views[&client.focus];
+        let buffer = &self.buffers[&view.buffer];
         let fresh = client.pending.is_empty() && client.count.is_none();
         if fresh
             && (client
                 .overlay
                 .as_ref()
                 .is_some_and(|o| o.contains_key(&key))
+                || view.keys.contains_key(&key)
                 || buffer.key(key).is_some())
         {
             return true;
@@ -2009,10 +2026,11 @@ impl Editor {
                 count: None,
             };
         }
-        let buffer = &buffers[&client.views[&client.focus].buffer];
+        let view = &client.views[&client.focus];
+        let buffer = &buffers[&view.buffer];
         if client.pending.is_empty()
             && client.count.is_none()
-            && let Some(name) = buffer.key(key)
+            && let Some(name) = view.keys.get(&key).or_else(|| buffer.key(key))
         {
             return KeyOutcome::Command {
                 name: name.clone(),
@@ -2273,6 +2291,7 @@ impl Editor {
             lines: None,
             filter: None,
             columns: 0,
+            keys: Arc::default(),
         })
     }
 

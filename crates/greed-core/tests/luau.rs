@@ -2866,6 +2866,10 @@ fn sandboxed_eval_reads_and_edits_buffers_and_needs_approval_for_the_rest() {
             "change a buffer's keys",
         ),
         (
+            "greed.view():set_keys({ y = 'quit' })",
+            "change a view's keys",
+        ),
+        (
             "greed.view():buffer():set_readonly(false)",
             "read-only or writable",
         ),

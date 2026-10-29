@@ -447,6 +447,16 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
         },
     );
     methods.add_method(
+        "set_keys",
+        |lua, this, bindings: Option<HashMap<String, String>>| {
+            super::capabilities::unless_sandboxed(lua, "change a view's keys")?;
+            this.with_view(lua, |_| Ok(()))?;
+            let keys = single_keys(bindings.unwrap_or_default())?;
+            state_mut(lua).editor.set_view_keys(this.id, keys);
+            Ok(())
+        },
+    );
+    methods.add_method(
         "set_filter",
         |lua, this, (text, opts): (Option<String>, Option<mlua::Table>)| {
             this.with_view(lua, |_| Ok(()))?;

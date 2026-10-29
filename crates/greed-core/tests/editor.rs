@@ -162,6 +162,30 @@ fn keys_bound_for_a_buffer_come_first_while_it_has_focus() {
 }
 
 #[test]
+fn keys_bound_for_a_view_come_first_while_it_has_focus() {
+    let mut ed = editor("");
+    let first = ed.focus();
+    let buffer = ed.view(first).buffer;
+    ed.keymap_mut().set_fallback("insert", "insert-key", "core");
+    ed.set_mode("insert");
+    ed.set_buffer_keys(buffer, [(Key::char('y'), "buffer-yes".into())].into());
+    ed.set_view_keys(first, [(Key::char('y'), "view-yes".into())].into());
+    let command = |name: &str, keys_: &str| KeyOutcome::Command {
+        name: name.into(),
+        keys: keys(keys_),
+        count: None,
+    };
+    assert_eq!(ed.press(Key::char('y')), command("view-yes", "y"));
+    // Another view of the same buffer has the buffer's keys alone.
+    let second = ed.split(first);
+    ed.set_focus(second);
+    assert_eq!(ed.press(Key::char('y')), command("buffer-yes", "y"));
+    ed.set_focus(first);
+    ed.set_view_keys(first, std::collections::HashMap::new());
+    assert_eq!(ed.press(Key::char('y')), command("buffer-yes", "y"));
+}
+
+#[test]
 fn messages_are_collected_and_taken() {
     let mut ed = editor("");
     ed.echo("hello");
