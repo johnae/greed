@@ -1,6 +1,7 @@
 # Recent additions, one scene each: brackets that close themselves,
 # snippets, a folder edited as text, Greed's agent writing a plugin that is
-# loaded once installed, the outline, and the command picker's descriptions.
+# loaded once installed, the outline, the command picker's descriptions,
+# and a Markdown file shown as slides, a block running on one.
 # The model is scripted in the demo profile.
 size 1280 800
 fps 30
@@ -108,6 +109,34 @@ wait 0.8
 keys down
 wait 2.2
 keys esc
+wait 0.6
+
+caption A Markdown file is a slide deck
+keys :
+type open talk.md
+keys enter
+wait 0.6
+keys space m P
+wait 2
+
+caption Its blocks run on the slide
+keys right
+wait 1
+keys r
+wait 0.6
+keys y
+wait 2
+
+caption The presenter's view: the notes, the next slide and the time
+keys q
+wait 0.3
+keys :
+type slides-presenter
+keys enter
+wait 2.5
+keys right
+wait 1.5
+keys q
 wait 0.6
 
 caption greed.rs
