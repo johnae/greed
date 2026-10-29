@@ -55,6 +55,7 @@
 		"swatches": "./plugins/swatches",
 		"todo-comments": "./plugins/todo-comments",
 		"folders": "./plugins/folders",
-		"git-plugins": "./plugins/git-plugins"
+		"git-plugins": "./plugins/git-plugins",
+		"slides": "./plugins/slides"
 	}
 }

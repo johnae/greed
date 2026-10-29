@@ -450,10 +450,22 @@ end
 --- An image for a mark's `image`: what it shows and the cells it covers.
 export type Picture = { id: number, cols: number, rows: number, col: number?, row: number? }
 
+--- The image file at `path`, loaded once into `images` (by path; false
+--- when it doesn't load, and the caller forgets the rest when done). Nil
+--- if it doesn't load.
+function M.image(path: string, images: { [string]: number | false }): number?
+	local known = images[path]
+	if known == nil then
+		local loaded = greed.image.load(path)
+		images[path] = loaded or false
+		return loaded
+	end
+	return if type(known) == "number" then known else nil
+end
+
 --- The image file at `path`, for a mark in `buffer`: loaded once into
---- `images` (by path; false when it doesn't load, and the caller forgets
---- the rest when done), at its own size, `width` pixels wide when given,
---- or as wide as a view of the buffer if that's narrower. Nil if it
+--- `images` (see `M.image`), at its own size, `width` pixels wide when
+--- given, or as wide as a view of the buffer if that's narrower. Nil if it
 --- doesn't load.
 function M.picture(
 	buffer: greed.Buffer,
@@ -461,20 +473,10 @@ function M.picture(
 	images: { [string]: number | false },
 	width: number?
 ): Picture?
-	local cached = images[path]
-	if cached == nil then
-		local loaded = greed.image.load(path)
-		if loaded == nil then
-			images[path] = false
-			return nil
-		end
-		images[path] = loaded
-		cached = loaded
-	end
-	if type(cached) ~= "number" then
+	local id = M.image(path, images)
+	if id == nil then
 		return nil
 	end
-	local id: number = cached
 	local natural_cols, natural_rows = greed.image.cells(id)
 	if not (natural_cols and natural_rows) then
 		return nil
@@ -492,10 +494,16 @@ function M.picture(
 	}
 end
 
--- The image `src` names, loaded for `read` (see `M.picture`).
-local function picture(read: Reading, src: string): Picture?
-	local path = links.path(read.buffer, src)
-	return if path then M.picture(read.buffer, path, read.images) else nil
+--- The image a line of `buffer` shows when it's on a line of its own,
+--- `![description](file)`: its description and the file, found as links
+--- are. Nil when the line is something else.
+function M.image_on_line(buffer: greed.Buffer, text: string): (string?, string?)
+	local alt, src = string.match(text, "^%s*!%[([^%]]*)%]%(%s*<?([^%s>%)]+)[^%)]*%)%s*$")
+	local path = if src then links.path(buffer, src) else nil
+	if path == nil then
+		return nil, nil
+	end
+	return alt, path
 end
 
 -- Obsidian's callouts, `> [!warning] Title` on a quote's first line: the
@@ -608,8 +616,8 @@ local function marks(
 			continue
 		end
 		-- An image on a line of its own shows in place, reading.
-		local alt, src = string.match(text, "^%s*!%[([^%]]*)%]%(%s*<?([^%s>%)]+)[^%)]*%)%s*$")
-		local shown = if read and src then picture(read, src) else nil
+		local alt, path = M.image_on_line(buffer, text)
+		local shown = if read and path then M.picture(buffer, path, read.images) else nil
 		if shown then
 			local room: { any } = table.create(shown.rows - 1, "")
 			table.insert(out, {

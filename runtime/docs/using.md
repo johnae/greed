@@ -1970,6 +1970,75 @@ local blocks = require("@blocks")
 blocks.runner("lua", blocks.program({ "lua", "-e" }))
 ```
 
+### Slides
+
+Any Markdown file is a slide deck: a `---` line, with a blank line above
+it, starts the next slide. `:slides` (`space m P`) shows the slide the
+cursor is on, over the whole screen, without the status line, so with
+the window or terminal full screen there's only the slide. Like this:
+
+````markdown
+# Runbooks that run
+
+Notes, commands and their output in one file.
+
+---
+
+## A block runs where it is
+
+```sh safe=true
+echo "orders today: $((40 + 2))"
+```
+
+```notes
+Press r here; the result shows on the slide.
+```
+````
+
+The slides are a view of the file itself, so a block runs right there
+and its result lands on the slide, saved in the file like any other.
+
+| Keys | |
+|---|---|
+| `right`, `space`, `l`, `pagedown` | The next slide |
+| `left`, `backspace`, `h`, `pageup` | The slide before |
+| `home`, `g` / `end`, `G` | The first / the last slide |
+| `r` | Run the block the cursor is on; on a new slide it starts on the first |
+| `q`, `esc` | Back to the file |
+
+A `notes` block at the end of a slide is what you want to say there; it
+isn't shown on the slide. Front matter at the top isn't a slide either,
+and a `---` right under a line of text underlines a heading, as Markdown
+has it. Headings show big in the window and in kitty.
+
+A picture on a line of its own, `![Panes in Greed](panes.png)`, shows on
+the slide, made smaller when it doesn't fit beside the slide's other
+lines, never bigger than it is. That's in the window and in terminals
+that show images; elsewhere its description shows instead.
+
+A deck says how its slides look in its front matter, or your config does
+for every deck with `greed.option.set`:
+
+```markdown
+---
+slides-center: true
+slides-scale: 2
+slides-margin: 4
+---
+```
+
+| Setting | Default | |
+|---|---|---|
+| `slides-center` | `false` | Center each slide across and down: each heading on its own, the rest as one block, so code and lists keep their indents |
+| `slides-scale` | `1` | Draw the text that many times bigger (up to 4), in the window and in kitty; a `#` heading is twice that. `fit` draws each slide as big as it fits, so a title slide comes out huge and a slide of code stays readable |
+| `slides-margin` | `2` | Cells left empty above and left of a slide |
+
+A terminal that can't draw text bigger shows slides at their usual size,
+whatever `slides-scale` says, centered and with margins all the same; so
+does kitty run inside tmux or zellij, which drop what draws it bigger.
+On a slide with a block the cursor sits on it, ready for `r`; on the
+others there's no cursor at all.
+
 ## Notes
 
 [Hoard](hoard.md) (`greed notes`) shows your notes and todos on a home page
@@ -2493,9 +2562,10 @@ yazi's previews. They scroll with the output, and text written over them
 takes their place, as in any terminal.
 
 Bigger text, like a heading a plugin scales up, is drawn big in the window
-and in kitty, which can size text. Other terminals show it at the normal
-size on the rows it takes. `GREED_TEXT_SIZING=on` or `off` decides it for
-another terminal that can size text, or turns it off in kitty.
+and in kitty, which can size text, though not in tmux, zellij or screen
+running in kitty. Other terminals show it at the normal size on the rows
+it takes. `GREED_TEXT_SIZING=on` or `off` decides it for another terminal
+that can size text, or turns it off in kitty.
 
 ### Image files
 

@@ -1,0 +1,4 @@
+name = "slides"
+requires = ["core", "markdown", "blocks"]
+# Pictures on slides are read from their files.
+capabilities = ["fs.read"]
