@@ -785,8 +785,10 @@ fn float_boxes(chrome: &Chrome, looks: &[Vec<Look>], (cw, ch): (f32, f32)) -> Ve
         .iter()
         .filter_map(|r| {
             let (x, y) = (usize::from(r.x), usize::from(r.y));
-            let fill = looks.get(y)?.get(x)?.bg;
-            let border = looks.get(y)?.get(x.checked_sub(1)?)?.fg;
+            // Colored as its top left corner, a border cell: a text cell may
+            // have the cursor on it, or a line's style.
+            let corner = looks.get(y.checked_sub(1)?)?.get(x.checked_sub(1)?)?;
+            let (fill, border) = (corner.bg, corner.fg);
             // The border is the cells around the text.
             let (left, top) = ((f32::from(r.x) - 1.0) * cw, (f32::from(r.y) - 1.0) * ch);
             let (w, h) = (
@@ -1117,5 +1119,47 @@ mod tests {
         let mut grid = vec![cells("ab cd    ")];
         let cursor = preedit(&mut grid, at, "日本", Some("日".len()));
         assert_eq!(cursor.col, 5, "where the input method says, in bytes");
+    }
+
+    #[test]
+    fn a_float_is_colored_as_its_border_whatever_its_first_text_cell_shows() {
+        let plain = |fg: Rgba, bg: Rgba| Look {
+            fg,
+            bg,
+            bold: false,
+            italic: false,
+            underline: None,
+            strikethrough: false,
+            prose: false,
+            font: None,
+            badge: false,
+            checkbox: None,
+        };
+        let (edge, inside, cursor) = (
+            [0.5, 0.5, 0.5, 1.0],
+            [0.1, 0.1, 0.1, 1.0],
+            [1.0, 0.0, 1.0, 1.0],
+        );
+        let mut looks = vec![vec![plain(edge, inside); 5]; 3];
+        // The cursor on its first text cell, a heading's line style before it.
+        looks[1][1] = plain(inside, cursor);
+        looks[1][0] = plain(cursor, inside);
+        let chrome = Chrome {
+            images: &[],
+            under: &[],
+            floats: vec![Rect {
+                x: 1,
+                y: 1,
+                width: 3,
+                height: 1,
+            }],
+            beneath: Vec::new(),
+            rounded: true,
+            shadows: false,
+            text: Style::default(),
+            hover: None,
+        };
+        let boxes = float_boxes(&chrome, &looks, (8.0, 16.0));
+        assert_eq!((boxes[0].fill, boxes[0].border), (inside, edge));
     }
 }
