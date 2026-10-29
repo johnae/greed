@@ -183,3 +183,48 @@ test("a terminal that can't draw text bigger gets slides at their usual size", f
 		assert((mark.scale or 1) == 1, `scaled {mark.scale} where it can't be drawn so`)
 	end
 end)
+
+-- The screen `client` (or the test's own) shows, as one string.
+local function seen(c: any, rows: number?): string
+	return table.concat(c:screen(80, rows or 30), "\n")
+end
+
+test("another screen joins the slides and follows them, and leaves on its own", function(t)
+	t:buffer("|" .. DECK)
+	greed.view():buffer():set_language("markdown")
+	t:screen(80, 30)
+	t:run("slides")
+	local second = t:client("second")
+	second:screen(80, 30)
+	second:run("slides")
+	assert(string.find(seen(second), "What changed this quarter.", 1, true), seen(second))
+	-- Moving on one screen moves the other.
+	t:keys("right")
+	assert(string.find(seen(second), "Numbers", 1, true), seen(second))
+	second:keys("right")
+	assert(string.find(seen(t), "A heading under a line", 1, true), seen(t))
+	-- q leaves one screen; the other goes on.
+	second:keys("q")
+	assert(not string.find(seen(second), "1/3", 1, true), "the second left")
+	t:keys("home")
+	assert(string.find(seen(t), "What changed this quarter.", 1, true), seen(t))
+end)
+
+test("the presenter sees the notes, the next slide and the time beside the slide", function(t)
+	t:buffer("|" .. DECK)
+	greed.view():buffer():set_language("markdown")
+	greed.view():set_cursor(greed.view():buffer():line_start(10))
+	t:screen(120, 30)
+	t:run("slides-presenter")
+	local shown = seen(t)
+	assert(string.find(shown, "Slide 2 of 3 · 0:00", 1, true), shown)
+	assert(string.find(shown, "Mention the outage.", 1, true), "its notes")
+	assert(string.find(shown, "A heading under a line", 1, true), "the start of the next")
+	assert(string.find(shown, "echo 42", 1, true), "the slide itself")
+	-- The keys work from either side, and the notes follow.
+	t:keys("right")
+	assert(string.find(seen(t), "No notes for this slide.", 1, true), seen(t))
+	assert(string.find(seen(t), "The end.", 1, true), "nothing comes next")
+	t:keys("q")
+	assert(#t:floats() == 0, "both sides closed")
+end)

@@ -2016,6 +2016,22 @@ the slide, made smaller when it doesn't fit beside the slide's other
 lines, never bigger than it is. That's in the window and in terminals
 that show images; elsewhere its description shows instead.
 
+To present, show the slides on one screen and the notes on another.
+`:slides-presenter` shows the slide with what you need beside it: the
+slide number and how long you've been going, the slide's notes, and the
+start of the next slide. Run it in a terminal attached to the same
+session, then `:slides` in the window on the projector:
+
+```bash
+greed --gui talk.md          # on the projector: :slides
+greed attach                 # on your laptop's screen: :slides-presenter
+```
+
+Every screen showing the slides is on the same slide: `right` on any of
+them moves them all, so the presenter screen works as the clicker. `q`
+closes one screen, and the others go on. Each screen lays the slide out
+for its own size, big in the window and plain in the terminal.
+
 A deck says how its slides look in its front matter, or your config does
 for every deck with `greed.option.set`:
 

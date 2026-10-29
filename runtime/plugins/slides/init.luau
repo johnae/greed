@@ -11,6 +11,11 @@
 --
 -- A ```` ```notes ```` block at the end of a slide is what you'd say there:
 -- it isn't shown on the slide.
+--
+-- The slides are a talk, and every client can show it: `:slides` on another
+-- screen joins it, and `:slides-presenter` shows the slide with the notes,
+-- the next slide and the time beside it. Going to another slide on any of
+-- them goes there on all; q leaves one, and the talk ends with the last.
 
 local greed = require("@greed")
 local markdown = require("@markdown")
@@ -72,26 +77,40 @@ function M.slides(buffer: greed.Buffer): { Slide }
 	return out
 end
 
--- A slide show: the view showing it, its file, where the slide on screen
--- starts, followed through edits, and the client showing it, with whether
--- that one had its status line before, and the images its pictures
--- loaded, by file (false for one that didn't load).
-type Show = {
-	view: greed.View,
+-- A talk: a deck shown on one screen or more, every one on the same slide.
+-- Where that slide starts is followed through edits; `started` is when the
+-- talk began, on `greed.now()`'s clock, and `images` the images its
+-- pictures loaded, by file (false for one that didn't load).
+type Talk = {
 	buffer: greed.Buffer,
 	at: greed.Anchor,
-	client: number,
-	status_line: boolean,
+	started: number,
 	images: { [string]: number | false },
+	screens: { Screen },
 }
 
--- Slide shows by their view's id.
-local shows: { [number]: Show } = {}
+-- A client showing a talk: a view of the deck narrowed to the slide, as
+-- wide as `share` of the screen, and for a presenter, a view of the notes,
+-- the next slide and the time beside it. `status_line` is whether the
+-- client had its status line before.
+type Screen = {
+	talk: Talk,
+	view: greed.View,
+	client: number,
+	share: number,
+	status_line: boolean,
+	notes: greed.View?,
+}
 
--- The slide `show` is on, by its number, and every slide.
-local function current(show: Show): (number, { Slide })
-	local list = M.slides(show.buffer)
-	local line = show.buffer:line_of(show.at:pos() or 0)
+-- Talks by their deck's buffer id, and the screens showing them by the id
+-- of each of their views.
+local talks: { [number]: Talk } = {}
+local screens: { [number]: Screen } = {}
+
+-- The slide `talk` is on, by its number, and every slide.
+local function current(talk: Talk): (number, { Slide })
+	local list = M.slides(talk.buffer)
+	local line = talk.buffer:line_of(talk.at:pos() or 0)
 	local n = 1
 	for i, slide in list do
 		if slide.first <= line then
@@ -144,16 +163,16 @@ local function setting(s: markdown.Structure, name: string): any
 	return greed.option.get(name)
 end
 
--- The room the slides have inside their border, the screen of the client
--- showing them, and whether that one draws scaled text bigger.
-local function room(show: Show): (number, number, boolean)
+-- The room `screen`'s slide has inside its border, its share of the
+-- client's screen, and whether that client draws scaled text bigger.
+local function room(screen: Screen): (number, number, boolean)
 	for _, client in greed.client.list() do
 		local size = client.size
-		if client.id == show.client and size then
-			return size.width - 2, size.height - 2, client.scaled_text
+		if client.id == screen.client and size then
+			return math.floor(size.width * screen.share) - 2, size.height - 2, client.scaled_text
 		end
 	end
-	local rows, cols = show.view:size()
+	local rows, cols = screen.view:size()
 	return cols or 80, rows or 24, true
 end
 
@@ -189,13 +208,13 @@ type Picture = { id: number, alt: string, cols: number, rows: number }
 -- The pictures on `slide`, by line: each on a line of its own, as big as
 -- fits in `cols` by `rows` beside the slide's other lines, never bigger
 -- than it is.
-local function pictures(show: Show, slide: Slide, cols: number, rows: number): { [number]: Picture }
-	local buffer = show.buffer
+local function pictures(talk: Talk, slide: Slide, cols: number, rows: number): { [number]: Picture }
+	local buffer = talk.buffer
 	local out: { [number]: Picture } = {}
 	local spare = math.max(1, rows - (slide.last - slide.first))
 	for line = slide.first, slide.last do
 		local alt, path = markdown.image_on_line(buffer, buffer:line_text(line))
-		local id = if path then markdown.image(path, show.images) else nil
+		local id = if path then markdown.image(path, talk.images) else nil
 		if id then
 			local natural_cols, natural_rows = greed.image.cells(id)
 			if natural_cols and natural_rows then
@@ -212,20 +231,20 @@ local function pictures(show: Show, slide: Slide, cols: number, rows: number): {
 	return out
 end
 
--- Lays `slide` out in `show` as the deck's settings say: its text scaled,
--- its pictures shown, and centered with margins around it.
-local function lay_out(show: Show, slide: Slide)
-	local view, buffer = show.view, show.buffer
+-- Lays `slide` out on `screen` as the deck's settings say: its text
+-- scaled, its pictures shown, and centered with margins around it.
+local function lay_out(screen: Screen, slide: Slide)
+	local view, buffer = screen.view, screen.talk.buffer
 	local s = markdown.structure(buffer)
 	local margin = math.max(0, tonumber(setting(s, "slides-margin")) or 0)
-	local width, height, scales = room(show)
+	local width, height, scales = room(screen)
 	-- The room inside the margins.
 	local cols, rows = width - 2 * margin, height - 2 * margin
 	-- Measured without what this lays out.
 	view:decorate("slides.scale", {})
 	view:decorate("slides.center", {})
 	view:decorate("slides.pictures", {})
-	local shown = pictures(show, slide, cols, rows)
+	local shown = pictures(screen.talk, slide, cols, rows)
 	-- Each line's width at scale 1: a big heading is drawn twice as wide
 	-- already, so half that.
 	local base: { [number]: number } = {}
@@ -324,90 +343,170 @@ local function lay_out(show: Show, slide: Slide)
 	view:set_padding({ top = top, left = left })
 end
 
--- Shows slide `n` of `list` in `show`; with `go`, the cursor goes to it.
-local function draw(show: Show, n: number, list: { Slide }, go: boolean?)
-	local slide = list[n]
-	if slide == nil or not show.view:valid() then
+-- What a presenter sees beside the slide: where the talk is and how long
+-- it's gone, the slide's notes, and the start of the next slide.
+local function notes_text(talk: Talk, n: number, list: { Slide }): string
+	local seconds = math.floor((greed.now() - talk.started) / 1000)
+	local slide, upcoming = list[n], list[n + 1]
+	local out = {
+		`Slide {n} of {#list} · {seconds // 60}:{string.format("%02d", seconds % 60)}`,
+		"",
+		"## Notes",
+		"",
+		if slide and slide.notes then slide.notes else "No notes for this slide.",
+		"",
+		"## Next",
+		"",
+	}
+	if upcoming then
+		local buffer = talk.buffer
+		for line = upcoming.first, math.min(upcoming.last, upcoming.first + 5) do
+			table.insert(out, buffer:line_text(line))
+		end
+	else
+		table.insert(out, "The end.")
+	end
+	return table.concat(out, "\n")
+end
+
+-- Writes the notes on `screen`, a presenter's, as they are now.
+local function draw_notes(screen: Screen, n: number, list: { Slide })
+	local notes = screen.notes
+	if notes == nil or not notes:valid() then
 		return
 	end
-	local buffer = show.buffer
+	local buffer = notes:buffer()
+	local text = notes_text(screen.talk, n, list)
+	if buffer:text() ~= text then
+		buffer:set_readonly(false)
+		buffer:edit(function(e)
+			e:replace(0, buffer:len(), text)
+		end, { undo = false })
+		buffer:set_readonly(true)
+	end
+end
+
+-- Shows slide `n` of `list` on `screen`; with `go`, its cursor goes to it.
+local function draw_screen(screen: Screen, n: number, list: { Slide }, go: boolean?)
+	local slide = list[n]
+	local view = screen.view
+	if slide == nil or not view:valid() then
+		return
+	end
+	local buffer = screen.talk.buffer
 	local block = first_block(buffer, slide)
 	if go then
-		local start = buffer:line_start(slide.first)
-		show.at:forget()
-		show.at = buffer:track(start)
-		show.view:set_cursor(block or start)
+		view:set_cursor(block or buffer:line_start(slide.first))
 	end
 	-- The cursor shows where it does something: on a block, to run.
-	show.view:hide_cursor(block == nil)
-	show.view:narrow(slide.first, slide.last)
-	show.view:configure({ label = `{n}/{#list}` })
-	lay_out(show, slide)
+	view:hide_cursor(block == nil)
+	view:narrow(slide.first, slide.last)
+	view:configure({ label = `{n}/{#list}` })
+	lay_out(screen, slide)
+	draw_notes(screen, n, list)
 end
 
--- Forgets `show` and its images, giving its client back the status line
--- it had.
-local function forget(show: Show)
-	shows[show.view:id()] = nil
-	show.at:forget()
-	for _, id in show.images do
-		if type(id) == "number" then
-			greed.image.forget(id)
-		end
+-- Shows the slide `talk` is on on every screen; with `go`, it's a slide
+-- just gone to, and the cursors go there.
+local function draw(talk: Talk, go: boolean?)
+	local n, list = current(talk)
+	for _, screen in talk.screens do
+		draw_screen(screen, n, list, go)
+	end
+end
+
+-- The views `screen` shows: its slide's, and its notes' if it has them.
+local function views_of(screen: Screen): { greed.View }
+	local out = { screen.view }
+	local notes = screen.notes
+	if notes then
+		table.insert(out, notes)
+	end
+	return out
+end
+
+-- Takes `screen` off its talk, giving its client back the status line it
+-- had; the talk ends with its last screen.
+local function forget(screen: Screen)
+	local talk = screen.talk
+	for _, view in views_of(screen) do
+		screens[view:id()] = nil
+	end
+	local i = table.find(talk.screens, screen)
+	if i then
+		table.remove(talk.screens, i)
 	end
 	-- The client may have gone meanwhile.
-	pcall(greed.client.set_status_line, show.status_line, show.client)
-end
-
--- Ends `show`, closing its view.
-local function stop(show: Show)
-	forget(show)
-	if show.view:valid() then
-		show.view:close()
+	pcall(greed.client.set_status_line, screen.status_line, screen.client)
+	if #talk.screens == 0 then
+		talks[talk.buffer:id()] = nil
+		talk.at:forget()
+		for _, id in talk.images do
+			if type(id) == "number" then
+				greed.image.forget(id)
+			end
+		end
 	end
 end
 
--- The slide show in the focused view, if it is one.
-local function focused(ctx: greed.Context): Show?
-	return shows[ctx.view:id()]
+-- Takes `screen` off its talk and closes its views.
+local function stop(screen: Screen)
+	forget(screen)
+	for _, view in views_of(screen) do
+		if view:valid() then
+			view:close()
+		end
+	end
 end
 
--- A command moving the slide show in the focused view to the slide `to`
--- picks, from the one it's on (`n`) of `count`.
+-- The screen the focused view is part of, if it is.
+local function focused(ctx: greed.Context): Screen?
+	return screens[ctx.view:id()]
+end
+
+-- A command moving the talk the focused view shows to the slide `to`
+-- picks, from the one it's on (`n`) of `count`, on every screen.
 local function moving(name: string, doc: string, to: (n: number, count: number) -> number)
 	greed.command({
 		name = name,
 		doc = doc,
 		run = function(ctx)
-			local show = focused(ctx)
-			if show then
-				local n, list = current(show)
-				draw(show, math.clamp(to(n, #list), 1, math.max(#list, 1)), list, true)
+			local screen = focused(ctx)
+			if screen == nil then
+				return
+			end
+			local talk = screen.talk
+			local n, list = current(talk)
+			local slide = list[math.clamp(to(n, #list), 1, math.max(#list, 1))]
+			if slide then
+				talk.at:forget()
+				talk.at = talk.buffer:track(talk.buffer:line_start(slide.first))
+				draw(talk, true)
 			end
 		end,
 	})
 end
 
-moving("slide-next", "Go to the next slide", function(n)
+moving("slide-next", "Go to the next slide, on every screen showing the slides", function(n)
 	return n + 1
 end)
-moving("slide-prev", "Go to the slide before", function(n)
+moving("slide-prev", "Go to the slide before, on every screen showing the slides", function(n)
 	return n - 1
 end)
-moving("slide-first", "Go to the first slide", function()
+moving("slide-first", "Go to the first slide, on every screen showing the slides", function()
 	return 1
 end)
-moving("slide-last", "Go to the last slide", function(_, count)
+moving("slide-last", "Go to the last slide, on every screen showing the slides", function(_, count)
 	return count
 end)
 
 greed.command({
 	name = "slides-stop",
-	doc = "Stop showing slides and go back to the file",
+	doc = "Stop showing slides here and go back to the file; other screens go on",
 	run = function(ctx)
-		local show = focused(ctx)
-		if show then
-			stop(show)
+		local screen = focused(ctx)
+		if screen then
+			stop(screen)
 		end
 	end,
 })
@@ -431,70 +530,147 @@ local KEYS = {
 	esc = "slides-stop",
 }
 
-greed.command({
-	name = "slides",
-	doc = "Show this Markdown file as slides, from the one the cursor is on",
-	run = function(ctx)
-		local buffer = ctx.buffer
-		if buffer:language() ~= "markdown" then
-			greed.echo("slides come from a Markdown file")
-			return
+-- The talk to show on this client: the one about the focused file, or the
+-- only one going, or a new one about the focused file, from the slide its
+-- cursor is on. Nil and why when there's none to show.
+local function talk_for(ctx: greed.Context): (Talk?, string?)
+	local buffer = ctx.buffer
+	local going = talks[buffer:id()]
+	if going then
+		return going, nil
+	end
+	if buffer:language() ~= "markdown" then
+		local id, only = next(talks)
+		if id and next(talks, id) == nil then
+			return only, nil
 		end
-		local list = M.slides(buffer)
-		if #list == 0 then
-			greed.echo("there's nothing on any slide here")
-			return
+		return nil, "slides come from a Markdown file"
+	end
+	if #M.slides(buffer) == 0 then
+		return nil, "there's nothing on any slide here"
+	end
+	local talk: Talk = {
+		buffer = buffer,
+		at = buffer:track(ctx.view:cursor()),
+		started = greed.now(),
+		images = {},
+		screens = {},
+	}
+	talks[buffer:id()] = talk
+	-- The time on the presenter's notes keeps up while the talk goes on.
+	greed.spawn(function()
+		while talks[buffer:id()] == talk do
+			greed.sleep(1000)
+			if talks[buffer:id()] == talk then
+				local n, list = current(talk)
+				for _, screen in talk.screens do
+					draw_notes(screen, n, list)
+				end
+			end
 		end
-		local view = greed.float(buffer, {
-			width = "100%",
+	end)
+	return talk, nil
+end
+
+-- Shows `talk` on this client: the slide over the whole screen, or for a
+-- presenter (`presenting`), on the left with the notes on the right.
+local function show(talk: Talk, presenting: boolean)
+	local buffer = talk.buffer
+	local title = core.project.basename(buffer:path() or "") or "slides"
+	local share = if presenting then 0.6 else 1
+	local notes: greed.View? = nil
+	if presenting then
+		local text =
+			greed.create_buffer("slides-notes", "", { readonly = true, language = "markdown" })
+		notes = greed.float(text, {
+			x = "60%",
+			y = 0,
+			width = "40%",
 			height = "100%",
-			title = core.project.basename(buffer:path() or "") or "slides",
-			footer = "← → slides · r runs · q back",
+			title = "notes",
+			focus = false,
 		})
-		local client = greed.client.current()
-		local show: Show = {
-			view = view,
-			buffer = buffer,
-			at = buffer:track(ctx.view:cursor()),
-			client = client.id,
-			status_line = client.status_line,
-			images = {},
-		}
-		shows[view:id()] = show
-		view:set_keys(KEYS)
-		-- Problems a language server found, like a prose checker's, aren't
-		-- part of the talk, nor is the status line.
-		view:hide_marks({ "diagnostics", "lsp" })
-		greed.client.set_status_line(false)
-		local n = current(show)
-		draw(show, n, list, true)
-	end,
-})
+	end
+	local view = greed.float(buffer, {
+		x = 0,
+		y = 0,
+		width = if presenting then "60%" else "100%",
+		height = "100%",
+		title = title,
+		footer = "← → slides · r runs · q back",
+	})
+	local client = greed.client.current()
+	local screen: Screen = {
+		talk = talk,
+		view = view,
+		client = client.id,
+		share = share,
+		status_line = client.status_line,
+		notes = notes,
+	}
+	table.insert(talk.screens, screen)
+	for _, shown in views_of(screen) do
+		screens[shown:id()] = screen
+		shown:set_keys(KEYS)
+	end
+	-- Problems a language server found, like a prose checker's, aren't
+	-- part of the talk, nor is the status line.
+	view:hide_marks({ "diagnostics", "lsp" })
+	greed.client.set_status_line(false)
+	local n, list = current(talk)
+	draw_screen(screen, n, list, true)
+end
+
+-- A command showing the talk `talk_for` picks on this client.
+local function showing(name: string, doc: string, presenting: boolean)
+	greed.command({
+		name = name,
+		doc = doc,
+		run = function(ctx)
+			local talk, why = talk_for(ctx)
+			if talk then
+				show(talk, presenting)
+			else
+				greed.echo(why or "")
+			end
+		end,
+	})
+end
+
+showing(
+	"slides",
+	"Show this Markdown file as slides, from the one the cursor is on, or join the slides another screen shows",
+	false
+)
+showing(
+	"slides-presenter",
+	"Show the slides with their notes, the next slide and the time beside them, for whoever presents",
+	true
+)
 
 -- What a slide shows changes as its file does, like a block's result
--- coming in: it's narrowed to the slide again.
+-- coming in: every screen is narrowed to the slide again.
 greed.on("buffer.changed", function(event: greed.BufferChanged)
-	for _, show in shows do
-		if show.buffer == event.buffer then
-			local n, list = current(show)
-			draw(show, n, list)
-		end
+	local talk = talks[event.buffer:id()]
+	if talk then
+		draw(talk)
 	end
 end)
 
 -- Centered slides are laid out for the room they have.
 greed.on("view.resized", function(event: greed.ViewResized)
-	local show = shows[event.view:id()]
-	if show then
-		local n, list = current(show)
-		draw(show, n, list)
+	local screen = screens[event.view:id()]
+	if screen and event.view == screen.view then
+		local n, list = current(screen.talk)
+		draw_screen(screen, n, list)
 	end
 end)
 
+-- A screen whose slide or notes close goes, the other view with it.
 greed.on("view.closed", function(event: greed.ViewClosed)
-	local show = shows[event.view]
-	if show then
-		forget(show)
+	local screen = screens[event.view]
+	if screen then
+		stop(screen)
 	end
 end)
 
