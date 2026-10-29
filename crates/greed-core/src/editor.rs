@@ -83,6 +83,8 @@ pub struct View {
     pub hidden_marks: Arc<[Arc<str>]>,
     /// Room left empty above and left of its text, like a slide's margin.
     pub padding: Padding,
+    /// It draws no cursor or selection of its own, like a slide of text.
+    pub cursor_hidden: bool,
 }
 
 /// Empty rows above a view's text and empty cells left of it.
@@ -1006,6 +1008,16 @@ impl Editor {
     pub fn set_buffer_keys(&mut self, buffer: BufferId, keys: HashMap<Key, Arc<str>>) {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.set_keys(keys);
+        }
+    }
+
+    /// Has `view` draw no cursor or selection of its own (`hidden`), for
+    /// every client, or draw them again.
+    pub fn hide_cursor(&mut self, view: ViewId, hidden: bool) {
+        for client in self.clients.values_mut() {
+            if let Some(view) = client.views.get_mut(&view) {
+                view.cursor_hidden = hidden;
+            }
         }
     }
 
@@ -2336,6 +2348,7 @@ impl Editor {
             keys: Arc::default(),
             hidden_marks: Arc::default(),
             padding: Padding::default(),
+            cursor_hidden: false,
         })
     }
 

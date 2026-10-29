@@ -456,6 +456,13 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
             Ok(())
         },
     );
+    methods.add_method("hide_cursor", |lua, this, hidden: Option<bool>| {
+        this.with_view(lua, |_| Ok(()))?;
+        state_mut(lua)
+            .editor
+            .hide_cursor(this.id, hidden.unwrap_or(true));
+        Ok(())
+    });
     methods.add_method("set_padding", |lua, this, padding: Option<Table>| {
         this.with_view(lua, |_| Ok(()))?;
         let side = |name: &str| -> LuaResult<u16> {

@@ -959,6 +959,8 @@ greed.tab.set_layout({
 - `view:set_padding({ top = 4, left = 8 })` leaves rows empty above a
   view's text and cells empty left of it, like a slide's margins; its
   `size()` is then the room inside, for centring what's in it.
+  `view:hide_cursor(true)` draws no cursor or selection in one view, like
+  a slide of text; `view:hide_cursor(false)` draws them again.
 - Multibuffers show excerpts of many files in one buffer, edited in place:
   `require("@multibuffer").open({ { path = path, from = 9, to = 12 } },
   { summary = "3 places" })` gives a buffer to show in a panel or float,

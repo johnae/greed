@@ -604,6 +604,26 @@ fn a_views_own_marks_show_in_it_alone_and_go_when_it_closes() {
 }
 
 #[test]
+fn a_view_with_its_cursor_hidden_draws_no_cursor_or_selection() {
+    let mut ed = editor("^ab| c|d");
+    let view = ed.focus();
+    let shown = frame(&mut ed, 10, 3);
+    assert!(shown.cursor.is_some());
+    assert_eq!(tagged(&shown, &Tag::SELECTION), ["ab"]);
+    assert_eq!(tagged(&shown, &Tag::CURSOR), ["d"]);
+    ed.hide_cursor(view, true);
+    let shown = frame(&mut ed, 10, 3);
+    assert!(shown.cursor.is_none(), "no cursor");
+    assert!(
+        tagged(&shown, &Tag::SELECTION).is_empty(),
+        "nor its selections"
+    );
+    assert!(tagged(&shown, &Tag::CURSOR).is_empty());
+    ed.hide_cursor(view, false);
+    assert!(frame(&mut ed, 10, 3).cursor.is_some());
+}
+
+#[test]
 fn padding_leaves_room_above_and_left_of_a_views_text() {
     use greed_core::Padding;
     let mut ed = editor("a|b\ncd");

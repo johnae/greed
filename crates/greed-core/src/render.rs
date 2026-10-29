@@ -995,8 +995,24 @@ impl<M: Measure> Renderer<M> {
 
     /// Lays out one view to fill `room`, as [`Self::text_rows`] does, inside
     /// the padding the view asks for: empty rows above its text, and empty
-    /// cells left of it.
+    /// cells left of it. A view with its cursor hidden has none on screen.
     fn view_rows(
+        &self,
+        editor: &mut Editor,
+        view_id: ViewId,
+        room: Rect,
+        line_numbers: bool,
+        decorations: &dyn Decorations,
+    ) -> Laid {
+        let mut laid = self.padded_rows(editor, view_id, room, line_numbers, decorations);
+        if editor.view(view_id).cursor_hidden {
+            laid.cursor = None;
+        }
+        laid
+    }
+
+    /// [`Self::text_rows`] inside the view's padding.
+    fn padded_rows(
         &self,
         editor: &mut Editor,
         view_id: ViewId,
@@ -2156,12 +2172,14 @@ fn cursor_tags(view: &View, cell: &Cell, cursors: &[usize], peers: &[Peer]) -> S
             (&peer.selection_tag, &peer.cursor_tag),
         ));
     }
-    tags.extend(selection_tags(
-        &view.selection,
-        cell,
-        cursors,
-        (&Tag::SELECTION, &Tag::CURSOR),
-    ));
+    if !view.cursor_hidden {
+        tags.extend(selection_tags(
+            &view.selection,
+            cell,
+            cursors,
+            (&Tag::SELECTION, &Tag::CURSOR),
+        ));
+    }
     tags
 }
 
