@@ -604,6 +604,20 @@ fn a_views_own_marks_show_in_it_alone_and_go_when_it_closes() {
 }
 
 #[test]
+fn a_client_without_its_status_line_gives_the_row_to_the_text() {
+    let mut ed = editor("|a\nb\nc");
+    let client = ed.client();
+    assert!(frame(&mut ed, 10, 3).surface(SurfaceId::Status).is_some());
+    assert!(ed.set_status_line(client, false));
+    let shown = frame(&mut ed, 10, 3);
+    assert!(shown.surface(SurfaceId::Status).is_none(), "no status line");
+    let text: Vec<String> = screen_rows(&shown).iter().map(Row::text).collect();
+    assert_eq!(text, ["1 a", "2 b", "3 c"], "the text has every row");
+    assert!(ed.set_status_line(client, true));
+    assert!(frame(&mut ed, 10, 3).surface(SurfaceId::Status).is_some());
+}
+
+#[test]
 fn a_view_leaves_out_the_marks_of_the_namespaces_it_hides() {
     use greed_core::Mark;
     let mut ed = editor("|one two");

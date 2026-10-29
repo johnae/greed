@@ -1464,6 +1464,8 @@ export type ClientInfo = {
 	size: { width: number, height: number }?,
 	--- "follow": it shows the project, tab and panes the other followers do, with its own focus and zoom. "independent": a layout of its own.
 	layout: "follow" | "independent",
+	--- Whether it shows the status line (`set_status_line`).
+	status_line: boolean,
 	--- Which of the peer colors (1 to 6) its cursors show in for the other clients, as `ui.cursor.peer.N`.
 	color: number,
 	--- Who it belongs to: "owner", the session's owner, for now.
@@ -1484,6 +1486,8 @@ export type Client = {
 	home: (client: number) -> ({ [string]: any }?, string?),
 	--- Lays a client (the acting one by default) out on its own, "independent", starting from a copy of the tabs, panes and panels it had, with views of its own; or has it "follow" the others again, closing those views (their buffers stay). Returns whether it changed.
 	set_layout: (layout: "follow" | "independent", client: number?) -> boolean,
+	--- Shows or hides the status line of a client (the acting one by default), its row going to the text while hidden, as slides do while a talk is shown: only on that client's screen. Errors without such a client.
+	set_status_line: (shown: boolean, client: number?) -> (),
 }
 
 --- A problem a language server found.

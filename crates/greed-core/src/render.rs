@@ -709,35 +709,41 @@ impl<M: Measure> Renderer<M> {
         self.images.borrow_mut().clear();
         self.scenes.borrow_mut().clear();
         self.actions.borrow_mut().clear();
+        // A client may leave the status line out, its row going to the text.
+        let status_shown = editor
+            .client_state(editor.client())
+            .is_none_or(crate::ClientState::status_line);
         let screen = Rect {
             x: 0,
             y: 0,
             width: size.width,
-            height: size.height.saturating_sub(1),
+            height: size.height.saturating_sub(u16::from(status_shown)),
         };
         let (area, placed) = layout_panels(editor.panels(), screen);
         let mut surfaces = Vec::new();
         // Each view's cursor on screen, as views are laid out.
         let (lines, mut cursors) = self.panes(editor, area, decorations, &mut surfaces);
-        let status = match status {
-            Status::Default { message } => {
-                Self::default_status(editor, editor.view(editor.status_view()), *message)
-            }
-            Status::Line(line) => line.clone(),
-        };
-        let status_rect = Rect {
-            x: 0,
-            y: screen.height,
-            width: size.width,
-            height: 1,
-        };
-        let status = self.status_row(&status, usize::from(size.width), screen.height);
-        surfaces.push(Surface::new(
-            SurfaceId::Status,
-            Role::Status,
-            status_rect,
-            vec![status],
-        ));
+        if status_shown {
+            let status = match status {
+                Status::Default { message } => {
+                    Self::default_status(editor, editor.view(editor.status_view()), *message)
+                }
+                Status::Line(line) => line.clone(),
+            };
+            let status_rect = Rect {
+                x: 0,
+                y: screen.height,
+                width: size.width,
+                height: 1,
+            };
+            let status = self.status_row(&status, usize::from(size.width), screen.height);
+            surfaces.push(Surface::new(
+                SurfaceId::Status,
+                Role::Status,
+                status_rect,
+                vec![status],
+            ));
+        }
 
         for (view, rect, role) in placed {
             let laid = self.view_rows(editor, view, rect, false, decorations);

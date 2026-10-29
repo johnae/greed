@@ -654,6 +654,16 @@ impl Editor {
         }
     }
 
+    /// Shows or hides client `id`'s status line, as for a talk on one
+    /// screen; false without such a client.
+    pub fn set_status_line(&mut self, id: ClientId, shown: bool) -> bool {
+        let Some(client) = self.clients.get_mut(&id) else {
+            return false;
+        };
+        client.status_line = shown;
+        true
+    }
+
     /// Acts for client `id` from now on, which counts as its doing
     /// something. False, changing nothing, without such a client.
     pub fn set_acting(&mut self, id: ClientId) -> bool {

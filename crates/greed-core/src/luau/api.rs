@@ -1204,6 +1204,7 @@ fn client_to_lua(lua: &Lua, client: &crate::ClientState) -> LuaResult<Table> {
         t.set("size", size)?;
     }
     t.set("layout", client.layout().name())?;
+    t.set("status_line", client.status_line())?;
     t.set("color", client.color())?;
     // Every client is the session owner's until sessions can be shared.
     t.set("person", "owner")?;
@@ -1285,6 +1286,17 @@ fn client_module(lua: &Lua) -> LuaResult<Table> {
                 return Err(mlua::Error::runtime(format!("there is no client {}", id.0)));
             }
             set_client_layout(lua, id, layout)
+        })?,
+    )?;
+    client.set(
+        "set_status_line",
+        lua.create_function(|lua, (shown, id): (bool, Option<u32>)| {
+            let editor = &mut state_mut(lua).editor;
+            let id = id.map_or_else(|| editor.client(), ClientId);
+            if !editor.set_status_line(id, shown) {
+                return Err(mlua::Error::runtime(format!("there is no client {}", id.0)));
+            }
+            Ok(())
         })?,
     )?;
     Ok(client)

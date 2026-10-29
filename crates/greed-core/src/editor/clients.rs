@@ -79,6 +79,9 @@ pub struct ClientState {
     /// How many pixels wide and high a cell is on the client's screen, for
     /// sizing images.
     pub(super) cell_size: (u16, u16),
+    /// Whether it shows the status line; without, its last row is the text's,
+    /// like the screen a talk is shown on.
+    pub(super) status_line: bool,
 }
 
 impl ClientState {
@@ -108,6 +111,7 @@ impl ClientState {
             detach_requested: false,
             switch_requested: None,
             cell_size: (8, 16),
+            status_line: true,
         }
     }
 
@@ -157,6 +161,11 @@ impl ClientState {
 
     pub fn size(&self) -> Option<(u16, u16)> {
         self.size
+    }
+
+    /// Whether it shows the status line.
+    pub fn status_line(&self) -> bool {
+        self.status_line
     }
 
     pub fn color(&self) -> u8 {
