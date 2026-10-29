@@ -2185,6 +2185,17 @@ Links programs print (as `ls --hyperlink` and `gcc` do) are underlined, and
 URLs written in the output open too. They open with `xdg-open` (`open` on
 macOS), or whatever `:set link-opener firefox` names.
 
+A program can tell you something, as long builds and agents do with the
+notification escapes (`OSC 9`, or `OSC 777;notify` with a title). Greed
+passes it on to your desktop the way it sends its own, so you see it
+while you're in another window; looking at the terminal, it shows in the
+status line instead, and a terminal out of sight is marked as wanting a
+look. At most one a second reaches the desktop from each terminal, and
+`:set terminal-notifications false` keeps them in Greed. A program that
+says how far it got (`OSC 9;4`, as Windows Terminal reads it) has that
+shown after the terminal's name, wherever the name shows: `cargo build
+~/src 42%`, or `failed`, `paused` and `busy`.
+
 ### Tasks
 
 `space o t` picks a task to run: a command you run again and again, like

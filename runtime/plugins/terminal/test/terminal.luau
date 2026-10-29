@@ -199,6 +199,63 @@ test("what a program copies goes on the clipboard", function(t)
 	assert(copy and copy[1] == "copied", copy and copy[1])
 end)
 
+test("how far a program says it got shows in its terminal's name, until it's done", function(t)
+	t:run("terminal", {
+		"sh",
+		"-c",
+		"printf '\\033]9;4;1;42\\007going'; sleep 0.3; printf '\\033]9;4;2;60\\007'; sleep 0.3; printf '\\033]9;4;0\\007over'; sleep 5",
+	})
+	local buffer = greed.view():buffer()
+	local function named(wanted: string)
+		t:wait_for(function(): boolean
+			return string.find(buffer:name() or "", wanted, 1, true) ~= nil
+		end)
+	end
+	named(" 42%")
+	named(" 60% failed")
+	shows(t, "over")
+	t:wait_for(function(): boolean
+		return not string.find(buffer:name() or "", "%", 1, true)
+	end)
+end)
+
+test("what a program notifies goes to your desktop, and says so here", function(t)
+	t:run("terminal", {
+		"sh",
+		"-c",
+		"printf '\\033]777;notify;Tests;all 40 pass\\007done'; sleep 5",
+	})
+	shows(t, "done")
+	local sent: any = nil
+	t:wait_for(function(): boolean
+		sent = t:notices()[1]
+		return sent ~= nil
+	end)
+	assert(sent.title == "Tests" and sent.body == "all 40 pass", sent.title)
+	local said = t:messages()
+	assert(said[#said] == "Tests: all 40 pass", said[#said])
+end)
+
+test(
+	"a notification from a terminal out of sight marks it, and the desktop hears it once a second",
+	function(t)
+		local core = require("@core")
+		t:run("terminal", {
+			"sh",
+			"-c",
+			"sleep 0.5; printf '\\033]9;build done\\007\\033]9;tests done\\007'; sleep 5",
+		})
+		local buffer = greed.view():buffer()
+		t:buffer("|elsewhere")
+		t:wait_for(function(): boolean
+			local need = core.attention.of(buffer)
+			return need ~= nil and need.reason == "tests done"
+		end)
+		local sent = t:notices()
+		assert(#sent == 1 and sent[1].body == "build done", `{#sent} sent`)
+	end
+)
+
 -- Points the link-opener option at a script that writes what it opens to
 -- a file, and returns the file.
 local function record_opens(t: test.TestContext): string

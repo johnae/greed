@@ -783,6 +783,10 @@ export type Terminal = {
 	mouse: (self: Terminal, kind: string, col: number, row: number, which: string?, mods: { ctrl: boolean?, alt: boolean?, shift: boolean? }?) -> boolean,
 	--- What the program called its window, if it did.
 	title: (self: Terminal) -> string?,
+	--- The notifications the program sent since this was last asked, oldest first (the latest 16): `OSC 9;BODY` or `OSC 777;notify;TITLE;BODY`, as many programs and shells send them.
+	notices: (self: Terminal) -> { { title: string?, body: string } },
+	--- How far the program last said it got (ConEmu's `OSC 9;4`): "going" with `percent` 0 to 100, "error", "busy" (no telling how far) or "paused"; nil when it hasn't said, or said it's done.
+	progress: (self: Terminal) -> { state: "going" | "error" | "busy" | "paused", percent: number? }?,
 	--- The name of the program it started, like "nu" or "cargo": its file name, or the shell's for a terminal started without a command.
 	program: (self: Terminal) -> string,
 	--- The program's exit code, once it has ended.

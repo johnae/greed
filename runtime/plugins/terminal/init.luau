@@ -23,6 +23,12 @@ greed.option.define({
 	default = "",
 })
 
+greed.option.define({
+	name = "terminal-notifications",
+	doc = "Whether what a program in a terminal notifies (OSC 9, OSC 777) also goes to your desktop, as Greed's own notifications do",
+	default = true,
+})
+
 -- The terminal-shell option as a command line, or nil for $SHELL.
 local function shell(): { string }?
 	local words = {}
@@ -54,6 +60,9 @@ export type Term = {
 	owns: boolean,
 	-- What it runs, as typed, or the title it was opened with.
 	command: string,
+	-- When its program's notification last went to your desktop, on
+	-- `greed.now()`'s clock.
+	notified: number?,
 	-- The command it was asked to run, or nil for your shell.
 	asked: { string }?,
 	-- Images with a mark above the screen.
@@ -146,14 +155,38 @@ end
 -- The terminal last typed into, where text sent from files goes.
 local last_used: Term? = nil
 
+-- How far a program says it got, in words after its terminal's name: "42%",
+-- "42% failed", "busy", "paused".
+local function progress_text(progress: {
+	state: "going" | "error" | "busy" | "paused",
+	percent: number?,
+}): string
+	local percent = if progress.percent then `{progress.percent}%` else nil
+	if progress.state == "going" then
+		return percent or ""
+	elseif progress.state == "error" then
+		return if percent then `{percent} failed` else "failed"
+	elseif progress.state == "paused" then
+		return if percent then `{percent} paused` else "paused"
+	end
+	return "busy"
+end
+
 -- Names `term`'s buffer after what it runs and the folder its shell is in,
--- like "nu ~/src" or "cargo test ~/src", for its float's border, the tab
--- line, the dock and the status line; an adopted one by the title it was
--- given. Called as output comes, since the folder changes.
+-- like "nu ~/src" or "cargo test ~/src", with how far its program says it
+-- got ("cargo build ~/src 42%"), for its float's border, the tab line, the
+-- dock and the status line; an adopted one by the title it was given.
+-- Called as output comes, since the folder changes.
 local function name(term: Term)
 	local what = if term.adopted or term.asked then term.command else term.terminal:program()
+	local running = term.terminal:valid() and term.terminal:exit_code() == nil
 	local cwd = if not term.adopted and term.terminal:valid() then term.terminal:cwd() else nil
 	local wanted = if cwd then `{what} {core.project.tilde(cwd)}` else what
+	local progress = if running then term.terminal:progress() else nil
+	local far = if progress then progress_text(progress) else ""
+	if far ~= "" then
+		wanted ..= ` {far}`
+	end
 	if term.buffer:valid() and term.buffer:name() ~= wanted then
 		term.buffer:set_name(wanted)
 	end
@@ -959,9 +992,38 @@ greed.on("client.attached", function(event: greed.ClientAttached)
 	end
 end)
 
+-- The least time between two of a terminal's notifications reaching your
+-- desktop, in milliseconds; those in between only mark it.
+local NOTIFY_EVERY = 1000
+
+-- Passes on what `term`'s program notified (OSC 9, OSC 777): to your desktop
+-- through your client, which shows it while you're elsewhere, and here in
+-- the status line if you're looking at the terminal, or by marking it as
+-- needing a look if you aren't.
+local function pass_on_notices(term: Term)
+	for _, notice in term.terminal:notices() do
+		local title = notice.title or term.buffer:name() or term.command
+		local body = if notice.body ~= "" then notice.body else nil
+		local now = greed.now()
+		if
+			greed.option.get("terminal-notifications")
+			and now - (term.notified or -NOTIFY_EVERY) >= NOTIFY_EVERY
+		then
+			term.notified = now
+			greed.client.notify(title, body)
+		end
+		if shown(term) then
+			greed.echo(if body then `{title}: {body}` else title)
+		else
+			needs_look(term.buffer, body or "it asks for a look")
+		end
+	end
+end
+
 greed.on("terminal.output", function(event)
 	local term = find(event.terminal)
 	if term then
+		pass_on_notices(term)
 		M.update(term)
 	end
 end)

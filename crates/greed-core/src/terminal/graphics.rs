@@ -44,6 +44,10 @@ pub enum Piece<'a> {
     /// The folder the shell is in (`OSC 7`): what came after `7;`, like
     /// `file://host/home/me`.
     Cwd(Vec<u8>),
+    /// What a program tells, a notification or its progress (`OSC 9` and
+    /// `OSC 777`): the whole sequence's text, like `9;done` or
+    /// `777;notify;title;body`.
+    Notice(Vec<u8>),
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -167,6 +171,8 @@ impl Splitter {
             emit(Piece::Prompt(rest.to_vec()));
         } else if let Some(rest) = held.strip_prefix(b"7;") {
             emit(Piece::Cwd(rest.to_vec()));
+        } else if held.starts_with(b"9;") || held.starts_with(b"777;") {
+            emit(Piece::Notice(held));
         } else {
             let whole = [b"\x1b]", held.as_slice(), terminator].concat();
             emit(Piece::Bytes(&whole));
@@ -577,6 +583,7 @@ mod tests {
                 Piece::Iterm(i) => format!("iterm {}", String::from_utf8_lossy(&i)),
                 Piece::Prompt(p) => format!("prompt {}", String::from_utf8_lossy(&p)),
                 Piece::Cwd(c) => format!("cwd {}", String::from_utf8_lossy(&c)),
+                Piece::Notice(n) => format!("notice {}", String::from_utf8_lossy(&n)),
             });
         });
         out.retain(|p| p != "text ");
@@ -621,6 +628,24 @@ mod tests {
             pieces(&mut s, b"\x1b]7;file://box/home/me\x07"),
             ["cwd file://box/home/me"]
         );
+    }
+
+    #[test]
+    fn what_a_program_tells_comes_out_and_other_osc_goes_on() {
+        let mut s = Splitter::default();
+        assert_eq!(
+            pieces(
+                &mut s,
+                b"\x1b]9;build done\x07\x1b]777;notify;Tests;all 40 pass\x1b\\\x1b]9;4;1;42\x07"
+            ),
+            [
+                "notice 9;build done",
+                "notice 777;notify;Tests;all 40 pass",
+                "notice 9;4;1;42"
+            ]
+        );
+        // OSC 99 is kitty's own notifications, not OSC 9.
+        assert_eq!(pieces(&mut s, b"\x1b]99;;hi\x07"), ["text \x1b]99;;hi\x07"]);
     }
 
     #[test]

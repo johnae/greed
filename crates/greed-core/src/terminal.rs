@@ -162,6 +162,95 @@ impl MarkKind {
     }
 }
 
+/// A notification a program sent (`OSC 9;BODY` or
+/// `OSC 777;notify;TITLE;BODY`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub title: Option<String>,
+    pub body: String,
+}
+
+/// How far a program says it got (`OSC 9;4;STATE;PERCENT`, as Windows Terminal reads it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Progress {
+    pub state: ProgressState,
+    /// 0 to 100, when the program gave one.
+    pub percent: Option<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressState {
+    /// Going, `percent` of the way (1).
+    Going,
+    /// Failed (2).
+    Error,
+    /// Busy, with no telling how far (3).
+    Busy,
+    /// Paused, or going with a warning (4).
+    Paused,
+}
+
+impl ProgressState {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Going => "going",
+            Self::Error => "error",
+            Self::Busy => "busy",
+            Self::Paused => "paused",
+        }
+    }
+}
+
+/// What a program told with `OSC 9` or `OSC 777`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Told {
+    Notice(Notice),
+    /// Its progress, or none any more (state 0).
+    Progress(Option<Progress>),
+}
+
+impl Told {
+    /// What `sequence` tells: the whole OSC's text, like `9;done`. Other
+    /// `9;N;` codes of the same family and `777` other than `notify` tell nothing.
+    fn parse(sequence: &[u8]) -> Option<Self> {
+        let text = String::from_utf8_lossy(sequence);
+        if let Some(rest) = text.strip_prefix("777;notify;") {
+            let (title, body) = rest.split_once(';').unwrap_or((rest, ""));
+            let title = (!title.is_empty()).then(|| title.to_owned());
+            return Some(Self::Notice(Notice {
+                title,
+                body: body.to_owned(),
+            }));
+        }
+        let rest = text.strip_prefix("9;")?;
+        // ConEmu's codes are a number, alone or before a `;`; anything else
+        // is a notification's text.
+        let (code, args) = rest.split_once(';').unwrap_or((rest, ""));
+        if code.is_empty() || !code.bytes().all(|b| b.is_ascii_digit()) {
+            return Some(Self::Notice(Notice {
+                title: None,
+                body: rest.to_owned(),
+            }));
+        }
+        if code != "4" {
+            return None;
+        }
+        let (state, percent) = args.split_once(';').unwrap_or((args, ""));
+        let percent = percent.parse::<u8>().ok().map(|p| p.min(100));
+        let state = match state {
+            "1" => ProgressState::Going,
+            "2" => ProgressState::Error,
+            "3" => ProgressState::Busy,
+            "4" => ProgressState::Paused,
+            _ => return Some(Self::Progress(None)),
+        };
+        Some(Self::Progress(Some(Progress { state, percent })))
+    }
+}
+
+/// How many notifications a terminal keeps until they're taken.
+const NOTICES: usize = 16;
+
 /// A place a shell marked, on line `line`, counting from the terminal's
 /// first line as scrollback does, at byte `col` of that line's text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,6 +299,10 @@ struct Shared {
     made: AtomicU64,
     /// The folder the shell last said it's in, or the one it started in.
     cwd: Mutex<Option<PathBuf>>,
+    /// Notifications not taken yet, oldest first, the latest `NOTICES`.
+    notices: Mutex<VecDeque<Notice>>,
+    /// How far the program last said it got.
+    progress: Mutex<Option<Progress>>,
     /// Whether an `Output` event was sent that no read has answered yet.
     /// Each read clears it before reading, so output that lands during a
     /// read sends another event.
@@ -291,6 +384,8 @@ impl Terminal {
             marks: Mutex::new(VecDeque::new()),
             made: AtomicU64::new(0),
             cwd: Mutex::new(options.cwd.clone()),
+            notices: Mutex::new(VecDeque::new()),
+            progress: Mutex::new(None),
             unread: AtomicBool::new(false),
             cell: Mutex::new(options.cell),
         });
@@ -365,6 +460,17 @@ impl Terminal {
     /// started in.
     pub fn cwd(&self) -> Option<PathBuf> {
         lock(&self.shared.cwd).clone()
+    }
+
+    /// The notifications the program sent since this was last asked,
+    /// oldest first.
+    pub fn take_notices(&self) -> Vec<Notice> {
+        lock(&self.shared.notices).drain(..).collect()
+    }
+
+    /// How far the program last said it got, if it says.
+    pub fn progress(&self) -> Option<Progress> {
+        *lock(&self.shared.progress)
     }
 
     /// How many marks the shell has made so far, to tell when there are new
@@ -630,6 +736,17 @@ fn pump(
                         *lock(&shared.cwd) = Some(path);
                     }
                 }
+                Piece::Notice(sequence) => match Told::parse(&sequence) {
+                    Some(Told::Notice(notice)) => {
+                        let mut notices = lock(&shared.notices);
+                        notices.push_back(notice);
+                        if notices.len() > NOTICES {
+                            notices.pop_front();
+                        }
+                    }
+                    Some(Told::Progress(progress)) => *lock(&shared.progress) = progress,
+                    None => {}
+                },
             });
             keep_scrollback(&mut term, &graphics, &mut lock(&shared.scrollback));
         }
@@ -1144,6 +1261,48 @@ mod tests {
         assert_eq!(sent("f12"), b"\x1b[24~");
         assert_eq!(sent("ctrl-space"), [0]);
         assert_eq!(sent("é"), "é".as_bytes());
+    }
+
+    #[test]
+    fn what_a_program_tells_is_read_as_a_notification_or_its_progress() {
+        let told = |s: &str| Told::parse(s.as_bytes());
+        let notice = |title: Option<&str>, body: &str| {
+            Some(Told::Notice(Notice {
+                title: title.map(str::to_owned),
+                body: body.to_owned(),
+            }))
+        };
+        assert_eq!(told("9;build done"), notice(None, "build done"));
+        assert_eq!(
+            told("9;42 files"),
+            notice(None, "42 files"),
+            "a number, then words"
+        );
+        assert_eq!(
+            told("777;notify;Tests;all 40 pass"),
+            notice(Some("Tests"), "all 40 pass")
+        );
+        assert_eq!(told("777;notify;;just a body"), notice(None, "just a body"));
+        assert_eq!(
+            told("777;notify;Only a title"),
+            notice(Some("Only a title"), "")
+        );
+        assert_eq!(told("777;preexec"), None, "777 other than notify");
+        let progress = |state, percent| Some(Told::Progress(Some(Progress { state, percent })));
+        assert_eq!(told("9;4;1;42"), progress(ProgressState::Going, Some(42)));
+        assert_eq!(told("9;4;2"), progress(ProgressState::Error, None));
+        assert_eq!(told("9;4;3;0"), progress(ProgressState::Busy, Some(0)));
+        assert_eq!(
+            told("9;4;4;250"),
+            progress(ProgressState::Paused, Some(100))
+        );
+        assert_eq!(
+            told("9;4;0"),
+            Some(Told::Progress(None)),
+            "done with progress"
+        );
+        assert_eq!(told("9;4"), Some(Told::Progress(None)));
+        assert_eq!(told("9;9;/home/me"), None, "ConEmu's other codes");
     }
 
     #[test]

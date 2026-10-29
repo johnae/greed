@@ -245,6 +245,49 @@ fn modes_to_lua(lua: &Lua, modes: Modes) -> LuaResult<Table> {
     Ok(t)
 }
 
+fn notices_to_lua(lua: &Lua, notices: Vec<crate::terminal::Notice>) -> LuaResult<Table> {
+    let list = lua.create_table()?;
+    for notice in notices {
+        let t = lua.create_table()?;
+        t.set("title", notice.title)?;
+        t.set("body", notice.body)?;
+        list.push(t)?;
+    }
+    Ok(list)
+}
+
+fn progress_to_lua(
+    lua: &Lua,
+    progress: Option<crate::terminal::Progress>,
+) -> LuaResult<Option<Table>> {
+    let Some(progress) = progress else {
+        return Ok(None);
+    };
+    let t = lua.create_table()?;
+    t.set("state", progress.state.name())?;
+    t.set("percent", progress.percent)?;
+    Ok(Some(t))
+}
+
+/// What a terminal's program says of itself and how it's doing: its title,
+/// notifications and progress, its name, whether it ended or is busy.
+fn add_program_methods<M: UserDataMethods<TerminalRef>>(methods: &mut M) {
+    methods.add_method("title", |lua, this, NoArgs| this.with(lua, |t| t.title()));
+    methods.add_method("notices", |lua, this, NoArgs| {
+        notices_to_lua(lua, this.with(lua, |t| t.take_notices())?)
+    });
+    methods.add_method("progress", |lua, this, NoArgs| {
+        progress_to_lua(lua, this.with(lua, |t| t.progress())?)
+    });
+    methods.add_method("program", |lua, this, NoArgs| {
+        this.with(lua, |t| t.program().to_owned())
+    });
+    methods.add_method("exit_code", |lua, this, NoArgs| {
+        this.with(lua, |t| t.exit_code())
+    });
+    methods.add_method("busy", |lua, this, NoArgs| this.with(lua, |t| t.busy()));
+}
+
 impl UserData for TerminalRef {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("id", |_, this, NoArgs| Ok(this.0));
@@ -331,14 +374,7 @@ impl UserData for TerminalRef {
                 this.send(lua, |t| t.mouse(mouse))
             },
         );
-        methods.add_method("title", |lua, this, NoArgs| this.with(lua, |t| t.title()));
-        methods.add_method("program", |lua, this, NoArgs| {
-            this.with(lua, |t| t.program().to_owned())
-        });
-        methods.add_method("exit_code", |lua, this, NoArgs| {
-            this.with(lua, |t| t.exit_code())
-        });
-        methods.add_method("busy", |lua, this, NoArgs| this.with(lua, |t| t.busy()));
+        add_program_methods(methods);
         methods.add_method("kill", |lua, this, NoArgs| this.with(lua, Terminal::kill));
         methods.add_method("interrupt", |lua, this, NoArgs| {
             this.with(lua, |t| t.interrupt())
