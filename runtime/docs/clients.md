@@ -105,7 +105,7 @@ command, or the one an event is about.
 | `greed.client.current()` | Its name, kind, size and layout |
 | `greed.client.list()` | Every attached client |
 | `greed.client.set_layout("independent" \| "follow", id?)` | What the two commands above use |
-| `greed.client.set_status_line(shown, id?)` | Hides or shows one client's status line, as slides do while you present |
+| `greed.client.set_status_line(shown, id?)` | Hides or shows one client's status line, as slides do while you present; hidden, it still shows while there's a message, like a question |
 | `greed.option.set(name, value, { client = true })` | A value of its own for the acting client |
 | `buffer:set_screen_size` | Lays a buffer out at one size in every view, as terminals do |
 

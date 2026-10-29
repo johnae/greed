@@ -2159,6 +2159,7 @@ pub(super) fn status_line(
         left,
         right,
         actions,
+        message: message.is_some(),
     }))
 }
 

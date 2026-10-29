@@ -449,6 +449,7 @@ fn plugin_status_lines_are_padded_and_trimmed() {
         ],
         right: vec![span("3:4 ", Tag::STATUS)],
         actions: Vec::new(),
+        message: false,
     };
     let render = |width| {
         let mut ed = editor("|x");
@@ -471,6 +472,7 @@ fn a_click_on_a_status_segment_finds_its_action() {
         left: vec![span(" N "), span("agenda")],
         right: vec![span("2 due"), span(" 3:4 ")],
         actions: vec![None, Some("left".into()), Some("right".into())],
+        message: false,
     };
     let mut ed = editor("|x");
     let renderer = Renderer::new(CellWidth);
@@ -647,6 +649,22 @@ fn a_client_without_its_status_line_gives_the_row_to_the_text() {
     assert!(shown.surface(SurfaceId::Status).is_none(), "no status line");
     let text: Vec<String> = screen_rows(&shown).iter().map(Row::text).collect();
     assert_eq!(text, ["1 a", "2 b", "3 c"], "the text has every row");
+    // A message shows anyway, like a question waiting for a key.
+    let asked = Renderer::new(CellWidth).frame(
+        &mut ed,
+        Size {
+            width: 10,
+            height: 3,
+        },
+        &Status::Default {
+            message: Some("run? y n"),
+        },
+        &Plain,
+    );
+    assert!(
+        asked.surface(SurfaceId::Status).is_some(),
+        "a message shows"
+    );
     assert!(ed.set_status_line(client, true));
     assert!(frame(&mut ed, 10, 3).surface(SurfaceId::Status).is_some());
 }

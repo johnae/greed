@@ -592,6 +592,9 @@ pub struct StatusLine {
     /// The command a click on each segment runs, by its place in `left`
     /// and then `right`; segments past the end have none.
     pub actions: Vec<Option<Arc<str>>>,
+    /// Whether it shows a message, which shows even where the status line
+    /// is hidden, like a question waiting for a key.
+    pub message: bool,
 }
 
 /// What goes on the status line.
@@ -709,10 +712,16 @@ impl<M: Measure> Renderer<M> {
         self.images.borrow_mut().clear();
         self.scenes.borrow_mut().clear();
         self.actions.borrow_mut().clear();
-        // A client may leave the status line out, its row going to the text.
-        let status_shown = editor
-            .client_state(editor.client())
-            .is_none_or(crate::ClientState::status_line);
+        // A client may leave the status line out, its row going to the text,
+        // but a message still shows, so a question waiting for a key is seen.
+        let message = match status {
+            Status::Default { message } => message.is_some(),
+            Status::Line(line) => line.message,
+        };
+        let status_shown = message
+            || editor
+                .client_state(editor.client())
+                .is_none_or(crate::ClientState::status_line);
         let screen = Rect {
             x: 0,
             y: 0,
@@ -1765,6 +1774,7 @@ impl<M: Measure> Renderer<M> {
             ],
             right: vec![span(&format!("{}:{column} ", line + 1), Tag::STATUS)],
             actions: Vec::new(),
+            message: message.is_some(),
         }
     }
     /// Status line segments this wide or narrower, like the mode, are left whole
