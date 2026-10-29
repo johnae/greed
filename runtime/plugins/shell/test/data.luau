@@ -96,6 +96,9 @@ test("> buf:NAME sends a command's output to a buffer, and >> adds to it", funct
 	local first = run(t, sh, "printf 'a\\n' > buf:out")
 	local out = assert(data.buffer("out"), "a buffer made")
 	assert(out:text() == "a\n", out:text())
+	-- It shows beside the shell, which you go on typing in.
+	assert(#out:views() == 1 and out:views()[1]:is_pane(), "in a split")
+	assert(greed.view():buffer() == sh.buffer, "the shell keeps the focus")
 	assert(first.into == "buf:out" and first.runner == "pipe", tostring(first.into))
 	-- The output went to the buffer, so the block shows only the command.
 	assert(sh.buffer:text() == "printf 'a\\n' > buf:out\n", sh.buffer:text())
@@ -109,6 +112,7 @@ test("> buf:NAME sends a command's output to a buffer, and >> adds to it", funct
 	assert(out:text() == "a\n", "> empties it first: " .. out:text())
 	run(t, sh, "echo c > buf:out")
 	assert(out:text() == "c\n", out:text())
+	assert(#out:views() == 1, "showing already, so no second split")
 	-- open shows it.
 	run(t, sh, "open buf:out")
 	assert(greed.view():buffer() == out, "shown")

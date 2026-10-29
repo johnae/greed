@@ -506,7 +506,20 @@ local function begin(
 	local into = parsed.into
 	if into and why == nil then
 		block.into = `buf:{into.name}`
-		block.target = data.target(into, block.cwd)
+		local target = data.target(into, block.cwd)
+		block.target = target
+		-- What you send to a buffer shows beside the shell as it fills,
+		-- unless it shows already; an agent's commands open nothing.
+		local view = greed.view()
+		if
+			block.by == "user"
+			and #target:views() == 0
+			and view:buffer() == shell.buffer
+			and view:is_pane()
+		then
+			view:split("right", target)
+			view:focus()
+		end
 	end
 	if why then
 		run.fail(shell, block, why, 2)

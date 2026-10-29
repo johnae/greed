@@ -420,12 +420,14 @@ And end with where its output goes:
 | `... > buf:NAME` | Into a buffer, made if there's none, emptied first |
 | `... >> buf:NAME` | Added to the end of a buffer |
 
-Errors still show in the block. One of these alone passes it on: `$3`
-shows block 3's output again, `$3 > buf:keep` keeps it in a buffer, and
-`open buf:keep` shows that buffer, and `space b` lists it as `buf:keep`
-beside your open files. Such lines run through a pipe rather
-than a terminal, so a `> buf:` gets only what the program printed, and
-can't be combined with `!`.
+The buffer opens in a split beside the shell as the command runs, unless
+it shows already, and you go on typing at the prompt. Errors still show
+in the block. One of these alone passes it on: `$3` shows block 3's
+output again, and `$3 > buf:keep` keeps it in a buffer. Later, `open
+buf:keep` shows that buffer again, and `space b` lists it as `buf:keep`
+beside your open files. Such lines run through a pipe rather than a
+terminal, so a `> buf:` gets only what the program printed, and can't be
+combined with `!`.
 
 After a command's first word, `$3` is a file holding what block 3
 printed, for programs that read files rather than their input:
