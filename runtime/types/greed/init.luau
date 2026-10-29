@@ -1470,6 +1470,8 @@ export type ClientInfo = {
 	layout: "follow" | "independent",
 	--- Whether it shows the status line (`set_status_line`).
 	status_line: boolean,
+	--- Whether it draws scaled text (a mark's `scale`) bigger: the window does, and so does a terminal with kitty's text sizing; others draw it at its usual size, in the room it would take.
+	scaled_text: boolean,
 	--- Which of the peer colors (1 to 6) its cursors show in for the other clients, as `ui.cursor.peer.N`.
 	color: number,
 	--- Who it belongs to: "owner", the session's owner, for now.

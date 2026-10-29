@@ -490,11 +490,7 @@ impl Painter {
         );
         Painter(Screen {
             graphics: Graphics::new(graphics::detect()),
-            sized: text_sizing(
-                var("GREED_TEXT_SIZING").as_deref(),
-                var("TERM").as_deref(),
-                std::env::var_os("KITTY_WINDOW_ID").is_some(),
-            ),
+            sized: greed_core::control::terminal_text_sizing(),
             ..Screen::default()
         })
     }
@@ -553,16 +549,6 @@ impl Screen {
         }
         queue!(out, terminal::EndSynchronizedUpdate)?;
         out.flush()
-    }
-}
-
-/// Whether the terminal draws text bigger, with kitty's text sizing
-/// protocol: as `$GREED_TEXT_SIZING` says ("on" or "off"), or in kitty.
-fn text_sizing(setting: Option<&str>, term: Option<&str>, in_kitty: bool) -> bool {
-    match setting {
-        Some("on") => true,
-        Some("off") => false,
-        _ => in_kitty || term.is_some_and(|t| t.contains("kitty")),
     }
 }
 
@@ -878,6 +864,7 @@ mod tests {
 
     #[test]
     fn text_sizing_is_for_kitty_unless_greed_text_sizing_says() {
+        use greed_core::control::text_sizing;
         assert!(text_sizing(None, Some("xterm-kitty"), false));
         assert!(
             text_sizing(None, Some("xterm-256color"), true),

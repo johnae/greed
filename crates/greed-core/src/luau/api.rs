@@ -1205,6 +1205,7 @@ fn client_to_lua(lua: &Lua, client: &crate::ClientState) -> LuaResult<Table> {
     }
     t.set("layout", client.layout().name())?;
     t.set("status_line", client.status_line())?;
+    t.set("scaled_text", client.scaled_text())?;
     t.set("color", client.color())?;
     // Every client is the session owner's until sessions can be shared.
     t.set("person", "owner")?;

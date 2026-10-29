@@ -708,6 +708,9 @@ fn add_client(lua: &Lua, name: Option<String>, kind: Option<String>) -> mlua::Re
             id,
             crate::ClientInfo {
                 name: name.unwrap_or_else(|| format!("test {}", id.0)),
+                // A terminal draws scaled text at its usual size, as one
+                // without kitty's text sizing does.
+                scaled_text: kind.as_deref() != Some("tui"),
                 kind: kind.unwrap_or_else(|| "test".to_owned()),
                 remote: false,
             },

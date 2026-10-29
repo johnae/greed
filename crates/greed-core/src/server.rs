@@ -1207,6 +1207,7 @@ impl Server<'_> {
             remote,
             kind,
             name,
+            scaled_text,
             layout,
             takeover,
             build,
@@ -1229,7 +1230,12 @@ impl Server<'_> {
         for id in others {
             self.detach(id);
         }
-        let info = ClientInfo { name, kind, remote };
+        let info = ClientInfo {
+            name,
+            kind,
+            remote,
+            scaled_text,
+        };
         let id = self.host.with_editor_mut(|ed| ed.attach_client(info));
         self.connections += 1;
         let connection = self.connections;

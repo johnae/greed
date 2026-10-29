@@ -1600,6 +1600,7 @@ mod clients {
             name: name.to_owned(),
             kind: "tui".to_owned(),
             remote: false,
+            scaled_text: false,
         };
         let a = ed.attach_client(info("tui@a"));
         ed.set_acting(a);
@@ -1852,6 +1853,7 @@ mod clients {
             name: "tui@b".to_owned(),
             kind: "tui".to_owned(),
             remote: false,
+            scaled_text: false,
         };
         let b = ed.attach_client(info);
         ed.set_acting(b);
@@ -1866,6 +1868,7 @@ mod clients {
             name: name.to_owned(),
             kind: "tui".to_owned(),
             remote: false,
+            scaled_text: false,
         };
         let name = |ed: &Editor, id| ed.client_state(id).unwrap().name().to_owned();
         let a = ed.attach_client(info("tui@desk"));

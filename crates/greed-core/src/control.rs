@@ -149,13 +149,43 @@ impl Opening {
 }
 
 /// What a client of `kind` ("tui", "gui") asks to attach with: the
-/// handshake, and who it is, `kind@host`, so it gets its cursors, focus and
-/// mode back when it comes back.
+/// handshake, who it is, `kind@host`, so it gets its cursors, focus and
+/// mode back when it comes back, and whether it draws scaled text bigger.
 pub fn attach_params(kind: &str) -> Value {
     let host = gethostname::gethostname().to_string_lossy().into_owned();
+    let scaled_text = kind == "gui" || (kind == "tui" && terminal_text_sizing());
     let mut params = handshake();
-    params["client"] = json!({ "kind": kind, "name": format!("{kind}@{host}") });
+    params["client"] = json!({
+        "kind": kind,
+        "name": format!("{kind}@{host}"),
+        "scaled_text": scaled_text,
+    });
     params
+}
+
+/// Whether the terminal greed runs in draws text bigger, with kitty's text
+/// sizing protocol (see [`text_sizing`]). Kitty's own variable says so, but
+/// not in tmux, zellij or screen in kitty, which keep it and drop the
+/// protocol.
+pub fn terminal_text_sizing() -> bool {
+    let multiplexed = ["TMUX", "ZELLIJ", "STY"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some());
+    text_sizing(
+        std::env::var("GREED_TEXT_SIZING").ok().as_deref(),
+        std::env::var("TERM").ok().as_deref(),
+        std::env::var_os("KITTY_WINDOW_ID").is_some() && !multiplexed,
+    )
+}
+
+/// Whether a terminal draws text bigger, with kitty's text sizing
+/// protocol: as `$GREED_TEXT_SIZING` says ("on" or "off"), or in kitty.
+pub fn text_sizing(setting: Option<&str>, term: Option<&str>, in_kitty: bool) -> bool {
+    match setting {
+        Some("on") => true,
+        Some("off") => false,
+        _ => in_kitty || term.is_some_and(|t| t.contains("kitty")),
+    }
 }
 
 /// How to start over with the greed installed now when the session `name`
@@ -865,6 +895,9 @@ pub struct Attachment {
     /// Who it is, like "tui@laptop"; a client coming back by the same name
     /// gets its state back.
     pub name: String,
+    /// Whether it draws scaled text bigger; a client that doesn't say does
+    /// if it's a window.
+    pub scaled_text: bool,
     /// "follow" or "independent", if it asked to be laid out one way: a
     /// client coming back otherwise keeps the layout it had, and a new one
     /// follows.
@@ -890,6 +923,7 @@ impl Attachment {
         let name = client["name"]
             .as_str()
             .map_or_else(|| kind.clone(), str::to_owned);
+        let scaled_text = client["scaled_text"].as_bool().unwrap_or(kind == "gui");
         Self {
             reader,
             writer,
@@ -898,6 +932,7 @@ impl Attachment {
             remote: params["remote"].as_bool() == Some(true),
             kind,
             name,
+            scaled_text,
             layout: params["layout"]
                 .as_str()
                 .and_then(crate::ClientLayout::parse),

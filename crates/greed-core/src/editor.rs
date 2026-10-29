@@ -655,6 +655,7 @@ impl Editor {
         client.name = info.name.into();
         client.kind = info.kind.into();
         client.remote = info.remote;
+        client.scaled_text = info.scaled_text;
         true
     }
 

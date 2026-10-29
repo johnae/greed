@@ -82,6 +82,8 @@ pub struct ClientState {
     /// Whether it shows the status line; without, its last row is the text's,
     /// like the screen a talk is shown on.
     pub(super) status_line: bool,
+    /// Whether it draws scaled text bigger (see [`ClientInfo`]).
+    pub(super) scaled_text: bool,
 }
 
 impl ClientState {
@@ -112,6 +114,7 @@ impl ClientState {
             switch_requested: None,
             cell_size: (8, 16),
             status_line: true,
+            scaled_text: true,
         }
     }
 
@@ -166,6 +169,11 @@ impl ClientState {
     /// Whether it shows the status line.
     pub fn status_line(&self) -> bool {
         self.status_line
+    }
+
+    /// Whether it draws scaled text bigger.
+    pub fn scaled_text(&self) -> bool {
+        self.scaled_text
     }
 
     pub fn color(&self) -> u8 {
@@ -236,6 +244,9 @@ pub struct ClientInfo {
     pub kind: String,
     /// Whether it came over `greed ssh`.
     pub remote: bool,
+    /// Whether it draws scaled text bigger: a window, or a terminal with
+    /// kitty's text sizing.
+    pub scaled_text: bool,
 }
 
 /// A tab as one client has it: which pane is active, the panes in the
