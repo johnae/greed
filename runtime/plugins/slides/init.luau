@@ -9,7 +9,7 @@
 --   r                  run the block the cursor is on (it lands on the first)
 --   q, esc             back to the file
 --
--- A ```` ```notes ```` block at the end of a slide is what you'd say there:
+-- A ```` ```speaker ```` block at the end of a slide is what you'd say there:
 -- it isn't shown on the slide.
 --
 -- The slides are a talk, and every client can show it: `:slides` on another
@@ -40,7 +40,7 @@ function M.slides(buffer: greed.Buffer): { Slide }
 	local function add(first: number, last: number)
 		local notes: { string } = {}
 		for _, code in s.code do
-			if code.lang == "notes" and code.open >= first and code.close <= last then
+			if code.lang == "speaker" and code.open >= first and code.close <= last then
 				table.insert(notes, buffer:slice(code.code_from, code.code_to))
 			end
 		end
@@ -52,7 +52,7 @@ function M.slides(buffer: greed.Buffer): { Slide }
 				last -= 1
 			end
 			local code = s.code_at[last]
-			if last < first or code == nil or code.lang ~= "notes" then
+			if last < first or code == nil or code.lang ~= "speaker" then
 				break
 			end
 			last = code.open - 1

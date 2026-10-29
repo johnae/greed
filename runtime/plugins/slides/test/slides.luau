@@ -19,7 +19,7 @@ local DECK = table.concat({
 	"echo 42",
 	"```",
 	"",
-	"```notes",
+	"```speaker",
 	"Mention the outage.",
 	"```",
 	"",

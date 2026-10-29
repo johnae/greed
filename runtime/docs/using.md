@@ -1990,7 +1990,7 @@ Notes, commands and their output in one file.
 echo "orders today: $((40 + 2))"
 ```
 
-```notes
+```speaker
 Press r here; the result shows on the slide.
 ```
 ````
@@ -2006,7 +2006,7 @@ and its result lands on the slide, saved in the file like any other.
 | `r` | Run the block the cursor is on; on a new slide it starts on the first |
 | `q`, `esc` | Back to the file |
 
-A `notes` block at the end of a slide is what you want to say there; it
+A `speaker` block at the end of a slide is what you want to say there; it
 isn't shown on the slide. Front matter at the top isn't a slide either,
 and a `---` right under a line of text underlines a heading, as Markdown
 has it. Headings show big in the window and in kitty.
