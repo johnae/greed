@@ -345,6 +345,8 @@ export type View = {
 	narrow: (self: View, from: number?, to: number?) -> (),
 	--- Binds single keys for this view alone, e.g. `{ right = "slide-next" }`, in every mode and ahead of its buffer's keys and every other binding, while it has focus; other views of the buffer keep theirs. Replaces what was bound for it before; nil drops them.
 	set_keys: (self: View, keys: { [string]: string }?) -> (),
+	--- Leaves the marks in these namespaces out of what this view draws, e.g. `{ "lsp" }` for slides without the problems' squiggles; other views of the buffer still draw them. Replaces the list it had; nil or empty draws them all again.
+	hide_marks: (self: View, namespaces: { string }?) -> (),
 	--- The first and last line it's narrowed to, or nil when it shows all of its buffer.
 	narrowed: (self: View) -> (number?, number?),
 	--- Shows only the lines a filter keeps, among those it shows past the first `skip`; the others stay in the buffer, hidden in this view alone. `text` is what was typed, given back by `filter()`; with `regex` it's a regex. Otherwise the lines `query` matches, a query `core.query` parsed (as the shell's filters read one: query.luau there): its words anywhere in a line (minding case with `case`), its fields those of a line of JSON (dotted paths, through arrays) or logfmt, compared as `greed.compare` does, and `key=value` found in the text of other lines; without a query, every word of `text`. A `section` ("status.conditions") keeps the indented text (YAML, indented JSON) under those keys, with the keys above what shows. A line with a cursor on it shows anyway. Nil or empty shows every line again, and so does showing another buffer.

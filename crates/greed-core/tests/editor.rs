@@ -804,6 +804,38 @@ fn decorations_follow_edits_and_are_replaced_per_namespace() {
 }
 
 #[test]
+fn a_view_can_leave_out_the_marks_of_some_namespaces() {
+    use greed_core::Mark;
+    let mut ed = editor("hello world");
+    let first = ed.focus();
+    let buffer = ed.view(first).buffer;
+    let mark = |from, to, style: &str| Mark {
+        range: from..to,
+        style: style.into(),
+        ..Mark::default()
+    };
+    ed.decorate(buffer, "lsp", vec![mark(0, 5, "diagnostic")]);
+    ed.decorate(buffer, "search", vec![mark(6, 11, "match")]);
+    let second = ed.split(first);
+    ed.hide_marks(first, vec!["lsp".into()]);
+    let styles = |ed: &Editor, view| -> Vec<String> {
+        let view = ed.view(view);
+        ed.buffer(buffer)
+            .marks_for(view.id, view.hidden_marks.clone())
+            .map(|m| m.style.to_string())
+            .collect()
+    };
+    assert_eq!(styles(&ed, first), ["match"]);
+    assert_eq!(
+        styles(&ed, second),
+        ["diagnostic", "match"],
+        "only that view"
+    );
+    ed.hide_marks(first, Vec::new());
+    assert_eq!(styles(&ed, first), ["diagnostic", "match"]);
+}
+
+#[test]
 fn file_types_come_from_a_table_plugins_can_change() {
     let mut ed = Editor::new(ClientId(1));
     let (rust, _) = ed.open("file", "", Some("src/main.rs".into()));

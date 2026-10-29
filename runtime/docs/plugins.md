@@ -952,7 +952,10 @@ greed.tab.set_layout({
   file that's open in two. It replaces only that view's marks in `ns`, and
   they go when the view closes. Every client sees them in that pane.
   Language servers' diagnostics are marks too, in the `"diagnostics"`
-  namespace, which is how they follow edits.
+  namespace, which is how they follow edits, and the lsp plugin draws
+  their signs and messages in `"lsp"`. `view:hide_marks({ "diagnostics",
+  "lsp" })` leaves a namespace's marks out of one view, as slides do;
+  `view:hide_marks(nil)` draws them all again.
 - Multibuffers show excerpts of many files in one buffer, edited in place:
   `require("@multibuffer").open({ { path = path, from = 9, to = 12 } },
   { summary = "3 places" })` gives a buffer to show in a panel or float,

@@ -604,6 +604,31 @@ fn a_views_own_marks_show_in_it_alone_and_go_when_it_closes() {
 }
 
 #[test]
+fn a_view_leaves_out_the_marks_of_the_namespaces_it_hides() {
+    use greed_core::Mark;
+    let mut ed = editor("|one two");
+    let main = ed.focus();
+    let buffer = ed.view(main).buffer;
+    let note = |at: usize, text: &str| Mark {
+        range: at..at,
+        style: "hint".into(),
+        text: Some(text.into()),
+        sign: Some("E".into()),
+        ..Mark::default()
+    };
+    ed.decorate(buffer, "lsp", vec![note(4, "oops ")]);
+    assert_eq!(rows(&frame(&mut ed, 30, 2)), ["E 1 one oops two"]);
+    ed.hide_marks(main, vec!["lsp".into()]);
+    assert_eq!(
+        rows(&frame(&mut ed, 30, 2)),
+        ["1 one two"],
+        "nor its sign column"
+    );
+    ed.hide_marks(main, Vec::new());
+    assert_eq!(rows(&frame(&mut ed, 30, 2)), ["E 1 one oops two"]);
+}
+
+#[test]
 fn marks_add_text_that_isnt_in_the_buffer() {
     use greed_core::Mark;
     let mut ed = editor("let x = 1|;\nfoo()");

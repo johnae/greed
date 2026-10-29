@@ -79,6 +79,8 @@ pub struct View {
     /// Single keys bound for this view alone, ahead of its buffer's, like
     /// a slide show's on the slides.
     pub keys: Arc<HashMap<Key, Arc<str>>>,
+    /// The namespaces of marks it doesn't draw, like problems on a slide.
+    pub hidden_marks: Arc<[Arc<str>]>,
 }
 
 impl View {
@@ -985,6 +987,17 @@ impl Editor {
     pub fn set_buffer_keys(&mut self, buffer: BufferId, keys: HashMap<Key, Arc<str>>) {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.set_keys(keys);
+        }
+    }
+
+    /// Leaves the marks in the namespaces `hidden` out of what `view` draws,
+    /// for every client; an empty list draws them all again.
+    pub fn hide_marks(&mut self, view: ViewId, hidden: Vec<Arc<str>>) {
+        let hidden: Arc<[Arc<str>]> = hidden.into();
+        for client in self.clients.values_mut() {
+            if let Some(view) = client.views.get_mut(&view) {
+                view.hidden_marks = hidden.clone();
+            }
         }
     }
 
@@ -2292,6 +2305,7 @@ impl Editor {
             filter: None,
             columns: 0,
             keys: Arc::default(),
+            hidden_marks: Arc::default(),
         })
     }
 

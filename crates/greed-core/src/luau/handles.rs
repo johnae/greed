@@ -456,6 +456,16 @@ fn add_part_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
             Ok(())
         },
     );
+    methods.add_method("hide_marks", |lua, this, hidden: Option<Vec<String>>| {
+        this.with_view(lua, |_| Ok(()))?;
+        let hidden = hidden
+            .unwrap_or_default()
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        state_mut(lua).editor.hide_marks(this.id, hidden);
+        Ok(())
+    });
     methods.add_method(
         "set_filter",
         |lua, this, (text, opts): (Option<String>, Option<mlua::Table>)| {

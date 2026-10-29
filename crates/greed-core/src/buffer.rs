@@ -279,9 +279,13 @@ impl Buffer {
         })
     }
 
-    /// The marks `view` draws: its own and every view's.
-    pub fn marks_for(&self, view: ViewId) -> impl Iterator<Item = &Mark> {
-        self.all_marks()
+    /// The marks `view` draws: its own and every view's, less those in the
+    /// namespaces it leaves out (`hidden`).
+    pub fn marks_for(&self, view: ViewId, hidden: Arc<[Arc<str>]>) -> impl Iterator<Item = &Mark> {
+        self.marks
+            .iter()
+            .filter(move |(ns, _)| !hidden.contains(ns))
+            .flat_map(|(_, marks)| marks)
             .filter(move |m| m.view.is_none_or(|v| v == view))
     }
 
