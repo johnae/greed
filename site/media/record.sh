@@ -177,6 +177,21 @@ if [ ${#names[@]} -eq 0 ]; then
   done
 fi
 
+# What the recording under way started: its servers, Dovecot and Tuwunel,
+# and its scratch folder. They go however it ends, a failed one too.
+servers="" scratch=""
+cleanup() {
+  for server in $servers; do
+    kill "$server" 2>/dev/null || true
+    wait "$server" 2>/dev/null || true
+  done
+  if [ -n "$scratch" ]; then
+    rm -rf "$scratch"
+  fi
+  servers="" scratch=""
+}
+trap cleanup EXIT
+
 for name in "${names[@]}"; do
   # A fresh Greed in a folder of its own: the demo profile's config, and
   # the sample project to work on, shop, in the demo's home so paths show
@@ -228,16 +243,11 @@ for name in "${names[@]}"; do
   (cd "$scratch/home/shop" && env -i "${vars[@]}" \
     "$root/target/debug/greed" --profile "$scratch/profile" --record "$scratch/$name.demo" \
     "${args[@]}")
-  # The servers it started, Dovecot and Tuwunel.
-  for server in $servers; do
-    kill "$server" 2>/dev/null || true
-    wait "$server" 2>/dev/null || true
-  done
   out=$root/target/media/$name
   rm -rf "$out"
   mkdir -p "$(dirname "$out")"
   mv "$scratch/$name" "$out"
-  rm -rf "$scratch"
+  cleanup
   if command -v ffmpeg >/dev/null; then
     fps=$(awk '$1 == "fps" { print $2 }' "$media/$name.demo")
     ffmpeg -y -loglevel error -framerate "${fps:-30}" -i "$out/frames/%05d.png" \
