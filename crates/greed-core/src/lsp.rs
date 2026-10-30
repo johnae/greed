@@ -187,6 +187,19 @@ struct Document {
     version: usize,
     uri: String,
     text: Rope,
+    /// How many times its buffer was saved, as the server last heard.
+    saves: u64,
+}
+
+/// Whether a server wants to hear when a document is saved, as
+/// `textDocumentSync` in its capabilities says, and if so whether with its
+/// text.
+fn save_wanted(capabilities: &Value) -> Option<bool> {
+    match &capabilities["textDocumentSync"]["save"] {
+        Value::Bool(true) => Some(false),
+        Value::Object(save) => Some(save.get("includeText") == Some(&Value::Bool(true))),
+        _ => None,
+    }
 }
 
 /// How a server wants to hear about changes to a document.
@@ -553,6 +566,7 @@ impl Lsp {
             server.notify("textDocument/didClose", &closed)?;
         }
         let (sync, encoding) = (server.sync, server.encoding);
+        let save = save_wanted(&server.capabilities);
         let Some(document) = server.documents.get_mut(&buffer.id()) else {
             let text = buffer.text().to_string();
             server.documents.insert(
@@ -561,6 +575,7 @@ impl Lsp {
                     version,
                     uri: uri.clone(),
                     text: buffer.text().clone(),
+                    saves: buffer.saves(),
                 },
             );
             let params = json!({ "textDocument": {
@@ -568,22 +583,39 @@ impl Lsp {
             }});
             return Ok(server.notify("textDocument/didOpen", &params)?);
         };
-        if document.version == version {
-            return Ok(());
+        let mut told = Vec::new();
+        if document.version != version {
+            let ranged = if sync == SyncKind::Incremental {
+                ranged_changes(&document.text, document.version, buffer, encoding)
+            } else {
+                None
+            };
+            let changes =
+                ranged.unwrap_or_else(|| vec![json!({ "text": buffer.text().to_string() })]);
+            document.version = version;
+            document.text = buffer.text().clone();
+            let params = json!({
+                "textDocument": { "uri": uri, "version": version },
+                "contentChanges": changes,
+            });
+            told.push(("textDocument/didChange", params));
         }
-        let ranged = if sync == SyncKind::Incremental {
-            ranged_changes(&document.text, document.version, buffer, encoding)
-        } else {
-            None
-        };
-        let changes = ranged.unwrap_or_else(|| vec![json!({ "text": buffer.text().to_string() })]);
-        document.version = version;
-        document.text = buffer.text().clone();
-        let params = json!({
-            "textDocument": { "uri": uri, "version": version },
-            "contentChanges": changes,
-        });
-        Ok(server.notify("textDocument/didChange", &params)?)
+        // A save after what changed, so the server checks the text saved, as
+        // rust-analyzer runs the compiler on save.
+        if document.saves != buffer.saves() {
+            document.saves = buffer.saves();
+            if let Some(with_text) = save {
+                let mut params = json!({ "textDocument": { "uri": uri } });
+                if with_text {
+                    params["text"] = Value::from(buffer.text().to_string());
+                }
+                told.push(("textDocument/didSave", params));
+            }
+        }
+        for (method, params) in told {
+            server.notify(method, &params)?;
+        }
+        Ok(())
     }
 
     /// The server for `language` in `root`, started if it isn't running yet.
@@ -1101,7 +1133,7 @@ fn client_capabilities() -> Value {
         "textDocument": {
             "hover": { "contentFormat": ["plaintext", "markdown"] },
             "publishDiagnostics": {},
-            "synchronization": { "didSave": false },
+            "synchronization": { "didSave": true },
             "definition": {},
             "references": {},
             "rename": { "prepareSupport": true },

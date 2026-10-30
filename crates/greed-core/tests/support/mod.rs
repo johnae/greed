@@ -43,6 +43,8 @@ pub struct Options {
     pub incremental: bool,
     /// Whether it counts positions in UTF-8 bytes, or UTF-16 code units.
     pub utf8: bool,
+    /// Whether it wants to hear of saves, and if so whether with the text.
+    pub save: Option<bool>,
 }
 
 impl Default for Options {
@@ -50,6 +52,7 @@ impl Default for Options {
         Self {
             incremental: false,
             utf8: true,
+            save: None,
         }
     }
 }
@@ -208,6 +211,8 @@ fn fake_server(
     // the settings it was told and answered when it asked.
     let (mut started, mut folders) = (Value::Null, Value::Null);
     let (mut changed, mut configured) = (Value::Null, Value::Null);
+    // The text each save came with, or null for one without.
+    let mut saved: Vec<Value> = Vec::new();
     while let Some(message) = read(&mut input) {
         let method = message["method"]
             .as_str()
@@ -235,8 +240,10 @@ fn fake_server(
                     "ranged": documents.ranged, "whole": documents.whole,
                     "errors": documents.errors,
                     "changed": changed, "configured": configured,
+                    "saved": saved,
                 } }),
             ),
+            "textDocument/didSave" => saved.push(message["params"]["text"].clone()),
             "textDocument/didOpen" | "textDocument/didChange" => {
                 opened = documents.update(&method, &message["params"], options);
                 publish_diagnostics(&mut output, &opened);
@@ -295,7 +302,11 @@ fn fake_server(
 fn capabilities(options: Options) -> Value {
     json!({
         "positionEncoding": if options.utf8 { "utf-8" } else { "utf-16" },
-        "textDocumentSync": { "openClose": true, "change": if options.incremental { 2 } else { 1 } },
+        "textDocumentSync": {
+            "openClose": true,
+            "change": if options.incremental { 2 } else { 1 },
+            "save": options.save.map(|text| json!({ "includeText": text })),
+        },
         "renameProvider": { "prepareProvider": true },
         "codeActionProvider": { "resolveProvider": true },
         "referencesProvider": true,

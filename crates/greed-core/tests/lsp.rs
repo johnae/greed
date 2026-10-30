@@ -644,6 +644,60 @@ fn servers_start_the_first_installed_command_and_skip_missing_ones_quietly() {
     assert!(err.to_string().contains("no language server"), "{err}");
 }
 
+/// Saves the first buffer of `s` to its file.
+fn save(s: &mut Setup) {
+    std::fs::create_dir_all(s.path.parent().unwrap()).unwrap();
+    let buffer = s.editor.buffers().next().unwrap().id();
+    s.editor.save(buffer).unwrap();
+}
+
+#[test]
+fn a_save_tells_a_server_that_asks_after_the_edit_with_the_text_it_wants() {
+    let options = support::Options {
+        save: Some(true),
+        ..support::Options::default()
+    };
+    let mut s = setup_with("ok", options);
+    s.lsp.sync(&s.editor);
+    s.next();
+    s.methods();
+    s.edit(0, 0, "// ");
+    save(&mut s);
+    s.lsp.sync(&s.editor);
+    assert_eq!(
+        s.documents_of(0),
+        ["textDocument/didChange", "textDocument/didSave"]
+    );
+    // Once for each save, not again with nothing new.
+    s.lsp.sync(&s.editor);
+    assert!(s.documents_of(0).is_empty());
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(s.probe(buffer)["saved"], json!(["// ok"]));
+}
+
+#[test]
+fn a_save_says_nothing_to_a_server_that_doesnt_ask_and_no_text_unless_asked() {
+    let mut s = setup("ok");
+    s.lsp.sync(&s.editor);
+    s.next();
+    s.methods();
+    save(&mut s);
+    s.lsp.sync(&s.editor);
+    assert!(s.documents_of(0).is_empty(), "it didn't ask");
+
+    let options = support::Options {
+        save: Some(false),
+        ..support::Options::default()
+    };
+    let mut s = setup_with("ok", options);
+    s.lsp.sync(&s.editor);
+    s.next();
+    save(&mut s);
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(s.probe(buffer)["saved"], json!([null]), "without the text");
+}
+
 #[test]
 fn a_request_goes_after_the_edit_made_just_before_it() {
     let mut s = setup("ok");
@@ -968,6 +1022,7 @@ fn incremental_changes_rebuild_the_text_in_utf16_positions() {
     let options = support::Options {
         incremental: true,
         utf8: false,
+        ..support::Options::default()
     };
     let mut s = setup_with("a😀b\r\ncd\r\n\r\né\n", options);
     let probe = s.edit_and_compare(1);
@@ -982,6 +1037,7 @@ fn incremental_changes_rebuild_the_text_in_utf8_positions() {
     let options = support::Options {
         incremental: true,
         utf8: true,
+        ..support::Options::default()
     };
     let mut s = setup_with("€x\r\n😀\r", options);
     let probe = s.edit_and_compare(2);
@@ -996,6 +1052,7 @@ fn a_server_that_wants_the_whole_text_gets_it() {
     let options = support::Options {
         incremental: false,
         utf8: false,
+        ..support::Options::default()
     };
     let mut s = setup_with("a😀b\r\n", options);
     let probe = s.edit_and_compare(3);
@@ -1008,6 +1065,7 @@ fn a_change_inside_a_line_break_takes_in_the_whole_break() {
     let options = support::Options {
         incremental: true,
         utf8: false,
+        ..support::Options::default()
     };
     let mut s = setup_with("ab\r\ncd\r\nef", options);
     s.lsp.sync(&s.editor);
@@ -1042,6 +1100,7 @@ fn a_forgotten_history_sends_the_whole_text() {
     let options = support::Options {
         incremental: true,
         utf8: false,
+        ..support::Options::default()
     };
     let mut s = setup_with("ab\ncd", options);
     s.lsp.sync(&s.editor);
@@ -1071,6 +1130,7 @@ fn diagnostics_past_the_end_or_inside_characters_are_kept_in_the_text() {
     let options = support::Options {
         incremental: false,
         utf8: false,
+        ..support::Options::default()
     };
     let mut s = setup_with("a😀é\nbad\n", options);
     s.lsp.sync(&s.editor);

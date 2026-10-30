@@ -1004,7 +1004,9 @@ project that has one of the language's root files (`Cargo.toml` for Rust,
 workspace; without one, it runs in the project's root. A crashed server
 starts again, up to three times in a row; `:lsp-restart` restarts this
 file's server (`:lsp-restart all` every one). Servers that support it get
-only what changed with each edit.
+only what changed with each edit, and those that ask hear when a file is
+saved: that's when rust-analyzer runs `cargo check` and its compiler
+warnings come in.
 
 A server's own settings go on its language, named as its documentation
 names them: `settings` for those it asks for as it runs, under the

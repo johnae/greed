@@ -30,6 +30,9 @@ pub struct Buffer {
     /// Where in the undo tree that text was, so undo or redo back to it
     /// counts as unmodified.
     saved_place: Option<u64>,
+    /// How many times it was written to its file, for language servers to
+    /// hear of each save.
+    saves: u64,
     readonly: bool,
     /// Where the part of the text only plugins can change ends, when that's
     /// only its start, like a transcript above the box you write in. It
@@ -238,6 +241,7 @@ impl Buffer {
             version: SmallVec::new(),
             saved: SmallVec::new(),
             saved_place: Some(0),
+            saves: 0,
             readonly: false,
             readonly_before: None,
             lossy: false,
@@ -554,7 +558,14 @@ impl Buffer {
             std::io::Error::new(err.kind(), format!("can't save {}: {err}", path.display()))
         })?;
         self.mark_saved();
+        self.saves += 1;
         Ok(())
+    }
+
+    /// How many times it was written to its file; reading it again from the
+    /// file doesn't count.
+    pub fn saves(&self) -> u64 {
+        self.saves
     }
 
     /// Counts the text as what its file holds, as after a save.
