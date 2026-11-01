@@ -42,10 +42,13 @@ M.LIMIT = 3
 local running = 0
 
 -- What the helper is told after the task; one that only reads hears so.
-local function brief(reads_only: boolean): string
-	local only = if reads_only
-		then " You can only read and search here: say what should change rather than changing it."
-		else ""
+local function brief(reads_only: boolean, limited: boolean): string
+	local only = ""
+	if limited then
+		only = " You only have the tools this task needs, each for a few calls."
+	elseif reads_only then
+		only = " You can only read and search here: say what should change rather than changing it."
+	end
 	return "\n\n(You're a helper another agent started through the Greed editor. Do the task "
 		.. "above, then end with a short report of what you found or did: that report is all the "
 		.. `other agent sees.{only})`
@@ -123,7 +126,8 @@ export type From = { session: Session, row: session.Tool? }
 --- Hands `task` to a new session of `chosen` started through `sessions`,
 --- waits for it to finish and returns what it reported, with the session.
 --- An agent program works in a workspace of its own unless `here`; Greed's
---- own works where its caller does, and only reads unless `here`. With `from`,
+--- own works where its caller does, and only reads unless `here`, or has
+--- only the tools in `calls`, for as many calls as it says. With `from`,
 --- the helper is one of that session's: stopping its turn stops the
 --- helper, and the call's row shows what the helper does. A turn that
 --- fails is an error, not an empty report.
@@ -132,7 +136,8 @@ function M.run(
 	chosen: agents.Agent,
 	task: string,
 	here: boolean?,
-	from: From?
+	from: From?,
+	calls: { [string]: number }?
 ): (Done?, string?)
 	if running >= M.LIMIT then
 		return nil, `{M.LIMIT} subagents are working already; wait for one to finish`
@@ -162,7 +167,10 @@ function M.run(
 			return nil, start_err
 		end
 		helper = s
-		if reads_only then
+		local limited = calls ~= nil and chosen.native == true
+		if limited then
+			native.limit(s, calls :: { [string]: number })
+		elseif reads_only then
 			native.read_only(s)
 		end
 		if caller then
@@ -179,7 +187,7 @@ function M.run(
 			row.helper = s.session_id
 			unwatch = watch(caller, row, s)
 		end
-		local sent, prompt_err = sessions.prompt(s, task .. brief(reads_only))
+		local sent, prompt_err = sessions.prompt(s, task .. brief(reads_only, limited))
 		if not sent then
 			return nil, prompt_err
 		elseif s.failed then

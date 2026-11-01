@@ -104,6 +104,7 @@ and which [tool groups](#tool-groups) it can switch on. The tools:
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust and as you last ran it; the result is saved under the block |
 | `web_fetch` | Read a page as Markdown, or have a small model answer a question from it (below) |
 | `web_search` | Search the web with the service you set up (below) |
+| `research` | Hand a question to a helper that searches and reads the web, and get its report with sources (below) |
 | `shell_run` | Run a command in the project's [shell](shell.md), where you see it marked ◆, and get back its id, exit code, output, errors, how long it took, the files and lines it names, its JSON and a table's first rows; one that runs past `timeout_s` comes back as running |
 | `shell_read`, `shell_wait`, `shell_kill` | A shell block by id, or the latest one (yours too), waiting for one still running, and stopping one an agent ran |
 | `tools` | The groups of tools below, and switching one on |
@@ -128,7 +129,7 @@ groups an agent switches on with `tools`. Always offered: `focus`,
 | `blocks` | `blocks_list`, `blocks_run` |
 | `plugins` | `plugin_guide`, `plugin_try`, `plugin_install`, `debug_log` |
 | `subagents` | `subagent` |
-| `web` | `web_search` |
+| `web` | `web_search`, `research` |
 | `shell` | `shell_run`, `shell_read`, `shell_wait`, `shell_kill` |
 | `mail` | `mail_search`, `mail_read`, `mail_show`, `mail_act` |
 | `everywhere` | `search_everywhere` |
@@ -155,6 +156,19 @@ greed.option.set("web-search", "brave") -- or "exa", "tavily", "searxng"
 -- then :secret-set brave (exa, tavily); SearXNG needs no key, only where it is:
 greed.option.set("web-search-url", "https://searx.example.org")
 ```
+
+For anything that takes more than a page, `research` hands the question
+to a helper: Greed's own agent, with only `web_search` and `web_fetch`, a
+few calls of each (`depth` `"thorough"` gives it more). It searches,
+reads, and reports back the answer with its sources as links, so the
+pages stay out of the asking agent's context. You can ask it yourself:
+
+```text
+:research what changed in tokio 1.45
+```
+
+That opens the helper's transcript, where you watch it work and the
+report ends up.
 
 Pages can say anything, including "ignore your instructions and…". They
 reach the agent between `<untrusted-…>` tags naming their source, as do

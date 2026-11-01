@@ -1683,6 +1683,76 @@ test("Greed's agent as a subagent only reads, unless it works here", function(t)
 	assert(string.find(result.note or "", "worked in the project itself", 1, true), result.note)
 end)
 
+-- Runs the research tool with `args`, as an agent's call would.
+local function research(args: { [string]: any }): (boolean, any)
+	for _, tool in agent.tools() do
+		if tool.name == "research" then
+			return pcall(tool.run, args, agent.caller())
+		end
+	end
+	error("no research tool")
+end
+
+-- The names of the tools `request` offers.
+local function offered_in(request: any): { string }
+	local names = {}
+	for _, tool in request.tools do
+		table.insert(names, tool.name)
+	end
+	table.sort(names)
+	return names
+end
+
+test(
+	"research hands the question to a helper with only the web, and its report comes back",
+	function(t)
+		local asked = script({
+			{
+				text = "Luau 0.700 adds X. Sources: https://luau.org/news",
+				calls = {},
+				stop = "done",
+			},
+		})
+		local dir = t:tempdir({ ["a.txt"] = "a\n" })
+		greed.open(`{dir}/a.txt`)
+		local ok, said = research({ question = "what's new in Luau 0.700" })
+		assert(ok, tostring(said))
+		local tools = table.concat(offered_in(asked[1]), " ")
+		assert(tools == "web_fetch web_search", tools)
+		local task = asked[1].said[1].text
+		assert(string.find(task, "what's new in Luau 0.700", 1, true), task)
+		assert(string.find(task, "sources as links", 1, true), task)
+		assert(string.find(said, '^<untrusted%-%x+ source="research on'), said)
+		assert(string.find(said, "Luau 0.700 adds X.", 1, true), said)
+	end
+)
+
+test("a research helper that has used its calls is told to finish with what it has", function(t)
+	local depths = acp.research.DEPTHS.quick
+	acp.research.DEPTHS.quick = { web_search = 1, web_fetch = 1 }
+	agent.web.request = function(): (any, string?)
+		return { status = 200, body = "the page", headers = { ["content-type"] = "text/plain" } },
+			nil
+	end
+	greed.option.set("agent-auto", true)
+	local function fetch(id: string): any
+		return { id = id, name = "web_fetch", input = { url = "https://docs.example/a" } }
+	end
+	local asked = script({
+		{ text = "", calls = { fetch("c1"), fetch("c2") }, stop = "tools" },
+		{ text = "Done.", calls = {}, stop = "done" },
+	})
+	local dir = t:tempdir({ ["a.txt"] = "a\n" })
+	greed.open(`{dir}/a.txt`)
+	local ok, said = research({ question = "x" })
+	greed.option.set("agent-auto", false)
+	acp.research.DEPTHS.quick = depths
+	assert(ok, tostring(said))
+	local results = greed.json.encode(asked[2].said)
+	assert(string.find(results, "the page", 1, true), "the first call ran")
+	assert(string.find(results, "that's all the web_fetch calls", 1, true), results)
+end)
+
 test("a subagent whose model fails is an error, not an empty report", function(t)
 	script({})
 	models.turn = function(): (any, string?)

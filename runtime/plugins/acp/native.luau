@@ -174,6 +174,9 @@ type State = {
 	--- It only reads and searches: it's offered no tool that changes
 	--- anything, as a helper working in the project (`read_only`).
 	reads_only: boolean?,
+	--- The only tools it has, and how many more calls each may take, as a
+	--- helper with one job (`limit`).
+	only: { [string]: number }?,
 }
 
 --- The tool groups Greed's own agent has from the start, besides those
@@ -1242,6 +1245,9 @@ local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agen
 	local offered: { [string]: models.ToolSpec } = {}
 	local by_name: { [string]: Own | agent.Tool } = {}
 	local function may(tool: agent.Tool): boolean
+		if state.only then
+			return state.only[tool.name] ~= nil
+		end
 		return not LEFT_OUT[tool.name] and not (state.reads_only and kind_of(tool) ~= "read")
 	end
 	for _, tool in agent.offered(state.caller) do
@@ -1256,7 +1262,7 @@ local function tools(state: State): ({ models.ToolSpec }, { [string]: Own | agen
 		end
 	end
 	-- Its own tools all change something.
-	if not state.reads_only then
+	if not state.reads_only and not state.only then
 		for _, own in OWN do
 			if own.edits == nil or own.edits == (state.edits or "replace") then
 				offered[own.spec.name] = own.spec
@@ -1356,6 +1362,13 @@ local function call(
 	local found = by_name[c.name]
 	if found == nil then
 		return `there's no tool called {c.name}`, true
+	end
+	local only = state.only
+	if only and only[c.name] then
+		if only[c.name] == 0 then
+			return `that's all the {c.name} calls this task has: finish with what you have`, true
+		end
+		only[c.name] -= 1
 	end
 	local own = if found.spec then found :: Own else nil
 	local registered = if own then nil else found :: agent.Tool
@@ -2287,6 +2300,21 @@ function M.read_only(s: Session)
 	local state = states[s.id]
 	if state then
 		state.reads_only = true
+	end
+end
+
+--- Gives the session `s` only the tools in `calls`, each for as many calls
+--- as it says, switching on their groups: a helper with one job.
+function M.limit(s: Session, calls: { [string]: number })
+	local state = states[s.id]
+	if state == nil then
+		return
+	end
+	state.only = table.clone(calls)
+	for _, tool in agent.tools() do
+		if calls[tool.name] and tool.group then
+			state.caller.groups[tool.group] = true
+		end
 	end
 end
 

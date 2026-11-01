@@ -2048,6 +2048,9 @@ M.subagent = require("@self/subagent")
 --- An agent's workspace changes as proposals on your files (review.luau).
 M.review = review
 M.subagent.offer(M)
+--- Agents researching on the web through a helper (research.luau).
+M.research = require("@self/research")
+M.research.offer(M)
 
 -- An agent at work keeps the session on :q (core's on-quit).
 core.file.running("agents", function()
