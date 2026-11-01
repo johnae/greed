@@ -1297,12 +1297,13 @@ local function allowed(
 	title: string,
 	kind: string,
 	locations: { string }?,
-	command: string?
+	command: string?,
+	url: string?
 ): (boolean, string?, string?)
 	if state.allowed[kind] then
 		return true, nil, nil
 	end
-	local chosen, note, by = session.ask(s, title, kind, ALLOW, locations, nil, command)
+	local chosen, note, by = session.ask(s, title, kind, ALLOW, locations, nil, command, url)
 	if chosen == "always" then
 		state.allowed[kind] = true
 	end
@@ -1442,6 +1443,7 @@ local function call(
 		local command = if kind == "execute" and type(c.input.command) == "string"
 			then c.input.command
 			else nil
+		local url = if kind == "fetch" and type(c.input.url) == "string" then c.input.url else nil
 		local ok, note, by = true, nil, nil
 		if title then
 			-- Only you answer, unless it's a risky command auto mode may
@@ -1454,7 +1456,7 @@ local function call(
 				session.ask(s, title, kind, session.ONCE, locations, firm, command)
 			ok, note, by = chosen == "once", said, policy
 		elseif asks and not outside then
-			ok, note, by = allowed(s, state, tool.title, kind, locations, command)
+			ok, note, by = allowed(s, state, tool.title, kind, locations, command, url)
 		end
 		if not ok and auto.said(by) then
 			-- Auto mode blocked it: the agent hears why, to find another

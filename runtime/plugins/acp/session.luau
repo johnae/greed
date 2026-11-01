@@ -37,6 +37,8 @@ export type Permission = {
 	locations: { string }?,
 	--- The command line it runs, for one that runs a command.
 	command: string?,
+	--- The address it fetches, for a fetch.
+	url: string?,
 	options: { { id: string, name: string, kind: string } },
 	answer: greed.Signal,
 	--- Only you answer it, never a policy: for writes that let a plugin do
@@ -577,7 +579,10 @@ local function handlers(session: Session): Handlers
 			options,
 			paths_of(call, session.cwd) or (tool and tool.locations),
 			nil,
-			command_of(call.rawInput)
+			command_of(call.rawInput),
+			if type(call.rawInput) == "table" and type(call.rawInput.url) == "string"
+				then call.rawInput.url
+				else nil
 		)
 		if chosen == nil then
 			return { outcome = { outcome = "cancelled" } }
@@ -742,12 +747,13 @@ M.NOT_WIDENED = "the user didn't allow letting a plugin do more; tell them what 
 
 --- Asks you whether the agent may do `title` (a tool call of `kind`,
 --- touching the files at `locations` when it says, running `command` for
---- one that runs a command), with `options` to answer by, unless a policy
---- answers first; a `firm` question only you answer. Returns the option
---- chosen, or nil if the question was cancelled, and what you wrote with a
---- rejection. That shows as your message: an agent in the editor tells its
---- model with the rejection, and an ACP agent gets it as the next prompt.
---- When a policy answered, the third value says why.
+--- one that runs a command, fetching `url` for a fetch), with `options` to
+--- answer by, unless a policy answers first; a `firm` question only you
+--- answer. Returns the option chosen, or nil if the question was cancelled,
+--- and what you wrote with a rejection. That shows as your message: an
+--- agent in the editor tells its model with the rejection, and an ACP agent
+--- gets it as the next prompt. When a policy answered, the third value says
+--- why.
 function M.ask(
 	session: Session,
 	title: string,
@@ -755,13 +761,15 @@ function M.ask(
 	options: { { id: string, name: string, kind: string } },
 	locations: { string }?,
 	firm: boolean?,
-	command: string?
+	command: string?,
+	url: string?
 ): (string?, string?, string?)
 	local permission: Permission = {
 		title = title,
 		kind = kind,
 		locations = locations,
 		command = command,
+		url = url,
 		options = options,
 		answer = greed.signal(),
 		firm = firm,

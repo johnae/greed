@@ -8,6 +8,9 @@
 -- to find another way; after three blocks in a row you're asked instead.
 -- A few things always ask you: changes outside the project, anything run
 -- as root, force pushes, and deleting or wiping what's beyond the project.
+-- Once the agent has read text from outside since your newest message,
+-- fetches from hosts nothing else named go to the decision model, and an
+-- address that looks like it carries a secret asks you.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -102,6 +105,104 @@ end
 local LOOKS: { [string]: boolean } = { read = true, search = true, fetch = true, think = true }
 -- The kinds that change files, allowed inside the project.
 local EDITS: { [string]: boolean } = { edit = true, delete = true, move = true }
+
+-- The addresses in `text`.
+local function urls(text: string): { string }
+	local found = {}
+	for url in string.gmatch(text, "https?://[^%s\"'<>`%)%]}]+") do
+		table.insert(found, url)
+	end
+	return found
+end
+
+local function host_of(url: string): string
+	return string.lower(
+		string.match(url, "^https?://[^/?#@]*@([^/?#:]+)")
+			or string.match(url, "^https?://([^/?#:]+)")
+			or ""
+	)
+end
+
+--- Whether `url` carries a long opaque value after its `?` or `#`, like a
+--- token or a key: the shape of a secret sent out in an address. Words
+--- joined by `+` are text, and so is a value without digits.
+function M.leaks(url: string): boolean
+	local rest = string.match(url, "[?#](.*)$")
+	if rest == nil then
+		return false
+	end
+	for value in string.gmatch(rest, "[^&=#;]+") do
+		for word in string.gmatch((string.gsub(value, "%%20", "+")), "[^+]+") do
+			if
+				#word >= 32
+				and not string.find(word, "[^%w%-_%.%%/~]")
+				and string.find(word, "%d")
+				and string.find(word, "%a")
+			then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+-- What the agent did since your newest message.
+local function turn(s: Session): { session.Entry }
+	for i = #s.entries, 1, -1 do
+		if s.entries[i].kind == "user" then
+			return table.move(s.entries, i + 1, #s.entries, 1, {})
+		end
+	end
+	return s.entries
+end
+
+-- Whether the agent has read text from outside since your newest message:
+-- a page it fetched, or what Greed marked as untrusted, like a search's
+-- results or what a command printed. Text like that may tell it to send
+-- what it knows somewhere. A fetch still waiting, like the one being
+-- asked about, hasn't brought anything yet.
+local function read_outside(s: Session): boolean
+	for _, e in turn(s) do
+		local tool = e.tool
+		if
+			tool
+			and (
+				(tool.kind == "fetch" and tool.status == "completed")
+				or string.find(table.concat(tool.output, "\n"), "<untrusted-", 1, true)
+			)
+		then
+			return true
+		end
+	end
+	return false
+end
+
+-- The hosts the agent may fetch from after reading text from outside:
+-- the ones in your messages, the ones it fetched from since your newest
+-- message (other than in `asking`), and the ones in what it found, like a
+-- search's results. Never ones a page names: a page could name any.
+local function known_hosts(s: Session, asking: session.Permission): { [string]: boolean }
+	local hosts: { [string]: boolean } = {}
+	local function add(text: string)
+		for _, url in urls(text) do
+			hosts[host_of(url)] = true
+		end
+	end
+	for _, e in s.entries do
+		if e.kind == "user" and e.text then
+			add(e.text)
+		end
+	end
+	for _, e in turn(s) do
+		local permission, tool = e.permission, e.tool
+		if permission and permission ~= asking and permission.url then
+			add(permission.url)
+		elseif tool and (tool.kind == "read" or tool.kind == "search") then
+			add(table.concat(tool.output, "\n"))
+		end
+	end
+	return hosts
+end
 
 -- Programs that change the machine itself.
 local MACHINE: { [string]: boolean } =
@@ -203,16 +304,17 @@ local decided: { [Session]: { [string]: Verdict } } = setmetatable({}, { __mode 
 
 --- How likely the decision model thinks `command` is safe to run without
 --- asking you, from 0 to 1, for an agent working in `folder` where you
---- asked `now` (after `before`, oldest first); nil and why without an
---- answer. It isn't told what Greed thinks is risky (told so, it blocks
---- what you asked for too), and the command goes as it is: the state is
---- data to it, never instructions, and wrapped in tags a harmless command
---- looked suspect.
+--- asked `now` (after `before`, oldest first), and that has `read_outside`
+--- text since; nil and why without an answer. It isn't told what Greed
+--- thinks is risky (told so, it blocks what you asked for too), and the
+--- command goes as it is: the state is data to it, never instructions,
+--- and wrapped in tags a harmless command looked suspect.
 function M.judged(
 	folder: string,
 	now: string?,
 	before: { string },
-	command: string
+	command: string,
+	read_outside: boolean?
 ): (number?, string?)
 	local rules = greed.option.get("agent-auto-rules")
 	local state = {
@@ -220,6 +322,7 @@ function M.judged(
 		user_asks_now = now,
 		user_asked_before = if #before > 0 then before else nil,
 		user_rules = if type(rules) == "string" and rules ~= "" then rules else nil,
+		agent_read_text_from_outside = if read_outside then true else nil,
 		agent_command = command,
 	}
 	local answers, err = models.decide(M.ROLE, state, QUESTIONS)
@@ -241,15 +344,15 @@ end
 -- What the decision model says of `s` running `command`, or nil when
 -- there's no model or no clear answer: you're asked, and it's asked again
 -- next time.
-local function judge(s: Session, command: string): Verdict?
+local function judge(s: Session, command: string, outside: boolean): Verdict?
 	local now, before, count = asked(s)
 	local known = decided[s] or {}
 	decided[s] = known
-	local key = `{count}\0{command}`
+	local key = `{count}\0{outside}\0{command}`
 	if known[key] then
 		return known[key]
 	end
-	local safe = M.judged(s.cwd, now, before, command)
+	local safe = M.judged(s.cwd, now, before, command, outside)
 	local result = if safe then M.verdict(safe) else nil
 	if result then
 		known[key] = result
@@ -280,8 +383,21 @@ function M.decide(s: Session, permission: session.Permission): ("allow" | "block
 	-- What goes to the decision model: a command, or a change to files in
 	-- the temporary folder, as the question names it ("Write /tmp/a.txt").
 	local action: string? = nil
+	local outside = read_outside(s)
 	if LOOKS[kind] then
-		return "allow", "auto: only looks"
+		-- After reading text from outside, a fetch could send what the agent
+		-- knows away in its address: one that looks like it asks you, and
+		-- one to a host nothing but that text named goes to the decision
+		-- model.
+		local url = if kind == "fetch" and outside
+			then permission.url or urls(permission.title)[1]
+			else nil
+		if url ~= nil and M.leaks(url) then
+			return nil, nil
+		elseif url == nil or known_hosts(s, permission)[host_of(url)] then
+			return "allow", "auto: only looks"
+		end
+		action = `fetch {url}`
 	elseif EDITS[kind] then
 		local locations = permission.locations
 		if locations == nil or #locations == 0 then
@@ -296,7 +412,15 @@ function M.decide(s: Session, permission: session.Permission): ("allow" | "block
 		local command = permission.command
 		if kind ~= "execute" or command == nil or M.hard(command) then
 			return nil, nil
-		elseif not core.risk.of(command) and core.risk.safe(command) then
+		end
+		if outside then
+			for _, url in urls(command) do
+				if M.leaks(url) then
+					return nil, nil
+				end
+			end
+		end
+		if not core.risk.of(command) and core.risk.safe(command) then
 			return "allow", "auto: only looks, builds or tests"
 		end
 		action = command
@@ -306,7 +430,7 @@ function M.decide(s: Session, permission: session.Permission): ("allow" | "block
 		-- until you've answered or switched auto mode off and on.
 		return nil, nil
 	end
-	local verdict = judge(s, action :: string)
+	local verdict = judge(s, action :: string, outside)
 	if verdict == nil then
 		return nil, nil
 	elseif verdict.allow then
