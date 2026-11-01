@@ -48,6 +48,14 @@ test("a page comes back as its text, marked as someone else's", function()
 	assert(not string.find(said, "evil", 1, true), "no scripts")
 end)
 
+test("tags with a dash in their name and a doctype don't come through as markup", function()
+	local text = web.text_of(
+		'<!DOCTYPE html><react-partial partial-name="x"\ndata-ssr="true">Menu</react-partial>'
+			.. '<tool-tip id="t" popover="manual">Dismiss</tool-tip><p>Body</p>'
+	)
+	assert(text == "MenuDismiss\nBody", text)
+end)
+
 test("only http and https pages are fetched", function()
 	serve({})
 	assert(not pcall(run, "web_fetch", { url = "file:///etc/passwd" }))
@@ -72,6 +80,52 @@ test("SearXNG's results come back as titles, addresses and lines", function()
 	assert(asked[1].url == "https://searx.example/search?q=luau%20types&format=json", asked[1].url)
 	assert(string.find(said, "1. Luau\nhttps://luau.org\nA small language", 1, true), said)
 	assert(string.find(said, 'source="a web search for &quot;luau types&quot;"', 1, true), said)
+	greed.option.set("web-search", "")
+end)
+
+test("Exa's highlights are asked for with a cap, so a search stays short", function(t)
+	t:buffer("|x")
+	t:run("secret-set", { "exa" })
+	t:keys("k e y enter")
+	t:wait(100)
+	greed.option.set("web-search", "exa")
+	local asked = serve({
+		["https://api.exa.ai/search"] = {
+			status = 200,
+			body = '{"results":[{"title":"Luau","url":"https://luau.org","highlights":["A small","language"]}]}',
+		},
+	})
+	local said = ""
+	greed.spawn(function()
+		said = run("web_search", { query = "luau" })
+	end)
+	t:wait(100)
+	local body = greed.json.decode(asked[1].body)
+	assert(body.contents.highlights.maxCharacters == 1000, asked[1].body)
+	assert(string.find(said, "1. Luau\nhttps://luau.org\nA small … language", 1, true), said)
+	greed.option.set("web-search", "")
+end)
+
+test("a long line from any service is cut short", function()
+	greed.option.set("web-search", "searxng")
+	greed.option.set("web-search-url", "https://searx.example/")
+	serve({
+		["https://searx.example/search"] = {
+			status = 200,
+			body = greed.json.encode({
+				results = {
+					{
+						title = "Long",
+						url = "https://long.example",
+						content = string.rep("word ", 400),
+					},
+				},
+			}),
+		},
+	})
+	local said = run("web_search", { query = "long" })
+	local line = string.match(said, "https://long%.example\n([^\n]*)") or ""
+	assert(utf8.len(line) == 1000 and string.find(line, "…$"), `{utf8.len(line)}: {line}`)
 	greed.option.set("web-search", "")
 end)
 

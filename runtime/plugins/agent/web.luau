@@ -31,6 +31,11 @@ local M = {}
 -- The most of a page an agent gets, in characters.
 local MOST = 20000
 
+-- The most of a result's lines an agent gets, in characters. Uncapped,
+-- Exa's come as whole sections of the page, and one search costs as much
+-- as reading several pages.
+local SNIPPET = 1000
+
 --- Sends `request` with greed.http. Tests replace it.
 function M.request(request: greed.HttpRequest): (greed.HttpResponse?, string?)
 	return greed.http.request(request)
@@ -57,8 +62,10 @@ function M.text_of(html: string): string
 		text = string.gsub(text, `<{tag}[^>]*>.-</{tag}>`, " ")
 	end
 	text = string.gsub(text, "<!%-%-.-%-%->", " ")
-	text = string.gsub(text, "</?%a[%w]*%f[%s>/][^>]*>", function(tag: string): string
-		local name = string.lower(string.match(tag, "^</?(%a[%w]*)") or "")
+	text = string.gsub(text, "<!%a[^>]*>", "")
+	-- Names may hold dashes: custom elements, like `<react-partial>`.
+	text = string.gsub(text, "</?%a[%w%-]*%f[%s>/][^>]*>", function(tag: string): string
+		local name = string.lower(string.match(tag, "^</?(%a[%w%-]*)") or "")
 		return if BLOCKS[name] then "\n" else ""
 	end)
 	text = string.gsub(text, "&#(%d+);", function(n: string): string
@@ -200,7 +207,7 @@ local SERVICES: { [string]: (query: string) -> { Found } } = {
 			body = greed.json.encode({
 				query = query,
 				numResults = 8,
-				contents = { highlights = true },
+				contents = { highlights = { maxCharacters = SNIPPET } },
 			}),
 			timeout = 20000,
 		})
@@ -270,7 +277,11 @@ function M.search(query: string): { Found }
 			0
 		)
 	end
-	return search(query)
+	local found = search(query)
+	for _, item in found do
+		item.snippet = core.text.clip(item.snippet, SNIPPET)
+	end
+	return found
 end
 
 registry.group(
