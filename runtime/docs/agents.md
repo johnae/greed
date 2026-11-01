@@ -102,7 +102,8 @@ and which [tool groups](#tool-groups) it can switch on. The tools:
 | `memory_list`, `memory_propose` | Your standing preferences (below), and proposing one for you to accept |
 | `subagent` | Hand a task to a helper agent with an empty context and get its report; Greed's own agent has it from the start (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust and as you last ran it; the result is saved under the block |
-| `web_search`, `web_fetch` | Search the web with the service you set up, and read a page as text (below) |
+| `web_fetch` | Read a page as Markdown, or have a small model answer a question from it (below) |
+| `web_search` | Search the web with the service you set up (below) |
 | `shell_run` | Run a command in the project's [shell](shell.md), where you see it marked ◆, and get back its id, exit code, output, errors, how long it took, the files and lines it names, its JSON and a table's first rows; one that runs past `timeout_s` comes back as running |
 | `shell_read`, `shell_wait`, `shell_kill` | A shell block by id, or the latest one (yours too), waiting for one still running, and stopping one an agent ran |
 | `tools` | The groups of tools below, and switching one on |
@@ -127,7 +128,7 @@ groups an agent switches on with `tools`. Always offered: `focus`,
 | `blocks` | `blocks_list`, `blocks_run` |
 | `plugins` | `plugin_guide`, `plugin_try`, `plugin_install`, `debug_log` |
 | `subagents` | `subagent` |
-| `web` | `web_search`, `web_fetch` |
+| `web` | `web_search` |
 | `shell` | `shell_run`, `shell_read`, `shell_wait`, `shell_kill` |
 | `mail` | `mail_search`, `mail_read`, `mail_show`, `mail_act` |
 | `everywhere` | `search_everywhere` |
@@ -139,10 +140,14 @@ every tool.
 
 ### The web
 
-The `web` group searches the web and reads pages. `web_fetch` gives a
-page's main content as Markdown, without its menus and footers, as a
-browser's reader view shows it. It needs no setup; searching needs a
-service:
+Agents always have `web_fetch`, so you can paste a link and say "read
+this". It gives the page's main content as Markdown, without its menus
+and footers, as a browser's reader view shows it. Given a `question`, the
+`fast` model (see `:models`) reads the page instead and only its answer
+comes back, which keeps a long page out of the agent's context; with no
+fast model set up, the agent gets the whole page.
+
+Searching is the `web` group, and needs a service:
 
 ```luau
 local greed = require("@greed")

@@ -1,7 +1,7 @@
--- Tools for searching the web and reading pages, in the `web` group, off
--- until an agent switches it on. What comes back is written by strangers,
--- so it reaches the agent marked as untrusted, and the agent's edits and
--- commands still wait for you as they always do.
+-- Tools for reading pages, always there, and searching the web, in the
+-- `web` group, off until an agent switches it on. What comes back is
+-- written by strangers, so it reaches the agent marked as untrusted, and
+-- the agent's edits and commands still wait for you as they always do.
 --
 -- Searching needs a service: `:set web-search brave` (or exa, tavily,
 -- searxng) and its key with `:secret-set brave`; SearXNG needs no key,
@@ -10,7 +10,9 @@
 local core = require("@core")
 local greed = require("@greed")
 local registry = require("./registry")
+local models: any = require("@models")
 local untrusted = require("./untrusted").wrap
+local untrusted_note = require("./untrusted").NOTE
 
 greed.option.define({
 	name = "web-search",
@@ -258,10 +260,7 @@ function M.search(query: string): { Found }
 	return found
 end
 
-registry.group(
-	"web",
-	"Searching the web and reading pages, for documentation and facts the project doesn't have"
-)
+registry.group("web", "Searching the web, for documentation and facts the project doesn't have")
 
 registry.tool({
 	name = "web_search",
@@ -282,14 +281,52 @@ registry.tool({
 	end,
 })
 
+-- What the fast model is told when it answers a question from a page.
+local READER = "You answer a question about a web page from what the page says, briefly. "
+	.. "Quote the lines you rely on. If the page doesn't answer it, say so and say what it "
+	.. "is about instead. "
+	.. untrusted_note
+
+--- What `question` gets for an answer from `page`, the text of `url`, by
+--- the fast model. Nil when there's no fast model to ask.
+function M.answer(url: string, page: string, question: string): string?
+	if not models.resolve("fast") then
+		return nil
+	end
+	local answer, err = models.ask("fast", {
+		system = READER,
+		max_tokens = 1000,
+		temperature = 0,
+		messages = { { role = "user", content = `{question}\n\n{untrusted(url, page)}` } },
+	})
+	if answer == nil then
+		error(`the fast model couldn't read {url}: {err}`, 0)
+	end
+	return answer
+end
+
+-- In no group: a link the user gives is read without switching one on.
 registry.tool({
 	name = "web_fetch",
-	group = "web",
 	kind = "fetch",
-	description = "Read a web page (http or https) as text, without its markup",
-	input = registry.schema.object({ url = { type = "string" } }, { "url" }),
+	description = "Read a web page (http or https) as Markdown, its main content without "
+		.. "menus and footers. With question, a small model reads it and only its answer "
+		.. "comes back: for a fact from a page rather than all of it",
+	input = registry.schema.object({
+		url = { type = "string" },
+		question = { type = "string", description = "What to find out from the page" },
+	}, { "url" }),
 	run = function(args)
-		return untrusted(args.url, M.fetch(args.url))
+		local page = M.fetch(args.url)
+		if args.question == nil then
+			return untrusted(args.url, page)
+		end
+		local answer = M.answer(args.url, page, args.question)
+		if answer == nil then
+			return "No fast model to answer with (:models), so the whole page.\n\n"
+				.. untrusted(args.url, page)
+		end
+		return untrusted(`what {args.url} says, as a model read it`, answer)
 	end,
 })
 
