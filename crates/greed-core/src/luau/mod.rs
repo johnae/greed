@@ -19,6 +19,7 @@ mod fs;
 mod handles;
 pub(crate) mod hash;
 mod history;
+mod html;
 mod http;
 mod images;
 mod index;

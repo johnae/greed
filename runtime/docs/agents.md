@@ -139,8 +139,10 @@ every tool.
 
 ### The web
 
-The `web` group searches the web and reads pages. `web_fetch` needs no
-setup; searching needs a service:
+The `web` group searches the web and reads pages. `web_fetch` gives a
+page's main content as Markdown, without its menus and footers, as a
+browser's reader view shows it. It needs no setup; searching needs a
+service:
 
 ```luau
 local greed = require("@greed")

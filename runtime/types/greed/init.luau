@@ -1062,6 +1062,24 @@ export type PdfDocument = {
 	text: (self: PdfDocument, page: number) -> (string?, string?),
 }
 
+--- Web pages as text to read.
+export type Htmls = {
+	--- What the page `html` reads as: its main content as Markdown, without menus, footers and banners, as a browser's reader view shows it; a page with no article in it, like a list of links, as all its text. `url` is where it came from, for its links. Waits like greed.sleep.
+	read: (html: string, url: string?) -> HtmlPage,
+}
+
+--- A page read with `greed.html.read`.
+export type HtmlPage = {
+	title: string?,
+	byline: string?,
+	--- The page's own summary of itself, when it has one.
+	excerpt: string?,
+	--- The text, as Markdown: links, lists, tables and code kept.
+	text: string,
+	--- Whether `text` is an article found in the page, rather than all of the page's text.
+	article: boolean,
+}
+
 --- A tab of the shown project: panes laid out side by side and one above
 --- another.
 export type TabInfo = {
@@ -2057,6 +2075,7 @@ export type Greed = {
 	image: Images,
 	scene: Scenes,
 	pdf: Pdfs,
+	html: Htmls,
 	--- A one-shot value that one piece of code waits for and another sends,
 	--- e.g. a tool waiting for the user's review. `wait` works in commands and
 	--- event handlers; a value sent before anyone waits is kept for them.

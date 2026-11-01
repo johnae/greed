@@ -32,7 +32,17 @@ local function run(name: string, args: { [string]: any }): any
 	error(`no tool {name}`)
 end
 
-test("a page comes back as its text, marked as someone else's", function()
+-- What `web_fetch` says of `url`, which waits for the page to be read.
+local function fetch(t: any, url: string): string
+	local said = ""
+	greed.spawn(function()
+		said = run("web_fetch", { url = url })
+	end)
+	t:wait(100)
+	return said
+end
+
+test("a page comes back as its text in Markdown, marked as someone else's", function(t)
 	serve({
 		["https://example.com"] = {
 			status = 200,
@@ -42,18 +52,32 @@ test("a page comes back as its text, marked as someone else's", function()
 				.. "<ul><li>one</li><li>two&#33;</li></ul></body></html>",
 		},
 	})
-	local said = run("web_fetch", { url = "https://example.com/docs" })
+	local said = fetch(t, "https://example.com/docs")
 	assert(string.find(said, '^<untrusted%-%x+ source="https://example.com/docs">\n'), said)
-	assert(string.find(said, "Docs\nUse fetch & read.\none\ntwo!", 1, true), said)
+	assert(string.find(said, "# x\n\n", 1, true), "the title, which the text leaves out: " .. said)
+	assert(string.find(said, "Use **fetch** & read.", 1, true), said)
+	assert(string.find(said, "- one\n- two!", 1, true), said)
 	assert(not string.find(said, "evil", 1, true), "no scripts")
 end)
 
-test("tags with a dash in their name and a doctype don't come through as markup", function()
-	local text = web.text_of(
-		'<!DOCTYPE html><react-partial partial-name="x"\ndata-ssr="true">Menu</react-partial>'
-			.. '<tool-tip id="t" popover="manual">Dismiss</tool-tip><p>Body</p>'
-	)
-	assert(text == "MenuDismiss\nBody", text)
+test("an article comes without the page around it", function(t)
+	local words =
+		string.rep("A cache keeps a copy of a response, so the next request is quick. ", 4)
+	serve({
+		["https://example.com"] = {
+			status = 200,
+			kind = "text/html",
+			body = '<!DOCTYPE html><html><head><title>Caching</title></head><body><nav><a href="/">Home</a></nav>'
+				.. '<react-partial data-ssr="true"><tool-tip>Dismiss</tool-tip></react-partial>'
+				.. `<article><h1>Caching</h1><p>{words}</p><p>{words}</p></article>`
+				.. "<footer>Privacy. Terms.</footer></body></html>",
+		},
+	})
+	local said = fetch(t, "https://example.com/caching")
+	assert(string.find(said, "A cache keeps a copy", 1, true), said)
+	for _, gone in { "Home", "Dismiss", "Privacy", "react-partial", "DOCTYPE" } do
+		assert(not string.find(said, gone, 1, true), `{gone} in {said}`)
+	end
 end)
 
 test("only http and https pages are fetched", function()

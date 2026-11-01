@@ -43,45 +43,19 @@ end
 
 local encode = core.text.percent_encode
 
-local ENTITIES: { [string]: string } =
-	{ amp = "&", lt = "<", gt = ">", quot = '"', apos = "'", nbsp = " " }
-
--- Tags whose text goes on lines of its own.
-local BLOCKS: { [string]: boolean } = {}
-for _, name in
-	string.split("p br div li tr section article h1 h2 h3 h4 h5 h6 pre blockquote ul ol table", " ")
-do
-	BLOCKS[name] = true
-end
-
---- A page's readable text: no scripts, styles or tags, blocks on lines of
---- their own, entities decoded.
-function M.text_of(html: string): string
-	local text = html
-	for _, tag in { "script", "style", "noscript", "svg", "head" } do
-		text = string.gsub(text, `<{tag}[^>]*>.-</{tag}>`, " ")
+--- A page's text to read, as Markdown: its title, its summary when the
+--- text leaves it out, and its main content.
+function M.text_of(html: string, url: string?): string
+	local page = greed.html.read(html, url)
+	local parts = {}
+	if page.title and not string.find(page.text, page.title, 1, true) then
+		table.insert(parts, `# {page.title}`)
 	end
-	text = string.gsub(text, "<!%-%-.-%-%->", " ")
-	text = string.gsub(text, "<!%a[^>]*>", "")
-	-- Names may hold dashes: custom elements, like `<react-partial>`.
-	text = string.gsub(text, "</?%a[%w%-]*%f[%s>/][^>]*>", function(tag: string): string
-		local name = string.lower(string.match(tag, "^</?(%a[%w%-]*)") or "")
-		return if BLOCKS[name] then "\n" else ""
-	end)
-	text = string.gsub(text, "&#(%d+);", function(n: string): string
-		local code = tonumber(n)
-		return if code and code < 0x110000 then utf8.char(code) else ""
-	end)
-	text = string.gsub(text, "&#x(%x+);", function(n: string): string
-		local code = tonumber(n, 16)
-		return if code and code < 0x110000 then utf8.char(code) else ""
-	end)
-	text = string.gsub(text, "&(%a+);", function(name: string): string
-		return ENTITIES[name] or `&{name};`
-	end)
-	text = string.gsub(text, "[ \t\r]+", " ")
-	text = string.gsub(text, " ?\n[ \n]*", "\n")
-	return (string.match(text, "^%s*(.-)%s*$") or "")
+	if page.excerpt and not string.find(page.text, page.excerpt, 1, true) then
+		table.insert(parts, page.excerpt)
+	end
+	table.insert(parts, page.text)
+	return table.concat(parts, "\n\n")
 end
 
 -- Whether `url` points at this machine or a private network (a router, a
@@ -146,7 +120,7 @@ function M.fetch(url: string): string
 	end
 	local kind = response.headers["content-type"] or ""
 	local text = if string.find(kind, "html", 1, true)
-		then M.text_of(response.body)
+		then M.text_of(response.body, url)
 		else response.body
 	if #text > MOST then
 		text = string.sub(text, 1, MOST) .. "\n(cut short)"

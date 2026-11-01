@@ -26,6 +26,7 @@ mod editor;
 pub mod files;
 mod filetypes;
 mod history;
+pub mod html;
 pub mod ide;
 pub mod image;
 pub mod keymap;

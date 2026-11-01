@@ -512,6 +512,36 @@ fn hundred_mb() {
 }
 
 // ---------------------------------------------------------------------------
+// Web pages
+
+/// A 10 MB page, as a long one with its menus and scripts: reading it for
+/// an agent (`greed.html.read`) runs in the background, but shouldn't keep
+/// the agent waiting.
+#[test]
+fn big_page() {
+    budget(
+        "big_page",
+        |found| {
+            let mut html = String::from("<html><head><title>Big</title></head><body>");
+            while html.len() < 10_000_000 {
+                html.push_str(
+                    "<nav><a href=\"/\">Home</a> <a href=\"/docs\">Docs</a></nav>\
+                     <script>track({ page: 1 })</script><article><h2>Part</h2>\
+                     <p>A cache keeps a copy of a response, so the next request for it \
+                     is answered without asking the server again.</p>\
+                     <pre><code>Cache-Control: max-age=3600</code></pre></article>",
+                );
+            }
+            html.push_str("</body></html>");
+            let (page, cpu, _) = timed(|| greed_core::html::read(&html, None));
+            assert!(page.text.contains("A cache keeps a copy"));
+            found.set("read_cpu_ms", ms(cpu));
+        },
+        &[("read_cpu_ms", 1000.0, 8000.0)],
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Many buffers
 
 #[test]

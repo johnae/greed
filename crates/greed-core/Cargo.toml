@@ -55,6 +55,8 @@ gethostname = "1.1"
 sha2 = "0.10"
 regex.workspace = true
 ureq = { version = "3.4.2", default-features = false, features = ["rustls", "gzip"] }
+dom_smoothie = "0.19"
+dom_query = "0.29"
 
 [dev-dependencies]
 proptest.workspace = true

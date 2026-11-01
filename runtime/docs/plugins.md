@@ -978,6 +978,11 @@ greed.tab.set_layout({
   its pages, `doc:render(page, scale)` draws one as an image id at `scale`
   pixels per point, and `doc:text(page)` gives its text, line by line. All
   three wait, like `greed.sleep`.
+- Web pages: `greed.html.read(html, url)` gives a page's main content as
+  Markdown in `.text`, without menus, footers and banners, as a browser's
+  reader view does, with `.title` and `.excerpt` when it has them. A page
+  without an article, like a list of links, comes as all its text, and
+  `.article` says which. It waits, like `greed.sleep`.
 - A view can show part of its buffer: `view:narrow(from, to)` shows only
   those lines (no arguments shows all again), and `view:set_filter(text)`
   keeps only the lines with every word of `text`, as `/` in a shell block

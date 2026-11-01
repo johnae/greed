@@ -32,6 +32,8 @@ pub enum Output {
     /// What connection `id`, made with `greed.rpc.start`, heard.
     Rpc(u64, crate::rpc::Event),
     Pdf(super::pdf::Done),
+    /// What a page reads as (`greed.html.read`).
+    Html(crate::html::Page),
     Tags(Vec<crate::syntax::FileTags>),
     /// The image on a client's system clipboard, as PNG; none when it has
     /// none, or didn't say.
@@ -240,6 +242,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Child(id, piece) => super::process::piece_arrived(lua, id, piece),
         Output::Rpc(id, event) => super::rpc::event_arrived(lua, id, event),
         Output::Pdf(pdf) => super::pdf::finish(lua, done.token, pdf),
+        Output::Html(page) => super::html::finish(lua, done.token, page),
         Output::Tags(files) => {
             tasks::deliver(lua, done.token, super::syntax::tags_to_lua(lua, files)?)
         }
