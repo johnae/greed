@@ -45,6 +45,12 @@ pub struct Options {
     pub utf8: bool,
     /// Whether it wants to hear of saves, and if so whether with the text.
     pub save: Option<bool>,
+    /// What its diagnostics name as their source, to tell two servers'
+    /// apart.
+    pub source: &'static str,
+    /// The requests it doesn't do, like `"textDocument/hover"`: it doesn't
+    /// say it does them, and answers them with an error.
+    pub lacks: &'static [&'static str],
 }
 
 impl Default for Options {
@@ -53,9 +59,23 @@ impl Default for Options {
             incremental: false,
             utf8: true,
             save: None,
+            source: "fake",
+            lacks: &[],
         }
     }
 }
+
+/// The capability that says a server does each request it may lack.
+const PROVIDERS: [(&str, &str); 8] = [
+    ("textDocument/hover", "hoverProvider"),
+    ("textDocument/definition", "definitionProvider"),
+    ("textDocument/completion", "completionProvider"),
+    ("textDocument/formatting", "documentFormattingProvider"),
+    ("textDocument/codeAction", "codeActionProvider"),
+    ("textDocument/rename", "renameProvider"),
+    ("textDocument/references", "referencesProvider"),
+    ("textDocument/signatureHelp", "signatureHelpProvider"),
+];
 
 /// The documents the client has open in the fake server, kept as LSP says
 /// to from what it's told, and how it was told.
@@ -246,7 +266,7 @@ fn fake_server(
             "textDocument/didSave" => saved.push(message["params"]["text"].clone()),
             "textDocument/didOpen" | "textDocument/didChange" => {
                 opened = documents.update(&method, &message["params"], options);
-                publish_diagnostics(&mut output, &opened);
+                publish_diagnostics(&mut output, &opened, options.source);
             }
             "textDocument/didClose" => {
                 documents.update(&method, &message["params"], options);
@@ -287,6 +307,10 @@ fn fake_server(
             ),
             // "die" stops without answering, as a server that crashes.
             "exit" | "die" => return,
+            lacked if options.lacks.contains(&lacked) => write(
+                &mut output,
+                &json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "not supported" } }),
+            ),
             other => {
                 if let Some(result) = answer(other, &message["params"], &opened) {
                     write(
@@ -300,18 +324,28 @@ fn fake_server(
 }
 
 fn capabilities(options: Options) -> Value {
-    json!({
+    let mut capabilities = json!({
         "positionEncoding": if options.utf8 { "utf-8" } else { "utf-16" },
         "textDocumentSync": {
             "openClose": true,
             "change": if options.incremental { 2 } else { 1 },
             "save": options.save.map(|text| json!({ "includeText": text })),
         },
+        "hoverProvider": true,
+        "definitionProvider": true,
+        "completionProvider": { "triggerCharacters": ["."] },
+        "documentFormattingProvider": true,
         "renameProvider": { "prepareProvider": true },
         "codeActionProvider": { "resolveProvider": true },
         "referencesProvider": true,
         "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
-    })
+    });
+    for (method, provider) in PROVIDERS {
+        if options.lacks.contains(&method) {
+            capabilities.as_object_mut().unwrap().remove(provider);
+        }
+    }
+    capabilities
 }
 
 /// What the server does once started: asks for its settings, and reports
@@ -338,9 +372,9 @@ fn initialized(output: &mut impl Write) {
     }
 }
 
-/// Reports every "bad" in the document as an error, and a warning in a
-/// file next to it that isn't open.
-fn publish_diagnostics(output: &mut impl Write, doc: &Opened) {
+/// Reports every "bad" in the document as an error, naming `source`, and a
+/// warning in a file next to it that isn't open.
+fn publish_diagnostics(output: &mut impl Write, doc: &Opened, source: &str) {
     let diagnostics: Vec<Value> = doc
         .text
         .lines()
@@ -349,7 +383,7 @@ fn publish_diagnostics(output: &mut impl Write, doc: &Opened) {
             content.match_indices("bad").map(move |(col, _)| {
                 json!({
                     "range": { "start": { "line": line, "character": col }, "end": { "line": line, "character": col + 3 } },
-                    "severity": 1, "message": "bad word", "source": "fake",
+                    "severity": 1, "message": "bad word", "source": source,
                 })
             })
         })
@@ -475,9 +509,28 @@ pub fn launcher() -> (greed_core::lsp::Launcher, Started) {
 /// Starts a fake server that works as `options` say whenever the editor
 /// starts a language server.
 pub fn launcher_with(options: Options) -> (greed_core::lsp::Launcher, Started) {
+    launcher_by(Vec::new(), options)
+}
+
+/// Starts a fake server whenever the editor starts a language server,
+/// working as `by` says for the program its command runs, and as `rest`
+/// says for any other: servers that differ.
+pub fn launcher_by(
+    by: Vec<(&'static str, Options)>,
+    rest: Options,
+) -> (greed_core::lsp::Launcher, Started) {
     let started = Started::default();
     let list = started.clone();
-    let launcher: greed_core::lsp::Launcher = Box::new(move |_, root| {
+    let launcher: greed_core::lsp::Launcher = Box::new(move |config, root| {
+        let program = config
+            .commands
+            .first()
+            .and_then(|command| command.first())
+            .map_or("", String::as_str);
+        let options = by
+            .iter()
+            .find(|(name, _)| *name == program)
+            .map_or(rest, |(_, options)| *options);
         let (input, output, log) = start(options);
         list.lock().unwrap().push((root.to_owned(), log));
         Ok(Some(greed_core::rpc::Transport::pipes(input, output)))

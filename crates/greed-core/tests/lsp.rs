@@ -131,6 +131,46 @@ fn documents_open_after_initialize_and_report_diagnostics() {
 }
 
 #[test]
+fn fake_servers_differ_by_their_program_to_tell_several_apart() {
+    let mut s = setup("let x = bad;\n");
+    let lint = support::Options {
+        source: "lint",
+        lacks: &["textDocument/hover"],
+        ..support::Options::default()
+    };
+    let (launcher, started) =
+        support::launcher_by(vec![("lint", lint)], support::Options::default());
+    s.lsp.set_launcher(launcher);
+    s.started = started;
+    s.lsp.configure(greed_core::lsp::ServerConfig {
+        commands: vec![vec!["lint".into()]],
+        ..support::rust_server()
+    });
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    let found = diagnostics(s.editor.buffer(buffer));
+    assert_eq!(found[0].source.as_deref(), Some("lint"));
+    let capabilities = s.lsp.capabilities(s.editor.buffer(buffer)).unwrap();
+    assert!(capabilities["hoverProvider"].is_null(), "{capabilities}");
+    assert_eq!(capabilities["definitionProvider"], json!(true));
+    let (_, id) = s
+        .lsp
+        .request(s.editor.buffer(buffer), "textDocument/hover", &json!({}))
+        .unwrap();
+    loop {
+        if let Handled::Response {
+            id: got, result, ..
+        } = s.next()
+            && got == id
+        {
+            assert!(result.is_err(), "{result:?}");
+            break;
+        }
+    }
+}
+
+#[test]
 fn a_server_gets_its_settings_and_init_options_and_each_section_it_asks_for() {
     let settings = json!({ "rust-analyzer": { "cargo": { "features": "all" } } });
     let mut s = setup("let x = 1;\n");
