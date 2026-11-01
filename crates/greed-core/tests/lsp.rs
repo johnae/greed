@@ -631,6 +631,111 @@ fn a_named_server_that_isnt_installed_leaves_the_main_one_working() {
     assert_eq!(s.probe(buffer)["text"], "let x = bad;\n");
 }
 
+/// Rust's main server and `lint` beside it, both having reported on
+/// `text`: the buffer and its two servers, the main one first.
+fn two_reported(text: &str) -> (Setup, greed_core::BufferId, Vec<greed_core::lsp::ServerId>) {
+    let mut s = setup(text);
+    let (launcher, started) = with_lint();
+    s.lsp.set_launcher(launcher);
+    s.started = started;
+    s.lsp.configure(lint_server(&[]));
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    for _ in 0..2 {
+        assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    }
+    let servers = s.lsp.servers_of(s.editor.buffer(buffer));
+    (s, buffer, servers)
+}
+
+#[test]
+fn each_servers_diagnostics_show_together_saying_whose_they_are() {
+    let (s, buffer, servers) = two_reported("let x = bad;\n");
+    let found = diagnostics(s.editor.buffer(buffer));
+    let whose: Vec<(Option<&str>, Option<greed_core::lsp::ServerId>)> = found
+        .iter()
+        .map(|d| (d.source.as_deref(), d.server))
+        .collect();
+    assert_eq!(whose.len(), 2, "{found:?}");
+    assert!(
+        whose.contains(&(Some("fake"), Some(servers[0]))),
+        "{whose:?}"
+    );
+    assert!(
+        whose.contains(&(Some("lint"), Some(servers[1]))),
+        "{whose:?}"
+    );
+    // In every file's problems too, from both.
+    let uri = file_uri(&s.path);
+    let mut sources: Vec<Option<String>> = (s.lsp.problems(&s.editor).into_iter())
+        .filter(|p| p.uri == uri)
+        .map(|p| p.source)
+        .collect();
+    sources.sort();
+    assert_eq!(sources, [Some("fake".to_owned()), Some("lint".to_owned())]);
+}
+
+#[test]
+fn a_server_clearing_its_diagnostics_leaves_the_others() {
+    let (mut s, buffer, servers) = two_reported("let x = bad;\n");
+    let uri = file_uri(&s.path);
+    let cleared = Event::Notification {
+        server: servers[1],
+        method: "textDocument/publishDiagnostics".into(),
+        params: json!({ "uri": uri, "diagnostics": [] }),
+    };
+    assert_eq!(
+        s.lsp.handle(cleared, &mut s.editor),
+        Handled::Diagnostics(buffer)
+    );
+    let left: Vec<Option<String>> = diagnostics(s.editor.buffer(buffer))
+        .into_iter()
+        .map(|d| d.source)
+        .collect();
+    assert_eq!(left, [Some("fake".to_owned())]);
+    let problems = s.lsp.problems(&s.editor);
+    assert!(
+        problems
+            .iter()
+            .all(|p| p.uri != uri || p.source.as_deref() == Some("fake")),
+        "{problems:?}"
+    );
+}
+
+#[test]
+fn a_server_reporting_again_replaces_only_its_own_after_an_edit_moved_the_others() {
+    let (mut s, buffer, servers) = two_reported("let x = bad;\n");
+    // Text typed before both: the main one's moves with it, unanswered.
+    let view = s.editor.focus();
+    let changes = greed_text::ChangeSet::from_changes(13, [(0, 0, Some("// \n"))]).unwrap();
+    s.editor
+        .apply(
+            view,
+            changes,
+            greed_text::Author::User(ClientId(1)),
+            None,
+            None,
+        )
+        .unwrap();
+    let text = s.editor.buffer(buffer).text().to_string();
+    let uri = file_uri(&s.path);
+    let reported = Event::Notification {
+        server: servers[1],
+        method: "textDocument/publishDiagnostics".into(),
+        params: json!({ "uri": uri, "diagnostics": [{
+            "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 2 } },
+            "severity": 2, "message": "a comment", "source": "lint",
+        }] }),
+    };
+    s.lsp.handle(reported, &mut s.editor);
+    let found = diagnostics(s.editor.buffer(buffer));
+    let shown: Vec<(&str, &str)> = found
+        .iter()
+        .map(|d| (&text[d.from..d.to], d.message.as_str()))
+        .collect();
+    assert_eq!(shown, [("//", "a comment"), ("bad", "bad word")]);
+}
+
 #[test]
 fn a_file_saved_into_another_project_moves_to_its_server() {
     let dir = two_projects("moves");

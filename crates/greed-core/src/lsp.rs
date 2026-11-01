@@ -155,6 +155,8 @@ pub struct Diagnostic {
     pub severity: u8,
     pub message: String,
     pub source: Option<String>,
+    /// The server that reported it.
+    pub server: Option<ServerId>,
 }
 
 #[derive(Debug)]
@@ -372,9 +374,9 @@ pub struct Lsp {
     stops: HashMap<Key, usize>,
     /// Servers given up on since the last sync, to say so.
     given_up: Vec<LspError>,
-    /// Every file's latest problems, by URI, including files not open, with
-    /// how their server counts positions.
-    problems: HashMap<String, (Encoding, Vec<Problem>)>,
+    /// Every file's latest problems, by URI, including files not open, as
+    /// each server reported them, with how it counts positions.
+    problems: HashMap<String, HashMap<ServerId, (Encoding, Vec<Problem>)>>,
     /// The folders servers may start in, as servers run a project's code
     /// (a build script, a config file): `None` lets them start anywhere.
     trusted: Option<Vec<PathBuf>>,
@@ -1067,45 +1069,65 @@ impl Lsp {
                 source: d["source"].as_str().map(str::to_owned),
             })
             .collect();
+        // Each server's own: one clearing its problems leaves the others'.
+        let by_server = self.problems.entry(uri.to_owned()).or_default();
         if problems.is_empty() {
-            self.problems.remove(uri);
+            by_server.remove(&server);
         } else {
-            self.problems.insert(uri.to_owned(), (encoding, problems));
+            by_server.insert(server, (encoding, problems));
+        }
+        if by_server.is_empty() {
+            self.problems.remove(uri);
         }
         let Some((buffer, _)) = buffer else {
             return Handled::Nothing;
         };
         let text = editor.buffer(buffer).text();
-        let mut reported: Vec<&Value> = reported.iter().collect();
-        // The worst last, so its style is drawn on top.
-        reported.sort_by_key(|d| std::cmp::Reverse(severity(d)));
-        let marks = reported
-            .into_iter()
-            .filter_map(|d| diagnostic_mark(text, d, encoding))
+        // The other servers' marks stay where edits since moved them.
+        let others = (editor.buffer(buffer).marks(DIAGNOSTICS).iter())
+            .filter(|mark| mark_server(mark) != Some(server))
+            .cloned();
+        let mut marks: Vec<Mark> = reported
+            .iter()
+            .filter_map(|d| diagnostic_mark(text, d, encoding, server))
+            .chain(others)
             .collect();
+        // The worst last, so its style is drawn on top.
+        marks.sort_by_key(|mark| std::cmp::Reverse(mark.data.as_ref().map_or(1, severity)));
         editor.decorate(buffer, DIAGNOSTICS, marks);
         Handled::Diagnostics(buffer)
     }
 
-    /// Every file's latest problems, open or not. Those in open buffers are
-    /// where they are now, after any edits since the server sent them.
+    /// Every file's latest problems, open or not, from every server. Those
+    /// in open buffers are where they are now, after any edits since the
+    /// servers sent them.
     pub fn problems(&self, editor: &Editor) -> Vec<Problem> {
         let mut problems = Vec::new();
-        for (uri, (encoding, reported)) in &self.problems {
+        for (uri, by_server) in &self.problems {
             let Some(buffer) = buffer_at(editor, uri) else {
-                problems.extend(reported.iter().cloned());
+                for (_, reported) in by_server.values() {
+                    problems.extend(reported.iter().cloned());
+                }
                 continue;
             };
             let text = buffer.text();
-            problems.extend(diagnostics(buffer).into_iter().map(|d| Problem {
-                uri: uri.clone(),
-                range: json!({
-                    "start": position(text, d.from, *encoding),
-                    "end": position(text, d.to, *encoding),
-                }),
-                severity: d.severity,
-                message: d.message,
-                source: d.source,
+            let encoding = |server: Option<ServerId>| {
+                server
+                    .and_then(|server| by_server.get(&server))
+                    .map_or(Encoding::Utf16, |(encoding, _)| *encoding)
+            };
+            problems.extend(diagnostics(buffer).into_iter().map(|d| {
+                let encoding = encoding(d.server);
+                Problem {
+                    uri: uri.clone(),
+                    range: json!({
+                        "start": position(text, d.from, encoding),
+                        "end": position(text, d.to, encoding),
+                    }),
+                    severity: d.severity,
+                    message: d.message,
+                    source: d.source,
+                }
             }));
         }
         problems
@@ -1138,6 +1160,7 @@ pub fn diagnostics(buffer: &Buffer) -> Vec<Diagnostic> {
                 severity: severity(data),
                 message: data["message"].as_str().unwrap_or_default().to_owned(),
                 source: data["source"].as_str().map(str::to_owned),
+                server: mark_server(mark),
             }
         })
         .collect();
@@ -1145,9 +1168,23 @@ pub fn diagnostics(buffer: &Buffer) -> Vec<Diagnostic> {
     list
 }
 
-/// A diagnostic as a mark: its text underlined and its line number styled
-/// by severity, with the server's details kept in its data.
-fn diagnostic_mark(text: &Rope, diagnostic: &Value, encoding: Encoding) -> Option<Mark> {
+/// The server a diagnostic's mark came from.
+fn mark_server(mark: &Mark) -> Option<ServerId> {
+    let data = mark.data.as_ref()?;
+    data["server"]
+        .as_u64()
+        .and_then(|id| ServerId::try_from(id).ok())
+}
+
+/// A diagnostic `server` reported as a mark: its text underlined and its
+/// line number styled by severity, with the server's details kept in its
+/// data.
+fn diagnostic_mark(
+    text: &Rope,
+    diagnostic: &Value,
+    encoding: Encoding,
+    server: ServerId,
+) -> Option<Mark> {
     let from = offset(text, &diagnostic["range"]["start"], encoding)?;
     let to = offset(text, &diagnostic["range"]["end"], encoding)?;
     let severity = severity(diagnostic);
@@ -1166,6 +1203,7 @@ fn diagnostic_mark(text: &Rope, diagnostic: &Value, encoding: Encoding) -> Optio
             "severity": severity,
             "message": diagnostic["message"],
             "source": diagnostic["source"],
+            "server": server,
         })),
         ..Mark::default()
     })
