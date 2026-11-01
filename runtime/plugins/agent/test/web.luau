@@ -179,6 +179,87 @@ test("SearXNG's results come back as titles, addresses and lines", function()
 	greed.option.set("web-search", "")
 end)
 
+-- What `web_search` says for `args` with `service` set up, a key kept for
+-- one that needs it, answered by `pages`; and what was asked of it.
+local function searching(
+	t: any,
+	service: string,
+	args: { [string]: any },
+	pages: { [string]: { status: number, body: string, kind: string? } }
+): (string, { any })
+	if service ~= "searxng" then
+		t:buffer("|x")
+		t:run("secret-set", { service })
+		t:keys("k e y enter")
+		t:wait(100)
+	end
+	greed.option.set("web-search", service)
+	greed.option.set("web-search-url", "https://searx.example/")
+	local asked = serve(pages)
+	local said = ""
+	greed.spawn(function()
+		said = run("web_search", args)
+	end)
+	t:wait(100)
+	greed.option.set("web-search", "")
+	return said, asked
+end
+
+test("news asks each service for news, and results say when they're from", function(t)
+	local said, asked = searching(t, "brave", { query = "rust", news = true }, {
+		["https://api.search.brave.com/res/v1/news/search"] = {
+			status = 200,
+			body = '{"results":[{"title":"Rust 2.0","url":"https://blog.rust-lang.org/x",'
+				.. '"description":"Out now","page_age":"2026-10-30T10:00:00"}]}',
+		},
+	})
+	assert(asked[1].url == "https://api.search.brave.com/res/v1/news/search?q=rust", asked[1].url)
+	assert(
+		string.find(said, "1. Rust 2.0\nhttps://blog.rust-lang.org/x\n2026-10-30: Out now", 1, true),
+		said
+	)
+	said, asked = searching(t, "exa", { query = "rust", news = true }, {
+		["https://api.exa.ai/search"] = { status = 200, body = '{"results":[]}' },
+	})
+	assert(greed.json.decode(asked[1].body).category == "news", asked[1].body)
+	said, asked = searching(t, "tavily", { query = "rust", news = true }, {
+		["https://api.tavily.com/search"] = { status = 200, body = '{"results":[]}' },
+	})
+	assert(greed.json.decode(asked[1].body).topic == "news", asked[1].body)
+	said, asked = searching(t, "searxng", { query = "rust", news = true }, {
+		["https://searx.example/search"] = { status = 200, body = '{"results":[]}' },
+	})
+	assert(string.find(asked[1].url, "&categories=news", 1, true), asked[1].url)
+end)
+
+test("web-sources puts sources you trust first, and web-sources-only keeps only them", function(t)
+	local pages = {
+		["https://searx.example/search"] = {
+			status = 200,
+			body = greed.json.encode({
+				results = {
+					{ title = "Blog", url = "https://someblog.example/a", content = "" },
+					{ title = "Docs", url = "https://docs.rs/tokio", content = "" },
+					{ title = "News", url = "https://www.reuters.com/b", content = "" },
+				},
+			}),
+		},
+	}
+	greed.option.set("web-sources", "reuters.com docs.rs")
+	local said = searching(t, "searxng", { query = "x" }, pages)
+	local order = {}
+	for title in string.gmatch(said, "%d+%. (%a+)\n") do
+		table.insert(order, title)
+	end
+	assert(table.concat(order, " ") == "Docs News Blog", table.concat(order, " "))
+	greed.option.set("web-sources-only", true)
+	said = searching(t, "searxng", { query = "x" }, pages)
+	greed.option.set("web-sources-only", false)
+	greed.option.set("web-sources", "")
+	assert(not string.find(said, "someblog", 1, true), said)
+	assert(string.find(said, "1. Docs", 1, true) and string.find(said, "2. News", 1, true), said)
+end)
+
 test("Exa's highlights are asked for with a cap, so a search stays short", function(t)
 	t:buffer("|x")
 	t:run("secret-set", { "exa" })

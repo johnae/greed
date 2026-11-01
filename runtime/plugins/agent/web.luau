@@ -28,6 +28,19 @@ greed.option.define({
 	doc = "Where your SearXNG is, for web-search searxng",
 })
 
+greed.option.define({
+	name = "web-sources",
+	default = "",
+	doc = 'Domains whose results agents\' searches show first, like "reuters.com docs.rs"; '
+		.. "a domain counts its subdomains too",
+})
+
+greed.option.define({
+	name = "web-sources-only",
+	default = false,
+	doc = "Agents' searches show only results from the web-sources domains",
+})
+
 local M = {}
 
 -- The most of a page an agent gets, in characters.
@@ -130,7 +143,18 @@ function M.fetch(url: string): string
 	return text
 end
 
-export type Found = { title: string, url: string, snippet: string }
+--- A result: its title, address and a line from it, and for news when
+--- it's from, when the service says.
+export type Found = { title: string, url: string, snippet: string, date: string? }
+
+-- When a result is from, as a service gives it: the day of a timestamp,
+-- other forms as they are.
+local function day(given: any): string?
+	if type(given) ~= "string" or given == "" then
+		return nil
+	end
+	return string.match(given, "^(%d%d%d%d%-%d%d%-%d%d)") or given
+end
 
 -- The key for `service`, or a failure saying how to set it.
 local function key(service: string): string
@@ -157,25 +181,32 @@ local function answer(response: greed.HttpResponse?, err: string?, service: stri
 	return decoded
 end
 
--- How each service is searched: the results for `query`.
-local SERVICES: { [string]: (query: string) -> { Found } } = {
-	brave = function(query)
+-- How each service is searched: the results for `query`, or with `news`
+-- the news about it.
+local SERVICES: { [string]: (query: string, news: boolean) -> { Found } } = {
+	brave = function(query, news)
+		local kind = if news then "news" else "web"
 		local response, err = M.request({
-			url = `https://api.search.brave.com/res/v1/web/search?q={encode(query)}`,
+			url = `https://api.search.brave.com/res/v1/{kind}/search?q={encode(query)}`,
 			method = "GET",
 			headers = { accept = "application/json", ["x-subscription-token"] = key("brave") },
 			timeout = 20000,
 		})
+		local answered = answer(response, err, "brave")
+		-- Its news results are at the top, its web results under `web`.
+		local results = if news then answered.results else (answered.web or {}).results
 		local found = {}
-		for _, item in (answer(response, err, "brave").web or {}).results or {} do
-			table.insert(
-				found,
-				{ title = item.title, url = item.url, snippet = item.description or "" }
-			)
+		for _, item in results or {} do
+			table.insert(found, {
+				title = item.title,
+				url = item.url,
+				snippet = item.description or "",
+				date = day(item.page_age),
+			})
 		end
 		return found
 	end,
-	exa = function(query)
+	exa = function(query, news)
 		local response, err = M.request({
 			url = "https://api.exa.ai/search",
 			method = "POST",
@@ -183,6 +214,7 @@ local SERVICES: { [string]: (query: string) -> { Found } } = {
 			body = greed.json.encode({
 				query = query,
 				numResults = 8,
+				category = if news then "news" else nil,
 				contents = { highlights = { maxCharacters = SNIPPET } },
 			}),
 			timeout = 20000,
@@ -194,11 +226,12 @@ local SERVICES: { [string]: (query: string) -> { Found } } = {
 				title = item.title or item.url,
 				url = item.url,
 				snippet = table.concat(highlights, " … "),
+				date = day(item.publishedDate),
 			})
 		end
 		return found
 	end,
-	tavily = function(query)
+	tavily = function(query, news)
 		local response, err = M.request({
 			url = "https://api.tavily.com/search",
 			method = "POST",
@@ -206,25 +239,32 @@ local SERVICES: { [string]: (query: string) -> { Found } } = {
 				["content-type"] = "application/json",
 				authorization = `Bearer {key("tavily")}`,
 			},
-			body = greed.json.encode({ query = query, max_results = 8 }),
+			body = greed.json.encode({
+				query = query,
+				max_results = 8,
+				topic = if news then "news" else nil,
+			}),
 			timeout = 20000,
 		})
 		local found = {}
 		for _, item in answer(response, err, "tavily").results or {} do
-			table.insert(
-				found,
-				{ title = item.title, url = item.url, snippet = item.content or "" }
-			)
+			table.insert(found, {
+				title = item.title,
+				url = item.url,
+				snippet = item.content or "",
+				date = day(item.published_date),
+			})
 		end
 		return found
 	end,
-	searxng = function(query)
+	searxng = function(query, news)
 		local base = greed.option.get("web-search-url") :: string
 		if base == "" then
 			error("web-search is searxng, but web-search-url doesn't say where it is", 0)
 		end
+		local category = if news then "&categories=news" else ""
 		local response, err = M.request({
-			url = `{string.gsub(base, "/+$", "")}/search?q={encode(query)}&format=json`,
+			url = `{string.gsub(base, "/+$", "")}/search?q={encode(query)}&format=json{category}`,
 			method = "GET",
 			timeout = 20000,
 		})
@@ -233,18 +273,31 @@ local SERVICES: { [string]: (query: string) -> { Found } } = {
 			if i > 8 then
 				break
 			end
-			table.insert(
-				found,
-				{ title = item.title, url = item.url, snippet = item.content or "" }
-			)
+			table.insert(found, {
+				title = item.title,
+				url = item.url,
+				snippet = item.content or "",
+				date = day(item.publishedDate),
+			})
 		end
 		return found
 	end,
 }
 
+-- Whether `url` is on one of the domains in `sources`, or under one.
+local function trusted(url: string, sources: { string }): boolean
+	local host = string.lower(string.match(url, "^https?://([^/?#:]+)") or "")
+	for _, source in sources do
+		if host == source or string.sub(host, -#source - 1) == "." .. source then
+			return true
+		end
+	end
+	return false
+end
+
 --- The web's results for `query`, from the service the web-search option
 --- names, or fails with why (and how to set one up).
-function M.search(query: string): { Found }
+function M.search(query: string, news: boolean?): { Found }
 	local service = greed.option.get("web-search") :: string
 	local search = SERVICES[service]
 	if search == nil then
@@ -253,11 +306,26 @@ function M.search(query: string): { Found }
 			0
 		)
 	end
-	local found = search(query)
+	local found = search(query, news == true)
 	for _, item in found do
 		item.snippet = core.text.clip(item.snippet, SNIPPET)
 	end
-	return found
+	-- The sources you trust first, in the service's order, or only them.
+	local sources = {}
+	for source in string.gmatch(string.lower(greed.option.get("web-sources") :: string), "%S+") do
+		table.insert(sources, source)
+	end
+	if #sources == 0 then
+		return found
+	end
+	local first, rest = {}, {}
+	for _, item in found do
+		table.insert(if trusted(item.url, sources) then first else rest, item)
+	end
+	if greed.option.get("web-sources-only") ~= true then
+		table.move(rest, 1, #rest, #first + 1, first)
+	end
+	return first
 end
 
 registry.group("web", "Searching the web, for documentation and facts the project doesn't have")
@@ -267,12 +335,16 @@ registry.tool({
 	group = "web",
 	kind = "fetch",
 	description = "Search the web: the results' titles, addresses and a line from each. "
-		.. "Read a promising one with web_fetch",
-	input = registry.schema.object({ query = { type = "string" } }, { "query" }),
+		.. "Read a promising one with web_fetch. With news, recent news about it, dated",
+	input = registry.schema.object({
+		query = { type = "string" },
+		news = { type = "boolean", description = "Search the news rather than the whole web" },
+	}, { "query" }),
 	run = function(args)
 		local lines = {}
-		for i, found in M.search(args.query) do
-			table.insert(lines, `{i}. {found.title}\n{found.url}\n{found.snippet}`)
+		for i, found in M.search(args.query, args.news) do
+			local line = if found.date then `{found.date}: {found.snippet}` else found.snippet
+			table.insert(lines, `{i}. {found.title}\n{found.url}\n{line}`)
 		end
 		if #lines == 0 then
 			return "nothing found"

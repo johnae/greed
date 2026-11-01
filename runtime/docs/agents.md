@@ -103,7 +103,7 @@ and which [tool groups](#tool-groups) it can switch on. The tools:
 | `subagent` | Hand a task to a helper agent with an empty context and get its report; Greed's own agent has it from the start (below) |
 | `blocks_list`, `blocks_run` | The runnable code blocks in a Markdown file, and running one, in files you trust and as you last ran it; the result is saved under the block |
 | `web_fetch` | Read a page as Markdown, or have a small model answer a question from it (below) |
-| `web_search` | Search the web with the service you set up (below) |
+| `web_search` | Search the web, or the news, with the service you set up (below) |
 | `research` | Hand a question to a helper that searches and reads the web, and get its report with sources (below) |
 | `shell_run` | Run a command in the project's [shell](shell.md), where you see it marked ◆, and get back its id, exit code, output, errors, how long it took, the files and lines it names, its JSON and a table's first rows; one that runs past `timeout_s` comes back as running |
 | `shell_read`, `shell_wait`, `shell_kill` | A shell block by id, or the latest one (yours too), waiting for one still running, and stopping one an agent ran |
@@ -155,6 +155,15 @@ local greed = require("@greed")
 greed.option.set("web-search", "brave") -- or "exa", "tavily", "searxng"
 -- then :secret-set brave (exa, tavily); SearXNG needs no key, only where it is:
 greed.option.set("web-search-url", "https://searx.example.org")
+```
+
+`web_search` with `news` searches the news instead, each result with its
+date. To have results from sources you trust first, name their domains,
+subdomains included; `web-sources-only` keeps only those:
+
+```luau
+greed.option.set("web-sources", "reuters.com apnews.com docs.rs")
+greed.option.set("web-sources-only", false)
 ```
 
 For anything that takes more than a page, `research` hands the question
