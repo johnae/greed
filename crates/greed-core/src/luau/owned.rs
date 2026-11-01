@@ -96,8 +96,9 @@ impl Owned {
     }
 
     pub fn server(&mut self, by: PluginId, config: ServerConfig) {
-        self.servers
-            .retain(|(owner, c)| !(*owner == by && c.language == config.language));
+        self.servers.retain(|(owner, c)| {
+            !(*owner == by && c.language == config.language && c.name == config.name)
+        });
         self.servers.push((by, config));
     }
 
@@ -153,17 +154,17 @@ impl Owned {
                 (language.as_str(), ext.as_slice(), names.as_slice())
             }));
         }
-        let languages: Vec<String> = self
+        let servers: Vec<(String, String)> = self
             .servers
             .iter()
             .filter(|(by, _)| mine(by))
-            .map(|(_, c)| c.language.clone())
+            .map(|(_, c)| (c.language.clone(), c.name.clone()))
             .collect();
         self.servers.retain(|(by, _)| !mine(by));
-        for language in languages {
-            match self.servers.iter().rfind(|(_, c)| c.language == language) {
+        for (language, name) in servers {
+            match (self.servers.iter()).rfind(|(_, c)| c.language == language && c.name == name) {
                 Some((_, config)) => lsp.configure(config.clone()),
-                None => lsp.remove(&language),
+                None => lsp.remove(&language, Some(&name)),
             }
         }
         closed

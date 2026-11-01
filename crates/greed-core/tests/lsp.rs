@@ -480,6 +480,157 @@ fn each_project_gets_a_server_of_its_own_in_its_root() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// Rust's server for linting, which runs beside its main one and doesn't
+/// do hover.
+fn lint_server(when: &[&str]) -> greed_core::lsp::ServerConfig {
+    greed_core::lsp::ServerConfig {
+        name: "lint".into(),
+        commands: vec![vec!["lint".into()]],
+        when: when.iter().map(|w| (*w).to_owned()).collect(),
+        ..support::rust_server()
+    }
+}
+
+/// Fake servers whose `lint` doesn't do hover and names its diagnostics so.
+fn with_lint() -> (greed_core::lsp::Launcher, support::Started) {
+    let lint = support::Options {
+        source: "lint",
+        lacks: &["textDocument/hover"],
+        ..support::Options::default()
+    };
+    support::launcher_by(vec![("lint", lint)], support::Options::default())
+}
+
+#[test]
+fn a_named_server_runs_beside_the_main_one_and_both_hear_of_the_document() {
+    let mut s = setup("let x = bad;\n");
+    let (launcher, started) = with_lint();
+    s.lsp.set_launcher(launcher);
+    s.started = started;
+    s.lsp.configure(lint_server(&[]));
+    assert!(s.lsp.sync(&s.editor).is_empty());
+    assert_eq!(s.starts(), 2);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    // Each opens it once it's started, and reports on it.
+    for _ in 0..2 {
+        assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    }
+    for n in 0..2 {
+        assert_eq!(s.documents_of(n), ["textDocument/didOpen"], "server {n}");
+    }
+    // The main one first.
+    let servers = s.lsp.servers_of(s.editor.buffer(buffer));
+    assert_eq!(servers.len(), 2);
+    let hovers = |s: &Setup, n: usize| {
+        !s.lsp.capabilities_of(servers[n]).unwrap()["hoverProvider"].is_null()
+    };
+    assert!(hovers(&s, 0) && !hovers(&s, 1));
+    let names: Vec<String> = s.lsp.running().into_iter().map(|r| r.name).collect();
+    assert_eq!(names, ["lint", "rust"]);
+
+    let view = s.editor.focus();
+    let changes = greed_text::ChangeSet::from_changes(13, [(13, 13, Some("ok"))]).unwrap();
+    s.editor
+        .apply(
+            view,
+            changes,
+            greed_text::Author::User(ClientId(1)),
+            None,
+            None,
+        )
+        .unwrap();
+    s.lsp.sync(&s.editor);
+    for n in 0..2 {
+        assert_eq!(s.documents_of(n), ["textDocument/didChange"], "server {n}");
+    }
+
+    // A request goes to the server it's for.
+    let (to, id) = s
+        .lsp
+        .request_to(
+            servers[1],
+            s.editor.buffer(buffer),
+            "textDocument/hover",
+            &json!({}),
+        )
+        .unwrap();
+    assert_eq!(to, servers[1]);
+    loop {
+        if let Handled::Response {
+            id: got, result, ..
+        } = s.next()
+            && got == id
+        {
+            assert!(result.is_err(), "lint doesn't hover: {result:?}");
+            break;
+        }
+    }
+
+    // Set up no more, the document closes there only. The main one started
+    // first.
+    s.lsp.remove("rust", Some("lint"));
+    s.lsp.sync(&s.editor);
+    assert!(s.documents_of(0).is_empty(), "the main one keeps it");
+    assert_eq!(s.documents_of(1), ["textDocument/didClose"]);
+}
+
+#[test]
+fn a_server_with_when_runs_only_under_a_folder_that_has_one_of_its_files() {
+    let dir = two_projects("when");
+    std::fs::write(dir.join("a/lint.toml"), "").unwrap();
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", "let x = bad;", Some(dir.join("a/src/main.rs")));
+    editor.open("file", "let y = bad;", Some(dir.join("b/src/main.rs")));
+    let mut s = Setup {
+        lsp: Lsp::default(),
+        editor,
+        started: support::Started::default(),
+        path: dir.join("a/src/main.rs"),
+    };
+    let (launcher, started) = with_lint();
+    s.lsp.set_launcher(launcher);
+    s.started = started;
+    s.lsp.configure(support::rust_server());
+    s.lsp.configure(lint_server(&["lint.toml"]));
+    assert!(s.lsp.sync(&s.editor).is_empty());
+    let running: Vec<(String, PathBuf)> = s
+        .lsp
+        .running()
+        .into_iter()
+        .map(|r| (r.name, r.root))
+        .collect();
+    assert_eq!(
+        running,
+        [
+            ("lint".to_owned(), dir.join("a")),
+            ("rust".to_owned(), dir.join("a")),
+            ("rust".to_owned(), dir.join("b")),
+        ]
+    );
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_named_server_that_isnt_installed_leaves_the_main_one_working() {
+    let mut s = setup("let x = bad;\n");
+    let (mut inner, started) = support::launcher();
+    let launcher: greed_core::lsp::Launcher = Box::new(move |config, root| {
+        if config.name == "lint" {
+            Ok(None)
+        } else {
+            inner(config, root)
+        }
+    });
+    s.lsp.set_launcher(launcher);
+    s.started = started;
+    s.lsp.configure(lint_server(&[]));
+    assert!(s.lsp.sync(&s.editor).is_empty());
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    assert_eq!(s.lsp.servers_of(s.editor.buffer(buffer)).len(), 1);
+    assert_eq!(s.probe(buffer)["text"], "let x = bad;\n");
+}
+
 #[test]
 fn a_file_saved_into_another_project_moves_to_its_server() {
     let dir = two_projects("moves");
@@ -1229,8 +1380,11 @@ fn servers_start_only_in_trusted_folders_and_one_held_back_starts_once_trusted()
     assert_eq!(s.starts(), 0, "nothing started");
     let held = s.lsp.held();
     assert_eq!(held.len(), 1, "{held:?}");
-    let (language, root) = held[0].clone();
-    assert!(language == "rust" && s.path.starts_with(&root), "{root:?}");
+    let (language, name, root) = held[0].clone();
+    assert!(
+        language == "rust" && name.is_empty() && s.path.starts_with(&root),
+        "{root:?}"
+    );
     // A folder holding the server's trusts it too.
     s.lsp
         .trust(Some(vec![root.parent().unwrap().to_path_buf()]));

@@ -914,12 +914,16 @@ fn a_languages_settings_and_start_options_reach_its_server_set_on_their_own() {
     .unwrap();
     h.sync_lsp();
     h.run(FIRST_CLIENT, "probe").unwrap();
-    let mut messages = Vec::new();
+    // What the probe said, past any other message, like a stall under load.
+    let mut said = None;
     pump(&h, |h| {
-        messages.extend(h.with_editor_mut(Editor::take_messages));
-        !messages.is_empty()
+        let messages = h.with_editor_mut(Editor::take_messages);
+        said = said
+            .take()
+            .or_else(|| messages.into_iter().find(|m| m.starts_with('{')));
+        said.is_some()
     });
-    let seen: serde_json::Value = serde_json::from_str(&messages[0]).unwrap();
+    let seen: serde_json::Value = serde_json::from_str(&said.unwrap()).unwrap();
     assert_eq!(
         seen["init"],
         serde_json::json!({ "symbols": "all" }),

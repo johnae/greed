@@ -261,6 +261,8 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
             };
             let config = ServerConfig {
                 language: spec.get("language")?,
+                name: spec.get::<Option<String>>("name")?.unwrap_or_default(),
+                when: strings("when")?,
                 commands,
                 root_markers: strings("root_markers")?,
                 reads_only: spec.get::<Option<bool>>("reads_only")?.unwrap_or(false),
@@ -278,7 +280,7 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
         "remove",
         lua.create_function(|lua, language: String| {
             let state = &mut *state_mut(lua);
-            state.lsp.remove(&language);
+            state.lsp.remove(&language, None);
             state.owned.remove_server(&language);
             Ok(())
         })?,
