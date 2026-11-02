@@ -55,8 +55,8 @@ local function current_name(buffer: greed.Buffer, pos: number): (boolean, string
 	end
 	local range = result.range or result
 	if range.start then
-		local from = core.lsp.offset(buffer, range.start, server)
-		return true, buffer:slice(from, core.lsp.offset(buffer, range["end"], server))
+		local from = greed.lsp.offset(buffer, range.start, server)
+		return true, buffer:slice(from, greed.lsp.offset(buffer, range["end"], server))
 	end
 	return true, word_at(buffer, pos)
 end
@@ -100,26 +100,6 @@ greed.command({
 	end,
 })
 
--- The problems the servers reported in `from`..`to`, as `server` counts
--- positions, so it can offer fixes for them.
-local function problems_in(buffer: greed.Buffer, from: number, to: number, server: number?): { any }
-	local list = {}
-	for _, d in greed.lsp.diagnostics(buffer) do
-		if d.from <= to and from <= d.to then
-			table.insert(list, {
-				range = {
-					start = core.lsp.position(buffer, d.from, server),
-					["end"] = core.lsp.position(buffer, d.to, server),
-				},
-				severity = d.severity,
-				message = d.message,
-				source = d.source,
-			})
-		end
-	end
-	return list
-end
-
 -- Does what a code action from `server` says: fetches its edit if the
 -- server left that for later, applies it, then runs its command, all with
 -- that server.
@@ -159,10 +139,10 @@ local function actions_of(
 	local ok, result, err = pcall(greed.lsp.request, buffer, "textDocument/codeAction", {
 		textDocument = { uri = greed.lsp.uri(buffer) },
 		range = {
-			start = core.lsp.position(buffer, from, server),
-			["end"] = core.lsp.position(buffer, to, server),
+			start = greed.lsp.position(buffer, from, server),
+			["end"] = greed.lsp.position(buffer, to, server),
 		},
-		context = { diagnostics = problems_in(buffer, from, to, server) },
+		context = { diagnostics = greed.json.array(core.lsp.problems_in(buffer, from, to, server)) },
 	}, server)
 	if not ok then
 		return nil, tostring(result)

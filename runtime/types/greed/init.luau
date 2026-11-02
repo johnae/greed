@@ -1524,6 +1524,9 @@ export type Diagnostic = {
 	source: string?,
 	--- The id of the server that reported it.
 	server: number?,
+	--- What the server knows it by, its `code` and `data`, to send back with it when asking it for fixes.
+	code: any?,
+	data: any?,
 }
 
 --- The error a language server answered a request with.
@@ -1583,9 +1586,9 @@ export type Lsp = {
 	uri: (buffer: Buffer) -> string,
 	--- The file path in a `file://` URI.
 	path: (uri: string) -> string?,
-	--- Byte offset `pos` as `server` (the buffer's first without one) counts positions.
+	--- Byte offset `pos` as `server` (the buffer's first without one) counts positions. `server` may be any running server, like the one that named a place in this file before the file had a server of its own.
 	position: (buffer: Buffer, pos: number, server: number?) -> LspPosition,
-	--- The byte offset of a position as `server` (the buffer's first without one) counts it.
+	--- The byte offset of a position as `server` (the buffer's first without one) counts it; any running server, as for `position`.
 	offset: (buffer: Buffer, position: LspPosition, server: number?) -> number,
 	--- The buffer's latest diagnostics from all its servers, where they are now: they move with
 	--- edits. They are marks in the buffer's "diagnostics" namespace, with

@@ -212,8 +212,8 @@ greed.command({
 		for _, location in found do
 			if greed.lsp.path(location.uri) == buffer:path() then
 				table.insert(ranges, {
-					anchor = core.lsp.offset(buffer, location.range.start, server),
-					head = core.lsp.offset(buffer, location.range["end"], server),
+					anchor = greed.lsp.offset(buffer, location.range.start, server),
+					head = greed.lsp.offset(buffer, location.range["end"], server),
 				})
 			end
 		end

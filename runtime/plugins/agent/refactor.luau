@@ -84,8 +84,8 @@ local function changes_of(edit: any, project: string, server: number?): { propos
 		local buffer = greed.load(path)
 		local changes: { proposals.Change } = {}
 		for i, e in file.edits do
-			local from = core.lsp.offset(buffer, e.range.start, server)
-			local to = core.lsp.offset(buffer, e.range["end"], server)
+			local from = greed.lsp.offset(buffer, e.range.start, server)
+			local to = greed.lsp.offset(buffer, e.range["end"], server)
 			table.insert(changes, { from = from, to = to, text = e.newText, i = i } :: any)
 		end
 		-- In file order; edits at one place keep the server's order.
@@ -140,7 +140,7 @@ agent.tool({
 		local server = core.lsp.server(buffer, "textDocument/rename")
 		local edit = request(buffer, "textDocument/rename", {
 			textDocument = { uri = greed.lsp.uri(buffer) },
-			position = core.lsp.position(buffer, at, server),
+			position = greed.lsp.position(buffer, at, server),
 			newName = args.new_name,
 		}, server)
 		if edit == nil then
@@ -162,25 +162,12 @@ local function actions(buffer: greed.Buffer, line: number, to_line: number?): { 
 	local _, to = line_range(buffer, to_line or line)
 	local list: { Offered } = {}
 	core.lsp.each(buffer, "textDocument/codeAction", function(server)
-		local problems = {}
-		for _, d in greed.lsp.diagnostics(buffer) do
-			if d.from <= to and from <= d.to then
-				table.insert(problems, {
-					range = {
-						start = core.lsp.position(buffer, d.from, server),
-						["end"] = core.lsp.position(buffer, d.to, server),
-					},
-					severity = d.severity,
-					message = d.message,
-					source = d.source,
-				})
-			end
-		end
+		local problems = core.lsp.problems_in(buffer, from, to, server)
 		local result = request(buffer, "textDocument/codeAction", {
 			textDocument = { uri = greed.lsp.uri(buffer) },
 			range = {
-				start = core.lsp.position(buffer, from, server),
-				["end"] = core.lsp.position(buffer, to, server),
+				start = greed.lsp.position(buffer, from, server),
+				["end"] = greed.lsp.position(buffer, to, server),
 			},
 			context = { diagnostics = greed.json.array(problems) },
 		}, server)

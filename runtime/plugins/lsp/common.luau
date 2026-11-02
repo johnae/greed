@@ -10,7 +10,7 @@ local M = {}
 function M.at(buffer: greed.Buffer, pos: number, server: number?): any
 	return {
 		textDocument = { uri = greed.lsp.uri(buffer) },
-		position = core.lsp.position(buffer, pos, server),
+		position = greed.lsp.position(buffer, pos, server),
 	}
 end
 
@@ -116,7 +116,7 @@ end
 function M.open_at(path: string, position: greed.LspPosition, server: number?)
 	core.file.open(path)
 	local view = greed.view()
-	view:set_cursor(core.lsp.offset(view:buffer(), position, server))
+	view:set_cursor(greed.lsp.offset(view:buffer(), position, server))
 end
 
 return M

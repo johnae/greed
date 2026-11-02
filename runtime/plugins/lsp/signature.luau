@@ -126,7 +126,7 @@ local function ask(view: greed.View, context: any)
 	local ok, help = pcall(function()
 		return greed.lsp.request(buffer, "textDocument/signatureHelp", {
 			textDocument = { uri = greed.lsp.uri(buffer) },
-			position = core.lsp.position(buffer, view:cursor(), server),
+			position = greed.lsp.position(buffer, view:cursor(), server),
 			context = context,
 		}, server)
 	end)

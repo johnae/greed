@@ -88,6 +88,29 @@ function M.server(buffer: greed.Buffer, method: string): number?
 	return if first then first.id else nil
 end
 
+--- The problems `server` reported in `from`..`to` of `buffer`, as it sent
+--- them (every server's without one), where they are now: what goes in a
+--- code action request's context, which a server finds its fixes by.
+function M.problems_in(buffer: greed.Buffer, from: number, to: number, server: number?): { any }
+	local list = {}
+	for _, d in greed.lsp.diagnostics(buffer) do
+		if d.from <= to and from <= d.to and (server == nil or d.server == server) then
+			table.insert(list, {
+				range = {
+					start = greed.lsp.position(buffer, d.from, server),
+					["end"] = greed.lsp.position(buffer, d.to, server),
+				},
+				severity = d.severity,
+				message = d.message,
+				source = d.source,
+				code = d.code,
+				data = d.data,
+			})
+		end
+	end
+	return list
+end
+
 --- Calls `ask` with the id of each of the buffer's `servers` for `method`,
 --- in order, for requests every one answers, like completion; once with
 --- nil, for its first, when none says it can.
@@ -100,31 +123,6 @@ function M.each(buffer: greed.Buffer, method: string, ask: (server: number?) -> 
 	for _, server in found do
 		ask(server.id)
 	end
-end
-
--- `server` when it's one of the buffer's, else nil for its first: what a
--- server answers about another file, like a definition, is counted its way
--- when that file has it too.
-local function its(buffer: greed.Buffer, server: number?): number?
-	if server == nil then
-		return nil
-	end
-	for _, known in greed.lsp.servers_of(buffer) do
-		if known.id == server then
-			return server
-		end
-	end
-	return nil
-end
-
---- The byte offset of `position`, which `server` sent, in `buffer`.
-function M.offset(buffer: greed.Buffer, position: greed.LspPosition, server: number?): number
-	return greed.lsp.offset(buffer, position, its(buffer, server))
-end
-
---- Byte offset `pos` in `buffer` as a position to send `server`.
-function M.position(buffer: greed.Buffer, pos: number, server: number?): greed.LspPosition
-	return greed.lsp.position(buffer, pos, its(buffer, server))
 end
 
 return M

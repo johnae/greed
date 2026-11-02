@@ -165,6 +165,10 @@ pub struct Diagnostic {
     pub source: Option<String>,
     /// The server that reported it.
     pub server: Option<ServerId>,
+    /// What the server knows it by, its `code` and `data`: a server asked
+    /// for fixes finds its own by them, as eslint finds a rule's.
+    pub code: Value,
+    pub data: Value,
 }
 
 #[derive(Debug)]
@@ -1295,6 +1299,8 @@ pub fn diagnostics(buffer: &Buffer) -> Vec<Diagnostic> {
                 message: data["message"].as_str().unwrap_or_default().to_owned(),
                 source: data["source"].as_str().map(str::to_owned),
                 server: mark_server(mark),
+                code: data["code"].clone(),
+                data: data["data"].clone(),
             }
         })
         .collect();
@@ -1343,6 +1349,8 @@ fn diagnostic_mark(
             "severity": severity,
             "message": diagnostic["message"],
             "source": diagnostic["source"],
+            "code": diagnostic["code"],
+            "data": diagnostic["data"],
             "server": server,
             "pulled": pulled,
         })),

@@ -207,7 +207,7 @@ local function items_from(result: any, buffer: greed.Buffer, server: number?): {
 			text = item.textEdit.newText
 			local range = item.textEdit.range or item.textEdit.replace
 			if range then
-				from = core.lsp.offset(buffer, range.start, server)
+				from = greed.lsp.offset(buffer, range.start, server)
 			end
 		end
 		table.insert(out, {
@@ -554,7 +554,7 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 				local ok, result = pcall(function()
 					return greed.lsp.request(buffer, "textDocument/completion", {
 						textDocument = { uri = greed.lsp.uri(buffer) },
-						position = core.lsp.position(buffer, view:cursor(), server),
+						position = greed.lsp.position(buffer, view:cursor(), server),
 					}, server)
 				end)
 				answer:send(if ok and result ~= nil then items_from(result, buffer, server) else {})

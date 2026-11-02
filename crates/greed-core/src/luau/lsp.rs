@@ -473,6 +473,8 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 entry.set("message", d.message.as_str())?;
                 entry.set("source", d.source.as_deref())?;
                 entry.set("server", d.server)?;
+                entry.set("code", to_lua(lua, &d.code)?)?;
+                entry.set("data", to_lua(lua, &d.data)?)?;
                 list.push(entry)?;
             }
             Ok(list)
@@ -505,13 +507,19 @@ fn server_for(
     }
 }
 
-/// How `server` (the first of `buffer`'s without one) counts positions.
+/// How `server` counts positions, or the first of `buffer`'s without one.
+/// `server` needn't be one of `buffer`'s: a place one server names in
+/// another file, like a definition, is counted its way there too, though
+/// that file has no server yet.
 fn encoding_for(
     lsp: &lsp::Lsp,
     buffer: &Buffer,
     server: Option<lsp::ServerId>,
 ) -> LuaResult<lsp::Encoding> {
-    let server = server_for(lsp, buffer, server)?;
+    let server = match server {
+        Some(server) => server,
+        None => server_for(lsp, buffer, None)?,
+    };
     lsp.encoding_of(server)
         .ok_or_else(|| mlua::Error::runtime("the language server stopped"))
 }

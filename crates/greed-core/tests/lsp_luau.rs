@@ -186,6 +186,38 @@ fn a_command_waiting_on_a_server_that_stops_gets_an_error() {
 }
 
 #[test]
+fn a_place_a_server_names_in_a_file_without_a_server_is_counted_its_way() {
+    let h = host();
+    h.sync_lsp();
+    pump(&h, support::has_diagnostics);
+    // A definition in a file just opened, which no server has yet.
+    h.with_editor_mut(|ed| {
+        ed.open("file", "é = 1", Some("notes.txt".into()));
+    });
+    let said = h
+        .eval(
+            r#"
+            local greed = require("@greed")
+            local main, notes
+            for _, b in greed.buffers() do
+                if b:path() and string.find(b:path(), "main.rs$") then main = b end
+                if b:path() and string.find(b:path(), "notes.txt$") then notes = b end
+            end
+            local server = greed.lsp.servers_of(main)[1].id
+            local at = greed.lsp.offset(notes, { line = 0, character = 2 }, server)
+            local ok = pcall(greed.lsp.offset, notes, { line = 0, character = 2 })
+            return `{at} {ok}`
+            "#,
+        )
+        .unwrap();
+    // The fake server counts bytes: é is two.
+    assert_eq!(
+        said, "2 false",
+        "its own way; without a server, no way to tell"
+    );
+}
+
+#[test]
 fn requests_need_a_server_and_a_command() {
     let h = host();
     let err = h
@@ -631,9 +663,10 @@ fn code_actions_from_every_server_run_on_the_server_that_offered_them() {
     move_cursor(&h, 9);
     press_and_wait(&h, "space a", |h| picker_items(h).is_some());
     let items = picker_items(&h).unwrap();
+    // Each hears of its own problem there, as it sent it, to fix.
     for wanted in [
-        "Make it good (2 known)",
-        "lint: Make it good (2 known)",
+        "Make it good (1 known)",
+        "lint: Make it good (1 known)",
         "lint: Add a comment",
     ] {
         assert!(items.iter().any(|i| i == wanted), "{wanted}: {items:?}");

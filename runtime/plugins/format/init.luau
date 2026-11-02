@@ -135,8 +135,8 @@ local function server_format(buffer: greed.Buffer): (boolean, string?)
 	local ranges = {}
 	for _, edit in edits do
 		table.insert(ranges, {
-			from = core.lsp.offset(buffer, edit.range.start, server),
-			to = core.lsp.offset(buffer, edit.range["end"], server),
+			from = greed.lsp.offset(buffer, edit.range.start, server),
+			to = greed.lsp.offset(buffer, edit.range["end"], server),
 			text = edit.newText,
 		})
 	end
