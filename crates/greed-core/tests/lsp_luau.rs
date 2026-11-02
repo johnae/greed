@@ -1150,6 +1150,54 @@ fn accept_and_wait(h: &Host) {
 }
 
 #[test]
+fn a_language_names_servers_to_run_beside_its_main_one_and_drops_those_it_leaves_out() {
+    let dir = std::env::temp_dir().join(format!("greed-lsp-beside-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("lint.toml"), "").unwrap();
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", "let x = bad;", Some(dir.join("main.rs")));
+    let h = Host::new(editor).unwrap();
+    let lint = support::Options {
+        source: "lint",
+        ..support::Options::default()
+    };
+    let (launcher, _started) =
+        support::launcher_by(vec![("lint", lint)], support::Options::default());
+    h.set_lsp_launcher(launcher);
+    let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+    for plugin in ["core", "cmdline", "languages"] {
+        h.load_dir(&runtime.join(plugin)).unwrap();
+    }
+    h.load_str(
+        "config",
+        r#"
+        local greed = require("@greed")
+        greed.lsp.trust(nil)
+        require("@languages").set("rust", { servers = {
+            { "sh" },
+            { name = "lint", command = { "lint" }, when = { "lint.toml" }, except = { "hover" } },
+            { name = "absent", command = { "absent" }, when = { "nowhere.toml" } },
+        } })
+        "#,
+    )
+    .unwrap();
+    h.sync_lsp();
+    pump(&h, |h| {
+        h.with_editor(|ed| greed_core::lsp::diagnostics(ed.buffers().next().unwrap()).len() == 2)
+    });
+    let servers = "local out = {}\nfor _, s in require('@greed').lsp.servers_of(require('@greed').view():buffer()) do table.insert(out, `{s.name} {table.concat(s.except, '+')}`) end\nreturn table.concat(out, ', ')";
+    assert_eq!(h.eval(servers).unwrap(), "rust , lint hover");
+
+    // Left out, it's set up no more: the buffer has only the main one.
+    h.eval("require('@languages').set('rust', { servers = { { 'sh' } } })")
+        .unwrap();
+    h.sync_lsp();
+    assert_eq!(h.eval(servers).unwrap(), "rust ");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn a_languages_settings_and_start_options_reach_its_server_set_on_their_own() {
     let mut editor = Editor::new(ClientId(1));
     editor.open(

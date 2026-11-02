@@ -1027,6 +1027,46 @@ require("@languages").set("rust", {
 A running server keeps the settings it started with; `:lsp-restart` gives
 it the new ones.
 
+### Several servers for one file
+
+A language can have servers that run beside its main one, like a linter
+beside the TypeScript server. JavaScript and TypeScript come with eslint
+and Biome, CSS with Stylelint, and Markdown with harper's grammar checks
+beside marksman. Each only starts in a project set up for it (an
+`eslint.config.js`, a `biome.json`) and when it's installed; `:health`
+lists them, and the status line names the ones running, like
+`typescript-language-server · eslint`.
+
+Like this, to add one of your own:
+
+```luau
+require("@languages").set("python", {
+	servers = {
+		{ "basedpyright-langserver", "--stdio" },
+		{ name = "ruff", command = { "ruff", "server" }, when = { "ruff.toml", "pyproject.toml" } },
+	},
+})
+```
+
+Entries without a `name` are the main server's commands, tried in order as
+before. One with a `name` runs beside it, in the nearest folder that has
+one of its `when` files (everywhere, without `when`). `settings`,
+`init_options` and `reads_only` go on it, as on a language.
+
+Problems, completions and code actions come from all of them together.
+Hover, going to a definition, references, rename, signature help and
+formatting go to the first that does it: the main one, then the others in
+order. To change who does what, `only` and `except` take the features
+`hover`, `definition`, `references`, `rename`, `code-action`,
+`completion`, `signature-help`, `format` and `symbols`:
+
+```luau
+{ name = "biome", command = { "biome", "lsp-proxy" }, when = { "biome.json" }, only = { "format", "code-action" } }
+```
+
+A language's `formatter` program, when installed, still formats before any
+server does.
+
 | Keys | |
 |---|---|
 | `space k` | What's under the cursor, with any problems there, drawn as Markdown: code in its language's colors, links to follow |

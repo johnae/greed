@@ -33,21 +33,68 @@ local function apply(name: string, language: Language)
 	})
 end
 
+-- The servers each language had set beside its main one, by name, so those
+-- left out when it's set again stop being set.
+local beside_of: { [string]: { string } } = {}
+
+-- A language's main server's commands, and the servers beside it.
+local function split(language: Language): ({ { string } }, { defaults.Server })
+	local commands: { { string } }, beside: { defaults.Server } = {}, {}
+	local servers: { defaults.Server } = language.servers or {}
+	for _, entry in servers do
+		if entry.name then
+			table.insert(beside, entry)
+		else
+			local command: { string } = {}
+			for i = 1, #entry do
+				table.insert(command, entry[i])
+			end
+			table.insert(commands, command)
+		end
+	end
+	return commands, beside
+end
+
 -- Tells the editor about a language's servers.
 local function apply_servers(name: string, language: Language)
-	local servers = language.servers
-	if servers and #servers > 0 then
+	local commands, beside = split(language)
+	if #commands > 0 then
 		greed.lsp.server({
 			language = name,
-			commands = servers,
+			commands = commands,
 			root_markers = language.roots,
 			reads_only = language.reads_only,
 			settings = language.settings,
 			init_options = language.init_options,
 		})
 	else
-		greed.lsp.remove(name)
+		greed.lsp.remove(name, "")
 	end
+	local named: { string } = {}
+	for _, server in beside do
+		local called = server.name :: string
+		table.insert(named, called)
+		greed.lsp.server({
+			language = name,
+			name = called,
+			command = server.command,
+			commands = server.commands,
+			when = server.when,
+			only = server.only,
+			except = server.except,
+			root_markers = language.roots,
+			reads_only = server.reads_only,
+			settings = server.settings,
+			init_options = server.init_options,
+		})
+	end
+	local before: { string } = beside_of[name] or {}
+	for _, old in before do
+		if not table.find(named, old) then
+			greed.lsp.remove(name, old)
+		end
+	end
+	beside_of[name] = named
 end
 
 -- Who set each language's fields, by language and field: the plugin, or
@@ -242,7 +289,7 @@ local function health_report(): (string, { greed.Mark })
 	for _, name in greed.grammars() do
 		have[name] = true
 	end
-	local lines, marks = {}, {}
+	local lines: { string }, marks: { greed.Mark } = {}, {}
 	local pos = 0
 	local function add(text: string, style: string?)
 		if style then
@@ -261,16 +308,37 @@ local function health_report(): (string, { greed.Mark })
 		else
 			line ..= add("no grammar    ", "ui.health.missing")
 		end
-		local servers: { { string } } = language.servers or {}
-		if #servers == 0 then
+		local commands, beside = split(language)
+		if #commands == 0 and #beside == 0 then
 			line ..= add("no server set", "ui.health.missing")
 		end
-		for i, command in servers do
+		-- The main server's commands, then those beside it, by name.
+		local shown = 0
+		local function program(command: { string }, label: string?)
+			if command[1] == nil then
+				return
+			end
 			local found = greed.which(command[1]) ~= nil
-			if i > 1 then
+			if shown > 0 then
 				line ..= add(", ")
 			end
-			line ..= add(command[1], if found then "ui.health.found" else "ui.health.missing")
+			shown += 1
+			line ..= add(
+				label or command[1],
+				if found then "ui.health.found" else "ui.health.missing"
+			)
+		end
+		for _, command in commands do
+			program(command)
+		end
+		for _, server in beside do
+			local command: { string }? = server.command
+			if command == nil and server.commands then
+				command = server.commands[1]
+			end
+			if command then
+				program(command, `{command[1]} ({server.name})`)
+			end
 		end
 		table.insert(lines, line)
 		pos += 1

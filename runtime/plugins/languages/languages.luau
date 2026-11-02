@@ -1,7 +1,29 @@
 -- The languages Greed knows: which files are in each, the language servers to
--- try (the first one installed runs), the files that mark a project's root,
--- and how comments and indentation look. Greed has syntax highlighting for
--- some of them; `:health` shows which.
+-- try (the first one installed runs) and those that run beside it, the files
+-- that mark a project's root, and how comments and indentation look. Greed
+-- has syntax highlighting for some of them; `:health` shows which.
+
+--- An entry of a language's `servers`: a command to try for its main
+--- server, like `{ "rust-analyzer" }`, or, with a `name`, a server that
+--- runs beside it, like eslint beside TypeScript's: its command (or
+--- `commands`, tried in order), and the files one of which a folder needs
+--- for it to run there (`when`), so it starts only in projects set up for
+--- it. `only` and `except` say what it's used for: "hover", "definition",
+--- "references", "rename", "code-action", "completion", "signature-help",
+--- "format" and "symbols". It runs the project's code unless `reads_only`,
+--- so it waits until you trust the project.
+export type Server = {
+	[number]: string,
+	name: string?,
+	command: { string }?,
+	commands: { { string } }?,
+	when: { string }?,
+	only: { string }?,
+	except: { string }?,
+	reads_only: boolean?,
+	settings: { [string]: any }?,
+	init_options: { [string]: any }?,
+}
 
 export type Language = {
 	extensions: { string }?,
@@ -9,8 +31,10 @@ export type Language = {
 	names: { string }?,
 	--- Files that mark a project's root, e.g. "Cargo.toml".
 	roots: { string }?,
-	--- Commands to start a language server, tried in order.
-	servers: { { string } }?,
+	--- Commands to start the language's main server, tried in order: the
+	--- first installed runs. An entry with a `name` is a server that runs
+	--- beside it (see `Server`).
+	servers: { Server }?,
 	--- Whether its servers only read the project's files, never running its
 	--- code, so they start in a project you haven't trusted. Servers that
 	--- build the project or load its plugins (rust-analyzer, typescript)
@@ -46,6 +70,60 @@ export type Language = {
 	--- prints it formatted. "{path}" in it stands for the file's path.
 	--- Without one, the language server formats, as rust-analyzer does.
 	formatter: { string }?,
+}
+
+-- Linters for JavaScript and TypeScript, which run beside their main
+-- server where a project is set up for them. eslint's server reads its
+-- settings rather than defaulting them, as other editors give them.
+local ESLINT: Server = {
+	name = "eslint",
+	command = { "vscode-eslint-language-server", "--stdio" },
+	when = {
+		"eslint.config.js",
+		"eslint.config.mjs",
+		"eslint.config.cjs",
+		"eslint.config.ts",
+		".eslintrc",
+		".eslintrc.js",
+		".eslintrc.cjs",
+		".eslintrc.json",
+		".eslintrc.yml",
+		".eslintrc.yaml",
+	},
+	except = { "format" },
+	-- What it has no default for; an empty list is left out, as a Luau
+	-- table it would reach the server as an object.
+	settings = {
+		validate = "on",
+		run = "onType",
+		problems = { shortenToSingleLine = false },
+		workingDirectory = { mode = "location" },
+		codeAction = {
+			disableRuleComment = { enable = true, location = "separateLine" },
+			showDocumentation = { enable = true },
+		},
+	},
+}
+local BIOME: Server = {
+	name = "biome",
+	command = { "biome", "lsp-proxy" },
+	when = { "biome.json", "biome.jsonc" },
+}
+local STYLELINT: Server = {
+	name = "stylelint",
+	command = { "stylelint-lsp", "--stdio" },
+	when = {
+		".stylelintrc",
+		".stylelintrc.json",
+		".stylelintrc.yml",
+		".stylelintrc.yaml",
+		".stylelintrc.js",
+		".stylelintrc.cjs",
+		".stylelintrc.mjs",
+		"stylelint.config.js",
+		"stylelint.config.cjs",
+		"stylelint.config.mjs",
+	},
 }
 
 local languages: { [string]: Language } = {
@@ -85,7 +163,7 @@ local languages: { [string]: Language } = {
 	css = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "css", "scss" },
-		servers = { { "vscode-css-language-server", "--stdio" } },
+		servers = { { "vscode-css-language-server", "--stdio" }, STYLELINT },
 		reads_only = true,
 		indent = 2,
 	},
@@ -126,7 +204,7 @@ local languages: { [string]: Language } = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "js", "mjs", "cjs", "jsx" },
 		roots = { "package.json" },
-		servers = { { "typescript-language-server", "--stdio" } },
+		servers = { { "typescript-language-server", "--stdio" }, ESLINT, BIOME },
 		comment = "//",
 		indent = 2,
 	},
@@ -158,7 +236,11 @@ local languages: { [string]: Language } = {
 	},
 	markdown = {
 		extensions = { "md", "markdown" },
-		servers = { { "harper-ls", "--stdio" }, { "marksman", "server" } },
+		-- marksman for links and headings, the grammar checker beside it.
+		servers = {
+			{ "marksman", "server" },
+			{ name = "harper", command = { "harper-ls", "--stdio" }, reads_only = true },
+		},
 		reads_only = true,
 		indent = 2,
 	},
@@ -275,7 +357,7 @@ local languages: { [string]: Language } = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "ts", "mts", "cts" },
 		roots = { "tsconfig.json", "package.json" },
-		servers = { { "typescript-language-server", "--stdio" } },
+		servers = { { "typescript-language-server", "--stdio" }, ESLINT, BIOME },
 		comment = "//",
 		indent = 2,
 	},
@@ -283,7 +365,7 @@ local languages: { [string]: Language } = {
 		formatter = { "prettier", "--stdin-filepath", "{path}" },
 		extensions = { "tsx" },
 		roots = { "tsconfig.json", "package.json" },
-		servers = { { "typescript-language-server", "--stdio" } },
+		servers = { { "typescript-language-server", "--stdio" }, ESLINT, BIOME },
 		comment = "//",
 		indent = 2,
 	},
