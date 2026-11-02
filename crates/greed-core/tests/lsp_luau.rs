@@ -516,6 +516,162 @@ fn picker_items(h: &Host) -> Option<Vec<String>> {
     })
 }
 
+/// What a fake server works as and is set up with: its options, and more
+/// fields for `greed.lsp.server` in Luau, like `except = { "hover" }`.
+type Fake<'a> = (support::Options, &'a str);
+
+/// A host with the default lsp plugin loaded and two fake servers for Rust:
+/// the main one as `main` says, and `lint` beside it as `lint` says.
+fn with_two(main: Fake, lint: Fake) -> Host {
+    let ((main, main_spec), (lint, spec)) = (main, lint);
+    let mut editor = Editor::new(ClientId(1));
+    editor.open(
+        "file",
+        "let x = bad;",
+        Some(std::env::temp_dir().join("greed-lsp-two/main.rs")),
+    );
+    let h = Host::new(editor).unwrap();
+    let lint = support::Options {
+        source: "lint",
+        ..lint
+    };
+    let (launcher, _started) = support::launcher_by(vec![("lint", lint)], main);
+    h.set_lsp_launcher(launcher);
+    h.load_dirs(&[
+        plugin("core"),
+        plugin("helix"),
+        plugin("picker"),
+        plugin("multibuffer"),
+        plugin("statusline"),
+        plugin("markdown"),
+        plugin("lsp"),
+    ])
+    .unwrap();
+    h.load_str(
+        "servers",
+        &format!(
+            r#"
+            local greed = require("@greed")
+            greed.option.set("project-trust", "off")
+            greed.lsp.trust(nil)
+            greed.lsp.server({{ language = "rust", command = {{ "sh" }}, root_markers = {{ "Cargo.toml" }}, {main_spec} }})
+            greed.lsp.server({{ language = "rust", name = "lint", command = {{ "lint" }}, {spec} }})
+            "#
+        ),
+    )
+    .unwrap();
+    h.sync_lsp();
+    // Both have reported.
+    pump(&h, |h| {
+        h.with_editor(|ed| {
+            let buffer = ed.buffer(ed.view(ed.main()).buffer);
+            greed_core::lsp::diagnostics(buffer).len() == 2
+        })
+    });
+    h.with_editor_mut(Editor::take_messages);
+    h
+}
+
+/// The text of the first float, once one shows.
+fn float_text(h: &Host) -> Option<String> {
+    h.with_editor(|ed| {
+        ed.floats()
+            .first()
+            .map(|f| ed.buffer(ed.view(f.view).buffer).text().to_string())
+    })
+}
+
+#[test]
+fn hover_goes_to_the_first_server_that_does_it_and_may() {
+    let no_hover = support::Options {
+        lacks: &["textDocument/hover"],
+        ..support::Options::default()
+    };
+    let both = support::Options::default();
+    for (main, lint, answers) in [
+        // The main one doesn't hover: lint does.
+        ((no_hover, ""), (both, ""), "lint: hover at 0:4"),
+        // Both do: the main one, first.
+        ((both, ""), (both, ""), "hover at 0:4"),
+        // Both do, but the main one is kept from it, and lint only does it.
+        (
+            (both, "except = { 'hover' }"),
+            (both, "only = { 'hover' }"),
+            "lint: hover at 0:4",
+        ),
+    ] {
+        let h = with_two(main, lint);
+        move_cursor(&h, 4);
+        press_and_wait(&h, "space k", |h| float_text(h).is_some());
+        assert_eq!(float_text(&h).unwrap(), answers);
+    }
+}
+
+#[test]
+fn completions_from_every_server_show_together_each_once() {
+    let h = with_two(
+        (support::Options::default(), ""),
+        (support::Options::default(), ""),
+    );
+    move_cursor(&h, 12);
+    h.press_keys("i space b a").unwrap();
+    pause_and_wait(&h);
+    let menu = completion_menu(&h).unwrap();
+    assert!(menu.iter().any(|l| l == "bad_lint"), "{menu:?}");
+    let badges = menu.iter().filter(|l| *l == "badge").count();
+    assert_eq!(badges, 1, "offered by both, listed once: {menu:?}");
+}
+
+#[test]
+fn code_actions_from_every_server_run_on_the_server_that_offered_them() {
+    let h = with_two(
+        (support::Options::default(), ""),
+        (support::Options::default(), ""),
+    );
+    move_cursor(&h, 9);
+    press_and_wait(&h, "space a", |h| picker_items(h).is_some());
+    let items = picker_items(&h).unwrap();
+    for wanted in [
+        "Make it good (2 known)",
+        "lint: Make it good (2 known)",
+        "lint: Add a comment",
+    ] {
+        assert!(items.iter().any(|i| i == wanted), "{wanted}: {items:?}");
+    }
+    // Resolved by the server that offered it, which knows it.
+    press_and_wait(&h, "l i n t space c o m m e n t enter", |h| {
+        main_text(h) == "// resolved\nlet x = bad;"
+    });
+}
+
+#[test]
+fn the_server_that_formats_is_the_first_that_does_it_and_may() {
+    let no_format = support::Options {
+        lacks: &["textDocument/formatting"],
+        ..support::Options::default()
+    };
+    let h = with_two((no_format, ""), (support::Options::default(), ""));
+    h.load_dirs(&[plugin("cmdline"), plugin("languages"), plugin("format")])
+        .unwrap();
+    h.eval("require('@languages').set('rust', { formatter = {} })")
+        .unwrap();
+    h.run(FIRST_CLIENT, "format").unwrap();
+    pump(&h, |h| main_text(h).starts_with("// formatted\n"));
+
+    // One kept from formatting doesn't, though it could.
+    let h = with_two(
+        (no_format, ""),
+        (support::Options::default(), "except = { 'format' }"),
+    );
+    h.load_dirs(&[plugin("cmdline"), plugin("languages"), plugin("format")])
+        .unwrap();
+    h.eval("require('@languages').set('rust', { formatter = {} })")
+        .unwrap();
+    h.run(FIRST_CLIENT, "format").unwrap();
+    let said = h.with_editor_mut(Editor::take_messages);
+    assert_eq!(main_text(&h), "let x = bad;", "{said:?}");
+}
+
 #[test]
 fn rename_starts_from_the_name_and_changes_it_where_the_server_says() {
     let h = with_plugin();

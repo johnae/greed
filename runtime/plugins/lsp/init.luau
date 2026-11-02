@@ -87,7 +87,7 @@ end
 -- Goes to where the language server says the thing under the cursor is,
 -- by `method`: its definition, declaration, type or implementation.
 local function go_to(ctx: greed.Context, method: string)
-	local ok, result, err = ask(ctx.buffer, `textDocument/{method}`, ctx.view:cursor())
+	local ok, result, err, server = ask(ctx.buffer, `textDocument/{method}`, ctx.view:cursor())
 	if not ok then
 		return
 	elseif err then
@@ -107,7 +107,7 @@ local function go_to(ctx: greed.Context, method: string)
 		greed.echo(`can't open {uri}`)
 		return
 	end
-	common.open_at(path, range.start)
+	common.open_at(path, range.start, server)
 end
 
 -- What `hover` (space k), `quick-fix` (ctrl-.) and `goto-definition` (g d)

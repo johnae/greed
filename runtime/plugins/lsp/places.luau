@@ -9,25 +9,37 @@ local multibuffer = require("@multibuffer")
 local common = require("./common")
 local core = require("@core")
 
-type Place = { path: string, position: greed.LspPosition, ending: greed.LspPosition }
+--- A place a server named, as it counts positions; `server` is the one
+--- that named it, when it's known.
+type Place = {
+	path: string,
+	position: greed.LspPosition,
+	ending: greed.LspPosition,
+	server: number?,
+}
 
 -- What a place adds to a multibuffer: a style for its range, a note.
 type Shown = { style: string, note: string? }
 
--- Whether the server for files like `path` counts columns in bytes; the
--- default is UTF-16 code units. Asks a server of an open buffer in the same
--- language, since the file itself may not be open.
-local function counts_bytes(path: string): boolean
+-- Whether `server`, or else the server for files like `path`, counts
+-- columns in bytes; the default is UTF-16 code units. Asks an open buffer
+-- that has it, or one in the same language, since the file itself may not
+-- be open.
+local function counts_bytes(path: string, server: number?): boolean
 	local language = greed.language_of(path)
+	local fallback: boolean? = nil
 	for _, buffer in greed.buffers() do
-		if buffer:language() == language then
-			local capabilities = greed.lsp.capabilities(buffer)
-			if capabilities then
-				return capabilities.positionEncoding == "utf-8"
+		for _, known in greed.lsp.servers_of(buffer) do
+			local bytes = known.capabilities ~= nil
+				and known.capabilities.positionEncoding == "utf-8"
+			if known.id == server then
+				return bytes
+			elseif fallback == nil and buffer:language() == language then
+				fallback = bytes
 			end
 		end
 	end
-	return false
+	return fallback == true
 end
 
 -- The byte column in `line` of a server's column `character`.
@@ -69,7 +81,7 @@ local function pick(
 	end
 	picker.pick(title, items, function(item)
 		local place: Place = item.value
-		common.open_at(place.path, place.position)
+		common.open_at(place.path, place.position, place.server)
 	end, {
 		preview = function(item)
 			local place: Place = item.value
@@ -86,7 +98,7 @@ local function pick(
 				for _, item in picked do
 					local place: Place = item.value
 					if bytes[place.path] == nil then
-						bytes[place.path] = counts_bytes(place.path)
+						bytes[place.path] = counts_bytes(place.path, place.server)
 					end
 					local line = line_of(place)
 					local start, ending = place.position, place.ending
@@ -130,29 +142,34 @@ local function by_place(a: Place, b: Place): boolean
 	return a.position.character < b.position.character
 end
 
--- The places the thing under the cursor is used, as LSP locations, or nil
--- if the request failed (having said why).
-local function references(ctx: greed.Context): { any }?
+-- The places the thing under the cursor is used, as LSP locations, and
+-- the server that answered, or nil if the request failed (having said
+-- why).
+local function references(ctx: greed.Context): ({ any }?, number?)
 	local buffer = ctx.buffer
-	local ok, result, err = common.request(buffer, "textDocument/references", function()
-		local params = common.at(buffer, ctx.view:cursor())
-		params.context = { includeDeclaration = true }
-		return params
-	end)
+	local ok, result, err, server = common.request(
+		buffer,
+		"textDocument/references",
+		function(server)
+			local params = common.at(buffer, ctx.view:cursor(), server)
+			params.context = { includeDeclaration = true }
+			return params
+		end
+	)
 	if not ok then
-		return nil
+		return nil, nil
 	elseif err then
 		greed.echo(`references: {err.message}`)
-		return nil
+		return nil, nil
 	end
-	return result or {}
+	return result or {}, server
 end
 
 greed.command({
 	name = "goto-references",
 	doc = "Pick a place where the thing under the cursor is used, and go there",
 	run = function(ctx)
-		local found = references(ctx)
+		local found, server = references(ctx)
 		if found == nil then
 			return
 		end
@@ -160,10 +177,12 @@ greed.command({
 		for _, location in found do
 			local path = greed.lsp.path(location.uri)
 			if path then
-				table.insert(
-					places,
-					{ path = path, position = location.range.start, ending = location.range["end"] }
-				)
+				table.insert(places, {
+					path = path,
+					position = location.range.start,
+					ending = location.range["end"],
+					server = server,
+				})
 			end
 		end
 		if #places == 0 then
@@ -184,7 +203,7 @@ greed.command({
 	name = "select-references",
 	doc = "Select every place in this file where the thing under the cursor is used",
 	run = function(ctx)
-		local found = references(ctx)
+		local found, server = references(ctx)
 		if found == nil then
 			return
 		end
@@ -193,8 +212,8 @@ greed.command({
 		for _, location in found do
 			if greed.lsp.path(location.uri) == buffer:path() then
 				table.insert(ranges, {
-					anchor = greed.lsp.offset(buffer, location.range.start),
-					head = greed.lsp.offset(buffer, location.range["end"]),
+					anchor = core.lsp.offset(buffer, location.range.start, server),
+					head = core.lsp.offset(buffer, location.range["end"], server),
 				})
 			end
 		end
@@ -242,10 +261,10 @@ greed.command({
 		end
 		local title = if kind then `Symbols: {kind}` else "Symbols"
 		picker.pick(title, {}, function(item)
-			common.open_at(item.value.path, item.value.position)
+			common.open_at(item.value.path, item.value.position, item.value.server)
 		end, {
 			source = function(query)
-				local ok, result = common.request(buffer, "workspace/symbol", function()
+				local ok, result, _, server = common.request(buffer, "workspace/symbol", function()
 					-- rust-analyzer searches only types unless asked for all
 					-- (its own searchKind); other servers pass over it.
 					local all = if kind and kind ~= "type" then "allSymbols" else nil
@@ -275,7 +294,7 @@ greed.command({
 					table.insert(items, {
 						label = f.name,
 						detail = `{f.kind}{string.rep(" ", widest - #f.kind + 2)}{where}`,
-						value = { path = f.path, position = f.at },
+						value = { path = f.path, position = f.at, server = server },
 					})
 				end
 				return items
@@ -293,7 +312,7 @@ greed.command({
 		for _, problem in greed.lsp.problems() do
 			local path = greed.lsp.path(problem.uri)
 			if path then
-				local place =
+				local place: Place =
 					{ path = path, position = problem.range.start, ending = problem.range["end"] }
 				about[place] = problem
 				table.insert(places, place)

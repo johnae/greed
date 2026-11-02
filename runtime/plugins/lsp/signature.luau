@@ -28,9 +28,13 @@ local function close()
 end
 
 -- The characters that ask for signature help in `buffer`, and the ones
--- that ask again while it's showing.
+-- that ask again while it's showing, as its server for it says.
 local function triggers(buffer: greed.Buffer): ({ string }, { string })
-	local capabilities = greed.lsp.capabilities(buffer)
+	local server = core.lsp.server(buffer, "textDocument/signatureHelp")
+	if server == nil then
+		return {}, {}
+	end
+	local capabilities = greed.lsp.capabilities(buffer, server)
 	local provider = capabilities and capabilities.signatureHelpProvider
 	if type(provider) ~= "table" then
 		return {}, {}
@@ -118,11 +122,14 @@ local function ask(view: greed.View, context: any)
 	local client = greed.client.id()
 	local wanted = (generations[client] or 0) + 1
 	generations[client] = wanted
-	local ok, help = pcall(greed.lsp.request, buffer, "textDocument/signatureHelp", {
-		textDocument = { uri = greed.lsp.uri(buffer) },
-		position = greed.lsp.position(buffer, view:cursor()),
-		context = context,
-	})
+	local server = core.lsp.server(buffer, "textDocument/signatureHelp")
+	local ok, help = pcall(function()
+		return greed.lsp.request(buffer, "textDocument/signatureHelp", {
+			textDocument = { uri = greed.lsp.uri(buffer) },
+			position = core.lsp.position(buffer, view:cursor(), server),
+			context = context,
+		}, server)
+	end)
 	if wanted ~= generations[client] or not typing(greed.mode.get()) then
 		return
 	end

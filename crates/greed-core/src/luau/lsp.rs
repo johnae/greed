@@ -134,12 +134,14 @@ fn answer(
         state_mut(lua).lsp.respond(server, &id, &result);
         Ok(())
     })?;
+    // The server that asked goes along, for its positions' encoding.
     let run: Function = lua
         .load(
-            "local handler, reply = ...\nreturn function(params) reply(pcall(handler, params)) end",
+            "local handler, reply, server = ...\n\
+             return function(params) reply(pcall(handler, params, server)) end",
         )
         .set_name("=lsp.on_request")
-        .call((handler, reply))?;
+        .call((handler, reply, server))?;
     tasks::spawn(lua, run, to_lua(lua, params)?, owner, None)
 }
 
@@ -290,6 +292,8 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 reads_only: spec.get::<Option<bool>>("reads_only")?.unwrap_or(false),
                 settings: json("settings")?,
                 init_options: json("init_options")?,
+                only: strings("only")?,
+                except: strings("except")?,
             };
             let state = &mut *state_mut(lua);
             state.owned.server(owner.clone(), config.clone());
@@ -356,6 +360,10 @@ fn add_listings(lua: &Lua, lsp: &Table) -> LuaResult<()> {
                 let entry = lua.create_table()?;
                 entry.set("id", server)?;
                 entry.set("name", state.lsp.name_of(server))?;
+                if let Some((only, except)) = state.lsp.features_of(server) {
+                    entry.set("only", only)?;
+                    entry.set("except", except)?;
+                }
                 if let Some(capabilities) = state.lsp.capabilities_of(server) {
                     entry.set("capabilities", to_lua(lua, capabilities)?)?;
                 }

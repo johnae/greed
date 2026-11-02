@@ -8,9 +8,9 @@ local picker = require("@picker")
 local common = require("./common")
 local edits = require("./edits")
 
--- Applies a workspace edit and says what changed.
-local function apply(edit: any, what: string)
-	local changed, err = edits.apply_workspace(edit)
+-- Applies a workspace edit `server` sent and says what changed.
+local function apply(edit: any, what: string, server: number?)
+	local changed, err = edits.apply_workspace(edit, server)
 	if changed == nil then
 		greed.echo(`{what}: {err}`)
 	elseif changed > 1 then
@@ -38,7 +38,8 @@ end
 -- What the name under the cursor is now, as the server sees it: false if
 -- the server says it can't be renamed.
 local function current_name(buffer: greed.Buffer, pos: number): (boolean, string?)
-	local capabilities = greed.lsp.capabilities(buffer)
+	local server = core.lsp.server(buffer, "textDocument/rename")
+	local capabilities = greed.lsp.capabilities(buffer, server)
 	local provider = capabilities and capabilities.renameProvider
 	if type(provider) ~= "table" or not provider.prepareProvider then
 		return true, word_at(buffer, pos)
@@ -54,8 +55,8 @@ local function current_name(buffer: greed.Buffer, pos: number): (boolean, string
 	end
 	local range = result.range or result
 	if range.start then
-		local from = greed.lsp.offset(buffer, range.start)
-		return true, buffer:slice(from, greed.lsp.offset(buffer, range["end"]))
+		local from = core.lsp.offset(buffer, range.start, server)
+		return true, buffer:slice(from, core.lsp.offset(buffer, range["end"], server))
 	end
 	return true, word_at(buffer, pos)
 end
@@ -76,11 +77,11 @@ greed.command({
 				if new_name == "" or new_name == name then
 					return
 				end
-				local answered, result, err = common.request(
+				local answered, result, err, server = common.request(
 					buffer,
 					"textDocument/rename",
-					function()
-						local params = common.at(buffer, pos)
+					function(server)
+						local params = common.at(buffer, pos, server)
 						params.newName = new_name
 						return params
 					end
@@ -92,23 +93,23 @@ greed.command({
 				elseif result == nil then
 					greed.echo("nothing to rename")
 				else
-					apply(result, "rename")
+					apply(result, "rename", server)
 				end
 			end,
 		})
 	end,
 })
 
--- The problems the server reported in `from`..`to`, as it sent them, so
--- it can offer fixes for them.
-local function problems_in(buffer: greed.Buffer, from: number, to: number): { any }
+-- The problems the servers reported in `from`..`to`, as `server` counts
+-- positions, so it can offer fixes for them.
+local function problems_in(buffer: greed.Buffer, from: number, to: number, server: number?): { any }
 	local list = {}
 	for _, d in greed.lsp.diagnostics(buffer) do
 		if d.from <= to and from <= d.to then
 			table.insert(list, {
 				range = {
-					start = greed.lsp.position(buffer, d.from),
-					["end"] = greed.lsp.position(buffer, d.to),
+					start = core.lsp.position(buffer, d.from, server),
+					["end"] = core.lsp.position(buffer, d.to, server),
 				},
 				severity = d.severity,
 				message = d.message,
@@ -119,31 +120,56 @@ local function problems_in(buffer: greed.Buffer, from: number, to: number): { an
 	return list
 end
 
--- Does what a code action says: fetches its edit if the server left that
--- for later, applies it, then runs its command.
-local function run_action(buffer: greed.Buffer, action: any)
+-- Does what a code action from `server` says: fetches its edit if the
+-- server left that for later, applies it, then runs its command, all with
+-- that server.
+local function run_action(buffer: greed.Buffer, action: any, server: number?)
 	-- A bare command, the older kind of answer.
 	if type(action.command) == "string" then
 		action = { title = action.title, command = action }
 	end
 	if action.edit == nil and action.command == nil and action.data ~= nil then
-		local ok, resolved = pcall(greed.lsp.request, buffer, "codeAction/resolve", action)
+		local ok, resolved = pcall(greed.lsp.request, buffer, "codeAction/resolve", action, server)
 		if ok and resolved then
 			action = resolved
 		end
 	end
 	if action.edit then
-		apply(action.edit, action.title)
+		apply(action.edit, action.title, server)
 	end
 	if action.command then
 		local _, err = greed.lsp.request(buffer, "workspace/executeCommand", {
 			command = action.command.command,
 			arguments = action.command.arguments,
-		})
+		}, server)
 		if err then
 			greed.echo(`{action.title}: {err.message}`)
 		end
 	end
+end
+
+-- The code actions `server` (the buffer's first without one) offers for
+-- `from`..`to`, or nil and why it couldn't.
+local function actions_of(
+	buffer: greed.Buffer,
+	from: number,
+	to: number,
+	server: number?
+): (any, string?)
+	local ok, result, err = pcall(greed.lsp.request, buffer, "textDocument/codeAction", {
+		textDocument = { uri = greed.lsp.uri(buffer) },
+		range = {
+			start = core.lsp.position(buffer, from, server),
+			["end"] = core.lsp.position(buffer, to, server),
+		},
+		context = { diagnostics = problems_in(buffer, from, to, server) },
+	}, server)
+	if not ok then
+		return nil, tostring(result)
+	elseif err then
+		return nil, err.message
+	end
+	return result or {}, nil
 end
 
 greed.command({
@@ -151,40 +177,45 @@ greed.command({
 	doc = "Pick a fix or refactor for the cursor or the selection",
 	run = function(ctx)
 		local buffer = ctx.buffer
+		if buffer:path() == nil then
+			greed.echo(common.no_server(buffer))
+			return
+		end
 		local selection = ctx.view:selection()
 		local range = selection.ranges[selection.primary]
 		local from, to = core.text.span(range)
-		local ok, result, err = common.request(buffer, "textDocument/codeAction", function()
-			return {
-				textDocument = { uri = greed.lsp.uri(buffer) },
-				range = {
-					start = greed.lsp.position(buffer, from),
-					["end"] = greed.lsp.position(buffer, to),
-				},
-				context = { diagnostics = problems_in(buffer, from, to) },
-			}
-		end)
-		if not ok then
-			return
-		elseif err then
-			greed.echo(`code actions: {err.message}`)
-			return
-		end
-		-- What the server prefers first, otherwise in its order.
+		-- Every server that offers them, each its own; the buffer's first
+		-- when none says it does.
+		-- What a server prefers first, otherwise in their order.
 		local items, others = {}, {}
-		for _, action in result or {} do
-			if not action.disabled then
-				local item = { label = action.title, value = action }
-				table.insert(if action.isPreferred then items else others, item)
+		local failed: string? = nil
+		core.lsp.each(buffer, "textDocument/codeAction", function(server)
+			local result, err = actions_of(buffer, from, to, server)
+			if result == nil then
+				failed = failed or err
+				return
 			end
-		end
+			for _, action in result do
+				if not action.disabled then
+					local item =
+						{ label = action.title, value = { action = action, server = server } }
+					table.insert(if action.isPreferred then items else others, item)
+				end
+			end
+		end)
 		table.move(others, 1, #others, #items + 1, items)
 		if #items == 0 then
-			greed.echo("no code actions here")
+			local no_server = failed and string.find(failed, "no language server", 1, true)
+			greed.echo(
+				if no_server
+					then common.no_server(buffer)
+					elseif failed then `code actions: {failed}`
+					else "no code actions here"
+			)
 			return
 		end
 		picker.pick("Code actions", items, function(item)
-			run_action(buffer, item.value)
+			run_action(buffer, item.value.action, item.value.server)
 		end)
 	end,
 })

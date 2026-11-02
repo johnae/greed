@@ -16,10 +16,10 @@ local function load(path: string): greed.Buffer
 	return greed.load(core.project.resolve(path))
 end
 
--- Asks the buffer's server, failing with why when there's no server or it
--- says no.
-local function request(buffer: greed.Buffer, method: string, params: any): any
-	local ok, result, err = pcall(greed.lsp.request, buffer, method, params)
+-- Asks `server`, one of the buffer's (its first without one), failing with
+-- why when there's no server or it says no.
+local function request(buffer: greed.Buffer, method: string, params: any, server: number?): any
+	local ok, result, err = pcall(greed.lsp.request, buffer, method, params, server)
 	if not ok then
 		error(tostring(result), 0)
 	elseif err then
@@ -48,10 +48,10 @@ local function find_name(buffer: greed.Buffer, line: number, name: string): numb
 	return found.from
 end
 
--- A workspace edit as proposals: the files it changes, each with its
--- changes as byte ranges. Only files in `project` may change, and only
--- their text: an edit creating, renaming or deleting files is refused.
-local function changes_of(edit: any, project: string): { proposals.FileChanges }
+-- A workspace edit `server` sent as proposals: the files it changes, each
+-- with its changes as byte ranges. Only files in `project` may change, and
+-- only their text: an edit creating, renaming or deleting files is refused.
+local function changes_of(edit: any, project: string, server: number?): { proposals.FileChanges }
 	local per_file: { { uri: string, edits: { any } } } = {}
 	if edit.documentChanges then
 		-- A file listed twice is one file's edits.
@@ -84,8 +84,8 @@ local function changes_of(edit: any, project: string): { proposals.FileChanges }
 		local buffer = greed.load(path)
 		local changes: { proposals.Change } = {}
 		for i, e in file.edits do
-			local from = greed.lsp.offset(buffer, e.range.start)
-			local to = greed.lsp.offset(buffer, e.range["end"])
+			local from = core.lsp.offset(buffer, e.range.start, server)
+			local to = core.lsp.offset(buffer, e.range["end"], server)
 			table.insert(changes, { from = from, to = to, text = e.newText, i = i } :: any)
 		end
 		-- In file order; edits at one place keep the server's order.
@@ -106,8 +106,8 @@ end
 
 -- Proposes what `edit` changes, in `buffer`'s project, and waits for the
 -- user.
-local function propose(buffer: greed.Buffer, edit: any, reason: string): string
-	local files = changes_of(edit, core.project.root(buffer:path()))
+local function propose(buffer: greed.Buffer, edit: any, reason: string, server: number?): string
+	local files = changes_of(edit, core.project.root(buffer:path()), server)
 	if #files == 0 then
 		return "the language server had nothing to change"
 	end
@@ -137,55 +137,63 @@ agent.tool({
 	run = function(args)
 		local buffer = load(args.path)
 		local at = find_name(buffer, args.line, args.name)
+		local server = core.lsp.server(buffer, "textDocument/rename")
 		local edit = request(buffer, "textDocument/rename", {
 			textDocument = { uri = greed.lsp.uri(buffer) },
-			position = greed.lsp.position(buffer, at),
+			position = core.lsp.position(buffer, at, server),
 			newName = args.new_name,
-		})
+		}, server)
 		if edit == nil then
 			return `the language server can't rename {args.name} there`
 		end
-		return propose(buffer, edit, args.reason or `rename {args.name} to {args.new_name}`)
+		local reason = args.reason or `rename {args.name} to {args.new_name}`
+		return propose(buffer, edit, reason, server)
 	end,
 })
 
--- The server's code actions for lines `line`..`to_line` of `buffer`, with
--- the problems reported there, which it may offer fixes for.
-local function actions(buffer: greed.Buffer, line: number, to_line: number?): { any }
+--- A code action and the server that offered it.
+type Offered = { action: any, server: number? }
+
+-- The code actions the buffer's servers offer for lines `line`..`to_line`
+-- of `buffer`, every one that offers them (its first when none says it
+-- does), with the problems reported there, which they may offer fixes for.
+local function actions(buffer: greed.Buffer, line: number, to_line: number?): { Offered }
 	local from = line_range(buffer, line)
 	local _, to = line_range(buffer, to_line or line)
-	local problems = {}
-	for _, d in greed.lsp.diagnostics(buffer) do
-		if d.from <= to and from <= d.to then
-			table.insert(problems, {
-				range = {
-					start = greed.lsp.position(buffer, d.from),
-					["end"] = greed.lsp.position(buffer, d.to),
-				},
-				severity = d.severity,
-				message = d.message,
-				source = d.source,
-			})
-		end
-	end
-	local result = request(buffer, "textDocument/codeAction", {
-		textDocument = { uri = greed.lsp.uri(buffer) },
-		range = {
-			start = greed.lsp.position(buffer, from),
-			["end"] = greed.lsp.position(buffer, to),
-		},
-		context = { diagnostics = greed.json.array(problems) },
-	})
-	local list = {}
-	for _, action in result or {} do
-		if not action.disabled then
-			-- A bare command, the older kind of answer.
-			if type(action.command) == "string" then
-				action = { title = action.title, command = action }
+	local list: { Offered } = {}
+	core.lsp.each(buffer, "textDocument/codeAction", function(server)
+		local problems = {}
+		for _, d in greed.lsp.diagnostics(buffer) do
+			if d.from <= to and from <= d.to then
+				table.insert(problems, {
+					range = {
+						start = core.lsp.position(buffer, d.from, server),
+						["end"] = core.lsp.position(buffer, d.to, server),
+					},
+					severity = d.severity,
+					message = d.message,
+					source = d.source,
+				})
 			end
-			table.insert(list, action)
 		end
-	end
+		local result = request(buffer, "textDocument/codeAction", {
+			textDocument = { uri = greed.lsp.uri(buffer) },
+			range = {
+				start = core.lsp.position(buffer, from, server),
+				["end"] = core.lsp.position(buffer, to, server),
+			},
+			context = { diagnostics = greed.json.array(problems) },
+		}, server)
+		for _, action in result or {} do
+			if not action.disabled then
+				-- A bare command, the older kind of answer.
+				if type(action.command) == "string" then
+					action = { title = action.title, command = action }
+				end
+				table.insert(list, { action = action, server = server })
+			end
+		end
+	end)
 	return list
 end
 
@@ -204,7 +212,8 @@ agent.tool({
 	run = function(args)
 		local buffer = load(args.path)
 		local lines = {}
-		for _, action in actions(buffer, args.line, args.to_line) do
+		for _, offered in actions(buffer, args.line, args.to_line) do
+			local action = offered.action
 			local kind = if action.kind then ` ({action.kind})` else ""
 			local preferred = if action.isPreferred then ", preferred" else ""
 			table.insert(lines, `{action.title}{kind}{preferred}`)
@@ -234,10 +243,10 @@ agent.tool({
 	}, { "path", "line", "title" }),
 	run = function(args)
 		local buffer = load(args.path)
-		local chosen: any
-		for _, action in actions(buffer, args.line, args.to_line) do
-			if action.title == args.title then
-				chosen = action
+		local chosen: any, server: number? = nil, nil
+		for _, offered in actions(buffer, args.line, args.to_line) do
+			if offered.action.title == args.title then
+				chosen, server = offered.action, offered.server
 				break
 			end
 		end
@@ -245,7 +254,7 @@ agent.tool({
 			error(`there's no code action called "{args.title}" there; code_actions lists them`, 0)
 		end
 		if chosen.edit == nil and chosen.command == nil and chosen.data ~= nil then
-			chosen = request(buffer, "codeAction/resolve", chosen) or chosen
+			chosen = request(buffer, "codeAction/resolve", chosen, server) or chosen
 		end
 		-- A command could change anything, out of sight, so only edits go.
 		if chosen.command then
@@ -258,7 +267,7 @@ agent.tool({
 		if chosen.edit == nil then
 			return `"{args.title}" has no changes to make`
 		end
-		return propose(buffer, chosen.edit, args.reason or chosen.title)
+		return propose(buffer, chosen.edit, args.reason or chosen.title, server)
 	end,
 })
 

@@ -105,13 +105,19 @@ local function run_formatter(buffer: greed.Buffer, command: { string }): string?
 	return nil
 end
 
--- Asks the language server to format the buffer. Returns false if there's
--- no server, or it can't, and why when the buffer changed meanwhile.
+-- Asks the buffer's language server for formatting, the first that may and
+-- says it can (core.lsp), to format it. Returns false if there's none, or it
+-- can't, and why when the buffer changed meanwhile.
 local function server_format(buffer: greed.Buffer): (boolean, string?)
 	if buffer:path() == nil then
 		return false, nil
 	end
-	local indent = require("@core").indent.unit(buffer)
+	local core = require("@core")
+	local server = core.lsp.server(buffer, "textDocument/formatting")
+	if server == nil then
+		return false, nil
+	end
+	local indent = core.indent.unit(buffer)
 	local version = buffer:version()
 	local ok, edits = pcall(greed.lsp.request, buffer, "textDocument/formatting", {
 		textDocument = { uri = greed.lsp.uri(buffer) },
@@ -119,7 +125,7 @@ local function server_format(buffer: greed.Buffer): (boolean, string?)
 			tabSize = if indent == "\t" then 4 else #indent,
 			insertSpaces = indent ~= "\t",
 		},
-	})
+	}, server)
 	if not ok or type(edits) ~= "table" then
 		return false, nil
 	elseif buffer:version() ~= version then
@@ -129,8 +135,8 @@ local function server_format(buffer: greed.Buffer): (boolean, string?)
 	local ranges = {}
 	for _, edit in edits do
 		table.insert(ranges, {
-			from = greed.lsp.offset(buffer, edit.range.start),
-			to = greed.lsp.offset(buffer, edit.range["end"]),
+			from = core.lsp.offset(buffer, edit.range.start, server),
+			to = core.lsp.offset(buffer, edit.range["end"], server),
 			text = edit.newText,
 		})
 	end

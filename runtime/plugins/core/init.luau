@@ -226,6 +226,8 @@ return {
 	registers = registers,
 	--- Where the thing under the cursor is defined, and what it is (lookup.luau).
 	lookup = lookup,
+	--- Which of a buffer's language servers to ask for what (lsp.luau).
+	lsp = require("@self/lsp"),
 	--- Helpers for registries other plugins add to (registry.luau).
 	registry = require("@self/registry"),
 	--- Runs a few changes with no frame drawn in between (atomic.luau).

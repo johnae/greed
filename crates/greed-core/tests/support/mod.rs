@@ -312,7 +312,7 @@ fn fake_server(
                 &json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "not supported" } }),
             ),
             other => {
-                if let Some(result) = answer(other, &message["params"], &opened) {
+                if let Some(result) = answer(other, &message["params"], &opened, options.source) {
                     write(
                         &mut output,
                         &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
@@ -408,10 +408,19 @@ fn publish_diagnostics(output: &mut impl Write, doc: &Opened, source: &str) {
 
 /// Answers that are only a result: hover, definitions, completion,
 /// formatting, and changing "bad" with rename, references and code actions.
-/// `opened` is the document opened or changed last.
-fn answer(method: &str, params: &Value, opened: &Opened) -> Option<Value> {
+/// `opened` is the document opened or changed last. A server whose source
+/// isn't "fake" says so in its hover text and code actions' titles, and
+/// offers a completion of its own, to tell its answers apart.
+fn answer(method: &str, params: &Value, opened: &Opened, source: &str) -> Option<Value> {
     let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
     let position = &params["position"];
+    let named = |text: String| {
+        if source == "fake" {
+            text
+        } else {
+            format!("{source}: {text}")
+        }
+    };
     // Past column 10 there's nothing to say, as servers often answer: no
     // hover text, and an empty list of definitions.
     let far = position["character"].as_u64() > Some(10);
@@ -433,16 +442,22 @@ fn answer(method: &str, params: &Value, opened: &Opened) -> Option<Value> {
         }
         "textDocument/hover" if far => json!({ "contents": "" }),
         "textDocument/hover" => json!({
-            "contents": format!("hover at {}:{}", position["line"], position["character"]),
+            "contents": named(format!("hover at {}:{}", position["line"], position["character"])),
         }),
         "textDocument/definition" if far => json!([]),
         "textDocument/definition" => json!({ "uri": uri, "range": word_range() }),
-        "textDocument/completion" => json!({ "isIncomplete": false, "items": [
-            { "label": "bad_thing", "kind": 3, "detail": "fn()" },
-            { "label": "badge", "kind": 6 },
-            { "label": "other", "kind": 6 },
-            { "label": "snippet", "insertText": "snip(${1:x})$0", "insertTextFormat": 2 },
-        ] }),
+        "textDocument/completion" => {
+            let mut items = vec![
+                json!({ "label": "bad_thing", "kind": 3, "detail": "fn()" }),
+                json!({ "label": "badge", "kind": 6 }),
+                json!({ "label": "other", "kind": 6 }),
+                json!({ "label": "snippet", "insertText": "snip(${1:x})$0", "insertTextFormat": 2 }),
+            ];
+            if source != "fake" {
+                items.push(json!({ "label": format!("bad_{source}"), "kind": 6 }));
+            }
+            json!({ "isIncomplete": false, "items": items })
+        }
         "textDocument/formatting" => json!([
             { "range": { "start": { "line": 0, "character": 0 }, "end": { "line": 0, "character": 0 } }, "newText": "// formatted\n" },
         ]),
@@ -460,10 +475,10 @@ fn answer(method: &str, params: &Value, opened: &Opened) -> Option<Value> {
                 .as_array()
                 .map_or(0, Vec::len);
             json!([
-                { "title": "Shout", "command": { "title": "Shout", "command": "shout", "arguments": [uri] } },
-                { "title": format!("Make it good ({known} known)"), "kind": "quickfix", "isPreferred": true,
+                { "title": named("Shout".into()), "command": { "title": "Shout", "command": "shout", "arguments": [uri] } },
+                { "title": named(format!("Make it good ({known} known)")), "kind": "quickfix", "isPreferred": true,
                   "edit": { "changes": { uri: [{ "range": word_range(), "newText": "good" }] } } },
-                { "title": "Add a comment", "data": 7 },
+                { "title": named("Add a comment".into()), "data": 7 },
             ])
         }
         "codeAction/resolve" => {

@@ -51,6 +51,11 @@ pub struct ServerConfig {
     pub settings: Value,
     /// What `initialize` sends as `initializationOptions`.
     pub init_options: Value,
+    /// The features it's used for, like `"hover"` or `"format"`, for the
+    /// plugins that pick a buffer's server for one: only these, when there
+    /// are any, and never those in `except`.
+    pub only: Vec<String>,
+    pub except: Vec<String>,
 }
 
 impl ServerConfig {
@@ -208,6 +213,9 @@ struct Server {
     documents: HashMap<BufferId, Document>,
     /// The settings it started with ([`ServerConfig::settings`]).
     settings: Value,
+    /// The features it's used for, and not ([`ServerConfig::only`]).
+    only: Vec<String>,
+    except: Vec<String>,
 }
 
 /// An open document as the server has it.
@@ -768,6 +776,8 @@ impl Lsp {
             queued: Vec::new(),
             documents: HashMap::new(),
             settings: config.settings.clone(),
+            only: config.only.clone(),
+            except: config.except.clone(),
         };
         let mut params = json!({
             "processId": std::process::id(),
@@ -1036,6 +1046,14 @@ impl Lsp {
     /// `server`'s name, its language's for the main one, while it runs.
     pub fn name_of(&self, server: ServerId) -> Option<&str> {
         self.servers.get(&server).map(Server::shown_name)
+    }
+
+    /// The features `server` is used for, and those it isn't, as its
+    /// config said when it started.
+    pub fn features_of(&self, server: ServerId) -> Option<(&[String], &[String])> {
+        self.servers
+            .get(&server)
+            .map(|s| (s.only.as_slice(), s.except.as_slice()))
     }
 
     fn finish_initialize(&mut self, server: ServerId, result: Option<&Value>) {

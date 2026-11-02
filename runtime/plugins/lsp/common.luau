@@ -1,14 +1,16 @@
 -- Helpers the language server commands share.
 
 local greed = require("@greed")
+local core = require("@core")
 
 local M = {}
 
---- Parameters for requests about the position at `pos`.
-function M.at(buffer: greed.Buffer, pos: number): any
+--- Parameters for requests to `server` (the buffer's first without one)
+--- about the position at `pos`.
+function M.at(buffer: greed.Buffer, pos: number, server: number?): any
 	return {
 		textDocument = { uri = greed.lsp.uri(buffer) },
-		position = greed.lsp.position(buffer, pos),
+		position = core.lsp.position(buffer, pos, server),
 	}
 end
 
@@ -30,16 +32,22 @@ function M.no_server(buffer: greed.Buffer): string
 	return `no language server for {language}: {commands[1][1]} isn't installed`
 end
 
---- Sends `method` to the buffer's server with `params`. Returns whether it
---- got an answer, then the result, or nil and the error. Without a server
---- it says so.
-function M.request(buffer: greed.Buffer, method: string, params: () -> any): (boolean, any, any)
+--- Sends `method` with `params`, made for the server it goes to, to the
+--- buffer's server for it (core.lsp), or its first when none says it can.
+--- Returns whether it got an answer, then the result, or nil and the
+--- error, and the server that answered. Without a server it says so.
+function M.request(
+	buffer: greed.Buffer,
+	method: string,
+	params: (server: number?) -> any
+): (boolean, any, any, number?)
 	if buffer:path() == nil then
 		greed.echo(M.no_server(buffer))
 		return false
 	end
+	local server = core.lsp.server(buffer, method)
 	local ok, result, err = pcall(function()
-		return greed.lsp.request(buffer, method, params())
+		return greed.lsp.request(buffer, method, params(server), server)
 	end)
 	if not ok then
 		local message = tostring(result)
@@ -50,13 +58,14 @@ function M.request(buffer: greed.Buffer, method: string, params: () -> any): (bo
 		)
 		return false
 	end
-	return true, result, err
+	return true, result, err, server
 end
 
---- Asks the buffer's server about the position at `pos`, as `request` does.
-function M.ask(buffer: greed.Buffer, method: string, pos: number): (boolean, any, any)
-	return M.request(buffer, method, function()
-		return M.at(buffer, pos)
+--- Asks the buffer's server for `method` about the position at `pos`, as
+--- `request` does.
+function M.ask(buffer: greed.Buffer, method: string, pos: number): (boolean, any, any, number?)
+	return M.request(buffer, method, function(server)
+		return M.at(buffer, pos, server)
 	end)
 end
 
@@ -102,11 +111,12 @@ function M.describe(problem: { severity: number, message: string }): string
 	return `{M.severity(problem.severity)}: {problem.message}`
 end
 
---- Opens `path` in the main view at an LSP `position`.
-function M.open_at(path: string, position: greed.LspPosition)
-	require("@core").file.open(path)
+--- Opens `path` in the main view at an LSP `position`, as `server` counts
+--- positions.
+function M.open_at(path: string, position: greed.LspPosition, server: number?)
+	core.file.open(path)
 	local view = greed.view()
-	view:set_cursor(greed.lsp.offset(view:buffer(), position))
+	view:set_cursor(core.lsp.offset(view:buffer(), position, server))
 end
 
 return M

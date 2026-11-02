@@ -196,8 +196,8 @@ local function word_start(buffer: greed.Buffer, pos: number): number
 	return at
 end
 
--- The server's items in a form the menu uses.
-local function items_from(result: any, buffer: greed.Buffer): { Item }
+-- `server`'s items in a form the menu uses.
+local function items_from(result: any, buffer: greed.Buffer, server: number?): { Item }
 	local list = if result and result.items then result.items else result or {}
 	local out = {}
 	for _, item in list do
@@ -207,7 +207,7 @@ local function items_from(result: any, buffer: greed.Buffer): { Item }
 			text = item.textEdit.newText
 			local range = item.textEdit.range or item.textEdit.replace
 			if range then
-				from = greed.lsp.offset(buffer, range.start)
+				from = core.lsp.offset(buffer, range.start, server)
 			end
 		end
 		table.insert(out, {
@@ -542,16 +542,36 @@ local function ask(view: greed.View, wanted: number, explicit: boolean)
 	end
 	local items: { Item } = {}
 	if buffer:path() ~= nil then
-		-- Where the cursor is takes the server's encoding: a buffer with no
-		-- server fails there as much as at the request.
-		local ok, result = pcall(function()
-			return greed.lsp.request(buffer, "textDocument/completion", {
-				textDocument = { uri = greed.lsp.uri(buffer) },
-				position = greed.lsp.position(buffer, view:cursor()),
-			})
+		-- Every server that completes, at once, their items in their order;
+		-- the buffer's first when none says it does.
+		local answers: { greed.Signal } = {}
+		core.lsp.each(buffer, "textDocument/completion", function(server)
+			local answer = greed.signal()
+			table.insert(answers, answer)
+			greed.spawn(function()
+				-- Where the cursor is takes the server's encoding: a buffer
+				-- with no server fails there as much as at the request.
+				local ok, result = pcall(function()
+					return greed.lsp.request(buffer, "textDocument/completion", {
+						textDocument = { uri = greed.lsp.uri(buffer) },
+						position = core.lsp.position(buffer, view:cursor(), server),
+					}, server)
+				end)
+				answer:send(if ok and result ~= nil then items_from(result, buffer, server) else {})
+			end)
 		end)
-		if ok and result ~= nil then
-			items = items_from(result, buffer)
+		-- What two servers both offer, the same label putting in the same
+		-- text, is listed once.
+		local seen: { [string]: boolean } = {}
+		for _, answer in answers do
+			local got: { Item } = answer:wait()
+			for _, item in got do
+				local key = `{item.label}\0{item.text}`
+				if not seen[key] then
+					seen[key] = true
+					table.insert(items, item)
+				end
+			end
 		end
 	end
 	if wanted ~= generation() or greed.mode.get() ~= mode or not view:valid() then

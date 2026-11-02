@@ -4,16 +4,17 @@
 -- change can be looked over and undone before writing it.
 
 local greed = require("@greed")
+local core = require("@core")
 
 local M = {}
 
---- Applies LSP text edits to `buffer` as one change.
-function M.apply(buffer: greed.Buffer, edits: { any })
+--- Applies LSP text edits `server` sent to `buffer` as one change.
+function M.apply(buffer: greed.Buffer, edits: { any }, server: number?)
 	local ranges = {}
 	for _, edit in edits do
 		table.insert(ranges, {
-			from = greed.lsp.offset(buffer, edit.range.start),
-			to = greed.lsp.offset(buffer, edit.range["end"]),
+			from = core.lsp.offset(buffer, edit.range.start, server),
+			to = core.lsp.offset(buffer, edit.range["end"], server),
 			text = edit.newText,
 		})
 	end
@@ -37,10 +38,10 @@ local function buffer_for(uri: string): (greed.Buffer?, string?)
 	return buffer, nil
 end
 
---- Applies a workspace edit. Returns how many files changed, or nil and
---- why it couldn't. Creating, renaming and deleting files isn't supported,
---- so an edit with those changes nothing.
-function M.apply_workspace(edit: any): (number?, string?)
+--- Applies a workspace edit `server` sent. Returns how many files changed,
+--- or nil and why it couldn't. Creating, renaming and deleting files isn't
+--- supported, so an edit with those changes nothing.
+function M.apply_workspace(edit: any, server: number?): (number?, string?)
 	local per_file: { { uri: string, edits: { any } } } = {}
 	if edit.documentChanges then
 		for _, change in edit.documentChanges do
@@ -64,15 +65,15 @@ function M.apply_workspace(edit: any): (number?, string?)
 		buffers[i] = buffer
 	end
 	for i, file in per_file do
-		M.apply(buffers[i], file.edits)
+		M.apply(buffers[i], file.edits, server)
 	end
 	return #per_file, nil
 end
 
 -- Servers send edits this way too, e.g. after running a code action's
 -- command.
-greed.lsp.on_request("workspace/applyEdit", function(params)
-	local changed, err = M.apply_workspace(params.edit)
+greed.lsp.on_request("workspace/applyEdit", function(params, server)
+	local changed, err = M.apply_workspace(params.edit, server)
 	if changed == nil then
 		return { applied = false, failureReason = err }
 	end
