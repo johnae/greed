@@ -216,6 +216,10 @@ struct Server {
     /// The features it's used for, and not ([`ServerConfig::only`]).
     only: Vec<String>,
     except: Vec<String>,
+    /// The diagnostics asked of it and not answered yet, as a server that
+    /// reports them only when asked (`diagnosticProvider`) wants: by
+    /// request id, the document's URI and the version they're for.
+    pulls: HashMap<i64, (String, usize)>,
 }
 
 /// An open document as the server has it.
@@ -263,6 +267,31 @@ impl SyncKind {
 impl Server {
     fn key(&self) -> Key {
         (self.language.clone(), self.name.clone(), self.root.clone())
+    }
+
+    /// Asks for the diagnostics of the document at `uri`, at `version`, if
+    /// the server reports them only when asked; the answer goes where
+    /// published ones do.
+    fn pull(&mut self, uri: &str, version: usize) -> io::Result<()> {
+        if self.capabilities["diagnosticProvider"].is_null() {
+            return Ok(());
+        }
+        let params = json!({ "textDocument": { "uri": uri } });
+        let id = self.request("textDocument/diagnostic", &params)?;
+        self.pulls.insert(id, (uri.to_owned(), version));
+        Ok(())
+    }
+
+    /// Asks again for the diagnostics of every document it has open, as
+    /// when it says they changed.
+    fn pull_all(&mut self) -> io::Result<()> {
+        let open: Vec<(String, usize)> = (self.documents.values())
+            .map(|d| (d.uri.clone(), d.version))
+            .collect();
+        for (uri, version) in open {
+            self.pull(&uri, version)?;
+        }
+        Ok(())
     }
 
     /// Its name, or its language's for the main one.
@@ -343,6 +372,12 @@ const RESTARTS: usize = 3;
 /// root the server runs in.
 pub type Key = (String, String, PathBuf);
 
+/// Where a set of diagnostics came from: the server, and whether it was
+/// asked for them (pulled) or published them. A server may do both, as
+/// rust-analyzer answers for what it sees itself and publishes what
+/// `cargo check` found; each replaces only its own.
+type Origin = (ServerId, bool);
+
 /// Where a buffer's servers are: its language and file, and the root each
 /// of its language's servers runs in for it (by name, the main one first),
 /// so roots aren't looked for on every sync; and the servers it was last
@@ -391,8 +426,9 @@ pub struct Lsp {
     /// Servers given up on since the last sync, to say so.
     given_up: Vec<LspError>,
     /// Every file's latest problems, by URI, including files not open, as
-    /// each server reported them, with how it counts positions.
-    problems: HashMap<String, HashMap<ServerId, (Encoding, Vec<Problem>)>>,
+    /// each server reported them (by [`Origin`]), with how it counts
+    /// positions.
+    problems: HashMap<String, HashMap<Origin, (Encoding, Vec<Problem>)>>,
     /// The folders servers may start in, as servers run a project's code
     /// (a build script, a config file): `None` lets them start anywhere.
     trusted: Option<Vec<PathBuf>>,
@@ -665,10 +701,12 @@ impl Lsp {
             let params = json!({ "textDocument": {
                 "uri": uri, "languageId": language, "version": version, "text": text,
             }});
-            return Ok(server.notify("textDocument/didOpen", &params)?);
+            server.notify("textDocument/didOpen", &params)?;
+            return Ok(server.pull(&uri, version)?);
         };
         let mut told = Vec::new();
-        if document.version != version {
+        let edited = document.version != version;
+        if edited {
             let ranged = if sync == SyncKind::Incremental {
                 ranged_changes(&document.text, document.version, buffer, encoding)
             } else {
@@ -698,6 +736,9 @@ impl Lsp {
         }
         for (method, params) in told {
             server.notify(method, &params)?;
+        }
+        if edited {
+            server.pull(&uri, version)?;
         }
         Ok(())
     }
@@ -778,6 +819,7 @@ impl Lsp {
             settings: config.settings.clone(),
             only: config.only.clone(),
             except: config.except.clone(),
+            pulls: HashMap::new(),
         };
         let mut params = json!({
             "processId": std::process::id(),
@@ -915,13 +957,27 @@ impl Lsp {
                 self.finish_initialize(server, result.as_ref().ok());
                 Handled::Nothing
             }
+            Event::Response { server, id, result }
+                if self.servers[&server].pulls.contains_key(&id) =>
+            {
+                self.pulled(server, id, result, editor)
+            }
             Event::Response { server, id, result } => Handled::Response { server, id, result },
             Event::Notification {
                 server,
                 method,
                 params,
             } if method == "textDocument/publishDiagnostics" => {
-                self.store_diagnostics(server, &params, editor)
+                self.store_diagnostics((server, false), &params, editor)
+            }
+            Event::Request {
+                server, id, method, ..
+            } if method == "workspace/diagnostic/refresh" => {
+                self.respond(server, &id, &Value::Null);
+                if let Some(server) = self.servers.get_mut(&server) {
+                    let _ = server.pull_all();
+                }
+                Handled::Nothing
             }
             Event::Notification {
                 server,
@@ -1077,14 +1133,51 @@ impl Lsp {
         for message in std::mem::take(&mut server.queued) {
             let _ = server.send(message);
         }
+        // Documents opened before it could say how it reports diagnostics.
+        let _ = server.pull_all();
     }
 
-    fn store_diagnostics(
+    /// Takes in `server`'s answer to the diagnostics asked with request `id`:
+    /// stored as published ones are, unless the document changed since,
+    /// when the answer for its newer text is on its way.
+    fn pulled(
         &mut self,
         server: ServerId,
+        id: i64,
+        result: Result<Value, Value>,
+        editor: &mut Editor,
+    ) -> Handled {
+        let Some(asked) = self.servers.get_mut(&server) else {
+            return Handled::Nothing;
+        };
+        let Some((uri, version)) = asked.pulls.remove(&id) else {
+            return Handled::Nothing;
+        };
+        let Ok(report) = result else {
+            return Handled::Nothing;
+        };
+        let current = asked
+            .documents
+            .values()
+            .any(|d| d.uri == uri && d.version == version);
+        // "unchanged" keeps what it reported last.
+        if !current || report["kind"] != "full" {
+            return Handled::Nothing;
+        }
+        let params = json!({ "uri": uri, "diagnostics": report["items"] });
+        self.store_diagnostics((server, true), &params, editor)
+    }
+
+    /// Stores the diagnostics in `params` (a `publishDiagnostics`'s) as
+    /// `origin`'s, in place of what it reported before for the document,
+    /// leaving every other's.
+    fn store_diagnostics(
+        &mut self,
+        origin: Origin,
         params: &Value,
         editor: &mut Editor,
     ) -> Handled {
+        let server = origin.0;
         let encoding = self.servers[&server].encoding;
         let Some(uri) = params["uri"].as_str() else {
             return Handled::Nothing;
@@ -1110,27 +1203,27 @@ impl Lsp {
                 source: d["source"].as_str().map(str::to_owned),
             })
             .collect();
-        // Each server's own: one clearing its problems leaves the others'.
-        let by_server = self.problems.entry(uri.to_owned()).or_default();
+        // Each origin's own: one clearing its problems leaves the others'.
+        let by_origin = self.problems.entry(uri.to_owned()).or_default();
         if problems.is_empty() {
-            by_server.remove(&server);
+            by_origin.remove(&origin);
         } else {
-            by_server.insert(server, (encoding, problems));
+            by_origin.insert(origin, (encoding, problems));
         }
-        if by_server.is_empty() {
+        if by_origin.is_empty() {
             self.problems.remove(uri);
         }
         let Some((buffer, _)) = buffer else {
             return Handled::Nothing;
         };
         let text = editor.buffer(buffer).text();
-        // The other servers' marks stay where edits since moved them.
+        // The others' marks stay where edits since moved them.
         let others = (editor.buffer(buffer).marks(DIAGNOSTICS).iter())
-            .filter(|mark| mark_server(mark) != Some(server))
+            .filter(|mark| mark_origin(mark) != Some(origin))
             .cloned();
         let mut marks: Vec<Mark> = reported
             .iter()
-            .filter_map(|d| diagnostic_mark(text, d, encoding, server))
+            .filter_map(|d| diagnostic_mark(text, d, encoding, origin))
             .chain(others)
             .collect();
         // The worst last, so its style is drawn on top.
@@ -1144,18 +1237,18 @@ impl Lsp {
     /// servers sent them.
     pub fn problems(&self, editor: &Editor) -> Vec<Problem> {
         let mut problems = Vec::new();
-        for (uri, by_server) in &self.problems {
+        for (uri, by_origin) in &self.problems {
             let Some(buffer) = buffer_at(editor, uri) else {
-                for (_, reported) in by_server.values() {
+                for (_, reported) in by_origin.values() {
                     problems.extend(reported.iter().cloned());
                 }
                 continue;
             };
             let text = buffer.text();
             let encoding = |server: Option<ServerId>| {
-                server
-                    .and_then(|server| by_server.get(&server))
-                    .map_or(Encoding::Utf16, |(encoding, _)| *encoding)
+                (by_origin.iter())
+                    .find(|((from, _), _)| Some(*from) == server)
+                    .map_or(Encoding::Utf16, |(_, (encoding, _))| *encoding)
             };
             problems.extend(diagnostics(buffer).into_iter().map(|d| {
                 let encoding = encoding(d.server);
@@ -1211,20 +1304,26 @@ pub fn diagnostics(buffer: &Buffer) -> Vec<Diagnostic> {
 
 /// The server a diagnostic's mark came from.
 fn mark_server(mark: &Mark) -> Option<ServerId> {
-    let data = mark.data.as_ref()?;
-    data["server"]
-        .as_u64()
-        .and_then(|id| ServerId::try_from(id).ok())
+    mark_origin(mark).map(|(server, _)| server)
 }
 
-/// A diagnostic `server` reported as a mark: its text underlined and its
+/// Where a diagnostic's mark came from.
+fn mark_origin(mark: &Mark) -> Option<Origin> {
+    let data = mark.data.as_ref()?;
+    let server = data["server"]
+        .as_u64()
+        .and_then(|id| ServerId::try_from(id).ok())?;
+    Some((server, data["pulled"] == true))
+}
+
+/// A diagnostic `origin` reported as a mark: its text underlined and its
 /// line number styled by severity, with the server's details kept in its
 /// data.
 fn diagnostic_mark(
     text: &Rope,
     diagnostic: &Value,
     encoding: Encoding,
-    server: ServerId,
+    (server, pulled): Origin,
 ) -> Option<Mark> {
     let from = offset(text, &diagnostic["range"]["start"], encoding)?;
     let to = offset(text, &diagnostic["range"]["end"], encoding)?;
@@ -1245,6 +1344,7 @@ fn diagnostic_mark(
             "message": diagnostic["message"],
             "source": diagnostic["source"],
             "server": server,
+            "pulled": pulled,
         })),
         ..Mark::default()
     })
@@ -1303,10 +1403,12 @@ fn client_capabilities() -> Value {
             "applyEdit": true,
             "workspaceEdit": { "documentChanges": true },
             "configuration": true,
+            "diagnostics": { "refreshSupport": true },
         },
         "textDocument": {
             "hover": { "contentFormat": ["plaintext", "markdown"] },
             "publishDiagnostics": {},
+            "diagnostic": { "dynamicRegistration": false },
             "synchronization": { "didSave": true },
             "definition": {},
             "references": {},

@@ -51,6 +51,10 @@ pub struct Options {
     /// The requests it doesn't do, like `"textDocument/hover"`: it doesn't
     /// say it does them, and answers them with an error.
     pub lacks: &'static [&'static str],
+    /// Whether it reports diagnostics only when asked
+    /// (`textDocument/diagnostic`), as eslint's server does, rather than
+    /// publishing them.
+    pub pull: bool,
 }
 
 impl Default for Options {
@@ -61,6 +65,7 @@ impl Default for Options {
             save: None,
             source: "fake",
             lacks: &[],
+            pull: false,
         }
     }
 }
@@ -266,8 +271,17 @@ fn fake_server(
             "textDocument/didSave" => saved.push(message["params"]["text"].clone()),
             "textDocument/didOpen" | "textDocument/didChange" => {
                 opened = documents.update(&method, &message["params"], options);
-                publish_diagnostics(&mut output, &opened, options.source);
+                if !options.pull {
+                    publish_diagnostics(&mut output, &opened, options.source);
+                }
             }
+            // Asked for its diagnostics, as one that only reports them so.
+            "textDocument/diagnostic" => write(
+                &mut output,
+                &json!({ "jsonrpc": "2.0", "id": id, "result": {
+                    "kind": "full", "items": bad_words(&opened, options.source),
+                } }),
+            ),
             "textDocument/didClose" => {
                 documents.update(&method, &message["params"], options);
             }
@@ -345,6 +359,10 @@ fn capabilities(options: Options) -> Value {
             capabilities.as_object_mut().unwrap().remove(provider);
         }
     }
+    if options.pull {
+        capabilities["diagnosticProvider"] =
+            json!({ "interFileDependencies": false, "workspaceDiagnostics": false });
+    }
     capabilities
 }
 
@@ -372,11 +390,9 @@ fn initialized(output: &mut impl Write) {
     }
 }
 
-/// Reports every "bad" in the document as an error, naming `source`, and a
-/// warning in a file next to it that isn't open.
-fn publish_diagnostics(output: &mut impl Write, doc: &Opened, source: &str) {
-    let diagnostics: Vec<Value> = doc
-        .text
+/// Every "bad" in the document, as an error naming `source`.
+fn bad_words(doc: &Opened, source: &str) -> Vec<Value> {
+    doc.text
         .lines()
         .enumerate()
         .flat_map(|(line, content)| {
@@ -387,7 +403,13 @@ fn publish_diagnostics(output: &mut impl Write, doc: &Opened, source: &str) {
                 })
             })
         })
-        .collect();
+        .collect()
+}
+
+/// Reports every "bad" in the document as an error, naming `source`, and a
+/// warning in a file next to it that isn't open.
+fn publish_diagnostics(output: &mut impl Write, doc: &Opened, source: &str) {
+    let diagnostics = bad_words(doc, source);
     write(
         output,
         &json!({ "jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": { "uri": doc.uri, "diagnostics": diagnostics } }),

@@ -948,6 +948,113 @@ fn save(s: &mut Setup) {
 }
 
 #[test]
+fn a_server_that_reports_only_when_asked_is_asked_on_open_after_edits_and_when_it_says() {
+    let options = support::Options {
+        pull: true,
+        ..support::Options::default()
+    };
+    let mut s = setup_with("let x = bad;\n", options);
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    // Asked once it said how it reports, the document open.
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    assert_eq!(diagnostics(s.editor.buffer(buffer)).len(), 1);
+    let methods = s.methods();
+    assert!(
+        methods.contains(&"textDocument/diagnostic".to_string()),
+        "{methods:?}"
+    );
+    assert!(!methods.contains(&"textDocument/publishDiagnostics".to_string()));
+
+    // After an edit, asked again, for the new text.
+    let view = s.editor.focus();
+    let changes = greed_text::ChangeSet::from_changes(13, [(13, 13, Some("bad"))]).unwrap();
+    s.editor
+        .apply(
+            view,
+            changes,
+            greed_text::Author::User(ClientId(1)),
+            None,
+            None,
+        )
+        .unwrap();
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    assert_eq!(diagnostics(s.editor.buffer(buffer)).len(), 2);
+
+    // Saying its diagnostics changed, it's asked again, and answered first.
+    let server = s.lsp.servers_of(s.editor.buffer(buffer))[0];
+    let refresh = Event::Request {
+        server,
+        id: json!("refresh"),
+        method: "workspace/diagnostic/refresh".into(),
+        params: Value::Null,
+    };
+    assert_eq!(s.lsp.handle(refresh, &mut s.editor), Handled::Nothing);
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    let methods = s.methods();
+    let answered = methods.iter().position(|m| m == "(response)");
+    let asked = methods.iter().rposition(|m| m == "textDocument/diagnostic");
+    assert!(answered.is_some() && answered < asked, "{methods:?}");
+}
+
+#[test]
+fn what_a_server_publishes_and_what_it_answers_when_asked_both_stay() {
+    let options = support::Options {
+        pull: true,
+        ..support::Options::default()
+    };
+    let mut s = setup_with("let x = bad;\n", options);
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    // It also publishes, as rust-analyzer does what `cargo check` found.
+    let server = s.lsp.servers_of(s.editor.buffer(buffer))[0];
+    let checked = Event::Notification {
+        server,
+        method: "textDocument/publishDiagnostics".into(),
+        params: json!({ "uri": file_uri(&s.path), "diagnostics": [{
+            "range": { "start": { "line": 0, "character": 4 }, "end": { "line": 0, "character": 5 } },
+            "severity": 2, "message": "unused variable", "source": "cargo",
+        }] }),
+    };
+    s.lsp.handle(checked, &mut s.editor);
+    // An edit asks again: the answer replaces what it answered, not what it
+    // published.
+    let view = s.editor.focus();
+    let changes = greed_text::ChangeSet::from_changes(13, [(13, 13, Some("bad"))]).unwrap();
+    s.editor
+        .apply(
+            view,
+            changes,
+            greed_text::Author::User(ClientId(1)),
+            None,
+            None,
+        )
+        .unwrap();
+    s.lsp.sync(&s.editor);
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    let messages: Vec<String> = diagnostics(s.editor.buffer(buffer))
+        .into_iter()
+        .map(|d| d.message)
+        .collect();
+    assert_eq!(messages, ["unused variable", "bad word", "bad word"]);
+    let sources: Vec<Option<String>> = s
+        .lsp
+        .problems(&s.editor)
+        .into_iter()
+        .map(|p| p.source)
+        .collect();
+    assert_eq!(
+        sources
+            .iter()
+            .filter(|s| s.as_deref() == Some("cargo"))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn a_save_tells_a_server_that_asks_after_the_edit_with_the_text_it_wants() {
     let options = support::Options {
         save: Some(true),
