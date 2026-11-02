@@ -1413,23 +1413,39 @@ carries on. Please report those.
 Language servers ask things too: `greed.lsp.on_request(method, handler)`
 answers a server's request, e.g. `workspace/applyEdit`, with what the
 handler returns, and the handler can wait, e.g. on a picker, before it
-answers. `greed.lsp.on_notification(method, handler)` hears what servers
-tell the editor without asking, like `$/progress`; the handler gets the
-parameters, the server's language and its root. The status line's language
-server piece is built on it.
+answers; it gets the parameters and the asking server's id.
+`greed.lsp.on_notification(method, handler)` hears what servers tell the
+editor without asking, like `$/progress`; the handler gets the parameters,
+the server's language, its root, its id and its name. The status line's
+language server piece is built on it.
 
-A server runs per language and project root. `greed.lsp.root(buffer)` is the
-folder the buffer's server runs in, and `greed.lsp.running()` lists the
-servers running, each with its language, root, command, whether it's ready,
-and the last lines it wrote to stderr. A request whose server stops before
-answering returns nil and an error saying so.
+A language has a main server and may have others beside it, like eslint
+beside TypeScript's, each running per project root. `greed.lsp.server{
+language, name, when, only, except, ... }` sets one up: without `name`
+the main one. `greed.lsp.servers_of(buffer)` lists a buffer's servers, the
+main one first, each with its id, name, capabilities, and the features it's
+used for (`only`) and not (`except`). `greed.lsp.root(buffer)` is the folder
+the buffer's first server runs in, and `greed.lsp.running()` lists the
+servers running, each with its id, language, name, root, command, whether
+it's ready, and the last lines it wrote to stderr. A request whose server
+stops before answering returns nil and an error saying so.
 
-`greed.lsp.request(buffer, method, params)` asks the buffer's server
-anything and waits for the answer. `greed.lsp.uri(buffer)`,
-`greed.lsp.position(buffer, pos)` and `greed.lsp.offset(buffer,
-position)` turn files and byte offsets into what servers count in and
-back, and `greed.lsp.capabilities(buffer)` is what the server said it
-can do.
+`greed.lsp.request(buffer, method, params, server)` asks one of the
+buffer's servers anything, its first without `server`, and waits for the
+answer. `greed.lsp.uri(buffer)`, `greed.lsp.position(buffer, pos, server)`
+and `greed.lsp.offset(buffer, position, server)` turn files and byte offsets
+into what a server counts in and back, and `greed.lsp.capabilities(buffer,
+server)` is what it said it can do. Diagnostics from all of a buffer's
+servers come together in `greed.lsp.diagnostics(buffer)`, each with the id
+of the server that reported it.
+
+To pick the server for a feature as the editor's own commands do, use
+`core.lsp`: `core.lsp.server(buffer, method)` is the first server that may
+be used for the method's feature and says it can do it, `core.lsp.servers`
+all of them, `core.lsp.each(buffer, method, fn)` calls `fn` with each (for
+requests every server answers, like completion), and
+`core.lsp.problems_in(buffer, from, to, server)` is what to send a server in
+a code action request's context.
 
 ## Events
 
