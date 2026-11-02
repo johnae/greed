@@ -101,7 +101,8 @@ end
 -- nil for this one and your config.
 local set_by: { [string]: { [string]: string } } = {}
 
--- A copy of `value`, tables inside it too.
+-- A copy of `value`, tables inside it too, and an array still one when
+-- marked as one (`greed.json.array`).
 local function copy(value: any): any
 	if type(value) ~= "table" then
 		return value
@@ -110,7 +111,7 @@ local function copy(value: any): any
 	for k, v in value do
 		out[k] = copy(v)
 	end
-	return out
+	return if greed.json.is_array(value) then greed.json.array(out) else out
 end
 
 local M = {}

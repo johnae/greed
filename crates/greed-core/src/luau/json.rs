@@ -41,6 +41,12 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             Ok(items)
         })?,
     )?;
+    json.set(
+        "is_array",
+        lua.create_function(|lua, value: Value| {
+            Ok(matches!(value, Value::Table(t) if t.metatable() == Some(lua.array_metatable())))
+        })?,
+    )?;
     Ok(json)
 }
 

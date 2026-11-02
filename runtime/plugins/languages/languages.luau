@@ -3,6 +3,8 @@
 -- that mark a project's root, and how comments and indentation look. Greed
 -- has syntax highlighting for some of them; `:health` shows which.
 
+local greed = require("@greed")
+
 --- An entry of a language's `servers`: a command to try for its main
 --- server, like `{ "rust-analyzer" }`, or, with a `name`, a server that
 --- runs beside it, like eslint beside TypeScript's: its command (or
@@ -91,10 +93,14 @@ local ESLINT: Server = {
 		".eslintrc.yaml",
 	},
 	except = { "format" },
-	-- What it has no default for; an empty list is left out, as a Luau
-	-- table it would reach the server as an object.
+	-- What it has no default for. The server in vscode-langservers-extracted
+	-- 4.10 fails every file without nodePath, experimental and
+	-- rulesCustomizations, which must be an array.
 	settings = {
 		validate = "on",
+		nodePath = "",
+		experimental = {},
+		rulesCustomizations = greed.json.array(),
 		run = "onType",
 		problems = { shortenToSingleLine = false },
 		workingDirectory = { mode = "location" },

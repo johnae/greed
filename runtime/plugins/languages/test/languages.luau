@@ -33,6 +33,28 @@ test("set changes the fields it's given and keeps the rest", function()
 	assert(table.find(languages.list(), "odin"), "and are listed")
 end)
 
+test("eslint gets the settings its older servers can't do without", function()
+	local function eslint(): { [string]: any }
+		local typescript = languages.get("typescript") :: languages.Language
+		for _, server in assert(typescript.servers) do
+			if type(server) == "table" and server.name == "eslint" then
+				return assert(server.settings)
+			end
+		end
+		error("no eslint")
+	end
+	-- vscode-langservers-extracted 4.10 fails every file without them.
+	local encoded = greed.json.encode(eslint())
+	assert(string.find(encoded, '"rulesCustomizations":[]', 1, true), encoded)
+	assert(string.find(encoded, '"experimental":{}', 1, true), encoded)
+	assert(string.find(encoded, '"nodePath":""', 1, true), encoded)
+	-- Still an array after going through get and set.
+	local typescript = languages.get("typescript") :: languages.Language
+	languages.set("typescript", { servers = typescript.servers })
+	encoded = greed.json.encode(eslint())
+	assert(string.find(encoded, '"rulesCustomizations":[]', 1, true), encoded)
+end)
+
 test(":health lists each language with its highlighting and servers", function(t)
 	t:buffer("|x")
 	t:run("health")

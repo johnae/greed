@@ -1190,6 +1190,9 @@ export type Json = {
 	decode: (text: string) -> (any, string?),
 	--- Marks `items` (or a new table) to encode as an array even when empty.
 	array: <T>(items: { T }?) -> { T },
+	--- Whether `value` is marked to encode as an array, by `array` or by
+	--- `decode`, so a copy of it can be marked too.
+	is_array: (value: any) -> boolean,
 }
 
 --- A mistake or a warning in a sikt program: its words, where it is in the program's text (`from` its first byte to just after its last), what might help, and whether it's only a warning.

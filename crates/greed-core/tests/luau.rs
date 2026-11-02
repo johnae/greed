@@ -2316,6 +2316,15 @@ fn json_round_trips_and_empty_tables_are_objects_unless_marked() {
         eval("return greed.json.encode(greed.json.array({ '\\xFF' }))"),
         "[\"\u{fffd}\"]"
     );
+    // What's marked an array says so, decoded arrays too, so a copy can
+    // keep the mark.
+    assert_eq!(
+        eval(
+            "return greed.json.is_array(greed.json.array()), greed.json.is_array(greed.json.decode('[]')), \
+             greed.json.is_array({}), greed.json.is_array({ 1 }), greed.json.is_array('x')"
+        ),
+        "true\ttrue\tfalse\tfalse\tfalse"
+    );
 }
 
 #[test]
