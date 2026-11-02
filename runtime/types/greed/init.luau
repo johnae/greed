@@ -1522,6 +1522,8 @@ export type Diagnostic = {
 	severity: number,
 	message: string,
 	source: string?,
+	--- The id of the server that reported it.
+	server: number?,
 }
 
 --- The error a language server answered a request with.
@@ -1537,68 +1539,84 @@ export type LspPosition = {
 	character: number,
 }
 
---- Language servers. A server runs per language and project root, started
---- the first time a file that needs it is open, and started again if it
---- stops.
+--- Language servers. A language has a main server and may have others that
+--- run beside it, like eslint beside TypeScript's; each runs per project
+--- root, started the first time a file that needs it is open, and started
+--- again if it stops. A buffer has every one of its language's that runs
+--- for it, the main one first: functions taking a buffer use its first
+--- unless given a server's id (`servers_of`).
 export type Lsp = {
-	--- Sets the server for a language, e.g.
+	--- Sets a server for a language, e.g.
 	--- `{ language = "rust", command = { "rust-analyzer" }, root_markers = { "Cargo.toml" } }`.
+	--- Without `name` it's the language's main server; with one, a server that runs beside it, set and replaced by its name.
 	--- With `commands`, the first one whose program is installed runs, when
 	--- a file of the language first opens; with none installed, nothing does.
 	--- A server runs in the topmost folder with one of `root_markers` inside
-	--- the file's project, or the project's root without one. With
-	--- `reads_only`, the server only reads the project's files, never running its code, so it starts in a project nobody trusted (see `trust`).
+	--- the file's project, or the project's root without one. With `when`, it runs only for files under a folder that has one of those files, in the nearest such folder.
+	--- With `reads_only`, the server only reads the project's files, never running its code, so it starts in a project nobody trusted (see `trust`).
 	--- `settings` are the server's settings, sent once it's initialized and what it gets when it asks for a section; `init_options` goes with `initialize`. A running server keeps the ones it started with until it's restarted.
-	server: (spec: { language: string, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean?, settings: { [string]: any }?, init_options: { [string]: any }? }) -> (),
-	--- Stops starting a server for a language; one running keeps running.
-	remove: (language: string) -> (),
+	server: (spec: { language: string, name: string?, when: { string }?, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean?, settings: { [string]: any }?, init_options: { [string]: any }? }) -> (),
+	--- Stops starting the language's server called `name`, or all of its servers without one; one running keeps running.
+	remove: (language: string, name: string?) -> (),
 	--- Stops the servers running for `language` (every language without one) and starts them again, as after they got stuck. Returns how many were running. Needs "proc".
 	restart: (language: string?) -> number,
 	--- Lets servers start only in `folders` and the folders inside them, as a server runs a project's code (a build script, a config file); nil lets them start anywhere. A server set up with `reads_only` starts anywhere. One held back starts once its folder is trusted. Needs "proc".
 	trust: (folders: { string }?) -> (),
 	--- Whether the buffer's server is held back until its folder is trusted (`trust`): one is set up for its language and installed, runs the project's code, and may not start where it would run.
 	waits: (buffer: Buffer) -> boolean,
-	--- The commands set for each language's server, by language.
+	--- The commands set for each language's main server, by language.
 	servers: () -> { [string]: { { string } } },
-	--- The servers running now, by language and then root.
+	--- The servers running now, by language, name and root.
 	running: () -> { LspServer },
-	--- The folder the buffer's server runs in, or would: nil without a file or a server set for its language.
+	--- The buffer's running servers, its language's main one first and then the others in the order they were set up.
+	servers_of: (buffer: Buffer) -> { LspBufferServer },
+	--- The folder the buffer's first server runs in, or would: nil without a file or a server set for its language.
 	root: (buffer: Buffer) -> string?,
-	--- Sends a request to the buffer's server and waits for the answer.
+	--- Sends a request to `server`, one of the buffer's (its first without one), and waits for the answer.
 	--- Returns the result, or nil and the error; a server that stops before
 	--- answering gives the error "the language server stopped". Works in
 	--- commands and event handlers. "workspace/executeCommand" needs "proc",
 	--- since a server's commands can do anything.
-	request: (buffer: Buffer, method: string, params: any) -> (any, LspError?),
+	request: (buffer: Buffer, method: string, params: any, server: number?) -> (any, LspError?),
 	--- The buffer's file as a URI, for request parameters.
 	uri: (buffer: Buffer) -> string,
 	--- The file path in a `file://` URI.
 	path: (uri: string) -> string?,
-	--- Byte offset `pos` as the buffer's server counts positions.
-	position: (buffer: Buffer, pos: number) -> LspPosition,
-	--- The byte offset of a server position.
-	offset: (buffer: Buffer, position: LspPosition) -> number,
-	--- The buffer's latest diagnostics, where they are now: they move with
+	--- Byte offset `pos` as `server` (the buffer's first without one) counts positions.
+	position: (buffer: Buffer, pos: number, server: number?) -> LspPosition,
+	--- The byte offset of a position as `server` (the buffer's first without one) counts it.
+	offset: (buffer: Buffer, position: LspPosition, server: number?) -> number,
+	--- The buffer's latest diagnostics from all its servers, where they are now: they move with
 	--- edits. They are marks in the buffer's "diagnostics" namespace, with
-	--- `{ severity, message, source }` as their data.
+	--- `{ severity, message, source, server }` as their data.
 	diagnostics: (buffer: Buffer) -> { Diagnostic },
 	--- Every file's latest problems, including files that aren't open, with
 	--- ranges as the server counts positions. Those in open files are where
 	--- they are now.
 	problems: () -> { LspProblem },
-	--- What the buffer's server said it can do (its `ServerCapabilities`),
+	--- What `server` (the buffer's first without one) said it can do (its `ServerCapabilities`),
 	--- or nil without a running server.
-	capabilities: (buffer: Buffer) -> any,
+	capabilities: (buffer: Buffer, server: number?) -> any,
 	--- Answers requests of `method` from servers, e.g. "workspace/applyEdit",
 	--- with what `handler` returns. It can wait, e.g. to ask you; the server gets the answer when it returns.
 	on_request: (method: string, handler: (params: any) -> any) -> (),
-	--- Hears notifications of `method` from servers that the editor doesn't deal with itself, e.g. "$/progress", with the language and root of the server that sent it.
-	on_notification: (method: string, handler: (params: any, language: string, root: string) -> ()) -> (),
+	--- Hears notifications of `method` from servers that the editor doesn't deal with itself, e.g. "$/progress", with the language, root, id and name of the server that sent it.
+	on_notification: (method: string, handler: (params: any, language: string, root: string, server: number, name: string) -> ()) -> (),
+}
+
+--- One of a buffer's servers (`servers_of`): its id, its name (its language's for the main one) and what it can do.
+export type LspBufferServer = {
+	id: number,
+	name: string,
+	capabilities: any,
 }
 
 --- A language server that's running.
 export type LspServer = {
+	id: number,
 	language: string,
+	--- Its name: its language's for the main one.
+	name: string,
 	--- The folder it runs in.
 	root: string,
 	command: { string },

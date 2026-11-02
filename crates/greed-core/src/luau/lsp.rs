@@ -57,11 +57,21 @@ pub(super) fn handle(lua: &Lua, event: Event) -> LuaResult<()> {
             params,
         } => answer(lua, server, &id, &method, &params),
         Handled::Notification {
+            server,
             language,
+            name,
             root,
             method,
             params,
-        } => tell(lua, &language, &root.to_string_lossy(), &method, &params),
+        } => {
+            let from = From {
+                server,
+                language: &language,
+                name: &name,
+                root: &root.to_string_lossy(),
+            };
+            tell(lua, &from, &method, &params)
+        }
         Handled::Exited { server } => stopped(lua, server),
         Handled::Nothing => Ok(()),
     }
@@ -133,15 +143,18 @@ fn answer(
     tasks::spawn(lua, run, to_lua(lua, params)?, owner, None)
 }
 
-/// Passes a notification from `language`'s server in `root` to the
-/// handlers plugins set for its method, each run the way a command is.
-fn tell(
-    lua: &Lua,
-    language: &str,
-    root: &str,
-    method: &str,
-    params: &serde_json::Value,
-) -> LuaResult<()> {
+/// The server a notification came from.
+struct From<'a> {
+    server: lsp::ServerId,
+    language: &'a str,
+    name: &'a str,
+    root: &'a str,
+}
+
+/// Passes a notification from a server to the handlers plugins set for its
+/// method, each run the way a command is, with the server's language, root,
+/// id and name.
+fn tell(lua: &Lua, from: &From, method: &str, params: &serde_json::Value) -> LuaResult<()> {
     let listeners: Vec<(PluginId, Function)> = state(lua)
         .lsp_calls
         .listeners
@@ -151,9 +164,12 @@ fn tell(
         .collect();
     for (owner, handler) in listeners {
         let run: Function = lua
-            .load("local handler, language, root = ...\nreturn function(params) handler(params, language, root) end")
+            .load(
+                "local handler, language, root, server, name = ...\n\
+                 return function(params) handler(params, language, root, server, name) end",
+            )
             .set_name("=lsp.on_notification")
-            .call((handler, language, root))?;
+            .call((handler, from.language, from.root, from.server, from.name))?;
         tasks::spawn(lua, run, to_lua(lua, params)?, owner, None)?;
     }
     Ok(())
@@ -176,6 +192,7 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
     let lsp = lua.create_table()?;
     add_server_side(lua, &lsp, owner)?;
     add_servers(lua, &lsp, owner)?;
+    add_listings(lua, &lsp)?;
     add_documents(lua, &lsp, owner)?;
     Ok(lsp)
 }
@@ -209,14 +226,19 @@ fn add_server_side(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
 
     lsp.set(
         "capabilities",
-        lua.create_function(|lua, buffer: UserDataRef<BufferRef>| {
-            let state = state(lua);
-            let b = buffer_ref(&state.editor, &buffer)?;
-            match state.lsp.capabilities(b) {
-                Ok(capabilities) => to_lua(lua, capabilities),
-                Err(_) => Ok(Value::Nil),
-            }
-        })?,
+        lua.create_function(
+            |lua, (buffer, server): (UserDataRef<BufferRef>, Option<lsp::ServerId>)| {
+                let state = state(lua);
+                let b = buffer_ref(&state.editor, &buffer)?;
+                let capabilities = server_for(&state.lsp, b, server)
+                    .ok()
+                    .and_then(|server| state.lsp.capabilities_of(server));
+                match capabilities {
+                    Some(capabilities) => to_lua(lua, capabilities),
+                    None => Ok(Value::Nil),
+                }
+            },
+        )?,
     )?;
 
     lsp.set(
@@ -278,10 +300,10 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
 
     lsp.set(
         "remove",
-        lua.create_function(|lua, language: String| {
+        lua.create_function(|lua, (language, name): (String, Option<String>)| {
             let state = &mut *state_mut(lua);
-            state.lsp.remove(&language, None);
-            state.owned.remove_server(&language);
+            state.lsp.remove(&language, name.as_deref());
+            state.owned.remove_server(&language, name.as_deref());
             Ok(())
         })?,
     )?;
@@ -309,16 +331,37 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
     )
 }
 
-/// The documents servers are about: requests, positions and diagnostics.
-fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
+/// Which servers there are: set up, running, and a buffer's.
+fn add_listings(lua: &Lua, lsp: &Table) -> LuaResult<()> {
     lsp.set(
         "servers",
         lua.create_function(|lua, NoArgs| {
             let servers = lua.create_table()?;
             for config in state(lua).lsp.configs() {
-                servers.set(config.language.as_str(), config.commands.clone())?;
+                if config.name.is_empty() {
+                    servers.set(config.language.as_str(), config.commands.clone())?;
+                }
             }
             Ok(servers)
+        })?,
+    )?;
+
+    lsp.set(
+        "servers_of",
+        lua.create_function(|lua, buffer: UserDataRef<BufferRef>| {
+            let list = lua.create_table()?;
+            let state = state(lua);
+            let b = buffer_ref(&state.editor, &buffer)?;
+            for server in state.lsp.servers_of(b) {
+                let entry = lua.create_table()?;
+                entry.set("id", server)?;
+                entry.set("name", state.lsp.name_of(server))?;
+                if let Some(capabilities) = state.lsp.capabilities_of(server) {
+                    entry.set("capabilities", to_lua(lua, capabilities)?)?;
+                }
+                list.push(entry)?;
+            }
+            Ok(list)
         })?,
     )?;
 
@@ -328,7 +371,9 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
             let list = lua.create_table()?;
             for server in state(lua).lsp.running() {
                 let entry = lua.create_table()?;
+                entry.set("id", server.id)?;
                 entry.set("language", server.language)?;
+                entry.set("name", server.name)?;
                 entry.set("root", server.root.to_string_lossy())?;
                 entry.set("command", server.command)?;
                 entry.set("ready", server.ready)?;
@@ -349,8 +394,11 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 .root(b, &state.editor)
                 .map(|root| root.to_string_lossy().into_owned()))
         })?,
-    )?;
+    )
+}
 
+/// The documents servers are about: requests, positions and diagnostics.
+fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
     lsp.set("request", request_function(lua, owner)?)?;
 
     lsp.set(
@@ -373,27 +421,32 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
 
     lsp.set(
         "position",
-        lua.create_function(|lua, (buffer, pos): (UserDataRef<BufferRef>, usize)| {
-            let json = {
-                let state = state(lua);
-                let b = buffer_ref(&state.editor, &buffer)?;
-                let encoding = state.lsp.encoding(b).map_err(mlua::Error::external)?;
-                lsp::position(b.text(), pos, encoding)
-            };
-            to_lua(lua, &json)
-        })?,
+        lua.create_function(
+            |lua, (buffer, pos, server): (UserDataRef<BufferRef>, usize, Option<lsp::ServerId>)| {
+                let json = {
+                    let state = state(lua);
+                    let b = buffer_ref(&state.editor, &buffer)?;
+                    let encoding = encoding_for(&state.lsp, b, server)?;
+                    lsp::position(b.text(), pos, encoding)
+                };
+                to_lua(lua, &json)
+            },
+        )?,
     )?;
 
     lsp.set(
         "offset",
-        lua.create_function(|lua, (buffer, position): (UserDataRef<BufferRef>, Value)| {
-            let position: serde_json::Value = lua.from_value(position)?;
-            let state = state(lua);
-            let b = buffer_ref(&state.editor, &buffer)?;
-            let encoding = state.lsp.encoding(b).map_err(mlua::Error::external)?;
-            lsp::offset(b.text(), &position, encoding)
-                .ok_or_else(|| mlua::Error::runtime("a position is { line = n, character = n }"))
-        })?,
+        lua.create_function(
+            |lua, (buffer, position, server): (UserDataRef<BufferRef>, Value, Option<lsp::ServerId>)| {
+                let position: serde_json::Value = lua.from_value(position)?;
+                let state = state(lua);
+                let b = buffer_ref(&state.editor, &buffer)?;
+                let encoding = encoding_for(&state.lsp, b, server)?;
+                lsp::offset(b.text(), &position, encoding).ok_or_else(|| {
+                    mlua::Error::runtime("a position is { line = n, character = n }")
+                })
+            },
+        )?,
     )?;
 
     lsp.set(
@@ -411,6 +464,7 @@ fn add_documents(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 entry.set("severity", d.severity)?;
                 entry.set("message", d.message.as_str())?;
                 entry.set("source", d.source.as_deref())?;
+                entry.set("server", d.server)?;
                 list.push(entry)?;
             }
             Ok(list)
@@ -424,22 +478,60 @@ fn buffer_ref<'a>(editor: &'a Editor, buffer: &BufferRef) -> LuaResult<&'a Buffe
         .ok_or_else(|| mlua::Error::runtime("this buffer was closed"))
 }
 
-/// `greed.lsp.request(buffer, method, params)`: sends a request and waits for
-/// the answer, returning `result, error`. `workspace/executeCommand` takes
-/// `proc`, since a server's commands run whatever it wants to.
+/// `server`, which must be one of `buffer`'s running servers, or without one
+/// the first of them.
+fn server_for(
+    lsp: &lsp::Lsp,
+    buffer: &Buffer,
+    server: Option<lsp::ServerId>,
+) -> LuaResult<lsp::ServerId> {
+    let servers = lsp.servers_of(buffer);
+    match server {
+        Some(server) if servers.contains(&server) => Ok(server),
+        Some(server) => Err(mlua::Error::runtime(format!(
+            "server {server} isn't one of this buffer's"
+        ))),
+        None => servers.first().copied().ok_or_else(|| {
+            mlua::Error::runtime(format!("no language server for buffer {}", buffer.id().0))
+        }),
+    }
+}
+
+/// How `server` (the first of `buffer`'s without one) counts positions.
+fn encoding_for(
+    lsp: &lsp::Lsp,
+    buffer: &Buffer,
+    server: Option<lsp::ServerId>,
+) -> LuaResult<lsp::Encoding> {
+    let server = server_for(lsp, buffer, server)?;
+    lsp.encoding_of(server)
+        .ok_or_else(|| mlua::Error::runtime("the language server stopped"))
+}
+
+/// `greed.lsp.request(buffer, method, params, server)`: sends a request to
+/// `server`, one of the buffer's, or its first, and waits for the answer,
+/// returning `result, error`. `workspace/executeCommand` takes `proc`, since
+/// a server's commands run whatever it wants to.
 fn request_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     let owner = owner.clone();
     let start = lua.create_function(
-        move |lua, (buffer, method, params): (UserDataRef<BufferRef>, String, Value)| {
+        move |lua,
+              (buffer, method, params, server): (
+            UserDataRef<BufferRef>,
+            String,
+            Value,
+            Option<lsp::ServerId>,
+        )| {
             if method == "workspace/executeCommand" {
                 capabilities::check_for(lua, &owner, "proc")?;
             }
             let params: serde_json::Value = lua.from_value(params)?;
             let state = &mut *state_mut(lua);
             let b = buffer_ref(&state.editor, &buffer)?;
+            let server = server_for(&state.lsp, b, server)?;
             let request = state
                 .lsp
-                .request(b, &method, &params)
+                .request_to(server, b, &method, &params)
                 .map_err(mlua::Error::external)?;
             let token = state.tasks.token();
             state.lsp_calls.waiting.insert(request, token);
@@ -449,11 +541,11 @@ fn request_function(lua: &Lua, owner: &PluginId) -> LuaResult<Function> {
     lua.load(
         r#"
         local start = ...
-        return function(buffer, method, params)
+        return function(buffer, method, params, server)
             if not coroutine.isyieldable() then
                 error("greed.lsp.request can only be used in a command or event handler", 2)
             end
-            return coroutine.yield(start(buffer, method, params))
+            return coroutine.yield(start(buffer, method, params, server))
         end
         "#,
     )

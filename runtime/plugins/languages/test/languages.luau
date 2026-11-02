@@ -51,14 +51,18 @@ test(":health ends with the servers running, one per project", function(t)
 	)
 	local lines = languages.running_report({
 		{
+			id = 1,
 			language = "rust",
+			name = "rust",
 			root = "/a",
 			command = { "rust-analyzer" },
 			ready = true,
 			stderr = {},
 		},
 		{
+			id = 2,
 			language = "rust",
+			name = "rust",
 			root = "/b",
 			command = { "rust-analyzer" },
 			ready = false,

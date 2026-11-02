@@ -102,9 +102,11 @@ impl Owned {
         self.servers.push((by, config));
     }
 
-    /// Forgets the servers set for `language`, which was removed.
-    pub fn remove_server(&mut self, language: &str) {
-        self.servers.retain(|(_, c)| c.language != language);
+    /// Forgets `language`'s server called `name` (all of them with `None`),
+    /// which was removed.
+    pub fn remove_server(&mut self, language: &str, name: Option<&str>) {
+        self.servers
+            .retain(|(_, c)| c.language != language || name.is_some_and(|name| c.name != name));
     }
 
     /// Takes away what `owner` made: clears its marks, forgets its tracked

@@ -49,6 +49,89 @@ fn diagnostics_arrive_and_are_announced() {
 }
 
 #[test]
+fn a_buffers_servers_are_named_asked_one_by_one_and_report_together() {
+    let mut editor = Editor::new(ClientId(1));
+    editor.open(
+        "file",
+        "let x = bad;",
+        Some(std::env::temp_dir().join("greed-lsp-luau-two/main.rs")),
+    );
+    let h = Host::new(editor).unwrap();
+    let lint = support::Options {
+        source: "lint",
+        lacks: &["textDocument/hover"],
+        ..support::Options::default()
+    };
+    let (launcher, _started) =
+        support::launcher_by(vec![("lint", lint)], support::Options::default());
+    h.set_lsp_launcher(launcher);
+    h.load_str(
+        "two",
+        r#"
+        local greed = require("@greed")
+        greed.lsp.trust(nil)
+        greed.lsp.server({ language = "rust", command = { "sh" }, root_markers = { "Cargo.toml" } })
+        greed.lsp.server({ language = "rust", name = "lint", command = { "lint" } })
+        greed.lsp.on_notification("$/progress", function(params, language, root, server, name)
+            if params.value.kind == "end" then
+                greed.echo(`progress from {name} {server}`)
+            end
+        end)
+        greed.command { name = "ask", run = function(ctx)
+            local servers = greed.lsp.servers_of(ctx.buffer)
+            local params = {
+                textDocument = { uri = greed.lsp.uri(ctx.buffer) },
+                position = greed.lsp.position(ctx.buffer, 4, servers[2].id),
+            }
+            local main = greed.lsp.request(ctx.buffer, "textDocument/hover", params)
+            local _, err = greed.lsp.request(ctx.buffer, "textDocument/hover", params, servers[2].id)
+            local sources = {}
+            for _, d in greed.lsp.diagnostics(ctx.buffer) do
+                table.insert(sources, `{d.source}:{d.server == servers[1].id or d.server == servers[2].id}`)
+            end
+            table.sort(sources)
+            greed.echo(table.concat({
+                servers[1].name, servers[2].name,
+                tostring(servers[2].capabilities.hoverProvider),
+                tostring(greed.lsp.capabilities(ctx.buffer, servers[2].id).hoverProvider),
+                main.contents, err.message, table.concat(sources, " "),
+            }, ", "))
+        end }
+        "#,
+    )
+    .unwrap();
+    assert!(h.sync_lsp().is_empty());
+    pump(&h, |h| {
+        h.with_editor(|ed| {
+            let buffer = ed.buffers().next().unwrap();
+            greed_core::lsp::diagnostics(buffer).len() == 2
+        })
+    });
+    h.run(FIRST_CLIENT, "ask").unwrap();
+    let mut messages = Vec::new();
+    pump(&h, |h| {
+        messages.extend(h.with_editor_mut(Editor::take_messages));
+        messages.iter().any(|m| m.starts_with("rust, "))
+    });
+    let progress: Vec<&String> = messages
+        .iter()
+        .filter(|m| m.starts_with("progress"))
+        .collect();
+    assert_eq!(progress.len(), 2, "{messages:?}");
+    assert!(
+        progress
+            .iter()
+            .any(|m| m.starts_with("progress from lint ")),
+        "{messages:?}"
+    );
+    let said = messages.iter().find(|m| m.starts_with("rust, ")).unwrap();
+    assert_eq!(
+        said,
+        "rust, lint, nil, nil, hover at 0:4, not supported, fake:true lint:true"
+    );
+}
+
+#[test]
 fn commands_wait_for_answers() {
     let h = host();
     h.load_str(

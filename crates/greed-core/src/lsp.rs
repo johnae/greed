@@ -112,7 +112,10 @@ pub enum Handled {
     /// The server told the editor something it doesn't deal with itself,
     /// like `$/progress`, for plugins to hear.
     Notification {
+        server: ServerId,
         language: String,
+        /// The server's name: its language's for the main one.
+        name: String,
         /// The folder the server runs in.
         root: PathBuf,
         method: String,
@@ -252,6 +255,11 @@ impl SyncKind {
 impl Server {
     fn key(&self) -> Key {
         (self.language.clone(), self.name.clone(), self.root.clone())
+    }
+
+    /// Its name, or its language's for the main one.
+    fn shown_name(&self) -> &str {
+        shown_name(&self.language, &self.name)
     }
 
     /// Sends `message`, or keeps it until the server has answered
@@ -871,7 +879,7 @@ impl Lsp {
             .map(|(&id, s)| Running {
                 id,
                 language: s.language.clone(),
-                name: shown_name(&s.language, &s.name).to_owned(),
+                name: s.shown_name().to_owned(),
                 root: s.root.clone(),
                 command: s.command.clone(),
                 ready: s.ready,
@@ -909,12 +917,17 @@ impl Lsp {
                 server,
                 method,
                 params,
-            } => Handled::Notification {
-                language: self.servers[&server].language.clone(),
-                root: self.servers[&server].root.clone(),
-                method,
-                params,
-            },
+            } => {
+                let from = &self.servers[&server];
+                Handled::Notification {
+                    server,
+                    language: from.language.clone(),
+                    name: from.shown_name().to_owned(),
+                    root: from.root.clone(),
+                    method,
+                    params,
+                }
+            }
             Event::Request {
                 server,
                 id,
@@ -1013,6 +1026,16 @@ impl Lsp {
     /// What `server` said it can do, while it runs.
     pub fn capabilities_of(&self, server: ServerId) -> Option<&Value> {
         self.servers.get(&server).map(|s| &s.capabilities)
+    }
+
+    /// How `server` counts positions within a line, while it runs.
+    pub fn encoding_of(&self, server: ServerId) -> Option<Encoding> {
+        self.servers.get(&server).map(|s| s.encoding)
+    }
+
+    /// `server`'s name, its language's for the main one, while it runs.
+    pub fn name_of(&self, server: ServerId) -> Option<&str> {
+        self.servers.get(&server).map(Server::shown_name)
     }
 
     fn finish_initialize(&mut self, server: ServerId, result: Option<&Value>) {
