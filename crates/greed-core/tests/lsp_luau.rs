@@ -645,6 +645,35 @@ fn code_actions_from_every_server_run_on_the_server_that_offered_them() {
 }
 
 #[test]
+fn servers_beside_the_main_one_show_by_name_as_objects_and_in_the_status_line() {
+    let h = with_two(
+        (support::Options::default(), ""),
+        (support::Options::default(), ""),
+    );
+    let shown = h
+        .eval(
+            r#"
+            local greed = require("@greed")
+            local core = require("@core")
+            local status = require("@lsp").status
+            local buffer = greed.view():buffer()
+            local ids = {}
+            for _, object in core.objects.list("language-server") do
+                local buffers = core.objects.related(object).buffers or {}
+                table.insert(ids, `{string.match(object.id, "^[^@]*")} {#buffers}`)
+            end
+            table.sort(ids)
+            return `{status.text(buffer)} | {table.concat(ids, ", ")}`
+            "#,
+        )
+        .unwrap();
+    assert_eq!(
+        shown,
+        "sh · lint | language-server:rust 1, language-server:rust/lint 1"
+    );
+}
+
+#[test]
 fn the_server_that_formats_is_the_first_that_does_it_and_may() {
     let no_format = support::Options {
         lacks: &["textDocument/formatting"],

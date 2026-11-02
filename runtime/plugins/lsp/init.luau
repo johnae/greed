@@ -396,13 +396,14 @@ actions.action({
 	end,
 })
 
--- Running language servers as objects, by their language and the folder
--- they run in.
+-- Running language servers as objects, by their language, their name when
+-- they run beside its main one, and the folder they run in.
 local function server_object(server: greed.LspServer): core.Object
+	local name = if server.name == server.language then "" else `/{server.name}`
 	return {
 		kind = "language-server",
-		id = `language-server:{server.language}@{server.root}`,
-		label = `{server.command[1] or server.language} for {server.language}`,
+		id = `language-server:{server.language}{name}@{server.root}`,
+		label = `{server.command[1] or server.name} for {server.language}`,
 		value = server,
 	}
 end
@@ -420,6 +421,7 @@ core.objects.kind({
 	inspect = function(server: greed.LspServer)
 		return {
 			language = server.language,
+			name = server.name,
 			folder = server.root,
 			command = table.concat(server.command, " "),
 			ready = server.ready,
@@ -429,13 +431,10 @@ core.objects.kind({
 	relations = function(server: greed.LspServer)
 		local buffers = {}
 		for _, buffer in greed.buffers() do
-			local path = buffer:path()
-			if
-				buffer:language() == server.language
-				and path
-				and string.sub(path, 1, #server.root) == server.root
-			then
-				table.insert(buffers, assert(core.objects.get(`buffer:{buffer:id()}`)))
+			for _, known in greed.lsp.servers_of(buffer) do
+				if known.id == server.id then
+					table.insert(buffers, assert(core.objects.get(`buffer:{buffer:id()}`)))
+				end
 			end
 		end
 		return { buffers = buffers }

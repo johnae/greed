@@ -15,15 +15,27 @@ local MOST = 20
 
 local SEVERITY = { "error", "warning" }
 
--- Who waits for each buffer's next report, by buffer id.
-local waiting: { [number]: { greed.Signal } } = {}
+-- Who waits for each buffer's next reports, by buffer id, and how many
+-- more reports each waits for: one from each of the buffer's servers.
+type Waiter = { signal: greed.Signal, left: number }
+local waiting: { [number]: { Waiter } } = {}
 
 greed.on("lsp.diagnostics", function(event: greed.DiagnosticsChanged)
 	local id = event.buffer:id()
-	local signals: { greed.Signal } = waiting[id] or {}
-	waiting[id] = nil
-	for _, signal in signals do
-		signal:send(true)
+	local list = waiting[id]
+	if list == nil then
+		return
+	end
+	for i = #list, 1, -1 do
+		local waiter = list[i]
+		waiter.left -= 1
+		if waiter.left <= 0 then
+			table.remove(list, i)
+			waiter.signal:send(true)
+		end
+	end
+	if #list == 0 then
+		waiting[id] = nil
 	end
 end)
 
@@ -56,17 +68,18 @@ end
 --- of them.
 function M.after_edits(buffers: { greed.Buffer }, ms: number?): string?
 	local checked: { greed.Buffer } = {}
-	local signals: { greed.Signal } = {}
+	local waiters: { Waiter } = {}
 	local seen: { [number]: boolean } = {}
 	for _, buffer in buffers do
 		local id = buffer:id()
-		if not seen[id] and buffer:path() and greed.lsp.capabilities(buffer) ~= nil then
+		local servers = if buffer:path() then #greed.lsp.servers_of(buffer) else 0
+		if not seen[id] and servers > 0 then
 			seen[id] = true
-			local signal = greed.signal()
+			local waiter = { signal = greed.signal(), left = servers }
 			waiting[id] = waiting[id] or {}
-			table.insert(waiting[id], signal)
+			table.insert(waiting[id], waiter)
 			table.insert(checked, buffer)
-			table.insert(signals, signal)
+			table.insert(waiters, waiter)
 		end
 	end
 	if #checked == 0 then
@@ -74,12 +87,12 @@ function M.after_edits(buffers: { greed.Buffer }, ms: number?): string?
 	end
 	greed.spawn(function()
 		greed.sleep(ms or WAIT)
-		for i, signal in signals do
-			signal:send(false)
+		for i, waiter in waiters do
+			waiter.signal:send(false)
 			-- A server that never reports mustn't collect waiters.
 			local id = checked[i]:id()
 			local list = waiting[id]
-			local at = list and table.find(list, signal)
+			local at = list and table.find(list, waiter)
 			if list and at then
 				table.remove(list, at)
 			end
@@ -87,7 +100,7 @@ function M.after_edits(buffers: { greed.Buffer }, ms: number?): string?
 	end)
 	local reports = {}
 	for i, buffer in checked do
-		signals[i]:wait()
+		waiters[i].signal:wait()
 		table.insert(reports, report(buffer))
 	end
 	return table.concat(reports, "\n")

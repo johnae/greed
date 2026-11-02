@@ -1,8 +1,9 @@
 -- The language server in the status line: its name while it runs, what
 -- it's working on as it reports progress (`rust-analyzer: indexing 40%`),
 -- and whether it's starting, stopped, waiting for you to `:trust` the
--- project or not installed. Each project has its
--- own server, so each buffer shows its own.
+-- project or not installed; then the servers running beside it, by name
+-- (`· eslint`). Each project has its own servers, so each buffer shows its
+-- own.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -37,9 +38,11 @@ local function program(language: string): string | false
 	return found
 end
 
---- What names `language`'s server in `root`, for `progress` and `work`.
-function M.key(language: string, root: string?): string
-	return if root then `{language} {root}` else language
+--- What names `language`'s server in `root`, for `progress` and `work`:
+--- its main one, or the one called `name` beside it.
+function M.key(language: string, root: string?, name: string?): string
+	local which = if name and name ~= language then `{language}/{name}` else language
+	return if root then `{which} {root}` else which
 end
 
 --- Takes in a `$/progress` notification from the server `key` names.
@@ -96,7 +99,19 @@ function M.text(buffer: greed.Buffer): string?
 	end
 	seen[key] = true
 	local work = M.work(key)
-	return if work then `{name}: {work}` else name
+	local text = if work then `{name}: {work}` else name
+	-- The servers running beside it, by name, with their work.
+	local roots: { [number]: string } = {}
+	for _, running in greed.lsp.running() do
+		roots[running.id] = running.root
+	end
+	for _, other in greed.lsp.servers_of(buffer) do
+		if other.name ~= language then
+			local busy = M.work(M.key(language, roots[other.id], other.name))
+			text ..= if busy then ` · {other.name}: {busy}` else ` · {other.name}`
+		end
+	end
+	return text
 end
 
 --- What the server `key` names is working on, e.g. "indexing 3/10 40%",
@@ -116,8 +131,8 @@ function M.work(key: string): string?
 	return what
 end
 
-greed.lsp.on_notification("$/progress", function(params, language, root)
-	M.progress(M.key(language, root), params)
+greed.lsp.on_notification("$/progress", function(params, language, root, _server, name)
+	M.progress(M.key(language, root, name), params)
 end)
 
 -- A server installed since gets found the next time a file opens.

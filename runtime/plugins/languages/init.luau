@@ -213,8 +213,9 @@ greed.command({
 
 -- `:health` --------------------------------------------------------------
 
---- The lines `:health` ends with: each running server, its program and the
---- folder it runs in, one per project.
+--- The lines `:health` ends with: each running server, its program (and
+--- name, for one beside a language's main one) and the folder it runs in,
+--- one per project.
 function M.running_report(servers: { greed.LspServer }): { string }
 	if #servers == 0 then
 		return { "", "No language servers running" }
@@ -222,6 +223,9 @@ function M.running_report(servers: { greed.LspServer }): { string }
 	local lines = { "", "Running language servers:" }
 	for _, server in servers do
 		local program = server.command[1] or "?"
+		if server.name ~= server.language then
+			program = `{server.name}: {program}`
+		end
 		local state = if server.ready then "" else " (starting)"
 		table.insert(
 			lines,
