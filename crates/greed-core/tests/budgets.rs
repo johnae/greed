@@ -8,7 +8,9 @@
 //! far less than the clock. Time budgets are about four times what release
 //! and debug builds measured with every test running at once, and stayed
 //! well inside while the whole workspace's tests ran beside them; memory
-//! ones, which vary much less, about one and a half to two times.
+//! ones, which vary much less, about one and a half to two times. A
+//! measurement over budget is taken again, and fails only if it's over
+//! then too.
 //!
 //! `GREED_BUDGETS=report cargo test --release --test budgets -- --nocapture`
 //! prints every measurement next to its budget; `--include-ignored` adds
@@ -133,13 +135,20 @@ fn budget(test: &str, measure: impl FnOnce(&mut Found), budgets: &[(&str, f64, f
         // time, and on a shared CI runner an idle second filled up with
         // the others' work.
         static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let found = {
+        let measured = || {
             let _turn = ONE_AT_A_TIME
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             isolated(test)
         };
-        check(test, &found, budgets);
+        let mut over = over_budget(test, &measured(), budgets);
+        // A shared CI runner stalls now and then, all of it at once, and
+        // puts one measurement many times over. A real slowdown is over
+        // the second time too.
+        if !over.is_empty() {
+            over = over_budget(test, &measured(), budgets);
+        }
+        assert!(over.is_empty(), "{test} is over budget:\n{over}");
     }
 }
 
@@ -184,8 +193,8 @@ fn isolated(test: &str) -> Found {
 
 /// Checks what `test` found against `budgets`: each a name, and the most
 /// it may be in a release build and in a debug one. What has no budget is
-/// only reported.
-fn check(test: &str, found: &Found, budgets: &[(&str, f64, f64)]) {
+/// only reported. Gives back a line for each that's over.
+fn over_budget(test: &str, found: &Found, budgets: &[(&str, f64, f64)]) -> String {
     let report = std::env::var("GREED_BUDGETS").is_ok_and(|v| v == "report");
     // A slower machine than the budgets were set on, like CI's shared
     // runners, scales them all: still small enough to catch a real
@@ -223,7 +232,7 @@ fn check(test: &str, found: &Found, budgets: &[(&str, f64, f64)]) {
             "{test} didn't measure {name}"
         );
     }
-    assert!(over.is_empty(), "{test} is over budget:\n{over}");
+    over
 }
 
 /// A temporary folder, removed when dropped, however the test ends.
