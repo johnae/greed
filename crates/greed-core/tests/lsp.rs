@@ -1,6 +1,7 @@
 mod support;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use greed_core::Editor;
@@ -23,7 +24,13 @@ fn setup(text: &str) -> Setup {
 /// An editor with `text` in a Rust file, and fake servers that work as
 /// `options` say started for it.
 fn setup_with(text: &str, options: support::Options) -> Setup {
-    let path = std::env::temp_dir().join("greed-lsp-test/main.rs");
+    // A folder of its own: one a test saving into appears under another's
+    // file, and moves that one's server to it.
+    static SETUPS: AtomicUsize = AtomicUsize::new(0);
+    let n = SETUPS.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir()
+        .join(format!("greed-lsp-test-{}-{n}", std::process::id()))
+        .join("main.rs");
     let mut editor = Editor::new(ClientId(1));
     editor.open("file", text, Some(path.clone()));
     let mut lsp = Lsp::default();
@@ -35,6 +42,12 @@ fn setup_with(text: &str, options: support::Options) -> Setup {
         editor,
         started,
         path,
+    }
+}
+
+impl Drop for Setup {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(self.path.parent().unwrap());
     }
 }
 
