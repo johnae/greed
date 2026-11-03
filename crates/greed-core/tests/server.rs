@@ -436,12 +436,17 @@ fn start_keys() -> Connection {
     conn
 }
 
-/// Reads frames until the first line is `1 TEXT`.
+/// Reads frames until the first line is `1 TEXT`, saying what it last was
+/// if it never gets there.
 fn until_text(conn: &Connection, text: &str) {
     let want = format!("1 {text}");
-    let mut f = frame(conn);
-    while screen_rows(&f)[0].text() != want {
-        f = frame(conn);
+    let mut last = String::new();
+    while last != want {
+        match conn.output.recv_timeout(Duration::from_secs(30)) {
+            Ok(Output::Frame(f)) => last = screen_rows(&f)[0].text(),
+            Ok(other) => panic!("expected a frame, got {other:?}"),
+            Err(err) => panic!("waited for {want:?}, still {last:?}: {err}"),
+        }
     }
 }
 
