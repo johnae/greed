@@ -2684,6 +2684,31 @@ fn waiting_calls_refuse_to_run_where_they_would_hold_up_the_editor() {
 }
 
 #[test]
+fn a_program_printing_half_a_character_is_read_once_it_has_printed_the_rest() {
+    let host = host("");
+    host.eval(
+        r#"local greed = require('@greed')
+         greed.spawn(function()
+             local child = assert(greed.process.spawn({ 'sh', '-c', [[printf 'a\342\234'; sleep 0.3; printf '\224b']] }))
+             local pieces = {}
+             while true do
+                 local piece = child:read()
+                 if piece == nil then break end
+                 table.insert(pieces, `{piece}:{utf8.len(piece) ~= nil}`)
+             end
+             read = table.concat(pieces, " ")
+         end)"#,
+    )
+    .unwrap();
+    let jobs = host.finished_jobs();
+    while host.eval("return read == nil").unwrap() == "true" {
+        let done = jobs.recv_timeout(Duration::from_secs(10)).unwrap();
+        host.finish_job(done).unwrap();
+    }
+    assert_eq!(host.eval("return read").unwrap(), "a:true ✔b:true");
+}
+
+#[test]
 fn table_handles_take_method_calls_and_plain_calls() {
     let host = host("");
     let out = host

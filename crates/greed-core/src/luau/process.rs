@@ -159,6 +159,50 @@ pub(crate) enum Piece {
     },
 }
 
+/// Pieces of a program's output that end between characters, not inside
+/// one: a character a read cut off comes whole with the next piece. Bytes
+/// that aren't UTF-8 pass as they are.
+#[derive(Default)]
+struct WholeChars {
+    held: Vec<u8>,
+}
+
+impl WholeChars {
+    /// What `read` and what was held before make, up to a character cut
+    /// off at the end, which is held for the next. None when that's all.
+    fn next(&mut self, read: &[u8]) -> Option<Vec<u8>> {
+        let mut bytes = std::mem::take(&mut self.held);
+        bytes.extend_from_slice(read);
+        self.held = bytes.split_off(bytes.len() - cut_off(&bytes));
+        (!bytes.is_empty()).then_some(bytes)
+    }
+
+    /// What's held, once the output ends.
+    fn rest(&mut self) -> Option<Vec<u8>> {
+        let held = std::mem::take(&mut self.held);
+        (!held.is_empty()).then_some(held)
+    }
+}
+
+/// How many bytes at the end of `bytes` begin a UTF-8 character that
+/// isn't finished there.
+fn cut_off(bytes: &[u8]) -> usize {
+    for back in 1..=bytes.len().min(3) {
+        let byte = bytes[bytes.len() - back];
+        if byte & 0xC0 == 0x80 {
+            continue;
+        }
+        let length = match byte {
+            0xC0..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF7 => 4,
+            _ => 1,
+        };
+        return if length > back { back } else { 0 };
+    }
+    0
+}
+
 /// The most of a program's error output kept, from the end.
 const STDERR_KEPT: usize = 64 * 1024;
 
@@ -421,25 +465,37 @@ fn start_child(
     std::thread::spawn(move || {
         let _reading = stderr_reading;
         let mut buffer = [0; 4096];
+        let mut whole = WholeChars::default();
         while let Ok(n @ 1..) = stderr.read(&mut buffer) {
             if let Ok(mut kept) = errors.lock() {
                 kept.extend_from_slice(&buffer[..n]);
                 let over = kept.len().saturating_sub(STDERR_KEPT);
                 kept.drain(..over);
             }
-            if stream_stderr {
-                counted.add(n);
-                sender(Piece::Out(Stream::Stderr, buffer[..n].to_vec()));
+            if stream_stderr && let Some(piece) = whole.next(&buffer[..n]) {
+                counted.add(piece.len());
+                sender(Piece::Out(Stream::Stderr, piece));
             }
+        }
+        if stream_stderr && let Some(piece) = whole.rest() {
+            counted.add(piece.len());
+            sender(Piece::Out(Stream::Stderr, piece));
         }
     });
     let (sender, counted) = (send.clone(), unread.clone());
     std::thread::spawn(move || {
         let _reading = stdout_reading;
         let mut buffer = vec![0; 16 * 1024];
+        let mut whole = WholeChars::default();
         while let Ok(n @ 1..) = stdout.read(&mut buffer) {
-            counted.add(n);
-            sender(Piece::Out(Stream::Stdout, buffer[..n].to_vec()));
+            if let Some(piece) = whole.next(&buffer[..n]) {
+                counted.add(piece.len());
+                sender(Piece::Out(Stream::Stdout, piece));
+            }
+        }
+        if let Some(piece) = whole.rest() {
+            counted.add(piece.len());
+            sender(Piece::Out(Stream::Stdout, piece));
         }
     });
     let watched = process.clone();
@@ -773,9 +829,30 @@ fn spawn(
 mod tests {
     use std::time::Duration;
 
-    use super::state;
+    use super::{WholeChars, state};
     use crate::Editor;
     use crate::luau::Host;
+
+    #[test]
+    fn output_comes_in_whole_characters() {
+        let check = "✔".as_bytes();
+        let mut whole = WholeChars::default();
+        assert_eq!(whole.next(b"ok "), Some(b"ok ".to_vec()));
+        // A character cut by a read comes with the next piece.
+        assert_eq!(whole.next(&[b'a', check[0], check[1]]), Some(b"a".to_vec()));
+        assert_eq!(whole.next(&check[2..]), Some(check.to_vec()));
+        assert_eq!(whole.next(&check[..1]), None);
+        assert_eq!(whole.next(&check[1..]), Some(check.to_vec()));
+        // Four bytes, cut after three.
+        let face = "😀".as_bytes();
+        assert_eq!(whole.next(&face[..3]), None);
+        assert_eq!(whole.next(&face[3..]), Some(face.to_vec()));
+        // Bytes that aren't UTF-8 go on, and what's cut off at the end too.
+        assert_eq!(whole.next(&[0xFF, 0x80]), Some(vec![0xFF, 0x80]));
+        assert_eq!(whole.next(&check[..2]), None);
+        assert_eq!(whole.rest(), Some(check[..2].to_vec()));
+        assert_eq!(whole.rest(), None);
+    }
 
     #[test]
     fn programs_nobody_holds_go_once_they_exit() {
