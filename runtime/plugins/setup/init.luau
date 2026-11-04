@@ -249,6 +249,8 @@ function M.save(answers: { [string]: string })
 	if file and greed.fs.stat(file) == nil then
 		greed.fs.write(file, config)
 	end
+	-- Before anything else here can fail, so the config is checked.
+	types.update()
 	local said: { string } = {}
 	local provider = answers.provider
 	if provider and provider ~= "none" then
@@ -276,7 +278,6 @@ function M.save(answers: { [string]: string })
 	if #said > 0 then
 		greed.echo(table.concat(said, "; "))
 	end
-	types.update()
 	if file and greed.fs.read(file) == config then
 		greed.open(file)
 	else

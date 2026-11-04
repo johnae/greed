@@ -5,10 +5,12 @@
 -- aliases through a link, so Greed keeps one beside your config folder
 -- (`~/.config/.luaurc`) with an alias for its API and each plugin it comes
 -- with, as absolute paths into the runtime of the Greed you run. It's
--- written again when the editor starts, and only ever over what Greed wrote
--- there last: one you write or change yourself stays yours.
+-- written again when the editor starts and when the config changes, and
+-- only ever over what Greed wrote there last: one you write or change
+-- yourself stays yours.
 
 local greed = require("@greed")
+local core = require("@core")
 
 local M = {}
 
@@ -74,6 +76,13 @@ end
 -- points at its runtime.
 greed.on("editor.started", function()
 	pcall(M.update, nil)
+end)
+
+-- A config made or changed since, like one written by hand on a first run.
+greed.on("file.changed", function(event: greed.FileChanged)
+	if core.config.is_config(event.path) then
+		pcall(M.update, nil)
+	end
 end)
 
 greed.command({

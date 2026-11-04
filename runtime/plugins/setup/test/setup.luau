@@ -131,6 +131,8 @@ test("Save writes a config from the answers and opens it", function(t)
 	assert(string.find(written, 'option.set("tree-icons", "none")', 1, true), written)
 	assert(greed.view():buffer():path() == config_file(), "the config is open")
 	assert(seen() and page() == nil, "answered and closed")
+	local parent = assert(string.match(greed.fs.dirs().config :: string, "^(.*)/[^/]+/*$"))
+	assert(greed.fs.stat(`{parent}/.luaurc`), "its .luaurc, for type checking")
 	greed.option.set("editing-style", "helix")
 end)
 

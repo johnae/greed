@@ -1,6 +1,7 @@
 local test = require("@greed/test")
 local greed = require("@greed")
 local setup = require("@setup")
+local core = require("@core")
 
 -- Puts a config in the config folder; returns the folder above it.
 local function config(): string
@@ -42,4 +43,12 @@ end)
 
 test("without a config folder there's nothing to do", function(t)
 	assert(setup.types.update() == nil)
+end)
+
+test("a config made after the editor started gets its .luaurc once it's written", function(t)
+	core.config.watch()
+	local parent = config()
+	t:wait_for(function()
+		return greed.fs.stat(`{parent}/.luaurc`) ~= nil
+	end)
 end)
