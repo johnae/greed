@@ -498,8 +498,9 @@ impl Lsp {
     }
 
     /// Stops the servers running for `language` (every language with
-    /// `None`), forgetting that any failed or kept stopping, so the next
-    /// sync starts them fresh. Returns how many were running.
+    /// `None`), forgetting that any failed or kept stopping and where each
+    /// buffer's ran, so the next sync starts them fresh, in roots found
+    /// again. Returns how many were running.
     pub fn restart(&mut self, language: Option<&str>) -> usize {
         let of = |l: &str| language.is_none_or(|language| l == language);
         let ids: Vec<ServerId> = (self.servers.iter())
@@ -513,6 +514,7 @@ impl Lsp {
         }
         self.failed.retain(|(l, _, _)| !of(l));
         self.stops.retain(|(l, _, _), _| !of(l));
+        self.placed.retain(|_, p| !of(&p.language));
         ids.len()
     }
 

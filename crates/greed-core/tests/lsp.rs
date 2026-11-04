@@ -885,6 +885,27 @@ fn positions_count_in_the_servers_encoding() {
 }
 
 #[test]
+fn a_restart_finds_the_root_again_so_a_marker_made_since_counts() {
+    let dir = std::env::temp_dir().join(format!("greed-restart-root-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("crate/src")).unwrap();
+    let mut editor = Editor::new(ClientId(1));
+    editor.open("file", "let x = 1;\n", Some(dir.join("crate/src/main.rs")));
+    let mut lsp = Lsp::default();
+    lsp.configure(support::rust_server());
+    let (launcher, _started) = support::launcher();
+    lsp.set_launcher(launcher);
+    let roots = |lsp: &Lsp| -> Vec<PathBuf> { lsp.running().into_iter().map(|r| r.root).collect() };
+    lsp.sync(&editor);
+    assert_eq!(roots(&lsp), [dir.join("crate/src")]);
+    // A Cargo.toml made after the file opened, as setup writes a .luaurc.
+    std::fs::write(dir.join("crate/Cargo.toml"), "").unwrap();
+    lsp.restart(None);
+    lsp.sync(&editor);
+    assert_eq!(roots(&lsp), [dir.join("crate")]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn project_roots_come_from_markers_or_the_files_directory() {
     use greed_core::lsp::project_root;
     let dir = std::env::temp_dir().join(format!("greed-root-{}", std::process::id()));
