@@ -13,7 +13,9 @@ local greed = require("@greed")
 --- it. `only` and `except` say what it's used for: "hover", "definition",
 --- "references", "rename", "code-action", "completion", "signature-help",
 --- "format" and "symbols". It runs the project's code unless `reads_only`,
---- so it waits until you trust the project.
+--- so it waits until you trust the project. `folder_setting` names a
+--- setting that gets the folder it runs in, for a server that reads it
+--- from there, as eslint's does.
 export type Server = {
 	[number]: string,
 	name: string?,
@@ -24,6 +26,7 @@ export type Server = {
 	except: { string }?,
 	reads_only: boolean?,
 	settings: { [string]: any }?,
+	folder_setting: string?,
 	init_options: { [string]: any }?,
 }
 
@@ -109,6 +112,9 @@ local ESLINT: Server = {
 			showDocumentation = { enable = true },
 		},
 	},
+	-- The folder with its config, so paths in the config resolve from there
+	-- rather than from the file's folder.
+	folder_setting = "workspaceFolder",
 }
 local BIOME: Server = {
 	name = "biome",

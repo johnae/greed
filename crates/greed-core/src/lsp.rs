@@ -49,6 +49,10 @@ pub struct ServerConfig {
     /// it's initialized, and what it gets when it asks for a section. A
     /// server keeps the ones it started with until it's restarted.
     pub settings: Value,
+    /// A setting to put the server's folder in, as `{ uri, name }`, for a
+    /// server that reads it from there rather than from `initialize`, as
+    /// eslint's does (`workspaceFolder`).
+    pub folder_setting: Option<String>,
     /// What `initialize` sends as `initializationOptions`.
     pub init_options: Value,
     /// The features it's used for, like `"hover"` or `"format"`, for the
@@ -827,6 +831,12 @@ impl Lsp {
             except: config.except.clone(),
             pulls: HashMap::new(),
         };
+        if let Some(key) = &config.folder_setting {
+            if !server.settings.is_object() {
+                server.settings = json!({});
+            }
+            server.settings[key] = server.workspace_folders()[0].clone();
+        }
         let mut params = json!({
             "processId": std::process::id(),
             "rootUri": file_uri(&server.root),

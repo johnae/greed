@@ -1561,8 +1561,9 @@ export type Lsp = {
 	--- the file's project, or the project's root without one. With `when`, it runs only for files under a folder that has one of those files, in the nearest such folder.
 	--- With `reads_only`, the server only reads the project's files, never running its code, so it starts in a project nobody trusted (see `trust`).
 	--- `settings` are the server's settings, sent once it's initialized and what it gets when it asks for a section; `init_options` goes with `initialize`. A running server keeps the ones it started with until it's restarted.
+	--- `folder_setting` names a setting that gets the folder the server runs in, as `{ uri, name }`, for a server that reads it from its settings, as eslint's does with "workspaceFolder".
 	--- `only` and `except` name the features it's used for, like "hover" or "format", for plugins that pick one of a buffer's servers for a feature: only those, when given, and never those in `except`.
-	server: (spec: { language: string, name: string?, when: { string }?, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean?, settings: { [string]: any }?, init_options: { [string]: any }?, only: { string }?, except: { string }? }) -> (),
+	server: (spec: { language: string, name: string?, when: { string }?, command: { string }?, commands: { { string } }?, root_markers: { string }?, reads_only: boolean?, settings: { [string]: any }?, folder_setting: string?, init_options: { [string]: any }?, only: { string }?, except: { string }? }) -> (),
 	--- Stops starting the language's server called `name`, or all of its servers without one; one running keeps running.
 	remove: (language: string, name: string?) -> (),
 	--- Stops the servers running for `language` (every language without one) and starts them again, as after they got stuck. Returns how many were running. Needs "proc".

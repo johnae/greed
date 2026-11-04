@@ -1284,6 +1284,57 @@ fn a_languages_settings_and_start_options_reach_its_server_set_on_their_own() {
     );
 }
 
+#[test]
+fn a_server_beside_the_main_one_gets_its_folder_in_the_setting_it_names() {
+    let mut editor = Editor::new(ClientId(1));
+    editor.open(
+        "file",
+        "let x = 1;",
+        Some(std::env::temp_dir().join("greed-lsp-folder-setting/main.rs")),
+    );
+    let h = Host::new(editor).unwrap();
+    let (launcher, _started) = support::launcher();
+    h.set_lsp_launcher(launcher);
+    let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/plugins");
+    for plugin in ["core", "cmdline", "languages"] {
+        h.load_dir(&runtime.join(plugin)).unwrap();
+    }
+    h.load_str(
+        "config",
+        r#"
+        local greed = require("@greed")
+        greed.lsp.trust(nil)
+        require("@languages").set("rust", { servers = {
+            { "sh" },
+            { name = "lint", command = { "sh" }, settings = { validate = "on" }, folder_setting = "workspaceFolder" },
+        } })
+        greed.command { name = "probe", run = function(ctx)
+            for _, server in greed.lsp.servers_of(ctx.buffer) do
+                if server.name == "lint" then
+                    local seen = greed.lsp.request(ctx.buffer, "probe", {}, server.id)
+                    greed.echo(greed.json.encode(seen.changed.settings))
+                end
+            end
+        end }
+        "#,
+    )
+    .unwrap();
+    h.sync_lsp();
+    h.run(FIRST_CLIENT, "probe").unwrap();
+    let mut said = None;
+    pump(&h, |h| {
+        let messages = h.with_editor_mut(Editor::take_messages);
+        said = said
+            .take()
+            .or_else(|| messages.into_iter().find(|m| m.starts_with('{')));
+        said.is_some()
+    });
+    let seen: serde_json::Value = serde_json::from_str(&said.unwrap()).unwrap();
+    assert_eq!(seen["validate"], "on", "{seen}");
+    let folder = seen["workspaceFolder"]["uri"].as_str().unwrap_or_default();
+    assert!(folder.starts_with("file:///"), "{seen}");
+}
+
 /// The text of what the acting client's view shows: the picker's, once open.
 fn shown(h: &Host) -> String {
     h.eval("return require('@greed').view():buffer():text()")

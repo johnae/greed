@@ -291,6 +291,7 @@ fn add_servers(lua: &Lua, lsp: &Table, owner: &PluginId) -> LuaResult<()> {
                 root_markers: strings("root_markers")?,
                 reads_only: spec.get::<Option<bool>>("reads_only")?.unwrap_or(false),
                 settings: json("settings")?,
+                folder_setting: spec.get("folder_setting")?,
                 init_options: json("init_options")?,
                 only: strings("only")?,
                 except: strings("except")?,

@@ -210,6 +210,32 @@ fn a_server_gets_its_settings_and_init_options_and_each_section_it_asks_for() {
 }
 
 #[test]
+fn a_server_that_wants_its_folder_in_its_settings_gets_it_there() {
+    let mut s = setup("let x = 1;\n");
+    s.lsp.configure(greed_core::lsp::ServerConfig {
+        settings: json!({ "validate": "on" }),
+        folder_setting: Some("workspaceFolder".into()),
+        ..support::rust_server()
+    });
+    s.lsp.sync(&s.editor);
+    let buffer = s.editor.buffers().next().unwrap().id();
+    assert_eq!(s.next(), Handled::Diagnostics(buffer));
+    let root = s.lsp.running()[0].root.clone();
+    let name = root.file_name().unwrap().to_string_lossy().into_owned();
+    let settings = json!({
+        "validate": "on",
+        "workspaceFolder": { "uri": file_uri(&root), "name": name },
+    });
+    let probe = s.probe(buffer);
+    assert_eq!(probe["configured"][2], settings, "asked for");
+    assert_eq!(
+        probe["changed"],
+        json!({ "settings": settings }),
+        "and told"
+    );
+}
+
+#[test]
 fn a_server_without_settings_is_told_none() {
     let mut s = setup("let x = 1;\n");
     s.lsp.sync(&s.editor);

@@ -85,6 +85,7 @@ local function apply_servers(name: string, language: Language)
 			root_markers = language.roots,
 			reads_only = server.reads_only,
 			settings = server.settings,
+			folder_setting = server.folder_setting,
 			init_options = server.init_options,
 		})
 	end

@@ -1051,7 +1051,10 @@ require("@languages").set("python", {
 Entries without a `name` are the main server's commands, tried in order as
 before. One with a `name` runs beside it, in the nearest folder that has
 one of its `when` files (everywhere, without `when`). `settings`,
-`init_options` and `reads_only` go on it, as on a language.
+`init_options` and `reads_only` go on it, as on a language. A server that
+wants that folder in its settings rather than only from the start, as
+eslint's does, gets it with `folder_setting = "workspaceFolder"`, the
+name of the setting it reads.
 
 Problems, completions and code actions come from all of them together.
 Hover, going to a definition, references, rename, signature help and
