@@ -3,6 +3,76 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## 0.4.2 - 2026-11-06
+
+### Highlights
+
+- Several language servers in one buffer: eslint, Biome and Stylelint run beside a language's main server where a project sets them up, and their problems, completions and fixes show together (#32).
+- Any Markdown file is a slide deck: `:slides` shows it a slide at a time with blocks running on the slide, and `:slides-presenter` adds the notes, the next slide and the time.
+- Agents can read the web: `web_fetch` is always there, `web_search` can search the news, and `:research` hands a question to a helper that only has the web. After reading a page, auto mode watches where fetches go next.
+- Terminals running bash, zsh or fish mark their commands and folder with nothing to set up, and what a program notifies goes to your desktop.
+- Runnable blocks: `safe=true` marks one that may run unasked, `space m k` checks the safe ones, and a result that came out different shows what changed.
+- rust-analyzer checks on save again (#31).
+
+### New
+
+- blocks: safe=true marks a block that may run unasked; others ask first, as an input or in run all
+- blocks: a result that came out different shows what changed; space m k checks the safe blocks
+- lsp: project symbols of one kind, :pick-workspace-symbol function, functions from rust-analyzer too
+- terminal: what a program notifies goes to your desktop, and its progress shows by its name
+- process: greed.process.env, one of the editor's own environment variables
+- terminal: bash, zsh and fish mark their commands and folder with nothing to set up
+- view: view:set_keys binds keys for one view, ahead of its buffer's
+- view: view:hide_marks leaves some namespaces' marks out of one view
+- client: a client's status line can be hidden, its row going to the text
+- view: view:set_padding leaves room above and left of a view's text
+- view: view:hide_cursor draws no cursor or selection in one view
+- client: a client says whether it draws scaled text; kitty inside tmux or zellij doesn't
+- slides: any Markdown file is a slide deck; :slides shows it a slide at a time, blocks running on the slide
+- shell: > buf:NAME opens the buffer in a split beside the shell
+- slides: a talk shows on every screen at once, and :slides-presenter adds the notes, the next slide and the time
+- html: greed.html.read gives a page's main content as Markdown; agents' web_fetch uses it
+- agent: web_fetch is always there, and answers a question from a page with the fast model
+- acp: after reading from outside, auto mode watches where fetches go and what addresses carry
+- acp: research hands a question to a helper with only the web, and :research does it for you
+- agent: web_search can search the news, and web-sources puts sources you trust first
+- lsp: a language can have servers that run beside its main one, each where its files say
+- lsp: each server's diagnostics stay its own, so several show together
+- lsp: plugins see a buffer's servers and can ask one by its id
+- lsp: each feature goes to the servers that do it, as only and except allow
+- lsp: servers beside a language's main one show by name in the status line, objects and :health
+- lsp: servers that report diagnostics only when asked, as eslint's does, are asked
+- languages: eslint, biome and stylelint run beside a language's main server where a project sets them up
+
+### Fixed
+
+- picker: a picker that asks as you type asks as it opens too, so the project's symbols show at once
+- languages: a language's settings and start options reach its servers when set on their own
+- mail: moving or undoing right after a move waits for the message's new UID instead of doing nothing
+- gui: a float's box takes its colors from its border, not the cell the cursor is on
+- cmdline: what tab or history filled in can be deleted again
+- client: a hidden status line still shows a message, like a question waiting for a key
+- terminal: esc esc leaves even when the editor was too busy to see the second in time
+- shell: a > buf:NAME buffer goes by its name, and space b lists it
+- slides: speaker notes go in a speaker block, as a notes block is a notes query
+- gui: scaled text's background is as tall as the text, and the rows under it draw none of their own
+- lsp: servers that ask hear when a file is saved, so rust-analyzer checks on save (#31)
+- site: a demo recording stops its servers and removes its scratch folder even when it fails
+- agent: less noise from the web: custom elements' tags go, search lines are capped
+- lsp: a definition opens in a file no server has yet, and each server gets its own problems back to fix
+- languages: eslint works with the server from vscode-langservers-extracted 4.10
+- process: a program's output is read in whole characters, never cut inside one
+- lsp: :lsp-restart finds each buffer's root again, so a .luaurc made since counts
+- setup: the config's .luaurc is written right after setup saves it, and whenever the config changes
+- languages: eslint gets the folder with its config as workspaceFolder, so paths in it resolve
+
+### Documentation
+
+- kubernetes: a pod's shell says it's kubectl exec, so typing exec finds it
+- rust-analyzer takes its settings as init_options, and the docs say so
+- site: the tour shows a Markdown file as slides, a block running on one, and the presenter's view
+- plugins: a buffer's several language servers, in greed.lsp and core.lsp
+
 ## 0.4.1 - 2026-10-27
 
 ### Highlights
