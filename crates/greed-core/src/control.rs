@@ -276,6 +276,10 @@ pub struct Request {
     /// The session socket connection it came on, to send notifications to
     /// later; `None` for Claude Code's IDE connection.
     pub connection: Option<Notifier>,
+    /// The JSON-RPC id as the client sent it, so a later
+    /// `notifications/cancelled` can name the request; `None` for a
+    /// notification.
+    pub rpc_id: Option<Value>,
     pub method: String,
     pub params: Value,
     pub(crate) reply: Reply,
@@ -1103,6 +1107,7 @@ fn answer(
             "socket"
         },
         connection: Some(notifier.clone()),
+        rpc_id: id.clone(),
         method: method.to_owned(),
         params,
         reply: Reply::Outbox(Owed::new(id.clone(), notifier.outbox.clone())),

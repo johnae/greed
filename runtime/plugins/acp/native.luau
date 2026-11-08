@@ -171,6 +171,9 @@ type State = {
 	--- uses them to end it at once.
 	waiting: greed.Signal?,
 	close: (() -> ())?,
+	--- The tool calls running now, taken back when the turn is stopped, so
+	--- what they left waiting for you (a proposal) goes.
+	calls: { [agent.Call]: true }?,
 	--- It only reads and searches: it's offered no tool that changes
 	--- anything, as a helper working in the project (`read_only`).
 	reads_only: boolean?,
@@ -1493,7 +1496,11 @@ local function call(
 	end
 	tool.status = "in_progress"
 	s.changed()
-	local ok, result = pcall(function(): string
+	local call = agent.new_call()
+	local calls = state.calls or {}
+	state.calls = calls
+	calls[call] = true
+	local ok, result = pcall(agent.within_call, call, function(): string
 		if own then
 			return own.run(s, c.input)
 		end
@@ -1536,6 +1543,7 @@ local function call(
 		end
 		return said
 	end)
+	calls[call] = nil
 	local text = if ok then result else agent.error_text(result)
 	-- The turn was stopped while it ran, and its row says so already.
 	if state.run ~= run then
@@ -2122,6 +2130,12 @@ local DRIVER: session.Driver = {
 		end
 		if waiting then
 			waiting:send(false)
+		end
+		local calls = state.calls
+		if calls then
+			for call in table.clone(calls) do
+				agent.cancel_call(call)
+			end
 		end
 	end,
 	set_model = function(s, id)

@@ -234,7 +234,9 @@ Pending changes follow your edits; one whose own text you edited isn't
 accepted over your edit (undo it, or reject the change). The agent waits,
 then hears which changes went in along with the language server's
 diagnostics for those files. If the agent goes away while its proposal
-waits, like a Claude Code session you quit, what's left is rejected.
+waits, like a Claude Code session you quit, what's left is rejected. Same
+when it gives up on the call: you stop Claude Code mid-turn, or `ctrl-c`
+Greed's own agent, and its proposal goes from the buffer.
 
 What you accept from one proposal is an
 [operation](using.md#operations): `space u u` undoes it in every file at

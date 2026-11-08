@@ -2923,6 +2923,46 @@ test("ctrl-c during a tool call that doesn't end stops the turn, every call answ
 	})
 end)
 
+test("ctrl-c while a tool call waits on a proposal takes the proposal back", function(t)
+	local agent = require("@agent")
+	local dir = t:tempdir({ ["a.txt"] = "one\n" })
+	agent.tool({
+		name = "test_propose",
+		description = "proposes a change and waits",
+		run = function()
+			return agent.propose(`{dir}/a.txt`, { { old_text = "one", new_text = "two" } })
+		end,
+	})
+	model(function(_, n)
+		if n == 1 then
+			return {
+				text = "",
+				calls = { { id = "c1", name = "test_propose", input = {} } },
+				stop = "tools",
+			}
+		end
+		return DONE
+	end)
+	local s = beside(dir, "a.txt", 0, 0)
+	send(t, "go")
+	t:wait_for(function()
+		return agent.pending() == 1
+	end)
+	t:keys("ctrl-c")
+	t:wait_for(function()
+		return agent.pending() == 0
+	end)
+	assert(status_of(s) == "idle", status_of(s))
+	assert(greed.load(`{dir}/a.txt`):text() == "one\n", "the file is as it was")
+	agent.tool({
+		name = "test_propose",
+		description = "gone",
+		run = function()
+			return nil
+		end,
+	})
+end)
+
 -- Whether `request` is a helper's: its task ends with what helpers are told.
 local function from_helper(request: any): boolean
 	return string.find(request.said[1].text or "", "You're a helper", 1, true) ~= nil

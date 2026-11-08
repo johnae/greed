@@ -665,9 +665,28 @@ local function offer(prepared: { Prepared }, reason: string?, tab: string?): { P
 		)
 	end
 	announce(changes, paths, reason)
+	-- An agent that takes its call back waits for no answer, so what's
+	-- left of it goes.
+	local function withdraw()
+		for _, p in started do
+			if table.find(proposals, p) then
+				decide(p, everything, false)
+			end
+		end
+	end
+	local call = registry.current_call()
+	local stop: (() -> ())? = nil
+	if call and call.cancelled then
+		withdraw()
+	elseif call then
+		stop = registry.on_cancel(call, withdraw)
+	end
 	local decided: { Proposal } = {}
 	for _, p in started do
 		table.insert(decided, p.done:wait())
+	end
+	if stop then
+		stop()
 	end
 	return decided
 end

@@ -279,6 +279,64 @@ fn a_proposal_from_a_connection_that_closes_is_withdrawn() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+#[test]
+fn a_proposal_whose_call_is_cancelled_is_withdrawn_and_the_call_answered() {
+    use std::io::{BufRead, Write};
+    let dir = std::env::temp_dir().join(format!("greed-cancelled-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("a.txt");
+    std::fs::write(&file, "let x = 1;\n").unwrap();
+    let (conn, mut client) = start("cancelled", "");
+    let path = file.to_str().unwrap().to_owned();
+    call(&mut client, "open", &json!({ "path": path }));
+
+    // An agent proposes a change, then gives up on the call, as Claude Code
+    // does when you stop it, and stays connected.
+    let name = format!("agent-cancelled-{}", std::process::id());
+    let (socket, token_file) = control::session_files(&name);
+    let token = std::fs::read_to_string(token_file).unwrap();
+    let mut agent = std::os::unix::net::UnixStream::connect(socket).unwrap();
+    let mut answers = std::io::BufReader::new(agent.try_clone().unwrap());
+    writeln!(
+        agent,
+        "{}",
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "auth", "params": { "token": token } })
+    )
+    .unwrap();
+    answers.read_line(&mut String::new()).unwrap();
+    let edits = json!([{ "old_text": "1", "new_text": "2" }]);
+    let propose = json!({ "name": "propose", "arguments": { "path": path, "edits": edits } });
+    writeln!(
+        agent,
+        "{}",
+        json!({ "jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": propose })
+    )
+    .unwrap();
+    wait_for_proposal(&mut client, 8, true);
+    writeln!(
+        agent,
+        "{}",
+        json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": { "requestId": 7, "reason": "the user stopped it" },
+        })
+    )
+    .unwrap();
+    wait_for_proposal(&mut client, 8, false);
+    // The call is answered once its proposal is gone.
+    let mut line = String::new();
+    answers.read_line(&mut line).unwrap();
+    let answer: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(answer["id"], 7, "{line}");
+    assert_eq!(
+        call(&mut client, "read", &json!({ "path": path })).0,
+        "let x = 1;\n"
+    );
+    conn.input.send(Input::Quit).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// Waits until the focused buffer does or doesn't show a proposed change at
 /// `pos`.
 fn wait_for_proposal(client: &mut Client, pos: usize, shown: bool) {

@@ -981,6 +981,9 @@ export type ControlRequest = {
 	--- The session socket connection it came on, for `greed.control.send`;
 	--- nil for Claude Code's IDE connection.
 	connection: number?,
+	--- The JSON-RPC id as the client sent it, the one a later
+	--- `notifications/cancelled` names; nil for a notification.
+	rpc_id: any,
 	method: string,
 	params: any,
 }

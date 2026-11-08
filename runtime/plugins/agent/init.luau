@@ -52,6 +52,7 @@ export type Tool = registry.Tool
 export type Kind = registry.Kind
 export type Caller = registry.Caller
 export type Refusal = registry.Refusal
+export type Call = registry.Call
 export type Content = registry.Content
 export type Edit = proposals.Edit
 export type FileEdits = proposals.FileEdits
@@ -105,6 +106,12 @@ return table.freeze({
 	--- callers that are (registry.luau).
 	done = registry.done,
 	on_done = registry.on_done,
+	--- A tool call an agent can take back, running tools as part of one,
+	--- and taking it back: what it left waiting, like a proposal, goes
+	--- (registry.luau).
+	new_call = registry.new_call,
+	within_call = registry.within_call,
+	cancel_call = registry.cancel_call,
 	--- Text someone else wrote, between tags that mark it as data, and
 	--- what a model is told once about those tags (untrusted.luau).
 	untrusted = untrusted.wrap,

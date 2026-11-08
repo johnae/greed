@@ -210,6 +210,7 @@ fn forward(text: &str, requests: &Sender<Request>, outgoing: &Sender<String>) {
     let request = Request {
         client: "ide",
         connection: None,
+        rpc_id: id.clone(),
         method: message
             .get("method")
             .and_then(Value::as_str)

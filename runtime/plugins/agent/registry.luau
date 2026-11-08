@@ -333,14 +333,72 @@ local function caller_of(request: greed.ControlRequest): Caller
 	return known
 end
 
--- The connection each tool call from an MCP client runs for, by the
--- thread it runs in.
-local running: { [thread]: number? } = setmetatable({}, { __mode = "k" }) :: any
+--- One tool call of an agent's, which the agent can take back before it's
+--- answered: an MCP client with `notifications/cancelled`, Greed's own
+--- agent when you stop its turn. What the call left waiting, like a
+--- proposal, listens and goes.
+export type Call = {
+	cancelled: boolean,
+	--- The MCP connection it came on, if it did.
+	connection: number?,
+	listeners: { () -> () },
+}
+
+--- A call for `connection`, or for an agent in the editor.
+function M.new_call(connection: number?): Call
+	return { cancelled = false, connection = connection, listeners = {} }
+end
+
+-- The call each tool runs for, by the thread it runs in.
+local running: { [thread]: Call } = setmetatable({}, { __mode = "k" }) :: any
+
+--- Runs `f` as part of `call`, in this thread.
+function M.within_call<T>(call: Call, f: () -> T): T
+	local thread = coroutine.running()
+	local outer = running[thread]
+	running[thread] = call
+	local ok, result = pcall(f)
+	running[thread] = outer
+	if not ok then
+		error(result, 0)
+	end
+	return result
+end
+
+--- The call this thread runs for, if any.
+function M.current_call(): Call?
+	return running[coroutine.running()]
+end
 
 --- The MCP connection whose tool call runs in this thread, if any, e.g.
 --- to take back what the call leaves waiting once that connection closes.
 function M.connection(): number?
-	return running[coroutine.running()]
+	local call = M.current_call()
+	return call and call.connection
+end
+
+--- Calls `listener` once `call` is taken back. Returns what stops it.
+function M.on_cancel(call: Call, listener: () -> ()): () -> ()
+	return registry.put(call.listeners, listener)
+end
+
+--- Takes `call` back: what it left waiting hears so, once.
+function M.cancel_call(call: Call)
+	if call.cancelled then
+		return
+	end
+	call.cancelled = true
+	for _, listener in table.clone(call.listeners) do
+		listener()
+	end
+end
+
+-- MCP tool calls still running, by their connection (or client) and the
+-- id the client gave them, for `notifications/cancelled` to find.
+local open_calls: { [string]: Call } = {}
+
+local function call_key(request: greed.ControlRequest, id: any): string
+	return `{request.connection or request.client}:{id}`
 end
 
 --- Why `arguments` don't fit `tool`'s schema, naming what it takes: one it
@@ -415,10 +473,10 @@ function M.call(name: string, arguments: { [string]: any }, caller: Caller)
 			return M.result(`the user didn't allow it: {label} {why}`, true)
 		end
 	end
-	local thread = coroutine.running()
-	running[thread] = caller.connection
-	local ok, result = pcall(tool.run, arguments, caller)
-	running[thread] = nil
+	local call = M.current_call() or M.new_call(caller.connection)
+	local ok, result = pcall(M.within_call, call, function()
+		return tool.run(arguments, caller)
+	end)
 	if not ok then
 		return M.result(M.error_text(result), true)
 	elseif results[result] then
@@ -482,7 +540,30 @@ local methods: { [string]: (request: greed.ControlRequest) -> any } = {
 	end,
 	["tools/call"] = function(request)
 		local params = request.params
-		return M.call(params.name, params.arguments or {}, caller_of(request))
+		local call = M.new_call(request.connection)
+		local key = if request.rpc_id ~= nil then call_key(request, request.rpc_id) else nil
+		if key then
+			open_calls[key] = call
+		end
+		local ok, result = pcall(M.within_call, call, function()
+			return M.call(params.name, params.arguments or {}, caller_of(request))
+		end)
+		if key then
+			open_calls[key] = nil
+		end
+		if not ok then
+			error(result, 0)
+		end
+		return result
+	end,
+	-- The client gave up on a call, as Claude Code does when you stop it.
+	["notifications/cancelled"] = function(request)
+		local id = request.params and request.params.requestId
+		local call = if id ~= nil then open_calls[call_key(request, id)] else nil
+		if call then
+			M.cancel_call(call)
+		end
+		return nil
 	end,
 }
 

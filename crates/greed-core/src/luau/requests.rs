@@ -31,6 +31,9 @@ pub(super) fn handle(lua: &Lua, request: Request) -> LuaResult<()> {
     if let Some(connection) = &request.connection {
         payload.set("connection", connection.id)?;
     }
+    if let Some(rpc_id) = &request.rpc_id {
+        payload.set("rpc_id", lsp::to_lua(lua, rpc_id)?)?;
+    }
     let id = {
         let mut state = state_mut(lua);
         if let Some(connection) = &request.connection
