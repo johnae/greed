@@ -236,7 +236,9 @@ then hears which changes went in along with the language server's
 diagnostics for those files. If the agent goes away while its proposal
 waits, like a Claude Code session you quit, what's left is rejected. Same
 when it gives up on the call: you stop Claude Code mid-turn, or `ctrl-c`
-Greed's own agent, and its proposal goes from the buffer.
+Greed's own agent, and its proposal goes from the buffer. A newer
+proposal for text that already has one waiting replaces the older one,
+whichever agent made it, and the older agent hears so.
 
 What you accept from one proposal is an
 [operation](using.md#operations): `space u u` undoes it in every file at

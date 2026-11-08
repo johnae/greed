@@ -40,6 +40,38 @@ test("proposed changes wait for review, and the agent hears what went in", funct
 	assert(agent.pending() == 0)
 end)
 
+test("a newer proposal for the same text replaces the older, which hears so", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one two three\n" })
+	local path = dir .. "/a.txt"
+	greed.open(path)
+	local first = propose(t, path, {
+		{ old_text = "one", new_text = "1" },
+		{ old_text = "three", new_text = "3" },
+	})
+	local second = propose(t, path, { { old_text = "one two", new_text = "uno dos" } })
+	assert(
+		first()
+			== `accepted 0 of 2 changes to {path}; a newer proposal for the same text replaced change 1, 2`,
+		first()
+	)
+	assert(agent.pending() == 1, `{agent.pending()} pending`)
+	t:keys("space o A")
+	assert(greed.view():buffer():text() == "uno dos three\n", greed.view():buffer():text())
+	assert(string.find(second() or "", "accepted 1 of 1", 1, true), second())
+end)
+
+test("a proposal for other text waits beside the one there", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one two three\n" })
+	local path = dir .. "/a.txt"
+	greed.open(path)
+	local first = propose(t, path, { { old_text = "one", new_text = "1" } })
+	propose(t, path, { { old_text = "three", new_text = "3" } })
+	assert(first() == nil, "the first still waits")
+	assert(agent.pending() == 2, `{agent.pending()} pending`)
+	t:keys("space o A")
+	assert(greed.view():buffer():text() == "1 two 3\n", greed.view():buffer():text())
+end)
+
 test("changes follow edits made while they wait", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one two three\n" })
 	local path = dir .. "/a.txt"

@@ -28,7 +28,8 @@ type Hunk = {
 	old: string,
 	new: string,
 	id: number,
-	-- "pending", "accepted", "rejected", or "gone" if its text was deleted.
+	-- "pending", "accepted", "rejected", "gone" if its text was deleted, or
+	-- "replaced" by a newer proposal for the same text.
 	status: string,
 	-- What the user said about it, for the agent.
 	note: string?,
@@ -245,12 +246,14 @@ end
 
 -- What the agent hears once every hunk of `p` is decided.
 local function summary(p: Proposal): string
-	local accepted, rejected, gone = 0, {}, {}
+	local accepted, rejected, gone, replaced = 0, {}, {}, {}
 	for i, hunk in p.hunks do
 		if hunk.status == "accepted" then
 			accepted += 1
 		elseif hunk.status == "gone" then
 			table.insert(gone, tostring(i))
+		elseif hunk.status == "replaced" then
+			table.insert(replaced, tostring(i))
 		else
 			table.insert(rejected, tostring(i))
 		end
@@ -261,6 +264,9 @@ local function summary(p: Proposal): string
 	end
 	if #gone > 0 then
 		text ..= `; the user deleted the text of change {table.concat(gone, ", ")}`
+	end
+	if #replaced > 0 then
+		text ..= `; a newer proposal for the same text replaced change {table.concat(replaced, ", ")}`
 	end
 	for i, hunk in p.hunks do
 		if hunk.note then
@@ -648,6 +654,50 @@ local function prepare(path: string, edits: { Edit }): Prepared
 	return { path = full, buffer = buffer, pending = pending, hunks = hunks, at = at }
 end
 
+-- Takes away every proposal of the change `p` is part of, each hunk left
+-- "replaced", and tells its agents.
+local function replace(p: Proposal)
+	for _, other in table.clone(proposals) do
+		if other.op == p.op then
+			for _, hunk in other.pending do
+				hunk.status = "replaced"
+				clear(other, hunk)
+			end
+			other.pending = {}
+			table.remove(proposals, table.find(proposals, other) :: number)
+			changed(other.buffer)
+			other.done:send(other)
+		end
+	end
+end
+
+local function overlaps(p: Proposal, spans: { Span }): boolean
+	for _, hunk in p.pending do
+		local at = position(p, hunk)
+		if at then
+			for _, span in spans do
+				if at.from <= span.to and span.from <= at.to then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+-- Older proposals on the text `prepared` changes go first, so one stretch
+-- of text never shows two proposals at once: the newer one wins, whoever
+-- made either.
+local function replace_overlapping(prepared: { Prepared })
+	for _, file in prepared do
+		for _, p in in_buffer(file.buffer) do
+			if overlaps(p, file.at) then
+				replace(p)
+			end
+		end
+	end
+end
+
 -- Shows `prepared` for review as one operation, announced, and waits for
 -- the user. Returns each file's proposal once it's decided.
 local function offer(prepared: { Prepared }, reason: string?, tab: string?): { Proposal }
@@ -656,6 +706,7 @@ local function offer(prepared: { Prepared }, reason: string?, tab: string?): { P
 		table.insert(paths, file.path)
 		changes += #file.hunks
 	end
+	replace_overlapping(prepared)
 	local op = operations.run(reason or `changes to {where(paths)}`, function() end, "agent")
 	local started: { Proposal } = {}
 	for _, file in prepared do
