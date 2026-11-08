@@ -1485,10 +1485,10 @@ models.roles.agent = { provider = "mistral", model = "zai-glm-5-3", effort = "hi
 | `space i f` | Fix the problem the language server reports on this line, as proposed changes to review |
 | `space i c` | Draft a description of the changes in progress; `a` uses it (`jj describe`, or a git commit of what's staged) |
 
-Fixes come like an agent's proposals: `] o` goes to each change, `space o a`
-or `space o r` accepts or rejects it, and what you accept undoes as one
-operation. These use the `fast` role; `:set assist-role reasoning` asks
-another.
+Fixes come like an agent's proposals: `space o A` or `space o R` accepts or
+rejects the whole fix (`] o` and `space o a` go change by change), and what
+you accept undoes as one operation. These use the `fast` role; `:set
+assist-role reasoning` asks another.
 
 ### The context
 

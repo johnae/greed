@@ -135,7 +135,7 @@ test("new whole lines show as lines under the ones they replace", function(t)
 	propose(t, path, { { old_text = "two\n", new_text = "2\nzwei\n" } })
 	local rows = t:draw(30, 8)
 	assert(rows[1] == "one", rows[1])
-	assert(rows[2] == "two accept reject note", "the old line stays, marked: " .. rows[2])
+	assert(rows[2] == "two accept all reject all note", "the old line stays, marked: " .. rows[2])
 	assert(rows[3] == "2" and rows[4] == "zwei", `then the new ones: {rows[3]} / {rows[4]}`)
 	assert(rows[5] == "three", rows[5])
 
@@ -182,7 +182,7 @@ test("in a changed line, the words that changed stand out on both sides", functi
 	assert(new[1].text == "let total = " and new[3].text == " + 1", new[1].text)
 end)
 
-test("each change has accept, reject and note buttons to click", function(t)
+test("a proposal's first change has buttons that decide the whole of it", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\n" })
 	local path = dir .. "/a.txt"
 	greed.open(path)
@@ -191,18 +191,33 @@ test("each change has accept, reject and note buttons to click", function(t)
 		{ old_text = "one\n", new_text = "1\n" },
 		{ old_text = "three\n", new_text = "3\n" },
 	})
-	local rows = t:draw(30, 8)
-	assert(rows[1] == "one accept reject note", rows[1])
-	-- "accept" after "one ".
+	local rows = t:draw(40, 8)
+	assert(rows[1] == "one accept all reject all note", rows[1])
+	assert(table.find(rows, "three"), "the other change has none: " .. table.concat(rows, " / "))
+	-- "accept all" after "one ".
 	t:mouse("press", 5, 0)
 	local buffer = greed.view():buffer()
-	assert(buffer:text() == "1\ntwo\nthree\n", buffer:text())
-	rows = t:draw(30, 8)
-	local line = table.find(rows, "three accept reject note")
+	assert(buffer:text() == "1\ntwo\n3\n", buffer:text())
+	assert(answer() == `accepted 2 of 2 changes to {path}`, answer())
+end)
+
+test("deciding the first change alone moves the buttons to the next", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one\ntwo\nthree\n" })
+	local path = dir .. "/a.txt"
+	greed.open(path)
+	greed.view():buffer():set_line_numbers(false)
+	local answer = propose(t, path, {
+		{ old_text = "one\n", new_text = "1\n" },
+		{ old_text = "three\n", new_text = "3\n" },
+	})
+	t:keys("space o a")
+	local rows = t:draw(40, 8)
+	local line = table.find(rows, "three accept all reject all note")
 	assert(line, table.concat(rows, " / "))
-	-- "reject" after "three accept ".
-	t:mouse("press", 14, line - 1)
-	assert(buffer:text() == "1\ntwo\nthree\n")
+	-- "reject all" after "three accept all ".
+	t:mouse("press", 17, line - 1)
+	local buffer = greed.view():buffer()
+	assert(buffer:text() == "1\ntwo\nthree\n", buffer:text())
 	assert(answer() == `accepted 1 of 2 changes to {path}; the user rejected change 2`, answer())
 end)
 
@@ -343,12 +358,43 @@ test("the message says how many, where in the project, and the keys", function(t
 	local messages = t:messages()
 	assert(
 		messages[#messages]
-			== "an agent proposes 1 change in src/a.txt (numbers): ] o goes to each, space o a accepts, space o r rejects",
+			== "an agent proposes 1 change in src/a.txt (numbers): space o A accepts all of it, space o R rejects it, ] o goes through it",
 		messages[#messages]
 	)
 end)
 
-test("space o o lists a change that adds text by the text it adds", function(t)
+test("space o o lists each proposal once, with its files and changes", function(t)
+	local dir = t:tempdir({ ["a.txt"] = "one two\n", ["b.txt"] = "three\n" })
+	greed.project.open(dir)
+	greed.command({
+		name = "test-propose-two",
+		run = function()
+			agent.propose_files({
+				{
+					path = `{dir}/a.txt`,
+					edits = {
+						{ old_text = "one", new_text = "1" },
+						{ old_text = "two", new_text = "2" },
+					},
+				},
+				{ path = `{dir}/b.txt`, edits = { { old_text = "three", new_text = "3" } } },
+			}, "numbers")
+		end,
+	})
+	t:buffer("|x")
+	t:run("test-propose-two")
+	t:keys("space o o")
+	local list = table.concat(t:floats(), "\n")
+	assert(string.find(list, "numbers: 3 changes in a.txt, b.txt", 1, true), list)
+	t:keys("enter")
+	assert(greed.view():buffer():path() == `{dir}/a.txt`, "the first file opens")
+	t:keys("space o A")
+	assert(greed.load(`{dir}/b.txt`):text() == "3\n", greed.load(`{dir}/b.txt`):text())
+	assert(greed.load(`{dir}/a.txt`):text() == "1 2\n", greed.load(`{dir}/a.txt`):text())
+	assert(agent.pending() == 0, "the whole of it, in both files")
+end)
+
+test("a proposal for a file not on screen says space o o lists it", function(t)
 	local dir = t:tempdir({ ["a.txt"] = "one\n" })
 	local path = dir .. "/a.txt"
 	local buffer = greed.load(path)
@@ -370,7 +416,7 @@ test("space o o lists a change that adds text by the text it adds", function(t)
 	t:keys("space o o")
 	local list = t:floats()
 	assert(
-		string.find(table.concat(list, "\n"), "a.txt:2: + - added", 1, true),
+		string.find(table.concat(list, "\n"), "a.txt: + - added", 1, true),
 		table.concat(list, "\n")
 	)
 	t:keys("esc")

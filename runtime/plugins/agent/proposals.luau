@@ -1,15 +1,17 @@
 -- Edits an agent proposes, shown in the buffer for review before they
 -- apply. The old text is marked and the new text shows after it, or as
 -- lines under it when whole lines change; nothing changes until you
--- accept.
+-- accept. A proposal is one change, decided as a whole; going change by
+-- change is there when you want it.
 --
+--   space o A  accept the whole of the proposals in this file
+--   space o R  reject them
+--   space o N  reject them, telling the agent what to do instead
 --   ] o  [ o   the next or previous proposed change
 --   space o a  accept the changes your selections touch
 --   space o r  reject them
 --   space o n  reject them, telling the agent what to do instead
---   space o A  accept every change in the file
---   space o R  reject every change in the file
---   space o o  pick from every pending change
+--   space o o  pick a proposal, each agent's change
 --   space o d  the file with its changes in, side by side (compare.luau)
 --
 -- The agent's propose call waits for your decision and then learns which
@@ -203,8 +205,8 @@ local function line_marks(
 	return marks
 end
 
--- Buttons after the change's first line, which click the keys' commands
--- with the cursor on the change.
+-- Buttons after the first line of a proposal's first change, which decide
+-- on the whole of it: every change, in every file.
 local function buttons(at: Span): { greed.Mark }
 	local function button(text: string, action: string): greed.Mark
 		return {
@@ -217,17 +219,19 @@ local function buttons(at: Span): { greed.Mark }
 		}
 	end
 	return {
-		button("accept", "proposal-accept"),
-		button("reject", "proposal-reject"),
-		button("note", "proposal-note"),
+		button("accept all", "proposal-accept-all"),
+		button("reject all", "proposal-reject-all"),
+		button("note", "proposal-note-all"),
 	}
 end
 
+-- Draws `hunk` at `at`, with the buttons when it's the first of `p`'s
+-- changes still waiting.
 local function draw(p: Proposal, hunk: Hunk, at: Span)
 	local buffer = p.buffer
 	buffer:decorate(ns(hunk), { { from = at.from, to = at.to, style = "diff.minus" } })
 	local line, newline = line_above(buffer, hunk, at)
-	local marks = buttons(at)
+	local marks: { greed.Mark } = if p.pending[1] == hunk then buttons(at) else {}
 	if line then
 		for _, mark in line_marks(buffer, hunk, at, line, newline) do
 			table.insert(marks, mark)
@@ -286,6 +290,7 @@ local function decide(
 	note: string?
 )
 	local edits, pending = {}, {}
+	local first = p.pending[1]
 	-- Hunks whose text you changed since the agent proposed them: taking
 	-- one would lose your change, so it stays pending.
 	local changed_since = 0
@@ -323,6 +328,14 @@ local function decide(
 				end
 			end)
 		end)
+	end
+	-- The buttons go to the first change still waiting.
+	local next_first = pending[1]
+	if next_first and next_first ~= first then
+		local at = position(p, next_first)
+		if at then
+			draw(p, next_first, at)
+		end
 	end
 	if #pending == 0 then
 		local index = table.find(proposals, p)
@@ -428,19 +441,56 @@ greed.command({
 	end,
 })
 
+-- Decides on the whole of every proposal this file is part of: each of
+-- its changes, in every file it changes.
+local function decide_whole(ctx: greed.Context, accept: boolean, note: string?)
+	if not greed.plugin.started_within("commands") then
+		error("only you decide on proposed changes", 0)
+	end
+	local ops: { [operations.Operation]: boolean } = {}
+	for _, p in in_buffer(ctx.buffer) do
+		ops[p.op] = true
+	end
+	if next(ops) == nil then
+		greed.echo("no proposed changes in this file")
+		return
+	end
+	for _, p in table.clone(proposals) do
+		if ops[p.op] then
+			decide(p, everything, accept, note)
+		end
+	end
+end
+
 greed.command({
 	name = "proposal-accept-all",
-	doc = "Accept every proposed change in this file",
+	doc = "Accept the whole of the proposals in this file, in every file they change",
 	run = function(ctx)
-		decide_here(ctx, everything, true)
+		decide_whole(ctx, true)
 	end,
 })
 
 greed.command({
 	name = "proposal-reject-all",
-	doc = "Reject every proposed change in this file",
+	doc = "Reject the whole of the proposals in this file, in every file they change",
 	run = function(ctx)
-		decide_here(ctx, everything, false)
+		decide_whole(ctx, false)
+	end,
+})
+
+greed.command({
+	name = "proposal-note-all",
+	doc = "Reject the whole of the proposals in this file, telling the agent what to do instead",
+	run = function(ctx)
+		if #in_buffer(ctx.buffer) == 0 then
+			greed.echo("no proposed changes in this file")
+			return
+		end
+		local note = core.prompt.ask("Tell the agent")
+		if note == nil or note == "" then
+			return
+		end
+		decide_whole(ctx, false, note)
 	end,
 })
 
@@ -490,33 +540,58 @@ greed.command({
 
 greed.command({
 	name = "proposals",
-	doc = "Pick a proposed change to review",
+	doc = "Pick a proposal to review: each agent's change, with every file it changes",
 	run = function()
-		local items = {}
+		-- Each change in the order it came: its files, how many changes wait,
+		-- and where the first one is.
+		type Change = {
+			op: operations.Operation,
+			files: { string },
+			waiting: number,
+			first: { p: Proposal, at: greed.Mark }?,
+		}
+		local changes: { Change } = {}
+		local by_op: { [operations.Operation]: Change } = {}
 		for _, p in proposals do
-			for _, hunk in p.pending do
-				local at = position(p, hunk)
-				if at then
-					local line = p.buffer:line_of(at.from) + 1
-					-- What it replaces, or for text it adds, the text.
-					local first = if hunk.old == ""
-						then "+ " .. (string.match(hunk.new, "^[^\n]*") or "")
-						else string.match(hunk.old, "^[^\n]*")
-					table.insert(items, {
-						label = `{core.project.short(p.path)}:{line}: {first}`,
-						value = { p = p, at = at },
-					})
-				end
+			local change = by_op[p.op]
+			if change == nil then
+				local made: Change = { op = p.op, files = {}, waiting = 0 }
+				change = made
+				by_op[p.op] = made
+				table.insert(changes, made)
+			end
+			table.insert(change.files, core.project.short(p.path))
+			change.waiting += #p.pending
+			local hunk = p.pending[1]
+			local at = if hunk and change.first == nil then position(p, hunk) else nil
+			if at then
+				change.first = { p = p, at = at }
+			end
+		end
+		local items = {}
+		for _, change in changes do
+			local first = change.first
+			if first then
+				local count = if change.waiting == 1 then "1 change" else `{change.waiting} changes`
+				-- What the first change replaces, or for text it adds, the text.
+				local hunk = first.p.pending[1]
+				local shown = if hunk.old == ""
+					then "+ " .. (string.match(hunk.new, "^[^\n]*") or "")
+					else string.match(hunk.old, "^[^\n]*") or ""
+				table.insert(items, {
+					label = `{change.op.name}: {count} in {table.concat(change.files, ", ")}: {shown}`,
+					value = first,
+				})
 			end
 		end
 		if #items == 0 then
 			greed.echo("no proposed changes")
 			return
 		end
-		picker.pick("Proposed changes", items, function(item)
-			local p, at = item.value.p, item.value.at
-			greed.open(p.path)
-			select_mark(greed.view(), at)
+		picker.pick("Proposals", items, function(item)
+			local first = item.value
+			greed.open(first.p.path)
+			select_mark(greed.view(), first.at)
 		end)
 	end,
 })
@@ -532,6 +607,7 @@ greed.keymap.bind({ layer = "leader" }, {
 	["o n"] = "proposal-note",
 	["o A"] = "proposal-accept-all",
 	["o R"] = "proposal-reject-all",
+	["o N"] = "proposal-note-all",
 	["o o"] = "proposals",
 })
 
@@ -588,8 +664,8 @@ local function announce(changes: number, files: { string }, reason: string?)
 	local why = if reason then ` ({reason})` else ""
 	local buffer = if #files == 1 then greed.buffer_for(files[1]) else nil
 	local how = if buffer and #buffer:views() > 0
-		then `{keys_for("proposal-next")} goes to each, {keys_for("proposal-accept")} accepts, `
-			.. `{keys_for("proposal-reject")} rejects`
+		then `{keys_for("proposal-accept-all")} accepts all of it, {keys_for("proposal-reject-all")} `
+			.. `rejects it, {keys_for("proposal-next")} goes through it`
 		else `{keys_for("proposals")} lists them`
 	greed.echo(`an agent proposes {count} in {where(files)}{why}: {how}`)
 end
@@ -944,6 +1020,17 @@ core.objects.kind({
 })
 core.actions.command("proposal", "accept", "proposal-accept", "Accept its first undecided change")
 core.actions.command("proposal", "reject", "proposal-reject", "Reject its first undecided change")
-core.actions.command("proposal", "accept all", "proposal-accept-all", "Accept every change in it")
+core.actions.command(
+	"proposal",
+	"accept all",
+	"proposal-accept-all",
+	"Accept every change in it, in every file"
+)
+core.actions.command(
+	"proposal",
+	"reject all",
+	"proposal-reject-all",
+	"Reject every change in it, in every file"
+)
 
 return M

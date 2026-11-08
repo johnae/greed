@@ -217,17 +217,21 @@ it.
 with new text. In the buffer the old text is struck through with the new
 text after it; when whole lines change, the new lines show under the old
 ones with the changed words picked out. A message says how many changes
-came in, where, and the keys to review them. Nothing changes until you
-decide, with the keys or by clicking `accept`, `reject` or `note` after a
-change:
+came in, where, and the keys to review them.
+
+A proposal is one change, so you decide on all of it: look it over, then
+accept or reject the lot, with the keys or by clicking `accept all`,
+`reject all` or `note` after its first change. Nothing changes until you
+do. Going change by change is there too, when only part of it is right:
 
 | Keys | |
 |---|---|
+| `space o A` `space o R` | Accept or reject the whole of the proposals in this file, in every file they change |
+| `space o N` | Reject them and tell the agent what to do instead: what you type goes back to it, so it can propose again |
+| `space o o` | Pick a proposal: each agent's change, with the files it changes |
 | `] o` `[ o` | Next and previous proposed change |
-| `space o a` `space o r` | Accept or reject the changes your selections touch |
-| `space o n` | Reject them and tell the agent what to do instead: what you type goes back to it with the change, so it can propose again |
-| `space o A` `space o R` | Accept or reject every change in the file |
-| `space o o` | Pick from every pending change |
+| `space o a` `space o r` | Accept or reject only the changes your selections touch |
+| `space o n` | Reject those and tell the agent what to do instead |
 | `space o d` | Show the file with every change in, beside it; again to hide |
 
 Pending changes follow your edits; one whose own text you edited isn't
