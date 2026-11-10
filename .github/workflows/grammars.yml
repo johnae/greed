@@ -1,0 +1,47 @@
+# Builds the grammars in dist/grammars.txt (dist/grammars.sh) and, given a
+# tag like grammars-1, publishes them as a release the languages plugin
+# downloads them from. Without a tag it only builds them, as an artifact
+# to check.
+name: grammars
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, like grammars-1; empty only builds"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TREE_SITTER: "0.26.11"
+    steps:
+      - uses: actions/checkout@v7
+      - name: tree-sitter
+        run: |
+          curl -fsSL "https://github.com/tree-sitter/tree-sitter/releases/download/v$TREE_SITTER/tree-sitter-linux-x64.gz" \
+            | gunzip >"$RUNNER_TEMP/tree-sitter"
+          chmod +x "$RUNNER_TEMP/tree-sitter"
+          echo "$RUNNER_TEMP" >>"$GITHUB_PATH"
+      - name: build
+        run: dist/grammars.sh target/grammars
+      - uses: actions/upload-artifact@v7
+        with:
+          name: grammars
+          path: target/grammars
+      - name: release
+        if: inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release create "$TAG" target/grammars/* \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+            --title "Grammars ($TAG)" \
+            --notes "Tree-sitter grammars without WebAssembly releases of their own, built from dist/grammars.txt with Helix's queries, for Greed to download."

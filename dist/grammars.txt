@@ -1,0 +1,17 @@
+# Grammars that publish no WebAssembly of their own, built by
+# dist/grammars.sh at the revisions Helix uses. One a line: the grammar's
+# name (a language's `grammar`), its GitHub repository, the commit, and
+# the Helix query folder its queries come from.
+commonlisp          tree-sitter-grammars/tree-sitter-commonlisp     32323509b3d9fe96607d151c2da2c9009eb13a2f  common-lisp
+gitattributes       mtoohey31/tree-sitter-gitattributes             3dd50808e3096f93dccd5e9dc7dc3dba2eb12dc4  git-attributes
+gitignore           shunsambongi/tree-sitter-gitignore              f4685bf11ac466dd278449bcfe5fd014e94aa504  git-ignore
+glimmer-javascript  ember-tooling/tree-sitter-glimmer-javascript    d9cf7a2f1dad3c6b660148eaf77e955d418fdb8b  gjs
+glimmer-typescript  ember-tooling/tree-sitter-glimmer-typescript    12d98944c1d5077b957cbdb90d663a7c4d50118c  gts
+gotmpl              ngalaiko/tree-sitter-go-template                aa71f63de226c5592dfbfc1f29949522d7c95fac  gotmpl
+ini                 justinmk/tree-sitter-ini                        e4018b5176132b4f3c5d6e61cea383f42288d0f5  ini
+janet-simple        sogaiu/tree-sitter-janet-simple                 3c1bdcfff374138da03a1db25c75efce623910fe  janet
+jinja2              varpeti/tree-sitter-jinja2                      a533cd3c33aea6acb0f9bf9a56f35dcfe6a8eb53  jinja
+proto               sdoerner/tree-sitter-proto                      35a6a3b543e418b7037328261f40e912c767c598  protobuf
+qmljs               yuja/tree-sitter-qmljs                          0b2b25bcaa7d4925d5f0dda16f6a99c588a437f1  qml
+robots-txt          opa-oz/tree-sitter-robots-txt                   0c066107e3548de79316a6a4ec771e2f7cf7c468  robots.txt
+scheme              6cdh/tree-sitter-scheme                         c6cb7c7d7a04b3f5d999c28e2e9c0c31b2d50ece  scheme

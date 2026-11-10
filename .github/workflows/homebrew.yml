@@ -17,6 +17,8 @@ permissions:
 
 jobs:
   tap:
+    # Only Greed's own releases; grammars-N ones (grammars.yml) aren't.
+    if: startsWith(github.event.release.tag_name || inputs.tag, 'v')
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
