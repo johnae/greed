@@ -157,6 +157,37 @@ M.sources.requirements = grammars(
 	"35af73ba57bb324b588dc48ce7b788a5081e415cdd92062fda830eb3d14f3eb9"
 )
 
+-- Grammars that publish no WebAssembly of their own, built at the
+-- revisions Helix uses and released by Greed with Helix's queries
+-- (dist/grammars.txt).
+local BUILT = "grammars-1"
+for name, sha256 in
+	{
+		commonlisp = "c5dce5f55c5acf903594b53b648481b890770eadbdbd77d9bb2293e35b28e65b",
+		gitattributes = "2292a3815899cd5b6043f6b38da15420060bf8fcb98bf0883f8664f639bb600a",
+		gitignore = "64c755890ede296c5f4e4f0e3d92cf84203b10412743621603aff303de890bbb",
+		["glimmer-javascript"] = "c025f9e2976f807369e5d3474702ac4b0d61588eca75e59b387d1e501d144af0",
+		["glimmer-typescript"] = "6f0a980ee2e17ccb572f42a5322c8a5b01219f0f3498925cdbcb7081e43bb431",
+		gotmpl = "25d8d5c2aa53e6f39bd5747fad41f177e17c6ac034913b1ac67d881921d4413c",
+		ini = "04f80fde1a3a67dda12ab6150cba216459419c44bb19004940314900d742dd55",
+		["janet-simple"] = "af771fe0952d0730578122867668b3443fffd32ad410cc97bf70a39dab7d53c4",
+		jinja2 = "6c91ede1fde791b149717b4ffbb354148fc46ae34b46ea908e3e7233fe023794",
+		proto = "bab4a6268209a501ceda995d18b6426f641d649d1cf93e532cbc9b8cc70db236",
+		qmljs = "f2c9235a4f21a2fb7303d8d7e1cb907e3a816c0f57155ee62e374bda7bf863f1",
+		["robots-txt"] = "dab04825619d296ed821620e76f30e6f3fac1eec84b61e62768ca2189ec1e522",
+		scheme = "01d35cd2c3b5e6730dccb6ecfcb3594c595954bde7f9b99de3ecfd141fb5c7bf",
+	} :: { [string]: string }
+do
+	local base = `https://github.com/johnae/greed/releases/download/{BUILT}/{name}`
+	M.sources[name] = {
+		repo = "johnae/greed",
+		version = BUILT,
+		sha256 = sha256,
+		url = base .. ".wasm",
+		queries = base .. ".{kind}.scm",
+	}
+end
+
 -- Capture names other editors use, as Greed's (see the highlighting docs).
 local NAMES: { [string]: string? } = {
 	number = "constant.numeric",

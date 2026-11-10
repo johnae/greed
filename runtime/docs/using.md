@@ -3120,8 +3120,16 @@ Docker Compose files as YAML, `.env` files and PKGBUILDs as Bash. XML
 (and MSBuild projects), ERB and EJS templates, `requirements.txt`, CodeQL
 and tree-sitter queries download theirs the same way as the languages
 above.
-A language of your own can do the same, and uses the other's queries until
-it has its own:
+
+So do Protobuf, Common Lisp, Scheme (and Racket, Dune and Hy), Janet,
+QML, Jinja and Nunjucks, Go templates and Helm charts, INI and systemd
+units, `.gitignore` and `.gitattributes`, `robots.txt`, and Glimmer's
+`.gjs` and `.gts`. Their grammars don't publish WebAssembly builds, so
+Greed builds them at the versions Helix uses and downloads them from its
+own releases, with Helix's queries.
+
+A language of your own can borrow a grammar too, and uses the other
+language's queries until it has its own:
 
 ```luau
 require("@languages").set("cue", { extensions = { "cue" }, grammar = "go" })
