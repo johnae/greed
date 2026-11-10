@@ -401,6 +401,60 @@ fn grammars_load_from_webassembly_and_parse_like_built_in_ones() {
     assert_eq!(captured(&all, at..at + 2), ["constant.numeric"], "{all:?}");
 }
 
+/// Highlights of a buffer in `language` with `text`, after one parse.
+fn highlights_as(
+    ed: &mut Editor,
+    syntax: &mut Syntax,
+    language: &str,
+    text: &str,
+) -> Vec<Highlight> {
+    let buffer = ed.create_buffer("file", text);
+    ed.set_language(buffer, Some(language.into()));
+    syntax.update(ed);
+    wait(syntax);
+    syntax.highlights(buffer, ed.buffer(buffer).text(), 0..text.len())
+}
+
+#[test]
+fn a_language_can_use_another_ones_grammar_and_queries() {
+    let mut ed = Editor::new(ClientId(1));
+    let mut syntax = Syntax::new();
+    assert!(syntax.share_grammar("starlark", "klingon").is_err());
+    syntax
+        .set_query("python", "highlights", Some("\"def\" @custom".into()))
+        .unwrap();
+    syntax
+        .set_query("python", "folds", Some("(block) @fold".into()))
+        .unwrap();
+    syntax.share_grammar("starlark", "python").unwrap();
+    assert!(syntax.names().contains(&"starlark"));
+
+    // Python's queries, as long as it has none of its own.
+    let text = "def f():\n    pass\n";
+    let all = highlights_as(&mut ed, &mut syntax, "starlark", text);
+    assert_eq!(captured(&all, 0..3), ["custom"], "{all:?}");
+    assert_eq!(
+        syntax.query_source("starlark", "folds").as_deref(),
+        Some("(block) @fold")
+    );
+
+    // Python's changing reaches it too.
+    syntax
+        .set_query("python", "highlights", Some("\"def\" @changed".into()))
+        .unwrap();
+    let all = highlights_as(&mut ed, &mut syntax, "starlark", text);
+    assert_eq!(captured(&all, 0..3), ["changed"], "{all:?}");
+
+    // Its own come first, and leave Python's alone.
+    syntax
+        .set_query("starlark", "highlights", Some("\"def\" @own".into()))
+        .unwrap();
+    let all = highlights_as(&mut ed, &mut syntax, "starlark", text);
+    assert_eq!(captured(&all, 0..3), ["own"], "{all:?}");
+    let all = highlights_as(&mut ed, &mut syntax, "python", text);
+    assert_eq!(captured(&all, 0..3), ["changed"], "{all:?}");
+}
+
 /// A file big enough that parsing it again takes a while.
 const LINE: &str = "fn f() { let x = 1; }\n";
 const LINES: usize = 20_000;

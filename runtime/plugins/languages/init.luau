@@ -20,8 +20,17 @@ export type Language = defaults.Language
 
 local languages: { [string]: Language } = {}
 
+-- Has `name` use the grammar `language` names, if that one's here.
+local function share(name: string, language: Language)
+	local other = language.grammar
+	if other and other ~= name and table.find(greed.grammars(), other) then
+		greed.syntax.share_grammar(name, other)
+	end
+end
+
 -- Tells the editor about a language's files.
 local function apply(name: string, language: Language)
+	share(name, language)
 	greed.filetype(name, { extensions = language.extensions, names = language.names })
 	comment.set(name, language.comment)
 	core.pairs.set(name, language.pairs)
@@ -201,15 +210,30 @@ end)
 
 M.grammars = grammars
 
+-- The grammar `language` is highlighted with: its own, or the one it
+-- names.
+local function grammar_of(language: string): string
+	local known = languages[language]
+	return known and known.grammar or language
+end
+
 --- Sets up the grammar for `language` if Greed knows where to get one,
---- downloading it the first time. Returns whether it has one now.
+--- downloading it the first time, or the one it uses of another
+--- language. Returns whether it has one now.
 function M.ensure_grammar(language: string): boolean
-	return grammars.ensure(language, query_files.provides)
+	if not grammars.ensure(grammar_of(language), query_files.provides) then
+		return false
+	end
+	local known = languages[language]
+	if known then
+		share(language, known)
+	end
+	return true
 end
 
 greed.on("buffer.opened", function(event: greed.BufferChanged)
 	local language = event.buffer:language()
-	if language and grammars.sources[language] then
+	if language and grammars.sources[grammar_of(language)] then
 		local ok, err = pcall(M.ensure_grammar, language)
 		if not ok then
 			greed.echo(tostring(err))
@@ -251,7 +275,7 @@ greed.command({
 	args = { { name = "language", doc = "e.g. ruby" } },
 	run = function(ctx)
 		local language = ctx.args[1] or ctx.buffer:language()
-		if language == nil or grammars.sources[language] == nil then
+		if language == nil or grammars.sources[grammar_of(language)] == nil then
 			error(`Greed doesn't know where to get a grammar for {language or "this buffer"}`, 0)
 		end
 		if M.ensure_grammar(language) then
@@ -305,7 +329,7 @@ local function health_report(): (string, { greed.Mark })
 		local line = add(string.format("%-12s", name))
 		if have[name] then
 			line ..= add("highlighting  ")
-		elseif grammars.sources[name] then
+		elseif grammars.sources[grammar_of(name)] then
 			line ..= add("downloads     ")
 		else
 			line ..= add("no grammar    ", "ui.health.missing")

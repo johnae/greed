@@ -174,6 +174,28 @@ test("a plugin's query files replace or extend the bundled ones, until it goes",
 	assert(greed.syntax.query("rust", "textobjects") == bundled, "back to the bundled one")
 end)
 
+test("Starlark uses Python's grammar and queries, under its own name", function(t)
+	assert(
+		greed.language_of("BUILD.bazel") == "starlark",
+		tostring(greed.language_of("BUILD.bazel"))
+	)
+	assert(table.find(greed.grammars(), "starlark"), "it has a grammar")
+	t:buffer("def rule(name):\n    |return name\n")
+	local buffer = greed.view():buffer()
+	buffer:set_language("starlark")
+	local tree = assert(buffer:tree(), "it parses")
+	assert(tree.kind == "module", tree.kind)
+	t:keys("m a f")
+	t:expect("^def rule(name):\n    return name|\n")
+
+	-- A language set from your config can name one too.
+	languages.set("klingon", { extensions = { "tlh" }, grammar = "rust" })
+	assert(table.find(greed.grammars(), "klingon"), "klingon has Rust's grammar")
+	assert(
+		greed.syntax.query("klingon", "textobjects") == greed.syntax.query("rust", "textobjects")
+	)
+end)
+
 test("m a f selects a Luau function", function(t)
 	t:buffer("local function f(a, b)\n\treturn |a\nend\n")
 	greed.view():buffer():set_language("luau")

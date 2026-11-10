@@ -64,7 +64,11 @@ def entry [language: record, servers: record] {
     let comment = (first_of ($language | get --optional comment-token)
         | default (first_of ($language | get --optional comment-tokens)))
     let indent = ($language | get --optional indent)
+    let grammar = ($language | get --optional grammar)
     mut fields = []
+    if ($grammar != null and $grammar != $language.name) {
+        $fields = ($fields | append $"grammar = (quote $grammar)")
+    }
     if ($extensions | is-not-empty) { $fields = ($fields | append $"extensions = (list $extensions)") }
     if ($names | is-not-empty) { $fields = ($fields | append $"names = (list $names)") }
     if ($roots | is-not-empty) { $fields = ($fields | append $"roots = (list $roots)") }

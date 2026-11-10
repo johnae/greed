@@ -105,6 +105,9 @@ pub struct Language {
     highlights: OnceLock<Highlights>,
     /// The grammar's own injections query, if it has one.
     default_injections: Option<&'static str>,
+    /// The language whose grammar this one shares, and whose queries it
+    /// uses where it has none of its own.
+    shares: Option<&'static str>,
 }
 
 impl Language {
@@ -120,6 +123,7 @@ impl Language {
             default_highlights: highlights,
             highlights: OnceLock::new(),
             default_injections: injections,
+            shares: None,
         }
     }
 
@@ -132,6 +136,19 @@ impl Language {
             default_highlights: "",
             highlights: OnceLock::new(),
             default_injections: None,
+            shares: None,
+        }
+    }
+
+    /// Language `name` parsed with `other`'s grammar.
+    fn sharing(name: &'static str, other: &Language) -> Self {
+        Self {
+            name,
+            grammar: other.grammar.clone(),
+            default_highlights: other.default_highlights,
+            highlights: OnceLock::new(),
+            default_injections: other.default_injections,
+            shares: Some(other.shares.unwrap_or(other.name)),
         }
     }
 
@@ -359,7 +376,8 @@ pub struct Syntax {
     /// loads them. Made with the first one, since making it takes longer
     /// than all the rest of starting up.
     wasm: Option<(Engine, WasmStore)>,
-    /// The languages loaded that way.
+    /// The languages added at run time: loaded that way, or sharing
+    /// another's grammar.
     loaded: Vec<&'static str>,
     pub max_bytes: usize,
 }
@@ -422,32 +440,55 @@ impl Syntax {
         let grammar = store
             .load_language(symbol, bytes)
             .map_err(|err| err.to_string())?;
-        // Language names live as long as the editor, like the built-in ones.
-        let name: &'static str = match self.languages.iter().find(|l| l.name == language) {
+        let name = self.lasting_name(language);
+        self.add(Language::loaded(name, grammar));
+        Ok(())
+    }
+
+    /// Lets `language` use the grammar of `other`, like Starlark Python's.
+    /// Its queries are `other`'s, except those set for it. Buffers in it are
+    /// parsed again.
+    pub fn share_grammar(&mut self, language: &str, other: &str) -> Result<(), String> {
+        let other = self
+            .language_named(other)
+            .ok_or_else(|| format!("there's no grammar for {other}"))?;
+        if other.name != language {
+            let name = self.lasting_name(language);
+            self.add(Language::sharing(name, &other));
+        }
+        Ok(())
+    }
+
+    /// `language` as a name that lives as long as the editor, like the
+    /// built-in ones.
+    fn lasting_name(&self, language: &str) -> &'static str {
+        match self.languages.iter().find(|l| l.name == language) {
             Some(known) => known.name,
             None => Box::leak(language.into()),
-        };
-        let loaded = Arc::new(Language::loaded(name, grammar));
+        }
+    }
+
+    /// Adds a language at run time, in place of one of the same name.
+    fn add(&mut self, language: Language) {
+        let name = language.name;
+        let language = Arc::new(language);
         self.languages.retain(|l| l.name != name);
-        self.languages.push(loaded.clone());
+        self.languages.push(language.clone());
         if !self.loaded.contains(&name) {
             self.loaded.push(name);
         }
         self.highlights.remove(name);
-        let source = |kind: &str| {
-            self.sources
-                .get(&(name.to_owned(), kind.to_owned()))
-                .cloned()
-        };
-        if let Some(highlights) = source("highlights") {
-            self.pending.insert(name, highlights);
+        if let Some(highlights) = self
+            .sources
+            .get(&(name.to_owned(), "highlights".to_owned()))
+        {
+            self.pending.insert(name, highlights.clone());
         }
-        let query = InjectionQuery::lazy(source("injections"));
+        let query = InjectionQuery::lazy(self.query_source(name, "injections"));
         let mut injections = (*self.injections).clone();
-        injections.insert(name, (loaded, Arc::new(query)));
+        injections.insert(name, (language, Arc::new(query)));
         self.injections = Arc::new(injections);
         self.buffers.retain(|_, state| state.language.name != name);
-        Ok(())
     }
 
     /// Every language with a grammar: the built-in ones and those loaded,
@@ -549,19 +590,21 @@ impl Syntax {
 
     /// Compiles the highlights query set for `language`, now that a buffer
     /// needs it. One that doesn't compile is reported, and the grammar's own
-    /// is used instead.
+    /// is used instead. The one set for the language it shares a grammar
+    /// with compiles too, since it's used when it has none of its own.
     fn prepare(&mut self, language: &Language) {
-        let Some(source) = self.pending.remove(language.name) else {
-            return;
-        };
-        match Query::new(&language.grammar, &source) {
-            Ok(query) => {
-                self.highlights
-                    .insert(language.name, Highlights::from(query));
+        for name in [Some(language.name), language.shares].into_iter().flatten() {
+            let Some(source) = self.pending.remove(name) else {
+                continue;
+            };
+            match Query::new(&language.grammar, &source) {
+                Ok(query) => {
+                    self.highlights.insert(name, Highlights::from(query));
+                }
+                Err(err) => self
+                    .problems
+                    .push(format!("the {name} highlights query: {err}")),
             }
-            Err(err) => self
-                .problems
-                .push(format!("the {} highlights query: {err}", language.name)),
         }
     }
 
@@ -707,8 +750,20 @@ impl Syntax {
                                 .or_else(|| grammar.default_injections.map(str::to_owned)),
                         ),
                     };
+                    let query = Arc::new(query);
                     let mut injections = (*self.injections).clone();
-                    injections.insert(grammar.name, (grammar.clone(), Arc::new(query)));
+                    injections.insert(grammar.name, (grammar.clone(), query.clone()));
+                    // And of the languages sharing its grammar that have
+                    // none of their own.
+                    for sharing in &self.languages {
+                        if sharing.shares == Some(grammar.name)
+                            && !self
+                                .sources
+                                .contains_key(&(sharing.name.to_owned(), kind.to_owned()))
+                        {
+                            injections.insert(sharing.name, (sharing.clone(), query.clone()));
+                        }
+                    }
                     self.injections = Arc::new(injections);
                     // Parse everything again, to find the languages inside anew.
                     for state in self.buffers.values_mut() {
@@ -731,12 +786,19 @@ impl Syntax {
     }
 
     /// The query of `kind` for `language` that's in use: the one a plugin
-    /// set, or for highlights and injections the grammar's own.
+    /// set, the one set for the language it shares a grammar with, or for
+    /// highlights and injections the grammar's own.
     pub fn query_source(&self, language: &str, kind: &str) -> Option<String> {
         if let Some(source) = self.sources.get(&(language.to_owned(), kind.to_owned())) {
             return Some(source.clone());
         }
         let grammar = self.language_named(language)?;
+        if let Some(source) = grammar
+            .shares
+            .and_then(|other| self.sources.get(&(other.to_owned(), kind.to_owned())))
+        {
+            return Some(source.clone());
+        }
         match kind {
             "highlights" => Some(grammar.default_highlights.to_owned()),
             "injections" => grammar.default_injections.map(str::to_owned),
@@ -775,6 +837,7 @@ impl Syntax {
         let highlights = self
             .highlights
             .get(language.name)
+            .or_else(|| language.shares.and_then(|other| self.highlights.get(other)))
             .unwrap_or_else(|| language.default_highlights());
         let mut cursor = QueryCursor::new();
         cursor.set_byte_range(range.clone());

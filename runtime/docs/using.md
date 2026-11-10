@@ -3114,6 +3114,16 @@ installed) it downloads the grammar the first time you open a file in that
 language, checks it against a checksum Greed knows, and keeps it in
 `~/.cache/greed/grammars`.
 
+Some languages borrow another's grammar: Starlark (Bazel's `BUILD` and
+`.bzl` files) and Tiltfiles are highlighted as Python, JSONC as JSON,
+Docker Compose files as YAML, `.env` files and PKGBUILDs as Bash.
+A language of your own can do the same, and uses the other's queries until
+it has its own:
+
+```luau
+require("@languages").set("cue", { extensions = { "cue" }, grammar = "go" })
+```
+
 | | |
 |---|---|
 | `:health` | Which languages are built in, which download, and which have no grammar |

@@ -1928,9 +1928,13 @@ export type Syntax = {
 	--- Errors if the language's grammar can't compile it. The newest one set is
 	--- used, and unloading a plugin takes its queries away.
 	set_query: (language: string, kind: string, source: string?) -> (),
-	--- The `kind` query in use for `language`: the one set, or for "highlights"
-	--- and "injections" the one that comes with the grammar.
+	--- The `kind` query in use for `language`: the one set, the one set for the
+	--- language it shares a grammar with, or for "highlights" and "injections"
+	--- the one that comes with the grammar.
 	query: (language: string, kind: string) -> string?,
+	--- Lets `language` use the grammar of `other`, which has one, like Starlark
+	--- Python's. It uses `other`'s queries too, except those set for it.
+	share_grammar: (language: string, other: string) -> (),
 	--- Loads the grammar for `language` from a WebAssembly file, like one built
 	--- with `tree-sitter build --wasm`, so buffers in it get a syntax tree. `symbol`
 	--- is the grammar's own name when it differs, e.g. "c_sharp" for "c-sharp";

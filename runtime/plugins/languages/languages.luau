@@ -31,6 +31,9 @@ export type Server = {
 }
 
 export type Language = {
+	--- The language whose grammar and queries it's highlighted with when it
+	--- has none of its own, like "python" for Starlark.
+	grammar: string?,
 	extensions: { string }?,
 	--- Whole file names, like "Makefile".
 	names: { string }?,

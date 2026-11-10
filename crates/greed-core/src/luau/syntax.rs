@@ -312,6 +312,15 @@ pub(super) fn module(lua: &Lua, owner: &PluginId) -> LuaResult<Table> {
         )?,
     )?;
     syntax.set(
+        "share_grammar",
+        lua.create_function(|lua, (language, other): (String, String)| {
+            state_mut(lua)
+                .syntax
+                .share_grammar(&language, &other)
+                .map_err(mlua::Error::runtime)
+        })?,
+    )?;
+    syntax.set(
         "query",
         lua.create_function(|lua, (language, kind): (String, String)| {
             Ok(state(lua).syntax.query_source(&language, &kind))

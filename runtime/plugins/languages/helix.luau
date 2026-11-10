@@ -42,6 +42,7 @@ return {
 		indent = 2,
 	},
 	["protobuf"] = {
+		grammar = "proto",
 		extensions = { "proto" },
 		servers = { { "buf", "lsp", "serve", "--timeout", "0" }, { "pb", "lsp" }, { "protols" } },
 		comment = "//",
@@ -96,6 +97,7 @@ return {
 		indent = 4,
 	},
 	["janet"] = {
+		grammar = "janet-simple",
 		extensions = { "cgen", "janet", "jdn" },
 		roots = { "project.janet" },
 		comment = "#",
@@ -150,6 +152,7 @@ return {
 		indent = 2,
 	},
 	["jsonc"] = {
+		grammar = "json",
 		extensions = { "jsonc" },
 		names = { "bun.lock", ".devcontainer.json", "devcontainer.json" },
 		servers = { { "vscode-json-language-server", "--stdio" } },
@@ -157,6 +160,7 @@ return {
 		indent = 2,
 	},
 	["json-ld"] = {
+		grammar = "json",
 		extensions = { "jsonld" },
 		servers = { { "vscode-json-language-server", "--stdio" } },
 		indent = 2,
@@ -271,6 +275,7 @@ return {
 		indent = 2,
 	},
 	["jsx"] = {
+		grammar = "javascript",
 		extensions = { "jsx" },
 		roots = { "package.json", "jsconfig.json" },
 		servers = { { "typescript-language-server", "--stdio" } },
@@ -574,6 +579,7 @@ return {
 		indent = 2,
 	},
 	["dune"] = {
+		grammar = "scheme",
 		names = { "dune-project", "dune" },
 		roots = { "dune-project" },
 		comment = ";",
@@ -624,6 +630,7 @@ return {
 		indent = 2,
 	},
 	["nestedtext"] = {
+		grammar = "yaml",
 		extensions = { "nt" },
 		comment = "#",
 		indent = 4,
@@ -684,6 +691,7 @@ return {
 		comment = "%",
 	},
 	["tsq"] = {
+		grammar = "query",
 		names = {
 			"injections.scm",
 			"highlights.scm",
@@ -749,12 +757,14 @@ return {
 		extensions = { "pod" },
 	},
 	["racket"] = {
+		grammar = "scheme",
 		extensions = { "rkt", "rktd", "rktl", "scrbl", "zuo" },
 		servers = { { "racket", "-l", "racket-langserver" } },
 		comment = ";",
 		indent = 2,
 	},
 	["common-lisp"] = {
+		grammar = "commonlisp",
 		extensions = { "lisp", "asd", "cl", "l", "lsp", "ny", "podsl", "ros", "sexp" },
 		servers = { { "cl-lsp" } },
 		comment = ";",
@@ -815,9 +825,12 @@ return {
 		indent = 2,
 	},
 	["markdown-rustdoc"] = {
+		grammar = "markdown",
 		indent = 2,
 	},
-	["markdown.inline"] = {},
+	["markdown.inline"] = {
+		grammar = "markdown_inline",
+	},
 	["djot"] = {
 		extensions = { "dj", "djot" },
 		indent = 2,
@@ -855,6 +868,7 @@ return {
 		indent = 2,
 	},
 	["docker-compose"] = {
+		grammar = "yaml",
 		names = { "docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml" },
 		roots = { "docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml" },
 		servers = {
@@ -866,17 +880,20 @@ return {
 		indent = 2,
 	},
 	["git-commit"] = {
+		grammar = "gitcommit",
 		names = { "COMMIT_EDITMSG", "MERGE_MSG", "TAG_EDITMSG" },
 		servers = { { "commit-lsp", "run" } },
 		comment = "#",
 		indent = 4,
 	},
 	["git-notes"] = {
+		grammar = "gitcommit",
 		names = { "NOTES_EDITMSG", "EDIT_DESCRIPTION" },
 		comment = "#",
 		indent = 4,
 	},
 	["github-action"] = {
+		grammar = "yaml",
 		servers = {
 			{ "actions-languageserver", "--stdio" },
 			{ "yaml-language-server", "--stdio" },
@@ -906,10 +923,12 @@ return {
 		tab_width = 4,
 	},
 	["git-attributes"] = {
+		grammar = "gitattributes",
 		names = { ".gitattributes" },
 		comment = "#",
 	},
 	["git-ignore"] = {
+		grammar = "gitignore",
 		names = { ".gitignore_global", ".ignore", "CODEOWNERS", ".git-blame-ignore-revs" },
 		comment = "#",
 	},
@@ -959,6 +978,7 @@ return {
 		indent = 2,
 	},
 	["tfvars"] = {
+		grammar = "hcl",
 		extensions = { "tfvars" },
 		servers = { { "terraform-ls", "serve" } },
 		comment = "#",
@@ -982,6 +1002,7 @@ return {
 		indent = 2,
 	},
 	["quarto"] = {
+		grammar = "markdown",
 		extensions = { "qmd" },
 		roots = { "_quarto.yml" },
 		indent = 2,
@@ -1007,6 +1028,7 @@ return {
 		indent = 2,
 	},
 	["rmarkdown"] = {
+		grammar = "markdown",
 		extensions = { "rmd", "Rmd" },
 		servers = { { "R", "--vanilla", "--no-echo", "-e", "languageserver::run()" } },
 		indent = 2,
@@ -1019,10 +1041,12 @@ return {
 		indent = 2,
 	},
 	["erb"] = {
+		grammar = "embedded-template",
 		extensions = { "erb" },
 		indent = 2,
 	},
 	["ejs"] = {
+		grammar = "embedded-template",
 		extensions = { "ejs" },
 		indent = 2,
 	},
@@ -1159,6 +1183,7 @@ return {
 		indent = 2,
 	},
 	["starlark"] = {
+		grammar = "python",
 		extensions = { "bzl", "bazel", "star", "bxl" },
 		names = { "BUILD", "BUCK", "WORKSPACE", "WORKSPACE.bzlmod", "PACKAGE" },
 		servers = { { "starpls" }, { "buck2", "lsp" } },
@@ -1380,6 +1405,7 @@ return {
 		indent = 2,
 	},
 	["env"] = {
+		grammar = "bash",
 		names = {
 			".env",
 			".envrc",
@@ -1393,6 +1419,7 @@ return {
 		tab_width = 4,
 	},
 	["systemd"] = {
+		grammar = "ini",
 		extensions = {
 			"service",
 			"automount",
@@ -1445,6 +1472,7 @@ return {
 		indent = 1,
 	},
 	["qml"] = {
+		grammar = "qmljs",
 		extensions = { "qml" },
 		servers = { { "qmlls" } },
 		comment = "//",
@@ -1474,11 +1502,13 @@ return {
 		indent = 2,
 	},
 	["sage"] = {
+		grammar = "python",
 		extensions = { "sage" },
 		comment = "#",
 		indent = 4,
 	},
 	["msbuild"] = {
+		grammar = "xml",
 		extensions = { "proj", "vbproj", "csproj", "fsproj", "targets", "props" },
 		indent = 2,
 	},
@@ -1617,6 +1647,7 @@ return {
 		indent = 2,
 	},
 	["webc"] = {
+		grammar = "html",
 		extensions = { "webc" },
 		indent = 2,
 	},
@@ -1627,14 +1658,17 @@ return {
 		indent = 2,
 	},
 	["nunjucks"] = {
+		grammar = "jinja2",
 		extensions = { "njk" },
 		indent = 2,
 	},
 	["jinja"] = {
+		grammar = "jinja2",
 		extensions = { "jinja", "jinja2", "j2" },
 		indent = 2,
 	},
 	["jjconfig"] = {
+		grammar = "toml",
 		servers = { { "taplo", "lsp", "stdio" }, { "tombi", "lsp" } },
 		comment = "#",
 		indent = 2,
@@ -1650,6 +1684,7 @@ return {
 		extensions = { "jjtemplate" },
 	},
 	["miseconfig"] = {
+		grammar = "toml",
 		names = { "mise.toml", ".mise.toml" },
 		servers = { { "taplo", "lsp", "stdio" }, { "tombi", "lsp" } },
 		comment = "#",
@@ -1757,6 +1792,7 @@ return {
 		indent = 2,
 	},
 	["hy"] = {
+		grammar = "scheme",
 		extensions = { "hy" },
 		roots = { "pyproject.toml" },
 		servers = { { "hyuga" } },
@@ -1783,11 +1819,13 @@ return {
 		comment = "#",
 	},
 	["pkgbuild"] = {
+		grammar = "bash",
 		names = { "PKGBUILD" },
 		servers = { { "termux-language-server" }, { "bash-language-server", "start" } },
 		comment = "#",
 	},
 	["helm"] = {
+		grammar = "gotmpl",
 		roots = { "Chart.yaml" },
 		servers = { { "helm_ls", "serve" } },
 		comment = "#",
@@ -1838,6 +1876,7 @@ return {
 		comment = ";",
 	},
 	["gjs"] = {
+		grammar = "glimmer-javascript",
 		extensions = { "gjs" },
 		roots = { "package.json", "ember-cli-build.js" },
 		servers = {
@@ -1849,6 +1888,7 @@ return {
 		indent = 2,
 	},
 	["gts"] = {
+		grammar = "glimmer-typescript",
 		extensions = { "gts" },
 		roots = { "package.json", "ember-cli-build.js" },
 		servers = {
@@ -1934,6 +1974,7 @@ return {
 		indent = 4,
 	},
 	["codeql"] = {
+		grammar = "ql",
 		extensions = { "ql", "qll" },
 		servers = { { "codeql", "execute", "language-server", "--check-errors=ON_CHANGE" } },
 		comment = "//",
@@ -2012,7 +2053,9 @@ return {
 		comment = "#",
 	},
 	["rust-format-args"] = {},
-	["rust-format-args-macro"] = {},
+	["rust-format-args-macro"] = {
+		grammar = "rust",
+	},
 	["clarity"] = {
 		extensions = { "clar" },
 		roots = { "Clarinet.toml" },
@@ -2052,10 +2095,12 @@ return {
 		comment = "#",
 	},
 	["robots.txt"] = {
+		grammar = "robots-txt",
 		names = { "robots.txt" },
 		comment = "#",
 	},
 	["pip-requirements"] = {
+		grammar = "requirements",
 		names = { "requirements.txt", "constraints.txt" },
 	},
 	["kconfig"] = {
@@ -2067,12 +2112,14 @@ return {
 		indent = 4,
 	},
 	["cross-config"] = {
+		grammar = "toml",
 		names = { "Cross.toml" },
 		servers = { { "taplo", "lsp", "stdio" }, { "tombi", "lsp" } },
 		comment = "#",
 		indent = 2,
 	},
 	["git-cliff-config"] = {
+		grammar = "toml",
 		names = { "cliff.toml" },
 		servers = { { "taplo", "lsp", "stdio" }, { "tombi", "lsp" } },
 		comment = "#",
@@ -2093,12 +2140,14 @@ return {
 		comment = "..",
 	},
 	["docker-bake"] = {
+		grammar = "hcl",
 		names = { "docker-bake.hcl", "docker-bake.override.hcl" },
 		servers = { { "docker-language-server", "start", "--stdio" } },
 		comment = "#",
 		indent = 2,
 	},
 	["gitlab-ci"] = {
+		grammar = "yaml",
 		names = { ".gitlab-ci.yml" },
 		servers = { { "yaml-language-server", "--stdio" }, { "gitlab-ci-ls" } },
 		comment = "#",
@@ -2160,6 +2209,7 @@ return {
 		indent = 4,
 	},
 	["woodpecker-ci"] = {
+		grammar = "yaml",
 		names = { ".woodpecker.yaml" },
 		servers = { { "yaml-language-server", "--stdio" } },
 		comment = "#",
@@ -2183,6 +2233,7 @@ return {
 		indent = 2,
 	},
 	["tilt"] = {
+		grammar = "python",
 		extensions = { "tiltfile" },
 		names = { "Tiltfile" },
 		servers = { { "tilt", "lsp", "start" } },

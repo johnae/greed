@@ -1105,6 +1105,7 @@ mod tests {
         "plugin.within",
         "syntax.query",
         "syntax.set_query",
+        "syntax.share_grammar",
     ];
 
     #[test]
