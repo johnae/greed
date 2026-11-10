@@ -3116,7 +3116,10 @@ language, checks it against a checksum Greed knows, and keeps it in
 
 Some languages borrow another's grammar: Starlark (Bazel's `BUILD` and
 `.bzl` files) and Tiltfiles are highlighted as Python, JSONC as JSON,
-Docker Compose files as YAML, `.env` files and PKGBUILDs as Bash.
+Docker Compose files as YAML, `.env` files and PKGBUILDs as Bash. XML
+(and MSBuild projects), ERB and EJS templates, `requirements.txt`, CodeQL
+and tree-sitter queries download theirs the same way as the languages
+above.
 A language of your own can do the same, and uses the other's queries until
 it has its own:
 

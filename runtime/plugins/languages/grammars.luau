@@ -116,6 +116,47 @@ M.sources.hcl = {
 M.sources.terraform = M.sources.hcl
 M.sources["terraform-vars"] = M.sources.hcl
 
+-- Grammars other languages borrow (their `grammar`), each with the
+-- queries of its own release.
+M.sources["embedded-template"] = tree_sitter(
+	"embedded-template",
+	"v0.25.0",
+	"d15bbf3cb90901d0372b5599761c7a1ada344a0f11573c173ace7042636a6174"
+)
+M.sources.ql =
+	tree_sitter("ql", "v0.23.1", "f7f01c27f942a76ffceb30cb194fe669f81a21971126a57d9bf876bdaffa85dc")
+
+-- One from the tree-sitter-grammars organisation, whose queries are in
+-- the `queries` folder when not at the top.
+local function grammars(name: string, version: string, sha256: string, queries: string?): Source
+	local repo = `tree-sitter-grammars/tree-sitter-{name}`
+	local folder = queries and `https://raw.githubusercontent.com/{repo}/{version}/{queries}`
+	return {
+		repo = repo,
+		version = version,
+		sha256 = sha256,
+		queries = folder and folder .. "/{kind}.scm",
+	}
+end
+
+M.sources.query = grammars(
+	"query",
+	"v0.8.0",
+	"c3458fa2de98b4470f3e650a43f7601c97a73eafc02cce553d7c430637f262b2",
+	"queries/query"
+)
+M.sources.xml = grammars(
+	"xml",
+	"v0.7.0",
+	"9950327f8542a3d563fe4192aa05986a53e6fd6adca518cbb1a1699cbc8970ad",
+	"queries/xml"
+)
+M.sources.requirements = grammars(
+	"requirements",
+	"v0.6.1",
+	"35af73ba57bb324b588dc48ce7b788a5081e415cdd92062fda830eb3d14f3eb9"
+)
+
 -- Capture names other editors use, as Greed's (see the highlighting docs).
 local NAMES: { [string]: string? } = {
 	number = "constant.numeric",

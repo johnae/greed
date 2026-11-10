@@ -284,6 +284,23 @@ test(
 	end
 )
 
+test("a language borrowing a grammar Greed downloads gets it when its file opens", function(t)
+	local dir = t:tempdir({ ["highlights.scm"] = "(number) @number\n" })
+	languages.grammars.sources.lender = local_source(dir)
+	languages.set("borrower", { extensions = { "borrowed" }, grammar = "lender" })
+	assert(table.find(greed.grammars(), "borrower") == nil, "not before it's needed")
+	local file = t:tempdir({ ["a.borrowed"] = '{"a": 42}' }) .. "/a.borrowed"
+	greed.open(file)
+	t:wait_for(function()
+		return table.find(greed.grammars(), "borrower") ~= nil
+	end)
+	assert(table.find(greed.grammars(), "lender"), "the grammar it borrows came too")
+	assert(greed.view():buffer():tree(), "it parses")
+	assert(
+		greed.syntax.query("borrower", "highlights") == greed.syntax.query("lender", "highlights")
+	)
+end)
+
 test("queries from other editors get Greed's names, and catch-alls go last", function()
 	local adapted = languages.grammars.adapt(
 		"(identifier) @variable\n(call function: (identifier) @function.call)\n(x) @spell\n((pattern/wildcard) @number)"
