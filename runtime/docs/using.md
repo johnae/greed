@@ -3141,6 +3141,67 @@ require("@languages").set("cue", { extensions = { "cue" }, grammar = "go" })
 | `:grammar-fetch ruby` | Download one ahead of time, say before going offline |
 | `greed.option.set("grammar-download", false)` | Turn downloading off |
 
+#### Adding a grammar Greed doesn't have
+
+If the grammar publishes a WebAssembly build in its GitHub releases (a
+`tree-sitter-NAME.wasm` file), tell Greed where it is in your config and it
+downloads it like the ones above. Odin's, for example:
+
+```luau
+require("@languages").grammars.sources.odin = {
+	repo = "tree-sitter-grammars/tree-sitter-odin",
+	version = "v1.3.0",
+	sha256 = "4a3c9f50ac2356d2284d26e92322c554b276ad6bf6bce87a8594cff95d2ed6f1",
+}
+```
+
+`version` is the release tag, and `sha256` is the checksum of the `.wasm`
+file (`sha256sum tree-sitter-odin.wasm` after downloading it once). The
+queries come from the repository's `queries` folder at that tag, with their
+capture names changed to Greed's. Add `symbol = "..."` when the grammar's
+own name isn't the language's with `-` as `_`.
+
+The key is the language's name, or its `grammar` if it borrows one. Most
+languages are already known, with their file extensions and language
+servers. For one that isn't, add it too:
+
+```luau
+require("@languages").set("odin", { extensions = { "odin" }, comment = "//" })
+```
+
+No WebAssembly build? Build it yourself with the
+[tree-sitter CLI](https://tree-sitter.github.io/tree-sitter/cli/) and
+point the entry at your files:
+
+```sh
+git clone https://github.com/tree-sitter-grammars/tree-sitter-odin
+cd tree-sitter-odin
+mkdir -p ~/grammars
+tree-sitter build --wasm -o ~/grammars/odin.wasm
+cp queries/*.scm ~/grammars/
+sha256sum ~/grammars/odin.wasm
+```
+
+```luau
+require("@languages").grammars.sources.odin = {
+	repo = "tree-sitter-grammars/tree-sitter-odin",
+	version = "local-1",
+	sha256 = "the checksum from sha256sum",
+	url = "file:///home/you/grammars/odin.wasm",
+	queries = "file:///home/you/grammars/{kind}.scm",
+}
+```
+
+Greed copies the files into its cache the first time a file in the language
+opens, so after rebuilding, change `version` (and the checksum) to have it
+copy them again. `queries` works with an `https://` URL too, for queries
+kept somewhere other than the grammar's repository.
+
+When it doesn't work, `:health` says whether the language has a grammar,
+and Greed's messages say why a download or a query failed. Queries written
+for other editors sometimes use things Greed doesn't support; fix those
+with your own file in `~/.config/greed/queries/odin/`, described below.
+
 What gets highlighted, and what counts as a function for `m i f`, comes
 from tree-sitter queries: files named `queries/LANGUAGE/KIND.scm`, where
 KIND is `highlights`, `injections` (languages inside others, like the code
