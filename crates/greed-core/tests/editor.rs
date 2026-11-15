@@ -282,6 +282,35 @@ fn scratch_buffers_go_away_with_their_last_view() {
 }
 
 #[test]
+fn a_view_comes_back_to_a_buffer_where_it_left_it() {
+    let mut ed = editor("hello world");
+    let main = ed.focus();
+    let first = ed.view(main).buffer;
+    ed.set_kept(first, true);
+    ed.view_mut(main).selection = Selection::single(6, 11);
+    let second = ed.create_buffer("scratch", "other");
+    ed.set_kept(second, true);
+
+    ed.show(main, second);
+    assert_eq!(
+        ed.view(main).selection,
+        Selection::point(0),
+        "a new one starts at the top"
+    );
+    ed.view_mut(main).selection = Selection::point(3);
+
+    // Edits made while it's out of sight move the place along with the text.
+    let changes = ChangeSet::from_changes(11, [(0, 0, Some(">> "))]).unwrap();
+    ed.apply_to_buffer(first, changes, Author::User(ClientId(1)), None, None)
+        .unwrap();
+
+    ed.show(main, first);
+    assert_eq!(ed.view(main).selection.primary(), Range::new(9, 14));
+    ed.show(main, second);
+    assert_eq!(ed.view(main).selection, Selection::point(3));
+}
+
+#[test]
 fn files_open_once_and_show_in_a_view() {
     let dir = std::env::temp_dir().join(format!("greed-open-file-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

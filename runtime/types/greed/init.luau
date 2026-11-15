@@ -367,7 +367,8 @@ export type View = {
 	--- cursor would be off screen, so move it first.
 	set_scroll: (self: View, line: number) -> (),
 	buffer: (self: View) -> Buffer,
-	--- Shows another buffer in this view.
+	--- Shows another buffer in this view, where the view left it if it
+	--- showed it before, otherwise at the top.
 	show: (self: View, buffer: Buffer) -> (),
 	--- Focuses this view, so keys go to it, showing its tab and project if it's a pane or panel.
 	focus: (self: View) -> (),

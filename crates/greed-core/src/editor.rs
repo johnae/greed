@@ -85,6 +85,9 @@ pub struct View {
     pub padding: Padding,
     /// It draws no cursor or selection of its own, like a slide of text.
     pub cursor_hidden: bool,
+    /// Where it was in each buffer it showed before, moved along with their
+    /// edits, so showing one again goes back there.
+    pub left: HashMap<BufferId, (Selection, Scroll)>,
 }
 
 /// Empty rows above a view's text and empty cells left of it.
@@ -872,8 +875,7 @@ impl Editor {
             .collect();
         for buffer in owned {
             if !self.shown(buffer) {
-                self.buffers.remove(&buffer);
-                self.buffer_projects.remove(&buffer);
+                self.remove_buffer(buffer);
             }
         }
         // The same project stays current unless it was the one closed; then
@@ -1204,16 +1206,28 @@ impl Editor {
         self.file_types.detect(path)
     }
 
-    /// Shows `buffer` in `view`, starting at the top.
+    /// Shows `buffer` in `view`, where the view left it if it showed it
+    /// before, otherwise at the top.
     pub fn show(&mut self, view: ViewId, buffer: BufferId) {
         let old = self.view(view).buffer;
+        let len = self
+            .buffers
+            .get(&buffer)
+            .map_or(0, |b| b.text().len_bytes());
         for client in self.clients.values_mut() {
             let Some(view) = client.views.get_mut(&view) else {
                 continue;
             };
+            view.left.insert(old, (view.selection.clone(), view.scroll));
+            let (selection, scroll) = view
+                .left
+                .remove(&buffer)
+                // Edits move it along, but one that no longer fits starts over.
+                .filter(|(selection, _)| selection.ranges().iter().all(|r| r.to() <= len))
+                .unwrap_or_else(|| (Selection::point(0), Scroll::default()));
             view.buffer = buffer;
-            view.selection = Selection::point(0);
-            view.scroll = Scroll::default();
+            view.selection = selection;
+            view.scroll = scroll;
             view.visible = None;
             view.lines = None;
             view.columns = 0;
@@ -2350,6 +2364,7 @@ impl Editor {
             hidden_marks: Arc::default(),
             padding: Padding::default(),
             cursor_hidden: false,
+            left: HashMap::new(),
         })
     }
 
@@ -2369,9 +2384,19 @@ impl Editor {
         if self.shown(buffer) {
             return Err(Error::Shown);
         }
+        self.remove_buffer(buffer);
+        Ok(())
+    }
+
+    /// Forgets `buffer`, which no view shows, and every view's place in it.
+    fn remove_buffer(&mut self, buffer: BufferId) {
         self.buffers.remove(&buffer);
         self.buffer_projects.remove(&buffer);
-        Ok(())
+        for client in self.clients.values_mut() {
+            for view in client.views.values_mut() {
+                view.left.remove(&buffer);
+            }
+        }
     }
 
     /// Removes a buffer that has no file and no view left.
@@ -2379,7 +2404,7 @@ impl Editor {
         let b = &self.buffers[&buffer];
         let unused = b.path().is_none() && !b.is_kept() && !self.shown(buffer);
         if unused {
-            self.buffers.remove(&buffer);
+            self.remove_buffer(buffer);
         }
     }
 
@@ -2421,6 +2446,9 @@ impl Editor {
                 let skipped = *client == self.acting && Some(*id) == except;
                 if !skipped && other.buffer == buffer {
                     other.selection = other.selection.map(changes);
+                }
+                if let Some((selection, _)) = other.left.get_mut(&buffer) {
+                    *selection = selection.map(changes);
                 }
             }
         }

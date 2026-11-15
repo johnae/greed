@@ -511,7 +511,7 @@ one character wide.
 | `z z` `z c`, `z t`, `z b` | Put the cursor's line in the middle, at the top or at the bottom of the screen |
 | `z j` `z k` | Scroll a line down or up; `Z` keeps the view keys going until `esc` |
 | `g t` `g c` `g b` | The top, middle or bottom line on the screen |
-| `g n` `g p`, `g a`, `g m` | The next or previous open file, the one you were in before, the one you changed last |
+| `g n` `g p`, `g a`, `g m` | The next or previous open file, the one you were in before, the one you changed last. A pane goes back to a file with the cursor and scroll where it left them, however you switch |
 | `g .` `g \|`, `g f` | Where the file last changed, column N (`8 g \|`), the file named under the cursor |
 | `alt-.` | Do the last `f` or `t` again |
 | `ctrl-o` `ctrl-i` | Back to where the last jump (a search, `g g`, `g d`, a file you opened from anywhere, the shell included) started, and forward again, like a browser's back and forward. Each pane has its own, and going back puts the cursor and scroll where they were (`ctrl-i` needs a terminal that tells it from `tab`, as most do now) |

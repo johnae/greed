@@ -68,7 +68,8 @@ test("g d on a link to a heading or a block opens the note there", function(t)
 	end
 	assert(follow("Week 42#Plans") == 5, "the heading")
 	assert(follow("key-point") == 7, "the block")
-	assert(follow("w42") == 0, "the alias's note")
+	-- A link to the note itself opens it where you left it, as any file does.
+	assert(follow("w42") == 7, "the alias's note")
 end)
 
 test("the Tasks plugin's due dates are due dates", function(t)
