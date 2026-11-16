@@ -4,6 +4,7 @@
 use std::path::Path;
 #[cfg(feature = "gui")]
 use std::path::PathBuf;
+use std::process::ExitCode;
 #[cfg(feature = "gui")]
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -81,6 +82,20 @@ pub fn kind() -> &'static str {
     } else {
         "tui"
     }
+}
+
+/// Runs `work`, the rest of this run of greed. For a window, the window's
+/// event loop runs on this thread meanwhile, and `work` on another: macOS
+/// wants the loop on the first thread, running the whole time.
+pub fn host(work: impl FnOnce() -> ExitCode + Send + 'static) -> ExitCode {
+    #[cfg(feature = "gui")]
+    if GUI.load(Ordering::Relaxed) && RECORD.get().is_none() {
+        return greed_gui::host(work).unwrap_or_else(|err| {
+            eprintln!("greed: {err}");
+            ExitCode::FAILURE
+        });
+    }
+    work()
 }
 
 /// Runs the client until the session exits or lets it go, and returns how

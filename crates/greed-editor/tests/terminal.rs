@@ -344,6 +344,46 @@ fn the_terminal_follows_when_its_session_switches_to_another_machine() {
 }
 
 #[test]
+fn the_terminal_follows_to_another_project_on_the_other_machine() {
+    let Some(world) = World::new("switch-remote-project") else {
+        return;
+    };
+    let first = world.project("first", &[("a.txt", "in the first")]);
+    world.project("second", &[("b.txt", "in the second")]);
+    let fake_ssh = fake_ssh(&world);
+    let command = format!("ssh somehost {}", first.join("a.txt").display());
+    let out = world.terminal(
+        &first,
+        &command,
+        &[
+            ("GREED_SSH", fake_ssh.to_str().unwrap()),
+            ("GREED_REMOTE", GREED),
+        ],
+        &[
+            Step::Until("the remote session", running),
+            Step::Shows("in the first"),
+            Step::Until("the switch", |w| {
+                let file = w.root.join("second/b.txt");
+                let script = format!(
+                    "require('@greed').session.switch({{ path = {:?} }})",
+                    file.to_str().unwrap()
+                );
+                w.eval("first", &script);
+                true
+            }),
+            Step::Shows("in the second"),
+            Step::Keys(":detach\r"),
+        ],
+    );
+    assert!(
+        out.contains("detached; greed ssh somehost comes back"),
+        "{out}"
+    );
+    world.eval("first", "require('@greed').quit()");
+    world.eval("second", "require('@greed').quit()");
+}
+
+#[test]
 fn greed_ssh_comes_back_to_the_same_session_when_the_connection_drops() {
     let Some(world) = World::new("ssh-drop") else {
         return;

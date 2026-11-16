@@ -99,7 +99,12 @@ fn main() -> ExitCode {
         eprintln!("greed: {err}");
         return ExitCode::FAILURE;
     }
-    let result = match args.as_slice() {
+    client::host(move || dispatch(&args, opening))
+}
+
+/// Does what `args` (with the flags taken out) ask.
+fn dispatch(args: &[String], opening: Opening) -> ExitCode {
+    let result = match args {
         [] => edit(None, None, opening),
         [flag] if flag == "--env0" => print_environment(),
         [flag] if flag == "--version" || flag == "-V" => {

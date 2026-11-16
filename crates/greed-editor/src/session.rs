@@ -6,8 +6,8 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use greed_core::SwitchTo;
@@ -223,6 +223,7 @@ fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
                 // Coming back to a machine finds it again, bringing your
                 // config as it is then.
                 machine = None;
+                set_away(None);
                 let place = Place {
                     host: None,
                     session: Some(name.clone()),
@@ -241,6 +242,7 @@ fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
                     machine = Some(Machine::reach(host)?);
                 }
                 let there = machine.as_ref().expect("just reached");
+                set_away(Some(host.clone()));
                 match ssh_once(there, to, opening, *new, problem.take(), tries > 0) {
                     Ok((session, Some(ended))) => {
                         tries = 0;
@@ -517,13 +519,22 @@ fn resolve(to: &SwitchTo) -> Result<(String, Option<PathBuf>), Error> {
     }
 }
 
+/// The machine of the session shown, when it's another one.
+static AWAY: Mutex<Option<String>> = Mutex::new(None);
+
+fn set_away(host: Option<String>) {
+    *AWAY.lock().unwrap_or_else(PoisonError::into_inner) = host;
+}
+
 /// Opens `to` in a window of its own, for a window that stays on its
 /// session: another `greed --gui`, attached to the session `to` names or
-/// to the project's (started if need be), or over `greed ssh`.
+/// to the project's (started if need be), or over `greed ssh`. Without a
+/// host, it's on the machine of the session shown.
 pub fn open_window(to: SwitchTo) {
+    let away = AWAY.lock().unwrap_or_else(PoisonError::into_inner).clone();
     std::thread::spawn(move || {
         let mut args = vec!["--gui".to_owned()];
-        if let Some(host) = to.host {
+        if let Some(host) = to.host.clone().or(away) {
             args.extend(["ssh".to_owned(), host]);
             if let Some(name) = to.session {
                 args.extend(["--session".to_owned(), name]);
@@ -1190,7 +1201,13 @@ fn send_config(host: &str) -> Result<Option<String>, Error> {
         return Ok(None);
     }
     let dir = format!("$HOME/.cache/greed/config-from-{}", this_machine());
-    let mut tar = Command::new("tar")
+    let mut tar = Command::new("tar");
+    // macOS's tar packs extended attributes and ._ files, which tar on
+    // Linux warns about.
+    if cfg!(target_os = "macos") {
+        tar.arg("--no-xattrs").env("COPYFILE_DISABLE", "1");
+    }
+    let mut tar = tar
         .arg("-C")
         .arg(&local)
         .args(["-cf", "-", "."])

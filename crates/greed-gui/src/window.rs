@@ -2,9 +2,8 @@
 //! keys, the mouse and its size back, as the TUI does in a terminal.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
-use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Instant;
 
 use crossbeam_channel::{Receiver, Sender};
@@ -15,7 +14,7 @@ use greed_core::server::{Input, Output};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key as WinitKey, ModifiersState, NamedKey};
 use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
 use winit::window::{Window, WindowId};
@@ -25,9 +24,15 @@ use crate::gpu::Gpu;
 use crate::paint::{ATLAS_SIZE, Painter, Taken};
 use crate::watchdog::{Alarm, Watchdog};
 
-/// What reaches the event loop from the session's thread.
+/// What reaches the event loop from other threads.
 pub(crate) enum Event {
-    Output(Box<Output>),
+    /// A session to show in the window.
+    Attach(Box<Attach>),
+    /// What the attachment with this number sent; a later attachment's
+    /// window drops what an earlier one still had on its way.
+    Output(u64, Box<Output>),
+    /// The work `host` runs beside the event loop is over.
+    Done,
     /// A menu bar item was chosen: the command to run.
     #[cfg(target_os = "macos")]
     Menu(String),
@@ -47,75 +52,105 @@ fn opens_in_new_window(to: &SwitchTo) -> bool {
     to.window && NEW_WINDOW.get().is_some()
 }
 
-thread_local! {
-    /// winit allows one event loop per process, so switching sessions runs
-    /// the same one again.
-    static LOOP: RefCell<Option<EventLoop<Event>>> = const { RefCell::new(None) };
-    /// The window a run that switched sessions left, for the next run to
-    /// show the other session in, as a terminal does.
-    static KEPT: RefCell<Option<App>> = const { RefCell::new(None) };
+/// A session for the window to show, and where to say how it ended.
+pub(crate) struct Attach {
+    input: Sender<Input>,
+    output: Receiver<Output>,
+    size_file: Option<PathBuf>,
+    done: Sender<Output>,
 }
 
-/// Runs the window until the session exits or lets it go, or the window is
-/// closed (`Output::Detached`), sending keys and sizes to `input` and
-/// drawing the frames from `output`. Returns how it ended. The window opens
-/// at the size kept in `size_file`, if there is one, and keeps its size
-/// there when it closes.
+/// Reaches the event loop `host` runs, while it runs.
+static HOST: Mutex<Option<EventLoopProxy<Event>>> = Mutex::new(None);
+
+fn host_slot() -> MutexGuard<'static, Option<EventLoopProxy<Event>>> {
+    HOST.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Runs the window's event loop on this thread, the program's first, and
+/// `work` on another, until `work` is done; returns what it returned. The
+/// loop runs the whole time, so sessions `work` shows with [`run`] come and
+/// go in the same window: macOS hides a window whose loop stopped and
+/// started again.
+pub fn host<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, Box<dyn std::error::Error>> {
+    let mut event_loop = EventLoop::<Event>::with_user_event().build()?;
+    let proxy = event_loop.create_proxy();
+    *host_slot() = Some(proxy.clone());
+    let worker = std::thread::spawn(move || {
+        let out = work();
+        let _ = proxy.send_event(Event::Done);
+        out
+    });
+    let mut app = App::new(&event_loop);
+    let ran = event_loop.run_app_on_demand(&mut app);
+    *host_slot() = None;
+    // A session still showing hears the window is gone.
+    drop(app);
+    ran?;
+    worker.join().map_err(|_| "greed crashed".into())
+}
+
+/// Shows the session in the window until it exits, lets go or switches, or
+/// the window is closed (`Output::Detached`), sending keys and sizes to
+/// `input` and drawing the frames from `output`. Returns how it ended. A
+/// switch keeps the window for the next session; anything else closes it.
+/// The window opens at the size kept in `size_file`, if there is one, and
+/// keeps its size there. Runs inside [`host`].
 pub fn run(
     input: &Sender<Input>,
     output: &Receiver<Output>,
     size_file: Option<&Path>,
 ) -> Result<Output, Box<dyn std::error::Error>> {
-    LOOP.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(EventLoop::<Event>::with_user_event().build()?);
-        }
-        let event_loop = slot.as_mut().expect("just made");
-        // The session's output, passed on into the loop until this run ends.
-        let proxy = event_loop.create_proxy();
-        let (stop, stopped) = crossbeam_channel::bounded::<()>(1);
-        let outputs = output.clone();
-        let forward = std::thread::spawn(move || {
-            loop {
-                crossbeam_channel::select! {
-                    recv(outputs) -> message => {
-                        let message = message.unwrap_or(Output::Exit);
-                        let elsewhere = matches!(&message, Output::Switch(to) if opens_in_new_window(to));
-                        let last = !elsewhere && !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::SshAgentRequest(..) | Output::HomeStatus(_) | Output::Notify(_));
-                        if proxy.send_event(Event::Output(Box::new(message))).is_err() || last {
-                            return;
-                        }
+    let proxy = host_slot()
+        .clone()
+        .ok_or("no window: greed_gui::run goes inside greed_gui::host")?;
+    let (done, ended) = crossbeam_channel::bounded(1);
+    let attach = Attach {
+        input: input.clone(),
+        output: output.clone(),
+        size_file: size_file.map(Path::to_path_buf),
+        done,
+    };
+    proxy
+        .send_event(Event::Attach(Box::new(attach)))
+        .map_err(|_| "the window is gone")?;
+    Ok(ended.recv().unwrap_or(Output::Detached))
+}
+
+/// Passes what the attachment `id` sends on into the loop, until its last
+/// message or `stopped`.
+fn forward(
+    id: u64,
+    outputs: Receiver<Output>,
+    proxy: EventLoopProxy<Event>,
+    stopped: Receiver<()>,
+) {
+    std::thread::spawn(move || {
+        loop {
+            crossbeam_channel::select! {
+                recv(outputs) -> message => {
+                    let message = message.unwrap_or(Output::Exit);
+                    let elsewhere = matches!(&message, Output::Switch(to) if opens_in_new_window(to));
+                    let last = !elsewhere && !matches!(message, Output::Frame(_) | Output::Delta(_) | Output::Image(_) | Output::Scene(_) | Output::Clipboard(_) | Output::ReadClipboardImage(_) | Output::SshAgentRequest(..) | Output::HomeStatus(_) | Output::Notify(_));
+                    if proxy.send_event(Event::Output(id, Box::new(message))).is_err() || last {
+                        return;
                     }
-                    recv(stopped) -> _ => return,
                 }
+                recv(stopped) -> _ => return,
             }
-        });
-        let kept = KEPT.with(|kept| kept.borrow_mut().take());
-        let mut app = if let Some(kept) = kept {
-            kept.attach(input.clone())
-        } else {
-            let mut app = App::new(input.clone());
-            #[cfg(target_os = "macos")]
-            {
-                app.menubar = Some(crate::menubar::MenuBar::new(event_loop.create_proxy()));
-            }
-            app.size = size_file.and_then(|path| parse_size(&std::fs::read_to_string(path).ok()?));
-            app
-        };
-        event_loop.run_app_on_demand(&mut app)?;
-        let _ = stop.send(());
-        let _ = forward.join();
-        if let (Some(path), Some(size)) = (size_file, app.size) {
-            let _ = std::fs::write(path, format!("{} {}\n", size.width, size.height));
         }
-        let ended = app.ended.take().unwrap_or(Output::Detached);
-        // Going to another session keeps the window; anything else closes it.
-        if matches!(ended, Output::Switch(_)) {
-            KEPT.with(|kept| *kept.borrow_mut() = Some(app));
-        }
-        Ok(ended)
-    })
+    });
+}
+
+/// The session the window shows.
+struct Attached {
+    id: u64,
+    done: Sender<Output>,
+    size_file: Option<PathBuf>,
+    /// Stops passing on its output.
+    stop: Sender<()>,
 }
 
 /// The window's drawing state, made once it exists.
@@ -143,7 +178,11 @@ struct App {
     clipboard: Option<arboard::Clipboard>,
     /// Notices when the window stops showing frames, so it can recover.
     watchdog: Watchdog,
-    ended: Option<Output>,
+    /// The session shown, while one is.
+    attached: Option<Attached>,
+    /// The last attachment's number.
+    attachments: u64,
+    proxy: EventLoopProxy<Event>,
     /// The window's size, before the screen's scale.
     size: Option<LogicalSize<f64>>,
     /// The system's menu bar, filled with the frame's menus.
@@ -169,9 +208,10 @@ impl App {
             .is_some_and(|clipboard| clipboard.get_image().is_ok())
     }
 
-    fn new(input: Sender<Input>) -> Self {
+    fn new(event_loop: &EventLoop<Event>) -> Self {
         Self {
-            input,
+            // Nothing listens until a session attaches.
+            input: crossbeam_channel::unbounded().0,
             shown: None,
             painter: Painter::new().gliding(),
             columns: Columns::default(),
@@ -181,25 +221,67 @@ impl App {
             scrolled: 0.0,
             clipboard: arboard::Clipboard::new().ok(),
             watchdog: Watchdog::default(),
-            ended: None,
+            attached: None,
+            attachments: 0,
+            proxy: event_loop.create_proxy(),
             size: None,
             #[cfg(target_os = "macos")]
-            menubar: None,
+            menubar: Some(crate::menubar::MenuBar::new(event_loop.create_proxy())),
         }
     }
 
-    /// The window a session switch left, now for the session `input` goes
-    /// to: told the window's size, and drawn again once its first frame
-    /// comes.
-    fn attach(mut self, input: Sender<Input>) -> Self {
+    /// Shows the session `attach` brings: in the window a switch left, told
+    /// its size and drawn again once the first frame comes, or in a new one.
+    fn attach(&mut self, event_loop: &ActiveEventLoop, attach: Attach) {
+        let Attach {
+            input,
+            output,
+            size_file,
+            done,
+        } = attach;
+        self.attachments += 1;
+        let (stop, stopped) = crossbeam_channel::bounded(1);
+        forward(self.attachments, output, self.proxy.clone(), stopped);
+        if self.size.is_none() {
+            self.size = size_file
+                .as_deref()
+                .and_then(|path| parse_size(&std::fs::read_to_string(path).ok()?));
+        }
+        self.attached = Some(Attached {
+            id: self.attachments,
+            done,
+            size_file,
+            stop,
+        });
         self.input = input;
         self.watchdog = Watchdog::default();
         self.held = None;
-        if let Some(shown) = &self.shown {
-            self.send_size(shown.window.inner_size());
+        match &self.shown {
+            Some(shown) => {
+                self.send_size(shown.window.inner_size());
+                self.want_redraw();
+            }
+            None => self.open(event_loop),
         }
-        self.want_redraw();
-        self
+    }
+
+    /// The session shown ended as `ended` says: told to whoever attached
+    /// it. A switch keeps the window for the next session; anything else
+    /// closes it.
+    fn end(&mut self, ended: Output) {
+        let Some(attached) = self.attached.take() else {
+            return;
+        };
+        let _ = attached.stop.send(());
+        if let (Some(path), Some(size)) = (&attached.size_file, self.size) {
+            let _ = std::fs::write(path, format!("{} {}\n", size.width, size.height));
+        }
+        if !matches!(ended, Output::Switch(_)) {
+            self.shown = None;
+            self.painter = Painter::new().gliding();
+            self.columns = Columns::default();
+        }
+        let _ = attached.done.send(ended);
     }
 
     /// Takes up the font the frame's options choose, if it's another one,
@@ -406,7 +488,7 @@ impl App {
         Ok(())
     }
 
-    fn handle(&mut self, event_loop: &ActiveEventLoop, output: Output) {
+    fn handle(&mut self, output: Output) {
         match self.painter.take(output) {
             Ok(Taken::Frame) => {}
             Ok(Taken::Stale) => {
@@ -446,8 +528,7 @@ impl App {
                 return;
             }
             Err(other) => {
-                self.ended = Some(other);
-                event_loop.exit();
+                self.end(other);
                 return;
             }
         }
@@ -503,11 +584,10 @@ impl App {
     }
 }
 
-impl ApplicationHandler<Event> for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.shown.is_some() {
-            return;
-        }
+impl App {
+    /// Opens the window for the session attached. Without one it can't
+    /// show, that session ends.
+    fn open(&mut self, event_loop: &ActiveEventLoop) {
         let attributes = Window::default_attributes()
             .with_title("Greed")
             .with_inner_size(self.size.unwrap_or(LogicalSize::new(1100.0, 720.0)));
@@ -521,15 +601,19 @@ impl ApplicationHandler<Event> for App {
             let attributes = WindowAttributesExtWayland::with_name(attributes, "greed", "greed");
             WindowAttributesExtX11::with_name(attributes, "greed", "greed")
         };
-        let Ok(window) = event_loop.create_window(attributes) else {
-            event_loop.exit();
-            return;
+        let window = match event_loop.create_window(attributes) {
+            Ok(window) => window,
+            Err(err) => {
+                eprintln!("greed: can't open a window: {err}");
+                self.end(Output::Detached);
+                return;
+            }
         };
         window.set_ime_allowed(true);
         let window = Arc::new(window);
         let Some(shown) = Shown::new(window.clone(), event_loop) else {
             eprintln!("greed: no GPU to draw the window with");
-            event_loop.exit();
+            self.end(Output::Detached);
             return;
         };
         self.painter.set_scale(window.scale_factor());
@@ -538,10 +622,24 @@ impl ApplicationHandler<Event> for App {
         // Frames may have come before the window did.
         self.want_redraw();
     }
+}
+
+impl ApplicationHandler<Event> for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.shown.is_none() && self.attached.is_some() {
+            self.open(event_loop);
+        }
+    }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: Event) {
         match event {
-            Event::Output(output) => self.handle(event_loop, *output),
+            Event::Attach(attach) => self.attach(event_loop, *attach),
+            Event::Output(id, output) => {
+                if self.attached.as_ref().is_some_and(|a| a.id == id) {
+                    self.handle(*output);
+                }
+            }
+            Event::Done => event_loop.exit(),
             #[cfg(target_os = "macos")]
             Event::Menu(command) => {
                 let _ = self.input.send(Input::Run(command));
@@ -549,13 +647,10 @@ impl ApplicationHandler<Event> for App {
         }
     }
 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         self.log_event(&event);
         match event {
-            WindowEvent::CloseRequested => {
-                self.ended = Some(Output::Detached);
-                event_loop.exit();
-            }
+            WindowEvent::CloseRequested => self.end(Output::Detached),
             WindowEvent::Resized(size) => {
                 if let Some(shown) = &mut self.shown {
                     shown.config.width = size.width.max(1);
