@@ -3,6 +3,35 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
+## 0.4.3 - 2026-11-16
+
+### Highlights
+
+- On macOS the window stays and keeps drawing when you switch projects or sessions; before, it went blank or disappeared, over `greed ssh` too.
+- A new window (alt-w) from a session on another machine opens on that machine.
+- Going back to a buffer puts the cursor and scroll where you left them, however you switch (#33).
+- More languages download their grammar: XML, ERB, EJS, CodeQL, Protobuf, Scheme, Jinja, QML and others. A language can borrow another's grammar, and the docs say how to add one Greed doesn't have.
+- An agent's proposal is reviewed as one change, accepted or rejected as a whole.
+
+### New
+
+- agent: a proposal is reviewed as one change, accepted or rejected as a whole
+- languages: a language can use another's grammar, so Starlark is highlighted as Python
+- languages: download grammars for XML, ERB, EJS, CodeQL, requirements and queries
+- languages: download Protobuf, Scheme, Jinja, QML and other grammars Greed builds
+
+### Fixed
+
+- agent: a call the agent gives up on takes back what it proposed
+- agent: a newer proposal for the same text replaces the one waiting there
+- going back to a buffer puts the cursor and scroll where the view left them (#33)
+- gui: switching sessions keeps the window on macOS, and new windows open on the session's machine
+- ssh: copying your config from a Mac no longer makes tar on the other end warn
+
+### Documentation
+
+- how to add a grammar Greed doesn't have
+
 ## 0.4.2 - 2026-11-06
 
 ### Highlights
