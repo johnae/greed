@@ -21,6 +21,9 @@ local object = agent.schema.object
 
 -- Every account's key, sorted.
 local function keys(): { string }
+	if not backend.has_accounts() then
+		error(backend.NONE, 0)
+	end
 	backend.start()
 	return accounts.keys()
 end
@@ -83,7 +86,7 @@ return function(chat: any)
 			.. "last active. Those with mentions or unread messages come first",
 		input = object({
 			query = { type = "string", description = "Only those whose names have these letters" },
-		}, {}),
+		}),
 		run = function(args)
 			local query = string.lower(tostring(args.query or ""))
 			local found: { { key: string, room: backend.Room } } = {}

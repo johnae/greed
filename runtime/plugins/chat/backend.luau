@@ -713,6 +713,15 @@ end
 
 services.define({ name = "chat", start = any_kept })
 
+--- What reading or searching says on a machine where no chat account was
+--- signed in to: asking would start an owner with nothing in it.
+M.NONE = "there are no chat accounts on this machine; `:chat` signs in to one"
+
+--- Whether this machine's owner has accounts to read and search.
+function M.has_accounts(): boolean
+	return any_kept()
+end
+
 if services.owner("chat") then
 	offer = services.offer("chat", { version = VERSION, handle = handle })
 	-- In its own session the accounts connect at once, so alerts come before
@@ -840,6 +849,9 @@ M.source = index.source
 --- The messages `parsed` finds in what the owner keeps, newest first
 --- unless it sorts otherwise, or nil and why. Waits.
 function M.search(parsed: core.Query): ({ index.Found }?, string?)
+	if not any_kept() then
+		return nil, M.NONE
+	end
 	return view:request("search", { parsed = parsed })
 end
 

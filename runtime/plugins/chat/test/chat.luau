@@ -2172,3 +2172,20 @@ test("rooms changing many times close together are asked for once", function(t)
 	backend.ROOMS_EVERY = every
 	assert(asked_rooms - before == 1, `asked {asked_rooms - before} times`)
 end)
+
+test("with no chat account on this machine, reading and searching say so", function(t)
+	for_agents({})
+	local file = `{greed.fs.dirs().data}/chat/accounts.json`
+	local had = greed.fs.read(file)
+	greed.fs.write(file, "{}")
+	local ok, why = pcall(tool, "chat_rooms", {})
+	local found, trouble = chat.search.search("lunch")
+	local hits, troubles = core.everywhere.search("lunch in:chat")
+	greed.fs.write(file, had or "{}")
+	assert(
+		not ok and string.find(tostring(why), "no chat accounts on this machine", 1, true),
+		tostring(why)
+	)
+	assert(found == nil and trouble == backend.NONE, tostring(trouble))
+	assert(#hits == 0 and #troubles == 0, "search everywhere finds nothing, and that's no trouble")
+end)

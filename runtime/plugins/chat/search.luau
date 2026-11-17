@@ -91,6 +91,10 @@ core.everywhere.add({
 	name = "chat",
 	doc = "Your chat messages, every account, as the chat service keeps them",
 	search = function(text: string, limit: number): ({ core.EverywhereHit }?, string?)
+		-- Without chat here there's nothing to find, which is no trouble.
+		if not backend.has_accounts() then
+			return {}, nil
+		end
 		local found, why = M.search(text)
 		if found == nil then
 			return nil, why
