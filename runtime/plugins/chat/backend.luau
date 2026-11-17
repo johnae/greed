@@ -353,6 +353,13 @@ local walked: { [string]: boolean } = {}
 -- The accounts being caught up now, true when their rooms changed meanwhile.
 local catching: { [string]: boolean } = {}
 
+--- How long rooms changing waits, in milliseconds, for more changes to go
+--- with it before the rooms are asked for again.
+M.ROOMS_EVERY = 2000
+
+-- The accounts whose rooms changed and are about to be asked for.
+local rooms_due: { [string]: boolean } = {}
+
 -- Catches account `key` up, once it's ready, in the rooms it hasn't been
 -- yet. Its first sync can be ready before all its rooms are here, so it's
 -- asked again each time they change.
@@ -422,10 +429,21 @@ local function heard(service: string, method: string, params: any)
 			service = service,
 			params = { login = params.login, step = finished(service, params.step) },
 		})
-	else
-		if method == "rooms.changed" then
-			catch_up_rooms(service, `{service} {params.account}`)
+	elseif method == "rooms.changed" then
+		-- Mattermost says so for every post anywhere; asking for every
+		-- room each time is a lot, so several close together are one.
+		local key = `{service} {params.account}`
+		if rooms_due[key] then
+			return
 		end
+		rooms_due[key] = true
+		greed.spawn(function()
+			greed.sleep(M.ROOMS_EVERY)
+			rooms_due[key] = nil
+			catch_up_rooms(service, key)
+			tell(method, { service = service, params = params })
+		end)
+	else
 		tell(method, { service = service, params = params })
 	end
 end

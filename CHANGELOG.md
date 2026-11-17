@@ -38,6 +38,7 @@ the repository's history.
 - chat: Mattermost webhook posts (alerts, CI) are searchable, with their attachments' text and the webhook's name
 - picker: `space f` in a big project opens several times faster without holding up the editor, and lists every file; it stopped at 100,000 before
 - markdown: a table wider than the view runs past its edge instead of each row wrapping apart, and in an agent's transcript a table no longer swallows the tool call after it
+- chat: a room left open in a session nobody is attached to stays unread and alerts, and Mattermost asks for your rooms at most every two seconds rather than on every post
 
 ### Documentation
 

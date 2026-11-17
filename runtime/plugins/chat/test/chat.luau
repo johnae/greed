@@ -381,6 +381,29 @@ local function calls(method: string): { any }
 	return out
 end
 
+test("a room open where nobody's attached isn't marked read, until someone is", function(t)
+	local notify = fake()
+	local rooms = chat.rooms :: any
+	local attached = rooms.attached
+	rooms.attached = function()
+		return false
+	end
+	local changed = { account = "@anna:x", room = "!plans:x", changes = {} }
+	local ok, err = pcall(function()
+		on_message(t, "$1")
+		notify("timeline.changed", changed)
+		t:wait(50)
+		assert(#calls("read") == 0, "nobody to read it")
+		assert(not chat.rooms.shown("@anna:x", "!plans:x"), "shown to nobody")
+	end)
+	rooms.attached = attached
+	assert(ok, tostring(err))
+	t:wait(2100)
+	notify("timeline.changed", changed)
+	t:wait(50)
+	assert(#calls("read") == 1, "read once someone's there")
+end)
+
 test("a room is marked read as it opens, and says who's writing", function(t)
 	local notify = fake()
 	on_message(t, "$1")
@@ -2032,4 +2055,44 @@ test("an agent sends a message only after asking, saying what goes where", funct
 		"slash commands aren't sent"
 	)
 	assert(#sent == 1)
+end)
+
+test("rooms changing many times close together are asked for once", function(t)
+	local asked_rooms = 0
+	backend.reset()
+	local notify = backend.use("matrix", {
+		rooms = function(): any
+			asked_rooms += 1
+			return {
+				{
+					id = "!a:x",
+					account = "@anna:x",
+					name = "A",
+					kind = "room",
+					unread = 0,
+					mentions = 0,
+					at = 0,
+				},
+			}
+		end,
+	})
+	notify("account.changed", {
+		id = "@anna:x",
+		server = "https://x",
+		name = "Anna",
+		state = { state = "ready" },
+	})
+	local every = backend.ROOMS_EVERY
+	backend.ROOMS_EVERY = 100
+	t:buffer("|x")
+	greed.option.set("chat-list", "sidebar")
+	t:run("chat")
+	t:wait(50)
+	local before = asked_rooms
+	for _ = 1, 5 do
+		notify("rooms.changed", { account = "@anna:x" })
+	end
+	t:wait(300)
+	backend.ROOMS_EVERY = every
+	assert(asked_rooms - before == 1, `asked {asked_rooms - before} times`)
 end)

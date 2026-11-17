@@ -61,10 +61,22 @@ M.window_for = function(view: greed.View): greed.View
 	return view
 end
 
---- Whether room `room` of account `key` is open and shown somewhere here.
+-- Whether `r` is in front of someone: in a view here, with a client
+-- attached to see it. A room left open in a session nobody's attached to
+-- isn't read, and alerts as any other.
+local function seen(r: Open): boolean
+	return r.buffer:valid() and #r.buffer:views() > 0 and M.attached()
+end
+
+--- Whether a client is attached to this session; tests replace it.
+function M.attached(): boolean
+	return greed.session.attached()
+end
+
+--- Whether room `room` of account `key` is open and shown to someone here.
 function M.shown(key: string, room: string): boolean
 	local r = open[key_of(key, room, nil)]
-	return r ~= nil and r.buffer:valid() and #r.buffer:views() > 0
+	return r ~= nil and seen(r)
 end
 
 -- How often this session tells the owner which rooms it shows, in
@@ -75,11 +87,8 @@ local SHOWING_EVERY = 5000
 -- The rooms this session shows to someone, as "key|room".
 local function showing(): { string }
 	local list = {}
-	if not greed.session.attached() then
-		return list
-	end
 	for _, r in open do
-		if r.thread == nil and r.buffer:valid() and #r.buffer:views() > 0 then
+		if r.thread == nil and seen(r) then
 			table.insert(list, `{r.account}|{r.room}`)
 		end
 	end
@@ -687,7 +696,7 @@ end
 
 -- Marks a room read, at most every couple of seconds, when it's shown.
 local function mark_read(r: Open)
-	if r.thread or os.time() - r.marked < 2 or #r.buffer:views() == 0 then
+	if r.thread or os.time() - r.marked < 2 or not seen(r) then
 		return
 	end
 	r.marked = os.time()
@@ -819,6 +828,18 @@ function M.open(
 	end)
 	return r
 end
+
+-- Coming back to a session, the rooms on screen are read now. Only where
+-- a room is open: telling the owner would start it otherwise.
+greed.on("client.attached", function()
+	if next(open) == nil then
+		return
+	end
+	for _, r in open do
+		mark_read(r)
+	end
+	report()
+end)
 
 backend.on_timeline(function(key: string, room: string, thread: string?, changes: { any })
 	local r = open[key_of(key, room, thread)]
