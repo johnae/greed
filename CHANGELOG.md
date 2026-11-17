@@ -31,6 +31,7 @@ the repository's history.
 
 - agent: a call the agent gives up on takes back what it proposed
 - agent: a newer proposal for the same text replaces the one waiting there
+- agent: Claude Code sees the chat tools after switching their group on; one tool's empty list of required arguments made it drop the whole group
 - going back to a buffer puts the cursor and scroll where the view left them (#33)
 - gui: switching sessions keeps the window on macOS, and new windows open on the session's machine
 - ssh: copying your config from a Mac no longer makes tar on the other end warn

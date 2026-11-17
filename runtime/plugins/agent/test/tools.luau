@@ -399,6 +399,27 @@ test("schema.object makes an object's schema, the second list naming the require
 	assert(agent.schema.object({}).required == nil, "nothing required by default")
 end)
 
+test("a tool requiring nothing is offered without an empty required list", function()
+	-- `"required": {}` makes clients like Claude Code reject every tool
+	-- listed with it.
+	agent.tool({
+		name = "test_requires_nothing",
+		description = "x",
+		input = { type = "object", properties = { a = { type = "string" } }, required = {} },
+		run = function()
+			return "ok"
+		end,
+	})
+	for _, tool in agent.tools() do
+		if tool.name == "test_requires_nothing" then
+			local encoded = greed.json.encode(tool.input)
+			assert(not string.find(encoded, "required", 1, true), encoded)
+			return
+		end
+	end
+	error("the tool isn't offered")
+end)
+
 test("a tool failing a capability check tells the agent not to change capabilities", function()
 	agent.tool({
 		name = "needs_more",

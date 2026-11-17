@@ -120,6 +120,12 @@ M.schema = {
 --- replaced. It goes when the plugin that offered it does.
 function M.tool(spec: Tool)
 	assert(string.match(spec.name, "^[%w_%-]+$"), "tool names are letters, digits, _ and -")
+	-- An empty `required` would go out as `{}`, and clients like Claude
+	-- Code then reject every tool in the list along with it.
+	local input = spec.input
+	if input and type(input.required) == "table" and next(input.required) == nil then
+		input.required = nil
+	end
 	local client = spec.client or "socket"
 	local named = tools[client] or {}
 	tools[client] = named
