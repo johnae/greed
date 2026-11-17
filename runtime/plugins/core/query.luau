@@ -757,6 +757,46 @@ export type Source = {
 -- Fields every source understands, beside its own.
 local PLACES = { ["in"] = true, under = true, has = true }
 
+-- A field every source understands beside its own, unless it has its own:
+-- `ref:`, what an item mentions that lives elsewhere (`greed.index.refs`),
+-- a ticket, an issue, a commit, a link. An index keeps it as it writes.
+local REF = "ref"
+
+-- `source`'s fields, with `ref`.
+local function all_fields(source: Source): { [string]: Field }
+	if source.fields[REF] then
+		return source.fields
+	end
+	local out = table.clone(source.fields)
+	out[REF] = {
+		kind = "exact",
+		get = function(item: any): { string }
+			return greed.index.refs(source.text(item))
+		end,
+	}
+	return out
+end
+
+--- `source`'s fields with those every source understands (`ref`), as a
+--- query can name them.
+M.fields = all_fields
+
+-- Whether `node` asks about field `name` anywhere in it.
+local function asks(node: Node?, name: string): boolean
+	if node == nil then
+		return false
+	elseif node.kind == "field" and string.lower(node.field or "") == name then
+		return true
+	end
+	local items: { Node } = node.items or {}
+	for _, item in items do
+		if asks(item, name) then
+			return true
+		end
+	end
+	return false
+end
+
 -- The flags `is:` or `has:` names in `node`: the one by its name, or
 -- every one it starts, by prefix (`is:unr` while it's typed).
 local function flags_named(source: Source, node: Node): { (item: any) -> boolean }
@@ -821,7 +861,8 @@ end
 --- don't compile, places it can't look in. Empty when it can run.
 function M.check(parsed: Parsed, source: Source): { Problem }
 	local problems: { Problem } = {}
-	local fields = sorted_keys(source.fields)
+	local known = all_fields(source)
+	local fields = sorted_keys(known)
 	local flags = sorted_keys(source.flags or {})
 	local function problem(message: string, at: At)
 		table.insert(problems, { message = message, at = at })
@@ -904,7 +945,7 @@ function M.check(parsed: Parsed, source: Source): { Problem }
 			end
 			return
 		end
-		local field = source.fields[name]
+		local field = known[name]
 		if field == nil then
 			local near = closest(name, fields)
 			problem(
@@ -978,10 +1019,10 @@ local function bind(node: Node, source: Source): Node
 	return out
 end
 
--- `item`'s values of each of `source`'s fields, by name.
-local function fields_of(item: any, source: Source): { [string]: string | { string } }
+-- `item`'s values of each of fields `all`, by name.
+local function fields_of(item: any, all: { [string]: Field }): { [string]: string | { string } }
 	local fields: { [string]: string | { string } } = {}
-	for name, field in source.fields do
+	for name, field in all do
 		fields[name] = values_of(field, item)
 	end
 	return fields
@@ -990,7 +1031,7 @@ end
 -- `items` as rows for `greed.query.run`, their flags worked out, and after
 -- them the rows they sit in, all the way up, and those they hold, so
 -- `in:`, `under:` and `has:` can look at them.
-local function rows_of(items: { any }, source: Source): { greed.QueryRow }
+local function rows_of(items: { any }, source: Source, all: { [string]: Field }): { greed.QueryRow }
 	local rows: { greed.QueryRow } = {}
 	local index: { [any]: number } = {}
 	local flags: { [string]: (item: any) -> boolean } = source.flags or {}
@@ -1007,7 +1048,7 @@ local function rows_of(items: { any }, source: Source): { greed.QueryRow }
 		end
 		table.insert(rows, {
 			text = source.text(item),
-			fields = fields_of(item, source),
+			fields = fields_of(item, all),
 			flags = has,
 			name = if source.name then source.name(item) else nil,
 		})
@@ -1045,7 +1086,7 @@ end
 -- others are worked out when a query runs.
 local function schema_of(source: Source, indexed: boolean): greed.QuerySchema
 	local kinds: { [string]: string } = {}
-	for name, field in source.fields do
+	for name, field in all_fields(source) do
 		kinds[name] = field.kind
 	end
 	local stored: { [string]: boolean } = {}
@@ -1095,7 +1136,7 @@ function M.index_items(items: { any }, source: Source): { greed.IndexItem }
 			parent = if parent ~= nil then key(parent) else nil,
 			name = if source.name then source.name(item) else nil,
 			text = source.text(item),
-			fields = fields_of(item, source),
+			fields = fields_of(item, source.fields),
 			flags = has,
 			words = words,
 		})
@@ -1126,7 +1167,10 @@ end
 function M.run(parsed: Parsed, items: { any }, source: Source): ({ any }?, string?)
 	-- Every flag is worked out for the rows (`rows_of`), so none is a maybe.
 	local query: Node? = if parsed.query then bind(parsed.query, source) else nil
-	local found, _, err = greed.query.run(query, rows_of(items, source), schema_of(source, false))
+	-- What items mention is only worked out when it's asked about.
+	local all = if asks(query, REF) then all_fields(source) else source.fields
+	local found, _, err =
+		greed.query.run(query, rows_of(items, source, all), schema_of(source, false))
 	if found == nil then
 		return nil, err
 	end

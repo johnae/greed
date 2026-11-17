@@ -332,9 +332,30 @@ for i, match in { "^jj log", "^jj%s*$" } do
 	})
 end
 
+-- A commit's hash, as notes, mail and chat mention it (`ref:`): by its
+-- first 7, which every way of writing it shares however long it's shown.
+local function hash_ref(hash: any): { string }
+	if type(hash) ~= "string" or #hash < 7 then
+		return {}
+	end
+	return { string.lower(string.sub(hash, 1, 7)) }
+end
+
 core.objects.kind({ name = "changed-file", doc = "A file git or jj says has changed, by its path" })
-core.objects.kind({ name = "commit", doc = "A git commit, by its hash" })
-core.objects.kind({ name = "revision", doc = "A jj revision, by its change id" })
+core.objects.kind({
+	name = "commit",
+	doc = "A git commit, by its hash",
+	refs = function(value: any): { string }
+		return hash_ref(if type(value) == "table" then value.sha else value)
+	end,
+})
+core.objects.kind({
+	name = "revision",
+	doc = "A jj revision, by its change id",
+	refs = function(value: any): { string }
+		return hash_ref(if type(value) == "table" then value.commit else nil)
+	end,
+})
 
 -- `git` with `args`, in the repository at `value.root`.
 local function git(args: string, value: any): string

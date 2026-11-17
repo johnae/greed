@@ -1732,7 +1732,7 @@ export type Index = {
 	search: (self: Index, query: any, schema: QuerySchema, view: { sort: { { field: string, descending: boolean } }?, limit: number? }?) -> ({ string }?, { string }?, string?),
 	--- The items with `keys`, as they were put in (without `words`), in that order; keys it doesn't hold are left out. For showing what `search` found. Nil and why when it can't read them.
 	items: (self: Index, keys: { string }) -> ({ IndexItem }?, string?),
-	--- Puts `items` in, in one go, each in place of the one with its key; an index from `open` can't be written. True, or nil and why.
+	--- Puts `items` in, in one go, each in place of the one with its key, with what its text mentions in its field `ref` (see `refs`); an index from `open` can't be written. True, or nil and why.
 	write: (self: Index, items: { IndexItem }) -> (boolean?, string?),
 	--- Takes the items with `keys` out. True, or nil and why.
 	remove: (self: Index, keys: { string }) -> (boolean?, string?),
@@ -1746,6 +1746,8 @@ export type IndexModule = {
 	open: (path: string) -> (Index?, string?),
 	--- The index at `path` to write, made if it isn't there, and made again when another Greed's version of it is there. Needs "fs.write".
 	writer: (path: string) -> (Index?, string?),
+	--- What `text` mentions that lives elsewhere, sorted, as an index keeps it in each item's field `ref`: a Jira ticket's key, `group/repo#12` and `repo#12` for an issue, `!12` for a merge request, a commit's hash, and any link's host, path and query. An index also counts bare `PLAT-9` or `repo!3` once a link has shown what they are; this only reads links.
+	refs: (text: string) -> { string },
 }
 
 --- A match of a regex in some text, from `greed.text.matches`.

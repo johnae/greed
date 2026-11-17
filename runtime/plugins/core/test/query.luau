@@ -336,3 +336,43 @@ test("an index gives back what it holds for the keys a search found", function(t
 	assert(a.fields.from[1] == "Bea", "its fields")
 	assert(a.flags[1] == "mention", "its flags")
 end)
+
+test("ref: finds what an item mentions, in any source, without it saying so", function()
+	local source: core.QuerySource = {
+		fields = {
+			title = {
+				kind = "text",
+				get = function(m: any): string
+					return m.title
+				end,
+			},
+		},
+		text = function(m: any): string
+			return m.text
+		end,
+	}
+	local items = {
+		{ title = "a", text = "see https://jira.example.com/browse/PLAT-7" },
+		{ title = "b", text = "https://gitlab.example.com/team/api/-/merge_requests/3 is up" },
+		{ title = "c", text = "nothing to see, PLAT-7 bare isn't known here" },
+	}
+	local function titles(text: string): string
+		local parsed = query.parse(text)
+		local problems = query.check(parsed, source)
+		assert(#problems == 0, problems[1] and problems[1].message)
+		local found = assert(query.run(parsed, items, source))
+		local out: { string } = {}
+		for _, item in found do
+			table.insert(out, item.title)
+		end
+		return table.concat(out, " ")
+	end
+	assert(titles("ref:plat-7") == "a", titles("ref:plat-7"))
+	assert(titles('ref:plat-7 OR ref:"api!3"') == "a b", titles('ref:plat-7 OR ref:"api!3"'))
+	assert(titles("ref:team/api!3") == "b", titles("ref:team/api!3"))
+	assert(titles("-ref:plat-7 title:c") == "c")
+	assert(
+		query.fields(source).ref and source.fields.ref == nil,
+		"offered, not added to the source"
+	)
+end)

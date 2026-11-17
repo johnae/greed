@@ -73,6 +73,19 @@ test("notes are found by what they hold, and headings by their words", function(
 	assert(found("is:heading seeds") == "Seeds")
 end)
 
+test("notes and todos are found by the tickets and links they mention", function(t)
+	vault(t)
+	local dir = greed.option.get("notes-folder") :: string
+	greed.fs.write(
+		`{dir}/incident.md`,
+		"# Incident\n\n- [ ] follow up https://jira.example.com/browse/OPS-4\n"
+	)
+	notes.index.refresh()
+	local todos = found("is:todo ref:ops-4")
+	assert(string.find(todos, "follow up", 1, true), todos)
+	assert(found("is:note ref:OPS-4") == "incident", found("is:note ref:OPS-4"))
+end)
+
 test("a query with a mistake says so, and agents get the same", function(t)
 	vault(t)
 	local items, problems = notes.query.run("is:todo dew:today")

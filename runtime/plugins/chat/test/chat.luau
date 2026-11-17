@@ -1129,6 +1129,37 @@ test("a message's newest text is kept, whatever order its edits come in", functi
 	assert(#finds(t, "rake") == 1 and #finds(t, "trowel") == 0, "edited again")
 end)
 
+test("ref: finds messages by the tickets they mention, bare once a link showed the key", function(t)
+	local notify = fake()
+	local function said(event: string, text: string): any
+		return {
+			room = "!ops:x",
+			room_name = "Ops",
+			event = event,
+			sender = { id = "@bea:x", name = "Bea" },
+			at = 1792660000000,
+			text = text,
+			mine = false,
+			direct = false,
+		}
+	end
+	notify("messages", {
+		account = "@anna:x",
+		messages = { said("$l", "flaky: https://jira.example.com/browse/PLAT-12") },
+	})
+	t:wait(50)
+	notify(
+		"messages",
+		{ account = "@anna:x", messages = { said("$b", "PLAT-12 again, and PLAT-3") } }
+	)
+	t:wait(50)
+	local found = finds(t, "ref:PLAT-12")
+	table.sort(found)
+	assert(table.concat(found, " ") == "$b $l", table.concat(found, " "))
+	found = finds(t, "ref:plat-3")
+	assert(table.concat(found, " ") == "$b", table.concat(found, " "))
+end)
+
 test("chat's search finds what the services told of, in Greed's query language", function(t)
 	local notify = fake()
 	told(notify)

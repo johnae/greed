@@ -405,7 +405,7 @@ function M.complete(view: greed.View): { Item }?
 		end
 	else
 		if source then
-			for name, f in source.fields do
+			for name, f in query.fields(source) do
 				offer(name .. ":", f.kind)
 			end
 			for flag in flags do

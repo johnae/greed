@@ -4,5 +4,6 @@
 
 pub mod compare;
 pub mod query;
+pub mod refs;
 
 pub mod index;

@@ -83,6 +83,20 @@ function M.split(text: string): (string, { string })
 	return table.concat(rest, " "), named
 end
 
+--- A query for what mentions any of `refs` (`ref:`, see
+--- `greed.index.refs`), or nil for none.
+function M.about(refs: { string }): string?
+	if #refs == 0 then
+		return nil
+	end
+	local asked: { string } = {}
+	for _, ref in refs do
+		-- References never hold a quote: links end before one.
+		table.insert(asked, `ref:"{ref}"`)
+	end
+	return table.concat(asked, " OR ")
+end
+
 --- What `text` finds in every source, or those its `in:` names, newest
 --- first, at most `limit` (100); and why the sources that failed did.
 --- Waits.

@@ -797,6 +797,33 @@ Any other `in:` goes on to the sources (a room in chat, a folder in mail).
 Project files and shell history stay out, they have searches of their own,
 and each app's own search box still searches only that app.
 
+### What mentions a ticket, an MR or a commit
+
+`ref:` finds what mentions something that lives elsewhere: a Jira ticket,
+a GitLab or GitHub issue or merge request, a commit, any link. It works in
+every search, so in `space n s` it pulls the chat thread, the mail and the
+note about one ticket together. Like this:
+
+```text
+ref:PLAT-1234
+ref:api!42 OR ref:api#7
+ref:"grafana.example.com/d/abc"
+```
+
+Links say what they are: `…/browse/PLAT-1234` is `PLAT-1234`,
+`…/team/api/-/merge_requests/42` is `team/api!42` and `api!42` (`#` for
+issues), a commit link its hash, by its first 7 too, and any link its
+address without `https://`. Once a link has shown that `PLAT` is a Jira
+project or `team/api` a repository, a bare `PLAT-99` or `api#3` counts
+as well, from then on. A bare key nothing linked stays a word, so
+`UTF-8` isn't a ticket. Bare commit hashes aren't recognized yet, only
+commit links.
+
+On anything that mentions one or is one (a message, a mail, a link, a
+commit in `git log`), `space .` has `mentioned-elsewhere`, which opens
+`space n s` with those references. Agents use `ref:` in
+`search_everywhere` the same way.
+
 ## Files and buffers
 
 | Keys | |

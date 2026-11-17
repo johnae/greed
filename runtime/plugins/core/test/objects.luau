@@ -275,3 +275,27 @@ test("typed commands find an object argument by its key or its label", function(
 	local _, why = objects.find("no-such-kind", "x")
 	assert(why == "there's no kind of object called no-such-kind", tostring(why))
 end)
+
+test("what a thing is known as elsewhere: its kind says, or its text does", function()
+	objects.kind({
+		name = "test-hashed",
+		refs = function(value: any): { string }
+			return { value.hash, "b" }
+		end,
+	})
+	local said = objects.refs({ kind = "test-hashed", label = "x", value = { hash = "c" } })
+	assert(table.concat(said, " ") == "b c", table.concat(said, " "))
+	local found = objects.refs({
+		kind = "test-unknown",
+		label = "a message",
+		value = { text = "in https://jira.example.com/browse/OPS-3 we said", n = 3 },
+	})
+	assert(
+		table.concat(found, " ") == "OPS-3 jira.example.com/browse/OPS-3",
+		table.concat(found, " ")
+	)
+	local link =
+		objects.refs({ kind = "link", label = "x", value = "https://github.com/a/b/pull/9" })
+	assert(table.find(link, "a/b!9") and table.find(link, "b!9"), table.concat(link, " "))
+	assert(#objects.refs({ kind = "test-unknown", label = "plain", value = 4 }) == 0)
+end)

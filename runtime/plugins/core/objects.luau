@@ -58,6 +58,10 @@ export type Kind = {
 	--- gone. It may wait. Watching uses it; kinds without it are found again
 	--- by id and inspected.
 	fresh: ((value: any) -> { [string]: any }?)?,
+	--- What it's known as elsewhere, as `ref:` finds it in notes, mail and
+	--- chat (`greed.index.refs`): a commit its hash. Without it, the
+	--- references in its text are.
+	refs: ((value: any) -> { string })?,
 }
 
 --- Somewhere objects of any kind show up besides their kind's own list,
@@ -344,6 +348,33 @@ function M.related(object: Object): { [string]: { Object } }
 		end
 	end
 	return out
+end
+
+--- What `target` is known as elsewhere, sorted, each once: what its kind
+--- says (`refs`), or else the references in its text, its value when
+--- that's text, or the text in it, and its label.
+function M.refs(target: actions.Target): { string }
+	local kind = kind_named(target.kind)
+	if kind and kind.refs then
+		local said = tried(kind.refs, target.value)
+		if said then
+			local sorted = table.clone(said)
+			table.sort(sorted)
+			return sorted
+		end
+	end
+	local texts: { string } = { target.label }
+	local value = target.value
+	if type(value) == "string" then
+		table.insert(texts, value)
+	elseif type(value) == "table" then
+		for _, v in value do
+			if type(v) == "string" then
+				table.insert(texts, v)
+			end
+		end
+	end
+	return greed.index.refs(table.concat(texts, "\n"))
 end
 
 --- The actions `object`'s kind has.

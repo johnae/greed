@@ -981,3 +981,31 @@ test("the list scrolls to keep the current item and its whole detail in sight", 
 		"a new query starts at the top again: " .. rows()[1]
 	)
 end)
+
+test("mentioned elsewhere searches everything for what a thing mentions", function(t)
+	local core = require("@core")
+	local link: core.Target =
+		{ kind = "link", label = "a link", value = "https://jira.example.com/browse/PLAT-7" }
+	local names: { string } = {}
+	for _, action in core.actions.for_kind("link", link) do
+		table.insert(names, action.name)
+	end
+	assert(table.find(names, "mentioned-elsewhere"), table.concat(names, " "))
+	local plain: core.Target = { kind = "link", label = "plain", value = "nothing here" }
+	for _, action in core.actions.for_kind("link", plain) do
+		assert(action.name ~= "mentioned-elsewhere", "only offered where something's mentioned")
+	end
+	t:buffer("|x")
+	for _, action in core.actions.for_kind("link", link) do
+		if action.name == "mentioned-elsewhere" then
+			action.run(link)
+		end
+	end
+	t:wait(50)
+	local typed = greed.view():buffer():slice(0, greed.view():buffer():line_end(0))
+	assert(
+		typed == 'ref:"PLAT-7" OR ref:"jira.example.com/browse/PLAT-7"',
+		"the picker opens with the query: " .. typed
+	)
+	t:keys("esc")
+end)

@@ -11,6 +11,7 @@ use rusqlite::{Connection, OpenFlags, TransactionBehavior, params_from_iter, typ
 
 use crate::compare;
 use crate::query::{self, Answer, Flag, Kind, Node, Query, Row, Rows, Schema};
+use crate::refs;
 
 /// The version of the tables; an index made by another is made again.
 const VERSION: &str = "5";
@@ -64,7 +65,19 @@ CREATE VIRTUAL TABLE IF NOT EXISTS words USING fts5 (
 CREATE VIRTUAL TABLE IF NOT EXISTS field_words USING fts5 (
     value, field UNINDEXED, item UNINDEXED, tokenize = 'unicode61 remove_diacritics 2'
 );
+-- What links in the items have shown (`refs::Known`): kind 'key' or 'repo'.
+CREATE TABLE IF NOT EXISTS ref_known (
+    kind TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (kind, value)
+);
 ";
+
+/// The field each item's references go in (`refs`), worked out from its
+/// text as it's written.
+pub const REF: &str = "ref";
+
+/// The version of how references are found; items written before are
+/// looked at again when an index is opened for writing.
+const REFS: &str = "1";
 
 /// Something that went wrong with an index, in words.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +156,22 @@ impl Index {
             "INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?1)",
             [VERSION],
         )?;
+        let empty: bool =
+            db.query_row("SELECT NOT EXISTS (SELECT 1 FROM items)", [], |r| r.get(0))?;
+        if empty {
+            mark_refs_found(&db)?;
+        } else if refs_version(&db).as_deref() != Some(REFS) {
+            // Off the caller's thread: an index of many items takes a while,
+            // and writes meanwhile wait for it as for any other writer.
+            let path = path.to_path_buf();
+            // One that fails is tried again the next time it's opened.
+            std::thread::spawn(move || -> Result<(), Trouble> {
+                let mut db = Connection::open(&path)?;
+                db.busy_timeout(BUSY)?;
+                db.set_transaction_behavior(TransactionBehavior::Immediate);
+                refind(&mut db)
+            });
+        }
         Ok(Index { db })
     }
 
@@ -161,9 +190,18 @@ impl Index {
         Ok(Index { db })
     }
 
-    /// Puts `items` in, in one go, each in place of the one with its key.
+    /// Puts `items` in, in one go, each in place of the one with its key,
+    /// with the references in its text (`refs`) as its field [`REF`].
     pub fn write(&mut self, items: &[Item]) -> Result<(), Trouble> {
         let tx = self.db.transaction()?;
+        let mut known = read_known(&tx)?;
+        let mut learned = false;
+        for item in items {
+            learned |= refs::learn(&item.text, &mut known);
+        }
+        if learned {
+            save_known(&tx, &known)?;
+        }
         for item in items {
             forget(&tx, &item.key)?;
             run(
@@ -217,6 +255,7 @@ impl Index {
                     (id, flag.to_lowercase()),
                 )?;
             }
+            add_refs(&tx, id, &item.text, &known)?;
         }
         tx.commit()?;
         Ok(())
@@ -532,6 +571,98 @@ fn read_version(db: &Connection) -> rusqlite::Result<String> {
 // many items runs the same few statements many thousand times.
 fn run(db: &Connection, sql: &str, params: impl rusqlite::Params) -> rusqlite::Result<usize> {
     db.prepare_cached(sql)?.execute(params)
+}
+
+// The version of how the index's references were found (`REFS`).
+fn refs_version(db: &Connection) -> Option<String> {
+    db.query_row("SELECT value FROM meta WHERE key = 'refs'", [], |r| {
+        r.get(0)
+    })
+    .ok()
+}
+
+fn mark_refs_found(db: &Connection) -> Result<(), Trouble> {
+    run(
+        db,
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('refs', ?1)",
+        [REFS],
+    )?;
+    Ok(())
+}
+
+// What links have shown, as written in `ref_known`.
+fn read_known(db: &Connection) -> Result<refs::Known, Trouble> {
+    let mut known = refs::Known::default();
+    let mut statement = db.prepare_cached("SELECT kind, value FROM ref_known")?;
+    let mut rows = statement.query([])?;
+    while let Some(row) = rows.next()? {
+        let kind: String = row.get(0)?;
+        let value: String = row.get(1)?;
+        match kind.as_str() {
+            "key" => known.keys.insert(value),
+            _ => known.repos.insert(value),
+        };
+    }
+    Ok(known)
+}
+
+fn save_known(db: &Connection, known: &refs::Known) -> Result<(), Trouble> {
+    let kinds = [("key", &known.keys), ("repo", &known.repos)];
+    for (kind, values) in kinds {
+        for value in values {
+            run(
+                db,
+                "INSERT OR IGNORE INTO ref_known (kind, value) VALUES (?1, ?2)",
+                (kind, value),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+// Adds item `id`'s references, the ones in `text`, as its field `REF`.
+fn add_refs(db: &Connection, id: i64, text: &str, known: &refs::Known) -> Result<(), Trouble> {
+    for found in refs::find(text, known) {
+        run(
+            db,
+            "INSERT INTO item_values (item, field, value, lower, number) VALUES (?1, ?2, ?3, ?4, NULL)",
+            (id, REF, &found, query::fold(&found)),
+        )?;
+    }
+    Ok(())
+}
+
+// Works out every item's references again, learning from all of them
+// first, so a bare mention written before its link counts too.
+fn refind(db: &mut Connection) -> Result<(), Trouble> {
+    let tx = db.transaction()?;
+    // Another writer opened at the same time may have done it.
+    if refs_version(&tx).as_deref() == Some(REFS) {
+        return Ok(());
+    }
+    run(&tx, "DELETE FROM item_values WHERE field = ?1", [REF])?;
+    let mut known = read_known(&tx)?;
+    {
+        let mut statement = tx.prepare("SELECT text FROM items")?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let text: String = row.get(0)?;
+            refs::learn(&text, &mut known);
+        }
+    }
+    save_known(&tx, &known)?;
+    {
+        let mut statement = tx.prepare("SELECT id, text FROM items")?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let id: i64 = row.get(0)?;
+            let text: String = row.get(1)?;
+            add_refs(&tx, id, &text, &known)?;
+        }
+    }
+    mark_refs_found(&tx)?;
+    tx.commit()?;
+    Ok(())
 }
 
 // Takes the item with `key` out, with its values, flags and words.
@@ -1131,6 +1262,70 @@ mod tests {
         assert_eq!(index.count().unwrap(), 2);
         index.remove(&["a".into()]).unwrap();
         assert_eq!(index.count().unwrap(), 1);
+    }
+
+    fn by_ref(index: &Index, value: &str) -> Vec<String> {
+        let node = Node {
+            kind: "field".into(),
+            field: Some(REF.into()),
+            op: Some(":".into()),
+            value: Some(value.into()),
+            ..Node::default()
+        };
+        let schema = Schema {
+            fields: HashMap::from([(REF.to_string(), Kind::Exact)]),
+            ..Schema::default()
+        };
+        let mut keys = index
+            .search(Some(&node), &schema, &View::default())
+            .unwrap()
+            .keys;
+        keys.sort();
+        keys
+    }
+
+    #[test]
+    fn items_are_found_by_what_they_mention() {
+        let path = temp("refs");
+        let mut index = Index::open(&path).unwrap();
+        index.write(&[item("a", "PLAT-12 is flaky again")]).unwrap();
+        index
+            .write(&[item("b", "https://jira.example.com/browse/PLAT-7")])
+            .unwrap();
+        assert_eq!(by_ref(&index, "plat-7"), ["b"], "without minding case");
+        assert!(
+            by_ref(&index, "PLAT-12").is_empty(),
+            "written before its key was known"
+        );
+        index.write(&[item("c", "PLAT-12 again")]).unwrap();
+        assert_eq!(
+            by_ref(&index, "PLAT-12"),
+            ["c"],
+            "known now, for what comes"
+        );
+
+        // Opened again after references change, every item is looked at.
+        drop(index);
+        let db = Connection::open(&path).unwrap();
+        db.execute("DELETE FROM meta WHERE key = 'refs'", [])
+            .unwrap();
+        drop(db);
+        let index = Index::open(&path).unwrap();
+        // It's done on another thread.
+        for _ in 0..200 {
+            if by_ref(&index, "PLAT-12").len() == 2 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(by_ref(&index, "PLAT-12"), ["a", "c"]);
+        assert_eq!(
+            by_ref(&index, "jira.example.com/browse/PLAT-7"),
+            ["b"],
+            "and links by where they go"
+        );
+        let read = index.items(&["a".into()]).unwrap();
+        assert_eq!(read[0].fields[REF], ["PLAT-12"]);
     }
 
     #[test]

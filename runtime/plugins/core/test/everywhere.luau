@@ -70,3 +70,11 @@ test("a source that can't search says why, and the others still answer", functio
 	assert(labels(hits) == "fine:here", labels(hits))
 	assert(#troubles == 1 and troubles[1] == "broken: it's down", table.concat(troubles, "; "))
 end)
+
+test("about asks for what mentions any of some references", function()
+	assert(everywhere.about({}) == nil)
+	local asked = everywhere.about({ "PLAT-7", "wiki.example.com/x?id=1" })
+	assert(asked == 'ref:"PLAT-7" OR ref:"wiki.example.com/x?id=1"', asked)
+	local parsed = core.query.parse(asked :: string)
+	assert(parsed.ok, "it reads as a query")
+end)

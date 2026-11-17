@@ -288,10 +288,19 @@ end
 greed.command({
 	name = "search-everywhere",
 	doc = "Search your notes, mail and chat at once, as you type; in:mail, in:chat or in:notes picks some",
-	run = function()
+	args = {
+		{
+			name = "query",
+			doc = "What to search for to begin with",
+			type = "string",
+			optional = true,
+		},
+	},
+	run = function(ctx)
 		picker.pick("Search everywhere", {}, function(item)
 			item.value.open()
 		end, {
+			query = ctx.values.query,
 			delay = 250,
 			source = function(query: string): { picker.Item }
 				if core.text.trim(query) == "" then
@@ -316,5 +325,23 @@ greed.command({
 })
 
 greed.keymap.bind({ layer = "leader" }, { ["n s"] = "search-everywhere" })
+
+-- On anything that mentions a ticket, issue, commit or link, or is one:
+-- what your notes, mail and chat say about the same.
+core.actions.action({
+	kind = "*",
+	name = "mentioned-elsewhere",
+	quiet = true,
+	doc = "What your notes, mail and chat say about the tickets, issues, commits and links it is or mentions",
+	offers = function(target: core.Target): boolean
+		return #core.objects.refs(target) > 0
+	end,
+	run = function(target: core.Target)
+		local query = core.everywhere.about(core.objects.refs(target))
+		if query then
+			greed.run("search-everywhere", { args = { query } })
+		end
+	end,
+})
 
 return {}

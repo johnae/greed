@@ -215,5 +215,14 @@ pub(super) fn module(lua: &Lua) -> LuaResult<Table> {
             opened(lua, Index::open(&file), &path)
         })?,
     )?;
+    module.set(
+        "refs",
+        lua.create_function(|_, text: String| {
+            Ok(greed_index::refs::find(
+                &text,
+                &greed_index::refs::Known::default(),
+            ))
+        })?,
+    )?;
     Ok(module)
 }

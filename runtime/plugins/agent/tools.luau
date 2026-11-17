@@ -460,7 +460,10 @@ agent.tool({
 	description = "Search the user's notes, mail and chat at once, newest first: each hit's source, "
 		.. "kind and id, what it is, a snippet and when. One query in Greed's search language, "
 		.. "words and fields like from:, and in:notes, in:mail or in:chat to search only those "
-		.. "(any other in: is a place inside them, like a mail folder or a chat room). Reading "
+		.. "(any other in: is a place inside them, like a mail folder or a chat room). ref: finds "
+		.. "what mentions a ticket, issue, merge request, commit or link: ref:PLAT-12, ref:api!42 "
+		.. "(a merge request), ref:api#7 (an issue), ref:abc1234 (a commit, by its first 7), "
+		.. 'ref:"wiki.example.com/x" (a link, without its scheme). Reading '
 		.. "mail or chat asks the user the first time in a project",
 	input = object({
 		query = { type = "string", description = 'Like "migration from:bea" or "lunch in:chat"' },

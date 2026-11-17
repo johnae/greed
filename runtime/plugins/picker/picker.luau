@@ -27,6 +27,8 @@ export type Preview = {
 type Paths = { dirs: boolean?, choose: (path: string) -> () }
 
 export type Options = {
+	--- What's typed in it to begin with.
+	query: string?,
 	--- Shows a preview of the current item beside the list. Returning nil
 	--- leaves the preview empty.
 	preview: ((item: Item) -> Preview?)?,
@@ -723,6 +725,13 @@ function M.pick(title: string, items: { Item }, choose: (item: Item) -> (), opti
 		end
 	end
 	opened[client] = o
+	local typed = options and options.query
+	if typed then
+		o.buffer:edit(function(e)
+			e:insert(0, typed)
+		end, { undo = false })
+		o.view:set_cursor(#typed)
+	end
 	refresh(o)
 end
 

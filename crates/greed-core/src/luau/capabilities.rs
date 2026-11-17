@@ -1072,6 +1072,8 @@ mod tests {
         "image.decode",
         "image.forget",
         "image.size",
+        // Reading references out of text in hand; opening an index is gated.
+        "index.refs",
         // Where things are, not what's in them.
         "fs.cwd",
         "fs.dirs",
