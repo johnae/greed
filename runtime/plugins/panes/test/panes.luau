@@ -878,3 +878,25 @@ test("in Vim, a count before g t goes to that tab", function(t)
 	assert(greed.tab.list()[1].current, "round to the first")
 	greed.option.set("editing-style", "helix")
 end)
+
+test("a panel's title changes or goes, and a pane has none to change", function(t)
+	t:buffer("|hello")
+	local panel = greed.panel(
+		greed.create_buffer("notes", "a panel"),
+		{ side = "right", width = 30, title = "first" }
+	)
+	local function drawn(): string
+		return table.concat(t:screen(80, 10), "\n")
+	end
+	assert(string.find(drawn(), "first", 1, true), drawn())
+	assert(panel:set_title("second"))
+	assert(
+		string.find(drawn(), "second", 1, true) and not string.find(drawn(), "first", 1, true),
+		drawn()
+	)
+	assert(panel:set_title(nil))
+	assert(not string.find(drawn(), "second", 1, true), drawn())
+	assert(string.find(drawn(), "a panel", 1, true), "the text moves up a row")
+	panel:close()
+	assert(not greed.view():set_title("x"), "a pane")
+end)

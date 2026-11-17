@@ -632,13 +632,19 @@ local function split(buffer: greed.Buffer, sizes: Sizes): greed.View
 	return view
 end
 
+-- The title of a panel or float showing the agent `name`, as
+-- `agent-pane-title` says.
+local function pane_title(name: string): string?
+	return if greed.option.get("agent-pane-title") ~= false then name else nil
+end
+
 local function open_in(
 	buffer: greed.Buffer,
 	name: string,
 	where: Placement,
 	sizes: Sizes
 ): greed.View
-	local title = if greed.option.get("agent-pane-title") ~= false then name else nil
+	local title = pane_title(name)
 	if where == "panel" then
 		return greed.panel(buffer, { side = "right", width = "45%", title = title })
 	elseif where == "float" then
@@ -2065,6 +2071,16 @@ greed.on("option.changed", function(event: greed.OptionChanged)
 	if table.find(REDRAWN_BY, event.name) then
 		for _, s in sessions do
 			changed(s)
+		end
+	elseif event.name == "agent-pane-title" then
+		-- Panels and floats open already follow it too.
+		for _, s in sessions do
+			local buffer = buffers[s.id]
+			if buffer and buffer:valid() then
+				for _, view in buffer:views() do
+					view:set_title(pane_title(s.name))
+				end
+			end
 		end
 	end
 end)

@@ -761,8 +761,8 @@ The line above the transcript (`Claude Code in ~/src/app`) follows
 `agent-title`, which takes the same kind of list as `agent-box`: `agent`,
 `model`, `folder`, `workspace`, your own fields and quoted text. Set it to
 `""` to drop the line. A panel or float showing an agent has its name as a
-title; `:set agent-pane-title false` leaves that off for agents shown
-afterwards. The session list keeps the name either way, so two sessions
+title; `:set agent-pane-title false` takes it off, open ones
+included. The session list keeps the name either way, so two sessions
 stay apart.
 
 ```luau

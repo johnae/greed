@@ -542,6 +542,11 @@ fn add_float_methods<M: UserDataMethods<ViewRef>>(methods: &mut M) {
         state_mut(lua).editor.configure_float(this.id, options);
         Ok(true)
     });
+    methods.add_method("set_title", |lua, this, title: Option<String>| {
+        this.with_view(lua, |_| Ok(()))?;
+        let title = title.filter(|t| !t.is_empty()).map(std::sync::Arc::from);
+        Ok(state_mut(lua).editor.set_title(this.id, title))
+    });
     methods.add_method("raise", |lua, this, NoArgs| {
         Ok(state_mut(lua).editor.raise_float(this.id))
     });

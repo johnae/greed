@@ -1330,6 +1330,27 @@ impl Editor {
         view
     }
 
+    /// Gives the panel or floating view `view` the title `title` (none for
+    /// no title row). False if `view` is neither.
+    pub fn set_title(&mut self, view: ViewId, title: Option<Arc<str>>) -> bool {
+        let mut found = false;
+        for panel in self
+            .projects
+            .iter_mut()
+            .flat_map(|p| p.arrangements.values_mut())
+            .flat_map(|a| a.panels.iter_mut())
+            .filter(|p| p.view == view)
+        {
+            panel.options.title.clone_from(&title);
+            found = true;
+        }
+        if let Some(float) = self.floats.iter_mut().find(|f| f.view == view) {
+            float.options.title = title;
+            found = true;
+        }
+        found
+    }
+
     /// Panels, outermost first on each side.
     pub fn panels(&self) -> &[Panel] {
         &self.shown_arrangement().panels

@@ -378,6 +378,8 @@ export type View = {
 	--- Changes how a floating view is shown; fields left out stay as they
 	--- are. False, changing nothing, if it isn't floating; fails if it was closed.
 	configure: (self: View, spec: FloatSpec) -> boolean,
+	--- Gives a panel or floating view the title `title`, nil or "" for none; false if it's neither.
+	set_title: (self: View, title: string?) -> boolean,
 	--- Brings a floating view in front of the other floats; false if it isn't floating.
 	raise: (self: View) -> boolean,
 	--- How a floating view is shown, as `greed.float` takes it; nil if it isn't floating.
