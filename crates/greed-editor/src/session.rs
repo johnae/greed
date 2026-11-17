@@ -309,7 +309,8 @@ fn travel(mut next: Next, mut opening: Opening) -> Result<(), Error> {
             | Output::SshAgentRequest(..)
             | Output::HomeStatus(_)
             | Output::Notify(_)
-            | Output::Ping => return Ok(()),
+            | Output::Ping
+            | Output::Lost => return Ok(()),
         };
     }
 }
@@ -359,10 +360,37 @@ fn say_detached(place: &Place) {
     }
 }
 
+/// How often a heartbeat checks whether the session is still heard from,
+/// so a machine waking from sleep notices within about this long.
+const CHECK_EVERY: Duration = Duration::from_secs(1);
+
+/// The tries made a second apart before waiting longer: a network coming
+/// back after sleep takes a few seconds.
+const QUICK_TRIES: u32 = 20;
+
+/// Whether a session with a heartbeat last heard from `awake` ago, counting
+/// only time this machine was awake, and `wall` ago by the clock, is gone.
+/// A machine that slept longer than [`control::HEARTBEAT_LOST`] was let go
+/// by the session meanwhile, so it knows at once on waking.
+fn gone(awake: Duration, wall: Duration) -> bool {
+    awake > control::HEARTBEAT_LOST || wall > control::HEARTBEAT_LOST
+}
+
+/// Milliseconds since 1970 by the wall clock.
+fn wall_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
 /// How long to wait before trying a lost connection again for the
-/// `tries`th time: longer each time, up to half a minute.
+/// `tries`th time: a second for the first [`QUICK_TRIES`], then longer each
+/// time, up to half a minute.
 fn retry_after(tries: u32) -> Duration {
-    Duration::from_secs(1 << tries.min(5)).min(Duration::from_secs(30))
+    match tries.checked_sub(QUICK_TRIES) {
+        None | Some(0) => Duration::from_secs(1),
+        Some(later) => Duration::from_secs(1 << later.min(5)).min(Duration::from_secs(30)),
+    }
 }
 
 /// Where a switch `to` from `here` goes, with the places the client has been
@@ -611,30 +639,39 @@ fn show(
     });
     // When the session was last heard from, and whether the connection
     // went without it saying how things ended.
+    // Heard by both clocks: the steady one stops while the machine sleeps,
+    // the wall clock doesn't.
     let started = Instant::now();
     let heard = Arc::new(AtomicU64::new(0));
+    let heard_wall = Arc::new(AtomicU64::new(wall_millis()));
     let lost = Arc::new(AtomicBool::new(false));
     // Whether this run is over, for the heartbeat to stop.
     let over = Arc::new(AtomicBool::new(false));
     if heartbeat {
-        let (input, outputs, heard, lost, over) = (
+        let (input, outputs, heard, heard_wall, lost, over) = (
             input.clone(),
             outputs.clone(),
             heard.clone(),
+            heard_wall.clone(),
             lost.clone(),
             over.clone(),
         );
         std::thread::spawn(move || {
+            let mut pinged = Instant::now();
             while !over.load(Ordering::Relaxed) {
-                std::thread::sleep(control::HEARTBEAT);
-                let since = millis_since(started) - heard.load(Ordering::Relaxed);
-                if Duration::from_millis(since) > control::HEARTBEAT_LOST {
+                std::thread::sleep(CHECK_EVERY);
+                let awake = millis_since(started).saturating_sub(heard.load(Ordering::Relaxed));
+                let wall = wall_millis().saturating_sub(heard_wall.load(Ordering::Relaxed));
+                if gone(Duration::from_millis(awake), Duration::from_millis(wall)) {
                     lost.store(true, Ordering::Relaxed);
-                    let _ = outputs.send(Output::Exit);
+                    let _ = outputs.send(Output::Lost);
                     return;
                 }
-                if input.send(Input::Ping).is_err() {
-                    return;
+                if pinged.elapsed() >= control::HEARTBEAT {
+                    pinged = Instant::now();
+                    if input.send(Input::Ping).is_err() {
+                        return;
+                    }
                 }
             }
         });
@@ -650,6 +687,7 @@ fn show(
         for line in reader.lines() {
             let Ok(line) = line else { break };
             heard.store(millis_since(started), Ordering::Relaxed);
+            heard_wall.store(wall_millis(), Ordering::Relaxed);
             // One this client can't read, as from a newer session, is left
             // out; a frame or delta left out makes the next delta not fit,
             // and the client asks for a whole frame.
@@ -673,7 +711,7 @@ fn show(
         }
         if !said_end {
             reading_lost.store(true, Ordering::Relaxed);
-            let _ = outputs.send(Output::Exit);
+            let _ = outputs.send(Output::Lost);
         }
     });
     let ended = crate::client::run(&input, &output);
@@ -1251,6 +1289,27 @@ fn this_machine() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_session_is_gone_after_three_quiet_beats_awake_or_asleep() {
+        let s = Duration::from_secs;
+        assert!(!gone(s(4), s(4)), "heard a beat ago");
+        assert!(gone(s(16), s(16)), "three beats missed while awake");
+        // Asleep for half an hour: the steady clock barely moved, but the
+        // session let the client go long ago.
+        assert!(gone(s(1), s(30 * 60)), "woke from a long sleep");
+        assert!(!gone(s(1), s(10)), "a short sleep the session waited out");
+    }
+
+    #[test]
+    fn lost_connections_are_tried_each_second_at_first_then_less_often() {
+        let s = Duration::from_secs;
+        assert_eq!(retry_after(1), s(1));
+        assert_eq!(retry_after(QUICK_TRIES), s(1));
+        assert_eq!(retry_after(QUICK_TRIES + 1), s(2));
+        assert_eq!(retry_after(QUICK_TRIES + 3), s(8));
+        assert_eq!(retry_after(QUICK_TRIES + 50), s(30));
+    }
 
     #[test]
     fn the_bridge_command_quotes_paths_and_brings_the_config() {

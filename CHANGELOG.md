@@ -33,6 +33,7 @@ the repository's history.
 - going back to a buffer puts the cursor and scroll where the view left them (#33)
 - gui: switching sessions keeps the window on macOS, and new windows open on the session's machine
 - ssh: copying your config from a Mac no longer makes tar on the other end warn
+- ssh: waking from sleep reconnects at once, retries come every second at first, and the window keeps the last screen with `reconnecting…` meanwhile
 
 ### Documentation
 

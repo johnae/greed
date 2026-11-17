@@ -327,10 +327,13 @@ only keys and screen updates cross the network. After `:detach` the session
 keeps running, and `greed ssh HOST` comes back to it.
 
 If the connection drops (the network goes, the laptop sleeps), `greed ssh`
-says so and reconnects to the same session by itself, waiting a little
-longer between tries (`ctrl-c` stops it). The two ends check in every few
-seconds, so a quiet connection is noticed within about fifteen seconds, and
-the session lets that client go then too.
+says so and reconnects to the same session by itself: every second for the
+first twenty tries, then waiting a little longer each time (`ctrl-c` stops
+it). The two ends check in every few seconds, so a quiet connection is
+noticed within about fifteen seconds, and the session lets that client go
+then too. Waking from a longer sleep, Greed knows straight away and
+reconnects. The window keeps showing the last screen with `reconnecting…`
+over it until the session's screen is back.
 
 From inside Greed, `space C` (`:connect`, or Connect to Host… in the
 window's File menu) does the same without a terminal: pick from the hosts

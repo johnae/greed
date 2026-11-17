@@ -42,6 +42,9 @@ pub(crate) enum Event {
 /// asks for one; without it, the window goes to that session instead.
 static NEW_WINDOW: OnceLock<fn(SwitchTo)> = OnceLock::new();
 
+/// What the window says over the last screen while it connects again.
+const RECONNECTING: &str = "reconnecting…";
+
 /// Sets what opens a session in another window: the program knows how to
 /// find and start sessions, and this crate only draws them.
 pub fn on_new_window(open: fn(SwitchTo)) {
@@ -266,8 +269,9 @@ impl App {
     }
 
     /// The session shown ended as `ended` says: told to whoever attached
-    /// it. A switch keeps the window for the next session; anything else
-    /// closes it.
+    /// it. A switch keeps the window for the next session, and a lost
+    /// connection keeps it showing what it had while it connects again;
+    /// anything else closes it.
     fn end(&mut self, ended: Output) {
         let Some(attached) = self.attached.take() else {
             return;
@@ -276,7 +280,10 @@ impl App {
         if let (Some(path), Some(size)) = (&attached.size_file, self.size) {
             let _ = std::fs::write(path, format!("{} {}\n", size.width, size.height));
         }
-        if !matches!(ended, Output::Switch(_)) {
+        if matches!(ended, Output::Lost) {
+            self.painter.overlay = vec![RECONNECTING.to_owned()];
+            self.want_redraw();
+        } else if !matches!(ended, Output::Switch(_)) {
             self.shown = None;
             self.painter = Painter::new().gliding();
             self.columns = Columns::default();
@@ -490,7 +497,8 @@ impl App {
 
     fn handle(&mut self, output: Output) {
         match self.painter.take(output) {
-            Ok(Taken::Frame) => {}
+            // The session's screen again, after connecting again.
+            Ok(Taken::Frame) => self.painter.overlay.clear(),
             Ok(Taken::Stale) => {
                 let _ = self.input.send(Input::Refresh);
             }
@@ -647,9 +655,11 @@ impl ApplicationHandler<Event> for App {
         }
     }
 
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         self.log_event(&event);
         match event {
+            // Closed while connecting again, there's no session to tell.
+            WindowEvent::CloseRequested if self.attached.is_none() => event_loop.exit(),
             WindowEvent::CloseRequested => self.end(Output::Detached),
             WindowEvent::Resized(size) => {
                 if let Some(shown) = &mut self.shown {

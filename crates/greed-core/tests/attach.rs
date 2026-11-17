@@ -424,7 +424,7 @@ fn detaching_lets_the_client_go_and_the_editor_keeps_running() {
             | Output::HomeStatus(_)
             | Output::Notify(_)
             | Output::Ping => {}
-            other @ (Output::Exit | Output::Switch(_)) => {
+            other @ (Output::Exit | Output::Switch(_) | Output::Lost) => {
                 panic!("expected a detach, got {other:?}")
             }
         }

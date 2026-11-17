@@ -117,6 +117,11 @@ pub enum Output {
     /// asked for a heartbeat as it attached, so it knows the connection went
     /// once they stop.
     Ping,
+    /// The connection to the session went without it saying how things
+    /// ended. A client makes this itself for the window to wait in while it
+    /// connects again; it's never sent.
+    #[serde(skip)]
+    Lost,
 }
 
 impl Output {
@@ -127,7 +132,7 @@ impl Output {
     pub fn ends(&self) -> bool {
         match self {
             Output::Switch(to) => !to.window,
-            other => matches!(other, Output::Exit | Output::Detached),
+            other => matches!(other, Output::Exit | Output::Detached | Output::Lost),
         }
     }
 }
