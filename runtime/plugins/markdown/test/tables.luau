@@ -203,3 +203,38 @@ test("typing that changes nothing, like a search into a table, leaves it as writ
 	t:keys("i esc")
 	assert(text_of(view) == written, "in and out of typing: " .. text_of(view))
 end)
+
+test("a table wider than the view goes past its edge, a row to a line", function(t)
+	local wide = "intro\n\n| Option | What it does | Cost |\n|---|---|---|\n"
+		.. "| `--release` | builds with optimizations turned on for speed | slow build |\n\nafter\n"
+	opened(t, wide)
+	local rows = t:draw(40, 12)
+	local drawn = table.concat(rows, "\n")
+	-- Each row of the table on a line of its own, starting with its border,
+	-- and the text after the table right after the bottom border.
+	local tops, mids, bottoms, cells = 0, 0, 0, 0
+	for _, row in rows do
+		local first = utf8.char(utf8.codepoint(row .. " ", 1))
+		tops += if first == "┌" then 1 else 0
+		mids += if first == "├" then 1 else 0
+		bottoms += if first == "└" then 1 else 0
+		cells += if first == "│" then 1 else 0
+	end
+	assert(tops == 1 and mids == 1 and bottoms == 1 and cells == 2, drawn)
+	assert(
+		string.find(drawn, "└[^\n]*\n\nafter", 1) or string.find(drawn, "└[^\n]*\n *\nafter"),
+		drawn
+	)
+	assert(not string.find(drawn, "\nturned on", 1, true), "no row wraps\n" .. drawn)
+end)
+
+test("a table ends at a plain line, though that line has a pipe", function(t)
+	local view = opened(t, "| A | B |\n|---|---|\n| 1 | 2 |\n✓ Bash ls | head\n")
+	-- As an agent's transcript marks a tool call after a message.
+	markdown.plain(view:buffer(), { [3] = true })
+	markdown.refresh(view:buffer())
+	local drawn = table.concat(t:draw(40, 10), "\n")
+	assert(string.find(drawn, "\n✓ Bash ls | head", 1, true), drawn)
+	assert(not string.find(drawn, "│ ✓ Bash ls", 1, true), drawn)
+	markdown.plain(view:buffer(), nil)
+end)

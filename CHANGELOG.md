@@ -37,6 +37,7 @@ the repository's history.
 - chat: rooms show by name in `space space`, not as chat-room
 - chat: Mattermost webhook posts (alerts, CI) are searchable, with their attachments' text and the webhook's name
 - picker: `space f` in a big project opens several times faster without holding up the editor, and lists every file; it stopped at 100,000 before
+- markdown: a table wider than the view runs past its edge instead of each row wrapping apart, and in an agent's transcript a table no longer swallows the tool call after it
 
 ### Documentation
 

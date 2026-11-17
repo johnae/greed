@@ -444,6 +444,9 @@ local function draw_table(
 		style = "markdown.table",
 		lines = { core.ui.border(widths, "└", "┴", "┘") },
 	})
+	-- A table wider than the view goes past its edge, scrolling sideways
+	-- with the cursor, rather than each row wrapping into the next.
+	table.insert(out, { from = line_start(n), to = line_end(last), style = "", nowrap = true })
 	return true
 end
 
@@ -609,6 +612,18 @@ local function marks(
 			continue
 		end
 		local found = s.table_at[n - 1]
+		-- A table ends where a plain line starts, like an agent's tool call
+		-- right after its message, though it has a pipe in it.
+		if found and left_plain then
+			for row = found.first + 2, found.last do
+				if left_plain[row] then
+					local cut = table.clone(found)
+					cut.last = row - 1
+					found = cut
+					break
+				end
+			end
+		end
 		if
 			found and draw_table(s, found, out, shows, read ~= nil, values.worked(buffer, s, found))
 		then
