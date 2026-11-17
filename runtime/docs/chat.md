@@ -213,6 +213,32 @@ them to the desktop's own notifications too (`notify-send` on Linux,
 Only new messages alert: what came while Greed was away shows as unread
 counts in the list.
 
+## Chat and agents
+
+Agents have the `chat` tools, a group they switch on when they need them
+(see [Agents](agents.md#tool-groups)):
+
+| Tool          | Does                                                              |
+| ------------- | ----------------------------------------------------------------- |
+| `chat_rooms`  | lists your rooms, channels and direct messages, unread first      |
+| `chat_read`   | reads a room's latest messages, or older ones; it stays unread    |
+| `chat_search` | searches every account with the query chat's search box takes     |
+| `chat_send`   | sends a message as you, asking you every time                     |
+
+So you can ask for things like:
+
+```text
+what did I miss in #infra since yesterday?
+did anyone answer my question about the runbook?
+tell Bea in our DM that I'm running ten minutes late
+```
+
+What an agent reads of chat is marked as from outside, to read as data:
+a message saying "ignore your instructions" is something it read, never
+something you asked for. `chat_send` asks you every time, whatever you've
+allowed agents, and shows what it would send and where. It doesn't send
+slash commands.
+
 ## What isn't here, and what happens instead
 
 | Thing | What Greed does |

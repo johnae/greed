@@ -86,6 +86,21 @@ function M.room(key: string, shown: backend.Room, window: greed.View?)
 	room.open(key, shown.id, shown.name, nil, window)
 end
 
+--- Whether room `a` comes before `b` in lists: those with mentions, then
+--- unread, then the most recently active, then by name.
+function M.ahead(a: backend.Room, b: backend.Room): boolean
+	if (a.mentions > 0) ~= (b.mentions > 0) then
+		return a.mentions > 0
+	end
+	if (a.unread > 0) ~= (b.unread > 0) then
+		return a.unread > 0
+	end
+	if (a.active or 0) ~= (b.active or 0) then
+		return (a.active or 0) > (b.active or 0)
+	end
+	return a.name < b.name
+end
+
 --- The rooms to list, unread and recent first; spaces are `grouped`'s.
 function M.sorted(rooms: { backend.Room }): { backend.Room }
 	local out: { backend.Room } = {}
@@ -94,18 +109,7 @@ function M.sorted(rooms: { backend.Room }): { backend.Room }
 			table.insert(out, room)
 		end
 	end
-	table.sort(out, function(a: backend.Room, b: backend.Room): boolean
-		if (a.mentions > 0) ~= (b.mentions > 0) then
-			return a.mentions > 0
-		end
-		if (a.unread > 0) ~= (b.unread > 0) then
-			return a.unread > 0
-		end
-		if (a.active or 0) ~= (b.active or 0) then
-			return (a.active or 0) > (b.active or 0)
-		end
-		return a.name < b.name
-	end)
+	table.sort(out, M.ahead)
 	return out
 end
 
@@ -792,5 +796,19 @@ end
 room.window_for = function(view: greed.View): greed.View
 	return if view == sidebar() then greed.tab.current().active else view
 end
+
+-- Agents' tools for chat, while there are agents (tools.luau).
+local function offer_tools()
+	require("@self/tools")(M)
+end
+
+if table.find(greed.plugin.list(), "agent") then
+	offer_tools()
+end
+greed.on("plugin.loaded", function(event: greed.PluginLoaded)
+	if event.name == "agent" then
+		offer_tools()
+	end
+end)
 
 return M

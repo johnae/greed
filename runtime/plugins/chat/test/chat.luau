@@ -1860,3 +1860,154 @@ test("] m outside anything made of items says so", function(t)
 	local messages = t:messages()
 	assert(string.find(messages[#messages] or "", "made of items", 1, true), messages[#messages])
 end)
+
+-- Runs the agent tool `name` with `args`.
+local function tool(name: string, args: { [string]: any }): any
+	local agent = require("@agent")
+	for _, found in agent.tools() do
+		if found.name == name then
+			return found.run(args, agent.caller())
+		end
+	end
+	error(`no tool {name}`)
+end
+
+-- What an untrusted answer holds, decoded.
+local function inside(answer: string): any
+	local held = assert(string.match(answer, "\n(.*)\n</untrusted"), answer)
+	return greed.json.decode(held)
+end
+
+-- A Matrix service with Plans and Quiet, Plans' history two messages long,
+-- that keeps what it's sent in `sent`.
+local function for_agents(sent: { any }): (method: string, params: any) -> ()
+	table.clear(asked)
+	backend.reset()
+	local function room(id: string, name: string, unread: number): any
+		return {
+			id = id,
+			account = "@anna:x",
+			name = name,
+			kind = "room",
+			unread = unread,
+			mentions = 0,
+			favourite = false,
+			muted = false,
+			encrypted = false,
+			active = 1792660000000,
+		}
+	end
+	local notify = backend.use("matrix", {
+		rooms = function(): any
+			return { room("!quiet:x", "Quiet", 0), room("!plans:x", "Plans", 2) }
+		end,
+		history = function(params: any): any
+			table.insert(asked, { method = "history", params = params })
+			local function said(event: string, who: string, text: string): any
+				return {
+					room = "!plans:x",
+					room_name = "Plans",
+					event = event,
+					sender = { id = `@{string.lower(who)}:x`, name = who },
+					at = 1792660000000,
+					text = text,
+					mine = who == "Anna",
+					direct = false,
+				}
+			end
+			return {
+				messages = { said("$2", "Bea", "lunch at noon?"), said("$1", "Anna", "hungry") },
+				before = "older",
+			}
+		end,
+		send = function(params: any)
+			table.insert(sent, params)
+			return nil
+		end,
+	})
+	notify("account.changed", {
+		id = "@anna:x",
+		server = "https://x",
+		name = "Anna",
+		state = { state = "ready" },
+	})
+	return notify
+end
+
+test("an agent lists the rooms, reads one and searches, marked as from outside", function(t)
+	local notify = for_agents({})
+	local rooms = tool("chat_rooms", {})
+	assert(string.find(rooms, '^<untrusted%-%x+ source="the user\'s chat rooms"'), rooms)
+	local listed = inside(rooms)
+	assert(#listed == 2 and listed[1].name == "Plans" and listed[1].unread == 2, rooms)
+	assert(listed[1].account == "matrix @anna:x" and listed[1].room == "!plans:x", rooms)
+	local only = inside(tool("chat_rooms", { query = "qui" }))
+	assert(#only == 1 and only[1].name == "Quiet", greed.json.encode(only))
+
+	local read = tool("chat_read", { account = "matrix @anna:x", room = "!plans:x", limit = 5 })
+	assert(string.find(read, 'source="messages in the chat room Plans"', 1, true), read)
+	local said = inside(read)
+	assert(said.before == "older" and #said.messages == 2, read)
+	assert(said.messages[1].from == "Bea" and said.messages[1].text == "lunch at noon?", read)
+	assert(said.messages[2].mine == true, read)
+	local history = calls("history")
+	assert(#history == 1 and history[1].limit == 5, greed.json.encode(asked))
+	assert(
+		not pcall(tool, "chat_read", { account = "nobody", room = "!plans:x" }),
+		"an unknown account fails"
+	)
+
+	told(notify)
+	t:wait(50)
+	local found: any = nil
+	greed.spawn(function()
+		found = inside(tool("chat_search", { query = "lunch from:bea" }))
+	end)
+	t:wait_for(function(): boolean
+		return found ~= nil
+	end)
+	assert(
+		#found == 1 and found[1].room_name == "Plans" and found[1].from == "Bea",
+		greed.json.encode(found)
+	)
+end)
+
+test("an agent sends a message only after asking, saying what goes where", function(t)
+	local sent = {}
+	for_agents(sent)
+	local agent = require("@agent")
+	for _, found in agent.tools() do
+		if found.name == "chat_send" then
+			assert(agent.asks(found), "sending asks")
+			local why = agent.danger(
+				found,
+				{ account = "matrix @anna:x", room = "!plans:x", text = "on my\nway" }
+			)
+			assert(why == 'sends "on my way" to Plans as you', tostring(why))
+		elseif
+			found.name == "chat_rooms"
+			or found.name == "chat_read"
+			or found.name == "chat_search"
+		then
+			assert(not agent.asks(found), "reading doesn't")
+		end
+	end
+	local done = tool(
+		"chat_send",
+		{ account = "matrix @anna:x", room = "!plans:x", text = "on my way", reply_to = "$2" }
+	)
+	assert(done == "sent to Plans", done)
+	assert(
+		#sent == 1 and sent[1].text == "on my way" and sent[1].reply_to == "$2",
+		greed.json.encode(sent)
+	)
+	assert(
+		not pcall(
+			tool,
+			"chat_send",
+			{ account = "matrix @anna:x", room = "!plans:x", text = "/kick bea" }
+		),
+		"slash commands aren't sent"
+	)
+	assert(#sent == 1)
+end)

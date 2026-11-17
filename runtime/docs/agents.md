@@ -132,6 +132,7 @@ groups an agent switches on with `tools`. Always offered: `focus`,
 | `web` | `web_search`, `research` |
 | `shell` | `shell_run`, `shell_read`, `shell_wait`, `shell_kill` |
 | `mail` | `mail_search`, `mail_read`, `mail_show`, `mail_act` |
+| `chat` | `chat_rooms`, `chat_read`, `chat_search`, `chat_send` |
 | `everywhere` | `search_everywhere` |
 
 `:set agent-tool-groups "plan notes"` gives agents those groups from the
