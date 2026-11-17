@@ -1087,14 +1087,14 @@ server does.
 `:pick-workspace-symbol function` lists only functions and methods, and
 `type`, `module`, `constant` and `variable` work the same way; it asks
 rust-analyzer for every kind, so no `#` is needed. A key for it is a
-command of your own, here on `space M`, which is free:
+command of your own, here on `space V`, which is free:
 
 ```luau
 local greed = require("@greed")
 greed.command({ name = "pick-functions", run = function()
 	greed.run("pick-workspace-symbol", { args = { "function" } })
 end })
-greed.keymap.bind({ layer = "leader" }, { M = "pick-functions" })
+greed.keymap.bind({ layer = "leader" }, { V = "pick-functions" })
 ```
 
 Problems are underlined, and their lines get a sign and a colored line

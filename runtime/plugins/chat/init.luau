@@ -1,9 +1,10 @@
 -- Chat: Matrix and Mattermost in Greed. In the chat session (`greed chat`)
 -- a sidebar lists your rooms and channels, those with something unread
 -- first, then each space (or team) with its rooms under it, and rooms open
--- beside it; elsewhere `:chat` opens the same list in a float of the tab,
--- rooms opening in its place. A room shows its messages, kept up to date,
--- and a box under them where `enter` sends what's written (as Markdown)
+-- beside it; `:chat` opens the same sidebar elsewhere, or with `chat-list`
+-- a float of the tab, rooms opening in its place. `:chat-go` (`alt-g`)
+-- goes to any room or person by name. A room shows its messages, kept up
+-- to date, and a box under them where `enter` sends what's written (as Markdown)
 -- and `alt-enter` starts a new line; `enter` on a space offers the rooms
 -- it holds. `:chat-login` signs in to a server, by password or through the
 -- browser; `:chat-logout` signs out. The services run as programs of their
@@ -14,6 +15,7 @@ local core = require("@core")
 local picker = require("@picker")
 local panes = require("@panes")
 local backend = require("@self/backend")
+local accounts = require("@self/accounts")
 local encryption = require("@self/encryption")
 local alerts = require("@self/alerts")
 local search = require("@self/search")
@@ -363,13 +365,102 @@ end)
 
 greed.command({
 	name = "chat",
-	doc = "Your rooms and channels: a sidebar in the chat session, a float elsewhere",
+	doc = "Your rooms and channels, as the chat-list option says: a sidebar on the left, or a float of the tab",
 	run = function()
-		if backend.here() then
-			M.sidebar()
-		else
+		if greed.option.get("chat-list") == "float" and not backend.here() then
 			M.list()
+		else
+			M.sidebar()
 		end
+	end,
+})
+
+greed.option.define({
+	name = "chat-list",
+	doc = 'Where :chat shows your rooms outside the chat session: "sidebar", a panel on the left, or "float"',
+	default = "sidebar",
+	choices = { "sidebar", "float" },
+})
+
+--- How a room reads in `:chat-go`: its marker, name, what's unread and,
+--- with several accounts, whose it is.
+function M.go_label(key: string, one: backend.Room, several: boolean): string
+	local parts = { `{M.marker(one)} {one.name}{M.presence(one.presence)}` }
+	if one.mentions > 0 then
+		table.insert(parts, `@{one.mentions}`)
+	elseif one.unread > 0 then
+		table.insert(parts, tostring(one.unread))
+	end
+	if several then
+		local account = backend.accounts[key]
+		table.insert(parts, if account then account.name or account.id else key)
+	end
+	return table.concat(parts, " · ")
+end
+
+--- Every room of every account to go to, as `sorted` orders them across
+--- accounts, then writing to someone new for each account that can find
+--- people. Waits, so it runs in a coroutine.
+function M.go_items(): { picker.Item }
+	backend.start()
+	local keys = accounts.keys()
+	local several = #keys > 1
+	local all: { backend.Room } = {}
+	local whose: { [backend.Room]: string } = {}
+	for _, key in keys do
+		local o = list
+		local rooms: { backend.Room }? = if o then o.rooms[key] else nil
+		if rooms == nil then
+			rooms = accounts.ask(key, "rooms")
+		end
+		local found: { backend.Room } = rooms or {}
+		for _, one in found do
+			whose[one] = key
+			table.insert(all, one)
+		end
+	end
+	local items: { picker.Item } = {}
+	for _, one in M.sorted(all) do
+		local key = whose[one]
+		table.insert(
+			items,
+			{ label = M.go_label(key, one, several), value = { account = key, room = one } }
+		)
+	end
+	for _, key in accounts.keys("people") do
+		local label = if several then `Write to someone… · {key}` else "Write to someone…"
+		table.insert(items, { label = label, value = { account = key } })
+	end
+	return items
+end
+
+greed.command({
+	name = "chat-go",
+	doc = "Go to a room, channel or person by name, those with something unread first, or write to someone new",
+	run = function(ctx)
+		local window = ctx.view
+		greed.spawn(function()
+			local items = M.go_items()
+			if #items == 0 then
+				greed.echo("no chat accounts: :chat-login signs in")
+				return
+			end
+			local chosen = picker.choose("Go to", items)
+			if chosen == nil then
+				return
+			end
+			local value = chosen.value
+			local one: backend.Room? = value.room
+			if one == nil then
+				join.direct(value.account, window)
+			elseif one.kind == "invite" then
+				join.answer(value.account, one.id, one.name, window)
+			elseif one.kind == "space" then
+				join.browse(value.account, one.id, one.name, window)
+			else
+				M.room(value.account, one, window)
+			end
+		end)
 	end,
 })
 
@@ -640,6 +731,15 @@ greed.keymap.bind({ kind = "chat" }, {
 	["/"] = "chat-search",
 	["+"] = "chat-join",
 	["-"] = "chat-leave",
+	["alt-g"] = "chat-go",
+})
+greed.keymap.bind({ kind = "chat-room" }, { ["alt-g"] = "chat-go" })
+greed.keymap.bind({ layer = "leader" }, {
+	["M g"] = "chat-go",
+	["M s"] = "chat",
+	["M w"] = "chat-write",
+	["M j"] = "chat-join",
+	["M /"] = "chat-search",
 })
 core.back.provide("chat", "chat-close")
 

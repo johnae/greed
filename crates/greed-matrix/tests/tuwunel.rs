@@ -1373,36 +1373,34 @@ fn joins_by_address_and_from_the_directory_leaves_and_answers_invites() {
         assert_eq!(found["address"], "#garden:localhost");
         assert_eq!(found["members"], 1);
 
-        let joined = call(
-            &matrix,
-            "join",
-            json!({ "account": anna, "room": "#garden:localhost" }),
-        )
-        .await;
-        assert_eq!(joined["room"], garden.as_str());
-        until(&matrix, "rooms", &account, |rooms| {
-            kind_of(rooms, &garden) == "room"
-        })
-        .await;
-        let listed = call(
-            &matrix,
-            "directory",
-            json!({ "account": anna, "query": "" }),
-        )
-        .await;
-        assert!(
-            listed
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|r| r["id"] != garden.as_str()),
-            "rooms you're in aren't listed: {listed}"
-        );
-        call(&matrix, "leave", json!({ "account": anna, "room": garden })).await;
-        until(&matrix, "rooms", &account, |rooms| {
-            kind_of(rooms, &garden).is_null()
-        })
-        .await;
+        // An address without a server is on Anna's own.
+        for address in ["#garden:localhost", "#garden"] {
+            let joined = call(&matrix, "join", json!({ "account": anna, "room": address })).await;
+            assert_eq!(joined["room"], garden.as_str(), "{address}");
+            until(&matrix, "rooms", &account, |rooms| {
+                kind_of(rooms, &garden) == "room"
+            })
+            .await;
+            let listed = call(
+                &matrix,
+                "directory",
+                json!({ "account": anna, "query": "" }),
+            )
+            .await;
+            assert!(
+                listed
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|r| r["id"] != garden.as_str()),
+                "rooms you're in aren't listed: {listed}"
+            );
+            call(&matrix, "leave", json!({ "account": anna, "room": garden })).await;
+            until(&matrix, "rooms", &account, |rooms| {
+                kind_of(rooms, &garden).is_null()
+            })
+            .await;
+        }
 
         // Asked to a room: no, then yes.
         for answer in ["leave", "join"] {
@@ -1612,5 +1610,80 @@ fn lists_a_spaces_rooms_joins_one_and_lists_it_under_the_space() {
             .unwrap()
             .clone();
         assert_eq!(listed["joined"], true, "{listed}");
+    });
+}
+
+#[test]
+fn finds_people_and_starts_a_direct_message() {
+    let Some(server) = Tuwunel::start("people", None) else {
+        return;
+    };
+    run(async {
+        server.register("anna", "secret").await;
+        server.register("bea", "secret").await;
+        // Bea shares a room with Anna, so the user directory lists her.
+        let bea = other(&server, "bea", "secret").await;
+        let (notifier, _notices) = rpc::notifier();
+        let matrix = Matrix::new(server.dir.join("data"), notifier);
+        sign_in(&matrix, &server, "anna", "secret").await;
+        let anna = "@anna:localhost";
+        let account = json!({ "account": anna });
+        let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
+        request.invite = vec![anna.try_into().unwrap()];
+        let shared = bea.create_room(request).await.unwrap();
+        let shared = shared.room_id().to_string();
+        until(&matrix, "rooms", &account, |rooms| {
+            rooms
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == shared.as_str())
+        })
+        .await;
+        call(&matrix, "join", json!({ "account": anna, "room": shared })).await;
+
+        let found = until(
+            &matrix,
+            "people",
+            &json!({ "account": anna, "query": "bea" }),
+            |found| !found.as_array().unwrap().is_empty(),
+        )
+        .await;
+        let people = found.as_array().unwrap();
+        assert_eq!(people[0]["id"], "@bea:localhost", "{found}");
+        assert_eq!(people[0]["handle"], "@bea:localhost");
+        let me = call(
+            &matrix,
+            "people",
+            json!({ "account": anna, "query": "anna" }),
+        )
+        .await;
+        assert!(
+            me.as_array().unwrap().iter().all(|p| p["id"] != anna),
+            "you aren't among them: {me}"
+        );
+
+        let direct = call(
+            &matrix,
+            "direct",
+            json!({ "account": anna, "user": "@bea:localhost" }),
+        )
+        .await;
+        let room = direct["room"].as_str().unwrap().to_string();
+        until(&matrix, "rooms", &account, |rooms| {
+            rooms
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["id"] == room.as_str() && r["kind"] == "direct")
+        })
+        .await;
+        let again = call(
+            &matrix,
+            "direct",
+            json!({ "account": anna, "user": "@bea:localhost" }),
+        )
+        .await;
+        assert_eq!(again["room"], room.as_str(), "the same one again");
     });
 }

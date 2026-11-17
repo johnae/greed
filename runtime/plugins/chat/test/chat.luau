@@ -1302,6 +1302,107 @@ test("+ joins a room by its address", function(t)
 	assert(#joined == 1 and joined[1].room == "#garden:x", greed.json.encode(asked))
 end)
 
+-- A Mattermost service with Town (read), Plans (unread) and a direct
+-- message with Bea, that finds Cid and starts a direct message with him;
+-- what it's asked goes in `asked`.
+local function people_service()
+	table.clear(asked)
+	backend.reset()
+	local function room(fields: { [string]: any }): { [string]: any }
+		local made: { [string]: any } = {
+			account = "anna",
+			unread = 0,
+			mentions = 0,
+			favourite = false,
+			muted = false,
+			encrypted = false,
+		}
+		for key, value in fields do
+			made[key] = value
+		end
+		return made
+	end
+	local notify = backend.use("mattermost", {
+		rooms = function(): any
+			return {
+				room({ id = "town", name = "Town", kind = "room", active = 30 }),
+				room({ id = "plans", name = "Plans", kind = "room", unread = 2, active = 10 }),
+				room({ id = "bea", name = "Bea", kind = "direct", active = 20 }),
+			}
+		end,
+		people = function(params: any): any
+			table.insert(asked, { method = "people", params = params })
+			return { { id = "u-cid", name = "Cid Lind", handle = "@cid" } }
+		end,
+		direct = function(params: any): any
+			table.insert(asked, { method = "direct", params = params })
+			return { room = "dm-cid", name = "Cid Lind" }
+		end,
+		timeline = function(): any
+			return { items = {} }
+		end,
+		read = function()
+			return nil
+		end,
+		["timeline.close"] = function()
+			return nil
+		end,
+	}, { "people" })
+	notify("account.changed", {
+		id = "anna",
+		server = "https://mm.x",
+		name = "Anna",
+		state = { state = "ready" },
+	})
+end
+
+test("chat-go lists every room, unread first, and opens the one picked", function(t)
+	people_service()
+	t:buffer("|x")
+	local labels = {}
+	for _, item in chat.go_items() do
+		table.insert(labels, item.label)
+	end
+	local want = { "# Plans · 2", "# Town", "@ Bea", "Write to someone…" }
+	assert(table.concat(labels, "|") == table.concat(want, "|"), table.concat(labels, "|"))
+	t:run("chat-go")
+	t:wait(50)
+	t:type("bea")
+	t:keys("enter")
+	t:wait(100)
+	local r = chat.rooms.of(greed.view():buffer())
+	assert(r and r.room == "bea" and r.name == "Bea", "Bea's direct messages open")
+end)
+
+test("chat-write finds someone by name and opens a direct message with them", function(t)
+	people_service()
+	t:buffer("|x")
+	t:run("chat-write")
+	t:wait(50)
+	t:type("cid")
+	t:keys("enter")
+	t:wait(50)
+	t:keys("enter") -- Cid Lind · @cid
+	t:wait(100)
+	local found = calls("people")
+	assert(#found == 1 and found[1].query == "cid", greed.json.encode(asked))
+	local direct = calls("direct")
+	assert(#direct == 1 and direct[1].user == "u-cid", greed.json.encode(asked))
+	local r = chat.rooms.of(greed.view():buffer())
+	assert(r and r.room == "dm-cid" and r.name == "Cid Lind", "the direct message opens")
+end)
+
+test("chat opens the rooms as a sidebar outside the chat session too", function(t)
+	people_service()
+	t:buffer("|x")
+	greed.option.set("chat-list", "sidebar")
+	t:run("chat")
+	t:wait(50)
+	local panel = greed.view()
+	assert(panel:buffer():kind() == "chat" and not panel:is_pane(), "a panel shows the rooms")
+	panel:close()
+end)
+
 test("enter on an invite: n says no, y joins", function(t)
 	joining({ id = "!plans:x", name = "Plans", kind = "invite" })
 	t:buffer("|x")
@@ -1539,6 +1640,7 @@ test(
 	":chat is one float of the tab, rooms open in it, and :chat again shows the rooms in it",
 	function(t)
 		local panes = require("@panes")
+		greed.option.set("chat-list", "float")
 		fake()
 		t:buffer("|x")
 		t:run("chat")
@@ -1564,6 +1666,7 @@ test(
 )
 
 test("the rooms opened show as a bar over a room; tab and alt and a number go to them", function(t)
+	greed.option.set("chat-list", "float")
 	fake()
 	chat.rooms.forget_recent()
 	t:buffer("|x")

@@ -343,7 +343,8 @@ impl Matrix {
                     "receipts",
                     "previews",
                     "polls",
-                    "history"
+                    "history",
+                    "people"
                 ]
                 .map(String::from)
                 .to_vec(),
@@ -402,6 +403,8 @@ impl Matrix {
             "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
             "history" => Ok(json!(self.history(&rpc::parse(params)?).await?)),
             "join" => self.join(&rpc::parse(params)?).await,
+            "people" => Ok(json!(self.find_people(&rpc::parse(params)?).await?)),
+            "direct" => self.direct(&rpc::parse(params)?).await,
             "space" => Ok(json!(self.space(&rpc::parse(params)?).await?)),
             "leave" => self.leave(&rpc::parse(params)?).await.map(|()| Value::Null),
             "directory" => Ok(json!(self.directory(&rpc::parse(params)?).await?)),
@@ -409,6 +412,13 @@ impl Matrix {
                 .upload(&rpc::parse(params)?)
                 .await
                 .map(|()| Value::Null),
+            _ => self.handle_encryption(method, params).await,
+        }
+    }
+
+    /// The methods for encryption and verifying devices.
+    async fn handle_encryption(&self, method: &str, params: Value) -> Result<Value, Failure> {
+        match method {
             "encryption.state" => self.encryption_state(&rpc::parse(params)?).await,
             "encryption.setup" => self.encryption_setup(&rpc::parse(params)?).await,
             "encryption.recover" => self

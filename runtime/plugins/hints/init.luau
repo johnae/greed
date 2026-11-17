@@ -22,6 +22,7 @@ M.leader_groups = {
 	i = "agents",
 	l = "Luau",
 	m = "markdown and code blocks",
+	M = "chat",
 	n = "notes",
 	o = "proposals, shells and tasks",
 	u = "operations and undo",

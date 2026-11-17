@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use greed_chat::protocol::{
-    AccountState, DirectoryParams, JoinParams, Listed, Person, Room, RoomKind, RoomParams,
+    AccountState, Contact, DirectParams, DirectoryParams, JoinParams, Listed, PeopleParams, Person,
+    Room, RoomKind, RoomParams,
 };
 use greed_chat::rpc::Failure;
 use greed_chat::why;
@@ -148,7 +149,7 @@ impl Matrix {
     /// one you're asked to: `{room}`, its id.
     pub(crate) async fn join(&self, params: &JoinParams) -> Result<Value, Failure> {
         let client = self.client_of(&params.account)?;
-        let target = RoomOrAliasId::parse(params.room.trim())
+        let target = RoomOrAliasId::parse(on_own_server(&client, params.room.trim()))
             .map_err(|_| Failure::new(format!("{} isn't a room's id or address", params.room)))?;
         let failed = |e: &dyn std::error::Error| Failure::new(format!("can't join it: {}", why(e)));
         let mut request = join_room_by_id_or_alias::v3::Request::new(target);
@@ -171,6 +172,49 @@ impl Matrix {
             .await
             .map_err(|e| failed(&e))?;
         Ok(json!({ "room": room.room_id() }))
+    }
+
+    /// The people in the server's user directory whose names or ids have
+    /// `params.query`, you left out.
+    pub(crate) async fn find_people(&self, params: &PeopleParams) -> Result<Vec<Contact>, Failure> {
+        let client = self.client_of(&params.account)?;
+        let query = params.query.trim();
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let found = client
+            .search_users(query, 25)
+            .await
+            .map_err(|e| Failure::new(format!("can't search for people: {}", why(&e))))?;
+        let me = client.user_id();
+        Ok(found
+            .results
+            .into_iter()
+            .filter(|user| Some(user.user_id.as_ref()) != me)
+            .map(|user| Contact {
+                id: user.user_id.to_string(),
+                name: user
+                    .display_name
+                    .unwrap_or_else(|| user.user_id.localpart().to_string()),
+                handle: Some(user.user_id.to_string()),
+            })
+            .collect())
+    }
+
+    /// The direct message room with `params.user`, made if there's none
+    /// yet: `{room, name}`.
+    pub(crate) async fn direct(&self, params: &DirectParams) -> Result<Value, Failure> {
+        let client = self.client_of(&params.account)?;
+        let user = UserId::parse(params.user.trim())
+            .map_err(|_| Failure::new(format!("{} isn't someone's id", params.user)))?;
+        let room = match client.get_dm_room(&user) {
+            Some(room) => room,
+            None => client
+                .create_dm(&user)
+                .await
+                .map_err(|e| Failure::new(format!("can't start a direct message: {}", why(&e))))?,
+        };
+        Ok(json!({ "room": room.room_id(), "name": name_of(&room).await }))
     }
 
     /// Leaves a room, or says no to being asked to one.
@@ -282,5 +326,18 @@ async fn room_of(account: &str, room: &matrix_sdk::Room, kind: RoomKind) -> Room
         active: room.latest_event_timestamp().map(|at| i64::from(at.0)),
         // Presence isn't in what the sync brings.
         presence: None,
+    }
+}
+
+/// `room` as an address on the account's own server when it names no
+/// server: `garden` and `#garden` are `#garden:example.org` there.
+fn on_own_server(client: &Client, room: &str) -> String {
+    if room.contains(':') {
+        return room.to_string();
+    }
+    let alias = room.trim_start_matches('#');
+    match client.user_id() {
+        Some(me) => format!("#{alias}:{}", me.server_name()),
+        None => room.to_string(),
     }
 }

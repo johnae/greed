@@ -17,6 +17,7 @@ the repository's history.
 ### New
 
 - agent: choose what the top of the message box shows, with your own fields, and what heads the agent's turns
+- chat: go to any room or person by name (`alt-g`, `space M g`), write to someone new, join a Mattermost channel or a Matrix room on your server by name, and `:chat` opens the sidebar in every session
 - agent: a proposal is reviewed as one change, accepted or rejected as a whole
 - languages: a language can use another's grammar, so Starlark is highlighted as Python
 - languages: download grammars for XML, ERB, EJS, CodeQL, requirements and queries

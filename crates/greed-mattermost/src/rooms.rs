@@ -3,7 +3,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use greed_chat::protocol::{DirectoryParams, JoinParams, Listed, Room, RoomKind, RoomParams};
+use greed_chat::protocol::{
+    Contact, DirectParams, DirectoryParams, JoinParams, Listed, PeopleParams, Room, RoomKind,
+    RoomParams,
+};
 use greed_chat::rpc::Failure;
 use serde_json::{Value, json};
 
@@ -142,10 +145,12 @@ impl Mattermost {
         }
     }
 
-    /// Joins a channel by its id: `{room}`.
+    /// Joins a channel by its id, or by its name in one of your teams
+    /// (`town-square`, `#town-square` or `~town-square`, or the name it
+    /// shows): `{room}`.
     pub(crate) async fn join(&self, params: &JoinParams) -> Result<Value, Failure> {
         let (api, me) = self.signed(&params.account)?;
-        let room = params.room.trim();
+        let room = channel_id(&api, &me, params.room.trim()).await?;
         let _: Value = api
             .post(
                 &format!("api/v4/channels/{room}/members"),
@@ -154,6 +159,50 @@ impl Mattermost {
             .await
             .map_err(|e| Failure::new(format!("can't join it: {e}")))?;
         Ok(json!({ "room": room }))
+    }
+
+    /// The people whose names or usernames have `params.query`, you left
+    /// out.
+    pub(crate) async fn find_people(&self, params: &PeopleParams) -> Result<Vec<Contact>, Failure> {
+        let (api, me) = self.signed(&params.account)?;
+        let query = params.query.trim().trim_start_matches('@');
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let users: Vec<User> = api
+            .post(
+                "api/v4/users/search",
+                &json!({ "term": query, "allow_inactive": false, "limit": 25 }),
+            )
+            .await
+            .map_err(|e| Failure::new(format!("can't search for people: {e}")))?;
+        let mut people = self.people.borrow_mut();
+        Ok(users
+            .into_iter()
+            .filter(|user| user.id != me)
+            .map(|user| {
+                let found = Contact {
+                    id: user.id.clone(),
+                    name: user.name(),
+                    handle: Some(format!("@{}", user.username)),
+                };
+                people.insert(format!("{} {}", params.account, user.id), user);
+                found
+            })
+            .collect())
+    }
+
+    /// The direct message channel with `params.user`, made if there's none
+    /// yet: `{room, name}`.
+    pub(crate) async fn direct(&self, params: &DirectParams) -> Result<Value, Failure> {
+        let (api, me) = self.signed(&params.account)?;
+        let channel: Channel = api
+            .post("api/v4/channels/direct", &json!([me, params.user]))
+            .await
+            .map_err(|e| Failure::new(format!("can't start a direct message: {e}")))?;
+        self.people(&params.account, &api, std::slice::from_ref(&params.user))
+            .await;
+        Ok(json!({ "room": channel.id, "name": self.name_of(&params.account, &params.user) }))
     }
 
     /// Leaves a channel.
@@ -268,4 +317,45 @@ async fn team_channels(api: &Api, me: &str, team: &Team) -> Result<Vec<Listed>, 
             }
         })
         .collect())
+}
+
+/// Whether `text` is a Mattermost id: 26 lowercase letters and digits.
+fn is_id(text: &str) -> bool {
+    text.len() == 26
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+}
+
+/// The id of channel `room`: an id as it is, else the channel of that
+/// name, or showing that name, in one of `me`'s teams.
+async fn channel_id(api: &Api, me: &str, room: &str) -> Result<String, Failure> {
+    if is_id(room) {
+        return Ok(room.to_string());
+    }
+    let name = room.trim_start_matches(['#', '~']);
+    let teams: Vec<Team> = api
+        .get("api/v4/users/me/teams")
+        .await
+        .map_err(|e| Failure::new(format!("can't list channels: {e}")))?;
+    for team in &teams {
+        let path = format!(
+            "api/v4/teams/{}/channels/name/{}",
+            team.id,
+            name.to_lowercase()
+        );
+        if let Ok(channel) = api.get::<Channel>(&path).await {
+            return Ok(channel.id);
+        }
+    }
+    for team in &teams {
+        if let Some(channel) = team_channels(api, me, team)
+            .await?
+            .into_iter()
+            .find(|channel| channel.name.eq_ignore_ascii_case(name))
+        {
+            return Ok(channel.id);
+        }
+    }
+    Err(Failure::new(format!("no channel {room} in your teams")))
 }

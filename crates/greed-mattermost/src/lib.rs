@@ -202,7 +202,7 @@ impl Service for Mattermost {
                 protocol: PROTOCOL,
                 service: "mattermost".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                can: ["threads", "presence", "commands", "history"]
+                can: ["threads", "presence", "commands", "history", "people"]
                     .map(String::from)
                     .to_vec(),
             })),
@@ -249,6 +249,8 @@ impl Service for Mattermost {
             "search" => Ok(json!(self.search(&rpc::parse(params)?).await?)),
             "history" => Ok(json!(self.history(&rpc::parse(params)?).await?)),
             "join" => self.join(&rpc::parse(params)?).await,
+            "people" => Ok(json!(self.find_people(&rpc::parse(params)?).await?)),
+            "direct" => self.direct(&rpc::parse(params)?).await,
             "space" => Ok(json!(self.space(&rpc::parse(params)?).await?)),
             "leave" => self.leave(&rpc::parse(params)?).await.map(|()| Value::Null),
             "directory" => Ok(json!(self.directory(&rpc::parse(params)?).await?)),

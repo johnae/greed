@@ -26,7 +26,28 @@ beside the sidebar: its messages, laid out as Markdown and kept up to date
 as they come, and a box under them, and `q` goes back to the sidebar. The
 room is marked read as you look at it, who's writing shows under the
 messages, and on Matrix "seen by" says who has read up to where.
-`:chat-sidebar` shows the same sidebar in any other session.
+`:chat` shows the same sidebar in any other session.
+
+## Going to a room or a person
+
+`alt-g` in the list or a room (or `space M g`, `:chat-go` anywhere) lists
+every room, channel and direct message of every account, mentions and
+unread first, then the most recent. Type a few letters of a name and
+`enter` opens it. The last entry, "Write to someone…", finds a person.
+
+`:chat-write` (`space M w`) asks for a name, lists the people the server
+finds by it, and opens your direct messages with the one you pick,
+starting them if you've never written. On Mattermost that's anyone on the
+server; on Matrix it's who the server's user directory shows, which is
+usually the people you share a room with plus public profiles.
+
+| Key | |
+|---|---|
+| `space M g`, `alt-g` in chat | Go to a room or person |
+| `space M s` | Your rooms as a sidebar |
+| `space M w` | Write to someone |
+| `space M j` | Join a room |
+| `space M /` | Search messages |
 
 | Key | In a room |
 | --- | --- |
@@ -63,11 +84,12 @@ under them.
 A link's preview shows under its message: the site, the page's title, and a
 line of what it says (see below for where they come from).
 
-In any other session, `:chat` opens the same list in a floating view of
-the tab, starting the chat service's session first if it isn't running.
-Rooms open in it and `q` goes back to the list; `alt-f` hides it and shows
-it again like the tab's other floats, and `:chat` brings it back showing
-the rooms. In a room, `esc` then `q` goes back to them too.
+In any other session, `:chat` opens the same sidebar, starting the chat
+service's session first if it isn't running. With `:set chat-list float`
+it opens in a floating view of the tab instead: rooms open in it and `q`
+goes back to the list; `alt-f` hides it and shows it again like the tab's
+other floats, and `:chat` brings it back showing the rooms. In a room,
+`esc` then `q` goes back to them too.
 
 ## Signing in
 
@@ -129,8 +151,11 @@ encrypted rooms. The room list says when this device isn't verified yet.
 
 `+` in the list (or `:chat-join`) offers the rooms you could join: on
 Matrix the rooms your server lists publicly, on Mattermost your teams'
-public channels you aren't in. Or pick "By its address or id" and type one,
-like `#garden:example.org`. The room opens once you've joined.
+public channels you aren't in. Or pick "By its name, address or id" and
+type one: on Matrix `#garden:example.org`, or `#garden` for one on your
+own server; on Mattermost the channel's name (`garden`, `~garden`) or the
+name it shows (`Garden`), in any of your teams. The room opens once
+you've joined.
 
 A Matrix space is a list of rooms rather than a room to talk in. Join one
 like any room (`+`, `#space:nixos.org`), and it shows in the list with

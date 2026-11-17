@@ -1,10 +1,11 @@
 -- Joining and leaving rooms. `:chat-join` (`+` in the list) offers the
 -- rooms you could join, the server's directory on Matrix and your teams'
--- public channels on Mattermost, or joining one by its address or id.
--- `enter` on a space (or team) in the list offers the rooms it holds: one
--- you're in opens, another is joined, a space inside it opens the same
--- way. An invite is answered when it's opened; `:chat-leave` (`-` in the
--- list) leaves a room after asking.
+-- public channels on Mattermost, or joining one by its name, address or
+-- id. `:chat-write` finds someone by name and opens your direct messages
+-- with them, starting them if needed. `enter` on a space (or team) in the
+-- list offers the rooms it holds: one you're in opens, another is joined,
+-- a space inside it opens the same way. An invite is answered when it's
+-- opened; `:chat-leave` (`-` in the list) leaves a room after asking.
 
 local greed = require("@greed")
 local core = require("@core")
@@ -128,9 +129,65 @@ function M.answer(key: string, id: string, name: string, window: greed.View)
 	end
 end
 
+--- Someone `people` found, to write to.
+export type Contact = { id: string, name: string, handle: string? }
+
+--- Asks who to write to in account `key`, offers the people the server
+--- finds by that, and opens the direct message with the one picked in
+--- `window`, starting it if there's none yet. Waits, so it runs in a
+--- coroutine.
+function M.direct(key: string, window: greed.View?)
+	local query = core.prompt.ask("Write to (a name)")
+	local trimmed = if query then core.text.trim(query) else ""
+	if trimmed == "" then
+		return
+	end
+	local found, why = accounts.ask(key, "people", { query = trimmed })
+	if found == nil then
+		greed.echo(`chat: {why}`)
+		return
+	end
+	local people: { Contact } = found
+	if #people == 0 then
+		greed.echo(`nobody called {trimmed}`)
+		return
+	end
+	local items = {}
+	for _, person in people do
+		local label = if person.handle then `{person.name} · {person.handle}` else person.name
+		table.insert(items, { label = label, value = person })
+	end
+	local chosen = picker.choose("Write to", items)
+	if chosen == nil then
+		return
+	end
+	local person: Contact = chosen.value
+	local direct, failed = accounts.ask(key, "direct", { user = person.id })
+	if direct == nil then
+		greed.echo(`chat: {failed}`)
+		return
+	end
+	room.open(key, direct.room, direct.name or person.name, nil, window)
+end
+
+greed.command({
+	name = "chat-write",
+	doc = "Write to someone: find them by name and open your direct messages, starting them if needed",
+	run = function(ctx: greed.Context)
+		local window = ctx.view
+		accounts.with_account(
+			accounts.keys("people"),
+			"no chat account can find people: :chat-login signs in",
+			function(key)
+				M.direct(key, window)
+			end
+		)
+	end,
+})
+
 greed.command({
 	name = "chat-join",
-	doc = "Join a room: one the server lists, or by its address or id",
+	doc = "Join a room: one the server lists, or by its name, address or id",
 	run = function(ctx: greed.Context)
 		local window = ctx.view
 		accounts.with_account(
@@ -141,7 +198,8 @@ greed.command({
 				if listed == nil then
 					greed.echo(`chat: {why}`)
 				end
-				local items: { any } = { { label = "By its address or id…", value = false } }
+				local items: { any } =
+					{ { label = "By its name, address or id…", value = false } }
 				local found: { Listed } = listed or {}
 				for _, one in found do
 					table.insert(items, { label = M.label(one), value = one })
@@ -153,8 +211,7 @@ greed.command({
 							M.join(key, one.id, one.name, window)
 							return
 						end
-						local target =
-							core.prompt.ask("The room's address or id (#garden:example.org)")
+						local target = core.prompt.ask("The room's name, address or id (#garden)")
 						local trimmed = if target then core.text.trim(target) else ""
 						if trimmed ~= "" then
 							M.join(key, trimmed, trimmed, window)

@@ -1110,13 +1110,83 @@ fn joins_and_leaves_channels_from_the_directory() {
         let rooms = call(&service, "rooms", json!({ "account": account })).await;
         assert!(in_list(&rooms).is_some(), "{rooms}");
 
-        call(
-            &service,
-            "leave",
-            json!({ "account": account, "room": garden }),
-        )
-        .await;
+        let garden_room = json!({ "account": account, "room": garden });
+        call(&service, "leave", garden_room.clone()).await;
         let rooms = call(&service, "rooms", json!({ "account": account })).await;
         assert!(in_list(&rooms).is_none(), "{rooms}");
+
+        // By its name too, with or without a mark, or the name it shows.
+        for name in ["~garden", "#garden", "Garden"] {
+            let joined = call(
+                &service,
+                "join",
+                json!({ "account": account, "room": name }),
+            )
+            .await;
+            assert_eq!(joined["room"], garden.as_str(), "{name}");
+            call(&service, "leave", garden_room.clone()).await;
+        }
+        let missing = service
+            .call(
+                "join",
+                json!({ "account": account, "room": "#no-such-channel" }),
+            )
+            .await;
+        assert!(missing.is_err(), "{missing:?}");
+    });
+}
+
+#[test]
+fn finds_people_and_starts_a_direct_message() {
+    let Some(server) = Server::start("people", &[]) else {
+        return;
+    };
+    server.user("anna", "Secret-pass1");
+    server.user("bea", "Secret-pass1");
+    run(async {
+        let Crew {
+            bea,
+            service,
+            account,
+            ..
+        } = crew(&server).await;
+        let me = json!({ "account": account, "query": "anna" });
+        let found = call(&service, "people", me).await;
+        assert_eq!(found, json!([]), "you aren't among them");
+        let found = call(
+            &service,
+            "people",
+            json!({ "account": account, "query": "@be" }),
+        )
+        .await;
+        let people = found.as_array().unwrap();
+        assert_eq!(people.len(), 1, "{found}");
+        assert_eq!(people[0]["id"], bea.id.as_str());
+        assert_eq!(people[0]["handle"], "@bea");
+
+        let direct = call(
+            &service,
+            "direct",
+            json!({ "account": account, "user": bea.id }),
+        )
+        .await;
+        let room = direct["room"].as_str().unwrap().to_string();
+        assert_eq!(direct["name"], "bea");
+        let again = call(
+            &service,
+            "direct",
+            json!({ "account": account, "user": bea.id }),
+        )
+        .await;
+        assert_eq!(again["room"], room.as_str(), "the same one again");
+        let rooms = call(&service, "rooms", json!({ "account": account })).await;
+        let listed = rooms
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == room.as_str())
+            .cloned()
+            .unwrap_or_else(|| panic!("no direct message in {rooms}"));
+        assert_eq!(listed["kind"], "direct");
     });
 }

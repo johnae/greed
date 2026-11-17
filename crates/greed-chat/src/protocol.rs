@@ -597,6 +597,32 @@ pub struct JoinParams {
     pub via: Vec<String>,
 }
 
+/// `people`'s parameters: the words their names have.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeopleParams {
+    pub account: String,
+    #[serde(default)]
+    pub query: String,
+}
+
+/// Someone `people` found, to start a direct message with.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Contact {
+    /// What `direct` takes: `@sam:example.org`, or a Mattermost user id.
+    pub id: String,
+    pub name: String,
+    /// The name they're found and mentioned by, where it isn't `name`:
+    /// a Mattermost username, a Matrix id.
+    pub handle: Option<String>,
+}
+
+/// `direct`'s parameters: the person, by the id `people` gave.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectParams {
+    pub account: String,
+    pub user: String,
+}
+
 /// `directory`'s parameters: the words its rooms' names or topics have.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryParams {
