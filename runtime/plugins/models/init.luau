@@ -130,6 +130,13 @@ M.providers = {
 		login = "berget",
 		idle = 600,
 	},
+	-- evroc's Think models; `evroc think apikey create NAME` makes a key.
+	evroc = {
+		kind = "openai",
+		url = "https://models.think.evroc.com/v1",
+		secret = "evroc",
+		idle = 600,
+	},
 } :: { [string]: Provider? }
 
 M.roles = {
@@ -313,6 +320,7 @@ M.presets = {
 	openai = { fast = "gpt-5-mini", reasoning = "gpt-5" },
 	berget = { fast = "meta-llama/Llama-3.3-70B-Instruct", reasoning = "openai/gpt-oss-120b" },
 	mistral = { fast = "mistral-small-latest", reasoning = "mistral-large-4" },
+	evroc = { fast = "Qwen/Qwen3.6-35B-A3B", reasoning = "zai-org/GLM-5.3" },
 	ollama = { fast = "llama3.2", reasoning = "llama3.2" },
 } :: { [string]: { fast: string, reasoning: string }? }
 
@@ -664,6 +672,7 @@ local KNOWN: { [string]: string } = {
 	berget = "https://api.berget.ai",
 	["berget sign-in"] = "https://api.berget.ai",
 	mistral = "https://api.mistral.ai",
+	evroc = "https://models.think.evroc.com",
 }
 
 local APPROVALS = "models-key-addresses"

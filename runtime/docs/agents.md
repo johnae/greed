@@ -461,7 +461,7 @@ with OpenAI's API.
 ```luau
 local models = require("@models")
 models.roles.agent = { provider = "ollama", model = "qwen2.5-coder" }
--- providers: anthropic, openai, mistral, berget, ollama, or your own
+-- providers: anthropic, openai, mistral, berget, evroc, ollama, or your own
 -- :secret-set PROVIDER for an API key, :login PROVIDER for a plan with an account
 ```
 

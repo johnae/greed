@@ -283,6 +283,25 @@ test("using a provider sets the fast and reasoning roles to its models", functio
 	assert(models.use_provider("nowhere") ~= nil, "no preset")
 end)
 
+test("evroc's Think models are a provider, its key from EVROC_API_KEY", function(t)
+	local evroc = models.providers.evroc :: models.Provider
+	assert(evroc.kind == "openai" and evroc.url == "https://models.think.evroc.com/v1")
+	local before_fast, before_reasoning = models.roles.fast, models.roles.reasoning
+	assert(models.use_provider("evroc") == nil)
+	local reasoning = models.roles.reasoning :: models.Role
+	assert(reasoning.provider == "evroc" and reasoning.model == "zai-org/GLM-5.3")
+	local why: string? = nil
+	greed.spawn(function()
+		local _, err = models.ask("reasoning", { messages = { { role = "user", content = "hi" } } })
+		why = err
+	end)
+	t:wait_for(function()
+		return why ~= nil
+	end)
+	assert(string.find(why or "", "no API key for evroc: set EVROC_API_KEY", 1, true), why)
+	models.roles.fast, models.roles.reasoning = before_fast, before_reasoning
+end)
+
 test("an Ollama that isn't running says how to start it", function(t)
 	models.providers.ollama = { kind = "openai", url = "http://127.0.0.1:9/v1" }
 	local found, why = models.list("ollama")

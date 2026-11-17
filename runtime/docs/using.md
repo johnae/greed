@@ -1420,8 +1420,8 @@ A model's answer that goes quiet for 90 seconds counts as failed; the
 first bytes get three times as long, since a long uncached conversation or
 hidden thinking can take minutes. `:set models-idle-timeout 180` changes it
 for all of them, `idle = 180` on a role or provider for its models (a slow
-local one, say), and `0` waits for ever. The `mistral`, `ollama` and
-`berget` providers wait ten minutes: they send a tool call whole once the
+local one, say), and `0` waits for ever. The `mistral`, `ollama`,
+`berget` and `evroc` providers wait ten minutes: they send a tool call whole once the
 model has written it, so a long file is a long quiet.
 
 ```luau
@@ -1467,6 +1467,16 @@ uses:
 
 ```luau
 models.roles.agent = { provider = "mistral", model = "mistral-large-4" }
+```
+
+The `evroc` provider is evroc's Think models, hosted in the EU. Make a key
+with evroc's CLI, `evroc think apikey create greed`, and keep it with
+`:secret-set evroc` (or `k` in `:models`, or set `EVROC_API_KEY`). Picked
+in `:models`, it uses GLM-5.3 for `reasoning` and Qwen3.6-35B-A3B for
+`fast`; `alt-M` in an agent session lists the rest, like Kimi-K2.6:
+
+```luau
+models.roles.agent = { provider = "evroc", model = "moonshotai/Kimi-K2.6" }
 ```
 
 Mistral also serves Z.ai's GLM 5.3 as `zai-glm-5-3`: a million tokens of
