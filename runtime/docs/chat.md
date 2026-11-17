@@ -33,7 +33,12 @@ messages, and on Matrix "seen by" says who has read up to where.
 `alt-g` in the list or a room (or `space M g`, `:chat-go` anywhere) lists
 every room, channel and direct message of every account, mentions and
 unread first, then the most recent. Type a few letters of a name and
-`enter` opens it. The last entry, "Write to someone…", finds a person.
+`enter` opens it. `alt-enter` (or `ctrl-v`) opens it in a new pane beside
+the one you're in instead, and `ctrl-s` below, so two rooms sit side by
+side. The last entry, "Write to someone…", finds a person.
+
+Rooms are named after themselves in `space space` and the tab line, and a
+thread after its room (`Ops · thread`).
 
 `:chat-write` (`space M w`) asks for a name, lists the people the server
 finds by it, and opens your direct messages with the one you pick,
@@ -184,7 +189,10 @@ The chat service keeps every message it sees to search, on this machine,
 in Greed's data folder: as they come, and each room's older ones fetched
 in the background as an account comes in, back to `chat-search-days` (90
 by default). Encrypted rooms are kept once their messages are decrypted
-here.
+here. What integrations post counts too: a Mattermost webhook's alert is
+kept with the text of its attachments, under the name the webhook gives,
+so `from:alertmanager in:alerts-platform-prod firing` finds it, and so do
+agents with `chat_search`.
 
 ```luau
 greed.option.set("chat-search-days", 365)

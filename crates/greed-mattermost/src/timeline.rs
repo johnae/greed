@@ -406,7 +406,8 @@ impl Mattermost {
             event: on_server.then(|| post.id.clone()),
             sender: Person {
                 id: post.user_id.clone(),
-                name: self.name_of(account, &post.user_id),
+                name: crate::alerts::webhook_name(post)
+                    .unwrap_or_else(|| self.name_of(account, &post.user_id)),
                 avatar: None,
             },
             at: post.create_at,
@@ -447,11 +448,7 @@ fn now() -> i64 {
 /// What a post says: its message and its attachments' text, or the files
 /// it holds when that's empty.
 fn text(post: &Post) -> String {
-    let attached = crate::commands::attachments_text(post);
-    let said: Vec<&str> = [post.message.as_str(), attached.as_str()]
-        .into_iter()
-        .filter(|part| !part.is_empty())
-        .collect();
+    let said = crate::alerts::words(post);
     if said.is_empty() {
         let names: Vec<&str> = post
             .metadata
@@ -461,7 +458,7 @@ fn text(post: &Post) -> String {
             .collect();
         names.join(", ")
     } else {
-        said.join("\n\n")
+        said
     }
 }
 

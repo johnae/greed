@@ -223,9 +223,12 @@ M.BETWEEN = 300
 local PAGES = 100
 
 -- Where the rooms caught up to the horizon are noted, by "account|room".
+-- A new name walks every room back once more, for messages a service now
+-- gives that it used to leave out (2: Mattermost's posts with attachments,
+-- as webhooks send).
 local function caught_file(): string?
 	local data = greed.fs.dirs().data
-	return if data then `{data}/chat/caught-up.json` else nil
+	return if data then `{data}/chat/caught-up-2.json` else nil
 end
 
 local function caught(): { [string]: boolean }

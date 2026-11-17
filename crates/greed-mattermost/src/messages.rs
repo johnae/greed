@@ -74,7 +74,8 @@ impl Mattermost {
                 event: post.id.clone(),
                 sender: Person {
                     id: post.user_id.clone(),
-                    name: self.name_of(id, &post.user_id),
+                    name: crate::alerts::webhook_name(post)
+                        .unwrap_or_else(|| self.name_of(id, &post.user_id)),
                     avatar: None,
                 },
                 at: post.create_at,

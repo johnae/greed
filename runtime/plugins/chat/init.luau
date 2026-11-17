@@ -438,9 +438,32 @@ function M.go_items(): { picker.Item }
 	return items
 end
 
+-- Opens what `chosen` of `go_items` is in `window`: a room, an invite to
+-- answer, a space to browse, or someone to write to.
+local function go_to(chosen: picker.Item, window: greed.View)
+	local value = chosen.value
+	local one: backend.Room? = value.room
+	if one == nil then
+		join.direct(value.account, window)
+	elseif one.kind == "invite" then
+		join.answer(value.account, one.id, one.name, window)
+	elseif one.kind == "space" then
+		join.browse(value.account, one.id, one.name, window)
+	else
+		M.room(value.account, one, window)
+	end
+end
+
+-- A new pane on the `side` of `window`, or of the tab's pane when
+-- `window` isn't one (the sidebar), for something to open in.
+local function split_of(window: greed.View, side: "right" | "down"): greed.View
+	local pane = if window:is_pane() then window else greed.tab.current().active
+	return pane:split(side)
+end
+
 greed.command({
 	name = "chat-go",
-	doc = "Go to a room, channel or person by name, those with something unread first, or write to someone new",
+	doc = "Go to a room, channel or person by name, those with something unread first, or write to someone new; alt-enter or ctrl-v opens it beside, ctrl-s below",
 	run = function(ctx)
 		local window = ctx.view
 		greed.spawn(function()
@@ -449,21 +472,25 @@ greed.command({
 				greed.echo("no chat accounts: :chat-login signs in")
 				return
 			end
-			local chosen = picker.choose("Go to", items)
-			if chosen == nil then
-				return
+			-- Each in its own coroutine: opening one can wait on the owner.
+			local function beside(_items: { picker.Item }, current: picker.Item?)
+				if current then
+					greed.spawn(go_to, current, split_of(window, "right"))
+				end
 			end
-			local value = chosen.value
-			local one: backend.Room? = value.room
-			if one == nil then
-				join.direct(value.account, window)
-			elseif one.kind == "invite" then
-				join.answer(value.account, one.id, one.name, window)
-			elseif one.kind == "space" then
-				join.browse(value.account, one.id, one.name, window)
-			else
-				M.room(value.account, one, window)
-			end
+			picker.pick("Go to", items, function(chosen)
+				greed.spawn(go_to, chosen, window)
+			end, {
+				keys = {
+					["alt-enter"] = beside,
+					["ctrl-v"] = beside,
+					["ctrl-s"] = function(_items, current)
+						if current then
+							greed.spawn(go_to, current, split_of(window, "down"))
+						end
+					end,
+				},
+			})
 		end)
 	end,
 })

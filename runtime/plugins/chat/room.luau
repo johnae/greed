@@ -762,6 +762,9 @@ function M.open(
 	-- chat-close.
 	buffer:set_kept(true)
 	buffer:set_line_numbers(false)
+	-- Named for the buffer list and the tab line, which would otherwise
+	-- say only what kind it is.
+	buffer:set_name(if thread then `{name} · thread` else name)
 	-- Only what people wrote is Markdown; who, when and the rest show as
 	-- they are. What you write in the box is Markdown too.
 	markdown.plain(
