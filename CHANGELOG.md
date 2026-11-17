@@ -16,6 +16,7 @@ the repository's history.
 
 ### New
 
+- watch: watchers, Greed's agent keeping an eye on chat rooms, mentions and DMs from your config: it escalates, drafts replies or answers where allowed, starting in quarantine
 - models: evroc's Think models as a built-in provider, its key from `:secret-set evroc` or `EVROC_API_KEY`
 - agent: choose what the top of the message box shows, with your own fields, and what heads the agent's turns
 - chat: go to any room or person by name (`alt-g`, `space M g`), write to someone new, join a Mattermost channel or a Matrix room on your server by name, and `:chat` opens the sidebar in every session

@@ -885,14 +885,15 @@ local function message_at(ctx: greed.Context): (Open?, backend.Item?)
 	return r, message_on(r, ctx.view:cursor())
 end
 
--- Puts `text` in `r`'s box, and the cursor after it.
-local function fill(r: Open, view: greed.View, text: string)
+--- Puts `text` in `r`'s box, and the cursor after it.
+function M.fill(r: Open, view: greed.View, text: string)
 	local buffer = r.buffer
 	buffer:edit(function(e)
 		e:replace(r.view:input_start(), buffer:len(), text)
 	end)
 	view:set_cursor(buffer:len())
 end
+local fill = M.fill
 
 --- Sends what's in `r`'s box: a new message, an answer, or the change to
 --- one of yours.

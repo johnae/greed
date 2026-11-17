@@ -23,6 +23,25 @@ function M.age(seconds: number): string
 	return `{whole}s`
 end
 
+--- How many seconds `text` says, written as an age is or in parts of
+--- one: `90s`, `30m`, `1h`, `2d`, `1h30m`; a bare number is minutes. Nil
+--- when it isn't one.
+function M.seconds(text: string): number?
+	local trimmed = string.lower((string.gsub(text, "%s", "")))
+	if string.match(trimmed, "^%d+$") then
+		return tonumber(trimmed) :: number * 60
+	elseif trimmed == "" then
+		return nil
+	end
+	local sizes: { [string]: number } = { d = 86400, h = 3600, m = 60, s = 1 }
+	local total = 0
+	for count, unit in string.gmatch(trimmed, "(%d+)([smhd])") do
+		total += (tonumber(count) :: number) * sizes[unit :: string]
+	end
+	local rest = string.gsub(trimmed, "%d+[smhd]", "")
+	return if rest == "" then total else nil
+end
+
 --- How long ago something `seconds` back was, roughly, in words: "just
 --- now", "4 min ago", "3 h ago", "2 days ago".
 function M.ago(seconds: number): string

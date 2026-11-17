@@ -156,6 +156,7 @@ local reset_listeners: { () -> () } = {}
 -- And in the owner's session.
 local alert_listeners: { (account: string, alert: Alert) -> () } = {}
 local read_listeners: { (account: string, room: string) -> () } = {}
+local message_listeners: { (account: string, messages: { any }) -> () } = {}
 
 --- Calls `listener` when an account comes, goes or changes state.
 function M.on_accounts(listener: () -> ())
@@ -213,6 +214,12 @@ end
 --- the service decides.
 function M.on_alert(listener: (account: string, alert: Alert) -> ())
 	greed.plugin.cleanup(core.registry.put(alert_listeners, listener))
+end
+
+--- In the owner's session: calls `listener` with each batch of messages a
+--- service tells of as they come (each as `Said`), with its account's key.
+function M.on_messages(listener: (account: string, messages: { any }) -> ())
+	greed.plugin.cleanup(core.registry.put(message_listeners, listener))
 end
 
 --- In the owner's session: calls `listener` with a room read in any
@@ -407,6 +414,7 @@ local function heard(service: string, method: string, params: any)
 	elseif method == "messages" then
 		-- Kept to search here; views ask the owner what a search finds.
 		greed.spawn(index.keep, service, `{service} {params.account}`, params.messages)
+		core.registry.tell(message_listeners, `{service} {params.account}`, params.messages)
 	elseif method == "unsaid" then
 		greed.spawn(index.forget, `{service} {params.account}`, params.room, params.event)
 	elseif method == "login.step" then

@@ -745,6 +745,19 @@ M.compact = native.compact
 --- a task needs.
 M.switch_on = native.switch_on
 
+--- Gives `s`, a session of Greed's own agent, only the tools in `calls`,
+--- each for as many calls as it says: an agent with one job.
+M.limit = native.limit
+
+--- Has `s` use the model `id`, as alt-M picks one: for Greed's own agent
+--- a role ("fast") or any model a provider lists. False and why when it
+--- can't.
+M.set_model = session.set_model
+
+--- The caller Greed's tools get from `s`, a session of Greed's own agent,
+--- so a tool can tell which session calls it.
+M.caller_of = native.caller
+
 --- Brings what `s` changed in its workspace into yours: with jj its change
 --- is squashed into your working copy, with git its diff is applied.
 M.bring = workspaces.bring

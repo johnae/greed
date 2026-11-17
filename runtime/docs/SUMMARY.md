@@ -18,6 +18,7 @@
 - [Writing plugins](plugins.md)
   - [Building interfaces](ui.md)
 - [Agents](agents.md)
+  - [Watchers](watchers.md)
 - [Permissions and sandboxing](permissions.md)
 - [How Greed is built](design.md)
 

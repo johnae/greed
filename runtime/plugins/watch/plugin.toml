@@ -1,0 +1,7 @@
+name = "watch"
+requires = ["core", "picker", "chat", "acp", "agent"]
+# It keeps each watcher's state, drafts and log in Greed's data folder
+# (fs.read, fs.write), and starts Greed's agent for each wake, which reads
+# where it works as it starts (proc). The agent itself only gets the
+# watcher's tools.
+capabilities = ["fs.read", "fs.write", "proc"]

@@ -239,6 +239,9 @@ something you asked for. `chat_send` asks you every time, whatever you've
 allowed agents, and shows what it would send and where. It doesn't send
 slash commands.
 
+To have an agent keep an eye on rooms for you, escalating what matters and
+drafting replies, set up a [watcher](watchers.md).
+
 ## What isn't here, and what happens instead
 
 | Thing | What Greed does |
