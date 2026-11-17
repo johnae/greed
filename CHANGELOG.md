@@ -36,6 +36,7 @@ the repository's history.
 - ssh: waking from sleep reconnects at once, retries come every second at first, and the window keeps the last screen with `reconnecting…` meanwhile
 - chat: rooms show by name in `space space`, not as chat-room
 - chat: Mattermost webhook posts (alerts, CI) are searchable, with their attachments' text and the webhook's name
+- picker: `space f` in a big project opens several times faster without holding up the editor, and lists every file; it stopped at 100,000 before
 
 ### Documentation
 

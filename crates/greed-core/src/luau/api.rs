@@ -1750,16 +1750,7 @@ fn workspace_functions(lua: &Lua, greed: &Table, owner: &PluginId) -> LuaResult<
         })?,
     )?;
 
-    greed.set(
-        "files",
-        lua.create_function(|_, dir: Option<String>| {
-            let home = std::env::var_os("HOME").map(PathBuf::from);
-            Ok(files(
-                Path::new(dir.as_deref().unwrap_or(".")),
-                home.as_deref(),
-            ))
-        })?,
-    )?;
+    greed.set("files", files_function(lua)?)?;
     Ok(())
 }
 
@@ -1883,9 +1874,6 @@ fn fuzzy(query: &str, items: &[String], case: CaseMatching) -> Vec<usize> {
     scored.into_iter().map(|(i, _)| i).collect()
 }
 
-/// At most this many files are listed.
-const MAX_FILES: usize = 100_000;
-
 /// The folders of a home folder that hold no one's work, and that macOS
 /// asks before letting a program read (iCloud Drive and other cloud storage
 /// are under Library): finding files there takes long and pops up prompts.
@@ -1904,27 +1892,43 @@ const HOME_SKIPPED: [&str; 6] = [
 pub(crate) fn files(dir: &Path, home: Option<&Path>) -> Vec<String> {
     let real = |path: &Path| std::fs::canonicalize(path).ok();
     let in_home = home.is_some_and(|home| real(home).is_some_and(|home| real(dir) == Some(home)));
-    let mut files: Vec<String> = ignore::WalkBuilder::new(dir)
-        .require_git(false)
-        .filter_entry(move |entry| {
-            !(in_home
-                && entry.depth() == 1
-                && entry
-                    .file_name()
-                    .to_str()
-                    .is_some_and(|name| HOME_SKIPPED.contains(&name)))
-        })
-        .build()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
-        .filter_map(|entry| {
-            let path = entry.path().strip_prefix(dir).ok()?;
-            Some(path.to_string_lossy().into_owned())
-        })
-        .take(MAX_FILES)
-        .collect();
-    files.sort();
-    files
+    crate::search::files(dir, if in_home { &HOME_SKIPPED } else { &[] })
+}
+
+/// `greed.files`: walked in a job while the caller can wait, so a big
+/// project doesn't hold up the editor, and right away where it can't.
+fn files_function(lua: &Lua) -> LuaResult<Function> {
+    let folder = |dir: Option<String>| -> (PathBuf, Option<PathBuf>) {
+        (
+            PathBuf::from(dir.as_deref().unwrap_or(".")),
+            std::env::var_os("HOME").map(PathBuf::from),
+        )
+    };
+    let start = lua.create_function(move |lua, dir: Option<String>| {
+        let (dir, home) = folder(dir);
+        Ok(super::jobs::start(
+            lua,
+            format!("greed.files {}", dir.display()),
+            move || super::jobs::Output::Files(files(&dir, home.as_deref())),
+        ))
+    })?;
+    let now = lua.create_function(move |_, dir: Option<String>| {
+        let (dir, home) = folder(dir);
+        Ok(files(&dir, home.as_deref()))
+    })?;
+    lua.load(
+        r"
+        local start, now = ...
+        return function(dir)
+            if coroutine.isyieldable() then
+                return coroutine.yield(start(dir))
+            end
+            return now(dir)
+        end
+        ",
+    )
+    .set_name("=greed.files")
+    .call((start, now))
 }
 
 const DEFAULT_FLOAT_SIZE: Extent = Extent::percent(60);

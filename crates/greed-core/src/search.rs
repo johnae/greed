@@ -128,15 +128,86 @@ const MAX_GREP_FILE: u64 = 8 * 1024 * 1024;
 /// A walk over the files under `dir`, in parallel, leaving out hidden ones
 /// and those `.gitignore` and the like exclude unless told to keep them.
 fn walker(dir: &Path, hidden: bool, ignored: bool) -> ignore::WalkParallel {
-    ignore::WalkBuilder::new(dir)
+    walk_builder(dir, hidden, ignored).build_parallel()
+}
+
+fn walk_builder(dir: &Path, hidden: bool, ignored: bool) -> ignore::WalkBuilder {
+    let mut builder = ignore::WalkBuilder::new(dir);
+    builder
         .hidden(!hidden)
         .git_ignore(!ignored)
         .git_exclude(!ignored)
         .git_global(!ignored)
         .ignore(!ignored)
         .parents(!ignored)
-        .require_git(false)
-        .build_parallel()
+        .require_git(false);
+    builder
+}
+
+/// Every file under `dir`, relative to it and sorted, skipping hidden
+/// files, anything `.gitignore` excludes and the folders right under `dir`
+/// that `skipped` names. Walked in parallel, and only names are read, so a
+/// big project's hundreds of thousands of files take a fraction of a
+/// second once the system has them cached.
+pub fn files(dir: &Path, skipped: &'static [&'static str]) -> Vec<String> {
+    let found = Mutex::new(Vec::new());
+    let mut builder = walk_builder(dir, false, false);
+    if !skipped.is_empty() {
+        builder.filter_entry(move |entry| {
+            entry.depth() != 1
+                || !entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| skipped.contains(&name))
+        });
+    }
+    builder.build_parallel().run(|| {
+        let mut mine = Gathered {
+            paths: Vec::new(),
+            into: &found,
+        };
+        Box::new(move |entry| {
+            if let Ok(entry) = entry
+                && entry.file_type().is_some_and(|t| t.is_file())
+                && let Ok(path) = entry.path().strip_prefix(dir)
+            {
+                mine.push(path.to_string_lossy().into_owned());
+            }
+            WalkState::Continue
+        })
+    });
+    let mut found = found.into_inner().expect("no panics while held");
+    found.sort_unstable();
+    found
+}
+
+/// What one of a walk's threads found, handed over a batch at a time, and
+/// the rest once the thread is done with it.
+struct Gathered<'a> {
+    paths: Vec<String>,
+    into: &'a Mutex<Vec<String>>,
+}
+
+impl Gathered<'_> {
+    fn push(&mut self, path: String) {
+        self.paths.push(path);
+        if self.paths.len() >= 4096 {
+            self.hand_over();
+        }
+    }
+
+    fn hand_over(&mut self) {
+        self.into
+            .lock()
+            .expect("no panics while held")
+            .append(&mut self.paths);
+    }
+}
+
+impl Drop for Gathered<'_> {
+    fn drop(&mut self) {
+        self.hand_over();
+    }
 }
 
 /// The file at `path` as text, unless it's binary or isn't UTF-8.

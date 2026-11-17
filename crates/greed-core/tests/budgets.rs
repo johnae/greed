@@ -601,6 +601,51 @@ fn many_buffers() {
     );
 }
 
+/// The file picker in a big project, more files than it used to stop at:
+/// opening it (walking the project), typing a query, and every file there
+/// to pick.
+#[test]
+fn the_file_picker_in_a_big_project() {
+    budget(
+        "the_file_picker_in_a_big_project",
+        |found| {
+            const FILES: usize = 150_000;
+            let dir = Temp::new("big-project");
+            std::fs::create_dir_all(dir.join(".git")).unwrap();
+            for n in 0..FILES {
+                let path = dir.join(format!("svc{}/src/mod{}/f{n}.ts", n % 40, n % 97));
+                if n < 40 * 97 {
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                }
+                std::fs::write(path, "").unwrap();
+            }
+            let mut driven = Driven::new(host("", Some(dir.join("main.rs"))));
+            driven.frame();
+            let ((), cpu, clock) = timed(|| {
+                driven.host.run(FIRST_CLIENT, "pick-file").unwrap();
+                driven.host.settle().unwrap();
+                driven.frame();
+            });
+            found.set("open_cpu_ms", ms(cpu));
+            found.set("open_clock_ms", ms(clock));
+            let count = driven.eval(&format!(
+                "return #require('@greed').files('{}')",
+                dir.display()
+            ));
+            assert_eq!(count, FILES.to_string(), "every file, none cut off");
+            found.set("per_key_cpu_ms", per_key(&mut driven, "s v c 3 9 f 1 2", 1));
+            driven.keys("esc");
+            found.set("peak_mb", peak_mb());
+        },
+        &[
+            ("open_cpu_ms", 1500.0, 3000.0),
+            ("open_clock_ms", 500.0, 2000.0),
+            ("per_key_cpu_ms", 60.0, 200.0),
+            ("peak_mb", 400.0, 500.0),
+        ],
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Notes
 

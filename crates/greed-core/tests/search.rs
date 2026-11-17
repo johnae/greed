@@ -46,3 +46,29 @@ fn big_texts_are_searched_without_copying_them() {
     let text = Rope::from_str(&big);
     assert_eq!(all(&text, "needle", 0), [(200_000, 200_006)]);
 }
+
+#[test]
+fn every_file_of_a_big_tree_is_listed_once_sorted_leaving_out_hidden_and_ignored() {
+    let dir = std::env::temp_dir().join(format!("greed-files-{}", std::process::id()));
+    // More than a thread hands over at once, across folders.
+    for n in 0..10_000 {
+        let path = dir.join(format!("src/m{}/f{n:05}.rs", n % 37));
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "").unwrap();
+    }
+    std::fs::create_dir_all(dir.join("target")).unwrap();
+    std::fs::write(dir.join("target/out.o"), "").unwrap();
+    std::fs::write(dir.join(".gitignore"), "target/\n").unwrap();
+    std::fs::write(dir.join(".hidden"), "").unwrap();
+    let files = greed_core::search::files(&dir, &[]);
+    assert_eq!(files.len(), 10_000, "every file, nothing ignored or hidden");
+    assert!(files.windows(2).all(|w| w[0] < w[1]), "sorted, each once");
+    assert!(
+        !files
+            .iter()
+            .any(|f| f.starts_with("target") || f.starts_with('.'))
+    );
+    let skipped = greed_core::search::files(&dir, &["src"]);
+    assert!(skipped.is_empty(), "{skipped:?}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

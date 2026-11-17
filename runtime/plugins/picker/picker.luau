@@ -96,6 +96,9 @@ type Open = {
 	on_move: ((item: Item) -> ())?,
 	-- The item `on_move` last heard of.
 	moved_to: Item?,
+	-- The widest label with a detail and the widest detail, of `items`,
+	-- worked out once for each list of items rather than on every draw.
+	sized: { items: { Item }, column: number, widest: number }?,
 	on_cancel: (() -> ())?,
 	paths: Paths?,
 	tags: ((item: Item, word: string) -> boolean)?,
@@ -201,12 +204,18 @@ local function draw(o: Open): core.UiNode
 	local height, cols = o.view:size()
 	local room = if cols then cols - 2 else nil
 	local column, widest = 0, 0
-	for _, item in o.items do
-		local detail = item.detail
-		if detail then
-			column = math.max(column, core.text.width(item.label))
-			widest = math.max(widest, core.text.width(detail))
+	local sized = o.sized
+	if sized and sized.items == o.items then
+		column, widest = sized.column, sized.widest
+	else
+		for _, item in o.items do
+			local detail = item.detail
+			if detail then
+				column = math.max(column, core.text.width(item.label))
+				widest = math.max(widest, core.text.width(detail))
+			end
 		end
+		o.sized = { items = o.items, column = column, widest = widest }
 	end
 	if room then
 		column = math.min(column, math.max(room - widest - 2, room * 3 // 5, 1))

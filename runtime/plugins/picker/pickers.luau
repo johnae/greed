@@ -33,9 +33,14 @@ end
 
 -- Picks a file under `root`, skipping ignored files, and opens it.
 local function pick_file(title: string, root: string)
+	-- The walk gives clean paths relative to `root`, so joining them is
+	-- all it takes: working each one out (`project.resolve`) took most of
+	-- the time in a big project.
+	local base = project.resolve(root)
+	local prefix = if string.sub(base, -1) == "/" then base else base .. "/"
 	local items = {}
 	for _, path in greed.files(root) do
-		table.insert(items, { label = path, value = project.resolve(path, root), kind = "file" })
+		table.insert(items, { label = path, value = prefix .. path, kind = "file" })
 	end
 	picker.pick(title, items, function(item)
 		core.file.open(item.value)

@@ -17,6 +17,8 @@ type LuaResult<T> = mlua::Result<T>;
 pub enum Output {
     Grep(Result<Vec<LineMatch>, BadPattern>),
     Scan(Vec<crate::search::Scanned>),
+    /// `greed.files`: paths under a folder.
+    Files(Vec<String>),
     Check(super::plugin::Check),
     Http(Result<super::http::Fetched, String>),
     /// A stream's status and headers, for the command waiting on `token`.
@@ -235,6 +237,7 @@ pub(super) fn finish(lua: &Lua, done: Done) -> LuaResult<()> {
         Output::Grep(Ok(lines)) => tasks::deliver(lua, done.token, fs::grep_to_lua(lua, lines)?),
         Output::Grep(Err(err)) => tasks::deliver(lua, done.token, (Value::Nil, err.to_string())),
         Output::Scan(files) => tasks::deliver(lua, done.token, fs::scan_to_lua(lua, files)?),
+        Output::Files(paths) => tasks::deliver(lua, done.token, paths),
         Output::Check(check) => tasks::deliver(lua, done.token, super::plugin::to_lua(lua, check)?),
         Output::Secret(result) => {
             tasks::deliver(lua, done.token, super::secrets::to_lua(lua, result)?)
