@@ -12,9 +12,11 @@ the repository's history.
 - Going back to a buffer puts the cursor and scroll where you left them, however you switch (#33).
 - More languages download their grammar: XML, ERB, EJS, CodeQL, Protobuf, Scheme, Jinja, QML and others. A language can borrow another's grammar, and the docs say how to add one Greed doesn't have.
 - An agent's proposal is reviewed as one change, accepted or rejected as a whole.
+- You choose what the top of an agent's message box shows (`agent-box`): the model by default, plus your own fields or text, each toggled with `:agent-box`. The model heads the agent's turns, and `agent-title` and `agent-pane-title` choose or drop the name above the transcript and on its panel.
 
 ### New
 
+- agent: choose what the top of the message box shows, with your own fields, and what heads the agent's turns
 - agent: a proposal is reviewed as one change, accepted or rejected as a whole
 - languages: a language can use another's grammar, so Starlark is highlighted as Python
 - languages: download grammars for XML, ERB, EJS, CodeQL, requirements and queries

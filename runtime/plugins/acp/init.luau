@@ -48,7 +48,7 @@ local terminal = require("@terminal")
 local slash = require("@self/slash")
 local overlap = require("@self/overlap")
 
-type Session = session.Session
+export type Session = session.Session
 
 local M = {}
 
@@ -61,6 +61,11 @@ M.register = agents.register
 
 --- The agent called `name`, or the first installed one, if it's installed.
 M.installed = agents.installed
+
+--- Adds a field the top of agents' message boxes can show, named in the
+--- agent-box option: `text` gives what it says for a session, nil for
+--- nothing.
+M.box_field = transcript.box_field
 
 greed.option.define({
 	name = "agent-greed-tools",
@@ -633,10 +638,11 @@ local function open_in(
 	where: Placement,
 	sizes: Sizes
 ): greed.View
+	local title = if greed.option.get("agent-pane-title") ~= false then name else nil
 	if where == "panel" then
-		return greed.panel(buffer, { side = "right", width = "45%", title = name })
+		return greed.panel(buffer, { side = "right", width = "45%", title = title })
 	elseif where == "float" then
-		return panes.floats.show(buffer, { title = name })
+		return panes.floats.show(buffer, { title = title })
 	elseif where == "tab" then
 		greed.tab.rename(greed.tab.new(buffer), name)
 		return greed.tab.current().active
@@ -1114,6 +1120,25 @@ greed.command({
 		else
 			greed.run("agent-new")
 		end
+	end,
+})
+
+greed.command({
+	name = "agent-box",
+	doc = 'Show or hide something at the top of agents\' message boxes (the agent-box option): agent, auto, mode, model, effort, keys, a field added with acp.box_field or "text in quotes"',
+	args = {
+		{ name = "field", doc = "What to show or hide", type = "rest" },
+	},
+	run = function(ctx)
+		local field: string = ctx.values.field
+		local fields = transcript.box_fields()
+		local at = table.find(fields, field)
+		if at then
+			table.remove(fields, at)
+		else
+			table.insert(fields, field)
+		end
+		greed.option.set("agent-box", table.concat(fields, " "))
 	end,
 })
 
@@ -2020,9 +2045,11 @@ greed.command({
 
 slash.complete(M.of)
 
--- Thoughts show or hide in every transcript as the option says.
+-- Thoughts, the box's top and the turns' headings change in every
+-- transcript as their options say.
+local REDRAWN_BY = { "agent-thoughts", "agent-box", "agent-heading", "agent-title" }
 greed.on("option.changed", function(event: greed.OptionChanged)
-	if event.name == "agent-thoughts" then
+	if table.find(REDRAWN_BY, event.name) then
 		for _, s in sessions do
 			changed(s)
 		end

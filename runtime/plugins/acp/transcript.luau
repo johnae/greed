@@ -193,7 +193,7 @@ local function heading(out: Lines, s: Session, who: "user" | "agent")
 	if out.speaker ~= who then
 		gap(out)
 		out.speaker = who
-		add(out, `  {if who == "user" then "You" else s.name}`, "markup.heading")
+		add(out, `  {if who == "user" then "You" else M.speaker(s)}`, "markup.heading")
 	end
 end
 
@@ -393,18 +393,21 @@ end
 -- only the one that changed is drawn again, then what you sent while it
 -- worked.
 local function history(s: Session): { core.UiNode }
-	local title = `{s.name} in {core.project.tilde(s.root)}`
-	if s.workspace then
-		title ..= ` (workspace {s.workspace.name})`
+	local title = M.title(s)
+	local parts: { core.UiNode } = {}
+	if title ~= "" then
+		table.insert(
+			parts,
+			part(function()
+				local out: Lines = { lines = {} }
+				add(out, title, "markup.heading")
+				return out.lines
+			end)
+		)
 	end
-	local parts: { core.UiNode } = {
-		part(function()
-			local out: Lines = { lines = {} }
-			add(out, title, "markup.heading")
-			return out.lines
-		end),
-	}
 	local thoughts = greed.option.get("agent-thoughts") ~= false
+	-- The agent's headings say this, so a change draws its entries again.
+	local said = M.speaker(s)
 	local speaker: ("user" | "agent")? = nil
 	for index, entry in s.entries do
 		local e = entry :: any
@@ -418,7 +421,7 @@ local function history(s: Session): { core.UiNode }
 		local wraps = e.kind ~= "thought" or index < #s.entries
 		table.insert(
 			parts,
-			ui.keyed(`entry:{index}`, version(s, index, e, before), function()
+			ui.keyed(`entry:{index}:{said}`, version(s, index, e, before), function()
 				return part(function(cells: number)
 					return entry_lines(s, index, e, before, cells)
 				end)
@@ -449,6 +452,83 @@ local function history(s: Session): { core.UiNode }
 	return parts
 end
 
+greed.option.define({
+	name = "agent-box",
+	doc = "What the top of an agent's message box shows, in the order it gives way when space is short: "
+		.. "agent, auto (only when Greed answers its questions), mode (when not the one it started in), model, effort, keys, "
+		.. 'fields added with acp.box_field and "text in quotes"',
+	default = "auto model mode effort keys",
+})
+
+greed.option.define({
+	name = "agent-title",
+	doc = "What the line above an agent's transcript says, in its order: agent, model, folder (in ~/where), "
+		.. 'workspace, fields added with acp.box_field and "text in quotes"; empty for no line',
+	default = "agent folder workspace",
+})
+
+greed.option.define({
+	name = "agent-pane-title",
+	doc = "Whether a panel or float showing an agent has the agent's name as its title",
+	default = true,
+})
+
+greed.option.define({
+	name = "agent-heading",
+	doc = 'What heads each of the agent\'s turns in its transcript: its "model", falling back to the agent\'s name, or the agent\'s "name"',
+	default = "model",
+	choices = { "model", "name" },
+})
+
+-- What `agent-box` can show besides the fields added with `box_field`.
+local BOX_FIELDS = { "agent", "auto", "mode", "model", "effort", "keys" }
+
+--- Fields plugins and your config add to what `agent-box` can show, by
+--- name: each says its text for a session, or nil to show nothing.
+local custom: { [string]: (s: Session) -> string? } = {}
+
+--- Adds a field `agent-box` can show as `name`: `text` gives what it says
+--- for a session, or nil for nothing. It goes when the plugin adding it
+--- does.
+function M.box_field(name: string, text: (s: Session) -> string?)
+	assert(string.match(name, "^[%w%-]+$"), "a field's name is letters, digits and -")
+	greed.plugin.cleanup(core.registry.set(custom, name, text))
+end
+
+--- The words of `option` (`agent-box` unless given), in its order: field
+--- names, and text in double quotes shown as it is.
+function M.box_fields(option: string?): { string }
+	local spec = tostring(greed.option.get(option or "agent-box") or "")
+	local fields = {}
+	local at = 1
+	while at <= #spec do
+		local word = string.match(spec, '^"[^"]*"', at) or string.match(spec, "^[%w%-]+", at)
+		if word and not table.find(fields, word) then
+			table.insert(fields, word)
+		end
+		at += if word then #word else 1
+	end
+	return fields
+end
+
+-- What `field` says for `s`: a quoted text as it is, a field added with
+-- `box_field` as it says (nil when it fails), nil for one unknown.
+local function custom_text(s: Session, field: string): string?
+	local quoted = string.match(field, '^"(.*)"$')
+	if quoted then
+		return if quoted ~= "" then quoted else nil
+	end
+	local text = custom[field]
+	if text == nil then
+		return nil
+	end
+	local ok, said = pcall(text, s)
+	if ok and type(said) == "string" and said ~= "" then
+		return (string.gsub(said, "\n", " "))
+	end
+	return nil
+end
+
 -- The name of the mode or model `id` among `list`.
 local function name_in(list: { session.Mode }, id: string?): string?
 	for _, item in list do
@@ -459,48 +539,100 @@ local function name_in(list: { session.Mode }, id: string?): string?
 	return nil
 end
 
+--- The line above the transcript of `s`, as `agent-title` says: "" for
+--- none.
+function M.title(s: Session): string
+	local text: { [string]: string? } = {
+		agent = s.name,
+		model = name_in(s.models, s.model),
+		folder = `in {core.project.tilde(s.root)}`,
+		workspace = if s.workspace then `(workspace {s.workspace.name})` else nil,
+	}
+	local shown: { string } = {}
+	for _, field in M.box_fields("agent-title") do
+		local said = if text[field] ~= nil then text[field] else custom_text(s, field)
+		if said then
+			table.insert(shown, said)
+		end
+	end
+	return table.concat(shown, " ")
+end
+
+--- What heads the agent's turns in `s`: its model or its name, as
+--- `agent-heading` says.
+function M.speaker(s: Session): string
+	if greed.option.get("agent-heading") == "model" then
+		return name_in(s.models, s.model) or s.name
+	end
+	return s.name
+end
+
 --- The box's top line for `s`, `cells` wide, and its decorations from
---- where it starts: the agent, whether Greed answers its questions (auto)
---- or you do (manual), its mode and model on the left, and the keys to send
---- and stop on the right, as far as they fit.
+--- where it starts: what `agent-box` asks for of the agent, whether Greed
+--- answers its questions (auto), its mode, model, effort and the fields
+--- added on the left, and the keys to send and stop on the right. When
+--- they don't all fit, the keys go first, then the others from the last.
 function M.top(s: Session, cells: number): (string, { greed.Mark })
-	local on = auto.on(s)
-	local answers = if on then "auto" else "manual"
-	local short = `{s.name} · {answers}`
-	local named = short
-	local mode, model = name_in(s.modes, s.mode), name_in(s.models, s.model)
-	if mode then
-		named ..= ` · {mode}`
+	local text: { [string]: string? } = {
+		agent = s.name,
+		auto = if auto.on(s) then "auto" else nil,
+		mode = if s.mode ~= s.first_mode then name_in(s.modes, s.mode) else nil,
+		model = name_in(s.models, s.model),
+		effort = if s.effort then `effort {s.effort}` else nil,
+	}
+	local shown: { string } = {}
+	local hints = ""
+	for _, field in M.box_fields() do
+		if field == "keys" then
+			hints = HINTS
+		elseif not table.find(BOX_FIELDS, field) then
+			text[field] = custom_text(s, field)
+		end
+		if text[field] then
+			table.insert(shown, field)
+		end
 	end
-	if model then
-		named ..= ` · {model}`
+	local function named(): string
+		local words = {}
+		for _, field in shown do
+			table.insert(words, text[field] :: string)
+		end
+		return table.concat(words, " · ")
 	end
-	if s.effort then
-		named ..= ` · effort {s.effort}`
-	end
-	local hints = HINTS
-	-- The rule between them: "╭─ " and " " around the name, " " and " ─╮"
-	-- around the hints, or "─╮" without them.
+	-- The rule around them: "╭─ " and " " around the name, " " and " ─╮"
+	-- around the hints, "─╮" without them, and "╭─" alone with no name.
 	local function room(): number
-		return cells - width(named) - width(hints) - (if hints == "" then 6 else 8)
+		local name = named()
+		return cells
+			- width(name)
+			- width(hints)
+			- (if name == "" then 2 else 4)
+			- (if hints == "" then 2 else 4)
 	end
 	if room() < 1 then
 		hints = ""
 	end
-	if room() < 1 then
-		named = short
+	while room() < 1 and #shown > 1 do
+		table.remove(shown)
 	end
-	local line = `╭─ {named} ` .. string.rep("─", math.max(room(), 1))
-	local word = #"╭─ " + #s.name + #" · "
-	local styles: { greed.Mark } = {
-		{ from = 0, to = #line, style = "agent.box" },
-		{ from = #"╭─ ", to = #"╭─ " + #named, style = "agent.box.title" },
-		{
-			from = word,
-			to = word + #answers,
-			style = if on then "agent.auto" else "agent.manual",
-		},
-	}
+	local name = named()
+	local line = if name == "" then "╭─" else `╭─ {name} `
+	line ..= string.rep("─", math.max(room(), 1))
+	local styles: { greed.Mark } = { { from = 0, to = #line, style = "agent.box" } }
+	if name ~= "" then
+		table.insert(
+			styles,
+			{ from = #"╭─ ", to = #"╭─ " + #name, style = "agent.box.title" }
+		)
+		local at = #"╭─ "
+		for _, field in shown do
+			local word = text[field] :: string
+			if field == "auto" then
+				table.insert(styles, { from = at, to = at + #word, style = "agent.auto" })
+			end
+			at += #word + #" · "
+		end
+	end
 	if hints ~= "" then
 		local start = #line + 1
 		line ..= ` {hints} ─╮`

@@ -96,6 +96,8 @@ export type Session = {
 	--- The modes the agent offers, and the one it's in.
 	modes: { Mode },
 	mode: string?,
+	--- The mode it started in, which the box leaves out.
+	first_mode: string?,
 	--- Whether Greed answers its questions for you where it safely can
 	--- (auto), or leaves them all to you; nil goes by `agent-auto`.
 	--- `auto_blocks` counts the commands auto mode blocked in a row, until
@@ -1064,6 +1066,7 @@ function M.start(
 				)
 			end
 			session.mode = new.modes.currentModeId
+			session.first_mode = session.mode
 		end
 		take_models(session, new)
 		if session.status == "starting" then

@@ -87,12 +87,115 @@ local function squeeze(drawn: string): string
 	return out
 end
 
-test("you write in a box that shows the agent, its mode and model, and the keys", function(t)
+test("you write in a box that shows the model and the keys", function(t)
 	start(t)
 	local drawn = screen(t)
 	local box =
-		"╭─ Fake · manual · Manual · Small ─ alt-enter sends · ctrl-c stops ─╮\n│ │\n╰─ ready ─╯"
+		"╭─ Small ─ alt-enter sends · ctrl-c stops ─╮\n│ │\n╰─ ready ─╯"
 	assert(string.find(squeeze(drawn), box, 1, true), drawn)
+end)
+
+test("agent-box picks what the box's top shows, and :agent-box toggles one", function(t)
+	local s = start(t)
+	local function top(): string
+		return squeeze(string.match(screen(t), "(╭[^\n]*)") :: string)
+	end
+	greed.option.set("agent-box", "agent auto mode model effort keys")
+	t:wait(30)
+	-- The mode it started in and manual answering say nothing.
+	assert(top() == "╭─ Fake · Small ─ alt-enter sends · ctrl-c stops ─╮", top())
+	s.mode = "plan"
+	s.effort = "high"
+	s.auto = true
+	greed.option.set("agent-box", "effort model mode auto")
+	t:wait(30)
+	assert(top() == "╭─ effort high · Small · Plan · auto ─╮", top())
+	t:run("agent-box", { "model" })
+	local box = tostring(greed.option.get("agent-box"))
+	assert(box == "effort mode auto", box)
+	t:run("agent-box", { "keys" })
+	t:wait(30)
+	assert(
+		top() == "╭─ effort high · Plan · auto ─ alt-enter sends · ctrl-c stops ─╮",
+		top()
+	)
+	greed.option.set("agent-box", "")
+	t:wait(30)
+	assert(top() == "╭─╮", top())
+	greed.option.set("agent-box", "auto model mode effort keys")
+end)
+
+test("the box shows text in quotes and fields added with box_field", function(t)
+	local s = start(t)
+	acp.box_field("where", function(of: any)
+		return if of == s then "here" else nil
+	end)
+	acp.box_field("nothing", function()
+		return nil
+	end)
+	acp.box_field("broken", function(): string?
+		error("oops")
+	end)
+	greed.option.set("agent-box", '"work laptop" model where nothing broken unknown')
+	t:wait(30)
+	local top = squeeze(string.match(screen(t), "(╭[^\n]*)") :: string)
+	assert(top == "╭─ work laptop · Small · here ─╮", top)
+	t:run("agent-box", { '"work laptop"' })
+	local box = tostring(greed.option.get("agent-box"))
+	assert(box == "model where nothing broken unknown", box)
+	greed.option.set("agent-box", "auto model mode effort keys")
+end)
+
+test("in a narrow view the box gives way from its last field", function(t)
+	local s = start(t)
+	s.mode = "plan"
+	s.effort = "high"
+	greed.option.set("agent-box", "agent model mode effort keys")
+	local drawn = screen(t, 22)
+	assert(string.find(squeeze(drawn), "╭─ Fake · Small ─╮", 1, true), drawn)
+	greed.option.set("agent-box", "auto model mode effort keys")
+end)
+
+test("the agent's turns are headed by its model, or its name", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	assert(string.find(screen(t), "▍ Small\n▍ Hello there\n", 1, true), screen(t))
+	greed.option.set("agent-heading", "name")
+	t:wait(30)
+	assert(string.find(screen(t), "▍ Fake\n▍ Hello there\n", 1, true), screen(t))
+	greed.option.set("agent-heading", "model")
+end)
+
+test("the line above the transcript says what agent-title asks, or nothing", function(t)
+	start(t)
+	assert(string.find(screen(t), "^Fake in "), screen(t))
+	acp.box_field("mood", function()
+		return "calm"
+	end)
+	greed.option.set("agent-title", 'model "·" mood nothing')
+	t:wait(30)
+	assert(string.find(screen(t), "^Small · calm\n"), screen(t))
+	greed.option.set("agent-title", "")
+	t:wait(30)
+	assert(not string.find(screen(t), "Fake", 1, true), screen(t))
+	assert(not string.find(screen(t), "Small ·", 1, true), screen(t))
+	greed.option.set("agent-title", "agent folder workspace")
+end)
+
+test("agent-pane-title off shows agents in floats without a title", function(t)
+	-- The title the float showing a new session gets.
+	local function titled(): string?
+		local s = assert(acp.start(FAKE, t:tempdir({})))
+		acp.show(s, "float")
+		local spec = greed.view():float_spec()
+		acp.stop(s)
+		return spec and spec.title
+	end
+	assert(titled() == "Fake", "the agent's name by default")
+	greed.option.set("agent-pane-title", false)
+	local title = titled()
+	greed.option.set("agent-pane-title", true)
+	assert(title == nil, tostring(title))
 end)
 
 test("the box grows with what you write and keeps its sides", function(t)
@@ -109,13 +212,10 @@ test("the box grows with what you write and keeps its sides", function(t)
 	assert(utf8.len(top) == utf8.len(side), `{top}\n{side}`)
 end)
 
-test("in a narrow view the keys give way to the agent's name", function(t)
+test("in a narrow view the keys give way first", function(t)
 	start(t)
 	local drawn = screen(t, 40)
-	assert(
-		string.find(squeeze(drawn), "╭─ Fake · manual · Manual · Small ─╮", 1, true),
-		drawn
-	)
+	assert(string.find(squeeze(drawn), "╭─ Small ─╮", 1, true), drawn)
 	assert(not string.find(drawn, "alt-enter sends", 1, true), drawn)
 end)
 
@@ -123,7 +223,7 @@ test("your messages and the agent's have bars beside them, yours a background", 
 	local s = start(t)
 	send(t, s, "hello")
 	local drawn = screen(t)
-	assert(string.find(drawn, "▍ You\n▍ hello\n\n▍ Fake\n▍ Hello there\n", 1, true), drawn)
+	assert(string.find(drawn, "▍ You\n▍ hello\n\n▍ Small\n▍ Hello there\n", 1, true), drawn)
 	local buffer = greed.view():buffer()
 	local yours, theirs = 0, 0
 	for _, mark in buffer:decorations("acp") do

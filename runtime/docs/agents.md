@@ -676,8 +676,9 @@ A helper's transcript opened from its row closes with `esc` (in normal
 mode) or `q`, back to the row it was opened from. Elsewhere those keys do
 what they always do.
 
-The box at the bottom grows as you write; its top shows the agent, its
-mode and model. In any mode, while typing too:
+The box at the bottom grows as you write; its top shows the model, `auto`
+when auto mode is on, the mode once you leave the one it started in, the
+effort and the keys. In any mode, while typing too:
 
 | Key | |
 |---|---|
@@ -711,6 +712,62 @@ waiting chip pulses; nothing moves while it's idle. Theme keys:
 `agent.box`, `agent.box.title`, `agent.hint`, `agent.picked` (the
 highlighted row), `agent.working`, `agent.waiting`, `agent.done` and
 `agent.failed`.
+
+#### What the box's top shows
+
+The `agent-box` option lists what goes at the top of the box, in order.
+Like this, in your config:
+
+```luau
+greed.option.set("agent-box", 'agent model "work" effort keys')
+```
+
+The fields are `agent` (its name, like Claude Code), `auto`, `mode`,
+`model`, `effort` and `keys`, plus text in double quotes shown as it is.
+Anything left out isn't drawn. When the box is narrow the keys give way
+first, then the fields from the end of the list, so put what you care
+about first.
+
+`:agent-box model` shows or hides one field. Keys bind to command names,
+so for a key give it a command of its own:
+
+```luau
+greed.command({
+  name = "agent-box-model",
+  run = function()
+    greed.run("agent-box", { args = { "model" } })
+  end,
+})
+greed.keymap.bind({ layer = "leader" }, { ["i b"] = "agent-box-model" })
+```
+
+Your own fields are Luau functions that get the session and return a
+text, or nil to show nothing. They're computed each time the box is
+drawn:
+
+```luau
+local acp = require("@acp")
+acp.box_field("project", function(s)
+  return s.root:match("[^/]+$")
+end)
+greed.option.set("agent-box", "project model keys")
+```
+
+The agent's turns in the transcript are headed by the model. Set
+`agent-heading` to `name` to head them with the agent's name instead.
+
+The line above the transcript (`Claude Code in ~/src/app`) follows
+`agent-title`, which takes the same kind of list as `agent-box`: `agent`,
+`model`, `folder`, `workspace`, your own fields and quoted text. Set it to
+`""` to drop the line. A panel or float showing an agent has its name as a
+title; `:set agent-pane-title false` leaves that off for agents shown
+afterwards. The session list keeps the name either way, so two sessions
+stay apart.
+
+```luau
+greed.option.set("agent-title", "model folder")
+greed.option.set("agent-pane-title", false)
+```
 
 When the agent asks before doing something, a row of choices shows at the
 top of the box:
