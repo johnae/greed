@@ -1084,6 +1084,51 @@ test("a room that comes after its account is ready is caught up too, once", func
 	assert(#found == 1 and found[1] == "$in!ops:x", table.concat(found, " "))
 end)
 
+test("a message's newest text is kept, whatever order its edits come in", function(t)
+	local notify = fake()
+	local function said(text: string, at: number, changed: number?): any
+		return {
+			room = "!yard:x",
+			room_name = "Yard",
+			event = "$y1",
+			sender = { id = "@cal:x", name = "Cal" },
+			at = at,
+			text = text,
+			thread = if changed then nil else "$t",
+			mine = false,
+			direct = false,
+			changed = changed,
+		}
+	end
+	-- As history gives them, newest first: two edits, then the message.
+	notify("messages", {
+		account = "@anna:x",
+		messages = { said("trowel", 3000, 3000), said("shovel", 2000, 2000) },
+	})
+	t:wait(50)
+	notify("messages", { account = "@anna:x", messages = { said("spade", 1000) } })
+	t:wait(50)
+	assert(#finds(t, "trowel") == 1, "the newest text")
+	assert(#finds(t, "shovel") == 0 and #finds(t, "spade") == 0, "not the older ones")
+	local item: any = nil
+	greed.spawn(function()
+		local index = chat.index.index()
+		assert(index)
+		local items = index:items({ chat.index.key("matrix @anna:x", "!yard:x", "$y1") })
+		item = (items or {})[1] or false
+	end)
+	t:wait_for(function(): boolean
+		return item ~= nil
+	end)
+	assert(item and item.fields.at[1] == "1000", "the date it was written")
+	assert(item.fields.thread[1] == "$t", "the thread the message is in")
+
+	-- Edited again, live: the new text.
+	notify("messages", { account = "@anna:x", messages = { said("rake", 4000, 4000) } })
+	t:wait(50)
+	assert(#finds(t, "rake") == 1 and #finds(t, "trowel") == 0, "edited again")
+end)
+
 test("chat's search finds what the services told of, in Greed's query language", function(t)
 	local notify = fake()
 	told(notify)

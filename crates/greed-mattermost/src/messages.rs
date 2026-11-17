@@ -83,6 +83,7 @@ impl Mattermost {
                 thread: Some(post.root_id.clone()).filter(|root| !root.is_empty()),
                 mine: post.user_id == me,
                 direct,
+                changed: (post.edit_at > 0).then_some(post.edit_at),
             });
         }
         kept

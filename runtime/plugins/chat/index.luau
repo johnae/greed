@@ -28,6 +28,8 @@ export type Kept = {
 	sender: string,
 	sender_id: string,
 	at: number,
+	-- When this version was written: an edit's own date, else `at`.
+	changed: number,
 	text: string,
 	thread: string?,
 	mine: boolean,
@@ -72,6 +74,9 @@ M.source = {
 		end),
 		at = field("value", function(m)
 			return tostring(m.at)
+		end),
+		changed = field("value", function(m)
+			return tostring(m.changed)
 		end),
 	},
 	flags = {
@@ -126,6 +131,7 @@ local function kept(service: string, account: string, said: any): Kept
 		sender = said.sender.name,
 		sender_id = said.sender.id,
 		at = said.at,
+		changed = said.changed or said.at,
 		text = said.text,
 		thread = said.thread,
 		mine = said.mine,
@@ -140,31 +146,57 @@ local function first(item: greed.IndexItem, name: string): string?
 	return if values then values[1] else nil
 end
 
+-- `fresh`, a version of a message, with what `known` (another version of
+-- it) adds: the newest text, and the earliest date, since an edit alone
+-- doesn't know when its message was written.
+local function merged(known: Kept, fresh: Kept): Kept
+	if known.changed > fresh.changed then
+		fresh.text = known.text
+		fresh.changed = known.changed
+	end
+	if known.at > 0 and known.at < fresh.at then
+		fresh.at = known.at
+	end
+	fresh.thread = fresh.thread or known.thread
+	return fresh
+end
+
 --- Keeps `messages` (`Said`s) of account `account` of `service`; gives the
---- keys of those it had already. An edit keeps the date it was written.
+--- keys of those it had already. The versions of a message (it and its
+--- edits) can come in any order: the newest text is kept, with the date it
+--- was first written.
 function M.keep(service: string, account: string, messages: { any }): { [string]: boolean }
 	local index = M.index()
 	local had: { [string]: boolean } = {}
 	if index == nil or #messages == 0 then
 		return had
 	end
-	local all: { Kept } = {}
+	local by: { [string]: Kept } = {}
 	local keys: { string } = {}
 	for _, said in messages do
 		local one = kept(service, account, said)
-		table.insert(all, one)
-		table.insert(keys, one.key)
+		local other = by[one.key]
+		if other then
+			by[one.key] = merged(other, one)
+		else
+			by[one.key] = one
+			table.insert(keys, one.key)
+		end
 	end
-	local before: { [string]: number } = {}
 	for _, item in index:items(keys) or {} :: { greed.IndexItem } do
 		had[item.key] = true
-		before[item.key] = tonumber(first(item, "at")) or 0
+		local fresh = by[item.key]
+		local at = tonumber(first(item, "at")) or 0
+		local known = table.clone(fresh)
+		known.at = at
+		known.changed = tonumber(first(item, "changed")) or at
+		known.text = item.text or ""
+		known.thread = first(item, "thread")
+		by[item.key] = merged(known, fresh)
 	end
-	for _, one in all do
-		local at = before[one.key]
-		if at and at > 0 then
-			one.at = at
-		end
+	local all: { Kept } = {}
+	for _, key in keys do
+		table.insert(all, by[key])
 	end
 	index:write(core.query.index_items(all, M.source))
 	return had
@@ -228,7 +260,7 @@ local PAGES = 100
 -- as webhooks send).
 local function caught_file(): string?
 	local data = greed.fs.dirs().data
-	return if data then `{data}/chat/caught-up-2.json` else nil
+	return if data then `{data}/chat/caught-up-3.json` else nil
 end
 
 local function caught(): { [string]: boolean }

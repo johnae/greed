@@ -117,14 +117,17 @@ async fn said_of(
     room: &Room,
     mine: Option<&UserId>,
 ) -> Said {
-    let (event, text) = match &message.content.relates_to {
+    let at = i64::from(message.origin_server_ts.0);
+    let (event, text, changed) = match &message.content.relates_to {
         Some(Relation::Replacement(edit)) => (
             edit.event_id.to_string(),
             describe(&edit.new_content.msgtype),
+            Some(at),
         ),
         _ => (
             message.event_id.to_string(),
             describe(&message.content.msgtype),
+            None,
         ),
     };
     let thread = match &message.content.relates_to {
@@ -136,10 +139,11 @@ async fn said_of(
         room_name: name_of(room).await,
         event,
         sender: person(room, &message.sender).await,
-        at: i64::from(message.origin_server_ts.0),
+        at,
         text,
         thread,
         mine: mine == Some(message.sender.as_ref()),
         direct: room.is_direct().await.unwrap_or(false),
+        changed,
     }
 }

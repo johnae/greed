@@ -667,6 +667,10 @@ pub struct Said {
     pub mine: bool,
     /// Whether it's in a direct message.
     pub direct: bool,
+    /// When this version was written, for an edit (milliseconds since
+    /// 1970). Versions can come in any order; the newest text is kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed: Option<i64>,
 }
 
 /// `history`'s parameters: messages of `room` older than `before` (a mark
