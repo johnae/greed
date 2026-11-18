@@ -15,6 +15,7 @@ base64 = "0.22"
 crossbeam-channel.workspace = true
 crossterm.workspace = true
 greed-core.workspace = true
+zstd.workspace = true
 gethostname = "1.1"
 sha2 = "0.10"
 greed-gui = { path = "../greed-gui", optional = true }

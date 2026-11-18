@@ -589,7 +589,6 @@ fn greed_ssh_brings_your_ssh_agent_to_the_session_on_the_other_machine() {
         args.contains("-o ForwardAgent=no -T somehost sh -s"),
         "ssh's own forwarding is off: {args}"
     );
-    assert!(args.contains("-o Compression=yes"), "compressed: {args}");
     world.eval("remote", "require('@greed').quit()");
 }
 

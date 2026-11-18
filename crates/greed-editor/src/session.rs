@@ -17,6 +17,7 @@ use greed_core::server::{self, Input, Output};
 use greed_core::starting::{AGENT_ENV, log_path, restore_flags, spawn_server};
 use serde_json::{Value, json};
 
+use crate::link;
 use crate::versions::{self, Choice, Stale};
 use crate::{client, ctl, host};
 
@@ -823,9 +824,10 @@ pub fn bridge(name: Option<&str>, path: Option<&Path>) -> Result<(), Error> {
         spawn_server(&name, Some(&target), true)?;
     }
     let first = format!("{attach}\n");
-    let input: Box<dyn BufRead + Send> =
-        Box::new(std::io::Cursor::new(first.into_bytes()).chain(stdin));
-    ctl::connect_to(Some(&name))?.pipe(input, std::io::stdout())?;
+    let asked = std::env::var_os(link::ASK).is_some();
+    let (rest, output) = link::bridge(stdin, std::io::stdout(), asked)?;
+    let input = std::io::Cursor::new(first.into_bytes()).chain(rest);
+    ctl::connect_to(Some(&name))?.pipe(input, output)?;
     Ok(())
 }
 
@@ -1040,20 +1042,17 @@ fn ssh_once(
         }
         format!("couldn't attach on {host}: {err}").into()
     };
-    // Frames are JSON, which shrinks some 30 times compressed, as what
-    // changed is mostly what was there a moment ago.
-    let mut options: Vec<&str> = vec!["-o", "Compression=yes"];
+    let mut options: Vec<&str> = Vec::new();
     if agent.is_some() {
         options.extend(["-o", "ForwardAgent=no"]);
     }
     if again {
         options.extend(["-o", "ConnectTimeout=15"]);
     }
-    let (mut child, mut writer, mut reader) =
-        remote_with(host, &options, &line).map_err(attach_failed)?;
-    let (session, heartbeat) = handshake(
-        &mut reader,
-        &mut writer,
+    let (mut child, writer, reader) = remote_with(host, &options, &line).map_err(attach_failed)?;
+    let (session, heartbeat, reader, writer) = handshake(
+        reader,
+        writer,
         to.session.as_deref(),
         opening,
         agent.is_some(),
@@ -1094,15 +1093,16 @@ fn remember_host(host: &str) {
 /// if it refuses, e.g. because the two ends run greed versions that don't
 /// speak the same protocol. It answers for the hub on this machine
 /// (`Output::HomeStatus`), and with `agent` says it relays your ssh agent.
-/// Returns the session's name, when its greed says, and whether it agreed
-/// to the heartbeat (an older one doesn't know it).
+/// Returns the session's name, when its greed says, whether it agreed to
+/// the heartbeat (an older one doesn't know it), and the connection from
+/// then on, compressed if the bridge does (see [`link`]).
 fn handshake(
-    reader: &mut impl BufRead,
-    writer: &mut impl Write,
+    reader: impl BufRead + Send + 'static,
+    mut writer: impl Write + Send + 'static,
     session: Option<&str>,
     opening: Opening,
     agent: bool,
-) -> Result<(Option<String>, bool), Error> {
+) -> Result<(Option<String>, bool, link::Reader, link::Writer), Error> {
     let mut params = control::attach_params(client::kind());
     opening.ask(&mut params);
     params["heartbeat"] = Value::Bool(true);
@@ -1118,6 +1118,7 @@ fn handshake(
     });
     writeln!(writer, "{request}")?;
     writer.flush()?;
+    let (mut reader, writer) = link::client(reader, writer)?;
     let mut line = String::new();
     if reader.read_line(&mut line)? == 0 {
         return Err("the other end closed the connection (see above for why)".into());
@@ -1131,6 +1132,8 @@ fn handshake(
     Ok((
         result["session"].as_str().map(str::to_owned),
         result["heartbeat"].as_bool() == Some(true),
+        reader,
+        writer,
     ))
 }
 
@@ -1222,10 +1225,11 @@ fn bridge_command(greed: &str, to: &SwitchTo, config: Option<&str>, new: bool) -
         .map(|arg| quote(arg))
         .collect::<Vec<_>>()
         .join(" ");
+    let ask = link::ASK;
     match config {
         // Double quotes, so the remote shell fills in $HOME.
-        Some(dir) => format!("GREED_SSH_CONFIG_DIR=\"{dir}\" exec {command}"),
-        None => format!("exec {command}"),
+        Some(dir) => format!("GREED_SSH_CONFIG_DIR=\"{dir}\" {ask}=1 exec {command}"),
+        None => format!("{ask}=1 exec {command}"),
     }
 }
 
@@ -1327,12 +1331,12 @@ mod tests {
                 Some("$HOME/.cache/greed/config-from-box"),
                 false
             ),
-            r#"GREED_SSH_CONFIG_DIR="$HOME/.cache/greed/config-from-box" exec 'greed' 'bridge' '--session' 'greed' 'it'\''s here.rs'"#
+            r#"GREED_SSH_CONFIG_DIR="$HOME/.cache/greed/config-from-box" GREED_BRIDGE_ZSTD=1 exec 'greed' 'bridge' '--session' 'greed' 'it'\''s here.rs'"#
         );
         let plain = SwitchTo::default();
         assert_eq!(
             bridge_command("/opt/greed", &plain, None, false),
-            "exec '/opt/greed' 'bridge'"
+            "GREED_BRIDGE_ZSTD=1 exec '/opt/greed' 'bridge'"
         );
     }
 

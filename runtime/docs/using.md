@@ -74,10 +74,8 @@ there and leaves the session you were in running. Over `greed ssh` it
 reconnects through a new ssh connection, which is close to instant with
 ssh connection sharing (`ControlMaster`).
 
-`greed ssh` asks ssh to compress what goes over the connection, which makes
-it about 30 times smaller. A shared connection keeps whatever the first one
-set up, though, so with `ControlMaster` put `Compression yes` for the host in
-your ssh config.
+What goes over `greed ssh` is compressed with zstd, by Greed itself: typing
+and moving around send some 50 times less, whatever ssh is set up to do.
 
 In one of Greed's own terminals, `greed FILE` opens the file in that session
 and returns, rather than starting an editor inside the editor, and
