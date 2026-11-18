@@ -74,6 +74,26 @@ pub fn record_as(script: greed_gui::record::Script, out: PathBuf) {
     let _ = RECORD.set((script, out));
 }
 
+/// Says `line`, what greed is doing before a session shows (like putting
+/// greed on another machine): on standard error, and in the window for a
+/// window client, which has no terminal to show it.
+pub fn say(line: &str) {
+    eprintln!("greed: {line}");
+    show(line);
+}
+
+/// Shows `line` in the window, for a window client, until a session's
+/// first frame: for what a terminal needn't print, like how far an upload
+/// got.
+pub fn show(line: &str) {
+    #[cfg(feature = "gui")]
+    if GUI.load(Ordering::Relaxed) {
+        greed_gui::say(vec![line.to_owned()]);
+    }
+    #[cfg(not(feature = "gui"))]
+    let _ = line;
+}
+
 /// What sort of client this is, as it tells the session when attaching:
 /// "gui" for a window, "tui" otherwise.
 pub fn kind() -> &'static str {

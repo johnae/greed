@@ -2,6 +2,7 @@
 //! scenes it sent, and the fonts and atlas the text is drawn with. The
 //! window draws with one, and so does the recorder, into images.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -106,10 +107,14 @@ pub(crate) struct Painter {
     /// typed, and where its own cursor is in it (bytes).
     preedit: Option<(String, Option<usize>)>,
     /// Lines drawn over the frame, centered near its bottom: a recording's
-    /// captions and the keys it pressed.
+    /// captions and the keys it pressed, "reconnecting…", or what happens
+    /// before a session's first frame (on a blank screen then).
     pub(crate) overlay: Vec<String>,
     /// Rows' text as last drawn, drawn again from there when unchanged.
     text_rows: draw::TextRows,
+    /// The window's size in cells, as last told to the session: the size
+    /// of the blank screen [`Painter::overlay`] goes on before any frame.
+    cells: std::cell::Cell<Size>,
 }
 
 impl Painter {
@@ -139,6 +144,10 @@ impl Painter {
             preedit: None,
             overlay: Vec::new(),
             text_rows: draw::TextRows::default(),
+            cells: std::cell::Cell::new(Size {
+                width: 80,
+                height: 24,
+            }),
         }
     }
 
@@ -301,13 +310,12 @@ impl Painter {
         let cols = (width as f32 / self.fonts.cell_w).floor().max(1.0) as u16;
         let rows = (height as f32 / self.fonts.cell_h).floor().max(1.0) as u16;
         let (cell_w, cell_h) = self.cell();
-        [
-            Input::Resize(Size {
-                width: cols,
-                height: rows,
-            }),
-            Input::CellSize(cell_w, cell_h),
-        ]
+        let size = Size {
+            width: cols,
+            height: rows,
+        };
+        self.cells.set(size);
+        [Input::Resize(size), Input::CellSize(cell_w, cell_h)]
     }
 
     /// A cell's size in whole pixels.
@@ -354,7 +362,8 @@ impl Painter {
     /// The frame as a scene for `gpu`, its glyphs and images uploaded. None
     /// before the first frame, or when it can't be drawn.
     pub(crate) fn paint(&mut self, gpu: &mut Gpu) -> Option<Scene> {
-        let frame = self.screen.frame()?;
+        let frame = to_draw(&self.screen, &self.overlay, self.cells.get())?;
+        let frame = &*frame;
         let mut grid = grid::compose(frame, Medium::Gui);
         overlay(&mut grid, &self.overlay, &frame.theme);
         // Scenes are drawn into images under the text: the cells there keep
@@ -463,6 +472,29 @@ fn place_glides(
     }
 }
 
+/// The frame to draw: the latest from `screen`, or before the first, an
+/// empty one of `size` cells when there are `lines` to say on it.
+fn to_draw<'a>(screen: &'a Latest, lines: &[String], size: Size) -> Option<Cow<'a, Frame>> {
+    if let Some(frame) = screen.frame() {
+        return Some(Cow::Borrowed(frame));
+    }
+    (!lines.is_empty()).then(|| {
+        Cow::Owned(Frame {
+            size,
+            surfaces: Vec::new(),
+            lines: Vec::new(),
+            images: Vec::new(),
+            scenes: Vec::new(),
+            cursor: None,
+            cursor_shape: greed_core::CursorShape::default(),
+            theme: std::sync::Arc::default(),
+            gui: std::collections::BTreeMap::new(),
+            menus: Vec::new(),
+            seq: 0,
+        })
+    })
+}
+
 /// Draws `lines` over `grid`, each centered, the last a row above the
 /// status line, as badges in the theme's button style. One cell a
 /// character, so the lines should keep to characters a cell wide.
@@ -531,6 +563,36 @@ mod tests {
             menus: Vec::new(),
             seq,
         }
+    }
+
+    #[test]
+    fn before_any_frame_lines_to_say_go_on_a_blank_screen_of_the_windows_size() {
+        let mut painter = Painter::new();
+        let _ = painter.size_inputs(800, 400);
+        let size = painter.cells.get();
+        assert!(size.width > 1 && size.height > 3, "{size:?}");
+        assert!(
+            to_draw(&painter.screen, &[], size).is_none(),
+            "nothing to say"
+        );
+        let said = vec!["putting greed on box".to_owned()];
+        let blank = to_draw(&painter.screen, &said, size).expect("a blank screen");
+        assert_eq!(blank.size, size);
+        let mut grid = grid::compose(&blank, Medium::Gui);
+        overlay(&mut grid, &said, &blank.theme);
+        let row: String = grid[grid.len() - 3]
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect();
+        assert!(row.contains("putting greed on box"), "{row}");
+        let _ = painter.take(Output::Frame(frame("hi", 1)));
+        assert!(
+            matches!(
+                to_draw(&painter.screen, &said, size),
+                Some(Cow::Borrowed(_))
+            ),
+            "the session's frame once it comes"
+        );
     }
 
     #[test]

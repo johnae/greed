@@ -191,6 +191,7 @@ struct Machine {
 
 impl Machine {
     fn reach(host: &str) -> Result<Self, Error> {
+        crate::client::show(&format!("connecting to {host}…"));
         Ok(Self {
             host: host.to_owned(),
             config: bring_config(host),
@@ -960,7 +961,9 @@ fn remote_greed(host: &str) -> Result<String, Error> {
 /// word on why when it couldn't be.
 fn bring_config(host: &str) -> Option<String> {
     send_config(host).unwrap_or_else(|err| {
-        eprintln!("greed: couldn't bring your config to {host}, going on without it: {err}");
+        crate::client::say(&format!(
+            "couldn't bring your config to {host}, going on without it: {err}"
+        ));
         None
     })
 }

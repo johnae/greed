@@ -418,7 +418,8 @@ used as it is. Where there's no greed on its `PATH`, a session puts its own at t
 its programs' `PATH`, so `greed FILE` in its terminal opens the file there.
 The programs that come beside `greed`, like `greed-mail` for `greed mail`,
 go along with it, built for that machine too; a machine that got its greed
-before they did gets them the next time you connect.
+before they did gets them the next time you connect. The first time takes
+a while, it's some 150 MB; with `--gui` the window says how far it got.
 
 `GREED_REMOTE` sets the path of `greed` on the other machine, and nothing
 is copied (the two ends check they speak the same protocol, and say so if

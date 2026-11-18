@@ -33,6 +33,8 @@ pub(crate) enum Event {
     Output(u64, Box<Output>),
     /// The work `host` runs beside the event loop is over.
     Done,
+    /// Lines to show until a session's frame comes, see [`say`].
+    Say(Vec<String>),
     /// A menu bar item was chosen: the command to run.
     #[cfg(target_os = "macos")]
     Menu(String),
@@ -93,6 +95,15 @@ pub fn host<T: Send + 'static>(
     drop(app);
     ran?;
     worker.join().map_err(|_| "greed crashed".into())
+}
+
+/// Shows `lines` in the window, opening it if it isn't yet, until the next
+/// frame of a session comes: what's happening while there's none to show,
+/// like connecting to another machine. Does nothing outside [`host`].
+pub fn say(lines: Vec<String>) {
+    if let Some(proxy) = host_slot().clone() {
+        let _ = proxy.send_event(Event::Say(lines));
+    }
 }
 
 /// Shows the session in the window until it exits, lets go or switches, or
@@ -648,6 +659,14 @@ impl ApplicationHandler<Event> for App {
                 }
             }
             Event::Done => event_loop.exit(),
+            Event::Say(lines) => {
+                self.painter.overlay = lines;
+                if self.shown.is_none() {
+                    self.open(event_loop);
+                } else {
+                    self.want_redraw();
+                }
+            }
             #[cfg(target_os = "macos")]
             Event::Menu(command) => {
                 let _ = self.input.send(Input::Run(command));

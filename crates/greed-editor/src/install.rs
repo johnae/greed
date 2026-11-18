@@ -21,9 +21,10 @@
 //! go along into the same folder, from beside whichever greed is put there,
 //! where Greed finds them.
 
-use std::io::{BufRead, Read};
+use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use greed_core::control::PROTOCOL;
 use sha2::{Digest, Sha256};
@@ -57,7 +58,9 @@ pub fn ensure(host: &str) -> Result<String, Error> {
     let given = std::env::var_os("GREED_REMOTE_BINARY");
     if given.is_none() && this_system().as_deref() == Some(system.as_str()) {
         let folder = format!("{server}/{}", build_folder());
-        eprintln!("greed: putting this greed (build {BUILD}) on {host} ({system})");
+        crate::client::say(&format!(
+            "putting this greed (build {BUILD}) on {host} ({system})"
+        ));
         if upload_this(host, &system, &folder) {
             prune(host, &server);
             return Ok(format!("{folder}/greed"));
@@ -72,14 +75,18 @@ pub fn ensure(host: &str) -> Result<String, Error> {
             match source {
                 Ok(greed) => upload_helpers(host, &greed, folder_of(&path), &found.version_missing),
                 Err(err) => {
-                    eprintln!("greed: couldn't get what goes beside greed on {host}: {err}");
+                    crate::client::say(&format!(
+                        "couldn't get what goes beside greed on {host}: {err}"
+                    ));
                 }
             }
         }
         return Ok(path);
     }
     let folder = format!("{server}/{}", folder_name());
-    eprintln!("greed: putting greed {VERSION} on {host} ({system}), once for this version");
+    crate::client::say(&format!(
+        "putting greed {VERSION} on {host} ({system}), once for this version"
+    ));
     if let Some(given) = given {
         upload(host, Path::new(&given), &folder)?;
     } else {
@@ -238,7 +245,9 @@ fn upload_this(host: &str, system: &str, folder: &str) -> bool {
     if upload(host, &me, folder).is_ok() {
         return true;
     }
-    eprintln!("greed: this greed doesn't run on {host}; getting the static build");
+    crate::client::say(&format!(
+        "this greed doesn't run on {host}; getting the static build"
+    ));
     false
 }
 
@@ -295,7 +304,7 @@ fn upload_helpers(host: &str, greed: &Path, folder: &str, wanted: &[impl AsRef<s
             continue;
         }
         if let Err(err) = copy(host, &helper, folder, name, false) {
-            eprintln!("greed: couldn't put {name} on {host}: {err}");
+            crate::client::say(&format!("couldn't put {name} on {host}: {err}"));
         }
     }
 }
@@ -314,7 +323,11 @@ fn copy(host: &str, binary: &Path, folder: &str, name: &str, check: bool) -> Res
          {check}&& mv \"{part}\" \"{folder}/{name}\" && echo copied"
     );
     let (mut child, mut input, mut output) = remote(host, &line)?;
-    std::io::copy(&mut std::fs::File::open(binary)?, &mut input)?;
+    sending(
+        &mut std::fs::File::open(binary)?,
+        &mut input,
+        &format!("putting {name} on {host}"),
+    )?;
     drop(input);
     let mut said = String::new();
     output.read_to_string(&mut said)?;
@@ -326,9 +339,36 @@ fn copy(host: &str, binary: &Path, folder: &str, name: &str, check: bool) -> Res
     }
 }
 
+/// How often [`sending`] says how far it got.
+const PROGRESS_EVERY: Duration = Duration::from_millis(250);
+
+/// Copies `file` to `to`, showing in a window how far it got as `what`
+/// (see [`crate::client::show`]): uploads are big and ssh can be slow.
+fn sending(file: &mut std::fs::File, to: &mut impl Write, what: &str) -> std::io::Result<()> {
+    const MB: u64 = 1 << 20;
+    let total = file.metadata()?.len();
+    let mut buffer = vec![0; 256 * 1024];
+    let mut sent = 0u64;
+    let mut said = Instant::now();
+    crate::client::show(&format!("{what}: 0 of {} MB", total / MB));
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            return Ok(());
+        }
+        to.write_all(&buffer[..n])?;
+        sent += n as u64;
+        if said.elapsed() >= PROGRESS_EVERY {
+            said = Instant::now();
+            crate::client::show(&format!("{what}: {} of {} MB", sent / MB, total / MB));
+        }
+    }
+}
+
 /// Downloads the release's static build for `system` to `to`, checked
 /// against the release's checksums.
 fn download(system: &str, to: &Path) -> Result<(), Error> {
+    crate::client::say(&format!("downloading greed {VERSION} for {system}"));
     let name = if system.starts_with("linux") {
         format!("greed-{VERSION}-{system}-tui-only-static")
     } else {
@@ -387,6 +427,27 @@ fn get(url: &str) -> Result<Vec<u8>, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sending_a_file_passes_on_all_of_it_in_pieces() {
+        let path = std::env::temp_dir().join(format!("greed-sending-{}", std::process::id()));
+        let bytes: Vec<u8> = (0..600_000u32).map(|n| (n % 251) as u8).collect();
+        std::fs::write(&path, &bytes).unwrap();
+        let mut sent = Vec::new();
+        sending(
+            &mut std::fs::File::open(&path).unwrap(),
+            &mut sent,
+            "putting it",
+        )
+        .unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(
+            sent == bytes,
+            "{} of {} bytes, in order",
+            sent.len(),
+            bytes.len()
+        );
+    }
 
     #[test]
     fn the_helpers_beside_a_greed_go_with_it_those_there_are() {
