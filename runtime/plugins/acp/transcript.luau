@@ -1161,6 +1161,8 @@ local function draw(buffer: greed.Buffer, s: Session)
 	shown[id] = s
 	local view = view_of(buffer)
 	if view == nil then
+		-- The box at the bottom from the first message, as the chat's is.
+		buffer:set_at_bottom(true)
 		ui.mount(buffer, function(state)
 			return render(buffer, state)
 		end, { s = s }, {

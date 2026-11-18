@@ -1133,6 +1133,14 @@ fn add_setting_methods<M: UserDataMethods<BufferRef>>(methods: &mut M) {
         state_mut(lua).editor.set_line_numbers(this.buffer, on);
         Ok(())
     });
+    methods.add_method("at_bottom", |lua, this, NoArgs| {
+        this.with_buffer(lua, |b| Ok(b.at_bottom()))
+    });
+    methods.add_method("set_at_bottom", |lua, this, on: bool| {
+        this.with_buffer(lua, |_| Ok(()))?;
+        state_mut(lua).editor.set_at_bottom(this.buffer, on);
+        Ok(())
+    });
     methods.add_method("views", |lua, this, NoArgs| {
         this.with_buffer(lua, |_| Ok(()))?;
         let list = lua.create_table()?;

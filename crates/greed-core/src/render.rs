@@ -1053,8 +1053,15 @@ impl<M: Measure> Renderer<M> {
         decorations: &dyn Decorations,
     ) -> Laid {
         let padding = editor.view(view_id).padding;
-        let top = padding.top.min(room.height.saturating_sub(1));
         let left = padding.left.min(room.width.saturating_sub(1));
+        let mut top = padding.top.min(room.height.saturating_sub(1));
+        top += self.room_above(
+            editor,
+            view_id,
+            room.width - left,
+            room.height - top,
+            line_numbers,
+        );
         if top == 0 && left == 0 {
             return self.text_rows(editor, view_id, room, line_numbers, decorations);
         }
@@ -1075,6 +1082,37 @@ impl<M: Measure> Renderer<M> {
         laid.rows
             .splice(0..0, std::iter::repeat_n(Row::default(), usize::from(top)));
         laid
+    }
+
+    /// The empty rows above a buffer that sits at the bottom of its views
+    /// (`Buffer::at_bottom`): the rows of `height` its text leaves free,
+    /// laid out `width` cells wide. 0 for any other buffer, or one laid out
+    /// at a screen size of its own.
+    fn room_above(
+        &self,
+        editor: &Editor,
+        view_id: ViewId,
+        width: u16,
+        height: u16,
+        line_numbers: bool,
+    ) -> u16 {
+        let view = editor.view(view_id);
+        let buffer = editor.buffer(view.buffer);
+        if !buffer.at_bottom() || buffer.screen_size().is_some() {
+            return 0;
+        }
+        let height = usize::from(height);
+        let (gutter, _) = gutter_width(editor, view, line_numbers);
+        let width = usize::from(width).saturating_sub(gutter).max(1);
+        let hidden = hidden_lines(editor, view);
+        let mut rows = 0;
+        for line in 0..buffer.text().len_lines() {
+            rows += self.line_rows(editor, view, line, width, &hidden);
+            if rows >= height {
+                return 0;
+            }
+        }
+        u16::try_from(height - rows).unwrap_or(0)
     }
 
     /// Lays out one view to fill `room`, scrolling it to keep its primary

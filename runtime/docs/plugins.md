@@ -591,6 +591,8 @@ it, `greed.create_buffer(kind, text)` makes a scratch buffer, and
 `buffer:find`, `buffer:find_all` and `greed.fs.grep` search with regexes.
 A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
 keeps it, and `buffer:set_line_numbers(false)` hides its line numbers.
+`buffer:set_at_bottom(true)` shows a buffer shorter than its view against
+the view's bottom edge, like a chat with its box at the bottom.
 
 ### Places that move with edits
 

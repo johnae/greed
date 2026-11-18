@@ -171,13 +171,14 @@ end)
 
 test("the line above the transcript says what agent-title asks, or nothing", function(t)
 	start(t)
-	assert(string.find(screen(t), "^Fake in "), screen(t))
+	-- The first line above the history, which sits at the bottom of the view.
+	assert(string.find(screen(t), "^%s*Fake in "), screen(t))
 	acp.box_field("mood", function()
 		return "calm"
 	end)
 	greed.option.set("agent-title", 'model "·" mood nothing')
 	t:wait(30)
-	assert(string.find(screen(t), "^Small · calm\n"), screen(t))
+	assert(string.find(screen(t), "^%s*Small · calm\n"), screen(t))
 	greed.option.set("agent-title", "")
 	t:wait(30)
 	assert(not string.find(screen(t), "Fake", 1, true), screen(t))
@@ -1606,4 +1607,12 @@ test("up in the box brings back what you sent, down goes forward again", functio
 	-- What's typed narrows it to the messages starting with it.
 	t:keys("h up")
 	assert(draft() == "hello", draft())
+end)
+
+test("a short transcript sits at the bottom of its view, the box on the edge", function(t)
+	start(t)
+	local rows = t:draw(70, 16)
+	table.remove(rows)
+	assert(rows[1] == "", "empty above: " .. table.concat(rows, "\n"))
+	assert(string.find(rows[#rows], "^▎ Small · ready"), table.concat(rows, "\n"))
 end)

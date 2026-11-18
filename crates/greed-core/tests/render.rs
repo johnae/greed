@@ -273,6 +273,39 @@ fn at_the_end_the_view_fills_rows_its_buffer_gave_up_and_elsewhere_stays() {
 }
 
 #[test]
+fn a_buffer_at_the_bottom_sits_on_its_views_edge_until_it_fills_them() {
+    let mut ed = editor("one\ntwo\nthree|");
+    let view = ed.focus();
+    let buffer = ed.view(view).buffer;
+    let f = frame(&mut ed, 20, 6);
+    assert_eq!(
+        rows(&f),
+        ["1 one", "2 two", "3 three", "", ""],
+        "from the top as usual"
+    );
+
+    ed.set_at_bottom(buffer, true);
+    let f = frame(&mut ed, 20, 6);
+    let mut want = vec![String::new(); 2];
+    want.extend(["1 one", "2 two", "3 three"].map(String::from));
+    assert_eq!(rows(&f), want, "the empty rows above it");
+    assert_eq!(f.cursor, Some(Position { col: 7, row: 4 }));
+    // Its view is the rows it's drawn in, so the mouse finds its text there.
+    assert_eq!(ed.view(view).area.map(|a| a.y), Some(2));
+
+    let text: Vec<String> = (0..10).map(|n| format!("line {n}")).collect();
+    let mut ed = editor(&format!("{}|", text.join("\n")));
+    let buffer = ed.view(ed.focus()).buffer;
+    ed.set_at_bottom(buffer, true);
+    let f = frame(&mut ed, 20, 6);
+    assert_eq!(
+        rows(&f)[0],
+        " 6 line 5",
+        "taller than the view, it fills it"
+    );
+}
+
+#[test]
 fn a_scroll_margin_keeps_rows_in_sight_around_the_cursor_but_the_buffers_ends() {
     let text: Vec<String> = (0..50).map(|n| format!("line {n}")).collect();
     let mut ed = editor(&format!("|{}", text.join("\n")));

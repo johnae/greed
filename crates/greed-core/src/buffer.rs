@@ -118,6 +118,9 @@ pub struct Buffer {
     lossy: bool,
     /// Whether the main view shows line numbers beside it.
     line_numbers: bool,
+    /// Whether its views show it against their bottom edge while it's
+    /// shorter than them, as a chat's messages sit on its box.
+    at_bottom: bool,
     /// How many columns apart its tab stops are.
     tab_width: usize,
     /// Kept open while nothing shows it, though it has no file.
@@ -320,6 +323,7 @@ impl Buffer {
             readonly_before: None,
             lossy: false,
             line_numbers: true,
+            at_bottom: false,
             tab_width: crate::render::TAB_WIDTH,
             kept: false,
             keys: HashMap::new(),
@@ -577,6 +581,14 @@ impl Buffer {
 
     pub(crate) fn set_line_numbers(&mut self, on: bool) {
         self.line_numbers = on;
+    }
+
+    pub fn at_bottom(&self) -> bool {
+        self.at_bottom
+    }
+
+    pub(crate) fn set_at_bottom(&mut self, on: bool) {
+        self.at_bottom = on;
     }
 
     /// How many columns apart its tab stops are.

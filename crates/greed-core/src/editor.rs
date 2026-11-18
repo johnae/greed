@@ -945,6 +945,14 @@ impl Editor {
         }
     }
 
+    /// Shows `buffer` against the bottom of its views while it's shorter
+    /// than them (`on`), or from their top as usual.
+    pub fn set_at_bottom(&mut self, buffer: BufferId, on: bool) {
+        if let Some(b) = self.buffers.get_mut(&buffer) {
+            b.set_at_bottom(on);
+        }
+    }
+
     pub fn set_tab_width(&mut self, buffer: BufferId, width: usize) {
         if let Some(b) = self.buffers.get_mut(&buffer) {
             b.set_tab_width(width);
