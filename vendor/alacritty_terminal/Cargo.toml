@@ -20,3 +20,6 @@ vte = { version = "0.15.0", default-features = false, features = ["std", "ansi"]
 # Off: Greed sends frames, not terminal state, so nothing needs it.
 [features]
 serde = []
+
+# Vendored code keeps its own style: the workspace's lints are left out.
+[lints]
