@@ -43,6 +43,7 @@ end
 
 local redraw = core.visible.add({
 	ns = "color-swatches",
+	lines = true,
 	wants = function(buffer: greed.Buffer): boolean
 		return buffer:kind() == "file" and greed.option.get("color-swatches") == true
 	end,

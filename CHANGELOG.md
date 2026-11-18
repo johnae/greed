@@ -48,6 +48,7 @@ the repository's history.
 - gui: the window draws again only the rows whose text changed, reusing the rest from the frame before, so a key's frame takes about a third of the time it did
 - gui: rows that only moved, like those under a line you add, are drawn from the frame before too
 - gui: spaces skip the glyph work, which most cells did for nothing, and finding a line shaped before copies nothing
+- typing within a line draws color swatches again only on that line, and TODO comments look for fewer words; together they were most of what each key's edit cost plugins
 - ssh: `greed ssh` compresses what goes over the connection with zstd, some 50 times less to send for typing and moving around; a session's machine with an older greed goes on uncompressed
 - chat: on a machine where you haven't signed in to chat, searching and the agent's chat tools say so; they used to start an empty chat service and find nothing
 - chat: a room left open in a session nobody is attached to stays unread and alerts, and Mattermost asks for your rooms at most every two seconds rather than on every post

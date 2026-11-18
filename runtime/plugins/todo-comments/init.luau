@@ -54,11 +54,14 @@ local function found(buffer: greed.Buffer, n: number, out: { greed.Mark })
 	local start = buffer:line_start(n)
 	for at, word, after in string.gmatch(text, "()(%u+)()") do
 		local style = M.words[word :: string]
+		if style == nil then
+			continue
+		end
 		local before = string.sub(text, (at :: number) - 1, (at :: number) - 1)
 		local next = string.sub(text, after :: number, after :: number)
 		local whole = not string.match(before, "[%w_]") and not string.match(next, "[%w_]")
 		local from = start + (at :: number) - 1
-		if style and whole and M.in_comment(buffer, from) then
+		if whole and M.in_comment(buffer, from) then
 			table.insert(out, { from = from, to = from + #(word :: string), style = style })
 		end
 	end
