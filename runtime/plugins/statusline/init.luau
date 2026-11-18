@@ -222,15 +222,37 @@ M.add("left", "file", function(ctx)
 	return if core.file.unsaved(buffer) then name .. " [+]" else name
 end)
 
+-- What the symbol piece found last, and for what: the status line is built
+-- for every frame, several to a key, and the query is the slow part.
+local symbol_seen: {
+	buffer: greed.Buffer?,
+	version: number,
+	at: number,
+	source: string?,
+	text: string?,
+} =
+	{ buffer = nil, version = -1, at = -1, source = nil, text = nil }
+
 -- The functions and types the cursor is in, outermost first, as the
 -- language's textobjects query finds them: `Server › listen`.
 M.add("left", "symbol", function(ctx)
-	local at = ctx.view:cursor()
+	local buffer, at = ctx.buffer, ctx.view:cursor()
+	local version, source = buffer:version(), core.syntax.query(buffer, "textobjects")
+	local seen = symbol_seen
+	if
+		seen.buffer == buffer
+		and seen.version == version
+		and seen.at == at
+		and seen.source == source
+	then
+		return seen.text
+	end
 	local around: { greed.Node } = {}
-	for _, object in { "function", "type" } do
-		for _, found in core.syntax.objects(ctx.buffer, object, at, at + 1) do
-			if found.around.from <= at and at < found.around.to then
-				table.insert(around, found.around)
+	if source then
+		for _, captures in buffer:query(source, { from = at, to = at + 1 }) do
+			local node = captures["function.around"] or captures["type.around"]
+			if node and node.from <= at and at < node.to then
+				table.insert(around, node)
 			end
 		end
 	end
@@ -245,7 +267,9 @@ M.add("left", "symbol", function(ctx)
 			table.insert(names, name:text())
 		end
 	end
-	return if #names > 0 then table.concat(names, " › ") else nil
+	local text = if #names > 0 then table.concat(names, " › ") else nil
+	symbol_seen = { buffer = buffer, version = version, at = at, source = source, text = text }
+	return text
 end)
 
 M.add("left", "macro", function(ctx)

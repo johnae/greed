@@ -43,6 +43,7 @@ the repository's history.
 - picker: `space f` in a big project opens several times faster without holding up the editor, and lists every file; it stopped at 100,000 before
 - markdown: a table wider than the view runs past its edge instead of each row wrapping apart, and in an agent's transcript a table no longer swallows the tool call after it
 - chat: the sidebar shows an account's rooms as soon as it has signed in; after a restart it could wait minutes, until something changed in one of them
+- statusline: the function the cursor is in is looked up once per edit or move, not for every frame; it was most of the status line's time, a few ms a key
 - chat: on a machine where you haven't signed in to chat, searching and the agent's chat tools say so; they used to start an empty chat service and find nothing
 - chat: a room left open in a session nobody is attached to stays unread and alerts, and Mattermost asks for your rooms at most every two seconds rather than on every post
 

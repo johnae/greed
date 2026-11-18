@@ -538,3 +538,40 @@ test("shows the function and type the cursor is in, outermost first", function(t
 		left
 	)
 end)
+
+test(
+	"the function the cursor is in follows edits and moves, and frames between reuse it",
+	function(t)
+		greed.syntax.set_query(
+			"rust",
+			"textobjects",
+			"(function_item body: (_) @function.inside) @function.around"
+		)
+		t:buffer("fn listen() {\n    x|\n}\n\nfn other() {\n    y\n}\n")
+		local buffer = greed.view():buffer()
+		buffer:set_language("rust")
+		local left = t:status()
+		assert(left and string.find(left, "listen", 1, true), left)
+		-- Built again for a frame with nothing changed, it still says so.
+		left = t:status()
+		assert(left and string.find(left, "listen", 1, true), left)
+		-- Renamed to a name as long, so the cursor stays where it was.
+		local cursor = greed.view():cursor()
+		buffer:edit(function(e)
+			e:replace(3, 9, "answer")
+		end)
+		assert(greed.view():cursor() == cursor)
+		left = t:status()
+		assert(
+			left
+				and string.find(left, "answer", 1, true)
+				and not string.find(left, "listen", 1, true),
+			left
+		)
+		-- Into the other function.
+		local at = string.find(buffer:text(), "y", 1, true) :: number
+		greed.view():set_cursor(at - 1)
+		left = t:status()
+		assert(left and string.find(left, "other", 1, true), left)
+	end
+)
