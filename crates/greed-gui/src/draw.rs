@@ -256,6 +256,88 @@ pub fn build(
     atlas: &mut Atlas,
     palette: &Palette,
 ) -> Result<Scene, Full> {
+    let mut drawn = TextRows::default();
+    build_with(grid, cursor, chrome, (fonts, atlas, &mut drawn), palette)
+}
+
+/// Each row's text as drawn last, to draw again for a row drawn the same:
+/// shaping and placing glyphs is most of the work, and most frames change
+/// a row or two.
+#[derive(Default)]
+pub struct TextRows {
+    /// The atlas the quads point into, as how often it was cleared.
+    atlas: u64,
+    rows: Vec<Option<TextRow>>,
+}
+
+/// What a row's text was drawn from, and its quads.
+struct TextRow {
+    cells: Vec<Cell>,
+    looks: Vec<Look>,
+    heights: Vec<usize>,
+    xs: Option<Vec<f32>>,
+    outlined: Vec<bool>,
+    hidden: Vec<bool>,
+    quads: Vec<Instance>,
+}
+
+impl TextRow {
+    fn drew(&self, cells: &[Cell], looks: &[Look], at: &RowAt) -> bool {
+        self.cells == cells
+            && self.looks == looks
+            && self.heights == at.heights
+            && self.xs.as_deref() == at.columns.row(at.y)
+            && self.outlined == at.outlined
+            && self.hidden == at.hidden
+    }
+}
+
+impl TextRows {
+    /// Draws `row`'s text as [`text_row`] does, or puts in the quads it
+    /// made for that row drawn the same way last time.
+    fn draw(
+        &mut self,
+        (row, looks): (&[Cell], &[Look]),
+        at: &RowAt,
+        (fonts, atlas): (&mut Fonts, &mut Atlas),
+        out: &mut Vec<Instance>,
+    ) -> Result<(), Full> {
+        if self.atlas != atlas.cleared {
+            self.atlas = atlas.cleared;
+            self.rows.clear();
+        }
+        if self.rows.len() <= at.y {
+            self.rows.resize_with(at.y + 1, || None);
+        }
+        if let Some(drawn) = &self.rows[at.y]
+            && drawn.drew(row, looks, at)
+        {
+            out.extend_from_slice(&drawn.quads);
+            return Ok(());
+        }
+        let first = out.len();
+        text_row(row, looks, at, fonts, atlas, out)?;
+        self.rows[at.y] = Some(TextRow {
+            cells: row.to_vec(),
+            looks: looks.to_vec(),
+            heights: at.heights.to_vec(),
+            xs: at.columns.row(at.y).map(<[f32]>::to_vec),
+            outlined: at.outlined.to_vec(),
+            hidden: at.hidden.to_vec(),
+            quads: out[first..].to_vec(),
+        });
+        Ok(())
+    }
+}
+
+/// [`build`], drawing rows' text again from `drawn` where it can.
+pub fn build_with(
+    grid: &[Vec<Cell>],
+    cursor: Option<(Position, CursorShape)>,
+    chrome: &Chrome,
+    (fonts, atlas, drawn): (&mut Fonts, &mut Atlas, &mut TextRows),
+    palette: &Palette,
+) -> Result<Scene, Full> {
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let background = look(&chrome.text, palette).bg;
     let mut looks: Vec<Vec<Look>> = grid
@@ -339,7 +421,7 @@ pub fn build(
             outlined: &border[y],
             hidden: hidden.get(y).map_or(&[], Vec::as_slice),
         };
-        text_row(row, row_looks, &at, fonts, atlas, &mut instances)?;
+        drawn.draw((row, row_looks), &at, (fonts, atlas), &mut instances)?;
     }
     if let Some((shape, col, row, w, h)) = cursor {
         let (x, w) = columns.span(row, col, col + w);
@@ -1121,6 +1203,43 @@ mod tests {
 
     fn text(row: &[Cell]) -> String {
         row.iter().map(|c| c.text.as_str()).collect()
+    }
+
+    #[test]
+    fn rows_drawn_again_from_before_come_out_as_drawn_anew() {
+        let mut fonts = Fonts::new(None, 15.0);
+        let mut atlas = Atlas::new(1024);
+        let palette = Palette::default();
+        let chrome = Chrome::default();
+        let mut drawn = TextRows::default();
+        let first = vec![cells("fn main() {"), cells("    one();"), cells("}")];
+        let mut second = first.clone();
+        second[1] = cells("    two();");
+        let cursor = Some((Position { col: 4, row: 1 }, CursorShape::Block));
+        // A row changed, the cursor on it, then the atlas starting over.
+        for (grid, clear) in [
+            (&first, false),
+            (&first, false),
+            (&second, false),
+            (&second, true),
+        ] {
+            if clear {
+                atlas.clear();
+            }
+            let kept = build_with(
+                grid,
+                cursor,
+                &chrome,
+                (&mut fonts, &mut atlas, &mut drawn),
+                &palette,
+            )
+            .unwrap()
+            .instances;
+            let anew = build(grid, cursor, &chrome, &mut fonts, &mut atlas, &palette)
+                .unwrap()
+                .instances;
+            assert_eq!(kept, anew);
+        }
     }
 
     #[test]

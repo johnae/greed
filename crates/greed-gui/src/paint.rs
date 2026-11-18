@@ -108,6 +108,8 @@ pub(crate) struct Painter {
     /// Lines drawn over the frame, centered near its bottom: a recording's
     /// captions and the keys it pressed.
     pub(crate) overlay: Vec<String>,
+    /// Rows' text as last drawn, drawn again from there when unchanged.
+    text_rows: draw::TextRows,
 }
 
 impl Painter {
@@ -136,6 +138,7 @@ impl Painter {
             hover: None,
             preedit: None,
             overlay: Vec::new(),
+            text_rows: draw::TextRows::default(),
         }
     }
 
@@ -393,8 +396,9 @@ impl Painter {
         chrome.under = &under;
         chrome.hover = self.hover;
         let palette = &self.palette;
-        let build = |fonts: &mut _, atlas: &mut _| {
-            let mut scene = draw::build(&grid, cursor, &chrome, fonts, atlas, palette)?;
+        let build = |fonts: &mut _, atlas: &mut _, drawn: &mut _| {
+            let mut scene =
+                draw::build_with(&grid, cursor, &chrome, (fonts, atlas, drawn), palette)?;
             draw::add_scaled(
                 &mut scene,
                 &contents,
@@ -406,11 +410,11 @@ impl Painter {
             )?;
             Ok::<_, crate::text::Full>(scene)
         };
-        let mut scene = build(&mut self.fonts, &mut self.atlas)
+        let mut scene = build(&mut self.fonts, &mut self.atlas, &mut self.text_rows)
             .or_else(|_| {
                 // The atlas is full: start it again with this frame's glyphs.
                 self.atlas.clear();
-                build(&mut self.fonts, &mut self.atlas)
+                build(&mut self.fonts, &mut self.atlas, &mut self.text_rows)
             })
             .ok()?;
         gpu.upload(&mut self.atlas);

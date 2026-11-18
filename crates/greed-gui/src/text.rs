@@ -484,6 +484,9 @@ pub struct Atlas {
     shelf: u32,
     slots: HashMap<CacheKey, Option<Slot>>,
     pub uploads: Vec<(Slot, Vec<u8>)>,
+    /// How many times it was cleared: quads made before point at glyphs
+    /// that aren't there any more.
+    pub cleared: u64,
 }
 
 impl Atlas {
@@ -495,6 +498,7 @@ impl Atlas {
             shelf: 0,
             slots: HashMap::new(),
             uploads: Vec::new(),
+            cleared: 0,
         }
     }
 
@@ -505,6 +509,7 @@ impl Atlas {
         self.shelf = 0;
         self.slots.clear();
         self.uploads.clear();
+        self.cleared += 1;
     }
 
     /// Where glyph `key` is, rasterizing and packing it the first time.

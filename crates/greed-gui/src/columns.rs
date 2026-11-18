@@ -36,6 +36,11 @@ impl Columns {
         (x, self.x(row, to) - x)
     }
 
+    /// Where each cell of `row` starts, unless they're all a cell wide.
+    pub fn row(&self, row: usize) -> Option<&[f32]> {
+        self.rows.get(row).and_then(Option::as_deref)
+    }
+
     /// The cell of `row` that pixel `x` is in.
     pub fn col_at(&self, row: usize, x: f32) -> usize {
         match self.rows.get(row).and_then(Option::as_ref) {
