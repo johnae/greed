@@ -592,7 +592,8 @@ it, `greed.create_buffer(kind, text)` makes a scratch buffer, and
 A scratch buffer goes once nothing shows it, unless `buffer:set_kept(true)`
 keeps it, and `buffer:set_line_numbers(false)` hides its line numbers.
 `buffer:set_at_bottom(true)` shows a buffer shorter than its view against
-the view's bottom edge, like a chat with its box at the bottom.
+the view's bottom edge, like a chat with its box at the bottom. Its views
+don't scroll past its end either.
 
 ### Places that move with edits
 

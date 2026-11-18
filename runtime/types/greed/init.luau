@@ -99,7 +99,7 @@ export type Buffer = {
 	--- Whether the main view shows line numbers beside it (the default).
 	line_numbers: (self: Buffer) -> boolean,
 	set_line_numbers: (self: Buffer, on: boolean) -> (),
-	--- Whether its views show it against their bottom edge while it's shorter than them, as a chat's messages sit on its box; off by default, from the top.
+	--- Whether its views show it against their bottom edge while it's shorter than them, as a chat's messages sit on its box, and never scroll past its end; off by default, from the top.
 	at_bottom: (self: Buffer) -> boolean,
 	set_at_bottom: (self: Buffer, on: boolean) -> (),
 	--- How many columns apart its tab stops are, as it's drawn; 4 until set. Core sets it from the language or the "tab-width" option.

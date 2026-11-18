@@ -303,6 +303,27 @@ fn a_buffer_at_the_bottom_sits_on_its_views_edge_until_it_fills_them() {
         " 6 line 5",
         "taller than the view, it fills it"
     );
+
+    // Scrolled past its end, as by the wheel, with the cursor up in it: its
+    // end stays on the bottom edge. Scrolled up, it stays where it was put.
+    let view = ed.focus();
+    let line_8 = ed.buffer(buffer).text().line_to_byte(8);
+    ed.view_mut(view).selection = Selection::point(line_8);
+    ed.view_mut(view).scroll = Scroll { line: 8, row: 0 };
+    let f = frame(&mut ed, 20, 6);
+    assert_eq!(rows(&f).last().unwrap(), "10 line 9", "{:?}", rows(&f));
+    assert_eq!(rows(&f)[0], " 6 line 5");
+    ed.view_mut(view).selection = Selection::point(ed.buffer(buffer).text().line_to_byte(3));
+    ed.view_mut(view).scroll = Scroll { line: 2, row: 0 };
+    let f = frame(&mut ed, 20, 6);
+    assert_eq!(rows(&f)[0], " 3 line 2");
+
+    // Any other buffer may still scroll past its end.
+    ed.set_at_bottom(buffer, false);
+    ed.view_mut(view).selection = Selection::point(line_8);
+    ed.view_mut(view).scroll = Scroll { line: 8, row: 0 };
+    let f = frame(&mut ed, 20, 6);
+    assert_eq!(rows(&f)[0], " 9 line 8");
 }
 
 #[test]

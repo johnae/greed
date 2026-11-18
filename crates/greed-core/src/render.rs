@@ -1555,10 +1555,49 @@ impl<M: Measure> Renderer<M> {
                 row: 0,
             }
         } else {
-            self.scroll_to_cursor(editor, view, width, height)
+            let scroll = self.scroll_to_cursor(editor, view, width, height);
+            self.filled_to_end(editor, view, scroll, width, height)
         };
         let columns = self.columns_for(editor, view, width);
         (within_lines(view, scroll, height, lines), columns)
+    }
+
+    /// `scroll`, for a buffer that sits at the bottom of its views
+    /// (`Buffer::at_bottom`), pulled back so no rows stay empty under its
+    /// end while there's text above to fill them, however it was scrolled,
+    /// as by the wheel past the end.
+    fn filled_to_end(
+        &self,
+        editor: &Editor,
+        view: &View,
+        scroll: Scroll,
+        width: usize,
+        height: usize,
+    ) -> Scroll {
+        let buffer = editor.buffer(view.buffer);
+        if !buffer.at_bottom() || (scroll.line, scroll.row) == (0, 0) {
+            return scroll;
+        }
+        let hidden = hidden_lines(editor, view);
+        let last = buffer.text().len_lines() - 1;
+        let skipped: usize = self
+            .heights(editor, view, scroll.line, width)
+            .iter()
+            .take(scroll.row)
+            .sum();
+        let mut seen = 0;
+        for line in scroll.line..=last {
+            seen += self.line_rows(editor, view, line, width, &hidden);
+            if seen >= height + skipped {
+                return scroll;
+            }
+        }
+        let end = Scroll {
+            line: last,
+            row: self.heights(editor, view, last, width).len() - 1,
+        };
+        let tail = virtual_lines(editor, view, last).count();
+        self.ending_at(editor, view, end, tail, width, height, &hidden)
     }
 
     /// The scroll position that keeps the primary cursor on screen, moving
@@ -1629,11 +1668,25 @@ impl<M: Measure> Renderer<M> {
         if seen <= height && !room_at_end {
             return current;
         }
+        self.ending_at(editor, view, cursor, tail, width, height, &hidden)
+    }
 
-        // Scroll so the cursor's row is the last one on screen: take the
-        // rows above it in its line while they fit, then whole lines while
-        // they fit, then as many rows of the next one as are left, after
-        // its virtual lines.
+    /// The scroll that makes `cursor`'s row the last one on screen, with
+    /// `tail` rows under it: take the rows above it in its line while they
+    /// fit, then whole lines while they fit, then as many rows of the next
+    /// one as are left, after its virtual lines.
+    #[expect(clippy::too_many_arguments, reason = "the layout it needs")]
+    fn ending_at(
+        &self,
+        editor: &Editor,
+        view: &View,
+        cursor: Scroll,
+        tail: usize,
+        width: usize,
+        height: usize,
+        hidden: &[Range<usize>],
+    ) -> Scroll {
+        let cursor_heights = self.heights(editor, view, cursor.line, width);
         let mut above = height.saturating_sub(cursor_heights[cursor.row] + tail);
         let mut top = cursor;
         top.row = fitting_from_end(&cursor_heights[..cursor.row], &mut above).unwrap_or(cursor.row);
@@ -1643,7 +1696,7 @@ impl<M: Measure> Renderer<M> {
         let mut l = cursor.line;
         while above > 0 && l > 0 {
             l -= 1;
-            if is_hidden(&hidden, l) {
+            if is_hidden(hidden, l) {
                 continue;
             }
             let heights = self.heights(editor, view, l, width);
