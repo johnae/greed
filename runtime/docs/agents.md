@@ -627,25 +627,26 @@ checked:` line. `:set agent-care quick` keeps only the reading first.
 | `:agent-compact` | Compact the conversation with Greed's own agent now |
 
 ```text
-▍ You
-▍ Fix the off-by-one in the pager
+› Fix the off-by-one in the pager
 
-▍ Claude
-▍ Found it in pager.rs.
-▍ ✓ Edit pager.rs · +1 -1
-▍ ✗ Run cargo test · 12 lines ▸
+  Found it in pager.rs.
+  ✓ Edit pager.rs · +1 -1
+  ✗ Run cargo test · 12 lines ▸
+  Sonnet · 48s
 
-╭─ Claude · auto · Plan · Sonnet ─ alt-enter sends · ctrl-c stops ─╮
-│ now add a test                                                   │
-╰─ ● thinking · 12s ───────────────────────── 14.2k / 200k tokens ─╯
+▎
+▎ now add a test
+▎ auto · Sonnet · Plan · ● thinking · 12s                    14.2k (7%)
 ```
 
-Messages have a coloured bar beside them (yours on a shaded background).
-Each tool call is one row: `○` waiting, `◐` running, `✓` done or `✗`
-failed, with a short summary like `read src/main.rs · 120 lines`. A `▸`
-means there's more: `tab` unfolds and folds it. When Greed's own agent asks
-before an edit, the row already holds the change (`-1 +1 · tab shows the
-change`), shown in the theme's diff colours.
+Your messages start with `›` on a shaded background. The agent's words are
+plain, and each of its turns ends with a dim line saying who answered and
+how long it took. Each tool call is one row: `○` waiting, `◐` running, `✓`
+done or `✗` failed, with a short summary like `read src/main.rs · 120
+lines`. A command of several lines shows its first and how many (`· 4 lines
+▸`). A `▸` means there's more: `tab` unfolds and folds it. When Greed's own
+agent asks before an edit, the row already holds the change (`-1 +1 · tab
+shows the change`), shown in the theme's diff colours.
 
 `up` on the box's first line brings back earlier messages, `down` on its
 last line comes forward; with something typed, only messages starting with
@@ -677,9 +678,9 @@ A helper's transcript opened from its row closes with `esc` (in normal
 mode) or `q`, back to the row it was opened from. Elsewhere those keys do
 what they always do.
 
-The box at the bottom grows as you write; its top shows the model, `auto`
-when auto mode is on, the mode once you leave the one it started in, the
-effort and the keys. In any mode, while typing too:
+The box at the bottom is a shaded card that grows as you write. The line
+under it shows the model, `auto` when auto mode is on, the mode once you
+leave the one it started in, the effort and the keys. In any mode, while typing too:
 
 | Key | |
 |---|---|
@@ -694,29 +695,32 @@ copy there, but typing, insert mode or pasting go to the end of the box,
 and deleting is refused. While the agent asks something, its keys answer
 from anywhere in the transcript.
 
-What you send while the agent works is queued: `You · queued` at the end of
-the transcript, `thinking · 1 queued` under the box. Greed's own agent
+What you send while the agent works is queued: `› queued` at the end of the
+transcript, `thinking · 1 queued` under the box. Greed's own agent
 reads it at its next step with the result of the tool it ran last; other
 agents get it as the next message once their turn ends, several together.
 It then shows where the agent got it. Messages still queued when you stop
 the agent go ahead of your next one (`alt-enter` on an empty box sends
 them alone).
 
-The box's bottom line shows what the agent is doing (the tool it runs,
-`waiting for mistral` until the answer starts, then `thinking` or
-`writing`), how long this turn has taken, `waiting for you` when it asks,
-and the conversation's tokens out of the context window when the agent
-reports them (Greed's own agent always does). With `:set effects true`,
+The line under the box says what the agent is doing in a word (`running`,
+`reading`, `editing` or `searching` while a tool runs, `waiting for
+mistral` until the answer starts, then `thinking` or `writing`), how long
+this turn has taken, `waiting for you` when it asks, and how much of the
+context window the conversation fills when the agent reports it
+(`14.2k (7%)`, yellow past half and red past four fifths; Greed's own agent
+always reports it). With `:set effects true`,
 running tools spin, the status shimmers while the agent thinks and the
 waiting chip pulses; nothing moves while it's idle. Theme keys:
-`agent.you` (your messages' background), `agent.you.bar`, `agent.bar`,
-`agent.box`, `agent.box.title`, `agent.hint`, `agent.picked` (the
+`agent.you` (your messages' and the box's background), `agent.you.bar` (the
+`›` and the box's bar), `agent.box`, `agent.box.title`, `agent.hint`, `agent.picked` (the
 highlighted row), `agent.working`, `agent.waiting`, `agent.done` and
 `agent.failed`.
 
-#### What the box's top shows
+#### What the line under the box shows
 
-The `agent-box` option lists what goes at the top of the box, in order.
+The `agent-box` option lists what goes on the line under the box, before
+what the agent is doing, in order.
 Like this, in your config:
 
 ```luau
@@ -754,8 +758,8 @@ end)
 greed.option.set("agent-box", "project model keys")
 ```
 
-The agent's turns in the transcript are headed by the model. Set
-`agent-heading` to `name` to head them with the agent's name instead.
+The line ending each of the agent's turns names the model. Set
+`agent-heading` to `name` for the agent's name instead.
 
 The line above the transcript (`Claude Code in ~/src/app`) follows
 `agent-title`, which takes the same kind of list as `agent-box`: `agent`,
@@ -770,8 +774,8 @@ greed.option.set("agent-title", "model folder")
 greed.option.set("agent-pane-title", false)
 ```
 
-When the agent asks before doing something, a row of choices shows at the
-top of the box:
+When the agent asks before doing something, a row of choices shows in the
+box:
 
 ```text
 Allow Edit a.txt?  [y] Allow once  [a] Allow always  [n] Reject
@@ -833,7 +837,7 @@ and asks a `decision` model about the rest. To set it up:
 3. Tell it about your setup, if it helps:
    `greed.option.set("agent-auto-rules", "Deleting under /tmp is fine.")`.
 4. `alt-a` in a transcript, or `/auto`, switches the session to auto mode;
-   the box's top line says `auto`. New sessions start the way you left the
+   the line under the box says `auto`. New sessions start the way you left the
    last one.
 
 Some things always ask you, whatever the model says: `sudo`, force pushes,
@@ -874,7 +878,7 @@ of going to the agent:
 | `/effort [none\|low\|medium\|high\|max]` | Greed's own agent: how hard its model thinks, for this session; without a word, a picker |
 | `/compact` | Greed's own agent: summarises all but its last few turns, to save room |
 
-`/effort` changes the session only, shown at the top of the box
+`/effort` changes the session only, shown under the box
 (`Greed · reasoning · effort high`); `/effort unset` goes back to the
 role's, and `e` in `:models` sets the role's for every session.
 

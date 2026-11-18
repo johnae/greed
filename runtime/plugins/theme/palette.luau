@@ -166,7 +166,6 @@ function M.styles(p: Palette): { [string]: greed.ThemeEntry }
 		["ui.multibuffer.note"] = { fg = p.comment, italic = true },
 		["agent.you"] = { bg = p.bg_high },
 		["agent.you.bar"] = { fg = p.blue },
-		["agent.bar"] = { fg = p.purple },
 		["agent.box"] = { fg = p.gutter },
 		["agent.box.title"] = { fg = p.fg, bold = true },
 		["agent.auto"] = { bg = p.green, fg = p.bg, bold = true, gui = { badge = true } },

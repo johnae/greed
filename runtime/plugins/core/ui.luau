@@ -428,6 +428,48 @@ function M.input_sides(
 	return marks
 end
 
+--- Marks drawing lines `first` (0-based) to the last of `buffer` as a
+--- card, as what's written in an agent's box: each row on `style`'s
+--- background with `accent`'s "▎ " in front, and with `under`, that line
+--- in the card under the last, `cells` wide. Nothing is drawn on the
+--- right, so a view narrower than `cells` cuts the card without breaking
+--- it. The bar and the line are empty ranges, so `accent` stays off what's
+--- written.
+function M.input_card(
+	buffer: greed.Buffer,
+	first: number,
+	cells: number,
+	style: string,
+	accent: string,
+	under: greed.MarkLine?
+): { greed.Mark }
+	local marks: { greed.Mark } = {}
+	local count = buffer:line_count()
+	for line = first, count - 1 do
+		local from = buffer:line_start(line)
+		local to = if line + 1 < count then buffer:line_start(line + 1) - 1 else buffer:len()
+		table.insert(marks, { from = from, to = to, style = style, line = true })
+		table.insert(marks, { from = from, to = from, style = accent, text = "▎ " })
+	end
+	if under then
+		local pieces: { any } = { { text = "▎ ", style = accent } }
+		local used = 2
+		local given: { any } = if type(under) == "string"
+			then { { text = under } }
+			else under :: any
+		for _, piece in given do
+			table.insert(pieces, piece)
+			used += width(piece.text)
+		end
+		if used < cells then
+			table.insert(pieces, { text = string.rep(" ", cells - used) })
+		end
+		local last = buffer:line_start(count - 1)
+		table.insert(marks, { from = last, to = last, style = style, lines = { pieces :: any } })
+	end
+	return marks
+end
+
 -- How many cells a progress bar takes.
 local BAR = 20
 

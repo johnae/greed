@@ -175,33 +175,31 @@ fn stream(label: &str) -> Seen {
     seen
 }
 
-/// What's wrong with a frame of the transcript: its box once, sides on
-/// each line inside it, and a bar on each line of the agent's last answer.
+/// What's wrong with a frame of the transcript: its box once, a card whose
+/// rows all have its bar, and the agent's answer above it.
 fn wrong_with(rows: &[String]) -> Option<String> {
-    let tops: Vec<usize> = (0..rows.len())
-        .filter(|&i| rows[i].trim_end().ends_with('╮'))
+    let card: Vec<usize> = (0..rows.len())
+        .filter(|&i| rows[i].starts_with('▎'))
         .collect();
-    let bottoms: Vec<usize> = (0..rows.len())
-        .filter(|&i| rows[i].trim_start().starts_with('╰'))
-        .collect();
-    let ([top], [bottom]) = (tops.as_slice(), bottoms.as_slice()) else {
-        return Some(format!("box tops {tops:?}, bottoms {bottoms:?}"));
+    let (Some(&first), Some(&last)) = (card.first(), card.last()) else {
+        return Some("no box".into());
     };
-    if top >= bottom {
-        return Some("the box's bottom is above its top".into());
+    if last - first + 1 != card.len() {
+        return Some(format!("the box's rows aren't together: {card:?}"));
     }
-    if let Some(row) = rows[top + 1..*bottom]
+    // Its top, the line you write in and the line under it.
+    if card.len() < 3 {
+        return Some(format!("the box has {} rows", card.len()));
+    }
+    // The agent's answer streaming in, between your message and the box.
+    let asked = rows[..first].iter().rposition(|row| row.starts_with('›'))?;
+    if rows[asked + 1..first]
         .iter()
-        .find(|row| !row.starts_with('│'))
+        .all(|row| row.trim().is_empty())
     {
-        return Some(format!("a line in the box without its side: {row:?}"));
+        return Some("nothing of the answer above the box".into());
     }
-    // The agent's answer streaming in, between its heading and the box.
-    let heading = rows[..*top].iter().rposition(|row| row.contains("Greed"))?;
-    rows[heading + 1..*top]
-        .iter()
-        .find(|row| !row.trim().is_empty() && !row.starts_with('▍'))
-        .map(|row| format!("a line of the answer without its bar: {row:?}"))
+    None
 }
 
 #[test]

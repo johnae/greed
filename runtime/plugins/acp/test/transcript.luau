@@ -87,41 +87,43 @@ local function squeeze(drawn: string): string
 	return out
 end
 
-test("you write in a box that shows the model and the keys", function(t)
+-- What the line under the box says, its runs of spaces as one.
+local function under(): string
+	return (string.gsub(squeeze(bottom()), " $", ""))
+end
+
+test("you write in a card that says the model and the keys under it", function(t)
 	start(t)
-	local drawn = screen(t)
-	local box =
-		"╭─ Small ─ alt-enter sends · ctrl-c stops ─╮\n│ │\n╰─ ready ─╯"
-	assert(string.find(squeeze(drawn), box, 1, true), drawn)
+	assert(under() == "▎ Small · ready alt-enter sends · ctrl-c stops", under())
+	assert(string.find(squeeze(screen(t)), "\n▎ \n▎ \n▎ Small · ready", 1, true), screen(t))
 end)
 
-test("agent-box picks what the box's top shows, and :agent-box toggles one", function(t)
+test("agent-box picks what the line under the box shows, and :agent-box toggles one", function(t)
 	local s = start(t)
-	local function top(): string
-		return squeeze(string.match(screen(t), "(╭[^\n]*)") :: string)
-	end
+	-- Drawn once, so the line has the view's width.
+	screen(t)
 	greed.option.set("agent-box", "agent auto mode model effort keys")
 	t:wait(30)
 	-- The mode it started in and manual answering say nothing.
-	assert(top() == "╭─ Fake · Small ─ alt-enter sends · ctrl-c stops ─╮", top())
+	assert(under() == "▎ Fake · Small · ready alt-enter sends · ctrl-c stops", under())
 	s.mode = "plan"
 	s.effort = "high"
 	s.auto = true
 	greed.option.set("agent-box", "effort model mode auto")
 	t:wait(30)
-	assert(top() == "╭─ effort high · Small · Plan · auto ─╮", top())
+	assert(under() == "▎ effort high · Small · Plan · auto · ready", under())
 	t:run("agent-box", { "model" })
 	local box = tostring(greed.option.get("agent-box"))
 	assert(box == "effort mode auto", box)
 	t:run("agent-box", { "keys" })
 	t:wait(30)
 	assert(
-		top() == "╭─ effort high · Plan · auto ─ alt-enter sends · ctrl-c stops ─╮",
-		top()
+		under() == "▎ effort high · Plan · auto · ready alt-enter sends · ctrl-c stops",
+		under()
 	)
 	greed.option.set("agent-box", "")
 	t:wait(30)
-	assert(top() == "╭─╮", top())
+	assert(under() == "▎ ready", under())
 	greed.option.set("agent-box", "auto model mode effort keys")
 end)
 
@@ -138,31 +140,32 @@ test("the box shows text in quotes and fields added with box_field", function(t)
 	end)
 	greed.option.set("agent-box", '"work laptop" model where nothing broken unknown')
 	t:wait(30)
-	local top = squeeze(string.match(screen(t), "(╭[^\n]*)") :: string)
-	assert(top == "╭─ work laptop · Small · here ─╮", top)
+	assert(under() == "▎ work laptop · Small · here · ready", under())
 	t:run("agent-box", { '"work laptop"' })
 	local box = tostring(greed.option.get("agent-box"))
 	assert(box == "model where nothing broken unknown", box)
 	greed.option.set("agent-box", "auto model mode effort keys")
 end)
 
-test("in a narrow view the box gives way from its last field", function(t)
+test("in a narrow view the line under the box gives way from its last field", function(t)
 	local s = start(t)
 	s.mode = "plan"
 	s.effort = "high"
 	greed.option.set("agent-box", "agent model mode effort keys")
-	local drawn = screen(t, 22)
-	assert(string.find(squeeze(drawn), "╭─ Fake · Small ─╮", 1, true), drawn)
+	screen(t, 22)
+	t:wait(200)
+	screen(t, 22)
+	assert(under() == "▎ Fake · ready", under())
 	greed.option.set("agent-box", "auto model mode effort keys")
 end)
 
-test("the agent's turns are headed by its model, or its name", function(t)
+test("the agent's turns end with its model, or its name, and how long they took", function(t)
 	local s = start(t)
 	send(t, s, "hello")
-	assert(string.find(screen(t), "▍ Small\n▍ Hello there\n", 1, true), screen(t))
+	assert(string.find(screen(t), "  Hello there\n  Small · 0s", 1, true), screen(t))
 	greed.option.set("agent-heading", "name")
 	t:wait(30)
-	assert(string.find(screen(t), "▍ Fake\n▍ Hello there\n", 1, true), screen(t))
+	assert(string.find(screen(t), "  Hello there\n  Fake · 0s", 1, true), screen(t))
 	greed.option.set("agent-heading", "model")
 end)
 
@@ -178,7 +181,7 @@ test("the line above the transcript says what agent-title asks, or nothing", fun
 	greed.option.set("agent-title", "")
 	t:wait(30)
 	assert(not string.find(screen(t), "Fake", 1, true), screen(t))
-	assert(not string.find(screen(t), "Small ·", 1, true), screen(t))
+	assert(string.find(screen(t), "^%s*▎"), "nothing above the box: " .. screen(t))
 	greed.option.set("agent-title", "agent folder workspace")
 end)
 
@@ -211,18 +214,19 @@ test("agent-pane-title changes the title of a float already open", function(t)
 	assert(on and on.title == "Fake", tostring(on and on.title))
 end)
 
-test("the box grows with what you write and keeps its sides", function(t)
+test("the card grows with what you write, a bar before each row", function(t)
 	start(t)
 	type_in(t, "h i enter t h e r e")
-	local drawn = screen(t)
-	assert(
-		string.find(squeeze(drawn), "\n│ hi │\n│ there │\n╰─ ready ─╯", 1, true),
-		drawn
-	)
-	-- Each row of the box is as wide as its top.
-	local top = string.match(drawn, "(╭[^\n]*)") :: string
-	local side = string.match(drawn, "(│ there[^\n]*)") :: string
-	assert(utf8.len(top) == utf8.len(side), `{top}\n{side}`)
+	local drawn = squeeze(screen(t))
+	assert(string.find(drawn, "\n▎ \n▎ hi\n▎ there\n▎ Small · ready", 1, true), drawn)
+	-- Every row of the card, the line under it too, is on its background.
+	local rows = 0
+	for _, mark in greed.view():buffer():decorations("acp-live") do
+		if mark.style == "agent.you" and mark.line then
+			rows += 1
+		end
+	end
+	assert(rows == 3, `the top row and the two you wrote: {rows}`)
 end)
 
 test("a box that grew and emptied again gives the transcript its rows back", function(t)
@@ -248,27 +252,28 @@ end)
 
 test("in a narrow view the keys give way first", function(t)
 	start(t)
-	local drawn = screen(t, 40)
-	assert(string.find(squeeze(drawn), "╭─ Small ─╮", 1, true), drawn)
-	assert(not string.find(drawn, "alt-enter sends", 1, true), drawn)
+	screen(t, 40)
+	t:wait(200)
+	screen(t, 40)
+	assert(under() == "▎ Small · ready", under())
 end)
 
-test("your messages and the agent's have bars beside them, yours a background", function(t)
+test("your messages start with a › on a background; the agent's are plain", function(t)
 	local s = start(t)
 	send(t, s, "hello")
 	local drawn = screen(t)
-	assert(string.find(drawn, "▍ You\n▍ hello\n\n▍ Small\n▍ Hello there\n", 1, true), drawn)
+	assert(string.find(drawn, "› hello\n\n  Hello there\n  Small · ", 1, true), drawn)
 	local buffer = greed.view():buffer()
-	local yours, theirs = 0, 0
+	local yours, marked = 0, 0
 	for _, mark in buffer:decorations("acp") do
 		if mark.style == "agent.you" and mark.line then
 			yours += 1
-		elseif mark.style == "agent.bar" then
-			theirs += 1
+		elseif mark.text == "›" then
+			marked += 1
 		end
 	end
-	assert(yours == 2, `your heading and message have a background: {yours}`)
-	assert(theirs == 2, `the agent's heading and words have its bar: {theirs}`)
+	assert(yours == 1, `your message has a background: {yours}`)
+	assert(marked == 1, `and a › before it: {marked}`)
 end)
 
 test("the status says what the agent does and for how long, then that it's ready", function(t)
@@ -280,33 +285,60 @@ test("the status says what the agent does and for how long, then that it's ready
 	end)
 	t:wait(2100)
 	local drawn = screen(t)
-	assert(string.find(drawn, "▍ ◐ Run tests\n", 1, true), "a running tool: " .. drawn)
-	assert(string.find(drawn, "╰─ ● Run tests · 2s ─", 1, true), drawn)
+	assert(string.find(drawn, "  ◐ Run tests\n", 1, true), "a running tool: " .. drawn)
+	-- A word for what it does, not the tool's title: that's in its row.
+	assert(string.find(under(), "▎ Small · ● running · 2s", 1, true), under())
 	t:keys("ctrl-c")
 	t:wait_for(function()
 		return s.status == "idle"
 	end)
 	t:wait(30)
-	assert(string.find(screen(t), "╰─ ready ─", 1, true), screen(t))
+	assert(string.find(under(), "▎ Small · ready", 1, true), under())
 end)
 
 test("waiting on you shows as a chip, and how much context is used on the right", function(t)
 	local s = start(t)
+	screen(t)
 	send(t, s, "usage")
-	local strip = "╰─ ready ─ 14.2k / 200k tokens ─╯"
-	assert(string.find(squeeze(screen(t)), strip, 1, true), screen(t))
-	send(t, s, "edit a.txt")
-	local drawn = screen(t)
 	assert(
-		string.find(
-			drawn,
-			"╰─  waiting for you  y/n or enter answers · esc rejects · 0s ─",
-			1,
-			true
-		),
-		drawn
+		string.find(under(), "· ready alt-enter sends · ctrl-c stops · 14.2k (7%)", 1, true),
+		under()
 	)
-	assert(string.find(drawn, "▍ ○ Edit a.txt\n", 1, true), "it waits to start: " .. drawn)
+	send(t, s, "edit a.txt")
+	assert(
+		string.find(under(), "waiting for you y/n or enter answers · esc rejects · 0s", 1, true),
+		under()
+	)
+	assert(
+		string.find(screen(t), "  ○ Edit a.txt\n", 1, true),
+		"it waits to start: " .. screen(t)
+	)
+	acp.stop(s)
+end)
+
+test("the context used turns yellow past half the window, and red past four fifths", function(t)
+	local s = start(t)
+	local function style(): string?
+		for _, mark in greed.view():buffer():decorations("acp-live") do
+			for _, piece in (mark.lines or {})[1] or {} do
+				if string.find(piece.text, "%%%)$") then
+					return piece.style
+				end
+			end
+		end
+		return nil
+	end
+	local cases: { { percent: number, style: string } } = {
+		{ percent = 10, style = "agent.hint" },
+		{ percent = 60, style = "agent.working" },
+		{ percent = 90, style = "agent.failed" },
+	}
+	for _, case in cases do
+		s.tokens, s.window = case.percent * 1000, 100000
+		s.changed()
+		t:wait(30)
+		assert(style() == case.style, `{case.percent}%: {style()}`)
+	end
 	acp.stop(s)
 end)
 
@@ -334,7 +366,7 @@ test("with effects on, a running tool and the status spin; without, they stay st
 	t:wait(100)
 	local first = spinners()[1]
 	assert(first and string.find("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", first, 1, true), tostring(first))
-	assert(not string.find(screen(t), "╰─ ●", 1, true), "the status spins too")
+	assert(not string.find(under(), "· ● ", 1, true), "the status spins too")
 	t:wait(170)
 	assert(spinners()[1] ~= first, "it turns")
 	t:keys("ctrl-c")
@@ -389,7 +421,7 @@ test("tool rows say what came back in a few words, never as JSON", function(t)
 	assert(rows[2] == "read a.txt · 2 lines", rows[2])
 	assert(rows[3] == "buffers · 1 item", rows[3])
 	acp.show(s)
-	assert(string.find(bottom(), " 1.5k / 200k tokens ─╯", 1, true), bottom())
+	assert(string.find(bottom(), "1.5k (1%)", 1, true), bottom())
 end)
 
 test("the status says whether Greed's agent waits for the model, thinks or writes", function(t)
@@ -398,7 +430,7 @@ test("the status says whether Greed's agent waits for the model, thinks or write
 	local seen: { string } = {}
 	local function look()
 		greed.sleep(50)
-		table.insert(seen, (string.match(bottom(), "^╰─ %S+ (.-) · %d+s") or bottom()))
+		table.insert(seen, (string.match(bottom(), "^▎ .- · %S+ (.-) · %d+s") or bottom()))
 	end
 	local at = 0
 	models.turn = function(_role, _request, on_text, _on_open, on_thinking, on_calling)
@@ -437,7 +469,7 @@ end)
 
 -- What's typed in the box once no question shows in it.
 local function draft(): string
-	return string.match(greed.view():buffer():text(), ".*─╮\n(.*)$") or "?"
+	return transcript.prompt(greed.view():buffer())
 end
 
 -- Asks to edit a.txt and waits for the question.
@@ -507,7 +539,12 @@ test("esc rejects the question, and with an empty box nothing more is sent", fun
 	local text = greed.view():buffer():text()
 	assert(string.find(text, "Left it alone.", 1, true), text)
 	assert(not string.find(text, "[y]", 1, true), "the row is gone")
-	local _, users = string.gsub(text, "\n  You\n", "")
+	local users = 0
+	for _, entry in s.entries do
+		if entry.kind == "user" then
+			users += 1
+		end
+	end
 	assert(users == 1, "only the first message went: " .. text)
 end)
 
@@ -529,7 +566,7 @@ test("esc with a message in the box rejects and sends the message next", functio
 	local text = greed.view():buffer():text()
 	assert(string.find(text, "? Edit a.txt: Reject", 1, true), text)
 	local rejected = string.find(text, "Left it alone.", 1, true)
-	local sent = string.find(text, "  You\n  hello\n", 1, true)
+	local sent = string.find(text, "\n  hello\n", rejected, true)
 	assert(rejected and sent and sent > rejected, "the message went once the turn ended: " .. text)
 	assert(draft() == "", draft())
 end)
@@ -673,10 +710,10 @@ test("a thought still coming in shows its first line, its last lines and a count
 	t:wait(30)
 	local drawn = screen(t, 70)
 	local tokens = math.ceil(#text / 4)
-	assert(string.find(drawn, "▍ … Planning the fix.\n", 1, true), drawn)
+	assert(string.find(drawn, "  … Planning the fix.\n", 1, true), drawn)
 	assert(not string.find(drawn, "step 4", 1, true), "only the last lines: " .. drawn)
 	assert(string.find(drawn, "newest\n", 1, true), "the newest words show: " .. drawn)
-	assert(string.find(drawn, `▍   thinking · {tokens} tokens · 4m 1`, 1, true), drawn)
+	assert(string.find(drawn, `    thinking · {tokens} tokens · 4m 1`, 1, true), drawn)
 	-- Each line fits the view.
 	for row in string.gmatch(drawn, "[^\n]+") do
 		assert((utf8.len(row) or 0) <= 70, row)
@@ -695,10 +732,10 @@ test("a thought still coming in shows its first line, its last lines and a count
 	drawn = screen(t, 70)
 	tokens = math.ceil(#s.entries[#s.entries].text / 4)
 	assert(
-		string.find(drawn, `▍ ▸ thought, {tokens} tokens · Planning the fix.\n`, 1, true),
+		string.find(drawn, `  ▸ thought, {tokens} tokens · Planning the fix.\n`, 1, true),
 		drawn
 	)
-	assert(not string.find(drawn, "▍   thinking", 1, true), drawn)
+	assert(not string.find(drawn, "    thinking", 1, true), drawn)
 	assert(not string.find(drawn, "then the test", 1, true), drawn)
 end)
 
@@ -712,7 +749,7 @@ test("a thought is done once something comes after it", function(t)
 	t:wait(30)
 	local drawn = screen(t, 70)
 	assert(string.find(drawn, "▸ thought, 7 tokens · Look at a.txt.\n", 1, true), drawn)
-	assert(not string.find(drawn, "▍   thinking", 1, true), drawn)
+	assert(not string.find(drawn, "    thinking", 1, true), drawn)
 	s.status = "idle"
 	s.changed()
 end)
@@ -793,15 +830,22 @@ test("after a click answers, typing goes in the box", function(t)
 	assert(draft() == "ok", draft())
 end)
 
-test("a tool's title of several lines shows them all, the question its first", function(t)
-	local s = start(t)
-	send(t, s, "script")
-	local drawn = screen(t, 70)
-	assert(string.find(drawn, "▍ ○ Run echo one\n▍   echo **two**\n", 1, true), drawn)
-	assert(string.find(drawn, "? Allow Run echo one …?", 1, true), drawn)
-	assert(string.find(drawn, "│ Allow Run echo one …?", 1, true), drawn)
-	acp.stop(s)
-end)
+test(
+	"a tool's title of several lines shows its first and how many, the question its first",
+	function(t)
+		local s = start(t)
+		send(t, s, "script")
+		local drawn = screen(t, 70)
+		assert(string.find(drawn, "  ○ Run echo one · 2 lines ▸\n", 1, true), drawn)
+		assert(
+			not string.find(drawn, "echo **two**", 1, true),
+			"the rest once it's opened: " .. drawn
+		)
+		assert(string.find(drawn, "? Allow Run echo one …?", 1, true), drawn)
+		assert(string.find(drawn, "▎ Allow Run echo one …?", 1, true), drawn)
+		acp.stop(s)
+	end
+)
 
 -- Sends `text` the way the transcript does, leaving the cursor where it is,
 -- and waits until the agent is done.
@@ -868,7 +912,7 @@ test("moved up into the history, the cursor stays while a row ticks below it", f
 	t:wait(60)
 	local view = greed.view()
 	local buffer = view:buffer()
-	assert(string.find(screen(t), "╰─", 1, true), "the box is on screen: " .. screen(t))
+	assert(string.find(screen(t), "▎", 1, true), "the box is on screen: " .. screen(t))
 	local below = (string.find(buffer:text(), "more words", 1, true) or 1) - 1
 	assert(below > 0, "words below the row")
 	for _, at in { 0, below } do
@@ -1115,7 +1159,8 @@ test("an image pasted in a transcript goes with the next message", function(t)
 	send(t, s, "pictures")
 	assert(last_said(s) == "image no, file yes", last_said(s))
 	assert(s.attached == nil, "sent with the message")
-	local user = s.entries[#s.entries - 1]
+	-- Before the agent's answer and the turn's end.
+	local user = s.entries[#s.entries - 2]
 	assert(user.kind == "user" and string.find(user.text, "🖼 image 1", 1, true), user.text)
 	-- One that sees them gets the image too.
 	local sees = assert(acp.start({
@@ -1176,8 +1221,9 @@ end)
 
 -- The transcript above the box.
 local function history(): string
-	local text = greed.view():buffer():text()
-	return string.sub(text, 1, (string.find(text, "╭─", 1, true) or 0) - 1)
+	local buffer = greed.view():buffer()
+	local text = buffer:text()
+	return string.sub(text, 1, (transcript.prompt_start(buffer) or #text + 1) - 1)
 end
 
 -- Presses `keys`, the last of which edits above the box and is refused.
@@ -1333,17 +1379,13 @@ test("a long transcript drawn by its tick and an update at once keeps one box", 
 	type_in(t, "h i")
 	local function check(step: string)
 		local text = buffer:text()
-		local _, tops = string.gsub(text, "╭─", "")
-		local _, ends = string.gsub(text, "─╮", "")
-		assert(
-			tops == 1 and ends == 1,
-			`{step}: {tops} tops, {ends} ends\n{string.sub(text, -600)}`
-		)
+		local boxes = #buffer:decorations("acp-prompt")
+		assert(boxes == 1, `{step}: {boxes} boxes\n{string.sub(text, -600)}`)
 		local _, counters = string.gsub(text, "thinking · ", "")
 		assert(counters == 1, `{step}: {counters} counters\n{string.sub(text, -600)}`)
 		-- The box's top comes right after the history, and what you typed
 		-- right after it.
-		local tail = string.match(text, "thinking · [^\n]*\n\n╭─[^\n]*─╮\n(.*)$")
+		local tail = string.match(text, "thinking · [^\n]*\n\n\n(.*)$")
 		assert(tail == "hi", `{step}: {string.sub(text, -600)}`)
 	end
 	-- Each update lands on the second the status ticks on, so the two draw
@@ -1362,7 +1404,7 @@ test("a long transcript drawn by its tick and an update at once keeps one box", 
 	t:wait(30)
 	local text = buffer:text()
 	assert(string.find(text, "tokens · Thinking it over", 1, true), string.sub(text, -600))
-	assert(string.match(text, "\n╭─[^\n]*─╮\nhi$"), string.sub(text, -600))
+	assert(string.match(text, "\n\n\nhi$"), string.sub(text, -600))
 end)
 
 -- The Markdown marks over the history of the transcript in the main view,
@@ -1410,7 +1452,7 @@ test("an answer streamed in pieces looks as the same answer drawn at once", func
 			-- An indented list's first item has its bullet, after the bar.
 			greed.view():set_cursor(greed.view():buffer():len())
 			local drawn = screen(t, 70)
-			assert(string.find(drawn, "▍ • TUI: draws frames as cells.\n", 1, true), drawn)
+			assert(string.find(drawn, "  • TUI: draws frames as cells.\n", 1, true), drawn)
 		end
 		table.remove(s.entries)
 		s.changed()
@@ -1468,22 +1510,27 @@ test("an answer streamed in pieces looks as the same answer drawn at once", func
 	acp.stop(s)
 end)
 
-test("a long command in the box's bottom line is cut to fit, its time still there", function()
+test("a long command running shows under the box as a word, never itself, and fits", function()
+	local command =
+		"Run cd /home/me/src; find / -maxdepth 6 -name core-plugins -type d 2>/dev/null | grep -v proc | head"
 	local s: any = {
 		status = "working",
-		tool = "Run cd /home/me/src; find / -maxdepth 6 -name core-plugins -type d 2>/dev/null | grep -v proc | head",
+		tool = command,
+		tools = { t1 = { title = command, kind = "execute", status = "in_progress" } },
+		modes = {},
+		models = {},
 		since = greed.now() - 5000,
 		tokens = 1500,
 		window = 200000,
 	}
-	for _, cells in { 60, 100 } do
-		local line = ""
+	for _, cells in { 30, 100 } do
+		local line = "▎ "
 		for _, piece in transcript.bottom(s, cells) do
 			line ..= piece.text
 		end
 		assert(core.text.width(line) <= cells, `{core.text.width(line)} > {cells}: {line}`)
-		assert(string.find(line, " · 5s", 1, true), line)
-		assert(string.find(line, "Run cd /home", 1, true), line)
+		assert(string.find(line, "● running · 5s", 1, true), line)
+		assert(not string.find(line, "Run cd", 1, true), line)
 	end
 end)
 
@@ -1513,7 +1560,7 @@ test("an image sent while the agent works is queued with the message, and shown 
 	assert(s.queued_images and #s.queued_images == 1, "queued")
 	t:wait(30)
 	local text = greed.view():buffer():text()
-	assert(string.find(text, "  You · queued\n  🖼 image 1", 1, true), text)
+	assert(string.find(text, "  queued\n  🖼 image 1", 1, true), text)
 	local words, images = session.take_queued(s)
 	assert(words == "" and images and #images == 1, "taken out together")
 	s.status = "idle"

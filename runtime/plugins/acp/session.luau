@@ -62,6 +62,9 @@ export type Entry = {
 	text: string?,
 	open: boolean?,
 	since: number?,
+	--- A turn's end ("turn"): how long it took, and the model that answered.
+	took: number?,
+	model: string?,
 	tool: Tool?,
 	items: { { text: string, status: string } }?,
 	permission: Permission?,
@@ -1284,8 +1287,24 @@ local function prompt_once(
 			{ kind = "note", text = `stopped: {string.gsub(result.stopReason, "_", " ")}` }
 		)
 	end
+	if result then
+		M.end_turn(session)
+	end
 	session.changed()
 	return true, nil
+end
+
+--- Ends the turn that started at `session.since` with an entry saying how
+--- long it took and the model that answered, for the transcript's footer.
+function M.end_turn(session: Session)
+	local model: string? = nil
+	for _, item in session.models do
+		if item.id == session.model then
+			model = item.name
+		end
+	end
+	local took = if session.since then greed.now() - session.since else nil
+	table.insert(session.entries, { kind = "turn", took = took, model = model })
 end
 
 --- Keeps `text`, a message you sent while the agent works, and the images

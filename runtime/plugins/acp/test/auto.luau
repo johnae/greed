@@ -283,8 +283,13 @@ test("in auto mode an agent's question is answered for you, saying why", functio
 	t:keys("alt-a")
 	assert(s.auto == true, "alt-a switched it on")
 	t:wait(50)
-	local text = greed.view():buffer():text()
-	assert(string.find(text, "╭─ auto · Small ", 1, true), "the box says so: " .. text)
+	local under = ""
+	for _, mark in greed.view():buffer():decorations("acp-live") do
+		for _, piece in (mark.lines or {})[1] or {} do
+			under ..= piece.text
+		end
+	end
+	assert(string.find(under, "▎ auto · Small · ", 1, true), "the box says so: " .. under)
 	local chosen, _, why = session.ask(s, "Edit a.txt", "edit", ONCE, { `{s.cwd}/a.txt` })
 	assert(chosen == "once" and why == "auto: in the project", tostring(chosen))
 	local last = s.entries[#s.entries]
@@ -308,8 +313,13 @@ test("in auto mode an agent's question is answered for you, saying why", functio
 	assert(not s.auto and greed.option.get("agent-auto") == false, "and back to manual")
 	assert(greed.fs.read(kept) == "manual\n")
 	t:wait(50)
-	text = greed.view():buffer():text()
-	assert(string.find(text, "╭─ Small ", 1, true), "the box says so: " .. text)
+	under = ""
+	for _, mark in greed.view():buffer():decorations("acp-live") do
+		for _, piece in (mark.lines or {})[1] or {} do
+			under ..= piece.text
+		end
+	end
+	assert(string.find(under, "▎ Small · ", 1, true), "the box says so: " .. under)
 end)
 
 test(

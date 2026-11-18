@@ -2084,6 +2084,7 @@ local function prompt(
 			text = `stopped: it took {most} turns without finishing (agent-max-turns); say go on to let it carry on`,
 		})
 	end
+	session.end_turn(s)
 	s.status = "idle"
 	keep(s, state)
 	s.changed()

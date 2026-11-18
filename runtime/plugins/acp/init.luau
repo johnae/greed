@@ -1149,7 +1149,7 @@ greed.command({
 
 greed.command({
 	name = "agent-box",
-	doc = 'Show or hide something at the top of agents\' message boxes (the agent-box option): agent, auto, mode, model, effort, keys, a field added with acp.box_field or "text in quotes"',
+	doc = 'Show or hide something on the line under agents\' message boxes (the agent-box option): agent, auto, mode, model, effort, keys, a field added with acp.box_field or "text in quotes"',
 	args = {
 		{ name = "field", doc = "What to show or hide", type = "rest" },
 	},

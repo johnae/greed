@@ -20,7 +20,8 @@ the repository's history.
 - search: `ref:` finds what mentions a Jira ticket, a GitLab or GitHub issue or MR, a commit or a link, in notes, mail and chat; `space .` on one has `mentioned-elsewhere`
 - watch: watchers, Greed's agent keeping an eye on chat rooms, mentions and DMs from your config: it escalates, drafts replies or answers where allowed, starting in quarantine
 - models: evroc's Think models as a built-in provider, its key from `:secret-set evroc` or `EVROC_API_KEY`
-- agent: choose what the top of the message box shows, with your own fields, and what heads the agent's turns
+- agent: choose what the line under the message box shows, with your own fields, and who the line ending the agent's turns names
+- agent: a quieter transcript: your messages start with `›` on a shaded background, the agent's are plain and each turn ends with who answered and how long it took; the box is a shaded card with a line under it saying the model, what the agent does in a word (`running`, `editing`) and how full its context is, yellow then red; a tool call takes one line however long its command
 - chat: go to any room or person by name (`alt-g`, `space M g`; `alt-enter` opens it beside), write to someone new, join a Mattermost channel or a Matrix room on your server by name, and `:chat` opens the sidebar in every session
 - chat: agents list, read and search your rooms with the `chat` tools, and send a message after asking you every time
 - agent: a proposal is reviewed as one change, accepted or rejected as a whole

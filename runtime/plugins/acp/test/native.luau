@@ -112,9 +112,20 @@ local function untimed(text: string?): string
 	return (string.gsub(text or "", "^<time>[^<]*</time>\n", ""))
 end
 
-local function said(s: any): string
+-- The entries of `s` but the turns' ends, which only the transcript draws.
+local function entries_of(s: any): { any }
 	local out = {}
 	for _, entry in s.entries do
+		if entry.kind ~= "turn" then
+			table.insert(out, entry)
+		end
+	end
+	return out
+end
+
+local function said(s: any): string
+	local out = {}
+	for _, entry in entries_of(s) do
 		table.insert(out, `{entry.kind}: {entry.text or (entry.tool and entry.tool.title) or ""}`)
 	end
 	return table.concat(out, " | ")
@@ -125,6 +136,8 @@ test("a prompt gets the model's answer in the transcript", function(t)
 	local s = ask(t, "hi")
 	assert(s.status == "idle", s.status)
 	assert(said(s) == "user: hi | agent: Hello there", said(s))
+	local ended = s.entries[#s.entries]
+	assert(ended.kind == "turn" and ended.took ~= nil, "the turn ends saying how long it took")
 	assert(untimed(asked[1].said[1].text) == "hi", "the prompt went to the model")
 	assert(#asked[1].tools > 3, "with tools")
 	-- Its own edits ask first and show the change, so it doesn't propose.
@@ -779,7 +792,8 @@ test(
 			),
 			said(s)
 		)
-		local last = s.entries[#s.entries]
+		local kept = entries_of(s)
+		local last = kept[#kept]
 		assert(last.kind == "agent" and last.text == "What would you like instead?", said(s))
 	end
 )
@@ -1460,7 +1474,8 @@ test("near the model's limit, all but the end becomes the model's summary", func
 	local system = asked[5].system :: string
 	assert(string.find(system, "Greed's coding agent", 1, true), "its instructions are fresh")
 	assert(not string.find(system, "three times", 1, true), "and the summary isn't in them")
-	local row = s.entries[#s.entries - 1].tool
+	local kept = entries_of(s)
+	local row = kept[#kept - 1].tool
 	assert(row and row.title == "conversation compacted (5 messages → summary)", said(s))
 	assert(row.output[1] == "they looked at the project three times" and not row.open, "folded")
 	acp.close(s)
@@ -2786,7 +2801,7 @@ test(
 		assert(status_of(s) == "working", status_of(s))
 		send(t, "and this")
 		local text = greed.view():buffer():text()
-		assert(string.find(text, "  You · queued\n  and this\n", 1, true), text)
+		assert(string.find(text, "  queued\n  and this\n", 1, true), text)
 		assert(
 			string.find(bottom_line(), "waiting for anthropic · 1 queued", 1, true),
 			bottom_line()
@@ -3364,7 +3379,13 @@ test(
 		send(t, "/effort high")
 		assert(s.effort == "high", table.concat(t:messages(), " / "))
 		assert(#asked == 0, "nothing sent")
-		assert(string.find(transcript_text(), "· effort high", 1, true), transcript_text())
+		local drawn = ""
+		for _, mark in greed.view():buffer():decorations("acp-live") do
+			for _, piece in (mark.lines or {})[1] or {} do
+				drawn ..= piece.text
+			end
+		end
+		assert(string.find(drawn, "· effort high", 1, true), drawn)
 		send(t, "hi")
 		assert(asked[1].effort == "high", tostring(asked[1].effort))
 		local body = models.tools.body("openai", "m", asked[1], 100)

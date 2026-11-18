@@ -627,3 +627,23 @@ test("ui.markdown keeps code's lines and lines tables up; prose still wraps", fu
 	assert(string.find(said, "| a      |   12 |", 1, true), said)
 	assert(string.find(said, "| longer |    3 |", 1, true), said)
 end)
+
+test("an input card puts a bar and a background on every row, a line under it", function(t)
+	t:buffer("first\nsecond|")
+	local buffer = greed.view():buffer()
+	buffer:set_line_numbers(false)
+	buffer:decorate("card", ui.input_card(buffer, 0, 30, "agent.you", "agent.you.bar", "under it"))
+	local rows = t:draw(40, 5)
+	assert(rows[1] == "▎ first" and rows[2] == "▎ second", rows[1] .. "|" .. rows[2])
+	assert(string.find(rows[3], "^▎ under it"), rows[3])
+	local backgrounds = 0
+	for _, mark in buffer:decorations("card") do
+		if mark.style == "agent.you" and mark.line then
+			backgrounds += 1
+		end
+	end
+	assert(backgrounds == 2, `a background on each row: {backgrounds}`)
+	-- Narrower than the card, the view cuts its line rather than wrapping it.
+	rows = t:draw(12, 5)
+	assert(rows[3] and not string.find(rows[4] or "", "it", 1, true), table.concat(rows, "|"))
+end)

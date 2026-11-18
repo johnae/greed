@@ -152,22 +152,24 @@ type Said = {
 	spin: { from: number, to: number }?,
 }
 
--- Lines being added, and who said them, for the bar beside each: the
--- agent's, or yours with a background too.
-type Lines = { lines: { Said }, speaker: ("user" | "agent")? }
+-- Lines being added, and who said them: yours have a background, the first
+-- with a "›" in front (`opening`).
+type Lines = { lines: { Said }, speaker: ("user" | "agent")?, opening: boolean? }
 
 local function add(out: Lines, text: string, style: string?, from: number?, to: number?): Said
 	local marks: { greed.Mark } = {}
 	if style then
 		table.insert(marks, { from = from or 0, to = to or #text, style = style })
 	end
-	local speaker = out.speaker
-	if speaker then
-		-- Over the first of the two spaces every line of theirs starts with.
-		local bar = if speaker == "user" then "agent.you.bar" else "agent.bar"
-		table.insert(marks, { from = 0, to = 1, style = bar, text = "▍", overlay = true })
-		if speaker == "user" then
-			table.insert(marks, { from = 0, to = #text, style = "agent.you", line = true })
+	if out.speaker == "user" then
+		table.insert(marks, { from = 0, to = #text, style = "agent.you", line = true })
+		if out.opening then
+			-- Over the first of the two spaces every line of yours starts with.
+			table.insert(
+				marks,
+				{ from = 0, to = 1, style = "agent.you.bar", text = "›", overlay = true }
+			)
+			out.opening = false
 		end
 	end
 	local line: Said = { text = text, marks = marks }
@@ -187,13 +189,14 @@ local function body(out: Lines, text: string, style: string?)
 	end
 end
 
--- A heading each time the speaker changes; the agent's text, tools and
--- plans run on under one.
-local function heading(out: Lines, s: Session, who: "user" | "agent")
+-- A gap each time the speaker changes: your message starts with a "›" on
+-- its background; the agent's turn runs on plain, its footer (a "turn"
+-- entry) saying who answered and how long it took.
+local function heading(out: Lines, who: "user" | "agent")
 	if out.speaker ~= who then
 		gap(out)
 		out.speaker = who
-		add(out, `  {if who == "user" then "You" else M.speaker(s)}`, "markup.heading")
+		out.opening = who == "user"
 	end
 end
 
@@ -208,15 +211,23 @@ local function entry_lines(
 ): { Said }
 	local out: Lines = { lines = {}, speaker = speaker }
 	if e.kind == "user" or e.kind == "agent" then
-		heading(out, s, e.kind)
+		heading(out, e.kind)
 		body(out, string.match(e.text, "^(.-)%s*$") or e.text)
 		return out.lines
 	elseif e.kind == "note" then
 		gap(out)
 		add(out, `  {e.text}`, "comment")
 		return out.lines
+	elseif e.kind == "turn" then
+		-- Under the agent's turn, dim: who answered and how long it took.
+		local by = if greed.option.get("agent-heading") == "model"
+			then e.model or s.name
+			else s.name
+		local took = if e.took then ` · {core.time.duration(e.took, true)}` else ""
+		add(out, `  {by}{took}`, "agent.hint")
+		return out.lines
 	end
-	heading(out, s, "agent")
+	heading(out, "agent")
 	if e.kind == "thought" then
 		local id = M.thought_id(index)
 		local first_row = true
@@ -264,12 +275,16 @@ local function entry_lines(
 		local id: string = tool.id
 		local status = tool.status or "pending"
 		local glyph = GLYPH[status] or GLYPH.pending
-		-- A title of several lines, like a script it runs, shows them all
-		-- under its first.
+		-- A title of several lines, like a script it runs, shows its first
+		-- and how many there are; opened, the rest under it.
 		local title_lines = string.split(tool.title, "\n")
+		local more = #title_lines > 1 or #tool.output > 1
 		local text = `  {glyph} {title_lines[1]}`
 		local named = #text
 		local summary = table.concat(tool.detail, " · ")
+		if #title_lines > 1 then
+			summary = `{#title_lines} lines` .. (if summary == "" then "" else ` · {summary}`)
+		end
 		if summary ~= "" then
 			text ..= ` · {summary}`
 		end
@@ -277,7 +292,7 @@ local function entry_lines(
 		if tool.helper then
 			text ..= " · enter shows it"
 		end
-		if #tool.output > 1 then
+		if more then
 			text ..= if tool.open then " ▾" else " ▸"
 		end
 		local glyph_at = { from = 2, to = 2 + #glyph }
@@ -287,18 +302,21 @@ local function entry_lines(
 			to = glyph_at.to,
 			style = GLYPH_STYLE[status] or "agent.hint",
 		})
+		-- One row however long: the view cuts it at its edge, so it's the
+		-- same at any width.
+		table.insert(line.marks, { from = 0, to = #text, style = "", nowrap = true })
 		if status == "in_progress" then
 			line.spin = glyph_at
 		end
 		local value: Value = { tool = id }
-		if tool.helper or #tool.output > 1 then
+		if tool.helper or more then
 			value.row = id
 		end
 		line.value = value
-		for i = 2, #title_lines do
-			add(out, `    {title_lines[i]}`).value = { tool = id }
-		end
 		if tool.open then
+			for i = 2, #title_lines do
+				add(out, `    {title_lines[i]}`).value = { tool = id }
+			end
 			for _, output in tool.output do
 				-- An edit's change shows as a diff: gone lines and new ones.
 				local diff = if tool.kind == "edit" then string.sub(output, 1, 2) else ""
@@ -352,6 +370,8 @@ local function version(s: Session, index: number, e: any, speaker: string?): str
 		end
 	elseif e.kind == "permission" then
 		v ..= `|{e.chosen}|{e.permission.title}`
+	elseif e.kind == "turn" then
+		v ..= `|{e.took}|{e.model}|{greed.option.get("agent-heading")}`
 	else
 		v ..= `|{#e.text}|{string.sub(e.text, -16)}`
 	end
@@ -437,7 +457,8 @@ local function history(s: Session): { core.UiNode }
 			if #queued > 0 or images then
 				gap(out)
 				out.speaker = "user"
-				add(out, "  You · queued", "comment")
+				out.opening = true
+				add(out, "  queued", "comment")
 				if #queued > 0 then
 					body(out, table.concat(queued, "\n\n"), "comment")
 				end
@@ -454,7 +475,7 @@ end
 
 greed.option.define({
 	name = "agent-box",
-	doc = "What the top of an agent's message box shows, in the order it gives way when space is short: "
+	doc = "What the line under an agent's message box shows before its status, in the order it gives way when space is short: "
 		.. "agent, auto (only when Greed answers its questions), mode (when not the one it started in), model, effort, keys, "
 		.. 'fields added with acp.box_field and "text in quotes"',
 	default = "auto model mode effort keys",
@@ -475,7 +496,7 @@ greed.option.define({
 
 greed.option.define({
 	name = "agent-heading",
-	doc = 'What heads each of the agent\'s turns in its transcript: its "model", falling back to the agent\'s name, or the agent\'s "name"',
+	doc = 'Who the line under each of the agent\'s turns says answered: its "model", falling back to the agent\'s name, or the agent\'s "name"',
 	default = "model",
 	choices = { "model", "name" },
 })
@@ -567,12 +588,11 @@ function M.speaker(s: Session): string
 	return s.name
 end
 
---- The box's top line for `s`, `cells` wide, and its decorations from
---- where it starts: what `agent-box` asks for of the agent, whether Greed
---- answers its questions (auto), its mode, model, effort and the fields
---- added on the left, and the keys to send and stop on the right. When
---- they don't all fit, the keys go first, then the others from the last.
-function M.top(s: Session, cells: number): (string, { greed.Mark })
+-- What the box's line says of `s` before its status, as `agent-box` asks:
+-- the agent, whether Greed answers its questions (auto), its mode, model,
+-- effort and the fields added, each a field's name and its text; and
+-- whether to show the keys to send and stop.
+local function box_text(s: Session): ({ { field: string, text: string } }, boolean)
 	local text: { [string]: string? } = {
 		agent = s.name,
 		auto = if auto.on(s) then "auto" else nil,
@@ -580,70 +600,20 @@ function M.top(s: Session, cells: number): (string, { greed.Mark })
 		model = name_in(s.models, s.model),
 		effort = if s.effort then `effort {s.effort}` else nil,
 	}
-	local shown: { string } = {}
-	local hints = ""
+	local shown: { { field: string, text: string } } = {}
+	local keys = false
 	for _, field in M.box_fields() do
 		if field == "keys" then
-			hints = HINTS
+			keys = true
 		elseif not table.find(BOX_FIELDS, field) then
 			text[field] = custom_text(s, field)
 		end
-		if text[field] then
-			table.insert(shown, field)
+		local said = text[field]
+		if said then
+			table.insert(shown, { field = field, text = said })
 		end
 	end
-	local function named(): string
-		local words = {}
-		for _, field in shown do
-			table.insert(words, text[field] :: string)
-		end
-		return table.concat(words, " · ")
-	end
-	-- The rule around them: "╭─ " and " " around the name, " " and " ─╮"
-	-- around the hints, "─╮" without them, and "╭─" alone with no name.
-	local function room(): number
-		local name = named()
-		return cells
-			- width(name)
-			- width(hints)
-			- (if name == "" then 2 else 4)
-			- (if hints == "" then 2 else 4)
-	end
-	if room() < 1 then
-		hints = ""
-	end
-	while room() < 1 and #shown > 1 do
-		table.remove(shown)
-	end
-	local name = named()
-	local line = if name == "" then "╭─" else `╭─ {name} `
-	line ..= string.rep("─", math.max(room(), 1))
-	local styles: { greed.Mark } = { { from = 0, to = #line, style = "agent.box" } }
-	if name ~= "" then
-		table.insert(
-			styles,
-			{ from = #"╭─ ", to = #"╭─ " + #name, style = "agent.box.title" }
-		)
-		local at = #"╭─ "
-		for _, field in shown do
-			local word = text[field] :: string
-			if field == "auto" then
-				table.insert(styles, { from = at, to = at + #word, style = "agent.auto" })
-			end
-			at += #word + #" · "
-		end
-	end
-	if hints ~= "" then
-		local start = #line + 1
-		line ..= ` {hints} ─╮`
-		table.insert(styles, { from = start, to = start + #hints, style = "agent.hint" })
-		table.insert(styles, { from = start + #hints, to = #line, style = "agent.box" })
-	else
-		local start = #line
-		line ..= "─╮"
-		table.insert(styles, { from = start, to = #line, style = "agent.box" })
-	end
-	return line, styles
+	return shown, keys
 end
 
 --- A count of tokens in a few characters: 950, 14.2k, 200k, 1.1M.
@@ -709,50 +679,79 @@ local function moment(s: Session): number?
 	return if busy(s) and core.effects.enabled() then greed.now() else nil
 end
 
---- The box's bottom line for `s`, `cells` wide, as pieces with styles: what
---- the agent is doing and for how long on the left, the tokens it has used
---- on the right. `now` is the clock, for animations; nil draws them still.
---- `hint` says how to answer while the agent waits for you.
+-- What the status says the agent does while a tool of each kind (as ACP
+-- names them) runs.
+local DOING: { [string]: string } = {
+	read = "reading",
+	edit = "editing",
+	delete = "deleting",
+	move = "moving",
+	search = "searching",
+	execute = "running",
+	think = "thinking",
+	fetch = "fetching",
+}
+
+-- The kind of the tool `s` runs now, if it said.
+local function running_kind(s: Session): string?
+	local tools = s.tools
+	if tools == nil then
+		return nil
+	end
+	for _, tool in tools do
+		if tool.title == s.tool and tool.status ~= "completed" and tool.status ~= "failed" then
+			return tool.kind
+		end
+	end
+	return nil
+end
+
+-- How full the context is, as a style: plain, then yellow, then red.
+local function fill_style(used: number, window: number): string
+	local share = used / window
+	return if share >= 0.8
+		then "agent.failed"
+		elseif share >= 0.5 then "agent.working"
+		else "agent.hint"
+end
+
+--- The line under the box for `s`, `cells` wide, as pieces with styles:
+--- what `agent-box` asks for (as `box_text` says) and what the agent is
+--- doing, for how long, on the left; the keys and how much of its context
+--- it has used on the right. When they don't all fit, the keys go first,
+--- then the fields from the last, then the context. `now` is the clock,
+--- for animations; nil draws them still. `hint` says how to answer while
+--- the agent waits for you.
 function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any }
-	local left: { any } = {}
+	local status: { any } = {}
 	local function piece(text: string, style: string)
-		table.insert(left, { text = text, style = style })
+		table.insert(status, { text = text, style = style })
 	end
 	-- What follows what it's doing: how many messages wait, and for how long
 	-- it's been at it.
 	local queued = if s.queued and #s.queued > 0 then #s.queued elseif s.queued_images then 1 else 0
 	local after = (if queued > 0 then ` · {queued} queued` else "")
 		.. (if busy(s) and s.since then ` · {elapsed(s.since)}` else "")
-	local right = ""
-	if s.tokens then
-		right = if s.window
-			then `{M.tokens(s.tokens)} / {M.tokens(s.window)} tokens`
-			else `{M.tokens(s.tokens)} tokens`
-	end
 	if s.status == "working" then
 		piece(if now then spinner_frame(now) else "●", "agent.working")
-		piece(" ", "agent.box")
+		piece(" ", "agent.hint")
 		local helpers = if s.helpers then #s.helpers else 0
+		-- A word for what it does, never a whole command: the tool's row
+		-- above says what that is.
 		local doing = if helpers > 0
 			then `waiting for {helpers} {if helpers == 1 then "helper" else "helpers"}`
-			elseif s.tool then session.first_line(s.tool)
+			elseif s.tool then DOING[running_kind(s) or ""] or "working"
 			else s.doing or "working"
-		-- A long command is cut to what fits beside the rest, the tokens
-		-- going first when there's little room.
-		local spare = cells - 9 - width(after)
-		if right ~= "" and spare - width(right) - 2 >= 20 then
-			spare -= width(right) + 2
-		end
-		doing = core.text.clip(doing, math.max(spare, 10))
+		doing = core.text.clip(doing, math.max(cells - 9 - width(after), 10))
 		local lit = if now then shimmer(doing, (now % 1600) / 1600) else nil
 		if lit then
-			table.move(lit, 1, #lit, #left + 1, left)
+			table.move(lit, 1, #lit, #status + 1, status)
 		else
 			piece(doing, "agent.working")
 		end
 	elseif s.status == "waiting" then
 		local level = if now then (math.sin(now / 250) + 1) / 2 * 0.6 else 0
-		table.insert(left, chip(" waiting for you ", level))
+		table.insert(status, chip(" waiting for you ", level))
 		if hint and hint ~= "" then
 			piece(` {hint}`, "agent.hint")
 		end
@@ -768,26 +767,62 @@ function M.bottom(s: Session, cells: number, now: number?, hint: string?): { any
 	if after ~= "" then
 		piece(after, "agent.hint")
 	end
+	local fields, keys = box_text(s)
+	local hints = if keys then HINTS else ""
+	local context, context_style = "", "agent.hint"
+	if s.tokens then
+		context = if s.window
+			then `{M.tokens(s.tokens)} ({math.floor(s.tokens / s.window * 100 + 0.5)}%)`
+			else `{M.tokens(s.tokens)} tokens`
+		if s.window then
+			context_style = fill_style(s.tokens, s.window)
+		end
+	end
 	local used = 0
-	for _, p in left do
+	for _, p in status do
 		used += width(p.text)
 	end
-	-- The rule after the left: "╰─ " and " " around it, then " " and " ─╯"
-	-- around the right, or "─╯" without it.
+	-- The card's bar takes two cells, and two keep the right off the left.
 	local function room(): number
-		return cells - used - width(right) - (if right == "" then 6 else 8)
+		local n = cells - 2 - used
+		for _, f in fields do
+			n -= width(f.text) + 3
+		end
+		local right = width(hints)
+			+ width(context)
+			+ (if hints ~= "" and context ~= "" then 3 else 0)
+		return n - (if right > 0 then right + 2 else 0)
 	end
-	if room() < 1 then
-		right = ""
+	if room() < 0 then
+		hints = ""
 	end
-	local out: { any } = { { text = "╰─ ", style = "agent.box" } }
-	table.move(left, 1, #left, 2, out)
-	table.insert(out, { text = " " .. string.rep("─", math.max(room(), 1)), style = "agent.box" })
-	if right ~= "" then
-		table.insert(out, { text = ` {right}`, style = "agent.hint" })
-		table.insert(out, { text = " ─╯", style = "agent.box" })
-	else
-		table.insert(out, { text = "─╯", style = "agent.box" })
+	while room() < 0 and #fields > 0 do
+		table.remove(fields)
+	end
+	if room() < 0 then
+		context = ""
+	end
+	local out: { any } = {}
+	for _, f in fields do
+		table.insert(
+			out,
+			{ text = f.text, style = if f.field == "auto" then "agent.auto" else "agent.box.title" }
+		)
+		table.insert(out, { text = " · ", style = "agent.hint" })
+	end
+	table.move(status, 1, #status, #out + 1, out)
+	local gap = room()
+	if hints ~= "" or context ~= "" then
+		table.insert(out, { text = string.rep(" ", gap + 2) })
+		if hints ~= "" then
+			table.insert(out, { text = hints, style = "agent.hint" })
+			if context ~= "" then
+				table.insert(out, { text = " · ", style = "agent.hint" })
+			end
+		end
+		if context ~= "" then
+			table.insert(out, { text = context, style = context_style })
+		end
 	end
 	return out
 end
@@ -826,13 +861,15 @@ end
 
 -- Per transcript buffer: its session, the lines nobody said
 -- (`plain_lines`), the shell blocks in it as last drawn, the box's head
--- (its top line, the row of choices and their marks) and whether its
+-- (its size, the row of choices and their marks) and whether its
 -- status is ticking. Its view (`core.ui`) knows what each line is.
 local shown: { [number]: Session } = {}
 local plains: { [number]: { [number]: boolean } } = {}
 local blocks: { [number]: { code.Code } } = {}
-local heads: { [number]: { size: number, top: number, marks: { greed.Mark } } } = {}
-local ticking: { [number]: boolean } = {}
+local heads: { [number]: { size: number, marks: { greed.Mark } } } = {}
+-- The status clock running for each transcript buffer, with its buffer; a
+-- newer clock put in its place stops the old one.
+local ticking: { [number]: { buffer: greed.Buffer } } = {}
 -- The plugin's own handle on each transcript buffer, for drawing above the
 -- box, which is read-only to you.
 local owned: { [number]: greed.Buffer } = {}
@@ -995,11 +1032,14 @@ local function live(buffer: greed.Buffer, s: Session, now: number?)
 	drafts[id] = draft
 	bind(buffer, draft)
 	local cells = box_width(buffer)
-	local marks = ui.input_sides(
+	-- A card from the box's top line down, on the background your messages
+	-- have, the line under it saying what the agent does.
+	local marks = ui.input_card(
 		buffer,
-		buffer:line_of(start) + 1,
+		buffer:line_of(start),
 		cells,
-		"agent.box",
+		"agent.you",
+		"agent.you.bar",
 		M.bottom(s, cells, now, question.hint(s, draft)) :: greed.MarkLine
 	)
 	if now then
@@ -1026,11 +1066,12 @@ local function tick(buffer: greed.Buffer, s: Session)
 	if ticking[id] or not busy(s) then
 		return
 	end
-	ticking[id] = true
+	local clock = { buffer = buffer }
+	ticking[id] = clock
 	greed.spawn(function()
 		-- It starts from a draw, which counted this second.
 		local second = greed.now() // SECOND_MS
-		while busy(s) and shown[id] == s do
+		while busy(s) and shown[id] == s and ticking[id] == clock do
 			local animate = core.effects.enabled()
 			local now = greed.now()
 			-- A thought coming in counts its time in the history.
@@ -1041,6 +1082,9 @@ local function tick(buffer: greed.Buffer, s: Session)
 			pcall(live, buffer, s, if animate then now else nil)
 			greed.sleep(if animate then FRAME_MS else SECOND_MS)
 		end
+		if ticking[id] ~= clock then
+			return
+		end
 		ticking[id] = nil
 		if shown[id] == s then
 			pcall(live, buffer, s, nil)
@@ -1048,13 +1092,13 @@ local function tick(buffer: greed.Buffer, s: Session)
 	end)
 end
 
--- The box's head for `s` in `buffer`, `cells` wide: its top line, the row
--- of choices for a question under it and the images pasted for your next
--- message. What it was is kept for drawing the choices after.
+-- The box's head for `s` in `buffer`, `cells` wide: an empty line (the
+-- card's first row, which ends the history), the row of choices for a
+-- question under it and the images pasted for your next message. What it
+-- was is kept for drawing the choices after.
 local function head(buffer: greed.Buffer, s: Session, cells: number): { Said }
-	local top, top_styles = M.top(s, cells)
-	local out: { Said } = { { text = top, marks = top_styles } }
-	local size = #top
+	local out: { Said } = { { text = "", marks = {} } }
+	local size = 0
 	local row, row_marks = question.row(buffer, s, cells)
 	if row then
 		table.insert(out, { text = row, marks = {} })
@@ -1066,7 +1110,7 @@ local function head(buffer: greed.Buffer, s: Session, cells: number): { Said }
 		table.insert(out, { text = chips, marks = {} })
 		size += 1 + #chips
 	end
-	heads[buffer:id()] = { size = size, top = #top, marks = row_marks }
+	heads[buffer:id()] = { size = size, marks = row_marks }
 	return out
 end
 
@@ -1093,7 +1137,7 @@ local function drawn(buffer: greed.Buffer, view: core.UiView)
 	local stop = view:input_start() - 1
 	local at = stop - made.size
 	buffer:decorate("acp-prompt", { { from = at, to = stop, style = "agent.box" } })
-	local row_at = at + made.top + 1
+	local row_at = at + 1
 	local marks: { greed.Mark } = {}
 	for _, mark in made.marks do
 		local moved = table.clone(mark)
@@ -1312,6 +1356,21 @@ greed.on("mode.changed", function()
 		local s = shown[buffer:id()]
 		if s then
 			live(buffer, s, moment(s))
+		end
+	end
+end)
+
+-- Effects turned on or off: each status clock starts again at its new pace,
+-- rather than at the end of a second it was sleeping.
+greed.on("option.changed", function(event: greed.OptionChanged)
+	if event.name ~= "effects" then
+		return
+	end
+	for id, clock in table.clone(ticking) do
+		ticking[id] = nil
+		local s = shown[id]
+		if s and clock.buffer:valid() then
+			tick(clock.buffer, s)
 		end
 	end
 end)
