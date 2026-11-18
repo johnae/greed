@@ -1556,8 +1556,8 @@ impl<M: Measure> Renderer<M> {
         let cursor_heights = self.heights(editor, view, cursor.line, width);
         // On the buffer's last row, what's drawn under it stays in sight
         // too, like the bottom of a box around a prompt.
-        let tail = if cursor.line + 1 == text.len_lines() && cursor.row + 1 == cursor_heights.len()
-        {
+        let at_end = cursor.line + 1 == text.len_lines() && cursor.row + 1 == cursor_heights.len();
+        let tail = if at_end {
             virtual_lines(editor, view, cursor.line).count()
         } else {
             0
@@ -1584,7 +1584,11 @@ impl<M: Measure> Renderer<M> {
                 break;
             }
         }
-        if seen <= height {
+        // At the end, the view doesn't keep empty rows below it while there
+        // are rows above to fill them, as after a box around a prompt got
+        // shorter: it scrolls back so the end is at the bottom.
+        let room_at_end = at_end && seen < height && (current.line, current.row) != (0, 0);
+        if seen <= height && !room_at_end {
             return current;
         }
 

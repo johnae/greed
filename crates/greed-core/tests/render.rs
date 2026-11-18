@@ -227,6 +227,52 @@ fn the_view_scrolls_to_keep_the_cursor_visible() {
 }
 
 #[test]
+fn at_the_end_the_view_fills_rows_its_buffer_gave_up_and_elsewhere_stays() {
+    let text: Vec<String> = (0..50).map(|n| format!("line {n}")).collect();
+    let mut ed = editor(&format!("|{}", text.join("\n")));
+    let view = ed.focus();
+    let len = |ed: &Editor| ed.buffer(ed.view(view).buffer).text().len_bytes();
+    let line_start =
+        |ed: &Editor, line: usize| ed.buffer(ed.view(view).buffer).text().line_to_byte(line);
+    // The lines from `first` on go, as a box around a prompt gets shorter.
+    let cut = |ed: &mut Editor, first: usize| {
+        let (from, to) = (line_start(ed, first) - 1, len(ed));
+        let changes =
+            greed_text::ChangeSet::from_changes(len(ed), [(from, to, None::<&str>)]).unwrap();
+        ed.apply(
+            view,
+            changes,
+            greed_text::Author::User(ClientId(1)),
+            None,
+            None,
+        )
+        .unwrap();
+    };
+
+    ed.view_mut(view).selection = Selection::point(len(&ed));
+    frame(&mut ed, 20, 5);
+    assert_eq!(ed.view(view).scroll.line, 46);
+    cut(&mut ed, 47);
+    let f = frame(&mut ed, 20, 5);
+    assert_eq!(ed.view(view).scroll.line, 43, "the end back at the bottom");
+    assert_eq!(rows(&f).last().map(String::as_str), Some("47 line 46"));
+
+    // With the cursor up in the text, the view stays where it is.
+    let mut ed = editor(&format!("|{}", text.join("\n")));
+    assert_eq!(ed.focus(), view, "the closures above name this view");
+    ed.view_mut(view).selection = Selection::point(len(&ed));
+    frame(&mut ed, 20, 5);
+    ed.view_mut(view).selection = Selection::point(line_start(&ed, 47));
+    cut(&mut ed, 49);
+    frame(&mut ed, 20, 5);
+    assert_eq!(
+        ed.view(view).scroll.line,
+        46,
+        "empty below the end, as it was"
+    );
+}
+
+#[test]
 fn a_scroll_margin_keeps_rows_in_sight_around_the_cursor_but_the_buffers_ends() {
     let text: Vec<String> = (0..50).map(|n| format!("line {n}")).collect();
     let mut ed = editor(&format!("|{}", text.join("\n")));

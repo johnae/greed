@@ -225,6 +225,27 @@ test("the box grows with what you write and keeps its sides", function(t)
 	assert(utf8.len(top) == utf8.len(side), `{top}\n{side}`)
 end)
 
+test("a box that grew and emptied again gives the transcript its rows back", function(t)
+	local s = start(t)
+	send(t, s, "long")
+	local before = screen(t)
+	assert(string.find(before, "And a closing line.", 1, true), before)
+	local lines = {}
+	for n = 1, 20 do
+		table.insert(lines, `l i n e space {n % 10} enter`)
+	end
+	type_in(t, table.concat(lines, " "))
+	assert(not string.find(screen(t), "And a closing line.", 1, true), "the box filled the view")
+	t:keys("i")
+	for _ = 1, 160 do
+		t:keys("backspace")
+	end
+	t:keys("esc")
+	local after = screen(t)
+	assert(after == before, after)
+	acp.stop(s)
+end)
+
 test("in a narrow view the keys give way first", function(t)
 	start(t)
 	local drawn = screen(t, 40)

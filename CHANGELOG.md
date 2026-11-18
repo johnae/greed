@@ -49,6 +49,7 @@ the repository's history.
 - gui: rows that only moved, like those under a line you add, are drawn from the frame before too
 - gui: spaces skip the glyph work, which most cells did for nothing, and finding a line shaped before copies nothing
 - gui: `greed ssh --gui` says in the window what it's doing while it connects, like putting greed on the other machine and how many MB of it went; the window stayed shut until then, which looked stuck
+- agents: the box you write in no longer leaves the transcript scrolled away once it shrinks again, as after deleting or sending a long message; with the cursor at the end, a view now fills the rows below it
 - typing within a line draws color swatches again only on that line, and TODO comments look for fewer words; together they were most of what each key's edit cost plugins
 - ssh: `greed ssh` compresses what goes over the connection with zstd, some 50 times less to send for typing and moving around; a session's machine with an older greed goes on uncompressed
 - chat: on a machine where you haven't signed in to chat, searching and the agent's chat tools say so; they used to start an empty chat service and find nothing

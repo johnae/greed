@@ -14,6 +14,7 @@
 #   context      says whether editor context came with the prompt
 #   servers      says what MCP servers it was given
 #   markdown     says something in Markdown: bold, code and a list
+#   long         says a long paragraph, a table and a list in Markdown
 #   code         says to run two shell blocks, one of them risky
 #   pictures     says whether an image came with the prompt, and its file
 #   twice        asks two questions, one after the other
@@ -180,6 +181,10 @@ while IFS= read -r line; do
 			;;
 		code*)
 			say 'Run this:\n\n```sh\necho from the chat\n```\n\nor this:\n\n```console\n$ kill 999999\n```'
+			turn_done "$id" end_turn
+			;;
+		long*)
+			say 'Here is a fairly long paragraph that will need to wrap across several lines when the pane is narrow, with **bold words** and `inline code` in the middle of it.\n\n| Name | Value | Notes |\n|---|---|---|\n| alpha | 1 | the first one |\n| beta | 22 | the second, a bit longer |\n\n- one item that is also rather long and wraps\n- two\n\nAnd a closing line.'
 			turn_done "$id" end_turn
 			;;
 		markdown*)
