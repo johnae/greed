@@ -46,6 +46,7 @@ the repository's history.
 - statusline: the function the cursor is in is looked up once per edit or move, not for every frame; it was most of the status line's time, a few ms a key
 - render: drawing looks only at the marks in sight, line by line, and lays each line out once a frame; a terminal with colored scrollback took up to 0.7 s a frame, and a full screen program redrawing at 50 fps is drawn in half the time
 - gui: the window draws again only the rows whose text changed, reusing the rest from the frame before, so a key's frame takes about a third of the time it did
+- gui: rows that only moved, like those under a line you add, are drawn from the frame before too
 - ssh: `greed ssh` has ssh compress the connection, about 30 times less to send for typing and moving around
 - chat: on a machine where you haven't signed in to chat, searching and the agent's chat tools say so; they used to start an empty chat service and find nothing
 - chat: a room left open in a session nobody is attached to stays unread and alerts, and Mattermost asks for your rooms at most every two seconds rather than on every post

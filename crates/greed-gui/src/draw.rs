@@ -3,6 +3,10 @@
 //! shaped cluster is put at its own cell, so a glyph from a fallback font
 //! or a ligature never pushes the rest of the line off the grid.
 
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+use std::rc::Rc;
+
 use bytemuck::{Pod, Zeroable};
 use cosmic_text::PhysicalGlyph;
 use greed_core::CursorShape;
@@ -260,18 +264,24 @@ pub fn build(
     build_with(grid, cursor, chrome, (fonts, atlas, &mut drawn), palette)
 }
 
-/// Each row's text as drawn last, to draw again for a row drawn the same:
-/// shaping and placing glyphs is most of the work, and most frames change
-/// a row or two.
+/// Each row's text as drawn last, to draw again for a row drawn the same,
+/// where it was or moved by scrolling: shaping and placing glyphs is most of
+/// the work, and most frames change a row or two.
 #[derive(Default)]
 pub struct TextRows {
     /// The atlas the quads point into, as how often it was cleared.
     atlas: u64,
-    rows: Vec<Option<TextRow>>,
+    /// The rows of the frame before, and of this one so far, by row.
+    before: Vec<Option<Rc<TextRow>>>,
+    now: Vec<Option<Rc<TextRow>>>,
+    /// The rows of the frame before by their text's hash, made when a row
+    /// isn't where it was.
+    moved: Option<HashMap<u64, usize>>,
 }
 
-/// What a row's text was drawn from, and its quads.
+/// What a row's text was drawn from, and its quads, from the row's top.
 struct TextRow {
+    hash: u64,
     cells: Vec<Cell>,
     looks: Vec<Look>,
     heights: Vec<usize>,
@@ -282,6 +292,30 @@ struct TextRow {
 }
 
 impl TextRow {
+    /// Draws `row`'s text as [`text_row`] does, its quads from its top.
+    fn new(
+        (row, looks): (&[Cell], &[Look]),
+        at: &RowAt,
+        (fonts, atlas): (&mut Fonts, &mut Atlas),
+    ) -> Result<Self, Full> {
+        let mut quads = Vec::new();
+        text_row(row, looks, at, fonts, atlas, &mut quads)?;
+        let top = at.y as f32 * fonts.cell_h;
+        for quad in &mut quads {
+            quad.pos[1] -= top;
+        }
+        Ok(TextRow {
+            hash: text_hash(row),
+            cells: row.to_vec(),
+            looks: looks.to_vec(),
+            heights: at.heights.to_vec(),
+            xs: at.columns.row(at.y).map(<[f32]>::to_vec),
+            outlined: at.outlined.to_vec(),
+            hidden: at.hidden.to_vec(),
+            quads,
+        })
+    }
+
     fn drew(&self, cells: &[Cell], looks: &[Look], at: &RowAt) -> bool {
         self.cells == cells
             && self.looks == looks
@@ -292,9 +326,51 @@ impl TextRow {
     }
 }
 
+/// A hash of a row's text, to find it again where it moved.
+fn text_hash(cells: &[Cell]) -> u64 {
+    let mut hasher = std::hash::DefaultHasher::new();
+    for cell in cells {
+        cell.text.hash(&mut hasher);
+        cell.scale.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 impl TextRows {
+    /// Starts a frame: what the last one drew is what this one can reuse.
+    fn start(&mut self, atlas: &Atlas) {
+        if self.atlas == atlas.cleared {
+            self.before = std::mem::take(&mut self.now);
+        } else {
+            self.atlas = atlas.cleared;
+            self.before.clear();
+            self.now.clear();
+        }
+        self.moved = None;
+    }
+
+    /// The row the frame before drew as `row` is drawn now, at its own
+    /// row or another.
+    fn find(&mut self, row: &[Cell], looks: &[Look], at: &RowAt) -> Option<Rc<TextRow>> {
+        if let Some(Some(drawn)) = self.before.get(at.y)
+            && drawn.drew(row, looks, at)
+        {
+            return Some(drawn.clone());
+        }
+        let before = &self.before;
+        let moved = self.moved.get_or_insert_with(|| {
+            before
+                .iter()
+                .enumerate()
+                .filter_map(|(y, drawn)| Some((drawn.as_ref()?.hash, y)))
+                .collect()
+        });
+        let drawn = self.before[*moved.get(&text_hash(row))?].as_ref()?;
+        drawn.drew(row, looks, at).then(|| drawn.clone())
+    }
+
     /// Draws `row`'s text as [`text_row`] does, or puts in the quads it
-    /// made for that row drawn the same way last time.
+    /// made for a row drawn the same way last time.
     fn draw(
         &mut self,
         (row, looks): (&[Cell], &[Look]),
@@ -302,30 +378,20 @@ impl TextRows {
         (fonts, atlas): (&mut Fonts, &mut Atlas),
         out: &mut Vec<Instance>,
     ) -> Result<(), Full> {
-        if self.atlas != atlas.cleared {
-            self.atlas = atlas.cleared;
-            self.rows.clear();
+        let top = at.y as f32 * fonts.cell_h;
+        let drawn = match self.find(row, looks, at) {
+            Some(drawn) => drawn,
+            None => Rc::new(TextRow::new((row, looks), at, (fonts, atlas))?),
+        };
+        out.extend(drawn.quads.iter().map(|quad| {
+            let mut quad = *quad;
+            quad.pos[1] += top;
+            quad
+        }));
+        if self.now.len() <= at.y {
+            self.now.resize_with(at.y + 1, || None);
         }
-        if self.rows.len() <= at.y {
-            self.rows.resize_with(at.y + 1, || None);
-        }
-        if let Some(drawn) = &self.rows[at.y]
-            && drawn.drew(row, looks, at)
-        {
-            out.extend_from_slice(&drawn.quads);
-            return Ok(());
-        }
-        let first = out.len();
-        text_row(row, looks, at, fonts, atlas, out)?;
-        self.rows[at.y] = Some(TextRow {
-            cells: row.to_vec(),
-            looks: looks.to_vec(),
-            heights: at.heights.to_vec(),
-            xs: at.columns.row(at.y).map(<[f32]>::to_vec),
-            outlined: at.outlined.to_vec(),
-            hidden: at.hidden.to_vec(),
-            quads: out[first..].to_vec(),
-        });
+        self.now[at.y] = Some(drawn);
         Ok(())
     }
 }
@@ -338,6 +404,7 @@ pub fn build_with(
     (fonts, atlas, drawn): (&mut Fonts, &mut Atlas, &mut TextRows),
     palette: &Palette,
 ) -> Result<Scene, Full> {
+    drawn.start(atlas);
     let (cw, ch) = (fonts.cell_w, fonts.cell_h);
     let background = look(&chrome.text, palette).bg;
     let mut looks: Vec<Vec<Look>> = grid
@@ -1215,13 +1282,16 @@ mod tests {
         let first = vec![cells("fn main() {"), cells("    one();"), cells("}")];
         let mut second = first.clone();
         second[1] = cells("    two();");
+        let scrolled = vec![cells("    two();"), cells("}"), cells("fn main() {")];
         let cursor = Some((Position { col: 4, row: 1 }, CursorShape::Block));
-        // A row changed, the cursor on it, then the atlas starting over.
+        // A row changed, the cursor on it, then the atlas starting over, then
+        // rows moving up.
         for (grid, clear) in [
             (&first, false),
             (&first, false),
             (&second, false),
             (&second, true),
+            (&scrolled, false),
         ] {
             if clear {
                 atlas.clear();
