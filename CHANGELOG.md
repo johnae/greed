@@ -33,6 +33,7 @@ the repository's history.
 ### Fixed
 
 - agent: the transcript can't be scrolled past its end, which left its box up in the middle of the pane
+- agent: a resumed Claude session shows your messages as you wrote them, without the editor context Greed sent along, and where you stopped it as a note
 - agent: a call the agent gives up on takes back what it proposed
 - agent: a newer proposal for the same text replaces the one waiting there
 - agent: Claude Code sees the chat tools after switching their group on; one tool's empty list of required arguments made it drop the whole group

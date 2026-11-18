@@ -233,6 +233,22 @@ function M.pinned_block(text: string?): string
 		.. "\n</pinned-context>"
 end
 
+--- `text` without the blocks `describe` and `pinned_block` add, as when
+--- an agent replays a message of yours from a saved session: what you
+--- wrote, as you saw it.
+function M.without_blocks(text: string): string
+	local found = 0
+	for _, tag in { "editor%-context", "pinned%-context" } do
+		local n
+		text, n = string.gsub(text, `%s*<{tag}>.-</{tag}>%s*`, "\n\n")
+		found += n
+	end
+	if found == 0 then
+		return text
+	end
+	return (string.gsub(string.gsub(text, "^%s+", ""), "%s+$", ""))
+end
+
 --- A block of what the user pinned, read now; nil when nothing is.
 function M.pinned(): string?
 	local text = M.pinned_text()

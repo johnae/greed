@@ -477,7 +477,17 @@ local function update(session: Session, u: any)
 		M.append(session, "thought", text_of(u.content))
 		session.doing = "thinking"
 	elseif kind == "user_message_chunk" then
-		M.append(session, "user", text_of(u.content))
+		-- A message of yours it replays comes with the blocks Greed sent too.
+		-- Claude Code keeps where you stopped it as a message of yours.
+		local said: string = agent.context.without_blocks(text_of(u.content))
+		local stopped, rest = string.match(said, "^(%[Request interrupted by user[^%]]*%])%s*(.*)$")
+		if stopped then
+			table.insert(session.entries, { kind = "note", text = "stopped" })
+			said = rest or ""
+		end
+		if said ~= "" then
+			M.append(session, "user", said)
+		end
 	elseif kind == "available_commands_update" then
 		local commands: { Command } = {}
 		for _, c in
