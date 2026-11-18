@@ -2,6 +2,7 @@
 //! missing glyphs) and rasterizing glyphs into an atlas the GPU draws from.
 
 use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
 use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, LayoutGlyph, Metrics, Shaping, Style, SwashCache,
@@ -215,6 +216,42 @@ impl Installed {
     }
 }
 
+/// A shaped line: its glyphs, and the baseline from its top.
+pub type Line = (Rc<[LayoutGlyph]>, f32);
+
+/// Lines shaped before, by style, then text, so finding one needs no key
+/// made for it.
+#[derive(Default)]
+struct Shaped {
+    by_style: HashMap<TextStyle, HashMap<Box<str>, Line>>,
+    count: usize,
+}
+
+impl Shaped {
+    /// How many lines are kept: a few screens' worth, then they start over.
+    const KEPT: usize = 4096;
+
+    fn get(&self, text: &str, style: TextStyle) -> Option<Line> {
+        self.by_style.get(&style)?.get(text).cloned()
+    }
+
+    fn insert(&mut self, text: &str, style: TextStyle, shaped: Line) {
+        if self.count >= Self::KEPT {
+            self.clear();
+        }
+        self.count += 1;
+        self.by_style
+            .entry(style)
+            .or_default()
+            .insert(text.into(), shaped);
+    }
+
+    fn clear(&mut self) {
+        self.by_style.clear();
+        self.count = 0;
+    }
+}
+
 /// The monospaced font text is drawn in, and the cell it sets.
 pub struct Fonts {
     system: FontSystem,
@@ -236,7 +273,7 @@ pub struct Fonts {
     /// Lines shaped before, by their text and style: a frame draws mostly
     /// what the one before did, and shaping a line with glyphs from
     /// fallback fonts takes milliseconds. Emptied when the fonts change.
-    shaped: HashMap<(String, TextStyle), (Vec<LayoutGlyph>, f32)>,
+    shaped: Shaped,
     /// The size and line height at scale 1.
     metrics: Metrics,
     /// A cell's width and height in pixels.
@@ -268,7 +305,7 @@ impl Fonts {
             installed,
             default_family,
             default_prose,
-            shaped: HashMap::new(),
+            shaped: Shaped::default(),
             metrics,
             cell_w: 0.0,
             cell_h: 0.0,
@@ -327,18 +364,13 @@ impl Fonts {
 
     /// Shapes one line as `style` says: its glyphs, each knowing the byte
     /// range of the text it draws, and the baseline from the line's top.
-    pub fn shape(&mut self, text: &str, style: TextStyle) -> (Vec<LayoutGlyph>, f32) {
-        /// How many lines are kept: a few screens' worth, then they start over.
-        const KEPT: usize = 4096;
-        let key = (text.to_owned(), style);
-        if let Some(shaped) = self.shaped.get(&key) {
-            return shaped.clone();
+    pub fn shape(&mut self, text: &str, style: TextStyle) -> Line {
+        if let Some(shaped) = self.shaped.get(text, style) {
+            return shaped;
         }
-        let shaped = self.shape_now(text, style);
-        if self.shaped.len() >= KEPT {
-            self.shaped.clear();
-        }
-        self.shaped.insert(key, shaped.clone());
+        let (glyphs, baseline) = self.shape_now(text, style);
+        let shaped = (Rc::from(glyphs), baseline);
+        self.shaped.insert(text, style, shaped.clone());
         shaped
     }
 
@@ -675,10 +707,10 @@ mod tests {
         let mut fonts = Fonts::new(None, 15.0);
         let style = TextStyle::default();
         let first = fonts.shape("let x = 1;", style);
-        assert_eq!(fonts.shaped.len(), 2, "with the 0 measuring the cell");
+        assert_eq!(fonts.shaped.count, 2, "with the 0 measuring the cell");
         let again = fonts.shape("let x = 1;", style);
         assert_eq!(first.0.len(), again.0.len());
-        assert_eq!(fonts.shaped.len(), 2, "kept, not shaped again");
+        assert_eq!(fonts.shaped.count, 2, "kept, not shaped again");
         fonts.shape(
             "let x = 1;",
             TextStyle {
@@ -686,9 +718,9 @@ mod tests {
                 ..style
             },
         );
-        assert_eq!(fonts.shaped.len(), 3, "another style is another line");
+        assert_eq!(fonts.shaped.count, 3, "another style is another line");
         fonts.set(None, 20.0);
-        assert_eq!(fonts.shaped.len(), 1, "a new size starts over, with its 0");
+        assert_eq!(fonts.shaped.count, 1, "a new size starts over, with its 0");
     }
 
     #[test]

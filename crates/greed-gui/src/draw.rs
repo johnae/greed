@@ -687,7 +687,11 @@ fn shape_run(
     // Where each cluster starts in the shaped line, so marks drawn after
     // their base keep their place.
     let mut cluster: Option<(usize, f32)> = None;
-    for glyph in &glyphs {
+    for glyph in glyphs.iter() {
+        // A space draws nothing, and most cells are spaces.
+        if matches!(run.text.as_bytes().get(glyph.start..glyph.end), Some(b" ")) {
+            continue;
+        }
         let i = run.starts.partition_point(|&(byte, _)| byte <= glyph.start);
         let Some(&(_, col)) = run.starts.get(i.saturating_sub(1)) else {
             continue;
@@ -780,7 +784,7 @@ fn checkbox(
     };
     let (glyphs, _) = fonts.shape("✓", bold);
     let atlas_size = atlas.size as f32;
-    for glyph in &glyphs {
+    for glyph in glyphs.iter() {
         // In the middle of the box: a tick is about 0.7 of the font's size.
         let baseline = y + side / 2.0 + 0.35 * glyph.font_size;
         let physical = glyph.physical((x + (side - glyph.w) / 2.0 - glyph.x, baseline), 1.0);
