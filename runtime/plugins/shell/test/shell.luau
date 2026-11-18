@@ -223,7 +223,9 @@ test("cd, export and unset change the shell for the commands after", function(t)
 		return sh.env.GREED_SHELL_TEST
 	end
 	assert(var() == "a b")
-	local shown = finished(t, type_line(t, sh, "printenv GREED_SHELL_TEST"))
+	-- Through a pipe: printenv quotes a value with spaces on a terminal
+	-- since coreutils 9.12.
+	local shown = finished(t, type_line(t, sh, "printenv GREED_SHELL_TEST | cat"))
 	assert(shown.output == "a b\n", shown.output)
 	local listed = finished(t, type_line(t, sh, "env"))
 	assert(listed.output == "GREED_SHELL_TEST=a b\n", listed.output)

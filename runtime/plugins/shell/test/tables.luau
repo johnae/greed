@@ -546,7 +546,8 @@ local function fake_jc(t: test.TestContext, sh: Shell)
 		["bin/dig"] = "#!/bin/sh\necho ';; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 1'\n",
 	})
 	run(t, sh, `chmod +x {dir}/bin/jc {dir}/bin/dig`)
-	local path = run(t, sh, [[printf %s "$PATH"]]).output
+	-- A terminal ends what it showed with a newline.
+	local path = (string.gsub(run(t, sh, [[printf %s "$PATH"]]).output, "%s+$", ""))
 	sh.env.PATH = `{dir}/bin:{path}`
 end
 
@@ -572,7 +573,7 @@ end)
 
 test("the real jc reads a command's output, when it's installed", function(t)
 	local sh = open(t, t:tempdir())
-	local path = run(t, sh, [[printf %s "$PATH"]]).output
+	local path = (string.gsub(run(t, sh, [[printf %s "$PATH"]]).output, "%s+$", ""))
 	if jc.find("jc", path) == nil then
 		-- Skipped: jc isn't installed here.
 		return
