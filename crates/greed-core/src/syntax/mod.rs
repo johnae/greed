@@ -21,7 +21,7 @@ use tree_sitter::wasmtime::Engine;
 use tree_sitter::{Node, ParseOptions, Parser, Query, QueryCursor, TextProvider, Tree, WasmStore};
 
 use crate::{Buffer, BufferId, Editor};
-use injections::{InjectionQuery, Injections, Layer};
+use injections::{InjectionQuery, Injections, Layer, Marked};
 
 mod incremental;
 mod injections;
@@ -319,6 +319,9 @@ fn builtin() -> Vec<Arc<Language>> {
 pub struct Highlight {
     pub range: Range<usize>,
     pub capture: Arc<str>,
+    /// From a language a mark asked for, which colours over the buffer's
+    /// own, and where a mark leaves that out (`plain`) too.
+    pub marked: bool,
 }
 
 struct Request {
@@ -327,6 +330,7 @@ struct Request {
     text: Rope,
     language: Arc<Language>,
     injections: Injections,
+    marked: Marked,
     /// Runs loaded grammars, once one has been.
     engine: Option<Engine>,
 }
@@ -342,8 +346,9 @@ pub struct Parsed {
 
 struct BufferSyntax {
     language: Arc<Language>,
-    /// The last version sent to the worker.
-    sent: Option<usize>,
+    /// The last version sent to the worker, with the ranges marks had
+    /// highlighted as other languages then.
+    sent: Option<(usize, Marked)>,
     /// The newest tree, to draw with and to parse the next version from.
     held: Option<Held>,
 }
@@ -574,16 +579,22 @@ impl Syntax {
         let Some(state) = self.buffers.get_mut(&buffer.id()) else {
             return;
         };
-        if state.sent == Some(version) {
+        let marked = buffer.marked_languages();
+        if state
+            .sent
+            .as_ref()
+            .is_some_and(|(sent, was)| *sent == version && *was == marked)
+        {
             return;
         }
-        state.sent = Some(version);
+        state.sent = Some((version, marked.clone()));
         let _ = self.requests.send(Request {
             buffer: buffer.id(),
             version,
             text: buffer.text().clone(),
             language: state.language.clone(),
             injections: self.injections.clone(),
+            marked,
             engine: self.wasm.as_ref().map(|(engine, _)| engine.clone()),
         });
     }
@@ -818,9 +829,10 @@ impl Syntax {
             return Vec::new();
         };
         let mut found = Vec::new();
-        self.highlight(language, &held.tree, text, &range, &mut found);
+        self.highlight(language, &held.tree, text, &range, false, &mut found);
         for layer in &held.layers {
-            self.highlight(&layer.language, &layer.tree, text, &range, &mut found);
+            let (language, tree) = (&layer.language, &layer.tree);
+            self.highlight(language, tree, text, &range, layer.marked, &mut found);
         }
         found
     }
@@ -832,6 +844,7 @@ impl Syntax {
         tree: &Tree,
         text: &Rope,
         range: &Range<usize>,
+        marked: bool,
         found: &mut Vec<Highlight>,
     ) {
         let highlights = self
@@ -852,6 +865,7 @@ impl Syntax {
             found.push(Highlight {
                 range: capture.node.byte_range(),
                 capture: name.clone(),
+                marked,
             });
         }
     }
@@ -905,6 +919,7 @@ fn parse_worker(inbox: &Receiver<Request>, outbox: &Sender<Parsed>) {
                 &request.language,
                 &tree,
                 &request.injections,
+                &request.marked,
             );
             let parsed = Parsed {
                 buffer: request.buffer,

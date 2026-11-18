@@ -305,6 +305,17 @@ local function entry_lines(
 		-- One row however long: the view cuts it at its edge, so it's the
 		-- same at any width.
 		table.insert(line.marks, { from = 0, to = #text, style = "", nowrap = true })
+		-- The command it runs, coloured as shell, where the title shows it.
+		local command = if tool.command then string.split(tool.command, "\n")[1] else ""
+		local command_at = if command ~= "" then string.find(text, command, 1, true) else nil
+		if command_at then
+			table.insert(line.marks, {
+				from = command_at - 1,
+				to = command_at - 1 + #command,
+				style = "",
+				language = "bash",
+			})
+		end
 		if status == "in_progress" then
 			line.spin = glyph_at
 		end
@@ -314,9 +325,22 @@ local function entry_lines(
 		end
 		line.value = value
 		if tool.open then
+			-- The rest of a script it runs, as shell too.
 			for i = 2, #title_lines do
-				add(out, `    {title_lines[i]}`).value = { tool = id }
+				local rest = add(out, `    {title_lines[i]}`)
+				rest.value = { tool = id }
+				if command_at then
+					table.insert(
+						rest.marks,
+						{ from = 4, to = #rest.text, style = "", language = "bash" }
+					)
+				end
 			end
+			-- An edit's change, in the language of the file it changes.
+			local file = tool.locations and tool.locations[1]
+			local language = if tool.kind == "edit" and file
+				then string.match(file, "%.([%w_]+)$")
+				else nil
 			for _, output in tool.output do
 				-- An edit's change shows as a diff: gone lines and new ones.
 				local diff = if tool.kind == "edit" then string.sub(output, 1, 2) else ""
@@ -324,7 +348,14 @@ local function entry_lines(
 					then "diff.minus"
 					elseif diff == "+ " then "diff.plus"
 					else "comment"
-				add(out, `    {output}`, style).value = { tool = id }
+				local said = add(out, `    {output}`, style)
+				said.value = { tool = id }
+				if language and (diff == "- " or diff == "+ " or diff == "  ") then
+					table.insert(
+						said.marks,
+						{ from = 6, to = #said.text, style = "", language = language }
+					)
+				end
 			end
 		end
 	elseif e.kind == "plan" then

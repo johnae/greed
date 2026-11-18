@@ -2199,14 +2199,14 @@ impl Peer {
 }
 
 /// The tags for one cell, bottom first: its syntax capture, the marks on it,
-/// then other clients' selections and cursors, then the client's own, then
-/// marks drawn above them.
+/// a language a mark asked for, then other clients' selections and cursors,
+/// then the client's own, then marks drawn above them.
 fn cell_tags(
     view: &View,
     cell: &Cell,
     cursors: &[usize],
     peers: &[Peer],
-    capture: Option<Arc<str>>,
+    capture: Option<(Arc<str>, bool)>,
     marks: &[&Mark],
 ) -> SmallVec<[Tag; 2]> {
     // A mark that shows text in place of what it hides styles that text,
@@ -2226,12 +2226,16 @@ fn cell_tags(
     let plain = marks
         .iter()
         .any(|m| m.plain && m.range.contains(&cell.byte));
-    let mut tags: SmallVec<[Tag; 2]> = capture
-        .filter(|_| !plain)
-        .map(Tag::from)
-        .into_iter()
-        .collect();
+    // A language a mark asked for colours over the marks' styles too, like
+    // a diff's, and where the buffer's own is left out.
+    let (capture, marked) = match capture {
+        Some((capture, true)) => (None, Some(capture)),
+        Some((capture, false)) if !plain => (Some(capture), None),
+        _ => (None, None),
+    };
+    let mut tags: SmallVec<[Tag; 2]> = capture.map(Tag::from).into_iter().collect();
     tags.extend(on_cell(false));
+    tags.extend(marked.map(Tag::from));
     tags.extend(cursor_tags(view, cell, cursors, peers));
     tags.extend(on_cell(true));
     tags
@@ -2334,9 +2338,10 @@ pub(crate) fn status_message(message: &str) -> Cow<'_, str> {
 
 /// The capture that applies to each byte of `range`. Inner captures win over
 /// the ones around them, and for the same text the first capture wins, which
-/// is how tree-sitter highlight queries are written.
-fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc<str>>> {
-    highlights.sort_by_key(|h| (h.range.start, std::cmp::Reverse(h.range.end)));
+/// is how tree-sitter highlight queries are written. Those of languages marks
+/// asked for go over the rest, with whether they are.
+fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<(Arc<str>, bool)>> {
+    highlights.sort_by_key(|h| (h.marked, h.range.start, std::cmp::Reverse(h.range.end)));
     let mut painted = vec![None; range.len()];
     let mut previous: Option<Range<usize>> = None;
     for highlight in highlights {
@@ -2346,7 +2351,7 @@ fn paint(mut highlights: Vec<Highlight>, range: &Range<usize>) -> Vec<Option<Arc
         let start = highlight.range.start.clamp(range.start, range.end) - range.start;
         let end = highlight.range.end.clamp(range.start, range.end) - range.start;
         for byte in &mut painted[start..end.max(start)] {
-            *byte = Some(highlight.capture.clone());
+            *byte = Some((highlight.capture.clone(), highlight.marked));
         }
         previous = Some(highlight.range);
     }

@@ -433,6 +433,7 @@ fn highlights_tag_text_with_inner_and_first_captures_winning() {
     let h = |range: std::ops::Range<usize>, capture: &str| Highlight {
         range,
         capture: Arc::from(capture),
+        marked: false,
     };
     let highlights = vec![
         h(8..13, "string"),
@@ -2317,10 +2318,12 @@ fn a_plain_mark_draws_its_text_without_syntax_highlighting() {
         Highlight {
             range: 0..3,
             capture: Arc::from("markup.strikethrough"),
+            marked: false,
         },
         Highlight {
             range: 4..7,
             capture: Arc::from("markup.strikethrough"),
+            marked: false,
         },
     ];
     ed.decorate(
@@ -2349,6 +2352,65 @@ fn a_plain_mark_draws_its_text_without_syntax_highlighting() {
         .map(|s| s.text.clone())
         .collect();
     assert_eq!(struck, ["~a~"], "only the text outside the plain mark");
+}
+
+#[test]
+fn a_marked_language_colours_over_plain_and_the_marks_styles() {
+    use greed_core::Mark;
+    use greed_core::syntax::Highlight;
+    use std::sync::Arc;
+
+    let mut ed = editor("|run ls -la");
+    let buffer = ed.view(ed.focus()).buffer;
+    let h = |range, capture: &str, marked| Highlight {
+        range,
+        capture: Arc::from(capture),
+        marked,
+    };
+    let highlights = vec![
+        h(0..11, "text.paragraph", false),
+        h(4..6, "function", true),
+        h(7..11, "constant", true),
+    ];
+    ed.decorate(
+        buffer,
+        "transcript",
+        vec![Mark {
+            range: 0..11,
+            style: "diff.minus".into(),
+            plain: true,
+            ..Mark::default()
+        }],
+    );
+    let f = Renderer::new(CellWidth).frame(
+        &mut ed,
+        Size {
+            width: 20,
+            height: 2,
+        },
+        &Status::Default { message: None },
+        &Fixed { highlights },
+    );
+    let tags_of = |text: &str| -> Vec<String> {
+        let span = screen_rows(&f)[0]
+            .spans
+            .iter()
+            .find(|s| s.text.contains(text))
+            .cloned()
+            .unwrap_or_else(|| panic!("{text} drawn"));
+        span.tags.iter().map(|t| t.name().to_owned()).collect()
+    };
+    assert_eq!(
+        tags_of("run"),
+        ["diff.minus"],
+        "the buffer's own is left out"
+    );
+    assert_eq!(
+        tags_of("ls"),
+        ["diff.minus", "function"],
+        "the mark's language on top"
+    );
+    assert_eq!(tags_of("-la"), ["diff.minus", "constant"]);
 }
 
 #[test]

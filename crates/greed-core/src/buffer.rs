@@ -15,6 +15,10 @@ pub struct BufferId(pub u32);
 
 /// One namespace's marks, and what finding those over a range needs.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "what the marks have, to skip namespaces without"
+)]
 struct Marks {
     list: Vec<Mark>,
     /// Whether `list` is in the order the marks start in, as plugins mostly
@@ -26,6 +30,8 @@ struct Marks {
     /// the whole buffer, so it can pass namespaces without.
     signs: bool,
     folds: bool,
+    /// Whether any mark highlights its text as a language.
+    languages: bool,
 }
 
 impl Marks {
@@ -43,6 +49,7 @@ impl Marks {
         self.longest = self.list.iter().map(|m| m.range.len()).max().unwrap_or(0);
         self.signs = self.list.iter().any(|m| m.sign.is_some());
         self.folds = self.list.iter().any(|m| m.fold);
+        self.languages = self.list.iter().any(|m| m.language.is_some());
     }
 
     /// The marks that may touch `range`, among others, in their order:
@@ -218,6 +225,10 @@ pub struct Mark {
     /// Draw the range's text without syntax highlighting, e.g. a tool's
     /// output in an agent's Markdown transcript.
     pub plain: bool,
+    /// Highlight the range's text as this language (a name or a file
+    /// extension, like "bash" or "rs"), over the buffer's own, e.g. a
+    /// command in a line that's no language at all.
+    pub language: Option<Arc<str>>,
     /// Lines shown under the range's last line that aren't in the buffer,
     /// like a list of backlinks. The cursor never goes on them.
     pub lines: Vec<VirtualLine>,
@@ -346,6 +357,21 @@ impl Buffer {
     /// Every mark, by namespace.
     pub fn all_marks(&self) -> impl Iterator<Item = &Mark> {
         self.marks.values().flat_map(|marks| &marks.list)
+    }
+
+    /// The ranges marks highlight as another language, with the language,
+    /// in the order they start in.
+    pub fn marked_languages(&self) -> Vec<(Arc<str>, Range<usize>)> {
+        let mut found: Vec<_> = self
+            .marks
+            .values()
+            .filter(|marks| marks.languages)
+            .flat_map(|marks| &marks.list)
+            .filter(|m| !m.range.is_empty())
+            .filter_map(|m| Some((m.language.clone()?, m.range.clone())))
+            .collect();
+        found.sort_by_key(|(_, range)| range.start);
+        found
     }
 
     /// The marks over `pos`, with their namespaces: those whose range holds

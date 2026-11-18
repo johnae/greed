@@ -646,7 +646,8 @@ done or `✗` failed, with a short summary like `read src/main.rs · 120
 lines`. A command of several lines shows its first and how many (`· 4 lines
 ▸`). A `▸` means there's more: `tab` unfolds and folds it. When Greed's own
 agent asks before an edit, the row already holds the change (`-1 +1 · tab
-shows the change`), shown in the theme's diff colours.
+shows the change`), shown in the theme's diff colours. Commands are coloured
+as shell, and a change as the language of the file it changes.
 
 `up` on the box's first line brings back earlier messages, `down` on its
 last line comes forward; with something typed, only messages starting with

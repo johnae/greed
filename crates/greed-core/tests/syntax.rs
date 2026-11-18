@@ -323,6 +323,61 @@ fn code_blocks_and_inline_text_in_markdown_are_highlighted_in_their_own_language
 }
 
 #[test]
+fn a_mark_highlights_its_text_as_the_language_it_names() {
+    let text =
+        "Bash  if true; then echo hi; fi\n\nNix  { buildPhase = ''if true; then make; fi''; }\n";
+    let mut ed = editor(text, "transcript.md");
+    let id = ed.buffers().next().unwrap().id();
+    let span = |from: &str, to: &str| text.find(from).unwrap()..text.find(to).unwrap() + to.len();
+    let mark = |range, language: &str| greed_core::Mark {
+        range,
+        style: "none".into(),
+        language: Some(language.into()),
+        ..Default::default()
+    };
+    let mut syntax = Syntax::new();
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let buffer = ed.find_buffer(id).unwrap();
+    let all = syntax.highlights(id, buffer.text(), 0..text.len());
+    let if_at = text.find("if").unwrap();
+    assert!(
+        !captured(&all, if_at..if_at + 2).contains(&"keyword"),
+        "no mark, no Bash: {all:?}"
+    );
+
+    ed.decorate(
+        id,
+        "tools",
+        vec![
+            mark(span("if true", "hi; fi"), "bash"),
+            mark(span("{ build", "; }"), "nix"),
+        ],
+    );
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let buffer = ed.find_buffer(id).unwrap();
+    let all = syntax.highlights(id, buffer.text(), 0..text.len());
+    assert!(
+        captured(&all, if_at..if_at + 2).contains(&"keyword"),
+        "the marked command is Bash: {all:?}"
+    );
+    let phase = text.rfind("if").unwrap();
+    assert!(
+        captured(&all, phase..phase + 2).contains(&"keyword"),
+        "the build phase inside the marked Nix is Bash too: {all:?}"
+    );
+
+    // Taking the marks away takes their languages away, with no edit.
+    ed.decorate(id, "tools", Vec::new());
+    syntax.update(&ed);
+    wait(&mut syntax);
+    let buffer = ed.find_buffer(id).unwrap();
+    let all = syntax.highlights(id, buffer.text(), 0..text.len());
+    assert!(!captured(&all, if_at..if_at + 2).contains(&"keyword"));
+}
+
+#[test]
 fn rust_macro_bodies_are_highlighted_as_rust() {
     let text = "fn f() { println!(\"{}\", 1 + 2); }";
     let ed = editor(text, "a.rs");

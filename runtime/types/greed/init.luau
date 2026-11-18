@@ -293,6 +293,10 @@ export type Mark = {
 	--- Draw the text without syntax highlighting, like a tool's output in a
 	--- Markdown buffer.
 	plain: boolean?,
+	--- Highlight the text as this language, by name or file extension
+	--- ("bash", "rs"), over the buffer's own, like a command in a line
+	--- that's no language at all. Languages inside it are found too.
+	language: string?,
 	--- Lines shown under the last line that aren't in the buffer, like
 	--- backlinks. The cursor never goes on them. Each is a string, or pieces
 	--- with styles of their own on top of the mark's, e.g.

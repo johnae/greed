@@ -6,6 +6,7 @@
 //! a layer over the buffer's tree, and layers can hold layers of their own.
 
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::{Arc, OnceLock};
 
 use greed_text::Rope;
@@ -61,6 +62,9 @@ impl InjectionQuery {
 pub struct Layer {
     pub language: Arc<Language>,
     pub tree: Tree,
+    /// Whether a mark asked for it (or for the one it's in), so it
+    /// colours over the buffer's own language, even where that's left out.
+    pub marked: bool,
 }
 
 /// The language a code block, setting or comment names: a language's own
@@ -152,18 +156,89 @@ fn injection<'t>(
     })
 }
 
-/// The layers inside `tree`, a parse of `text` as `language`, and the
-/// layers inside those.
+/// Ranges of a buffer its marks highlight as another language, with the
+/// language's name or extension.
+pub type Marked = Vec<(Arc<str>, Range<usize>)>;
+
+/// The layers inside `tree`, a parse of `text` as `language`, then those
+/// `marked` asks for, each with the layers inside it. The marked ones come
+/// last, so they draw over the rest.
 pub fn layers(
     parser: &mut Parser,
     text: &Rope,
     language: &Language,
     tree: &Tree,
     injections: &Injections,
+    marked: &Marked,
 ) -> Vec<Layer> {
     let mut found = Vec::new();
     inject(parser, text, language, tree, injections, 0, &mut found);
+    let unmarked = found.len();
+    let len = text.len_bytes();
+    for (name, range) in marked {
+        let Some(inner) = find(injections, name) else {
+            continue;
+        };
+        let range = range.start.min(len)..range.end.min(len);
+        if range.is_empty() {
+            continue;
+        }
+        let ranges = [tree_sitter::Range {
+            start_byte: range.start,
+            end_byte: range.end,
+            start_point: point(text, range.start),
+            end_point: point(text, range.end),
+        }];
+        parse_layer(
+            parser,
+            text,
+            inner.clone(),
+            &ranges,
+            injections,
+            0,
+            &mut found,
+        );
+    }
+    for layer in &mut found[unmarked..] {
+        layer.marked = true;
+    }
     found
+}
+
+/// Where `byte` is in `text` as tree-sitter counts: its row, and its column
+/// in bytes.
+fn point(text: &Rope, byte: usize) -> tree_sitter::Point {
+    let row = text.byte_to_line(byte);
+    tree_sitter::Point::new(row, byte - text.line_to_byte(row))
+}
+
+/// Parses `ranges` of `text` as `inner`, adding the layer to `found` after
+/// the layers inside it, unless there are enough already.
+fn parse_layer(
+    parser: &mut Parser,
+    text: &Rope,
+    inner: Arc<Language>,
+    ranges: &[tree_sitter::Range],
+    injections: &Injections,
+    depth: usize,
+    found: &mut Vec<Layer>,
+) {
+    if found.len() >= MAX_LAYERS
+        || ranges.is_empty()
+        || parser.set_language(&inner.grammar).is_err()
+        || parser.set_included_ranges(ranges).is_err()
+    {
+        return;
+    }
+    let parsed = super::parse(parser, text);
+    let _ = parser.set_included_ranges(&[]);
+    let Some(parsed) = parsed else { return };
+    inject(parser, text, &inner, &parsed, injections, depth + 1, found);
+    found.push(Layer {
+        language: inner,
+        tree: parsed,
+        marked: false,
+    });
 }
 
 fn inject(
@@ -212,22 +287,6 @@ fn inject(
         ranges.sort_by_key(|r| r.start_byte);
     }
     for (inner, ranges) in wanted {
-        if found.len() >= MAX_LAYERS {
-            return;
-        }
-        if ranges.is_empty()
-            || parser.set_language(&inner.grammar).is_err()
-            || parser.set_included_ranges(&ranges).is_err()
-        {
-            continue;
-        }
-        let parsed = super::parse(parser, text);
-        let _ = parser.set_included_ranges(&[]);
-        let Some(parsed) = parsed else { continue };
-        inject(parser, text, &inner, &parsed, injections, depth + 1, found);
-        found.push(Layer {
-            language: inner,
-            tree: parsed,
-        });
+        parse_layer(parser, text, inner, &ranges, injections, depth, found);
     }
 }

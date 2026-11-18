@@ -15,6 +15,8 @@ export type Tool = {
 	id: string,
 	title: string,
 	kind: string?,
+	--- The command line it runs, for one that runs a command.
+	command: string?,
 	status: string?,
 	--- The files it says it touches.
 	locations: { string }?,
@@ -497,6 +499,7 @@ local function update(session: Session, u: any)
 			id = u.toolCallId,
 			title = M.tool_title(u.title) or "a tool",
 			kind = u.kind,
+			command = if u.kind == "execute" then command_of(u.rawInput) else nil,
 			status = u.status or "pending",
 			locations = paths_of(u, session.cwd),
 			detail = detail,
@@ -513,6 +516,9 @@ local function update(session: Session, u: any)
 		end
 		tool.title = M.tool_title(u.title) or tool.title
 		tool.kind = u.kind or tool.kind
+		if tool.kind == "execute" then
+			tool.command = command_of(u.rawInput) or tool.command
+		end
 		tool.status = u.status or tool.status
 		tool.locations = paths_of(u, session.cwd) or tool.locations
 		if u.content then

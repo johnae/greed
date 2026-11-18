@@ -216,14 +216,14 @@ while IFS= read -r line; do
 				turn_done "$id" end_turn
 				;;
 			script*)
-				update '{"sessionUpdate":"tool_call","toolCallId":"t5","title":"Run echo one\necho **two**","kind":"execute","status":"pending"}'
+				update '{"sessionUpdate":"tool_call","toolCallId":"t5","title":"Run echo one\necho **two**","kind":"execute","status":"pending","rawInput":{"command":"echo one\necho **two**"}}'
 				send "{\"jsonrpc\":\"2.0\",\"id\":906,\"method\":\"session/request_permission\",\"params\":{\"sessionId\":\"s1\",\"toolCall\":{\"toolCallId\":\"t5\"},\"options\":[{\"optionId\":\"yes\",\"name\":\"Allow once\",\"kind\":\"allow_once\"},{\"optionId\":\"no\",\"name\":\"Reject\",\"kind\":\"reject_once\"}]}}"
 				await 906
 				update '{"sessionUpdate":"tool_call_update","toolCallId":"t5","status":"completed"}'
 				turn_done "$id" end_turn
 				;;
 		stars*)
-			update '{"sessionUpdate":"tool_call","toolCallId":"t4","title":"Run python","kind":"execute","status":"in_progress"}'
+			update '{"sessionUpdate":"tool_call","toolCallId":"t4","title":"Run python","kind":"execute","status":"in_progress","rawInput":{"command":"python"}}'
 			update '{"sessionUpdate":"tool_call_update","toolCallId":"t4","status":"completed","content":[{"type":"content","content":{"type":"text","text":"def f(**kwargs):\n    return *ptr, `x`\n- not a list"}}]}'
 			turn_done "$id" end_turn
 			;;

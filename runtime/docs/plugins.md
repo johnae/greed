@@ -928,6 +928,11 @@ greed.tab.set_layout({
     does).
   - `plain = true` draws a mark's text without syntax highlighting, as for
     a tool's output in a Markdown buffer.
+  - `language = "bash"` highlights a mark's text as that language (a name
+    or a file extension, like `"rs"`), over the buffer's own, its styles
+    and `plain`. Languages inside it are found too, so a `language = "nix"`
+    mark colours the shell in its build phases. The agent transcript marks
+    the commands its tools run this way.
   - `fold` folds lines away under the first one; with `peek` they show
     while a cursor is on that first line too.
   - `nowrap` keeps the lines it touches from wrapping, cut at the edge with

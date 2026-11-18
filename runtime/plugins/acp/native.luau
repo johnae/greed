@@ -1400,6 +1400,9 @@ local function call(
 		id = c.id,
 		title = if own then own.title(c.input) else agent.title(c.name, c.input, s.root),
 		kind = kind,
+		command = if kind == "execute" and type(c.input.command) == "string"
+			then c.input.command
+			else nil,
 		status = "pending",
 		locations = locations,
 		detail = {},

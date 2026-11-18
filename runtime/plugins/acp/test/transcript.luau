@@ -1075,6 +1075,56 @@ test("tool lines are drawn without Markdown's colours, what was said with them",
 	acp.stop(s)
 end)
 
+-- The language the marks over `needle` in the transcript shown ask for.
+local function language_at(needle: string): string?
+	local buffer = greed.view():buffer()
+	local at = string.find(buffer:text(), needle, 1, true)
+	assert(at, `{needle} in the transcript`)
+	for _, mark in buffer:marks_at(at - 1) do
+		if mark.language then
+			return mark.language
+		end
+	end
+	return nil
+end
+
+test("the command a tool runs is coloured as shell, opened all of it", function(t)
+	local s = start(t)
+	send(t, s, "stars")
+	t:wait(60)
+	assert(language_at("python") == "bash", "the command in the row")
+	assert(language_at("Run python") == nil, "not the rest of the title")
+
+	send(t, s, "script")
+	assert(language_at("echo one") == "bash")
+	s.tools.t5.open = true
+	s.changed()
+	t:wait(60)
+	assert(language_at("echo **two**") == "bash", "the script's other lines")
+	acp.stop(s)
+end)
+
+test("an edit's change is coloured as its file's language", function(t)
+	local s = start(t)
+	send(t, s, "hello")
+	local tool = tool_row(s, "e1", { "- local a = 1", "+ local a = 2" })
+	tool.kind = "edit"
+	tool.locations = { "/src/x.luau" }
+	tool.open = true
+	s.changed()
+	t:wait(60)
+	assert(language_at("local a = 1") == "luau")
+	assert(language_at("local a = 2") == "luau")
+	local other = tool_row(s, "e2", { "+ all: build" })
+	other.kind = "edit"
+	other.locations = { "/src/Makefile" }
+	other.open = true
+	s.changed()
+	t:wait(60)
+	assert(language_at("all: build") == nil, "a file with no extension has none")
+	acp.stop(s)
+end)
+
 test("shell code in a transcript has run, prompt and copy buttons", function(t)
 	local s = start(t)
 	send(t, s, "code")

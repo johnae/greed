@@ -22,6 +22,7 @@ the repository's history.
 - models: evroc's Think models as a built-in provider, its key from `:secret-set evroc` or `EVROC_API_KEY`
 - agent: choose what the line under the message box shows, with your own fields, and who the line ending the agent's turns names
 - agent: a quieter transcript: your messages start with `›` on a shaded background, the agent's are plain and each turn ends with who answered and how long it took; the box is a shaded card with a line under it saying the model, what the agent does in a word (`running`, `editing`) and how full its context is, yellow then red; a tool call takes one line however long its command; the box sits at the bottom of the view from the first message
+- syntax: a mark can colour its text as another language (`language = "bash"`), with the languages inside it, in any buffer; an agent's commands are coloured as shell, and its edits as the file's language
 - chat: go to any room or person by name (`alt-g`, `space M g`; `alt-enter` opens it beside), write to someone new, join a Mattermost channel or a Matrix room on your server by name, and `:chat` opens the sidebar in every session
 - chat: agents list, read and search your rooms with the `chat` tools, and send a message after asking you every time
 - agent: a proposal is reviewed as one change, accepted or rejected as a whole

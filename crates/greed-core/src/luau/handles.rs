@@ -883,6 +883,7 @@ fn marks_from_lua(lua: &Lua, list: &[Table]) -> LuaResult<Vec<Mark>> {
                 peek: flag("peek")?,
                 nowrap: flag("nowrap")?,
                 plain: flag("plain")?,
+                language: t.get::<Option<String>>("language")?.map(Into::into),
                 lines: t
                     .get::<Option<Vec<Value>>>("lines")?
                     .unwrap_or_default()
@@ -963,6 +964,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("peek", mark.peek)?;
     t.set("nowrap", mark.nowrap)?;
     t.set("plain", mark.plain)?;
+    t.set("language", mark.language.as_deref())?;
     t.set("action", mark.action.as_deref())?;
     if mark.scale > 1 {
         t.set("scale", mark.scale)?;
