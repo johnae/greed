@@ -13,6 +13,80 @@ use crate::{Error, ViewId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BufferId(pub u32);
 
+/// One namespace's marks, and what finding those over a range needs.
+#[derive(Debug, Clone, Default)]
+struct Marks {
+    list: Vec<Mark>,
+    /// Whether `list` is in the order the marks start in, as plugins mostly
+    /// set them, so those near a range are found by halving.
+    sorted: bool,
+    /// At least the longest mark's length in bytes.
+    longest: usize,
+    /// Whether any mark has a sign or folds, which drawing looks for in
+    /// the whole buffer, so it can pass namespaces without.
+    signs: bool,
+    folds: bool,
+}
+
+impl Marks {
+    fn new(list: Vec<Mark>) -> Self {
+        let mut marks = Marks {
+            list,
+            ..Marks::default()
+        };
+        marks.measure();
+        marks
+    }
+
+    fn measure(&mut self) {
+        self.sorted = self.list.is_sorted_by_key(|m| m.range.start);
+        self.longest = self.list.iter().map(|m| m.range.len()).max().unwrap_or(0);
+        self.signs = self.list.iter().any(|m| m.sign.is_some());
+        self.folds = self.list.iter().any(|m| m.fold);
+    }
+
+    /// The marks that may touch `range`, among others, in their order:
+    /// all of them unless they're sorted.
+    fn near(&self, range: Range<usize>) -> &[Mark] {
+        if !self.sorted {
+            return &self.list;
+        }
+        let from = range.start.saturating_sub(self.longest);
+        let first = self.list.partition_point(|m| m.range.start < from);
+        let past = self.list.partition_point(|m| m.range.start <= range.end);
+        &self.list[first..past.max(first)]
+    }
+
+    /// Moves the marks through `changes`, whose first change is at `first`,
+    /// dropping those whose text went. Sorted, those ending before it
+    /// stay as they are, so a terminal adding at its end moves few.
+    fn map(&mut self, changes: &ChangeSet, first: usize) {
+        let kept = if self.sorted {
+            self.list
+                .partition_point(|m| m.range.start.saturating_add(self.longest) < first)
+        } else {
+            0
+        };
+        let mut moved = self.list.split_off(kept);
+        let mut longest = 0;
+        moved.retain_mut(|mark| {
+            let was_empty = mark.range.is_empty();
+            let start = changes.map_pos(mark.range.start, Assoc::After);
+            let end = changes.map_pos(mark.range.end, Assoc::Before);
+            mark.range = start..end.max(start);
+            longest = longest.max(mark.range.len());
+            was_empty || start < end
+        });
+        self.list.append(&mut moved);
+        // Moving keeps the order; the longest can only be guessed high.
+        if self.sorted {
+            self.longest = self.longest.max(longest);
+        } else {
+            self.measure();
+        }
+    }
+}
+
 /// Open text, backed by a file or not.
 #[derive(Debug)]
 #[expect(clippy::struct_excessive_bools, reason = "independent flags")]
@@ -55,7 +129,7 @@ pub struct Buffer {
     /// The language its file name says, from the editor's file types.
     detected: Option<Arc<str>>,
     /// Decorations by namespace. They move with edits.
-    marks: BTreeMap<Arc<str>, Vec<Mark>>,
+    marks: BTreeMap<Arc<str>, Marks>,
     /// Places plugins follow through edits, by id.
     tracked: HashMap<TrackId, Tracked>,
     next_track: u64,
@@ -262,12 +336,12 @@ impl Buffer {
 
     /// The marks in namespace `ns`.
     pub fn marks(&self, ns: &str) -> &[Mark] {
-        self.marks.get(ns).map_or(&[], Vec::as_slice)
+        self.marks.get(ns).map_or(&[], |marks| &marks.list)
     }
 
     /// Every mark, by namespace.
     pub fn all_marks(&self) -> impl Iterator<Item = &Mark> {
-        self.marks.values().flatten()
+        self.marks.values().flat_map(|marks| &marks.list)
     }
 
     /// The marks over `pos`, with their namespaces: those whose range holds
@@ -275,6 +349,7 @@ impl Buffer {
     pub fn marks_at(&self, pos: usize) -> impl Iterator<Item = (&str, &Mark)> {
         self.marks.iter().flat_map(move |(ns, marks)| {
             marks
+                .near(pos..pos)
                 .iter()
                 .filter(move |m| {
                     m.range.contains(&pos) || (m.range.is_empty() && m.range.start == pos)
@@ -286,11 +361,48 @@ impl Buffer {
     /// The marks `view` draws: its own and every view's, less those in the
     /// namespaces it leaves out (`hidden`).
     pub fn marks_for(&self, view: ViewId, hidden: Arc<[Arc<str>]>) -> impl Iterator<Item = &Mark> {
+        self.marks_over(view, hidden, 0..usize::MAX)
+    }
+
+    /// Like [`Buffer::marks_for`], only those touching `range`: starting at
+    /// or before its end and ending at or after its start. Each
+    /// namespace's come in their order, as `marks_for` has them.
+    pub fn marks_over(
+        &self,
+        view: ViewId,
+        hidden: Arc<[Arc<str>]>,
+        range: Range<usize>,
+    ) -> impl Iterator<Item = &Mark> {
+        let (from, to) = (range.start, range.end);
         self.marks
             .iter()
             .filter(move |(ns, _)| !hidden.contains(ns))
-            .flat_map(|(_, marks)| marks)
+            .flat_map(move |(_, marks)| marks.near(from..to))
             .filter(move |m| m.view.is_none_or(|v| v == view))
+            .filter(move |m| m.range.start <= to && m.range.end >= from)
+    }
+
+    /// Whether any mark `view` draws has a sign, as [`Buffer::marks_for`]
+    /// has them.
+    pub fn has_signs(&self, view: ViewId, hidden: &[Arc<str>]) -> bool {
+        self.marks
+            .iter()
+            .filter(|(ns, marks)| marks.signs && !hidden.contains(ns))
+            .flat_map(|(_, marks)| &marks.list)
+            .any(|m| m.sign.is_some() && m.view.is_none_or(|v| v == view))
+    }
+
+    /// The marks `view` draws that fold, as [`Buffer::marks_for`] has them.
+    pub fn folds_for<'a>(
+        &'a self,
+        view: ViewId,
+        hidden: &'a [Arc<str>],
+    ) -> impl Iterator<Item = &'a Mark> {
+        self.marks
+            .iter()
+            .filter(|(ns, marks)| marks.folds && !hidden.contains(ns))
+            .flat_map(|(_, marks)| &marks.list)
+            .filter(move |m| m.fold && m.view.is_none_or(|v| v == view))
     }
 
     /// Replaces the marks in namespace `ns` that only `view` draws (with
@@ -304,7 +416,11 @@ impl Buffer {
         marks: Vec<Mark>,
     ) {
         let range = range.unwrap_or(0..usize::MAX);
-        let mut kept = self.marks.remove(ns).unwrap_or_default();
+        let mut kept = self
+            .marks
+            .remove(ns)
+            .map(|marks| marks.list)
+            .unwrap_or_default();
         kept.retain(|m| m.view != view || !range.contains(&m.range.start));
         kept.extend(marks);
         self.set_marks(ns, kept);
@@ -313,9 +429,10 @@ impl Buffer {
     /// Takes away the marks only `view` draws, once it's gone.
     pub(crate) fn forget_view(&mut self, view: ViewId) {
         for marks in self.marks.values_mut() {
-            marks.retain(|m| m.view != Some(view));
+            marks.list.retain(|m| m.view != Some(view));
+            marks.measure();
         }
-        self.marks.retain(|_, marks| !marks.is_empty());
+        self.marks.retain(|_, marks| !marks.list.is_empty());
     }
 
     /// Replaces the marks in namespace `ns`.
@@ -323,7 +440,7 @@ impl Buffer {
         if marks.is_empty() {
             self.marks.remove(ns);
         } else {
-            self.marks.insert(ns.into(), marks);
+            self.marks.insert(ns.into(), Marks::new(marks));
         }
     }
 
@@ -360,16 +477,13 @@ impl Buffer {
             t.range = start..end;
             t.deleted |= !was_empty && start == end;
         }
+        let Some(edited) = changes.changed_range() else {
+            return;
+        };
         for marks in self.marks.values_mut() {
-            marks.retain_mut(|mark| {
-                let was_empty = mark.range.is_empty();
-                let start = changes.map_pos(mark.range.start, Assoc::After);
-                let end = changes.map_pos(mark.range.end, Assoc::Before);
-                mark.range = start..end.max(start);
-                was_empty || start < end
-            });
+            marks.map(changes, edited.start);
         }
-        self.marks.retain(|_, marks| !marks.is_empty());
+        self.marks.retain(|_, marks| !marks.list.is_empty());
     }
 
     /// Adds what `changes` changed to the text plugins haven't been told
@@ -759,5 +873,124 @@ impl Buffer {
                 actual: meta.parents.to_vec(),
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Marks spread over 2000 bytes, a few long ones among them, from a
+    /// fixed seed.
+    fn spread(seed: u64, count: usize) -> Vec<Mark> {
+        let mut state = seed;
+        let mut next = move |below: usize| {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            usize::try_from(state >> 33).unwrap_or(0) % below
+        };
+        (0..count)
+            .map(|i| {
+                let start = next(2000);
+                let len = if i % 25 == 0 { next(600) } else { next(12) };
+                Mark {
+                    range: start..start + len,
+                    style: Arc::from(format!("s{i}")),
+                    ..Mark::default()
+                }
+            })
+            .collect()
+    }
+
+    /// What `marks_over` must give: each namespace's marks touching
+    /// `range`, in their order.
+    fn expected<'a>(buffer: &'a Buffer, range: &Range<usize>) -> Vec<&'a Mark> {
+        buffer
+            .all_marks()
+            .filter(|m| m.range.start <= range.end && m.range.end >= range.start)
+            .collect()
+    }
+
+    fn check(buffer: &Buffer) {
+        let hidden: Arc<[Arc<str>]> = Arc::from([]);
+        for start in (0..2100).step_by(37) {
+            for len in [0, 1, 30, 400] {
+                let range = start..start + len;
+                let found: Vec<&Mark> = buffer
+                    .marks_over(ViewId(0), hidden.clone(), range.clone())
+                    .collect();
+                assert_eq!(found, expected(buffer, &range), "over {range:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn marks_over_a_range_are_those_touching_it_sorted_or_not() {
+        let mut buffer = Buffer::new(BufferId(1), "file", &"x".repeat(2000));
+        let mut sorted = spread(1, 3000);
+        sorted.sort_by_key(|m| m.range.start);
+        buffer.set_marks("sorted", sorted);
+        buffer.set_marks("unsorted", spread(2, 500));
+        assert!(buffer.marks.get("sorted").is_some_and(|m| m.sorted));
+        check(&buffer);
+
+        // An insertion in the middle and a deletion before it move and
+        // drop marks as mapping every one of them would.
+        let mut changes = ChangeSet::default();
+        changes.retain(300);
+        changes.delete(40);
+        changes.retain(900);
+        changes.insert("inserted");
+        changes.retain(760);
+        let mapped = |marks: &[Mark]| -> Vec<Range<usize>> {
+            marks
+                .iter()
+                .filter_map(|m| {
+                    let start = changes.map_pos(m.range.start, Assoc::After);
+                    let end = changes.map_pos(m.range.end, Assoc::Before).max(start);
+                    (m.range.is_empty() || start < end).then_some(start..end)
+                })
+                .collect()
+        };
+        let want = (
+            mapped(buffer.marks("sorted")),
+            mapped(buffer.marks("unsorted")),
+        );
+        buffer.map_marks(&changes);
+        let ranges = |ns| {
+            buffer
+                .marks(ns)
+                .iter()
+                .map(|m| m.range.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!((ranges("sorted"), ranges("unsorted")), want);
+        check(&buffer);
+    }
+
+    #[test]
+    fn signs_and_folds_are_found_in_their_namespaces_only() {
+        let mut buffer = Buffer::new(BufferId(1), "file", &"x".repeat(100));
+        buffer.set_marks("plain", spread(3, 50));
+        assert!(!buffer.has_signs(ViewId(0), &[]));
+        assert_eq!(buffer.folds_for(ViewId(0), &[]).count(), 0);
+        let sign = Mark {
+            range: 10..12,
+            sign: Some(Arc::from("!")),
+            ..Mark::default()
+        };
+        let fold = Mark {
+            range: 20..40,
+            fold: true,
+            view: Some(ViewId(2)),
+            ..Mark::default()
+        };
+        buffer.set_marks("both", vec![sign, fold]);
+        assert!(buffer.has_signs(ViewId(0), &[]));
+        assert!(!buffer.has_signs(ViewId(0), &[Arc::from("both")]));
+        // The fold is only view 2's.
+        assert_eq!(buffer.folds_for(ViewId(0), &[]).count(), 0);
+        assert_eq!(buffer.folds_for(ViewId(2), &[]).count(), 1);
     }
 }

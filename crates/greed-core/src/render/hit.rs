@@ -249,14 +249,10 @@ impl<M: Measure> Renderer<M> {
             } else {
                 0
             };
-            for cells in self
-                .layout(editor, view, line, width)
-                .into_iter()
-                .skip(skip)
-            {
+            for cells in self.layout(editor, view, line, width).iter().skip(skip) {
                 // A scaled row takes more than one screen row; any of them
                 // finds it.
-                let height = super::row_height(&cells);
+                let height = super::row_height(cells);
                 if (row..row + height).contains(&usize::from(y)) {
                     let mut left = 0;
                     let mut last = None;

@@ -9,8 +9,9 @@
 
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -679,7 +680,14 @@ pub struct Renderer<M> {
     actions: RefCell<Vec<ActionArea>>,
     /// Where status line segments with actions are, as last drawn.
     status_actions: RefCell<Vec<StatusArea>>,
+    /// Lines laid out for the frame being drawn, by view, line, width and
+    /// columns scrolled: keeping the cursor in sight lays out the lines
+    /// that are then drawn.
+    layouts: RefCell<HashMap<LayoutKey, Rc<[Vec<Cell>]>>>,
 }
+
+/// A laid out line's view, line, width and columns scrolled sideways.
+type LayoutKey = (ViewId, usize, usize, usize);
 
 /// Where a status line segment with an action is on screen.
 #[derive(Debug, Clone)]
@@ -697,12 +705,27 @@ impl<M: Measure> Renderer<M> {
             scenes: RefCell::default(),
             actions: RefCell::default(),
             status_actions: RefCell::default(),
+            layouts: RefCell::default(),
         }
     }
 
     /// Lays out the focused view, scrolling it to keep the primary cursor
     /// visible.
     pub fn frame(
+        &self,
+        editor: &mut Editor,
+        size: Size,
+        status: &Status,
+        decorations: &dyn Decorations,
+    ) -> Frame {
+        self.layouts.borrow_mut().clear();
+        let frame = self.draw_frame(editor, size, status, decorations);
+        // What's laid out holds only while the editor is as it was.
+        self.layouts.borrow_mut().clear();
+        frame
+    }
+
+    fn draw_frame(
         &self,
         editor: &mut Editor,
         size: Size,
@@ -1104,19 +1127,16 @@ impl<M: Measure> Renderer<M> {
             let start = text.line_to_byte(line);
             let lines = start..text.line_to_byte(line + 1).max(start + 1);
             let head_shown = !lines.contains(&head) || shows(&layout, head);
-            let on_line = |m: &&&Mark| m.range.start < lines.end && m.range.end >= lines.start;
+            let styled = marks_on(&styled, &lines);
+            let on_line = |m: &&&Mark| m.range.start < lines.end;
             let line_gutter = Gutter::for_line(gutter, signs, &styled, &lines);
             let mut overlay = Overlay::default();
-            for (i, cells) in layout.into_iter().enumerate().skip(skip) {
+            for (i, cells) in layout.iter().enumerate().skip(skip) {
                 if rows.len() == text_rows {
                     break 'lines;
                 }
                 let mut row = Row {
-                    tags: styled
-                        .iter()
-                        .filter(|m| m.line && on_line(m))
-                        .map(|m| Tag::from(m.style.clone()))
-                        .collect(),
+                    tags: line_tags(styled.iter().filter(on_line)),
                     ..Row::default()
                 };
                 if line_numbers {
@@ -1124,7 +1144,7 @@ impl<M: Measure> Renderer<M> {
                 }
                 // Whether the line's end cell is drawn: the cursor is on it.
                 let (mut x, mut drawn) = (gutter, false);
-                for cell in &cells {
+                for cell in cells {
                     let place = screen_position(area, x, rows.len());
                     if cursor_here(cell, (head, head_shown), &lines, cursor.is_some()) {
                         cursor = Some(place);
@@ -1158,7 +1178,7 @@ impl<M: Measure> Renderer<M> {
                     self.push_eol_text(&mut row, at, (gap, drawn), styled.iter().filter(on_line));
                     overlay.past_the_end(&mut row, usize::from(area.width), &self.measure);
                 }
-                push_covering(&mut rows, row, row_height(&cells), text_rows);
+                push_covering(&mut rows, row, row_height(cells), text_rows);
             }
             let room = usize::from(area.width).saturating_sub(gutter);
             let lines = virtual_lines(editor, view, line);
@@ -1286,13 +1306,19 @@ impl<M: Measure> Renderer<M> {
     /// Splits `line` into screen rows of at most `width` cells, breaking
     /// after whitespace where it can; a line that doesn't wrap is one row,
     /// of the cells from the view's `columns` on.
-    fn layout(&self, editor: &Editor, view: &View, line: usize, width: usize) -> Vec<Vec<Cell>> {
-        let (cells, end) = self.line_cells(editor, view, line);
-        if nowrap(editor, view, line) {
-            vec![clip(cells, view.columns, width, end)]
-        } else {
-            wrap(cells, width, end)
+    fn layout(&self, editor: &Editor, view: &View, line: usize, width: usize) -> Rc<[Vec<Cell>]> {
+        let key = (view.id, line, width, view.columns);
+        if let Some(laid) = self.layouts.borrow().get(&key) {
+            return laid.clone();
         }
+        let (cells, end) = self.line_cells(editor, view, line);
+        let laid: Rc<[Vec<Cell>]> = if nowrap(editor, view, line) {
+            Rc::from([clip(cells, view.columns, width, end)])
+        } else {
+            wrap(cells, width, end).into()
+        };
+        self.layouts.borrow_mut().insert(key, laid.clone());
+        laid
     }
 
     /// The column byte `pos` is drawn at in its line in `view`, the line as
@@ -1345,7 +1371,7 @@ impl<M: Measure> Renderer<M> {
         let concealed = concealed(buffer, view, line, start..end, editor);
         // Text from marks, shown before the character at its position.
         let mut inserted: Vec<(&Mark, &str)> = buffer
-            .marks_for(view.id, view.hidden_marks.clone())
+            .marks_over(view.id, view.hidden_marks.clone(), start..end)
             .filter(|m| !m.eol && !m.overlay && (start..=end).contains(&m.range.start))
             .filter(|m| !m.conceal || !reveals(text, view, m, line, editor))
             .filter_map(|m| Some((m, m.text.as_deref()?)))
@@ -1354,7 +1380,7 @@ impl<M: Measure> Renderer<M> {
         let mut inserted = inserted.into_iter().peekable();
         // Text scaled up by marks: each byte at the largest scale over it.
         let scaled: Vec<&Mark> = buffer
-            .marks_for(view.id, view.hidden_marks.clone())
+            .marks_over(view.id, view.hidden_marks.clone(), start..end)
             .filter(|m| m.scale > 1 && m.range.start < end && m.range.end > start)
             .collect();
         let scale_at = |byte: usize| {
@@ -2088,9 +2114,7 @@ fn gutter_width(editor: &Editor, view: &View, line_numbers: bool) -> (usize, boo
     }
     let buffer = editor.buffer(view.buffer);
     let numbers = buffer.text().len_lines().to_string().len() + 1;
-    let signs = buffer
-        .marks_for(view.id, view.hidden_marks.clone())
-        .any(|m| m.sign.is_some());
+    let signs = buffer.has_signs(view.id, &view.hidden_marks);
     (numbers + if signs { SIGN_WIDTH } else { 0 }, signs)
 }
 
@@ -2473,12 +2497,30 @@ fn place(options: &FloatOptions, area: Rect, cursor: Option<Position>) -> Rect {
     inside(area.x + x, area.y + y)
 }
 
+/// The styles of those of `marks` that style their whole lines.
+fn line_tags<'a>(marks: impl Iterator<Item = &'a &'a Mark>) -> SmallVec<[Tag; 1]> {
+    marks
+        .filter(|m| m.line)
+        .map(|m| Tag::from(m.style.clone()))
+        .collect()
+}
+
+/// Those of `marks` that touch the line of bytes `lines`, its end too:
+/// each cell drawn looks at every mark, so only the line's, rather than
+/// every one in sight.
+fn marks_on<'a>(marks: &[&'a Mark], lines: &Range<usize>) -> Vec<&'a Mark> {
+    marks
+        .iter()
+        .filter(|m| m.range.start <= lines.end && m.range.end >= lines.start)
+        .copied()
+        .collect()
+}
+
 /// The marks `view` draws that touch `visible`.
 fn marks_in<'a>(editor: &'a Editor, view: &View, visible: &Range<usize>) -> Vec<&'a Mark> {
     editor
         .buffer(view.buffer)
-        .marks_for(view.id, view.hidden_marks.clone())
-        .filter(|m| m.range.start <= visible.end && m.range.end >= visible.start)
+        .marks_over(view.id, view.hidden_marks.clone(), visible.clone())
         .collect()
 }
 
@@ -2524,8 +2566,7 @@ pub(crate) fn hidden_lines(editor: &Editor, view: &View) -> Vec<Range<usize>> {
     let text = buffer.text();
     let cursors: Vec<usize> = cursor_lines(text, view).collect();
     let mut hidden: Vec<Range<usize>> = buffer
-        .marks_for(view.id, view.hidden_marks.clone())
-        .filter(|m| m.fold)
+        .folds_for(view.id, &view.hidden_marks)
         .filter_map(|m| {
             let first = text.byte_to_line(m.range.start.min(text.len_bytes()));
             let hidden = first + 1..last_line(text, &m.range) + 1;
@@ -2558,8 +2599,9 @@ fn virtual_lines<'a>(
 ) -> impl Iterator<Item = (&'a Mark, &'a VirtualLine)> {
     let buffer = editor.buffer(view.buffer);
     let text = buffer.text();
+    let bytes = text.line_to_byte(line)..text.line_to_byte((line + 1).min(text.len_lines()));
     buffer
-        .marks_for(view.id, view.hidden_marks.clone())
+        .marks_over(view.id, view.hidden_marks.clone(), bytes)
         .filter(move |m| !m.lines.is_empty() && last_line(text, &m.range) == line)
         .flat_map(|m| m.lines.iter().map(move |l| (m, l)))
 }
@@ -2587,7 +2629,7 @@ fn concealed<'a>(
     editor: &Editor,
 ) -> Vec<&'a Mark> {
     buffer
-        .marks_for(view.id, view.hidden_marks.clone())
+        .marks_over(view.id, view.hidden_marks.clone(), bytes.clone())
         .filter(|m| m.conceal && m.range.start < bytes.end && m.range.end > bytes.start)
         .filter(|m| !reveals(buffer.text(), view, m, line, editor))
         .collect()
@@ -2651,8 +2693,9 @@ fn fitting_from_end(heights: &[usize], room: &mut usize) -> Option<usize> {
 fn nowrap(editor: &Editor, view: &View, line: usize) -> bool {
     let buffer = editor.buffer(view.buffer);
     let text = buffer.text();
+    let bytes = text.line_to_byte(line)..text.line_to_byte((line + 1).min(text.len_lines()));
     buffer
-        .marks_for(view.id, view.hidden_marks.clone())
+        .marks_over(view.id, view.hidden_marks.clone(), bytes)
         .any(|m| {
             m.nowrap
                 && text.byte_to_line(m.range.start.min(text.len_bytes())) <= line

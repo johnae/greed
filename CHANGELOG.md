@@ -44,6 +44,7 @@ the repository's history.
 - markdown: a table wider than the view runs past its edge instead of each row wrapping apart, and in an agent's transcript a table no longer swallows the tool call after it
 - chat: the sidebar shows an account's rooms as soon as it has signed in; after a restart it could wait minutes, until something changed in one of them
 - statusline: the function the cursor is in is looked up once per edit or move, not for every frame; it was most of the status line's time, a few ms a key
+- render: drawing looks only at the marks in sight, line by line, and lays each line out once a frame; a terminal with colored scrollback took up to 0.7 s a frame, and a full screen program redrawing at 50 fps is drawn in half the time
 - chat: on a machine where you haven't signed in to chat, searching and the agent's chat tools say so; they used to start an empty chat service and find nothing
 - chat: a room left open in a session nobody is attached to stays unread and alerts, and Mattermost asks for your rooms at most every two seconds rather than on every post
 
