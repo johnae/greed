@@ -45,6 +45,7 @@ the repository's history.
 - markdown: a table wider than the view runs past its edge instead of each row wrapping apart, and in an agent's transcript a table no longer swallows the tool call after it
 - chat: the sidebar shows an account's rooms as soon as it has signed in; after a restart it could wait minutes, until something changed in one of them
 - statusline: the function the cursor is in is looked up once per edit or move, not for every frame; it was most of the status line's time, a few ms a key
+- statusline: a piece is moved out of the frame only once it's slow three times in a row, and it says so in the debug log (`:debug plugin:statusline`); one slow moment, like a busy machine, kept putting a notice on the status line about pieces as quick as the tab's name
 - render: drawing looks only at the marks in sight, line by line, and lays each line out once a frame; a terminal with colored scrollback took up to 0.7 s a frame, and a full screen program redrawing at 50 fps is drawn in half the time
 - gui: the window draws again only the rows whose text changed, reusing the rest from the frame before, so a key's frame takes about a third of the time it did
 - gui: rows that only moved, like those under a line you add, are drawn from the frame before too

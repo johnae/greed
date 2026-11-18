@@ -3012,9 +3012,10 @@ monorepo, add an async piece: its `refresh` runs in the background and can
 run programs, and the status line shows what it last found, never waiting
 for it.
 
-A plain piece that turns out slow (more than 10 ms to draw) is moved to
-the background the same way, with a message saying so: from then on it's
-drawn at most once a second and the status line shows what it last made.
+A plain piece that turns out slow (more than 10 ms to draw, three times in
+a row) is moved to the background the same way: from then on it's drawn at
+most once a second and the status line shows what it last made.
+`:debug plugin:statusline` says which pieces were moved.
 A status line of your own (`greed.statusline`) that takes too long is
 stopped, and the last one stays up for a second before it's built again.
 Typing never waits for either.

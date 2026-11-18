@@ -479,32 +479,61 @@ test("a long path gives way, keeping its end, [+] and the right side", function(
 	assert(string.find(status, "1:%d"), status)
 end)
 
-test("a piece slow to draw is drawn in the background from then on", function(t)
+-- Keeps the editor busy for `seconds`.
+local function busy(seconds: number)
+	local from = os.clock()
+	while os.clock() - from < seconds do
+	end
+end
+
+test("a piece slow to draw three times in a row is drawn in the background", function(t)
 	local statusline = require("@statusline")
 	local calls = 0
 	statusline.add("right", "test-slow", function()
 		calls += 1
-		if calls == 1 then
-			local from = os.clock()
-			while os.clock() - from < 0.03 do
-			end
-			return "first"
+		if calls <= 3 then
+			busy(0.03)
+			return "slow"
 		end
 		return `later {calls}`
 	end)
 	t:buffer("|abc")
-	local _, right = t:status()
-	assert(right and string.find(right, "first", 1, true), right)
+	for _ = 1, 3 do
+		t:status()
+	end
 	-- Found slow, it isn't drawn with the status line any more: frames show
 	-- what it last made until it's drawn again, at most once a second.
-	_, right = t:status()
-	assert(right and string.find(right, "first", 1, true) and calls == 1, `{right} {calls}`)
+	local _, right = t:status()
+	assert(right and string.find(right, "slow", 1, true) and calls == 3, `{right} {calls}`)
 	t:wait(1100)
 	_, right = t:status()
 	t:wait(10)
 	_, right = t:status()
 	assert(right and string.find(right, "later", 1, true), right)
+	-- It's said where its plugin's debug lines go, not on the status line.
+	for _, said in t:messages() do
+		assert(not string.find(said, "status line:", 1, true), said)
+	end
 	statusline.remove("test-slow")
+end)
+
+test("a piece slow to draw once, as in a pause, stays drawn with the status line", function(t)
+	local statusline = require("@statusline")
+	local calls = 0
+	statusline.add("right", "test-paused", function()
+		calls += 1
+		if calls == 1 then
+			busy(0.03)
+		end
+		return `drawn {calls}`
+	end)
+	t:buffer("|abc")
+	for _ = 1, 4 do
+		t:status()
+	end
+	local _, right = t:status()
+	assert(right and string.find(right, "drawn 5", 1, true), right)
+	statusline.remove("test-paused")
 end)
 
 test("shows the function and type the cursor is in, outermost first", function(t)

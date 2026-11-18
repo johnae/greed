@@ -533,10 +533,12 @@ local function clickable(out: { greed.StatusSegment }, first: number, action: st
 	end
 end
 
--- A piece taking longer than this (milliseconds) to draw once is drawn in
--- the background from then on, so the status line, built for every frame,
--- never holds the editor up.
+-- A piece taking longer than this (milliseconds) to draw, `SLOW_TIMES` in a
+-- row, is drawn in the background from then on, so the status line, built
+-- for every frame, never holds the editor up. Once alone is a pause, like
+-- the machine being busy, not the piece.
 local SLOW = 10
+local SLOW_TIMES = 3
 -- How often a slow piece is drawn again, at most (milliseconds).
 local SLOW_EVERY = 1000
 
@@ -546,10 +548,15 @@ local slow: { [Entry]: { part: Part?, running: boolean, at: number } } = setmeta
 	{ __mode = "k" }
 ) :: any
 
--- Marks `entry` slow, having taken `took` to make `part`.
+-- How many times in a row each piece took longer than `SLOW`.
+local strikes: { [Entry]: number } = setmetatable({}, { __mode = "k" }) :: any
+
+-- Marks `entry` slow, having taken `took` to make `part`. Said in this
+-- plugin's debug lines: it's for whoever writes the piece.
 local function found_slow(entry: Entry, part: Part?, took: string)
 	slow[entry] = { part = part, running = false, at = greed.now() }
-	greed.echo(`status line: {entry.name} took {took} to draw; it's drawn in the background now`)
+	strikes[entry] = nil
+	greed.debug.log(`{entry.name} took {took} to draw; it's drawn in the background now`)
 end
 
 -- What `entry` shows for `ctx`: drawn now, or for a slow piece what it last
@@ -568,8 +575,13 @@ local function part_of(entry: Entry, ctx: greed.StatusContext): Part?
 			error(part, 0)
 		end
 		local took = greed.now() - from
-		if took > SLOW then
-			found_slow(entry, part, `{math.floor(took)} ms`)
+		if took <= SLOW then
+			strikes[entry] = nil
+		else
+			strikes[entry] = (strikes[entry] or 0) + 1
+			if strikes[entry] >= SLOW_TIMES then
+				found_slow(entry, part, `{math.floor(took)} ms`)
+			end
 		end
 		return part
 	end
