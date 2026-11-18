@@ -870,6 +870,7 @@ of going to the agent:
 | `/auto` | Switches auto mode, as `alt-a` does |
 | `/thoughts` | Hides or shows what agents think |
 | `/fork` | A new session that starts with everything said so far |
+| `/resume [words]` | Picks a saved session of this project, newest first, and takes it up in this view; words narrow the picker |
 | `/effort [none\|low\|medium\|high\|max]` | Greed's own agent: how hard its model thinks, for this session; without a word, a picker |
 | `/compact` | Greed's own agent: summarises all but its last few turns, to save room |
 
@@ -994,6 +995,8 @@ bringing both in may clash`), once per file.
 Sessions are kept in the cache folder until you close them with `x`. After
 a restart, `space i l` lists them and takes one up: the agent replays the
 conversation into a new transcript, and its workspace is still there.
+`/resume` in a transcript does the same from a picker, in the view you're
+in. The session you typed it in closes if nothing was said there yet.
 Agents that can't take up or fork a session say so. Greed's own agent
 keeps its sessions itself, as described above.
 

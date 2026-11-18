@@ -820,6 +820,15 @@ local function repository(root: string): string
 	return key
 end
 
+-- What the agent of kept session `entry` is called.
+local function agent_title(entry: Saved): string
+	local agent = agents.named(entry.agent)
+	return if agent
+		then agent.title or agent.name
+		elseif entry.agent == IN_TERMINAL then "Claude Code"
+		else entry.agent
+end
+
 -- The list's rows: the sessions of the repository of the project at
 -- `root`, running and kept, that project's first, then the newest.
 local function rows(root: string): { list.Row }
@@ -885,14 +894,10 @@ local function rows(root: string): { list.Row }
 	end
 	for _, entry in entries do
 		if not running[entry.session_id] then
-			local agent = agents.named(entry.agent)
 			table.insert(out, {
 				key = `k{entry.session_id}`,
 				saved = entry,
-				agent = if agent
-					then agent.title or agent.name
-					elseif entry.agent == IN_TERMINAL then "Claude Code"
-					else entry.agent,
+				agent = agent_title(entry),
 				title = entry.title,
 				status = "saved",
 				time = entry.time,
@@ -1284,6 +1289,65 @@ greed.command({
 	doc = "Take up Greed's own sessions marked in the list, or the one under the cursor, in this workspace",
 	run = function(ctx)
 		resume_chosen(ctx, list.root())
+	end,
+})
+
+-- Whether `s` is a session nothing was said in yet, working in the
+-- project: one `/resume` leaves for the session taken up.
+local function untouched(s: Session): boolean
+	if s.workspace then
+		return false
+	end
+	for _, entry in s.entries do
+		if entry.kind == "user" then
+			return false
+		end
+	end
+	return true
+end
+
+--- Offers the sessions kept for the project of `s` (or the one you're in),
+--- newest first, those with `query` in them when given, and takes up the
+--- one picked in `view`. `s` goes if nothing was said in it yet, as it'd
+--- only be left empty.
+function M.resume_picked(view: greed.View, s: Session?, query: string?)
+	local entries = M.saved((s and s.root) or core.project.root())
+	if #entries == 0 then
+		greed.echo("no saved sessions to take up here")
+		return
+	end
+	local now = os.time()
+	local items: { picker.Item } = {}
+	for _, entry in entries do
+		table.insert(items, {
+			label = `{agent_title(entry)} · {entry.title} · {core.time.ago(now - entry.time)}`,
+			value = entry,
+		})
+	end
+	picker.pick("Take up a session", items, function(chosen)
+		local again, err = M.resume(chosen.value)
+		if again == nil then
+			greed.echo(`can't take it up: {err}`)
+			return
+		end
+		if view:valid() then
+			view:show(buffer_of(again))
+			view:focus()
+			transcript.focus_prompt(view)
+		end
+		if s and s ~= again and untouched(s) then
+			M.close(s)
+		end
+	end, { query = query })
+end
+
+greed.command({
+	name = "agent-resume-pick",
+	doc = "Pick a saved session of this project and take it up here, as /resume in a transcript does",
+	args = { { name = "query", type = "string", optional = true } },
+	run = function(ctx)
+		local query = ctx.values.query
+		M.resume_picked(ctx.view, current(ctx), if query and query ~= "" then query else nil)
 	end,
 })
 

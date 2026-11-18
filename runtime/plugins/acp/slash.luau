@@ -121,6 +121,12 @@ M.COMMANDS = {
 		when = native.drives,
 	},
 	{
+		name = "resume",
+		doc = "Pick a saved session of this project to take up here",
+		hint = "words in it",
+		command = "agent-resume-pick",
+	},
+	{
 		name = "fork",
 		doc = "A new session that starts with everything said so far",
 		command = "agent-fork",

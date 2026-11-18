@@ -407,19 +407,22 @@ test("Greed's own sessions kept per project folder move to their repository's", 
 	assert(#acp.saved(main) == 2, "the same for every workspace")
 end)
 
+-- Keeps a session of the fake agent in `dir` to take up again.
+local function keep(dir: string, id: string, title: string, ago: number)
+	local file = `{assert(greed.fs.dirs().cache)}/agents.json`
+	local text = greed.fs.read(file)
+	local all = if text then greed.json.decode(text) else {}
+	local entry =
+		{ agent = "fake", root = dir, session_id = id, title = title, time = os.time() - ago }
+	table.insert(all, entry)
+	greed.fs.write(file, greed.json.encode(greed.json.array(all)))
+end
+
 test("a kept session shows as saved; enter takes it up, x forgets it without asking", function(t)
 	local dir = t:tempdir({})
 	local file = `{assert(greed.fs.dirs().cache)}/agents.json`
-	local function keep(id: string, title: string, ago: number)
-		local text = greed.fs.read(file)
-		local all = if text then greed.json.decode(text) else {}
-		local entry =
-			{ agent = "fake", root = dir, session_id = id, title = title, time = os.time() - ago }
-		table.insert(all, entry)
-		greed.fs.write(file, greed.json.encode(greed.json.array(all)))
-	end
-	keep("old1", "an earlier task", 7200)
-	keep("old2", "another one", 3 * 86400)
+	keep(dir, "old1", "an earlier task", 7200)
+	keep(dir, "old2", "another one", 3 * 86400)
 	acp.list(dir)
 	local lines = rows()
 	assert(#lines == 2, table.concat(lines, "\n"))
@@ -455,5 +458,53 @@ test("f in the list forks the session under the cursor and shows the fork", func
 		string.find(greed.view():buffer():text(), "forked from Fake", 1, true),
 		"with all said so far"
 	)
+	close_all()
+end)
+
+-- Types `/resume` and `words` in the transcript in view, sends it, and
+-- picks the first session the picker offers.
+local function resume(t: test.TestContext, words: string)
+	local view = greed.view()
+	local pos = view:buffer():len()
+	view:set_selection({ ranges = { { anchor = pos, head = pos } }, primary = 1 })
+	local keys = {}
+	for char in string.gmatch(`/resume {words}`, ".") do
+		table.insert(keys, if char == " " then "space" else char)
+	end
+	t:keys(`i {table.concat(keys, " ")} esc alt-enter`)
+	t:wait(50)
+	t:keys("enter")
+	t:wait(50)
+end
+
+test("/resume picks a saved session and takes it up in place of a new one", function(t)
+	local dir = t:tempdir({})
+	keep(dir, "old1", "an earlier task", 7200)
+	keep(dir, "old2", "another one", 3 * 86400)
+	local fresh = start(t, dir)
+	local view = greed.view()
+	resume(t, "another")
+	local s = assert(acp.of(view:buffer()), "taken up in the same view")
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	t:wait(30)
+	assert(s.session_id == "old2", tostring(s.session_id))
+	assert(not table.find(acp.sessions(), fresh), "the new one nothing was said in goes")
+	close_all()
+end)
+
+test("/resume leaves a session something was said in running", function(t)
+	local dir = t:tempdir({})
+	keep(dir, "old1", "an earlier task", 7200)
+	local first = start(t, dir)
+	send(t, first, "hello")
+	resume(t, "")
+	local s = assert(acp.of(greed.view():buffer()))
+	t:wait_for(function()
+		return s.status == "idle"
+	end)
+	assert(s ~= first and s.session_id == "old1", tostring(s.session_id))
+	assert(table.find(acp.sessions(), first), "the one you talked in stays")
 	close_all()
 end)
