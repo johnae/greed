@@ -229,7 +229,7 @@ fn fake_ssh(world: &World) -> std::path::PathBuf {
     std::fs::write(
         &fake_ssh,
         format!(
-            "#!/bin/sh\nshift 2\n[ \"$*\" = 'sh -s' ] || {{ echo \"not plain words: $*\" >&2; exit 9; }}\nHOME={} exec sh -s\n",
+            "#!/bin/sh\nwhile [ \"$1\" = -o ]; do shift 2; done\nshift 2\n[ \"$*\" = 'sh -s' ] || {{ echo \"not plain words: $*\" >&2; exit 9; }}\nHOME={} exec sh -s\n",
             world.root.join("remote-home").display()
         ),
     )
@@ -523,7 +523,7 @@ fn greed_ssh_brings_your_ssh_agent_to_the_session_on_the_other_machine() {
         format!(
             "#!/bin/sh\necho \"$*\" >> {root}/ssh-args\n\
              [ \"$1\" = -G ] && {{ echo 'forwardagent yes'; exit 0; }}\n\
-             [ \"$1\" = -o ] && shift 2\nshift 2\n\
+             while [ \"$1\" = -o ]; do shift 2; done\nshift 2\n\
              [ \"$*\" = 'sh -s' ] || {{ echo \"not plain words: $*\" >&2; exit 9; }}\n\
              HOME={root}/remote-home exec sh -s\n",
             root = world.root.display()
@@ -589,6 +589,7 @@ fn greed_ssh_brings_your_ssh_agent_to_the_session_on_the_other_machine() {
         args.contains("-o ForwardAgent=no -T somehost sh -s"),
         "ssh's own forwarding is off: {args}"
     );
+    assert!(args.contains("-o Compression=yes"), "compressed: {args}");
     world.eval("remote", "require('@greed').quit()");
 }
 

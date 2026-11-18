@@ -1040,7 +1040,9 @@ fn ssh_once(
         }
         format!("couldn't attach on {host}: {err}").into()
     };
-    let mut options: Vec<&str> = Vec::new();
+    // Frames are JSON, which shrinks some 30 times compressed, as what
+    // changed is mostly what was there a moment ago.
+    let mut options: Vec<&str> = vec!["-o", "Compression=yes"];
     if agent.is_some() {
         options.extend(["-o", "ForwardAgent=no"]);
     }
