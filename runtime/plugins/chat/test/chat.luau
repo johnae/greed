@@ -2189,3 +2189,55 @@ test("with no chat account on this machine, reading and searching say so", funct
 	assert(found == nil and trouble == backend.NONE, tostring(trouble))
 	assert(#hits == 0 and #troubles == 0, "search everywhere finds nothing, and that's no trouble")
 end)
+
+test(
+	"the list fetches an account's rooms once it's ready, without waiting for a change",
+	function(t)
+		backend.reset()
+		-- Like Mattermost, it has no rooms to give before it's signed in.
+		local ready = false
+		local notify = backend.use("matrix", {
+			rooms = function(): (any, string?)
+				if not ready then
+					return nil, "not signed in yet"
+				end
+				return {
+					{
+						id = "!plans:x",
+						account = "@anna:x",
+						name = "Plans",
+						kind = "room",
+						unread = 0,
+						mentions = 0,
+						favourite = false,
+						muted = false,
+						encrypted = false,
+						active = 1,
+					},
+				}
+			end,
+		})
+		local function state(now: string)
+			notify("account.changed", {
+				id = "@anna:x",
+				server = "https://x",
+				name = "Anna",
+				state = { state = now },
+			})
+		end
+		state("connecting")
+		t:buffer("|x")
+		t:run("chat")
+		t:wait(50)
+		assert(not string.find(greed.view():buffer():text(), "Plans", 1, true), "not ready yet")
+		ready = true
+		state("ready")
+		t:wait(50)
+		local text = greed.view():buffer():text()
+		assert(string.find(text, "Plans", 1, true), text)
+		assert(
+			not string.find(text, "not signed in yet", 1, true),
+			"what it said before goes: " .. text
+		)
+	end
+)

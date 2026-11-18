@@ -224,6 +224,8 @@ local function fetch_rooms(o: List, key: string)
 	end
 	if rooms then
 		o.rooms[key] = rooms
+		-- What a fetch before the account was ready said no longer holds.
+		o.trouble = nil
 	else
 		o.trouble = why
 	end
@@ -360,11 +362,29 @@ backend.on_rooms(function(key: string)
 	end
 end)
 
+-- The accounts that were ready when the list last heard, by key.
+local was_ready: { [string]: boolean } = {}
+
+-- An account that just became ready has its rooms fetched: asked before
+-- it signed in, it had none to give, and a quiet one may not say its
+-- rooms changed for minutes.
 backend.on_accounts(function()
 	local o = list
+	local now_ready: { [string]: boolean } = {}
+	for key, account in backend.accounts do
+		now_ready[key] = account.state.state == "ready"
+	end
 	if o and o.buffer:valid() then
+		for key, ready in now_ready do
+			if ready and not was_ready[key] then
+				greed.spawn(function()
+					fetch_rooms(o, key)
+				end)
+			end
+		end
 		o.view:redraw()
 	end
+	was_ready = now_ready
 end)
 
 greed.command({
