@@ -278,6 +278,9 @@ export type Mark = {
 	--- on over the empty room there, after any `eol` text, a space only
 	--- moving what follows along, so several can share it (like rulers).
 	overlay: boolean?,
+	--- With `text` at the start of a line, draw it again at the start of
+	--- each row the line wraps onto, like the bar beside a card.
+	wrapped: boolean?,
 	--- Hide the text, showing `text` (if any) in its place, e.g. the
 	--- brackets of a `[[link]]`, except where `reveal` says.
 	conceal: boolean?,

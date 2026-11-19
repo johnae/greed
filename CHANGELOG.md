@@ -32,6 +32,7 @@ the repository's history.
 
 ### Fixed
 
+- agent: a long line in the box keeps the box's bar down all its rows, so the box no longer looks broken where it wraps
 - agent: the transcript can't be scrolled past its end, which left its box up in the middle of the pane
 - agent: a resumed Claude session shows your messages as you wrote them, without the editor context Greed sent along, and where you stopped it as a note
 - agent: a call the agent gives up on takes back what it proposed

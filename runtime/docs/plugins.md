@@ -918,6 +918,10 @@ greed.tab.set_layout({
     at their column, even on a blank line:
     `{ from = line_end, to = line_end, text = "     ┊", overlay = true, style = "ui.ruler" }`.
 
+  - `wrapped` draws `text` at a line's start again on each row the line
+    wraps onto, so a bar beside a card or a quote doesn't stop halfway:
+    `{ from = line_start, to = line_start, text = "▎ ", wrapped = true, style = "agent.you" }`.
+
   - `conceal` hides text (like a link's brackets), shown again as `reveal`
     says: `"line"` (the default) when a cursor is on its line, `"cursor"`
     when one is inside it, `"never"`, `"auto"`, which follows the mode: on

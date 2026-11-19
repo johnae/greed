@@ -627,6 +627,9 @@ struct Cell {
     /// transcript's bar) show on it as on the first row, and the cursor and
     /// selections never do.
     repeated: bool,
+    /// For inserted text: its mark's `wrapped`, so at the line's start it
+    /// starts each wrapped row too, as the indent does.
+    wrapped: bool,
 }
 
 impl Cell {
@@ -1297,10 +1300,13 @@ impl<M: Measure> Renderer<M> {
         view: ViewId,
         place: Position,
     ) {
-        if cell.repeated {
-            push_repeated(row, cell, marks);
-        } else {
-            self.push_inserted(row, cell, view, place);
+        match (cell.repeated, &cell.inserted) {
+            (true, None) => push_repeated(row, cell, marks),
+            // A mark's text again on a wrapped row: drawn, but not a button twice.
+            (true, Some(style)) => {
+                row.push_scaled(&cell.text, smallvec![Tag::from(style.clone())], cell.scale);
+            }
+            (false, _) => self.push_inserted(row, cell, view, place),
         }
     }
 
@@ -1450,6 +1456,7 @@ impl<M: Measure> Renderer<M> {
                         action: mark.action.clone().map(|a| (a, mark.range.start)),
                         scale,
                         repeated: false,
+                        wrapped: mark.wrapped,
                     });
                     x += w;
                 }
@@ -1477,6 +1484,7 @@ impl<M: Measure> Renderer<M> {
                 action: None,
                 scale,
                 repeated: false,
+                wrapped: false,
             });
             x += w;
         }
@@ -2842,6 +2850,7 @@ fn clipped(mark: &str, byte: usize) -> Cell {
         action: None,
         scale: 1,
         repeated: false,
+        wrapped: false,
     }
 }
 
@@ -2857,6 +2866,7 @@ fn end_cell(end: usize) -> Cell {
         action: None,
         scale: 1,
         repeated: false,
+        wrapped: false,
     }
 }
 
@@ -2876,13 +2886,14 @@ fn push_repeated(row: &mut Row, cell: &Cell, marks: &[&Mark]) {
     row.push_scaled(&cell.text, tags, cell.scale);
 }
 
-/// A line's leading whitespace, as copies to start its wrapped rows with
-/// (see [`Cell::repeated`]); none when the line is only whitespace or the
-/// indent would take more than half of `width`.
+/// A line's leading whitespace, and mark text there that asks to
+/// [`Cell::wrapped`], as copies to start its wrapped rows with (see
+/// [`Cell::repeated`]); none when the line is only that or the indent
+/// would take more than half of `width`.
 fn wrap_indent(cells: &[Cell], width: usize) -> Vec<Cell> {
     let leading: Vec<Cell> = cells
         .iter()
-        .take_while(|c| c.is_space())
+        .take_while(|c| c.is_space() || c.wrapped)
         .map(|c| Cell {
             repeated: true,
             ..c.clone()

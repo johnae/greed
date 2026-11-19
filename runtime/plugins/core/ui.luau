@@ -408,7 +408,10 @@ function M.input_sides(
 	for line = first, count - 1 do
 		local from = buffer:line_start(line)
 		local to = if line + 1 < count then buffer:line_start(line + 1) - 1 else buffer:len()
-		table.insert(marks, { from = from, to = from, style = style, text = "│ " })
+		table.insert(
+			marks,
+			{ from = from, to = from, style = style, text = "│ ", wrapped = true }
+		)
 		-- Text after a line's end is drawn a cell from it.
 		local pad = cells - 4 - width(buffer:slice(from, to))
 		if pad >= 0 then
@@ -449,7 +452,10 @@ function M.input_card(
 		local from = buffer:line_start(line)
 		local to = if line + 1 < count then buffer:line_start(line + 1) - 1 else buffer:len()
 		table.insert(marks, { from = from, to = to, style = style, line = true })
-		table.insert(marks, { from = from, to = from, style = accent, text = "▎ " })
+		table.insert(
+			marks,
+			{ from = from, to = from, style = accent, text = "▎ ", wrapped = true }
+		)
 	end
 	if under then
 		local pieces: { any } = { { text = "▎ ", style = accent } }

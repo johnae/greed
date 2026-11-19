@@ -128,6 +128,33 @@ fn a_bar_over_a_lines_indent_shows_on_each_of_its_rows() {
 }
 
 #[test]
+fn a_marks_wrapped_text_starts_each_row_its_line_wraps_onto() {
+    use greed_core::Mark;
+    let mut ed = editor("|the quick brown fox\nshort");
+    let buffer = ed.view(ed.focus()).buffer;
+    let bar = |at: usize, wrapped: bool| Mark {
+        range: at..at,
+        style: "agent.bar".into(),
+        text: Some("▎ ".into()),
+        wrapped,
+        ..Mark::default()
+    };
+    ed.decorate(buffer, "bar", vec![bar(0, true), bar(20, true)]);
+    let f = frame(&mut ed, 14, 6);
+    assert_eq!(
+        rows(&f),
+        ["1 ▎ the quick ", "  ▎ brown fox", "2 ▎ short", "", ""]
+    );
+    assert_eq!(tagged(&f, &Tag::from("agent.bar")).len(), 3);
+    // The cursor stays on the text, never on a copy.
+    assert_eq!(f.cursor, Some(Position { col: 4, row: 0 }));
+    // Without it, the text shows once and the row starts at the edge.
+    ed.decorate(buffer, "bar", vec![bar(0, false)]);
+    let f = frame(&mut ed, 14, 6);
+    assert_eq!(rows(&f)[..2], ["1 ▎ the quick ", "  brown fox"]);
+}
+
+#[test]
 fn a_click_on_a_wrapped_rows_indent_goes_to_its_first_character() {
     let mut ed = editor("|  the quick brown fox");
     let renderer = Renderer::new(CellWidth);

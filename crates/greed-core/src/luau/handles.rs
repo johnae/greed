@@ -877,6 +877,7 @@ fn marks_from_lua(lua: &Lua, list: &[Table]) -> LuaResult<Vec<Mark>> {
                 gutter: t.get::<Option<String>>("gutter")?.map(Into::into),
                 above: flag("above")?,
                 overlay: flag("overlay")?,
+                wrapped: flag("wrapped")?,
                 conceal: flag("conceal")?,
                 reveal: reveal_from_lua(t.get("reveal"))?,
                 fold: flag("fold")?,
@@ -949,6 +950,7 @@ fn mark_to_lua(lua: &Lua, mark: &Mark) -> LuaResult<Table> {
     t.set("gutter", mark.gutter.as_deref())?;
     t.set("above", mark.above)?;
     t.set("overlay", mark.overlay)?;
+    t.set("wrapped", mark.wrapped)?;
     t.set("conceal", mark.conceal)?;
     t.set(
         "reveal",

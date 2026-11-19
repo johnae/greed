@@ -207,6 +207,9 @@ pub struct Mark {
     /// Draw `text` over the characters from the start of the range, like a
     /// jump label, instead of inserting it.
     pub overlay: bool,
+    /// With `text` at the start of a line, draw it again at the start of
+    /// each row the line wraps onto, like the bar beside a card.
+    pub wrapped: bool,
     /// Hide the range's text, showing `text` (if any) in its place, e.g. the
     /// brackets of a `[[link]]`, except where `reveal` says.
     pub conceal: bool,
