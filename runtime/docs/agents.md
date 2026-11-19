@@ -432,9 +432,14 @@ Click one, press `enter` on the fence, or `space .` on it:
 
 | Button | |
 |---|---|
-| `▶ run` | Run it as a block in the project's shell, in the agent's folder; `ctrl-c` stops it, `space o w` finds it later |
-| `↳ prompt` | Put it at the shell's prompt to change first |
+| `▶ run` | Run it as a block in the project's shell, in the agent's folder, its output showing in a float as it comes; `ctrl-c` stops it, `esc` closes the float, `space o w` finds it later |
+| `↳ prompt` | Put it at the shell's prompt, in a float, to change first; `enter` runs it |
+| `◆ agent runs it` | Ask the agent to run it itself, with its own tools and the usual questions |
 | `⧉ copy` | Copy it |
+
+Once a command you ran with `▶ run` or `↳ prompt` is done, how it ended
+and the last 30 lines it printed go along with your next message, so "that
+failed, why?" just works. The agent can read the rest from the shell.
 
 A command that destroys, stops or sends something (`rm`, `kill`,
 `git push`, `kubectl delete`, `curl -X DELETE` and the like) asks y/n

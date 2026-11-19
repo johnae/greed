@@ -16,6 +16,7 @@ the repository's history.
 
 ### New
 
+- agent: a shell block's `▶ run` and `↳ prompt` show the shell in a float, and what came of the command goes to the agent with your next message; `◆ agent runs it` asks the agent to run it
 - agent: `/resume` in a transcript picks a saved session of the project and takes it up there, for Greed's own agent and Claude alike
 - search: `ref:` finds what mentions a Jira ticket, a GitLab or GitHub issue or MR, a commit or a link, in notes, mail and chat; `space .` on one has `mentioned-elsewhere`
 - watch: watchers, Greed's agent keeping an eye on chat rooms, mentions and DMs from your config: it escalates, drafts replies or answers where allowed, starting in quarantine

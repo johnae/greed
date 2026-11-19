@@ -135,6 +135,9 @@ export type Session = {
 	--- again with every move of the cursor.
 	pinned: string?,
 	pinned_sent: string?,
+	--- What came of the commands you ran from its messages since the last
+	--- prompt (agent.context.ran), to go with the next.
+	ran: { string }?,
 	--- When the turn going on now started, on `greed.now()`'s clock.
 	since: number?,
 	--- How many tokens of the model's context the conversation takes, and
@@ -1131,11 +1134,13 @@ function M.start_driven(opts: {
 	return session
 end
 
---- What to send with a prompt now: `context` (what you have on screen) and
---- what's pinned (`session.pinned`), each only when it isn't what the last
---- prompt took; nil for neither. Call it once the prompt is going.
+--- What to send with a prompt now: what came of the commands you ran
+--- (`session.ran`), `context` (what you have on screen) and what's pinned
+--- (`session.pinned`), the last two only when they aren't what the last
+--- prompt took; nil for none. Call it once the prompt is going.
 function M.fresh_context(session: Session, context: string?): string?
-	local parts: { string } = {}
+	local parts: { string } = session.ran or {}
+	session.ran = nil
 	if context and context ~= session.context_sent then
 		session.context_sent = context
 		table.insert(parts, context)

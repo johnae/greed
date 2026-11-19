@@ -76,7 +76,7 @@ while IFS= read -r line; do
 		update '{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"an earlier question"}}'
 		update '{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"an earlier answer"}}'
 		update '{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"[Request interrupted by user]"}}'
-		update '{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"<editor-context>\nIn: a terminal\n</editor-context>"}}'
+		update '{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"<editor-context>\nIn: a terminal\n</editor-context>\n\n<shell-run>\nThe user ran make\n</shell-run>"}}'
 		update '{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"try again"}}'
 		send "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{}}"
 		;;

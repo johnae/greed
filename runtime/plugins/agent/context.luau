@@ -233,12 +233,27 @@ function M.pinned_block(text: string?): string
 		.. "\n</pinned-context>"
 end
 
---- `text` without the blocks `describe` and `pinned_block` add, as when
---- an agent replays a message of yours from a saved session: what you
---- wrote, as you saw it.
+--- What came of a command the user ran from an agent's message: what ran,
+--- where, how it `ended` (like "failed with exit code 2"), the end of
+--- what it printed and its block's `id` in the shell, as a block to send
+--- with their next message.
+function M.ran(
+	run: { command: string, cwd: string, ended: string, output: string, id: number }
+): string
+	return "<shell-run>\n"
+		.. `The user ran this from your message in their shell, in {run.cwd}, and it {run.ended}:\n`
+		.. `{run.command}\n`
+		.. `The end of what it printed (shell_read with id {run.id} gives all of it):\n`
+		.. untrusted(`what {run.command} printed`, run.output)
+		.. "\n</shell-run>"
+end
+
+--- `text` without the blocks `describe`, `pinned_block` and `ran` add, as
+--- when an agent replays a message of yours from a saved session: what
+--- you wrote, as you saw it.
 function M.without_blocks(text: string): string
 	local found = 0
-	for _, tag in { "editor%-context", "pinned%-context" } do
+	for _, tag in { "editor%-context", "pinned%-context", "shell%-run" } do
 		local n
 		text, n = string.gsub(text, `%s*<{tag}>.-</{tag}>%s*`, "\n\n")
 		found += n

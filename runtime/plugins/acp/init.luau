@@ -1391,6 +1391,35 @@ greed.command({
 	end,
 })
 
+-- Sends `text` to `s`'s agent with what's on screen and pinned, or while
+-- it works, queues it for its turn; `taken` runs once it's gone or queued,
+-- to clear the box. A message it can't answer, like one to a model
+-- without a key, isn't taken.
+local function deliver(s: Session, text: string, taken: () -> ())
+	if s.status == "working" or s.status == "waiting" then
+		if text ~= "" or s.attached then
+			taken()
+			session.queue(s, text)
+		end
+		return
+	end
+	local problem = session.check(s)
+	changed(s)
+	if problem then
+		greed.echo(problem)
+		return
+	end
+	taken()
+	local context = if greed.option.get("agent-editor-context") == true
+		then agent_context.describe(s.root)
+		else nil
+	s.pinned = agent_context.pinned_text()
+	local ok, err = session.prompt(s, text, context)
+	if not ok then
+		greed.echo(err :: string)
+	end
+end
+
 greed.command({
 	name = "agent-send",
 	doc = "Send what's in the transcript's box to its agent",
@@ -1417,31 +1446,9 @@ greed.command({
 			transcript.clear_prompt(ctx.buffer)
 			return
 		end
-		-- Sent while it works, it waits its turn.
-		if s.status == "working" or s.status == "waiting" then
-			if text ~= "" or s.attached then
-				transcript.clear_prompt(ctx.buffer)
-				session.queue(s, text)
-			end
-			return
-		end
-		-- A message it can't answer, like one to a model without a key,
-		-- stays in the box.
-		local problem = session.check(s)
-		changed(s)
-		if problem then
-			greed.echo(problem)
-			return
-		end
-		transcript.clear_prompt(ctx.buffer)
-		local context = if greed.option.get("agent-editor-context") == true
-			then agent_context.describe(s.root)
-			else nil
-		s.pinned = agent_context.pinned_text()
-		local ok, err = session.prompt(s, text, context)
-		if not ok then
-			greed.echo(err :: string)
-		end
+		deliver(s, text, function()
+			transcript.clear_prompt(ctx.buffer)
+		end)
 	end,
 })
 
@@ -1861,24 +1868,46 @@ local function code_here(ctx: greed.Context): code.Code?
 	return found
 end
 
+-- Keeps `report`, what came of a command you ran from `s`'s message, to
+-- go with your next message to it.
+local function teller(s: Session): (report: string) -> ()
+	return function(report: string)
+		local ran = s.ran or {}
+		table.insert(ran, report)
+		s.ran = ran
+	end
+end
+
 greed.command({
 	name = "agent-code-run",
-	doc = "Run the shell code block at the cursor in this project's shell, as a block there; one that destroys something asks first",
+	doc = "Run the shell code block at the cursor in this project's shell, showing it in a float, and tell the agent what came of it with your next message; one that destroys something asks first",
 	run = function(ctx)
 		local found = code_here(ctx)
 		if found then
-			code.run(found, by_buffer[ctx.buffer:id()].cwd)
+			local s = by_buffer[ctx.buffer:id()]
+			code.run(found, s.cwd, teller(s))
 		end
 	end,
 })
 
 greed.command({
 	name = "agent-code-prompt",
-	doc = "Put the shell code block at the cursor at this project's shell's prompt, to look over before running it",
+	doc = "Put the shell code block at the cursor at this project's shell's prompt, in a float, to look over before running it; what comes of it goes to the agent with your next message",
 	run = function(ctx)
 		local found = code_here(ctx)
 		if found then
-			code.to_prompt(found, ctx.view)
+			code.to_prompt(found, teller(by_buffer[ctx.buffer:id()]))
+		end
+	end,
+})
+
+greed.command({
+	name = "agent-code-ask",
+	doc = "Ask the agent to run the shell code block at the cursor itself",
+	run = function(ctx)
+		local found = code_here(ctx)
+		if found then
+			deliver(by_buffer[ctx.buffer:id()], code.ask(found), function() end)
 		end
 	end,
 })

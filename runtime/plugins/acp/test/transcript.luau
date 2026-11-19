@@ -1125,7 +1125,7 @@ test("an edit's change is coloured as its file's language", function(t)
 	acp.stop(s)
 end)
 
-test("shell code in a transcript has run, prompt and copy buttons", function(t)
+test("shell code in a transcript has run, prompt, agent and copy buttons", function(t)
 	local s = start(t)
 	send(t, s, "code")
 	local buffer = greed.view():buffer()
@@ -1133,7 +1133,7 @@ test("shell code in a transcript has run, prompt and copy buttons", function(t)
 	for _, mark in buffer:decorations("acp-code") do
 		table.insert(found, mark.action or "")
 	end
-	assert(#found == 6, `three buttons on each of two blocks: {table.concat(found, " ")}`)
+	assert(#found == 8, `four buttons on each of two blocks: {table.concat(found, " ")}`)
 	-- Run runs it in the project's shell, in the agent's folder.
 	local text = buffer:text()
 	local fence = string.find(text, "```sh", 1, true)
@@ -1144,7 +1144,8 @@ test("shell code in a transcript has run, prompt and copy buttons", function(t)
 	local offered = table.concat(t:floats(), "\n")
 	assert(string.find(offered, "▶ run", 1, true), offered)
 	t:keys("esc")
-	greed.view():set_cursor(fence - 1)
+	local chat = greed.view()
+	chat:set_cursor(fence - 1)
 	t:run("agent-code-run")
 	local shell = require("@shell")
 	local sh = assert(shell.list(greed.project.current().id)[1], "a shell")
@@ -1157,6 +1158,53 @@ test("shell code in a transcript has run, prompt and copy buttons", function(t)
 		block.output
 	)
 	assert(block.cwd == s.cwd, "where the agent works")
+	-- What came of it goes with the next message, once.
+	t:wait_for(function()
+		return s.ran ~= nil
+	end)
+	local report = s.ran[1]
+	assert(string.find(report, "<shell-run>", 1, true), report)
+	assert(string.find(report, "echo from the chat", 1, true), report)
+	assert(string.find(report, "and it succeeded", 1, true), report)
+	assert(string.find(report, "from the chat\n", 1, true), report)
+	local fresh = session.fresh_context(s, nil)
+	assert(fresh and string.find(fresh, report, 1, true), fresh)
+	assert(s.ran == nil and session.fresh_context(s, nil) == nil, "only once")
+	-- Prompt puts it at the shell's prompt in a float; run from there, it
+	-- goes with the next message too.
+	chat:focus()
+	t:run("agent-code-prompt")
+	t:wait_for(function()
+		return greed.view():buffer() == sh.buffer
+	end)
+	assert(
+		greed.view() ~= greed.tab.current().panes[1],
+		"in a float, the transcript left as it was"
+	)
+	assert(greed.tab.current().panes[1]:buffer() == buffer)
+	local count = #sh.blocks
+	t:keys("enter")
+	t:wait_for(function()
+		return s.ran ~= nil
+	end)
+	assert(
+		#sh.blocks == count + 1 and string.find(s.ran[1], "echo from the chat", 1, true),
+		s.ran[1]
+	)
+	s.ran = nil
+	greed.view():close()
+	-- Agent runs it asks the agent to, as a message of yours.
+	chat:focus()
+	chat:set_cursor(fence - 1)
+	t:run("agent-code-ask")
+	t:wait_for(function()
+		for _, entry in s.entries do
+			if entry.kind == "user" and string.find(entry.text, "Run this for me", 1, true) then
+				return string.find(entry.text, "echo from the chat", 1, true) ~= nil
+			end
+		end
+		return false
+	end)
 	-- A console block's commands are its lines after `$ `; a risky one asks.
 	local console = string.find(text, "```console", 1, true)
 	assert(console, "a console block")
