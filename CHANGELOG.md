@@ -3,7 +3,7 @@
 What changed in each release of Greed. The commits behind each line are in
 the repository's history.
 
-## 0.4.3 - 2026-11-16
+## 0.4.3 - 2026-11-25
 
 ### Highlights
 
