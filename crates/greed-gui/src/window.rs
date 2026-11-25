@@ -800,13 +800,7 @@ impl Shown {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()?;
         let caps = surface.get_capabilities(&adapter);
-        // Colors are given as the theme has them, so not an sRGB target.
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| !f.is_srgb())
-            .or_else(|| caps.formats.first().copied())?;
+        let format = surface_format(&caps.formats)?;
         let size = window.inner_size();
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -823,7 +817,14 @@ impl Shown {
                 .copied()
                 .unwrap_or(wgpu::CompositeAlphaMode::Auto),
             view_formats: vec![],
-            color_space: wgpu::SurfaceColorSpace::Auto,
+            color_space: if caps
+                .color_spaces(format)
+                .contains(wgpu::SurfaceColorSpaces::SRGB)
+            {
+                wgpu::SurfaceColorSpace::Srgb
+            } else {
+                wgpu::SurfaceColorSpace::Auto
+            },
         };
         surface.configure(&device, &config);
         Some(Self {
@@ -891,6 +892,25 @@ fn present_mode(available: &[wgpu::PresentMode]) -> wgpu::PresentMode {
     } else {
         wgpu::PresentMode::Fifo
     }
+}
+
+/// The format to draw in. Colors are given already sRGB-encoded, as the
+/// theme has them, so the surface must take them as they are: an 8-bit
+/// format that doesn't encode again (not `*Srgb`), else another one that
+/// doesn't. `Rgba16Float` is the last resort, since systems show it as
+/// linear light and the colors come out washed out.
+fn surface_format(available: &[wgpu::TextureFormat]) -> Option<wgpu::TextureFormat> {
+    use wgpu::TextureFormat::{Bgra8Unorm, Rgba8Unorm, Rgba16Float};
+    available
+        .iter()
+        .find(|f| matches!(f, Bgra8Unorm | Rgba8Unorm))
+        .or_else(|| {
+            available
+                .iter()
+                .find(|f| !f.is_srgb() && **f != Rgba16Float)
+        })
+        .or_else(|| available.first())
+        .copied()
 }
 
 /// A clipboard image as PNG.
@@ -1028,6 +1048,24 @@ fn key_from(logical: &WinitKey, text: Option<&str>, mods: ModifiersState) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_surface_takes_theme_colors_as_they_are() {
+        use wgpu::TextureFormat::{
+            Bgra8Unorm, Bgra8UnormSrgb, Rgb10a2Unorm, Rgba8UnormSrgb, Rgba16Float,
+        };
+        assert_eq!(
+            surface_format(&[Rgba16Float, Bgra8UnormSrgb, Bgra8Unorm]),
+            Some(Bgra8Unorm),
+            "a compositor offering float first must not get it (#34)"
+        );
+        assert_eq!(
+            surface_format(&[Rgba16Float, Rgb10a2Unorm, Rgba8UnormSrgb]),
+            Some(Rgb10a2Unorm)
+        );
+        assert_eq!(surface_format(&[Rgba16Float]), Some(Rgba16Float));
+        assert_eq!(surface_format(&[]), None);
+    }
 
     #[test]
     fn ctrl_shift_v_and_shift_insert_paste_and_plain_v_types() {
